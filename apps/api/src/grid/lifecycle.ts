@@ -29,6 +29,10 @@ import {
   type BotVaultRuntimeMismatchRecoveryAction,
   type BotVaultRuntimeRecoveryHint
 } from "../vaults/botVaultRuntime.lifecycle.js";
+import {
+  GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY,
+  parseVaultSafetyControls
+} from "../vaults/safetyControls.js";
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -112,6 +116,18 @@ function ensureGridExchangeAllowed(params: {
     exchange,
     allowedExchanges: [...params.allowedExchanges]
   };
+}
+
+async function assertGridStartsEnabled(deps: GridLifecycleDeps): Promise<void> {
+  const row = typeof deps.db?.globalSetting?.findUnique === "function"
+    ? await deps.db.globalSetting.findUnique({
+      where: { key: GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY },
+      select: { value: true }
+    }).catch(() => null)
+    : null;
+  const controls = parseVaultSafetyControls(row?.value);
+  if (!controls.gridStartsDisabled) return;
+  throw new ManualTradingError("grid starts are disabled by safety controls", 423, "grid_starts_disabled");
 }
 
 async function readPaperSymbolState(params: {
@@ -348,6 +364,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       if (previousState === "archived") {
         throw new ManualTradingError("grid instance is archived", 409, "grid_instance_archived_not_restartable");
       }
+      await assertGridStartsEnabled(deps);
 
       const allowedExchanges = params.allowedExchanges ?? deps.allowedGridExchanges;
       const allowed = ensureGridExchangeAllowed({

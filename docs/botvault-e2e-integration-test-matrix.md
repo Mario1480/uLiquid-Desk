@@ -15,6 +15,8 @@ reconcile, or Grid start changes:
 npm -w apps/api run test:botvault-grid-smoke
 npm -w apps/api run test:botvault-v4-transitions
 npm -w apps/api run test:vault-grid-corewriter
+npm -w apps/api run test:vaults
+npm -w apps/runner run test:vault-grid-corewriter
 npm -w packages/futures-exchange run test:vault-grid-corewriter
 npm -w packages/contracts run test
 ```
@@ -40,6 +42,9 @@ npm -w apps/api run test:vaults
 | BV-E2E-09 | Vault activation fails -> GridBot does not become running. | API/service. | `startGridInstanceNow keeps grid out of running when BotVault activation fails`; route error payload mapping. | Force `activateBotVaultForGridInstance` to fail after readiness succeeds. Assert grid and bot are not `running`, blocker is persisted with `reasonCode=grid_instance_vault_activation_failed`, `recoveryHint=retry_reconcile`. |
 | BV-E2E-10 | Reconcile after process restart continues the flow. | API/service/job. | Funding timeout escalation; reduce-margin resume without duplicate transfer; claim/close/recover settlement resume after post-processing failure; `reconcileBotVaultV3ById` fee-event resume tests. | Start funding/withdraw/claim/close, stop after submitted or post-processing-pending metadata is persisted, recreate service/job process, run reconcile. Assert existing tx/action keys are reused, no duplicate transfer/claim/close tx is sent, and flow advances to confirmed or the documented pending/recovery state. |
 | BV-E2E-11 | Deterministic GridBot funding smoke: EVM funded -> Deposit pending -> Reconcile confirmed -> Grid start allowed -> Withdraw pending -> Claim blocked -> Claim after reconcile. | API/service/job smoke. | `npm -w apps/api run test:botvault-grid-smoke`; pending runtime reconciliation job test; reduce-margin pending EVM-balance reconcile test. | Assert pending deposit returns `deposit_pending_reconciliation` and readiness false, confirmed funding returns `funding_confirmed` and readiness true, pending withdraw returns `withdraw_pending_reconciliation`, and the final reconciled state has no pending runtime reconcile signal. |
+| BV-E2E-12 | Funding pending GridBot does not count as order-active running. | Runner/API/UI. | Runner `funding_pending` state tests; API pause/resume route coverage; Web typecheck. | Force Core deposit or perp-transfer pending. Assert GridBot instance state is `funding_pending`, runner continues reconciliation ticks, no orders are placed, UI running count excludes it, and pause remains available. |
+| BV-E2E-13 | Stale Trading-Reconciliation blocks settlement. | API/service. | Profitshare freshness tests and close/claim/recover guards. | Set `BotVaultPnlAggregate.lastReconciledAt` older than `BOTVAULT_TRADING_RECONCILIATION_FRESHNESS_SECONDS` or `isFlat=false`. Assert claim/close/recover reject before serialized onchain tx creation. |
+| BV-E2E-14 | Money-flow PlatformAlerts open and resolve. | API/job/admin. | Reconciliation job alert tests; Admin Vault-Ops response shape. | Hold deposit/withdraw/contract-balance pending beyond 10m. Assert one deduped PlatformAlert opens with reason, recovery, tx/idempotency, expected/actual balances, and resolves after reconciliation becomes clean. |
 
 ## Failure Contract
 
@@ -54,6 +59,8 @@ the persisted blocker or flow metadata where applicable.
 | HyperCore/perp margin not yet verified | `bot_vault_v4_perp_margin_not_verified` | `retry_reconcile` | Grid start blocker records retryable status. |
 | HyperCore state contradicts local funding lifecycle | `funding_lifecycle_hypercore_counterevidence` | `run_recovery` | Reconcile issue persists recovery-required status. |
 | Claim/close/recover contract balance not yet visible on HyperEVM | `insufficient_contract_balance` | `retry_reconcile` | `contractBalanceReconciliation.state=pending_reconciliation`. |
+| Settlement PnL reconciliation stale or not flat | `claim_profit_unavailable:pnl_not_finalized:reconciliation_stale` / `open_positions` | run trading reconciliation first | No claim/close/recover tx is created. |
+| Grid funding still reconciling | `grid_initial_core_spot_funding_pending` / `grid_initial_perp_funding_pending` | `retry_reconcile` | `GridBotInstance.state=funding_pending`; runner remains eligible but order placement is blocked. |
 | Reduce-margin post-transfer reconcile failed | `bot_vault_v3_reduce_margin_post_reconcile_failed` | `retry_reconcile` | `reduceMarginFinalization.postReconcileState=pending`. |
 | Reduce-margin post-transfer reconcile found counterevidence | `funding_lifecycle_perp_margin_counterevidence` | `run_recovery` | `reduceMarginFinalization.postReconcileState=recovery_required`. |
 | Vault activation fails during Grid start | `grid_instance_vault_activation_failed` | `retry_reconcile` | Grid/bot state remains non-running; start blocker is persisted. |

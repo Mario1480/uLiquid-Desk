@@ -27,6 +27,10 @@ const adminVaultProfitShareTreasuryConfigTxSchema = z.object({
 
 const adminVaultSafetyControlsSchema = z.object({
   haltNewOrders: z.boolean().optional(),
+  depositsDisabled: z.boolean().optional(),
+  withdrawsDisabled: z.boolean().optional(),
+  gridStartsDisabled: z.boolean().optional(),
+  profitClaimsDisabled: z.boolean().optional(),
   closeOnlyAllUserIds: z.array(z.string().trim().min(1)).optional(),
   reason: z.string().trim().max(500).nullable().optional()
 });
@@ -351,6 +355,34 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
         gridInstance: { select: { template: { select: { name: true, symbol: true } } } }
       }
     })).then((value) => Array.isArray(value) ? value : []).catch(() => []);
+    const openAlerts = await deps.ignoreMissingTable(() => deps.db.platformAlert.findMany({
+      where: {
+        source: "vault_onchain_reconciliation",
+        status: { in: ["open", "acknowledged"] }
+      },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 200,
+      select: {
+        id: true,
+        type: true,
+        severity: true,
+        status: true,
+        title: true,
+        message: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []);
+    const alertsByBotVaultId = new Map<string, any[]>();
+    for (const alert of openAlerts) {
+      const metadata = deps.parseJsonObject(alert.metadata);
+      const botVaultId = typeof metadata.botVaultId === "string" ? metadata.botVaultId : null;
+      if (!botVaultId) continue;
+      const current = alertsByBotVaultId.get(botVaultId) ?? [];
+      current.push(alert);
+      alertsByBotVaultId.set(botVaultId, current);
+    }
 
     const counts = {
       clean: 0,
@@ -364,6 +396,59 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       const executionMetadata = deps.parseJsonObject(row.executionMetadata);
       const tradingReconciliation = deps.parseJsonObject(executionMetadata.tradingReconciliation);
       const result = deps.parseJsonObject(tradingReconciliation.result);
+      const contractBalanceReconciliation = deps.parseJsonObject(executionMetadata.contractBalanceReconciliation);
+      const claimSpotToEvmTransfer = deps.parseJsonObject(executionMetadata.claimSpotToEvmTransfer);
+      const reduceMarginFinalization = deps.parseJsonObject(executionMetadata.reduceMarginFinalization);
+      const moneyFlowSource = (() => {
+        if (contractBalanceReconciliation.state === "pending_reconciliation") {
+          return {
+            status: "pending_reconciliation",
+            pendingKind: "contract_balance",
+            pendingSince: contractBalanceReconciliation.pendingAt ?? contractBalanceReconciliation.updatedAt,
+            reasonCode: contractBalanceReconciliation.reasonCode ?? "insufficient_contract_balance",
+            recoveryHint: "retry_reconcile",
+            txHash: contractBalanceReconciliation.txHash ?? null,
+            idempotencyKey: contractBalanceReconciliation.idempotencyKey ?? null,
+            expectedBalanceUsd: contractBalanceReconciliation.expectedAmountUsd ?? null,
+            actualBalanceUsd: contractBalanceReconciliation.actualBalanceUsd ?? null
+          };
+        }
+        if (["pending", "submitted", "pending_reconciliation"].includes(String(claimSpotToEvmTransfer.state ?? "").trim().toLowerCase())) {
+          return {
+            status: claimSpotToEvmTransfer.status ?? "transfer_pending_reconciliation",
+            pendingKind: "withdraw",
+            pendingSince: claimSpotToEvmTransfer.pendingAt ?? claimSpotToEvmTransfer.updatedAt,
+            reasonCode: claimSpotToEvmTransfer.errorCode ?? claimSpotToEvmTransfer.status ?? "claim_profit_pending_reconciliation",
+            recoveryHint: "retry_reconcile",
+            txHash: claimSpotToEvmTransfer.txHash ?? null,
+            idempotencyKey: claimSpotToEvmTransfer.idempotencyKey ?? null,
+            expectedBalanceUsd: claimSpotToEvmTransfer.expectedEvmBalanceAfterUsd ?? claimSpotToEvmTransfer.requiredAmountUsd ?? null,
+            actualBalanceUsd: claimSpotToEvmTransfer.evmBalanceBeforeUsd ?? null
+          };
+        }
+        const spotToEvmStatus = String(reduceMarginFinalization.spotToEvmTransferStatus ?? "").trim().toLowerCase();
+        if (["transfer_pending_reconciliation", "transfer_submitted", "pending_timeout"].includes(spotToEvmStatus)) {
+          return {
+            status: spotToEvmStatus,
+            pendingKind: "withdraw",
+            pendingSince: reduceMarginFinalization.updatedAt ?? null,
+            reasonCode: spotToEvmStatus,
+            recoveryHint: "retry_reconcile",
+            txHash: reduceMarginFinalization.spotToEvmTransferTxHash ?? null,
+            idempotencyKey: reduceMarginFinalization.idempotencyKey ?? null,
+            expectedBalanceUsd: reduceMarginFinalization.evmExpectedAfterUsd ?? reduceMarginFinalization.expectedEvmBalanceAfterUsd ?? null,
+            actualBalanceUsd: reduceMarginFinalization.evmBalanceAfterUsd ?? reduceMarginFinalization.evmBalanceBeforeUsd ?? null
+          };
+        }
+        return null;
+      })();
+      const moneyFlowPendingSince = typeof moneyFlowSource?.pendingSince === "string"
+        ? new Date(moneyFlowSource.pendingSince)
+        : null;
+      const moneyFlowPendingAgeSeconds = moneyFlowPendingSince && !Number.isNaN(moneyFlowPendingSince.getTime())
+        ? Math.max(0, Math.trunc((Date.now() - moneyFlowPendingSince.getTime()) / 1000))
+        : null;
+      const vaultAlerts = alertsByBotVaultId.get(String(row.id)) ?? [];
       const derivedLifecycle = deriveBotVaultLifecycleState({
         status: row.status,
         executionStatus: row.executionStatus,
@@ -405,6 +490,24 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
           ? result.blockedReasons.map((entry: unknown) => String(entry ?? "")).filter(Boolean)
           : [],
         items: Array.isArray(result.items) ? result.items : [],
+        moneyFlow: moneyFlowSource
+          ? {
+              ...moneyFlowSource,
+              pendingSince: moneyFlowSource.pendingSince ?? null,
+              pendingAgeSeconds: moneyFlowPendingAgeSeconds
+            }
+          : null,
+        openAlertIds: vaultAlerts.map((alert) => String(alert.id)),
+        openAlerts: vaultAlerts.map((alert) => ({
+          id: String(alert.id),
+          type: String(alert.type),
+          severity: String(alert.severity),
+          status: String(alert.status),
+          title: alert.title ? String(alert.title) : null,
+          message: String(alert.message),
+          createdAt: alert.createdAt instanceof Date ? alert.createdAt.toISOString() : null,
+          updatedAt: alert.updatedAt instanceof Date ? alert.updatedAt.toISOString() : null
+        })),
         updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null
       };
     });
@@ -435,7 +538,16 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     const user = getUserFromLocals(res);
     const current = await deps.getVaultSafetyControlsSettings();
-    const saved = await deps.setVaultSafetyControlsSettings({ haltNewOrders: parsed.data.haltNewOrders ?? current.haltNewOrders, closeOnlyAllUserIds: parsed.data.closeOnlyAllUserIds ?? current.closeOnlyAllUserIds, reason: parsed.data.reason ?? current.reason, updatedByUserId: user.id });
+    const saved = await deps.setVaultSafetyControlsSettings({
+      haltNewOrders: parsed.data.haltNewOrders ?? current.haltNewOrders,
+      depositsDisabled: parsed.data.depositsDisabled ?? current.depositsDisabled,
+      withdrawsDisabled: parsed.data.withdrawsDisabled ?? current.withdrawsDisabled,
+      gridStartsDisabled: parsed.data.gridStartsDisabled ?? current.gridStartsDisabled,
+      profitClaimsDisabled: parsed.data.profitClaimsDisabled ?? current.profitClaimsDisabled,
+      closeOnlyAllUserIds: parsed.data.closeOnlyAllUserIds ?? current.closeOnlyAllUserIds,
+      reason: parsed.data.reason ?? current.reason,
+      updatedByUserId: user.id
+    });
     return res.json(saved);
   });
 
@@ -448,7 +560,16 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       const current = await deps.getVaultSafetyControlsSettings();
       const nextUserIds = Array.from(new Set([...current.closeOnlyAllUserIds, req.params.id]));
       const [settings, result] = await Promise.all([
-        deps.setVaultSafetyControlsSettings({ haltNewOrders: current.haltNewOrders, closeOnlyAllUserIds: nextUserIds, reason: parsed.data.reason ?? "admin_close_only_all", updatedByUserId: actor.id }),
+        deps.setVaultSafetyControlsSettings({
+          haltNewOrders: current.haltNewOrders,
+          depositsDisabled: current.depositsDisabled,
+          withdrawsDisabled: current.withdrawsDisabled,
+          gridStartsDisabled: current.gridStartsDisabled,
+          profitClaimsDisabled: current.profitClaimsDisabled,
+          closeOnlyAllUserIds: nextUserIds,
+          reason: parsed.data.reason ?? "admin_close_only_all",
+          updatedByUserId: actor.id
+        }),
         deps.vaultService.setAllUserBotVaultsCloseOnly({ userId: req.params.id, actorUserId: actor.id, reason: parsed.data.reason ?? "admin_close_only_all", idempotencyKeyPrefix: parsed.data.idempotencyKey })
       ]);
       return res.json({ ok: true, safety: settings, result });

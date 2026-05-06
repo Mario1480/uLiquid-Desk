@@ -1,6 +1,6 @@
 # Go-live Readiness Follow-ups
 
-Stand: 2026-05-02
+Stand: 2026-05-06
 
 Dieses Dokument fasst den aktuellen Stand nach der Go-live-Security-Haertung zusammen. Es ist als operative Checkliste gedacht: Was ist im Code bereits erledigt, was muss vor dem echten Production-Go-live noch geprueft werden, und welche Verbesserungen koennen nach dem Go-live sinnvoll nachgezogen werden.
 
@@ -57,23 +57,17 @@ Lokal wurden folgende Checks erfolgreich ausgefuehrt:
 
 Hinweis: Der Typecheck laeuft gruene durch. Forge meldet weiterhin bestehende Solidity-Lint-Notes/Warnungen, blockiert den Typecheck aber nicht. Die Notification-Tests loggen ohne lokale Postgres-DB erwartbare Prisma-Warnungen fuer best-effort Audit-Writes; die Tests selbst sind gruen.
 
+## Ergaenzend Betreiber-verifiziert am 2026-05-06
+
+- Production-Secrets sind final ausserhalb des Repos gesetzt. Secret-Werte werden bewusst nicht dokumentiert.
+- Secret-Rotation wurde geplant und durchgefuehrt beziehungsweise fuer bewusst akzeptierte Secrets dokumentiert.
+- Superadmin/Admin-Backend-Access wurde produktionsnah geprueft.
+- Read-only Monitoring fuer Dashboard, Calendar, News und AI ist aktiv.
+
 ## Vor Go-live zwingend offen
 
 Diese Punkte sollten vor dem echten Production-Go-live erledigt oder bewusst abgehakt werden:
 
-- Production-Secrets final setzen:
-  - `ADMIN_EMAIL`
-  - `ADMIN_PASSWORD`
-  - `POSTGRES_PASSWORD`
-  - `SECRET_MASTER_KEY`
-  - `PY_STRATEGY_AUTH_TOKEN`
-  - `PY_GRID_AUTH_TOKEN`
-  - `CORS_ORIGINS`
-  - `SIWE_ALLOWED_DOMAINS`
-  - SMTP-/Telegram-/WalletConnect-/RPC-Secrets je nach aktivem Feature-Set.
-- Secret-Rotation planen:
-  - Alte Admin-Fallbacks duerfen in keiner `.env.prod` oder VPS-History mehr auftauchen.
-  - Bestehende DB-/Service-Tokens sollten vor Go-live einmal rotiert werden.
 - Migration auf Staging/Production testen:
   - Backup der Production-DB erstellen.
   - `prisma migrate deploy` gegen Staging ausfuehren.
@@ -191,7 +185,7 @@ Diese Punkte sind keine harten Go-live-Blocker, wuerden die Produktreife aber kl
 
 Vor dem naechsten groesseren Feature sollte mindestens klar sein:
 
-- Production-Secrets sind final gesetzt und rotiert.
+- Production-Secrets sind final gesetzt und rotiert. Status: erledigt am 2026-05-06.
 - Migration wurde gegen Staging getestet.
 - RBAC-Smoke ist mit Admin und User-Rolle erfolgreich.
 - Caddy ist der einzige oeffentliche Einstieg fuer Web/API.

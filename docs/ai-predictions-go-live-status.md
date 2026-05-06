@@ -1,6 +1,6 @@
 # AI Predictions Go-live Status
 
-Stand: 2026-05-02
+Stand: 2026-05-06
 
 Diese Doku haelt den aktuellen Go-live-Status der AI Predictions fest. Sie ergaenzt `docs/prediction-refresh-scheduler.md`, `docs/prediction-evaluator.md` und `docs/ai-evaluation-framework.md`.
 
@@ -15,7 +15,7 @@ Die AI-Predictions-Flaeche ist nach den letzten Hardening-Fixes deutlich naeher 
 - Tradable Generate-Flows laufen bei History-Persistenzfehlern fail-closed mit `503 prediction_persist_failed`.
 - AI-Provider-Base-URLs werden vor Outbound-Fetches gehaertet; unsichere Ziele liefern generisch `503`.
 
-Empfehlung: Ein interner Canary ist nach Migration und Provider-Konfig-Smoke vertretbar. Ein breiter Go-live sollte erst nach echten Scheduler-/Provider-Smokes, aktivem Monitoring und Operator-Runbook erfolgen.
+Empfehlung: Ein interner Canary ist nach Migration, Provider-Konfig-Smoke, Refresh-Degraded-Smoke, Evaluator-Stichprobe und aktivem Read-only-Monitoring vertretbar. Diese Betriebs-Smokes wurden am 2026-05-06 Betreiber-verifiziert. Ein breiter Go-live sollte weiterhin erst nach Operator-Runbook und den kapitalbewegenden Canary-Flows erfolgen.
 
 ## Behobene Go-live Blocker
 
@@ -125,7 +125,16 @@ Hinweise:
 
 - Lokale Default-Node-Version ist `18.20.8`; Web-Typecheck wurde deshalb mit der gebuendelten Codex-Runtime Node `24.14.0` ausgefuehrt, weil Next >= 20.9 erwartet.
 - Einige AI-Tests loggen Prisma-Warnungen, weil lokal kein Datenbankserver auf `localhost:5433` erreichbar ist. Die Tests fallen dabei wie vorgesehen auf Defaults zurueck und bestehen.
-- Echte Provider-, Scheduler- und Auto-Trading-Smokes wurden noch nicht ausgefuehrt, weil dafuer Production-nahe Secrets, Provider-Quotas und bewusst gewaehlte Accounts noetig sind.
+- Echte Provider-, Refresh-Degraded- und Evaluator-Smokes fuer Read-only AI wurden am 2026-05-06 Betreiber-verifiziert. Auto-Trading- und kapitalbewegende Smokes bleiben separat in Trading/Grid/BotVault nachzuhalten.
+
+Live-/Betriebs-Smokes am 2026-05-06:
+
+| Smoke | Ergebnis |
+| --- | --- |
+| AI Provider-Konfig-Smoke | DONE |
+| AI Refresh-Degraded-Smoke in API und UI | DONE |
+| AI Evaluator-Stichprobe gegen Candle-Daten | DONE |
+| Read-only Monitoring fuer AI | DONE |
 
 ## Vor Canary pruefen
 
@@ -137,6 +146,7 @@ Hinweise:
   - Keine privaten, lokalen oder Metadata-Ziele fuer Production.
   - Private Ollama nur bewusst mit `AI_ALLOW_PRIVATE_OLLAMA_BASE_URL=1`.
   - Unsichere Base-URL muss `503` liefern und intern `unsafe_ai_base_url` loggen.
+  - Status: erledigt am 2026-05-06 fuer die aktuelle Betreiber-Konfiguration; bei Provider-/Base-URL-Wechsel wiederholen.
 - AI-only-Smoke:
   - Provider erreichbar: AI-only Generate funktioniert und persistiert History.
   - Provider nicht erreichbar: AI-only Generate faellt geschlossen, kein lokaler Fallback als AI-Signal.
@@ -144,18 +154,21 @@ Hinweise:
   - Laufender Schedule aktualisiert `refreshStatus="ok"`.
   - Simulierter Provider-/Venue-Fehler setzt `refreshStatus="degraded"` und erhoeht den Failure-Count.
   - Naechster erfolgreicher Refresh setzt Status wieder auf `ok`.
+  - Status: erledigt am 2026-05-06 fuer API und UI.
 - Evaluator-Smoke:
   - Neue Prediction wird erst nach vollem `horizonMs` bewertet.
   - Alte `close_to_close_v1` Rows werden mit `close_to_close_v2` neu bewertet.
   - `outcomeMeta.realizedHorizonMs` ist sichtbar.
+  - Status: Stichprobe gegen Candle-Daten erledigt am 2026-05-06.
 - UI-Smoke:
   - Feed zeigt degraded Refresh sichtbar.
   - Running-Schedules zeigen Refresh-Fehler sichtbar.
   - Degraded Predictions koennen nicht an den Trading Desk gesendet werden.
+  - Status: Refresh-Degraded-UI-Smoke erledigt am 2026-05-06; Trading-Desk-Uebergabe bleibt im Trading-Canary nachzuhalten.
 
 ## Noch offen vor breitem Go-live
 
-- Monitoring und Alerts:
+- Monitoring und Alerts laufend beobachten:
   - `refreshStatus="degraded"` pro Workspace/Symbol/Timeframe.
   - `refreshFailureCount` ueber Schwellwert.
   - `prediction_persist_failed`.
@@ -168,8 +181,8 @@ Hinweise:
   - Wie alte v1-Metriken einmalig neu berechnen und pruefen?
   - Wann Schedules pausieren statt weiter retryen?
 - Production-Konfiguration:
-  - Node-Version fuer Web-Build/Typecheck auf >= 20.9 fixieren.
-  - Provider-Secrets und Base-URLs getrennt fuer Staging/Production pruefen.
+  - Node-Version fuer Web-Build/Typecheck auf >= 20.9 fixieren. Status: erledigt in Phase 1.
+  - Provider-Secrets und Base-URLs getrennt fuer Staging/Production pruefen. Status: aktuelle Betreiber-Konfiguration am 2026-05-06 geprueft; bei Wechsel wiederholen.
   - Migration in Deploy-Checklist aufnehmen.
   - Log-Scrubbing fuer AI-Fehler weiter beobachten.
 - Daten-/Metrik-Validierung:
@@ -206,14 +219,14 @@ Hinweise:
 
 ## Go-live Empfehlung
 
-AI Predictions haben die bekannten Code-Go-live-Blocker aus dem Review geschlossen. Fuer einen kontrollierten internen Canary ist der Stand nach Migration, Provider-Konfig-Smoke und Scheduler-Smoke vertretbar.
+AI Predictions haben die bekannten Code-Go-live-Blocker aus dem Review geschlossen. Fuer einen kontrollierten internen Canary ist der Stand nach Migration, Provider-Konfig-Smoke, Refresh-Degraded-Smoke, Evaluator-Stichprobe und aktivem Monitoring vertretbar.
 
 Nicht als breiten Go-live freigeben, solange diese Punkte nicht gruen sind:
 
 - Prisma-Migration in Staging/Production angewendet.
-- Provider-Smoke fuer sichere HTTPS-Base-URL bestanden.
+- Provider-Smoke fuer sichere Base-URL bestanden. Status: erledigt am 2026-05-06 fuer die aktuelle Betreiber-Konfiguration.
 - AI-only Fail-Closed-Smoke bestanden.
-- Refresh-Degraded-Smoke in API und UI bestanden.
-- v2-Evaluator-Stichprobe gegen echte Candle-Daten plausibel.
-- Monitoring fuer degraded Refresh, Persistenzfehler, unsafe AI URLs und Evaluator-Lag aktiv.
+- Refresh-Degraded-Smoke in API und UI bestanden. Status: erledigt am 2026-05-06.
+- v2-Evaluator-Stichprobe gegen echte Candle-Daten plausibel. Status: erledigt am 2026-05-06.
+- Monitoring fuer degraded Refresh, Persistenzfehler, unsafe AI URLs und Evaluator-Lag aktiv. Status: aktiviert am 2026-05-06, laufend beobachten.
 - Operator-Runbook fuer degraded Schedules und Provider-Ausfaelle vorhanden.

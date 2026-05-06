@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { afterEach, beforeEach } from "node:test";
 import { HyperliquidFuturesAdapter } from "./hyperliquid.adapter.js";
 import { HyperliquidContractCache } from "./hyperliquid.contract-cache.js";
+import { clearHyperliquidReadCoordinatorForTests } from "./hyperliquid.read-coordinator.js";
+
+beforeEach(() => {
+  clearHyperliquidReadCoordinatorForTests();
+});
+
+afterEach(() => {
+  clearHyperliquidReadCoordinatorForTests();
+});
 
 test("adapter market poll batches one snapshot for multiple ticker symbols", async () => {
   const adapter = new HyperliquidFuturesAdapter({
@@ -351,7 +360,7 @@ test("adapter depositUsdcToHyperCore waits for core balance reconciliation after
   const result = await adapter.depositUsdcToHyperCore({ amountUsd: 6 });
 
   assert.deepEqual(result, {
-    status: "pending_timeout",
+    status: "pending_reconciliation",
     submitted: true,
     confirmationSource: "receipt",
     receiptStatus: "success",
@@ -360,6 +369,57 @@ test("adapter depositUsdcToHyperCore waits for core balance reconciliation after
     errorCode: "deposit_pending_reconciliation",
     errorMessage: "deposit_pending_reconciliation"
   });
+
+  await adapter.close();
+});
+
+test("adapter transferUsdcSpotToEvm honors explicit expected EVM balance target", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let submitCalls = 0;
+  (adapter as any).getCoreUsdcSpotBalance = async () => ({
+    amountUsd: 5,
+    token: "USDC:0",
+    tokenIndex: 0,
+    systemAddress: `0x${"4".repeat(40)}`,
+    weiDecimals: 8
+  });
+  const evmBalances = [2, 3];
+  (adapter as any).getEvmUsdcBalance = async () => {
+    const amountUsd = evmBalances.shift() ?? 3;
+    return {
+      amountUsd,
+      amountAtomic: BigInt(Math.round(amountUsd * 1_000_000)),
+      holderAddress: `0x${"3".repeat(40)}`,
+      tokenAddress: `0x${"5".repeat(40)}`,
+      decimals: 6
+    };
+  };
+  (adapter as any).coreWriter.sendSpotAsset = async () => {
+    submitCalls += 1;
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "receipt",
+      receiptStatus: "success",
+      txHash: "0xtarget"
+    };
+  };
+
+  const result = await adapter.transferUsdcSpotToEvm({
+    amountUsd: 2,
+    expectedEvmBalanceAfterUsd: 4
+  });
+
+  assert.equal(result.status, "transfer_pending_reconciliation");
+  assert.equal(result.errorCode, "transfer_pending_reconciliation");
+  assert.equal(result.amountUsd, 2);
+  assert.equal(submitCalls, 1);
 
   await adapter.close();
 });

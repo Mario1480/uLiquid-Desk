@@ -1,6 +1,6 @@
 # BotVault Go-live Follow-ups
 
-Stand: 2026-05-02
+Stand: 2026-05-06
 
 Dieses Dokument haelt Punkte fest, die nach den aktuellen BotVault-, HyperCore-/HyperEVM- und Profitshare-Fixes nicht als harte Code-Blocker fuer einen kontrollierten Canary gelten, aber vor einem breiteren Go-live oder kurz danach abgearbeitet werden sollten.
 
@@ -12,10 +12,28 @@ Die zuletzt geprueften kritischen Geldfluss-Pfade sind stabilisiert:
 - Spot-to-EVM Transfers im Claim-Flow werden persistent als Pending-State gespeichert und koennen idempotent reconciled werden.
 - Teilweise Spot-to-EVM Transfers werden nicht mehr faelschlich als `transfer_confirmed` gemeldet.
 - v4 Profit-Claims werden auf finalized `BotVaultPnlAggregate.netWithdrawableProfit` begrenzt.
+- v4 Profit-Claims/Close/Recover werden nur mit frischer Trading-Reconciliation weitergefuehrt.
 - GridBot-Start wird fuer v4 erst freigegeben, wenn Funding, HYPE Reserve, Transfer-Observation und finale Perp-State-Reads verifiziert sind.
+- GridBot-Funding-Wartepfade werden als `funding_pending` sichtbar und zaehlen nicht mehr als order-aktives `running`.
 - API/UI Action Flags blockieren Claim, Close und Recover bei pending Funding oder Withdraw Reconciliation.
+- Granulare Safety-Controls koennen Deposits, Withdraws, Grid-Starts und Profit-Claims getrennt sperren.
+- Money-Flow-Pending-Zustaende erzeugen deduplizierte PlatformAlerts nach definierter Schwelle und werden in Admin Vault-Ops inklusive `reasonCode`, `recoveryHint`, `txHash`, `idempotencyKey` und erwarteter/tatsaechlicher Balance angezeigt.
 
 Empfehlung: kontrollierter Production-Canary mit kleinen Limits ist vertretbar. Breiter Go-live erst nach echten Lifecycle-Durchlaeufen und Monitoring-Verifikation.
+
+## Verifikation 2026-05-06
+
+- `npm -w packages/futures-exchange run test:vault-grid-corewriter`: PASS, 64/64.
+- `npm -w apps/runner run test:vault-grid-corewriter`: PASS, 127/127.
+- `npm -w apps/api run test:botvault-v4-transitions`: PASS, 15/15.
+- `npm -w apps/api run test:vault-grid-corewriter`: PASS, 9/9.
+- Vault-Suite mit Node >=20 und `--test-force-exit`: PASS, 214/214.
+- `npm -w apps/api run typecheck`: PASS.
+- `npm -w apps/runner run typecheck`: PASS.
+- `npm -w apps/web run typecheck`: PASS mit Node >=20.9.0.
+- `git diff --check`: PASS.
+
+Hinweis: Die lokale Standard-Node-Version war `v18.20.8`; die Node-20+-Checks wurden mit der gebuendelten Codex-Node-Runtime `v24.14.0` ausgefuehrt.
 
 ## Vor Canary pruefen
 
@@ -42,17 +60,15 @@ Empfehlung: kontrollierter Production-Canary mit kleinen Limits ist vertretbar. 
 ## Nicht vergessen vor breiterem Go-live
 
 - Monitoring und Alerts:
-  - `deposit_pending_reconciliation` laenger als definierte Schwelle.
-  - `withdraw_pending_reconciliation` laenger als definierte Schwelle.
-  - `funding_failed_retryable`.
-  - `funding_failed_final`.
-  - `bot_vault_v4_funding_verification_missing`.
-  - `insufficient_contract_balance`.
-  - Reconcile-Job Fehler oder ausbleibende Runs.
+  - `deposit_pending_reconciliation` laenger als definierte Schwelle: umgesetzt als `botvault_deposit_pending_reconciliation`.
+  - `withdraw_pending_reconciliation` laenger als definierte Schwelle: umgesetzt als `botvault_withdraw_pending_reconciliation`.
+  - `insufficient_contract_balance`: umgesetzt als `botvault_contract_balance_mismatch`.
+  - Reconcile-Job Fehler/degraded: umgesetzt als `botvault_reconcile_job_degraded`.
+  - Noch offen fuer breiteren Public-Go-live: harte Alert-Matrix fuer `funding_failed_retryable`, `funding_failed_final`, `bot_vault_v4_funding_verification_missing` und Low-HYPE feiner in PlatformAlerts statt nur Logs/Status spiegeln.
 - Admin-Operational-View:
-  - Pending Deposit vs Pending Withdraw getrennt anzeigen.
-  - `reasonCode`, `recoveryHint`, `txHash`, `idempotencyKey` sichtbar machen.
-  - Manuelle Aktion klar trennen von automatisch retrybarem Zustand.
+  - Pending Deposit vs Pending Withdraw getrennt anzeigen: erledigt in `/admin/vault-ops/reconciliation-summary`.
+  - `reasonCode`, `recoveryHint`, `txHash`, `idempotencyKey` sichtbar machen: erledigt fuer Money-Flow-Pending.
+  - Manuelle Aktion klar trennen von automatisch retrybarem Zustand: noch in Canary gegen echte Alerts/Recovery-Flows pruefen.
 - Bestehende Vaults normalisieren:
   - Alte `initialCoreSpotTransferDoneAt` Zustaende gegen echte Funding-Metadaten pruefen.
   - Alte `bot_vault_v3` Runtime-Metadaten kompatibel halten, aber neue Writes auf `bot_vault_v4` normalisieren.
@@ -97,6 +113,7 @@ Empfehlung: kontrollierter Production-Canary mit kleinen Limits ist vertretbar. 
   - Anzahl Retry-Versuche.
   - naechster geplanter Retry.
 - Idempotency-Key Suche in Admin-Tools ergaenzen, damit doppelte oder haengende Transfers schneller analysiert werden koennen.
+- Runtime-Naming-Cleanup: `botVaultRuntime.service.ts` ist weiterhin Legacy-kompatibler Reexport; neue Log-/Metadata-Standards sollten weiter auf `runtimeModel` normalisiert werden.
 - Profitshare Reporting ausbauen:
   - finalized realized PnL.
   - net withdrawable profit.

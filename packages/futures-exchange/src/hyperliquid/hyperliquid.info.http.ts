@@ -58,9 +58,6 @@ async function postInfo<T>(payload: Record<string, unknown>): Promise<T> {
       const message = await response.text().catch(() => "");
       lastError = new Error(`hyperliquid_info_request_failed:${response.status}:${message}`);
       (lastError as Error & { status?: number }).status = response.status;
-      if (response.status === 429) {
-        throw lastError;
-      }
       if (!RETRYABLE_INFO_STATUS_CODES.has(response.status) || attempt >= 2) {
         throw lastError;
       }

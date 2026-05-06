@@ -15,11 +15,15 @@ type VaultOpsStatusResponse = {
   thresholds: {
     reconciliationLagAlertSeconds: number;
   };
-  safety: {
-    haltNewOrders: boolean;
-    closeOnlyAllUserIds: string[];
-    reason: string | null;
-    updatedAt: string | null;
+	  safety: {
+	    haltNewOrders: boolean;
+	    depositsDisabled?: boolean;
+	    withdrawsDisabled?: boolean;
+	    gridStartsDisabled?: boolean;
+	    profitClaimsDisabled?: boolean;
+	    closeOnlyAllUserIds: string[];
+	    reason: string | null;
+	    updatedAt: string | null;
   };
   counts: {
     totalBotVaults: number;
@@ -125,11 +129,34 @@ type ReconciliationSummaryResponse = {
     reconciliationStatus: "clean" | "warning" | "drift_detected" | "blocked" | "unknown";
     reconciliationObservedAt: string | null;
     driftCount: number;
-    warningCount: number;
-    blockedReasons: string[];
-    updatedAt: string | null;
-  }>;
-};
+	    warningCount: number;
+	    blockedReasons: string[];
+	    moneyFlow?: {
+	      status: string | null;
+	      pendingKind: string | null;
+	      pendingSince: string | null;
+	      pendingAgeSeconds: number | null;
+	      reasonCode: string | null;
+	      recoveryHint: string | null;
+	      txHash: string | null;
+	      idempotencyKey: string | null;
+	      expectedBalanceUsd: number | null;
+	      actualBalanceUsd: number | null;
+	    } | null;
+	    openAlertIds?: string[];
+	    openAlerts?: Array<{
+	      id: string;
+	      type: string;
+	      severity: string;
+	      status: string;
+	      title: string | null;
+	      message: string;
+	      createdAt: string | null;
+	      updatedAt: string | null;
+	    }>;
+	    updatedAt: string | null;
+	  }>;
+	};
 
 type QueueMetricsResponse = {
   mode: string;
@@ -371,23 +398,39 @@ export default function AdminVaultOperationsPage() {
                         <th>{t("cols.botVault")}</th>
                         <th>{t("cols.symbol")}</th>
                         <th>{t("cols.lifecycle")}</th>
-                        <th>{t("cols.reconciliation")}</th>
-                        <th>{t("cols.drift")}</th>
-                        <th>{t("cols.updated")}</th>
-                      </tr>
+	                        <th>{t("cols.reconciliation")}</th>
+	                        <th>Money flow</th>
+	                        <th>Alerts</th>
+	                        <th>{t("cols.drift")}</th>
+	                        <th>{t("cols.updated")}</th>
+	                      </tr>
                     </thead>
                     <tbody>
                       {reconciliation.items.length === 0 ? (
-                        <tr><td colSpan={7}>{t("noReconciliationDrift")}</td></tr>
-                      ) : reconciliation.items.map((row) => (
-                        <tr key={row.id}>
+	                        <tr><td colSpan={9}>{t("noReconciliationDrift")}</td></tr>
+	                      ) : reconciliation.items.map((row) => (
+	                        <tr key={row.id}>
                           <td>{row.userEmail ?? row.userId}</td>
                           <td>{short(row.id)}</td>
                           <td>{row.symbol ?? row.templateName ?? "n/a"}</td>
-                          <td><StatusPill label={t(`lifecycle.${row.lifecycleState}`)} value={row.lifecycleState} /></td>
-                          <td><StatusPill label={t(`reconciliationStatus.${row.reconciliationStatus}`)} value={row.reconciliationStatus} /></td>
-                          <td>{row.driftCount}</td>
-                          <td>{fmtDate(row.reconciliationObservedAt ?? row.updatedAt)}</td>
+	                          <td><StatusPill label={t(`lifecycle.${row.lifecycleState}`)} value={row.lifecycleState} /></td>
+	                          <td><StatusPill label={t(`reconciliationStatus.${row.reconciliationStatus}`)} value={row.reconciliationStatus} /></td>
+	                          <td>
+	                            {row.moneyFlow ? (
+	                              <div>
+	                                <StatusPill label={String(row.moneyFlow.status ?? row.moneyFlow.pendingKind ?? "pending")} value={String(row.moneyFlow.status ?? "warning")} />
+	                                <div className="settingsMutedText" style={{ marginTop: 4 }}>
+	                                  {String(row.moneyFlow.reasonCode ?? "n/a")}
+	                                </div>
+	                                <div className="settingsMutedText" style={{ marginTop: 4 }}>
+	                                  {row.moneyFlow.pendingAgeSeconds == null ? "n/a" : `${Math.floor(row.moneyFlow.pendingAgeSeconds / 60)}m`} · {short(row.moneyFlow.txHash)}
+	                                </div>
+	                              </div>
+	                            ) : "n/a"}
+	                          </td>
+	                          <td>{row.openAlertIds?.length ? row.openAlertIds.map((id) => short(id)).join(", ") : "n/a"}</td>
+	                          <td>{row.driftCount}</td>
+	                          <td>{fmtDate(row.reconciliationObservedAt ?? row.updatedAt)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -404,12 +447,15 @@ export default function AdminVaultOperationsPage() {
               <h3 style={{ margin: 0 }}>{t("safetyTitle")}</h3>
             </div>
             <div className="settingsMutedText">
-              {t("safetyMeta", {
-                halt: payload.safety.haltNewOrders ? t("yes") : t("no"),
-                users: String(payload.safety.closeOnlyAllUserIds.length),
-                updatedAt: fmtDate(payload.safety.updatedAt)
-              })}
-            </div>
+	              {t("safetyMeta", {
+	                halt: payload.safety.haltNewOrders ? t("yes") : t("no"),
+	                users: String(payload.safety.closeOnlyAllUserIds.length),
+	                updatedAt: fmtDate(payload.safety.updatedAt)
+	              })}
+	            </div>
+	            <div className="settingsMutedText" style={{ marginTop: 6 }}>
+	              deposits={payload.safety.depositsDisabled ? t("yes") : t("no")} · withdraws={payload.safety.withdrawsDisabled ? t("yes") : t("no")} · gridStarts={payload.safety.gridStartsDisabled ? t("yes") : t("no")} · profitClaims={payload.safety.profitClaimsDisabled ? t("yes") : t("no")}
+	            </div>
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
               {t("safetyReason", { reason: payload.safety.reason ?? t("none") })}
             </div>

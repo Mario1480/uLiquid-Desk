@@ -206,7 +206,7 @@ export type GridInstance = {
   exchangeAccountId: string;
   templateId: string;
   botId: string;
-  state: "created" | "running" | "paused" | "stopped" | "archived" | "error";
+  state: "created" | "running" | "funding_pending" | "paused" | "stopped" | "archived" | "error";
   isArchived?: boolean;
   archivedAt?: string | null;
   archivedReason?: string | null;

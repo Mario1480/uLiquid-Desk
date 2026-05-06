@@ -8,6 +8,10 @@ import { withLocalePath, type AppLocale } from "../../../i18n/config";
 
 type VaultSafetyResponse = {
   haltNewOrders: boolean;
+  depositsDisabled: boolean;
+  withdrawsDisabled: boolean;
+  gridStartsDisabled: boolean;
+  profitClaimsDisabled: boolean;
   closeOnlyAllUserIds: string[];
   reason: string | null;
   updatedByUserId: string | null;
@@ -55,6 +59,10 @@ export default function AdminVaultSafetyPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<VaultSafetyResponse | null>(null);
   const [haltNewOrders, setHaltNewOrders] = useState(false);
+  const [depositsDisabled, setDepositsDisabled] = useState(false);
+  const [withdrawsDisabled, setWithdrawsDisabled] = useState(false);
+  const [gridStartsDisabled, setGridStartsDisabled] = useState(false);
+  const [profitClaimsDisabled, setProfitClaimsDisabled] = useState(false);
   const [closeOnlyUsersInput, setCloseOnlyUsersInput] = useState("");
   const [reason, setReason] = useState("");
   const [closeOnlyTargetUserId, setCloseOnlyTargetUserId] = useState("");
@@ -76,6 +84,10 @@ export default function AdminVaultSafetyPage() {
       const payload = await apiGet<VaultSafetyResponse>("/admin/settings/vault-safety");
       setSettings(payload);
       setHaltNewOrders(payload.haltNewOrders);
+      setDepositsDisabled(payload.depositsDisabled);
+      setWithdrawsDisabled(payload.withdrawsDisabled);
+      setGridStartsDisabled(payload.gridStartsDisabled);
+      setProfitClaimsDisabled(payload.profitClaimsDisabled);
       setCloseOnlyUsersInput(payload.closeOnlyAllUserIds.join("\n"));
       setReason(payload.reason ?? "");
       setLastCloseOnlyResult(null);
@@ -97,11 +109,19 @@ export default function AdminVaultSafetyPage() {
     try {
       const payload = await apiPut<VaultSafetyResponse>("/admin/settings/vault-safety", {
         haltNewOrders,
+        depositsDisabled,
+        withdrawsDisabled,
+        gridStartsDisabled,
+        profitClaimsDisabled,
         closeOnlyAllUserIds: parsedCloseOnlyUsers,
         reason: reason.trim() || undefined
       });
       setSettings(payload);
       setHaltNewOrders(payload.haltNewOrders);
+      setDepositsDisabled(payload.depositsDisabled);
+      setWithdrawsDisabled(payload.withdrawsDisabled);
+      setGridStartsDisabled(payload.gridStartsDisabled);
+      setProfitClaimsDisabled(payload.profitClaimsDisabled);
       setCloseOnlyUsersInput(payload.closeOnlyAllUserIds.join("\n"));
       setReason(payload.reason ?? "");
       setNotice(t("messages.saved"));
@@ -128,6 +148,10 @@ export default function AdminVaultSafetyPage() {
       });
       setSettings(payload.safety);
       setHaltNewOrders(payload.safety.haltNewOrders);
+      setDepositsDisabled(payload.safety.depositsDisabled);
+      setWithdrawsDisabled(payload.safety.withdrawsDisabled);
+      setGridStartsDisabled(payload.safety.gridStartsDisabled);
+      setProfitClaimsDisabled(payload.safety.profitClaimsDisabled);
       setCloseOnlyUsersInput(payload.safety.closeOnlyAllUserIds.join("\n"));
       setReason(payload.safety.reason ?? "");
       setLastCloseOnlyResult(payload.result);
@@ -163,14 +187,49 @@ export default function AdminVaultSafetyPage() {
               {t("sourceLabel")}: {settings?.source ?? "default"} · {t("lastUpdatedLabel")}: {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
             </div>
 
-            <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
-              <input
-                type="checkbox"
-                checked={haltNewOrders}
-                onChange={(event) => setHaltNewOrders(event.target.checked)}
-              />
-              <span>{t("haltNewOrdersLabel")}</span>
-            </label>
+	            <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+	              <input
+	                type="checkbox"
+	                checked={haltNewOrders}
+	                onChange={(event) => setHaltNewOrders(event.target.checked)}
+	              />
+	              <span>{t("haltNewOrdersLabel")}</span>
+	            </label>
+
+	            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
+	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+	                <input
+	                  type="checkbox"
+	                  checked={depositsDisabled}
+	                  onChange={(event) => setDepositsDisabled(event.target.checked)}
+	                />
+	                <span>Deposits disabled</span>
+	              </label>
+	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+	                <input
+	                  type="checkbox"
+	                  checked={withdrawsDisabled}
+	                  onChange={(event) => setWithdrawsDisabled(event.target.checked)}
+	                />
+	                <span>Withdraws disabled</span>
+	              </label>
+	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+	                <input
+	                  type="checkbox"
+	                  checked={gridStartsDisabled}
+	                  onChange={(event) => setGridStartsDisabled(event.target.checked)}
+	                />
+	                <span>Grid starts disabled</span>
+	              </label>
+	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+	                <input
+	                  type="checkbox"
+	                  checked={profitClaimsDisabled}
+	                  onChange={(event) => setProfitClaimsDisabled(event.target.checked)}
+	                />
+	                <span>Profit claims disabled</span>
+	              </label>
+	            </div>
 
             <div className="settingsFormGrid">
               <label>

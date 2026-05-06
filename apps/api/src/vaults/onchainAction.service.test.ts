@@ -180,7 +180,7 @@ test("computeSettlementPreview delegates fee math to centralized settlement logi
     feeRatePct: 30,
     releasedReservedUsd: 100,
     grossReturnedUsd: 150,
-    realizedPnlNetUsd: 30,
+    realizedPnlBeforeSettlementUsd: 30,
     highWaterMarkUsd: 20
   });
   const centralized = computeFeeSettlementMath({
@@ -197,4 +197,45 @@ test("computeSettlementPreview delegates fee math to centralized settlement logi
   assert.equal(preview.netReturnedUsd, centralized.netTransferUsd);
   assert.equal(preview.highWaterMarkBeforeUsd, centralized.highWaterMarkBeforeUsd);
   assert.equal(preview.highWaterMarkAfterUsd, centralized.highWaterMarkAfterUsd);
+});
+
+test("computeSettlementPreview treats pnl input as pre-settlement realized pnl", () => {
+  const profitReturn = computeSettlementPreview({
+    contractVersion: "v4",
+    treasuryPayoutModel: "direct_split_v4",
+    treasuryRecipient: null,
+    feeRatePct: 20,
+    releasedReservedUsd: 100,
+    grossReturnedUsd: 125,
+    realizedPnlBeforeSettlementUsd: 0,
+    highWaterMarkUsd: 0
+  });
+  assert.equal(profitReturn.realizedPnlAfterUsd, 25);
+  assert.equal(profitReturn.feeBaseUsd, 25);
+
+  const lossReturn = computeSettlementPreview({
+    contractVersion: "v4",
+    treasuryPayoutModel: "direct_split_v4",
+    treasuryRecipient: null,
+    feeRatePct: 20,
+    releasedReservedUsd: 100,
+    grossReturnedUsd: 80,
+    realizedPnlBeforeSettlementUsd: 0,
+    highWaterMarkUsd: 0
+  });
+  assert.equal(lossReturn.realizedPnlAfterUsd, -20);
+  assert.equal(lossReturn.feeBaseUsd, 0);
+
+  const alreadyFinalized = computeSettlementPreview({
+    contractVersion: "v4",
+    treasuryPayoutModel: "direct_split_v4",
+    treasuryRecipient: null,
+    feeRatePct: 20,
+    releasedReservedUsd: 0,
+    grossReturnedUsd: 0,
+    realizedPnlBeforeSettlementUsd: 12,
+    highWaterMarkUsd: 5
+  });
+  assert.equal(alreadyFinalized.realizedPnlAfterUsd, 12);
+  assert.equal(alreadyFinalized.feeBaseUsd, 7);
 });

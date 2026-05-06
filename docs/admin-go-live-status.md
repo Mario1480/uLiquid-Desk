@@ -1,12 +1,12 @@
 # Admin Go-Live Status
 
-Stand: 2026-05-03
+Stand: 2026-05-06
 
 ## Kurzstatus
 
-Status: **bedingt go-live-ready** fuer den Admin-Fixumfang.
+Status: **go-live-ready fuer den Admin-Fixumfang**, mit verbleibendem Staging-/Datenmengen-Smoke als Prozesscheck.
 
-Die vier Review-Findings sind im Code behoben und API-seitig verifiziert. Der direkte Web-Typecheck ist gruen. Der volle Next.js-Web-Typecheck ist lokal noch offen, weil die aktuelle Node-Version `18.20.8` ist und Next.js `>=20.9.0` verlangt.
+Die vier Review-Findings sind im Code behoben und API-seitig verifiziert. Der volle Next.js-Web-Typecheck ist mit Node `>=20.9.0` gruen. Superadmin/Admin-Backend-Access wurde am 2026-05-06 Betreiber-verifiziert.
 
 ## Behobene Findings
 
@@ -53,14 +53,13 @@ Die vier Review-Findings sind im Code behoben und API-seitig verifiziert. Der di
 | `npm -w apps/api run typecheck` | PASS |
 | `node ../../node_modules/tsx/dist/cli.mjs --test src/billing/routes.test.ts src/auth/superadmin.test.ts src/auth/permissions.test.ts src/admin/routes-platform.test.ts src/admin/routes-vault-operations.test.ts src/admin/routes-operations.telegram.test.ts src/admin/externalHealth.test.ts` | PASS, 24 Tests |
 | `node ../../node_modules/typescript/bin/tsc --noEmit --incremental false -p tsconfig.json` in `apps/web` | PASS |
-| `npm -w apps/web run typecheck` | BLOCKED lokal: Node `18.20.8`, Next.js verlangt `>=20.9.0` |
+| `npm -w apps/web run typecheck` | PASS mit Node `>=20.9.0` |
+| Superadmin/Admin-Backend-Access | PASS, Betreiber-verifiziert am 2026-05-06 |
 | `git diff --check` | PASS |
 | `rg` auf die entfernten Duplicate-Dateinamen | PASS, nur Doku-Treffer |
 
 ## Offene Punkte vor Go-Live
 
-- **Full-Web-Typecheck mit Node >=20.9.0 ausfuehren.** Lokal blockiert `npm -w apps/web run typecheck` wegen Node `18.20.8`.
-- **Deletion-Index finalisieren.** Die Admin/Billing-Duplikate und die zwei weiteren `* 2.*` Duplikate sind im Working Tree geloescht; vor Merge/Commit muessen die Deletions gestaged/committed werden. Bis dahin zeigt `git ls-files '* 2.tsx' '* 2.ts'` sie weiterhin als getrackte Index-Eintraege.
 - **Staging-Smoke mit realistischen Daten ausfuehren.** Besonders die neuen Prisma-Filter fuer Admin-Listen sollten einmal gegen produktionsnahe Datenmengen und Indizes validiert werden.
 
 ## Review-Ergebnis

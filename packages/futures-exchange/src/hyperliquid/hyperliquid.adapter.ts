@@ -920,7 +920,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       : "deposit_submitted";
     return {
       ...params.result,
-      status: "pending_timeout",
+      status: receiptConfirmed ? "pending_reconciliation" : "pending_timeout",
       submitted: true,
       amountUsd: params.requestedAmountUsd,
       errorCode,
@@ -933,6 +933,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     requestedAmountUsd: number;
     transferAmountUsd: number;
     evmBalanceBeforeUsd: number | null;
+    expectedEvmBalanceAfterUsd: number | null;
   }): Promise<FundsTransferResult> {
     if (params.result.status === "failed") {
       const finalFailure = params.result.receiptStatus === "reverted";
@@ -948,15 +949,21 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
     const evmBalanceAfter = await this.getEvmUsdcBalance().catch(() => null);
     const evmBalanceAfterUsd = evmBalanceAfter?.amountUsd ?? null;
-    const evmBalanceReachedRequestedAmount =
-      evmBalanceAfterUsd !== null
-      && evmBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD >= params.requestedAmountUsd;
+    const expectedEvmBalanceAfterUsd = params.expectedEvmBalanceAfterUsd != null
+      && Number.isFinite(Number(params.expectedEvmBalanceAfterUsd))
+      ? Math.max(0, Number(params.expectedEvmBalanceAfterUsd))
+      : null;
+    const evmBalanceReachedExpectedTarget =
+      expectedEvmBalanceAfterUsd !== null
+      && evmBalanceAfterUsd !== null
+      && evmBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD >= expectedEvmBalanceAfterUsd;
     const evmBalanceIncreasedByRequestedAmount =
-      params.evmBalanceBeforeUsd !== null
+      expectedEvmBalanceAfterUsd === null
+      && params.evmBalanceBeforeUsd !== null
       && evmBalanceAfterUsd !== null
       && evmBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD
         >= params.evmBalanceBeforeUsd + params.requestedAmountUsd;
-    if (evmBalanceReachedRequestedAmount || evmBalanceIncreasedByRequestedAmount) {
+    if (evmBalanceReachedExpectedTarget || evmBalanceIncreasedByRequestedAmount) {
       return {
         ...params.result,
         status: "transfer_confirmed",
@@ -1022,12 +1029,17 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
   async transferUsdcSpotToEvm(params: {
     amountUsd: number;
+    expectedEvmBalanceAfterUsd?: number | null;
   }): Promise<FundsTransferResult> {
     const [{ amountUsd, tokenIndex, systemAddress, weiDecimals }, evmBalanceBefore] = await Promise.all([
       this.getCoreUsdcSpotBalance(),
       this.getEvmUsdcBalance().catch(() => null)
     ]);
     const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
+    const expectedEvmBalanceAfterUsd = params.expectedEvmBalanceAfterUsd != null
+      && Number.isFinite(Number(params.expectedEvmBalanceAfterUsd))
+      ? Math.max(0, Number(params.expectedEvmBalanceAfterUsd))
+      : null;
     if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) {
       return {
         status: "transfer_failed_final",
@@ -1042,6 +1054,10 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (
       evmBalanceBefore?.amountUsd != null
       && evmBalanceBefore.amountUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD >= requestedAmountUsd
+      && (
+        expectedEvmBalanceAfterUsd === null
+        || evmBalanceBefore.amountUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD >= expectedEvmBalanceAfterUsd
+      )
     ) {
       return {
         status: "transfer_confirmed",
@@ -1077,7 +1093,8 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       result: submitted,
       requestedAmountUsd,
       transferAmountUsd,
-      evmBalanceBeforeUsd: evmBalanceBefore?.amountUsd ?? null
+      evmBalanceBeforeUsd: evmBalanceBefore?.amountUsd ?? null,
+      expectedEvmBalanceAfterUsd
     });
   }
 

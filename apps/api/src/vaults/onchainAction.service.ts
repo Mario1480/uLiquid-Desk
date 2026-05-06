@@ -482,13 +482,17 @@ export function computeSettlementPreview(input: {
   feeRatePct: number;
   releasedReservedUsd: number;
   grossReturnedUsd: number;
-  realizedPnlNetUsd: number;
+  realizedPnlBeforeSettlementUsd?: number;
+  realizedPnlNetUsd?: number;
   highWaterMarkUsd: number;
 }) {
   const releasedReservedUsd = roundUsd(Math.max(0, Number(input.releasedReservedUsd ?? 0)), 6);
   const grossReturnedUsd = roundUsd(Math.max(0, Number(input.grossReturnedUsd ?? 0)), 6);
+  const realizedPnlBeforeSettlementUsd = Number(
+    input.realizedPnlBeforeSettlementUsd ?? input.realizedPnlNetUsd ?? 0
+  );
   const realizedPnlAfterUsd = roundUsd(
-    Number(input.realizedPnlNetUsd ?? 0) + grossReturnedUsd - releasedReservedUsd,
+    realizedPnlBeforeSettlementUsd + grossReturnedUsd - releasedReservedUsd,
     6
   );
   const settlement = computeFeeSettlementMath({
@@ -1592,7 +1596,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         feeRatePct: profile.feeRatePct,
         releasedReservedUsd,
         grossReturnedUsd,
-        realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
+        realizedPnlBeforeSettlementUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
         highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
       });
 
@@ -1735,7 +1739,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         feeRatePct: profile.feeRatePct,
         releasedReservedUsd,
         grossReturnedUsd,
-        realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
+        realizedPnlBeforeSettlementUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
         highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
       });
 
@@ -1881,7 +1885,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         feeRatePct: profile.feeRatePct,
         releasedReservedUsd,
         grossReturnedUsd,
-        realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
+        realizedPnlBeforeSettlementUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
         highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
       });
 

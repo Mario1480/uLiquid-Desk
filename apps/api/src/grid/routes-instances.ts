@@ -1464,7 +1464,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       if (state === "archived") {
         return res.status(409).json({ error: "grid_instance_archived_not_restartable", state: row.state, restartable: false });
       }
-      if (state !== "running") {
+      if (state !== "running" && state !== "funding_pending") {
         return res.status(409).json({ error: "grid_instance_pause_invalid_state", state: row.state });
       }
       await deps.db.$transaction([

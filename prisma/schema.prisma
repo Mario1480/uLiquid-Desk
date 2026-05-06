@@ -110,6 +110,7 @@ enum GridTemplateVisibility {
 enum GridBotInstanceState {
   created
   running
+  funding_pending
   paused
   stopped
   archived

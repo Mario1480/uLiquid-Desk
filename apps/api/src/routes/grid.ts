@@ -25,7 +25,7 @@ import { isSuperadminEmail } from "../auth/superadmin.js";
 
 const gridModeSchema = z.enum(["long", "short", "neutral", "cross"]);
 const gridPriceModeSchema = z.enum(["arithmetic", "geometric"]);
-const gridStateSchema = z.enum(["created", "running", "paused", "stopped", "archived", "error"]);
+const gridStateSchema = z.enum(["created", "running", "funding_pending", "paused", "stopped", "archived", "error"]);
 const gridAllocationModeSchema = z.enum([
   "EQUAL_NOTIONAL_PER_GRID",
   "EQUAL_BASE_QTY_PER_GRID",
@@ -1321,6 +1321,7 @@ type RegisterGridRoutesDeps = {
   botVaultRuntimeService?: BotVaultRuntimeService | null;
   /** @deprecated Use botVaultRuntimeService for new call sites. */
   botVaultV3Service?: BotVaultRuntimeService | BotVaultV3Service | null;
+  computeGridPreviewAndAllocation?: typeof sharedComputeGridPreviewAndAllocation;
   onchainActionService?: OnchainActionService | null;
   executionOrchestrator?: ExecutionProviderOrchestrator | null;
   resolveVenueContext: (params: {
@@ -1703,7 +1704,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
   const childDeps = {
     ...deps,
-    computeGridPreviewAndAllocation: sharedComputeGridPreviewAndAllocation,
+    computeGridPreviewAndAllocation: deps.computeGridPreviewAndAllocation ?? sharedComputeGridPreviewAndAllocation,
     requestGridPreview,
     loadBotVaultByInstanceIds,
     loadGridInstanceForUser,

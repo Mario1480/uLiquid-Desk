@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { afterEach, beforeEach } from "node:test";
 import { HyperliquidTradeApi } from "./hyperliquid.trade.api.js";
 import { HyperliquidCoreWriterClient } from "./hyperliquid.corewriter.js";
+import { clearHyperliquidReadCoordinatorForTests } from "./hyperliquid.read-coordinator.js";
+
+beforeEach(() => {
+  clearHyperliquidReadCoordinatorForTests();
+});
+
+afterEach(() => {
+  clearHyperliquidReadCoordinatorForTests();
+});
 
 test("placeOrder uses hardened market ticker path for Hyperliquid market orders", async () => {
   const placedOrders: any[] = [];

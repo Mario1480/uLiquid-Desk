@@ -3752,8 +3752,16 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             });
           }
           try {
+            const evmBalanceBefore = typeof adapterAny.getEvmUsdcBalance === "function"
+              ? await adapterAny.getEvmUsdcBalance().catch(() => null)
+              : null;
+            const evmBalanceBeforeUsd = Number(evmBalanceBefore?.amountUsd ?? NaN);
+            const expectedEvmBalanceAfterUsd = Number.isFinite(evmBalanceBeforeUsd)
+              ? Number((evmBalanceBeforeUsd + spotBalanceUsd).toFixed(6))
+              : null;
             const transferResult = await adapterAny.transferUsdcSpotToEvm({
-              amountUsd: spotBalanceUsd
+              amountUsd: spotBalanceUsd,
+              expectedEvmBalanceAfterUsd
             });
             if (isFailedFundsTransferResult(transferResult)) {
               throw new Error(transferResult.errorMessage ?? transferResult.errorCode ?? "grid_close_only_spot_to_evm_failed");
@@ -3766,6 +3774,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               ...(transferConfirmed ? { closeOnlySpotToEvmDoneAt: ctx.now.toISOString() } : {}),
               ...(!transferConfirmed && transferPending ? { closeOnlySpotToEvmPendingAt: ctx.now.toISOString() } : {}),
               closeOnlySpotToEvmAmountUsd: spotBalanceUsd,
+              closeOnlySpotToEvmEvmBalanceBeforeUsd: Number.isFinite(evmBalanceBeforeUsd) ? evmBalanceBeforeUsd : null,
+              closeOnlySpotToEvmExpectedEvmBalanceAfterUsd: expectedEvmBalanceAfterUsd,
               closeOnlySpotToEvmLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
               closeOnlySpotToEvmLastStatus: transferStatus
             };
@@ -3788,11 +3798,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               executionLastErrorAt: null,
               executionMetadataPatch: {
                 lifecycleOverrideState: "settling",
-                settlementStage: "spot_to_evm_pending",
-                settlementLastUpdatedAt: ctx.now.toISOString(),
-                settlementSpotToEvmAmountUsd: spotBalanceUsd,
-                settlementSpotToEvmTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
-                settlementSpotToEvmStatus: transferStatus
+	                settlementStage: "spot_to_evm_pending",
+	                settlementLastUpdatedAt: ctx.now.toISOString(),
+	                settlementSpotToEvmAmountUsd: spotBalanceUsd,
+	                settlementSpotToEvmEvmBalanceBeforeUsd: Number.isFinite(evmBalanceBeforeUsd) ? evmBalanceBeforeUsd : null,
+	                settlementSpotToEvmExpectedEvmBalanceAfterUsd: expectedEvmBalanceAfterUsd,
+	                settlementSpotToEvmTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
+	                settlementSpotToEvmStatus: transferStatus
               }
             });
             return buildModeBlockedResult(signal, "grid_close_only_spot_to_evm_pending", {
@@ -4170,7 +4182,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             };
             await updateGridBotInstancePlannerState({
               instanceId: instance.id,
-              state: "running",
+              state: "funding_pending",
               stateJson: currentStateJson,
 	              metricsJson: mergeCurrentMetrics({
 	                initialCoreSpotDepositAmountUsd: toPositiveNumberOrNullLoose(currentStateJson.initialCoreSpotDepositAmountUsd) ?? coreSpotDepositAmountUsd,
@@ -4219,10 +4231,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	                initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString()
 	              };
               coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
-              await updateGridBotInstancePlannerState({
-                instanceId: instance.id,
-                state: "running",
-                stateJson: currentStateJson,
+	              await updateGridBotInstancePlannerState({
+	                instanceId: instance.id,
+		                state: "funding_pending",
+	                stateJson: currentStateJson,
 	                metricsJson: mergeCurrentMetrics({
 	                  initialCoreSpotDepositAmountUsd: depositConfirmed ? initialPerpTransferAmountUsd : coreSpotDepositAmountUsd,
 	                  initialCoreSpotDepositObservedAmountUsd: depositConfirmed ? initialPerpTransferAmountUsd : observedCoreSpotBalanceUsd,
@@ -4262,10 +4274,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 initialCoreSpotTransferFailedAt: ctx.now.toISOString(),
                 initialCoreSpotTransferLastError: String(error)
               };
-              await updateGridBotInstancePlannerState({
-                instanceId: instance.id,
-                state: "running",
-                stateJson: currentStateJson,
+	              await updateGridBotInstancePlannerState({
+	                instanceId: instance.id,
+	                state: "funding_pending",
+	                stateJson: currentStateJson,
                 lastPlanError: reason,
                 lastPlanVersion: "python-v1-initial-core-spot-funding"
               });
@@ -4315,10 +4327,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 initialPerpTransferLastCheckedAt: ctx.now.toISOString(),
                 initialPerpTransferPendingReason: "awaiting_account_state_confirmation"
               };
-              await updateGridBotInstancePlannerState({
-                instanceId: instance.id,
-                state: "running",
-                stateJson: currentStateJson,
+	              await updateGridBotInstancePlannerState({
+	                instanceId: instance.id,
+	                state: "funding_pending",
+	                stateJson: currentStateJson,
                 metricsJson: mergeCurrentMetrics({
                   initialSeedPending: false,
                   initialSeedExecuted: false,
@@ -4368,10 +4380,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	                initialSeedPending: false,
 	                initialSeedNeedsReseed: transferConfirmed
 	              };
-	              await updateGridBotInstancePlannerState({
-                instanceId: instance.id,
-                state: "running",
-                stateJson: currentStateJson,
+		              await updateGridBotInstancePlannerState({
+	                instanceId: instance.id,
+	                state: transferConfirmed ? "running" : "funding_pending",
+	                stateJson: currentStateJson,
                 metricsJson: mergeCurrentMetrics({
 	                  initialSeedPending: false,
 	                  initialSeedExecuted: false,
@@ -4407,10 +4419,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 initialPerpTransferFailedAt: ctx.now.toISOString(),
                 initialPerpTransferLastError: String(error)
               };
-              await updateGridBotInstancePlannerState({
-                instanceId: instance.id,
-                state: "running",
-                stateJson: currentStateJson,
+	              await updateGridBotInstancePlannerState({
+	                instanceId: instance.id,
+	                state: "funding_pending",
+	                stateJson: currentStateJson,
                 lastPlanError: reason,
                 lastPlanVersion: "python-v1-initial-perp-funding"
               });

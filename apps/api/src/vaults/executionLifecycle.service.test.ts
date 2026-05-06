@@ -64,7 +64,15 @@ function createInMemoryDb() {
       executionLastSyncedAt: null,
       executionLastError: null,
       executionLastErrorAt: null,
-      executionMetadata: null
+      executionMetadata: {
+        fundingLifecycle: {
+          stage: "execution_ready",
+          updatedAt: "2026-03-09T12:00:00.000Z",
+          failureReason: null,
+          recoveryReason: null,
+          history: []
+        }
+      }
     },
     {
       id: "bv_2",

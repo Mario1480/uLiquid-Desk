@@ -146,11 +146,12 @@ function GridBotsDashboardPageContent() {
   const sortedInstances = useMemo(() => {
     const rank = (state: GridInstance["state"]) => {
       if (state === "running") return 0;
-      if (state === "paused") return 1;
-      if (state === "error") return 2;
-      if (state === "created") return 3;
-      if (state === "stopped") return 4;
-      if (state === "archived") return 5;
+      if (state === "funding_pending") return 1;
+      if (state === "paused") return 2;
+      if (state === "error") return 3;
+      if (state === "created") return 4;
+      if (state === "stopped") return 5;
+      if (state === "archived") return 6;
       return 6;
     };
     return [...instances].sort((left, right) => {
@@ -487,9 +488,10 @@ function GridBotsDashboardPageContent() {
                 const trendReturnPct = actualInvestment > 0 ? (trendPnl / actualInvestment) * 100 : null;
                 const totalReturnPct = actualInvestment > 0 ? (totalPnl / actualInvestment) * 100 : null;
                 const selected = instance.id === selectedInstanceId;
-                const toggleAction = instance.state === "running" ? "pause" : "resume";
-                const toggleLabel = instance.state === "running" ? tInstance("pause") : tInstance("resume");
-                const toggleDisabled = busyInstanceAction !== null || !["running", "paused", "stopped", "created", "error"].includes(instance.state);
+                const canPause = instance.state === "running" || instance.state === "funding_pending";
+                const toggleAction = canPause ? "pause" : "resume";
+                const toggleLabel = canPause ? tInstance("pause") : tInstance("resume");
+                const toggleDisabled = busyInstanceAction !== null || !["running", "funding_pending", "paused", "stopped", "created", "error"].includes(instance.state);
                 const stopDisabled = busyInstanceAction !== null || instance.state === "archived" || instance.state === "stopped";
                 const endDisabled = busyInstanceAction !== null || instance.state === "archived";
                 const isHyperVaultDemo = instance.botVault?.executionProvider === "hyperliquid_demo";
@@ -530,7 +532,7 @@ function GridBotsDashboardPageContent() {
                           {instance.botVault?.executionStatus ? (
                             <span className="badge">{instance.botVault.executionStatus}</span>
                           ) : null}
-                          <span className={`badge ${instance.state === "running" ? "badgeOk" : instance.state === "paused" ? "badgeWarn" : "badge"}`}>{instance.state}</span>
+                          <span className={`badge ${instance.state === "running" ? "badgeOk" : instance.state === "paused" || instance.state === "funding_pending" ? "badgeWarn" : "badge"}`}>{instance.state}</span>
                         </div>
                       </div>
                       <div className="gridRunningHero">

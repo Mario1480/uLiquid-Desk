@@ -16,13 +16,15 @@ import {
 import { resetSerializedControllerTransactionStateForTests } from "./controllerTransaction.js";
 
 test("resolveFinalizedProfitSharePnlBasis accepts only reconciled flat realized pnl", () => {
+  const now = new Date("2026-04-20T10:00:30.000Z");
   assert.equal(resolveFinalizedProfitSharePnlBasis({
     aggregate: {
       realizedPnlNet: 11.25,
       isFlat: true,
       openPositionCount: 0,
       lastReconciledAt: new Date("2026-04-20T10:00:00.000Z")
-    }
+    },
+    now
   }), 11.25);
 
   assert.equal(resolveFinalizedProfitSharePnlBasis({
@@ -31,11 +33,13 @@ test("resolveFinalizedProfitSharePnlBasis accepts only reconciled flat realized 
       isFlat: true,
       openPositionCount: 0,
       lastReconciledAt: new Date("2026-04-20T10:00:00.000Z")
-    }
+    },
+    now
   }), -3.5);
 });
 
 test("resolveFinalizedProfitSharePnlBasis blocks unsafe pnl sources", () => {
+  const now = new Date("2026-04-20T10:00:30.000Z");
   assert.throws(() => resolveFinalizedProfitSharePnlBasis({ aggregate: null }), /pnl_not_finalized:aggregate_missing/);
   assert.throws(() => resolveFinalizedProfitSharePnlBasis({
     aggregate: {
@@ -43,7 +47,8 @@ test("resolveFinalizedProfitSharePnlBasis blocks unsafe pnl sources", () => {
       isFlat: false,
       openPositionCount: 1,
       lastReconciledAt: new Date("2026-04-20T10:00:00.000Z")
-    }
+    },
+    now
   }), /pnl_not_finalized:open_positions/);
   assert.throws(() => resolveFinalizedProfitSharePnlBasis({
     aggregate: {
@@ -51,11 +56,22 @@ test("resolveFinalizedProfitSharePnlBasis blocks unsafe pnl sources", () => {
       isFlat: true,
       openPositionCount: 0,
       lastReconciledAt: null
-    }
+    },
+    now
   }), /pnl_not_finalized:reconciliation_missing/);
+  assert.throws(() => resolveFinalizedProfitSharePnlBasis({
+    aggregate: {
+      realizedPnlNet: 10,
+      isFlat: true,
+      openPositionCount: 0,
+      lastReconciledAt: new Date("2026-04-20T09:58:00.000Z")
+    },
+    now
+  }), /pnl_not_finalized:reconciliation_stale/);
 });
 
 test("resolveFinalizedProfitShareClaimableProfitUsd caps live claimable profit to finalized aggregate", () => {
+  const now = new Date("2026-04-20T10:00:30.000Z");
   const aggregate = {
     realizedPnlNet: 15,
     netWithdrawableProfit: 6.5,
@@ -66,11 +82,13 @@ test("resolveFinalizedProfitShareClaimableProfitUsd caps live claimable profit t
 
   assert.equal(resolveFinalizedProfitShareClaimableProfitUsd({
     aggregate,
-    liveClaimableProfitUsd: 12
+    liveClaimableProfitUsd: 12,
+    now
   }), 6.5);
   assert.equal(resolveFinalizedProfitShareClaimableProfitUsd({
     aggregate,
-    liveClaimableProfitUsd: 3
+    liveClaimableProfitUsd: 3,
+    now
   }), 3);
 });
 
@@ -2441,7 +2459,7 @@ test("claimProfit settles missing HyperCore liquidity back to EVM before sending
   let accountValueUsd = 26.779303;
   let sendTransactionCount = 0;
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
-  const spotTransfers: Array<{ amountUsd: number }> = [];
+  const spotTransfers: Array<{ amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }> = [];
 
   const service = createBotVaultV3Service({
     botVault: {
@@ -2555,7 +2573,7 @@ test("claimProfit settles missing HyperCore liquidity back to EVM before sending
         accountValueUsd = Number((accountValueUsd - input.amountUsd).toFixed(6));
         return { status: "confirmed" };
       },
-      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+      async transferUsdcSpotToEvm(input: { amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }) {
         spotTransfers.push(input);
         spotUsdcBalance = Number((spotUsdcBalance - input.amountUsd).toFixed(6));
         evmBalanceAtomic += BigInt(Math.round(input.amountUsd * 1_000_000));
@@ -2622,7 +2640,7 @@ test("claimProfit settles missing HyperCore liquidity back to EVM before sending
 
   assert.equal(sendTransactionCount, 1);
   assert.deepEqual(usdTransfers, [{ amountUsd: 0.792573, toPerp: false }]);
-  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573 }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573, expectedEvmBalanceAfterUsd: 0.792573 }]);
   assert.equal(result.grossAmountAtomic, "792573");
   assert.equal(result.feeAmountAtomic, "237771");
   assert.equal(result.postProcessingStage, "applied");
@@ -2672,7 +2690,7 @@ test("claimProfit blocks on insufficient contract balance until EVM transfer rec
   let spotUsdcBalance = 0;
   let accountValueUsd = 26.779303;
   let sendTransactionCount = 0;
-  const spotTransfers: Array<{ amountUsd: number }> = [];
+  const spotTransfers: Array<{ amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }> = [];
   const feeEvents = new Map<string, any>();
 
   const dbLayer: any = {
@@ -2764,7 +2782,7 @@ test("claimProfit blocks on insufficient contract balance until EVM transfer rec
         accountValueUsd = Number((accountValueUsd - input.amountUsd).toFixed(6));
         return { status: "confirmed" };
       },
-	      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+	      async transferUsdcSpotToEvm(input: { amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }) {
 	        spotTransfers.push(input);
 	        spotUsdcBalance = Number((spotUsdcBalance - input.amountUsd).toFixed(6));
 	        return {
@@ -2836,7 +2854,7 @@ test("claimProfit blocks on insufficient contract balance until EVM transfer rec
   );
 
   assert.equal(sendTransactionCount, 0);
-  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573 }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573, expectedEvmBalanceAfterUsd: 0.792573 }]);
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.state, "pending_reconciliation");
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.reasonCode, "insufficient_contract_balance");
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.expectedAmountAtomic, "792573");
@@ -2854,7 +2872,7 @@ test("claimProfit blocks on insufficient contract balance until EVM transfer rec
 
   assert.equal(sendTransactionCount, 1);
   assert.equal(result.grossAmountAtomic, "792573");
-  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573 }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573, expectedEvmBalanceAfterUsd: 0.792573 }]);
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation, undefined);
   assert.equal(botVaultRow.executionMetadata?.claimSpotToEvmTransfer?.state, "confirmed");
 	  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.stage, "applied");
@@ -5930,7 +5948,7 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
   const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
-  const spotToEvmTransfers: Array<{ amountUsd: number }> = [];
+  const spotToEvmTransfers: Array<{ amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }> = [];
   const dbUpdates: any[] = [];
   const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   let spotBalanceUsd = 1;
@@ -6039,7 +6057,7 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
           ok: true
         };
       },
-      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+      async transferUsdcSpotToEvm(input: { amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }) {
         spotToEvmTransfers.push(input);
         spotBalanceUsd = 1;
         evmBalanceRaw = 17_000_000n;
@@ -6065,7 +6083,7 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   });
 
   assert.deepEqual(usdTransfers, [{ amountUsd: 5, toPerp: false }]);
-  assert.deepEqual(spotToEvmTransfers, [{ amountUsd: 5 }]);
+  assert.deepEqual(spotToEvmTransfers, [{ amountUsd: 5, expectedEvmBalanceAfterUsd: 17 }]);
   assert.equal(result.coreSpotBalanceBeforeUsd, 1);
   assert.equal(result.coreSpotBalanceAfterUsd, 1);
   assert.equal(result.evmBalanceBeforeUsd, 12);
@@ -6138,7 +6156,7 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
   const dbUpdates: any[] = [];
   const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
-  const spotToEvmTransfers: Array<{ amountUsd: number }> = [];
+  const spotToEvmTransfers: Array<{ amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }> = [];
   let updateCalls = 0;
   let accountStateReads = 0;
   let spotBalanceUsd = 1;
@@ -6262,7 +6280,7 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
           ok: true
         };
       },
-      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+      async transferUsdcSpotToEvm(input: { amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }) {
         spotToEvmTransfers.push(input);
         spotBalanceUsd = 1;
         if (options?.evmReflectsDrain !== false) {
@@ -6385,7 +6403,7 @@ test("reduceMargin marks v4 post-reconcile recovery required when reconcile find
   const finalization = harness.dbUpdates[harness.dbUpdates.length - 1]?.data?.executionMetadata?.reduceMarginFinalization;
 
   assert.deepEqual(harness.usdTransfers, [{ amountUsd: 5, toPerp: false }]);
-  assert.deepEqual(harness.spotToEvmTransfers, [{ amountUsd: 5 }]);
+  assert.deepEqual(harness.spotToEvmTransfers, [{ amountUsd: 5, expectedEvmBalanceAfterUsd: 17 }]);
   assert.equal(result.transferVerificationState, "reduction_verified");
   assert.equal(result.verificationState, "post_reconcile_recovery_required");
   assert.equal(result.verificationBlockingReason, "funding_lifecycle_perp_margin_counterevidence");
@@ -6971,9 +6989,9 @@ test("reduceMargin resumes a pending v4 drain by sending spot USDC to EVM withou
           ok: true
         };
       },
-      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+      async transferUsdcSpotToEvm(input: { amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }) {
         spotToEvmCalls += 1;
-        assert.deepEqual(input, { amountUsd: 5 });
+        assert.deepEqual(input, { amountUsd: 5, expectedEvmBalanceAfterUsd: 17 });
         spotBalanceUsd = 1;
         evmBalanceRaw = 17_000_000n;
         return {
@@ -7024,7 +7042,7 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
   const dbUpdates: any[] = [];
   const closeCalls: Array<{ symbol: string; side?: "long" | "short" }> = [];
   const usdClassTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
-  const spotTransfers: Array<{ amountUsd: number }> = [];
+  const spotTransfers: Array<{ amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }> = [];
   const coreWriterBuyCalls: Array<{
     asset: number;
     isBuy: boolean;
@@ -7207,7 +7225,7 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
           systemAddress
         };
       },
-      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+      async transferUsdcSpotToEvm(input: { amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }) {
         spotTransfers.push(input);
         return { ok: true };
       },
@@ -7242,7 +7260,7 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
   assert.equal(coreWriterBuyCalls[0]?.sz, 0.05);
   assert.equal(coreWriterBuyCalls[0]?.limitPx, 10.005);
   assert.match(String(coreWriterBuyCalls[0]?.clientOrderId), /^bot-vault-exit-gas-/);
-  assert.deepEqual(spotTransfers, [{ amountUsd: 4.5 }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 4.5, expectedEvmBalanceAfterUsd: null }]);
   assert.ok(dbUpdates.length >= 1);
 });
 
@@ -7287,7 +7305,7 @@ test("controllerCloseBotVault blocks closeVault until contract balance catches u
   let evmBalanceRaw = 0n;
   let coreSpotUsdcBalance = 6;
   let sendTransactionCount = 0;
-  const spotTransfers: Array<{ amountUsd: number }> = [];
+  const spotTransfers: Array<{ amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }> = [];
 
   const dbLayer: any = {
     $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
@@ -7401,7 +7419,7 @@ test("controllerCloseBotVault blocks closeVault until contract balance catches u
       async getAccountState() {
         return { availableMargin: "0" };
       },
-      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+      async transferUsdcSpotToEvm(input: { amountUsd: number; expectedEvmBalanceAfterUsd?: number | null }) {
         spotTransfers.push(input);
         coreSpotUsdcBalance = 0;
         return { status: "confirmed" };
@@ -7421,7 +7439,7 @@ test("controllerCloseBotVault blocks closeVault until contract balance catches u
   );
 
   assert.equal(sendTransactionCount, 0);
-  assert.deepEqual(spotTransfers, [{ amountUsd: 6 }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 6, expectedEvmBalanceAfterUsd: null }]);
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.state, "pending_reconciliation");
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.expectedAmountAtomic, "6000000");
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.actualBalanceAtomic, "0");

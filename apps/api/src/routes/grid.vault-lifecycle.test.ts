@@ -357,6 +357,22 @@ function createDeps(overrides?: Partial<any>) {
   };
 }
 
+async function mockGridMarginPreviewAndAllocation() {
+  return {
+    preview: {
+      liqEstimateLong: null,
+      liqEstimateShort: null
+    },
+    allocation: {
+      insufficient: false,
+      gridInvestUsd: 100,
+      extraMarginUsd: 20,
+      totalBudgetUsd: 120
+    },
+    minInvestmentUSDT: 50
+  };
+}
+
 function createDraftTemplatePayload(overrides?: Partial<Record<string, unknown>>) {
   return {
     name: "Draft Template",
@@ -966,6 +982,7 @@ test("POST /grid/instances/:id/margin/add/finalize delegates v3 funding finaliza
         }
       }
     },
+    computeGridPreviewAndAllocation: mockGridMarginPreviewAndAllocation,
     botVaultV3Service: {
       async finalizeMarginAdd(payload: any) {
         calls.push(payload);
@@ -1096,6 +1113,7 @@ test("POST /grid/instances/:id/margin/add/finalize resumes local apply from pers
         }
       }
     },
+    computeGridPreviewAndAllocation: mockGridMarginPreviewAndAllocation,
     botVaultV3Service: {
       async finalizeMarginAdd(payload: any) {
         calls.push(payload);
@@ -1211,6 +1229,7 @@ test("POST /grid/instances/:id/margin/add/finalize rejects a different pending m
         }
       }
     },
+    computeGridPreviewAndAllocation: mockGridMarginPreviewAndAllocation,
     botVaultV3Service: {
       async finalizeMarginAdd() {
         throw new Error("should_not_call_finalize_margin_add");
@@ -1263,6 +1282,7 @@ test("POST /grid/instances/:id/margin/remove delegates v3 margin release before 
         }
       }
     },
+    computeGridPreviewAndAllocation: mockGridMarginPreviewAndAllocation,
     botVaultV3Service: {
       async reduceMargin(payload: any) {
         calls.push(payload);
@@ -1336,6 +1356,7 @@ test("POST /grid/instances/:id/margin/remove keeps local apply pending when redu
         }
       }
     },
+    computeGridPreviewAndAllocation: mockGridMarginPreviewAndAllocation,
     botVaultV3Service: {
       async reduceMargin(payload: any) {
         calls.push(payload);
@@ -1482,6 +1503,7 @@ test("POST /grid/instances/:id/margin/remove resumes local apply from persisted 
         }
       }
     },
+    computeGridPreviewAndAllocation: mockGridMarginPreviewAndAllocation,
     botVaultV3Service: {
       async reduceMargin(payload: any) {
         calls.push(payload);
@@ -3204,6 +3226,12 @@ test("POST /grid/templates/:id/instances reuses selected bot vault instead of pr
             };
           }
           return null;
+        }
+      },
+      botVault: {
+        ...base.deps.db.botVault,
+        async findFirst() {
+          return { availableUsd: 300 };
         }
       },
       exchangeAccount: {

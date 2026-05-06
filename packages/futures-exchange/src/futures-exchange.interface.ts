@@ -38,6 +38,7 @@ export type FuturesActionStatus =
 
 export type FundsTransferStatus =
   | FuturesActionStatus
+  | "pending_reconciliation"
   | "transfer_submitted"
   | "transfer_pending_reconciliation"
   | "transfer_confirmed"
@@ -102,8 +103,9 @@ export function isFailedFundsTransferResult(
 
 export function isPendingFundsTransferResult(
   result: FundsTransferResult | null | undefined
-): result is FundsTransferResult & { status: "pending_timeout" | "transfer_submitted" | "transfer_pending_reconciliation" } {
+): result is FundsTransferResult & { status: "pending_timeout" | "pending_reconciliation" | "transfer_submitted" | "transfer_pending_reconciliation" } {
   return result?.status === "pending_timeout"
+    || result?.status === "pending_reconciliation"
     || result?.status === "transfer_submitted"
     || result?.status === "transfer_pending_reconciliation";
 }
@@ -143,6 +145,7 @@ export interface FuturesExchange {
   }): Promise<FundsTransferResult>;
   transferUsdcSpotToEvm?(params: {
     amountUsd: number;
+    expectedEvmBalanceAfterUsd?: number | null;
   }): Promise<FundsTransferResult>;
 
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;

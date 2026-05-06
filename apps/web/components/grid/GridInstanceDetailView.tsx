@@ -745,7 +745,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               <span className="gridRunningModeBadge">
                 {detail.template?.mode ?? "grid"} {Number.isFinite(Number(detail.leverage ?? NaN)) ? `${formatNumber(detail.leverage, 0)}x` : ""}
               </span>
-              <span className={`badge ${detail.state === "running" ? "badgeOk" : detail.state === "paused" ? "badgeWarn" : "badge"}`}>{detail.state}</span>
+              <span className={`badge ${detail.state === "running" ? "badgeOk" : detail.state === "paused" || detail.state === "funding_pending" ? "badgeWarn" : "badge"}`}>{detail.state}</span>
             </div>
           </div>
           {detail.state === "archived" ? (

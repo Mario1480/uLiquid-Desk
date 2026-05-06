@@ -45,6 +45,17 @@ const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
 const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS = BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES * 60_000;
 const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = ["create_bot_vault_v3", "create_bot_vault_v4"] as const;
 const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
+const MONEY_FLOW_PENDING_ALERT_MS = Math.max(
+  60,
+  Math.trunc(Number(process.env.BOTVAULT_MONEY_FLOW_PENDING_ALERT_SECONDS ?? "600") || 600)
+) * 1000;
+const MONEY_FLOW_ALERT_SOURCE = "vault_onchain_reconciliation";
+const MONEY_FLOW_ALERT_TYPES = [
+  "botvault_deposit_pending_reconciliation",
+  "botvault_withdraw_pending_reconciliation",
+  "botvault_contract_balance_mismatch",
+  "botvault_reconcile_job_degraded"
+] as const;
 
 type VaultOnchainReconciliationIssueClass = "okay_to_swallow" | "recoverable_track" | "must_fail";
 
@@ -109,9 +120,268 @@ function normalizeSignal(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function parseDateMs(value: unknown): number | null {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) ? time : null;
+  }
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 function includesAnySignal(value: unknown, signals: readonly string[]): boolean {
   const normalized = normalizeSignal(value);
   return normalized.length > 0 && signals.some((signal) => normalized.includes(signal));
+}
+
+type PendingMoneyFlowState = {
+  type: typeof MONEY_FLOW_ALERT_TYPES[number];
+  severity: "warning" | "critical";
+  title: string;
+  message: string;
+  pendingKind: "deposit" | "withdraw" | "contract_balance" | "reconcile_job";
+  pendingSinceMs: number | null;
+  reasonCode: string;
+  recoveryHint: string;
+  txHash: string | null;
+  idempotencyKey: string | null;
+  expectedBalanceUsd: number | null;
+  actualBalanceUsd: number | null;
+};
+
+function toFiniteNumberOrNull(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readPendingMoneyFlowState(row: unknown): PendingMoneyFlowState | null {
+  const normalizedRow = toRecord(row);
+  const metadata = toRecord(normalizedRow.executionMetadata);
+  const contractBalanceReconciliation = toRecord(metadata.contractBalanceReconciliation);
+  if (normalizeSignal(contractBalanceReconciliation.state) === "pending_reconciliation") {
+    return {
+      type: "botvault_contract_balance_mismatch",
+      severity: "critical",
+      title: "BotVault contract balance pending reconciliation",
+      message: "BotVault contract USDC balance is below the expected settlement amount.",
+      pendingKind: "contract_balance",
+      pendingSinceMs: parseDateMs(contractBalanceReconciliation.pendingAt ?? contractBalanceReconciliation.updatedAt),
+      reasonCode: String(contractBalanceReconciliation.reasonCode ?? "insufficient_contract_balance"),
+      recoveryHint: "retry_reconcile",
+      txHash: typeof contractBalanceReconciliation.txHash === "string" ? contractBalanceReconciliation.txHash : null,
+      idempotencyKey: typeof contractBalanceReconciliation.idempotencyKey === "string" ? contractBalanceReconciliation.idempotencyKey : null,
+      expectedBalanceUsd: toFiniteNumberOrNull(contractBalanceReconciliation.expectedAmountUsd),
+      actualBalanceUsd: toFiniteNumberOrNull(contractBalanceReconciliation.actualBalanceUsd)
+    };
+  }
+
+  const claimSpotToEvmTransfer = toRecord(metadata.claimSpotToEvmTransfer);
+  if (["pending", "submitted", "pending_reconciliation"].includes(normalizeSignal(claimSpotToEvmTransfer.state))) {
+    return {
+      type: "botvault_withdraw_pending_reconciliation",
+      severity: "warning",
+      title: "BotVault claim transfer pending reconciliation",
+      message: "Claim settlement is waiting for Spot-to-EVM transfer visibility.",
+      pendingKind: "withdraw",
+      pendingSinceMs: parseDateMs(claimSpotToEvmTransfer.pendingAt ?? claimSpotToEvmTransfer.updatedAt),
+      reasonCode: String(claimSpotToEvmTransfer.errorCode ?? claimSpotToEvmTransfer.status ?? "claim_profit_pending_reconciliation"),
+      recoveryHint: "retry_reconcile",
+      txHash: typeof claimSpotToEvmTransfer.txHash === "string" ? claimSpotToEvmTransfer.txHash : null,
+      idempotencyKey: typeof claimSpotToEvmTransfer.idempotencyKey === "string" ? claimSpotToEvmTransfer.idempotencyKey : null,
+      expectedBalanceUsd: toFiniteNumberOrNull(claimSpotToEvmTransfer.expectedEvmBalanceAfterUsd ?? claimSpotToEvmTransfer.requiredAmountUsd),
+      actualBalanceUsd: toFiniteNumberOrNull(claimSpotToEvmTransfer.evmBalanceBeforeUsd)
+    };
+  }
+
+  const reduceMarginFinalization = toRecord(metadata.reduceMarginFinalization);
+  if (includesAnySignal(reduceMarginFinalization.spotToEvmTransferStatus, [
+    "transfer_pending_reconciliation",
+    "transfer_submitted",
+    "pending_timeout"
+  ])) {
+    return {
+      type: "botvault_withdraw_pending_reconciliation",
+      severity: "warning",
+      title: "BotVault reduce-margin transfer pending reconciliation",
+      message: "Reduce-margin settlement is waiting for Spot-to-EVM transfer visibility.",
+      pendingKind: "withdraw",
+      pendingSinceMs: parseDateMs(reduceMarginFinalization.updatedAt),
+      reasonCode: String(reduceMarginFinalization.spotToEvmTransferStatus ?? "reduce_margin_pending_reconciliation"),
+      recoveryHint: "retry_reconcile",
+      txHash: typeof reduceMarginFinalization.spotToEvmTransferTxHash === "string" ? reduceMarginFinalization.spotToEvmTransferTxHash : null,
+      idempotencyKey: typeof reduceMarginFinalization.idempotencyKey === "string" ? reduceMarginFinalization.idempotencyKey : null,
+      expectedBalanceUsd: toFiniteNumberOrNull(reduceMarginFinalization.evmExpectedAfterUsd ?? reduceMarginFinalization.expectedEvmBalanceAfterUsd),
+      actualBalanceUsd: toFiniteNumberOrNull(reduceMarginFinalization.evmBalanceAfterUsd ?? reduceMarginFinalization.evmBalanceBeforeUsd)
+    };
+  }
+
+  if (includesAnySignal(metadata.initialCoreSpotDepositStatus, [
+    "deposit_pending_reconciliation",
+    "deposit_pending_timeout",
+    "pending_timeout"
+  ])) {
+    return {
+      type: "botvault_deposit_pending_reconciliation",
+      severity: "warning",
+      title: "BotVault deposit pending reconciliation",
+      message: "HyperCore deposit receipt is not yet visible in the reconciled balance.",
+      pendingKind: "deposit",
+      pendingSinceMs: parseDateMs(metadata.initialCoreSpotDepositPendingAt ?? metadata.initialCoreSpotDepositLastCheckedAt),
+      reasonCode: String(metadata.initialCoreSpotDepositStatus ?? "deposit_pending_reconciliation"),
+      recoveryHint: "retry_reconcile",
+      txHash: typeof metadata.initialCoreSpotDepositTxHash === "string" ? metadata.initialCoreSpotDepositTxHash : null,
+      idempotencyKey: typeof metadata.initialCoreSpotDepositIdempotencyKey === "string" ? metadata.initialCoreSpotDepositIdempotencyKey : null,
+      expectedBalanceUsd: toFiniteNumberOrNull(metadata.initialCoreSpotDepositAmountUsd),
+      actualBalanceUsd: toFiniteNumberOrNull(metadata.initialCoreSpotDepositObservedAmountUsd)
+    };
+  }
+
+  return null;
+}
+
+async function upsertMoneyFlowPlatformAlert(params: {
+  db: any;
+  row: any;
+  pending: PendingMoneyFlowState;
+  now: Date;
+}): Promise<void> {
+  if (typeof params.db.platformAlert?.findFirst !== "function" || typeof params.db.platformAlert?.create !== "function") return;
+  const pendingSinceMs = params.pending.pendingSinceMs ?? params.now.getTime();
+  const ageMs = params.now.getTime() - pendingSinceMs;
+  if (!Number.isFinite(ageMs) || ageMs < MONEY_FLOW_PENDING_ALERT_MS) return;
+  const userId = String(params.row.userId ?? "").trim() || null;
+  const botId = String(params.row.botId ?? "").trim() || null;
+  const metadata = {
+    botVaultId: String(params.row.id ?? ""),
+    gridInstanceId: params.row.gridInstanceId ? String(params.row.gridInstanceId) : null,
+    vaultAddress: params.row.vaultAddress ? String(params.row.vaultAddress) : null,
+    pendingKind: params.pending.pendingKind,
+    pendingAgeSeconds: Math.trunc(ageMs / 1000),
+    pendingSince: new Date(pendingSinceMs).toISOString(),
+    reasonCode: params.pending.reasonCode,
+    recoveryHint: params.pending.recoveryHint,
+    txHash: params.pending.txHash,
+    idempotencyKey: params.pending.idempotencyKey,
+    expectedBalanceUsd: params.pending.expectedBalanceUsd,
+    actualBalanceUsd: params.pending.actualBalanceUsd
+  };
+  const existing = await params.db.platformAlert.findFirst({
+    where: {
+      source: MONEY_FLOW_ALERT_SOURCE,
+      type: params.pending.type,
+      status: { in: ["open", "acknowledged"] },
+      ...(userId ? { userId } : {}),
+      ...(botId ? { botId } : {})
+    },
+    orderBy: [{ updatedAt: "desc" }]
+  }).catch(() => null);
+  if (existing?.id && typeof params.db.platformAlert.update === "function") {
+    await params.db.platformAlert.update({
+      where: { id: existing.id },
+      data: {
+        severity: params.pending.severity,
+        title: params.pending.title,
+        message: params.pending.message,
+        metadata
+      }
+    }).catch(() => undefined);
+    return;
+  }
+  await params.db.platformAlert.create({
+    data: {
+      severity: params.pending.severity,
+      status: "open",
+      type: params.pending.type,
+      source: MONEY_FLOW_ALERT_SOURCE,
+      title: params.pending.title,
+      message: params.pending.message,
+      userId,
+      botId,
+      metadata
+    }
+  }).catch(() => undefined);
+}
+
+async function resolveMoneyFlowPlatformAlerts(params: {
+  db: any;
+  row: any;
+}): Promise<void> {
+  if (typeof params.db.platformAlert?.updateMany !== "function") return;
+  const userId = String(params.row.userId ?? "").trim() || null;
+  const botId = String(params.row.botId ?? "").trim() || null;
+  await params.db.platformAlert.updateMany({
+    where: {
+      source: MONEY_FLOW_ALERT_SOURCE,
+      type: { in: [...MONEY_FLOW_ALERT_TYPES] },
+      status: { in: ["open", "acknowledged"] },
+      ...(userId ? { userId } : {}),
+      ...(botId ? { botId } : {})
+    },
+    data: {
+      status: "resolved",
+      resolvedAt: new Date(),
+      resolvedByUserId: null
+    }
+  }).catch(() => undefined);
+}
+
+async function upsertReconcileJobPlatformAlert(params: {
+  db: any;
+  severity: "warning" | "critical";
+  title: string;
+  message: string;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  if (typeof params.db.platformAlert?.findFirst !== "function" || typeof params.db.platformAlert?.create !== "function") return;
+  const existing = await params.db.platformAlert.findFirst({
+    where: {
+      source: MONEY_FLOW_ALERT_SOURCE,
+      type: "botvault_reconcile_job_degraded",
+      status: { in: ["open", "acknowledged"] }
+    },
+    orderBy: [{ updatedAt: "desc" }]
+  }).catch(() => null);
+  if (existing?.id && typeof params.db.platformAlert.update === "function") {
+    await params.db.platformAlert.update({
+      where: { id: existing.id },
+      data: {
+        severity: params.severity,
+        title: params.title,
+        message: params.message,
+        metadata: params.metadata
+      }
+    }).catch(() => undefined);
+    return;
+  }
+  await params.db.platformAlert.create({
+    data: {
+      severity: params.severity,
+      status: "open",
+      type: "botvault_reconcile_job_degraded",
+      source: MONEY_FLOW_ALERT_SOURCE,
+      title: params.title,
+      message: params.message,
+      metadata: params.metadata
+    }
+  }).catch(() => undefined);
+}
+
+async function resolveReconcileJobPlatformAlert(db: any): Promise<void> {
+  if (typeof db.platformAlert?.updateMany !== "function") return;
+  await db.platformAlert.updateMany({
+    where: {
+      source: MONEY_FLOW_ALERT_SOURCE,
+      type: "botvault_reconcile_job_degraded",
+      status: { in: ["open", "acknowledged"] }
+    },
+    data: {
+      status: "resolved",
+      resolvedAt: new Date(),
+      resolvedByUserId: null
+    }
+  }).catch(() => undefined);
 }
 
 export function hasPendingBotVaultRuntimeReconciliation(row: unknown): boolean {
@@ -1030,10 +1300,11 @@ export function createVaultOnchainReconciliationJob(
 
       const bots = await db.botVault.findMany({
         where: { vaultAddress: { not: null } },
-        select: {
-          id: true,
-          userId: true,
-          vaultModel: true,
+	        select: {
+	          id: true,
+	          botId: true,
+	          userId: true,
+	          vaultModel: true,
           vaultAddress: true,
           gridInstanceId: true,
           executionMetadata: true,
@@ -1691,7 +1962,19 @@ export function createVaultOnchainReconciliationJob(
           }
         }
 
-        if (isV3 && botVaultRuntimeService && hasPendingBotVaultRuntimeReconciliation(row)) {
+	        const pendingMoneyFlow = isV3 ? readPendingMoneyFlowState(row) : null;
+	        if (pendingMoneyFlow) {
+	          await upsertMoneyFlowPlatformAlert({
+	            db,
+	            row,
+	            pending: pendingMoneyFlow,
+	            now: lastStartedAt ?? new Date()
+	          });
+	        } else if (isV3) {
+	          await resolveMoneyFlowPlatformAlerts({ db, row });
+	        }
+
+	        if (isV3 && botVaultRuntimeService && hasPendingBotVaultRuntimeReconciliation(row)) {
           const reconcileById =
             botVaultRuntimeService.reconcileBotVaultById
             ?? botVaultRuntimeService.reconcileBotVaultV4ById
@@ -1863,6 +2146,19 @@ export function createVaultOnchainReconciliationJob(
         lastError = `vault_onchain_reconciliation_critical_persistence_failures:${criticalPersistenceFailures}`;
         lastErrorAt = new Date();
         totalFailedCycles += 1;
+        await upsertReconcileJobPlatformAlert({
+          db,
+          severity: "critical",
+          title: "BotVault reconciliation job degraded",
+          message: "Vault onchain reconciliation completed with critical persistence failures.",
+          metadata: {
+            reason,
+            mode,
+            drifts: driftCount,
+            criticalPersistenceFailures,
+            lastError
+          }
+        });
         logger.warn("vault_onchain_reconciliation_cycle_degraded", jobIssueMetadata({
           issueClass: "must_fail",
           mismatchCategory: "local_ahead_of_observed_state",
@@ -1875,6 +2171,7 @@ export function createVaultOnchainReconciliationJob(
       } else {
         lastError = null;
         lastErrorAt = null;
+        await resolveReconcileJobPlatformAlert(db);
       }
 
       if (driftCount > 0) {
@@ -1890,6 +2187,17 @@ export function createVaultOnchainReconciliationJob(
       lastError = String(error);
       lastErrorAt = new Date();
       totalFailedCycles += 1;
+      await upsertReconcileJobPlatformAlert({
+        db,
+        severity: "critical",
+        title: "BotVault reconciliation job blocked",
+        message: "Vault onchain reconciliation cycle failed before completion.",
+        metadata: {
+          reason,
+          mode: lastMode,
+          error: lastError
+        }
+      });
       logger.warn("vault_onchain_reconciliation_cycle_failed", jobIssueMetadata({
         issueClass: "must_fail",
         mismatchCategory: "observed_state_incomplete",

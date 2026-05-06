@@ -64,6 +64,10 @@ import {
   resolveLockedAffiliateFeeConfig,
   type LockedAffiliateFeeConfig
 } from "../affiliate/program.js";
+import {
+  GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY,
+  parseVaultSafetyControls
+} from "./safetyControls.js";
 
 export type AgentWalletSummary = {
   address: string | null;
@@ -1234,6 +1238,11 @@ const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
   Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
 );
 const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS = BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES * 60_000;
+const BOTVAULT_TRADING_RECONCILIATION_FRESHNESS_SECONDS = Math.max(
+  1,
+  Math.trunc(Number(process.env.BOTVAULT_TRADING_RECONCILIATION_FRESHNESS_SECONDS ?? "60") || 60)
+);
+const BOTVAULT_TRADING_RECONCILIATION_FRESHNESS_MS = BOTVAULT_TRADING_RECONCILIATION_FRESHNESS_SECONDS * 1000;
 
 type BotVaultV3FundingIntentTimeoutState = {
   sourceKey: string | null;
@@ -1321,6 +1330,8 @@ export function resolveFinalizedProfitSharePnlBasis(params: {
     openPositionCount?: unknown;
     lastReconciledAt?: unknown;
   } | null | undefined;
+  now?: Date;
+  freshnessMs?: number;
 }): number {
   const aggregate = params.aggregate;
   if (!aggregate) {
@@ -1328,6 +1339,12 @@ export function resolveFinalizedProfitSharePnlBasis(params: {
   }
   if (!(aggregate.lastReconciledAt instanceof Date)) {
     throw new Error("claim_profit_unavailable:pnl_not_finalized:reconciliation_missing");
+  }
+  const freshnessMs = Math.max(1, Math.trunc(Number(params.freshnessMs ?? BOTVAULT_TRADING_RECONCILIATION_FRESHNESS_MS)));
+  const now = params.now instanceof Date ? params.now : new Date();
+  const reconciliationAgeMs = now.getTime() - aggregate.lastReconciledAt.getTime();
+  if (!Number.isFinite(reconciliationAgeMs) || reconciliationAgeMs < 0 || reconciliationAgeMs > freshnessMs) {
+    throw new Error("claim_profit_unavailable:pnl_not_finalized:reconciliation_stale");
   }
   const openPositionCount = Math.max(0, Math.trunc(Number(aggregate.openPositionCount ?? 0)));
   if (openPositionCount > 0 || aggregate.isFlat !== true) {
@@ -1349,8 +1366,14 @@ export function resolveFinalizedProfitShareClaimableProfitUsd(params: {
     lastReconciledAt?: unknown;
   } | null | undefined;
   liveClaimableProfitUsd: number;
+  now?: Date;
+  freshnessMs?: number;
 }): number {
-  resolveFinalizedProfitSharePnlBasis({ aggregate: params.aggregate });
+  resolveFinalizedProfitSharePnlBasis({
+    aggregate: params.aggregate,
+    now: params.now,
+    freshnessMs: params.freshnessMs
+  });
   const liveClaimableProfitUsd = roundUsd(toNonNegativeNumber(params.liveClaimableProfitUsd), 6);
   const netWithdrawableProfitUsd = roundUsd(toNonNegativeNumber(params.aggregate?.netWithdrawableProfit), 6);
   return roundUsd(Math.min(liveClaimableProfitUsd, netWithdrawableProfitUsd), 6);
@@ -3548,6 +3571,35 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
   const sleepImpl = deps?.sleep ?? sleep;
 
+  async function readVaultSafetyControls() {
+    if (!db?.globalSetting?.findUnique) return parseVaultSafetyControls(null);
+    const row = await db.globalSetting.findUnique({
+      where: { key: GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY },
+      select: { value: true }
+    }).catch(() => null);
+    return parseVaultSafetyControls(row?.value);
+  }
+
+  async function assertVaultSafetyActionAllowed(action: "deposit" | "withdraw" | "profit_claim"): Promise<void> {
+    const controls = await readVaultSafetyControls();
+    if (action === "deposit" && controls.depositsDisabled) {
+      throw new Error("bot_vault_deposits_disabled");
+    }
+    if (action === "profit_claim" && controls.profitClaimsDisabled) {
+      throw new Error("bot_vault_profit_claims_disabled");
+    }
+    if ((action === "withdraw" || action === "profit_claim") && controls.withdrawsDisabled) {
+      throw new Error("bot_vault_withdraws_disabled");
+    }
+  }
+
+  async function assertFreshTradingReconciliationForSettlement(botVaultId: string): Promise<void> {
+    const aggregate = await db.botVaultPnlAggregate.findUnique({
+      where: { botVaultId }
+    });
+    resolveFinalizedProfitSharePnlBasis({ aggregate });
+  }
+
   function formatContractBalancePendingReason(params: {
     runtimeModel?: unknown;
     action: BotVaultV3ContractBalanceAction;
@@ -3802,6 +3854,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     botVaultId: string;
     requiredAmountUsd: number;
     amountUsd: number;
+    evmBalanceBeforeUsd: number;
+    expectedEvmBalanceAfterUsd: number;
     result?: unknown;
     state: "submitted" | "pending_reconciliation" | "confirmed" | "failed_retryable";
     error?: unknown;
@@ -3829,6 +3883,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             }),
             requiredAmountUsd: roundUsd(params.requiredAmountUsd, 6),
             amountUsd: roundUsd(params.amountUsd, 6),
+            evmBalanceBeforeUsd: roundUsd(params.evmBalanceBeforeUsd, 6),
+            expectedEvmBalanceAfterUsd: roundUsd(params.expectedEvmBalanceAfterUsd, 6),
             status: toNullableString(result.status) ?? (params.state === "confirmed" ? "transfer_confirmed" : null),
             submitted: result.submitted === true,
             txHash: toNullableString(result.txHash),
@@ -6481,11 +6537,22 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         : null;
       const spotUsdcUsd = Math.max(0, Number(spotBalance?.amountUsd ?? 0));
       if (spotUsdcUsd > 0.000001 && typeof adapterAny.transferUsdcSpotToEvm === "function") {
+        const evmBalanceBeforeTransfer = typeof adapterAny.getEvmUsdcBalance === "function"
+          ? await adapterAny.getEvmUsdcBalance().catch((error: unknown) => {
+            logSettlementStepFailure("get_evm_usdc_balance_before_spot_to_evm", error);
+            return null;
+          })
+          : null;
+        const evmBalanceBeforeTransferUsd = Number(evmBalanceBeforeTransfer?.amountUsd ?? NaN);
+        const expectedEvmBalanceAfterUsd = Number.isFinite(evmBalanceBeforeTransferUsd)
+          ? roundUsd(evmBalanceBeforeTransferUsd + spotUsdcUsd, 6)
+          : null;
         await retryHyperliquidTransient(
           "transfer_usdc_spot_to_evm",
           async () => {
             const result = await adapterAny.transferUsdcSpotToEvm({
-              amountUsd: spotUsdcUsd
+              amountUsd: spotUsdcUsd,
+              expectedEvmBalanceAfterUsd
             });
             if (!isConfirmedFundsTransferResult(result)) {
               throw new Error(result?.errorMessage ?? result?.errorCode ?? "bot_vault_v3_transfer_spot_to_evm_not_confirmed");
@@ -7296,6 +7363,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   async function fundBotVault(params: FundBotVaultParams): Promise<BotVaultV3Summary> {
     const amountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0));
     if (amountUsd <= 0) throw new Error("amount_required");
+    await assertVaultSafetyActionAllowed("deposit");
     const moveToHyperCore = params.moveToHyperCore !== false;
     const current = await ensureBotVaultForBot({ userId: params.userId, botId: params.botId });
     const botVault = await findBotVaultRecordForBot({
@@ -7807,13 +7875,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       const spotToEvmResult = await retryHyperliquidTransient(
         "claim_profit_transfer_usdc_spot_to_evm",
         () => adapterAny.transferUsdcSpotToEvm({
-          amountUsd: transferToEvmUsd
+          amountUsd: transferToEvmUsd,
+          expectedEvmBalanceAfterUsd: params.requiredAmountUsd
         })
       ) as FundsTransferResult;
       await persistBotVaultV3ClaimSpotToEvmTransfer({
         botVaultId: params.botVaultId,
         requiredAmountUsd: params.requiredAmountUsd,
         amountUsd: transferToEvmUsd,
+        evmBalanceBeforeUsd: params.currentEvmBalanceUsd,
+        expectedEvmBalanceAfterUsd: params.requiredAmountUsd,
         result: spotToEvmResult,
         state: isConfirmedFundsTransferResult(spotToEvmResult)
           ? "confirmed"
@@ -7875,6 +7946,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }
 
   async function claimProfit(params: ClaimProfitParams): Promise<BotVaultV3ClaimProfitResult> {
+    await assertVaultSafetyActionAllowed("profit_claim");
     let quote = await loadClaimProfitQuote(params);
     const {
       botVaultId,
@@ -9591,6 +9663,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   async function reduceMargin(params: ReduceMarginParams): Promise<BotVaultV3ReduceMarginResult> {
     const releasedAmountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0), 6);
     if (releasedAmountUsd <= 0) throw new Error("amount_required");
+    await assertVaultSafetyActionAllowed("withdraw");
 
     const botVault = await findBotVaultRecordById({
       userId: params.userId,
@@ -9718,6 +9791,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               : toNonNegativeNumber(existingReduceMarginFinalization.evmBalanceBeforeUsd)
           )
           : null;
+        const resumedExpectedEvmBalanceAfterUsd = autoDrainToEvm && resumedEvmBalanceBeforeUsd != null
+          ? roundUsd(resumedEvmBalanceBeforeUsd + spotToEvmAmountUsd, 6)
+          : null;
         const priorTransferObserved =
           existingReduceMarginFinalization.transferObserved === true
           || existingStage === "observed"
@@ -9757,7 +9833,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             const spotToEvmResult: any = await retryHyperliquidTransient(
               "reduce_margin_transfer_usdc_spot_to_evm",
               () => adapterAny.transferUsdcSpotToEvm({
-                amountUsd: spotToEvmAmountUsd
+                amountUsd: spotToEvmAmountUsd,
+                expectedEvmBalanceAfterUsd: resumedExpectedEvmBalanceAfterUsd
               })
             );
             resumedCoreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
@@ -10135,7 +10212,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             const spotToEvmResult: any = await retryHyperliquidTransient(
               "reduce_margin_transfer_usdc_spot_to_evm",
               () => adapterAny.transferUsdcSpotToEvm({
-                amountUsd: releasedAmountUsd
+                amountUsd: releasedAmountUsd,
+                expectedEvmBalanceAfterUsd: evmBalanceBeforeUsd == null
+                  ? null
+                  : roundUsd(evmBalanceBeforeUsd + releasedAmountUsd, 6)
               })
             );
             spotToEvmTransferStatus = String(spotToEvmResult?.status ?? "unknown");
@@ -10409,6 +10489,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
     const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
+    await assertVaultSafetyActionAllowed("withdraw");
+    if (contractVersion === "v4") {
+      await assertFreshTradingReconciliationForSettlement(String(botVault.id));
+    }
 
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
@@ -10949,6 +11033,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
     const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
+    await assertVaultSafetyActionAllowed("withdraw");
+    if (contractVersion === "v4") {
+      await assertFreshTradingReconciliationForSettlement(String(botVault.id));
+    }
 
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;

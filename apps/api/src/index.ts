@@ -1740,6 +1740,10 @@ const adminVaultProfitShareTreasuryConfigTxSchema = z.object({
 
 const adminVaultSafetyControlsSchema = z.object({
   haltNewOrders: z.boolean().optional(),
+  depositsDisabled: z.boolean().optional(),
+  withdrawsDisabled: z.boolean().optional(),
+  gridStartsDisabled: z.boolean().optional(),
+  profitClaimsDisabled: z.boolean().optional(),
   closeOnlyAllUserIds: z.array(z.string().trim().min(1)).optional(),
   reason: z.string().trim().max(500).nullable().optional()
 });
@@ -2883,12 +2887,20 @@ async function getVaultSafetyControlsSettings() {
 
 async function setVaultSafetyControlsSettings(input: {
   haltNewOrders: boolean;
+  depositsDisabled?: boolean;
+  withdrawsDisabled?: boolean;
+  gridStartsDisabled?: boolean;
+  profitClaimsDisabled?: boolean;
   closeOnlyAllUserIds: string[];
   reason?: string | null;
   updatedByUserId: string;
 }) {
   const next = buildVaultSafetyControls({
     haltNewOrders: input.haltNewOrders,
+    depositsDisabled: input.depositsDisabled,
+    withdrawsDisabled: input.withdrawsDisabled,
+    gridStartsDisabled: input.gridStartsDisabled,
+    profitClaimsDisabled: input.profitClaimsDisabled,
     closeOnlyAllUserIds: input.closeOnlyAllUserIds,
     reason: input.reason ?? null,
     updatedByUserId: input.updatedByUserId

@@ -94,6 +94,10 @@ export type BotVaultExecutionContext = {
 
 export type VaultSafetyControls = {
   haltNewOrders: boolean;
+  depositsDisabled: boolean;
+  withdrawsDisabled: boolean;
+  gridStartsDisabled: boolean;
+  profitClaimsDisabled: boolean;
   closeOnlyAllUserIds: string[];
   updatedByUserId: string | null;
   updatedAt: string | null;
@@ -148,7 +152,7 @@ export type BotTradeHistoryCloseOutcome =
   | "time_stop"
   | "unknown";
 
-export type GridBotInstanceStateValue = "created" | "running" | "paused" | "stopped" | "archived" | "error";
+export type GridBotInstanceStateValue = "created" | "running" | "funding_pending" | "paused" | "stopped" | "archived" | "error";
 
 export type GridBotInstanceCrossSide = {
   lowerPrice: number;
@@ -436,10 +440,20 @@ function toStringArray(value: unknown): string[] {
   return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
 }
 
+function envFlag(name: string): boolean {
+  const normalized = String(process.env[name] ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 function parseVaultSafetyControls(value: unknown): VaultSafetyControls {
   const record = asRecord(value);
+  const globalDisabled = envFlag("TRADING_GLOBAL_DISABLED") || envFlag("BOTVAULT_GLOBAL_DISABLED");
   return {
-    haltNewOrders: record?.haltNewOrders === true,
+    haltNewOrders: record?.haltNewOrders === true || globalDisabled,
+    depositsDisabled: record?.depositsDisabled === true || envFlag("BOTVAULT_DEPOSITS_DISABLED") || globalDisabled,
+    withdrawsDisabled: record?.withdrawsDisabled === true || envFlag("BOTVAULT_WITHDRAWS_DISABLED") || globalDisabled,
+    gridStartsDisabled: record?.gridStartsDisabled === true || envFlag("GRIDBOT_STARTS_DISABLED") || globalDisabled,
+    profitClaimsDisabled: record?.profitClaimsDisabled === true || envFlag("BOTVAULT_PROFIT_CLAIMS_DISABLED") || globalDisabled,
     closeOnlyAllUserIds: toStringArray(record?.closeOnlyAllUserIds),
     updatedByUserId: typeof record?.updatedByUserId === "string" && record.updatedByUserId.trim()
       ? record.updatedByUserId.trim()
@@ -1356,7 +1370,7 @@ export function isGridInstanceExecutionEligible(
   const archivedAt = gridInstance.archivedAt;
   if (archivedAt instanceof Date) return false;
   if (archivedAt) return false;
-  return state === "running";
+  return state === "running" || state === "funding_pending";
 }
 
 function canExecuteRow(bot: any): boolean {
