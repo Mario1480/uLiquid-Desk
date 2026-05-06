@@ -4089,18 +4089,33 @@ a { color: inherit; }
 
 .predictionCreateHeader {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px 12px;
   align-items: flex-start;
   margin-bottom: 10px;
 }
 
+.predictionCreateHeader > :first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 .predictionCreateBadges {
   display: flex;
+  flex: 0 0 auto;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   align-items: center;
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.predictionCreateBadges .badge {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
 }
 
 .predictionsWrap .badge {
@@ -5484,7 +5499,13 @@ a { color: inherit; }
     align-items: flex-start;
   }
   .predictionCreateBadges {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
     justify-content: flex-start;
+  }
+  .predictionCreateBadges .badge {
+    max-width: 100%;
   }
   .predictionCreateGrid {
     grid-template-columns: 1fr;
