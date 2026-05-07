@@ -292,9 +292,8 @@ function filterRowsForDeskSymbol<T extends { symbol?: string | null }>(
   return rows.filter((row) => normalizeDeskSymbol(row.symbol) === target);
 }
 
-function normalizeDeskPositions(rows: PositionItem[], symbol: string): PositionItem[] {
-  return filterRowsForDeskSymbol(rows, symbol)
-    .filter((row) => Number.isFinite(row.size) && row.size > 0);
+function normalizeDeskPositions(rows: PositionItem[]): PositionItem[] {
+  return rows.filter((row) => Number.isFinite(row.size) && row.size > 0);
 }
 
 function normalizeDeskOpenOrders(rows: OpenOrderItem[], symbol: string): OpenOrderItem[] {
@@ -486,6 +485,7 @@ function TradePageContent() {
     if (!selectedPositionKey) return null;
     const row = positions.find((item, index) => `${item.symbol}:${item.side}:${index}` === selectedPositionKey);
     if (!row) return null;
+    if (normalizeDeskSymbol(row.symbol) !== normalizeDeskSymbol(selectedSymbol)) return null;
     return {
       side: row.side,
       entryPrice: row.entryPrice,
@@ -493,7 +493,7 @@ function TradePageContent() {
       takeProfitPrice: row.takeProfitPrice,
       stopLossPrice: row.stopLossPrice
     };
-  }, [positions, selectedPositionKey]);
+  }, [positions, selectedPositionKey, selectedSymbol]);
   const numericLeverage = useMemo(() => {
     const value = Number(leverage);
     return Number.isFinite(value) && value > 0 ? value : null;
@@ -916,7 +916,7 @@ function TradePageContent() {
           `/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
         ),
         apiGet<{ items: PositionItem[]; degraded?: boolean }>(
-          `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
+          `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}${marketTypeParam}`
         ),
         apiGet<{ items: OpenOrderItem[] }>(
           `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
@@ -945,7 +945,7 @@ function TradePageContent() {
 
       if (positionsResult.status === "fulfilled") {
         const degraded = positionsResult.value.degraded === true;
-        const items = normalizeDeskPositions(positionsResult.value.items ?? [], nextSymbol);
+        const items = normalizeDeskPositions(positionsResult.value.items ?? []);
         setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
         if (!degraded) {
           liveTableReadyRef.current.positions = true;
@@ -989,7 +989,7 @@ function TradePageContent() {
     const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
     const [positionsResult, ordersResult, summaryResult] = await Promise.allSettled([
       apiGet<{ items: PositionItem[]; degraded?: boolean }>(
-        `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
+        `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}${marketTypeParam}`
       ),
       apiGet<{ items: OpenOrderItem[] }>(
         `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
@@ -1003,7 +1003,7 @@ function TradePageContent() {
 
     if (positionsResult.status === "fulfilled") {
       const degraded = positionsResult.value.degraded === true;
-      const items = normalizeDeskPositions(positionsResult.value.items ?? [], symbol);
+      const items = normalizeDeskPositions(positionsResult.value.items ?? []);
       setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
       if (!degraded) {
         liveTableReadyRef.current.positions = true;
@@ -1240,7 +1240,7 @@ function TradePageContent() {
         );
 
         if (Array.isArray(data.positions)) {
-          setPositions(normalizeDeskPositions(data.positions, selectedSymbol));
+          setPositions(normalizeDeskPositions(data.positions));
           liveTableReadyRef.current.positions = true;
         }
         if (Array.isArray(data.openOrders)) {
@@ -1455,19 +1455,20 @@ function TradePageContent() {
     }
   }
 
-  async function closePosition(side: "long" | "short") {
+  async function closePosition(position: PositionItem) {
     if (!selectedAccountId) return;
     if (tradingDataBlocked) {
       setActionError(dataBlockReason ?? t("messages.actionDisabledDegraded"));
       return;
     }
-    const pendingKey = `${marketType}:${selectedSymbol}:${side}`;
+    const positionSymbol = position.symbol || selectedSymbol;
+    const pendingKey = `${marketType}:${positionSymbol}:${position.side}`;
     if (closePendingKey) return;
     const accountLabel = selectedAccount ? `${selectedAccount.exchange.toUpperCase()} - ${selectedAccount.label}` : selectedAccountId;
-    const closeSide = isSpotMode ? "spot" : side.toUpperCase();
+    const closeSide = isSpotMode ? "spot" : position.side.toUpperCase();
     if (
       typeof window !== "undefined" &&
-      !window.confirm(t("messages.confirmClosePosition", { account: accountLabel, symbol: selectedSymbol, side: closeSide }))
+      !window.confirm(t("messages.confirmClosePosition", { account: accountLabel, symbol: positionSymbol, side: closeSide }))
     ) {
       return;
     }
@@ -1481,8 +1482,8 @@ function TradePageContent() {
       }>("/api/positions/close", {
         exchangeAccountId: selectedAccountId,
         marketType,
-        symbol: selectedSymbol,
-        side: isSpotMode ? undefined : side,
+        symbol: positionSymbol,
+        side: isSpotMode ? undefined : position.side,
         idempotencyKey: createClientIdempotencyKey("manual_close")
       });
       markOpenOrdersStale();
@@ -2513,7 +2514,7 @@ function TradePageContent() {
                                     disabled={tradingDataBlocked || closePendingKey !== null}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      void closePosition(position.side);
+                                      void closePosition(position);
                                     }}
                                   >
                                     {closePendingKey ? t("actions.closing") : t("actions.close")}
@@ -2575,7 +2576,7 @@ function TradePageContent() {
                                     disabled={tradingDataBlocked || closePendingKey !== null}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      void closePosition(position.side);
+                                      void closePosition(position);
                                     }}
                                   >
                                     {closePendingKey ? t("actions.closing") : t("actions.close")}
@@ -2611,7 +2612,7 @@ function TradePageContent() {
                       >
                         <div className="tradeMobileHead">
                           <div className="tradeMobileHeadLeft">
-                            <div className="tradeMobileTitle">{selectedSymbol}</div>
+                            <div className="tradeMobileTitle">{position.symbol}</div>
                             <span
                               className={`tradeMobileChip ${position.side === "long" ? "tradeMobileChipLong" : "tradeMobileChipShort"}`}
                             >
@@ -2722,7 +2723,7 @@ function TradePageContent() {
                               <button
                                 className="btn"
                                 disabled={tradingDataBlocked || closePendingKey !== null}
-                                onClick={() => void closePosition(position.side)}
+                                onClick={() => void closePosition(position)}
                               >
                                 {closePendingKey ? t("actions.closing") : t("actions.close")}
                               </button>
