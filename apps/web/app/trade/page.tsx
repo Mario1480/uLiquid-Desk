@@ -2416,7 +2416,6 @@ function TradePageContent() {
                 <div className="tradeDeskSectionTitle">{t("sections.positions")}</div>
                 <div className="tradeDeskSectionHint">{t("positions.hint")}</div>
               </div>
-              <div className="tradeDeskSectionHint">{t("positions.symbol")}: {selectedSymbol}</div>
             </div>
 
             <div className="tradeDesktopOnly">
@@ -2424,6 +2423,7 @@ function TradePageContent() {
                 <table className="tradeDataTable">
                   <thead>
                     <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.symbol")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.side")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.size")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.entry")}</th>
@@ -2437,14 +2437,14 @@ function TradePageContent() {
                   <tbody>
                     {positions.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ padding: 10, color: "var(--muted)" }}>{t("positions.empty")}</td>
+                        <td colSpan={9} style={{ padding: 10, color: "var(--muted)" }}>{t("positions.empty")}</td>
                       </tr>
                     ) : (
                       positions.map((position, index) => {
                         const rowKey = `${position.symbol}:${position.side}:${index}`;
                         return (
                           <tr
-                            key={`${position.side}_${index}`}
+                            key={rowKey}
                             style={{
                               borderTop: "1px solid rgba(255,255,255,.06)",
                               background:
@@ -2457,6 +2457,7 @@ function TradePageContent() {
                               setSelectedPositionKey((prev) => (prev === rowKey ? null : rowKey))
                             }
                           >
+                            <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>{position.symbol}</td>
                             <td style={{ padding: "8px 6px", color: position.side === "long" ? "#34d399" : "#f87171" }}>{position.side.toUpperCase()}</td>
                             <td style={{ padding: "8px 6px" }}>{fmt(position.size, 6)}</td>
                             <td style={{ padding: "8px 6px" }}>{fmt(position.entryPrice, 4)}</td>
@@ -2606,7 +2607,7 @@ function TradePageContent() {
                       position.side === "long" ? "tradeMobileCardSideLong" : "tradeMobileCardSideShort";
                     return (
                       <article
-                        key={`position_mobile_${position.side}_${index}`}
+                        key={`position_mobile_${rowKey}`}
                         className={`tradeMobileCard ${sideToneClass} ${isSelected ? "tradeMobileCardSelected" : ""}`}
                         onClick={() => setSelectedPositionKey((prev) => (prev === rowKey ? null : rowKey))}
                       >
@@ -2627,6 +2628,7 @@ function TradePageContent() {
                           </div>
                         </div>
                         <div className="tradeMobileRows">
+                          <div className="tradeMobileRow"><span>{t("positions.columns.symbol")}</span><strong>{position.symbol}</strong></div>
                           <div className="tradeMobileRow"><span>{t("positions.columns.size")}</span><strong>{fmt(position.size, 6)}</strong></div>
                           <div className="tradeMobileRow"><span>{t("positions.columns.entry")}</span><strong>{fmt(position.entryPrice, 4)}</strong></div>
                           <div className="tradeMobileRow"><span>{t("positions.columns.mark")}</span><strong>{fmt(position.markPrice, 4)}</strong></div>
@@ -2759,6 +2761,7 @@ function TradePageContent() {
                 <table className="tradeDataTable">
                   <thead>
                     <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+                      <th style={{ padding: "8px 6px" }}>{t("orders.columns.symbol")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("orders.columns.orderId")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("orders.columns.side")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("orders.columns.type")}</th>
@@ -2773,11 +2776,12 @@ function TradePageContent() {
                   <tbody>
                     {openOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={9} style={{ padding: 10, color: "var(--muted)" }}>{t("orders.empty")}</td>
+                        <td colSpan={10} style={{ padding: 10, color: "var(--muted)" }}>{t("orders.empty")}</td>
                       </tr>
                     ) : (
                       openOrders.map((order) => (
                         <tr key={order.orderId} style={{ borderTop: "1px solid rgba(255,255,255,.06)" }}>
+                          <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>{order.symbol}</td>
                           <td style={{ padding: "8px 6px" }}>{order.orderId.slice(0, 12)}...</td>
                           <td style={{ padding: "8px 6px" }}>{order.side ?? "-"}</td>
                           <td style={{ padding: "8px 6px" }}>{order.type ?? "-"}</td>
@@ -2957,7 +2961,7 @@ function TradePageContent() {
                       <article key={`order_mobile_${order.orderId}`} className={`tradeMobileCard ${sideToneClass}`}>
                         <div className="tradeMobileHead">
                           <div className="tradeMobileHeadLeft">
-                            <div className="tradeMobileTitle">{order.orderId.slice(0, 12)}...</div>
+                            <div className="tradeMobileTitle">{order.symbol}</div>
                             <span className={`tradeMobileChip ${sideChipClass}`}>{order.side ?? "-"}</span>
                           </div>
                           <div className="tradeMobileHeadRight">
@@ -2965,6 +2969,7 @@ function TradePageContent() {
                           </div>
                         </div>
                         <div className="tradeMobileRows">
+                          <div className="tradeMobileRow"><span>{t("orders.columns.orderId")}</span><strong>{order.orderId.slice(0, 12)}...</strong></div>
                           <div className="tradeMobileRow"><span>{t("orders.columns.type")}</span><strong>{order.type ?? "-"}</strong></div>
                           <div className="tradeMobileRow">
                             <span>{t("orders.columns.limitPrice")}</span>

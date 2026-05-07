@@ -1029,10 +1029,11 @@
       "openOrders": "Open Orders"
     },
     "positions": {
-      "hint": "Open positions for the selected market.",
+      "hint": "Open positions in the active account.",
       "symbol": "Symbol",
       "empty": "No open positions.",
       "columns": {
+        "symbol": "Symbol",
         "side": "Side",
         "size": "Size",
         "entry": "Entry",
@@ -1047,6 +1048,7 @@
       "hint": "Manage active orders before they fill.",
       "empty": "No open orders.",
       "columns": {
+        "symbol": "Symbol",
         "orderId": "Order ID",
         "side": "Side",
         "type": "Type",
