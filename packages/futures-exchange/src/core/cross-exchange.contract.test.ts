@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter, toMexcContractInfo } from "../mexc/mexc.adapter.js";
+import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
 import { toBitgetContractInfo } from "../bitget/bitget.contract-cache.js";
 import { BitgetRateLimitError } from "../bitget/bitget.errors.js";
 import { mapBitgetError } from "../bitget/bitget-error.mapper.js";
@@ -334,6 +335,46 @@ test("mexc adapter listPositions overlays active tp/sl stop orders onto open pos
       unrealizedPnl: 12.5,
       takeProfitPrice: 70000,
       stopLossPrice: 64000
+    }
+  ]);
+});
+
+test("bitget adapter listPositions canonicalizes legacy position symbols before filtering", async () => {
+  const adapter = Object.create(BitgetFuturesAdapter.prototype) as any;
+
+  adapter.productType = "USDT-FUTURES";
+  adapter.marginCoin = "USDT";
+  adapter.contractCache = {
+    refresh: async () => undefined
+  };
+  adapter.positionApi = {
+    getAllPositions: async () => [
+      {
+        symbol: "BTCUSDT_UMCBL",
+        holdSide: "long",
+        total: "0.01",
+        avgOpenPrice: "65000",
+        markPrice: "65100",
+        unrealizedPL: "1.2"
+      }
+    ]
+  };
+  adapter.toCanonicalSymbol = (symbol: string) => (
+    symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase() === "BTCUSDT" ? "BTCUSDT" : null
+  );
+
+  const rows = await adapter.listPositions({ symbol: "BTCUSDT" });
+
+  assert.deepEqual(rows, [
+    {
+      symbol: "BTCUSDT",
+      side: "long",
+      size: 0.01,
+      entryPrice: 65000,
+      markPrice: 65100,
+      unrealizedPnl: 1.2,
+      takeProfitPrice: null,
+      stopLossPrice: null
     }
   ]);
 });

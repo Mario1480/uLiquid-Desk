@@ -75,8 +75,36 @@ function toPositionSide(raw: unknown, signedQty?: number | null): "long" | "shor
   return "short";
 }
 
-function mapPosition(row: BitgetPositionRaw): FuturesPosition {
-  const canonical = normalizeCanonicalSymbol(String(row.symbol ?? ""));
+function stripLegacyBitgetContractSuffix(symbol: string): string {
+  return symbol.replace(/(SUMCBL|UMCBL|DMCBL|CMCBL)$/i, "");
+}
+
+function resolveBitgetPositionSymbol(
+  symbol: unknown,
+  resolver?: (value: string) => string | null
+): string {
+  const raw = String(symbol ?? "").trim();
+  if (!raw) return "";
+  const direct = resolver?.(raw);
+  if (direct) return direct;
+
+  const normalized = normalizeCanonicalSymbol(raw);
+  const fromNormalized = resolver?.(normalized);
+  if (fromNormalized) return fromNormalized;
+
+  const stripped = stripLegacyBitgetContractSuffix(normalized);
+  if (stripped && stripped !== normalized) {
+    return resolver?.(stripped) ?? stripped;
+  }
+
+  return normalized;
+}
+
+function mapPosition(
+  row: BitgetPositionRaw,
+  resolver?: (value: string) => string | null
+): FuturesPosition {
+  const canonical = resolveBitgetPositionSymbol(row.symbol, resolver);
   const total = toNumber(row.total);
   const available = toNumber(row.available);
   const signedQty =
@@ -203,13 +231,14 @@ export class BitgetFuturesAdapter implements FuturesExchange {
   }
 
   async getPositions(): Promise<FuturesPosition[]> {
+    await this.contractCache.refresh(false).catch(() => undefined);
     const rows = await this.positionApi.getAllPositions({
       productType: this.productType,
       marginCoin: this.marginCoin
     });
 
     return rows
-      .map((row) => mapPosition(row))
+      .map((row) => mapPosition(row, (symbol) => this.toCanonicalSymbol(symbol)))
       .filter((row) => row.symbol.length > 0 && row.size > 0);
   }
 
@@ -647,14 +676,17 @@ export class BitgetFuturesAdapter implements FuturesExchange {
 
   async listPositions(params?: { symbol?: string }): Promise<NormalizedPosition[]> {
     try {
-      const normalizedSymbol = params?.symbol ? normalizeCanonicalSymbol(params.symbol) : null;
+      await this.contractCache.refresh(false).catch(() => undefined);
+      const normalizedSymbol = params?.symbol
+        ? resolveBitgetPositionSymbol(params.symbol, (symbol) => this.toCanonicalSymbol(symbol))
+        : null;
       const rows = await this.positionApi.getAllPositions({
         productType: this.productType,
         marginCoin: this.marginCoin
       });
       return rows
         .map((row) => {
-          const mapped = mapPosition(row);
+          const mapped = mapPosition(row, (symbol) => this.toCanonicalSymbol(symbol));
           const raw = toRecord(row);
           return {
             symbol: mapped.symbol,

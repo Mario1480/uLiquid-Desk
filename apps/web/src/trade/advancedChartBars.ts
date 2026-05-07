@@ -22,6 +22,24 @@ function toSafeVolume(value: number | null | undefined): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+export function toAdvancedChartPrice(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function isSaneAdvancedChartBar(bar: AdvancedChartBar | null | undefined): bar is AdvancedChartBar {
+  if (!bar) return false;
+  const open = toAdvancedChartPrice(bar.open);
+  const high = toAdvancedChartPrice(bar.high);
+  const low = toAdvancedChartPrice(bar.low);
+  const close = toAdvancedChartPrice(bar.close);
+  if (open === null || high === null || low === null || close === null) return false;
+  if (high < Math.max(open, close, low)) return false;
+  if (low > Math.min(open, close, high)) return false;
+  return Number.isFinite(bar.time) && bar.time > 0;
+}
+
 export function buildAdvancedRealtimeTradeKey(params: {
   ts: number | null | undefined;
   price: number | null | undefined;
@@ -29,9 +47,9 @@ export function buildAdvancedRealtimeTradeKey(params: {
   side?: string | null | undefined;
 }): string | null {
   const normalizedTs = normalizeAdvancedChartTimestampMs(params.ts);
-  const price = Number(params.price);
-  const qty = Number(params.qty);
-  if (!Number.isFinite(normalizedTs) || !Number.isFinite(price) || !Number.isFinite(qty)) return null;
+  const price = toAdvancedChartPrice(params.price);
+  const qty = params.qty === null || params.qty === undefined ? null : Number(params.qty);
+  if (!Number.isFinite(normalizedTs) || price === null || !Number.isFinite(qty)) return null;
   const side = typeof params.side === "string" ? params.side.trim().toLowerCase() : "";
   return `${normalizedTs}:${price}:${qty}:${side}`;
 }

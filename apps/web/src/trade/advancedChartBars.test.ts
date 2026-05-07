@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   buildAdvancedRealtimeTradeKey,
   createAdvancedRealtimeBar,
+  isSaneAdvancedChartBar,
   normalizeAdvancedChartTimestampMs,
   rememberAdvancedRealtimeTrade,
-  reconcilePolledBarWithLiveBar
+  reconcilePolledBarWithLiveBar,
+  toAdvancedChartPrice
 } from "./advancedChartBars";
 
 test("createAdvancedRealtimeBar opens a new bucket at the previous close to avoid synthetic gaps", () => {
@@ -204,4 +206,38 @@ test("rememberAdvancedRealtimeTrade rejects duplicate trades", () => {
     }),
     false
   );
+});
+
+test("toAdvancedChartPrice rejects nullish and non-positive values", () => {
+  assert.equal(toAdvancedChartPrice(null), null);
+  assert.equal(toAdvancedChartPrice(undefined), null);
+  assert.equal(toAdvancedChartPrice(0), null);
+  assert.equal(toAdvancedChartPrice("-1"), null);
+  assert.equal(toAdvancedChartPrice("101.25"), 101.25);
+});
+
+test("isSaneAdvancedChartBar rejects zero-wick and inconsistent candles", () => {
+  assert.equal(isSaneAdvancedChartBar({
+    time: 1_710_000_000_000,
+    open: 100,
+    high: 105,
+    low: 0,
+    close: 104
+  }), false);
+
+  assert.equal(isSaneAdvancedChartBar({
+    time: 1_710_000_000_000,
+    open: 100,
+    high: 99,
+    low: 98,
+    close: 101
+  }), false);
+
+  assert.equal(isSaneAdvancedChartBar({
+    time: 1_710_000_000_000,
+    open: 100,
+    high: 105,
+    low: 98,
+    close: 101
+  }), true);
 });

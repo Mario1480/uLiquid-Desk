@@ -6,8 +6,10 @@ import { ApiError, apiGet, getApiBaseUrl } from "../../lib/api";
 import {
   rememberAdvancedRealtimeTrade,
   createAdvancedRealtimeBar,
+  isSaneAdvancedChartBar,
   normalizeAdvancedChartTimestampMs,
-  reconcilePolledBarWithLiveBar
+  reconcilePolledBarWithLiveBar,
+  toAdvancedChartPrice
 } from "../../src/trade/advancedChartBars";
 import type {
   Bar,
@@ -387,7 +389,9 @@ function buildAdvancedDatafeed(params: {
     const payload = await apiGet<CandlesResponse>(
       `/api/market/candles?exchangeAccountId=${encodeURIComponent(params.exchangeAccountId)}&symbol=${encodeURIComponent(symbolName)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}&marketType=${encodeURIComponent(params.marketType)}`
     );
-    return normalizeCandles(payload.items ?? []).map(toBar);
+    return normalizeCandles(payload.items ?? [])
+      .map(toBar)
+      .filter((bar): bar is Bar => isSaneAdvancedChartBar(bar));
   };
 
   const applyRealtimeBarUpdate = (
@@ -398,7 +402,8 @@ function buildAdvancedDatafeed(params: {
     qty?: number | null
   ): Bar | null => {
     const normalizedTs = normalizeAdvancedChartTimestampMs(ts);
-    if (!Number.isFinite(price) || !Number.isFinite(normalizedTs)) return null;
+    const safePrice = toAdvancedChartPrice(price);
+    if (safePrice === null || !Number.isFinite(normalizedTs)) return null;
     const subscriber = subscribers.get(listenerGuid);
     if (!subscriber) return null;
     const bucketMs = timeframeToBucketMs(timeframe);
@@ -408,7 +413,7 @@ function buildAdvancedDatafeed(params: {
     if (!lastBar || bucketStartMs > lastBar.time) {
       const nextBar: Bar = createAdvancedRealtimeBar({
         bucketStartMs,
-        price,
+        price: safePrice,
         qty,
         previousBar: lastBar
       });
@@ -422,9 +427,9 @@ function buildAdvancedDatafeed(params: {
 
     const nextBar: Bar = {
       ...lastBar,
-      high: Math.max(lastBar.high, price),
-      low: Math.min(lastBar.low, price),
-      close: price,
+      high: Math.max(lastBar.high, safePrice),
+      low: Math.min(lastBar.low, safePrice),
+      close: safePrice,
       volume: Math.max(0, Number(lastBar.volume ?? 0)) + Math.max(0, Number(qty ?? 0))
     };
     subscriber.lastBar = nextBar;
@@ -527,9 +532,9 @@ function buildAdvancedDatafeed(params: {
       };
 
       const handleRealtimeTrade = (trade: WsTrade) => {
-        const price = Number(trade.price);
+        const price = toAdvancedChartPrice(trade.price);
         const ts = Number(trade.ts);
-        if (!Number.isFinite(price) || !Number.isFinite(ts)) return;
+        if (price === null || !Number.isFinite(ts)) return;
         const subscriber = subscribers.get(listenerGuid);
         if (!subscriber) return;
         if (!rememberAdvancedRealtimeTrade(subscriber.seenTradeKeys, trade)) return;
@@ -543,7 +548,7 @@ function buildAdvancedDatafeed(params: {
 
         let maxTradeTsMs = subscriber.tradeWatermarkMs;
         const sortedTrades = [...trades]
-          .filter((trade) => Number.isFinite(Number(trade?.ts)) && Number.isFinite(Number(trade?.price)))
+          .filter((trade) => Number.isFinite(Number(trade?.ts)) && toAdvancedChartPrice(trade?.price) !== null)
           .sort((a, b) => Number(a.ts ?? 0) - Number(b.ts ?? 0));
 
         if (subscriber.tradeWatermarkMs === null) {
@@ -569,9 +574,12 @@ function buildAdvancedDatafeed(params: {
       };
 
       const handleRealtimeTicker = (ticker: TickerState) => {
-        const price = Number(ticker.last);
+        const bid = toAdvancedChartPrice(ticker.bid);
+        const ask = toAdvancedChartPrice(ticker.ask);
+        const midpoint = bid !== null && ask !== null ? (bid + ask) / 2 : null;
+        const price = toAdvancedChartPrice(ticker.last) ?? toAdvancedChartPrice(ticker.mark) ?? midpoint;
         const ts = Number(ticker.ts ?? Date.now());
-        if (!Number.isFinite(price) || !Number.isFinite(ts)) return;
+        if (price === null || !Number.isFinite(ts)) return;
         const nextBar = applyRealtimeBarUpdate(listenerGuid, timeframe, price, ts);
         if (nextBar) onTick(nextBar);
       };

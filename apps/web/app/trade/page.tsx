@@ -279,6 +279,28 @@ function numericEqual(a: number | null | undefined, b: number | null | undefined
   return Math.abs(a - b) <= tolerance;
 }
 
+function normalizeDeskSymbol(value: string | null | undefined): string {
+  return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function filterRowsForDeskSymbol<T extends { symbol?: string | null }>(
+  rows: T[],
+  symbol: string
+): T[] {
+  const target = normalizeDeskSymbol(symbol);
+  if (!target) return rows;
+  return rows.filter((row) => normalizeDeskSymbol(row.symbol) === target);
+}
+
+function normalizeDeskPositions(rows: PositionItem[], symbol: string): PositionItem[] {
+  return filterRowsForDeskSymbol(rows, symbol)
+    .filter((row) => Number.isFinite(row.size) && row.size > 0);
+}
+
+function normalizeDeskOpenOrders(rows: OpenOrderItem[], symbol: string): OpenOrderItem[] {
+  return filterRowsForDeskSymbol(rows, symbol);
+}
+
 function mergeAccountSummary(
   prev: AccountSummary | null,
   next: AccountSummary,
@@ -923,7 +945,7 @@ function TradePageContent() {
 
       if (positionsResult.status === "fulfilled") {
         const degraded = positionsResult.value.degraded === true;
-        const items = positionsResult.value.items ?? [];
+        const items = normalizeDeskPositions(positionsResult.value.items ?? [], nextSymbol);
         setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
         if (!degraded) {
           liveTableReadyRef.current.positions = true;
@@ -935,7 +957,7 @@ function TradePageContent() {
       }
 
       if (ordersResult.status === "fulfilled") {
-        setOpenOrders(ordersResult.value.items ?? []);
+        setOpenOrders(normalizeDeskOpenOrders(ordersResult.value.items ?? [], nextSymbol));
         liveTableReadyRef.current.openOrders = true;
       } else {
         const failure = `open orders (${errMsg(ordersResult.reason)})`;
@@ -981,7 +1003,7 @@ function TradePageContent() {
 
     if (positionsResult.status === "fulfilled") {
       const degraded = positionsResult.value.degraded === true;
-      const items = positionsResult.value.items ?? [];
+      const items = normalizeDeskPositions(positionsResult.value.items ?? [], symbol);
       setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
       if (!degraded) {
         liveTableReadyRef.current.positions = true;
@@ -992,7 +1014,7 @@ function TradePageContent() {
       partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
     }
     if (ordersResult.status === "fulfilled") {
-      setOpenOrders(ordersResult.value.items ?? []);
+      setOpenOrders(normalizeDeskOpenOrders(ordersResult.value.items ?? [], symbol));
       liveTableReadyRef.current.openOrders = true;
     } else {
       const failure = `open orders (${errMsg(ordersResult.reason)})`;
@@ -1218,11 +1240,11 @@ function TradePageContent() {
         );
 
         if (Array.isArray(data.positions)) {
-          setPositions(data.positions);
+          setPositions(normalizeDeskPositions(data.positions, selectedSymbol));
           liveTableReadyRef.current.positions = true;
         }
         if (Array.isArray(data.openOrders)) {
-          setOpenOrders(data.openOrders);
+          setOpenOrders(normalizeDeskOpenOrders(data.openOrders, selectedSymbol));
           liveTableReadyRef.current.openOrders = true;
         }
       }
