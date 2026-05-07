@@ -4,6 +4,7 @@
     "backToDashboard": "Back to dashboard",
     "loading": "Loading...",
     "saving": "Saving...",
+    "deleting": "Deleting...",
     "reload": "Reload",
     "saveSettings": "Save settings"
   },

@@ -59,6 +59,7 @@ export type RegisterStrategyWriteRoutesDeps = {
   getAiModel(): string;
   createGeneratedPromptDraft(input: any): { promptId: string; payload: any };
   createUserAiPromptTemplate(input: any): Promise<any>;
+  updateUserAiPromptTemplate(userId: string, id: string, input: any): Promise<any | null>;
   deleteUserAiPromptTemplateById(userId: string, id: string): Promise<boolean>;
   adminAiPromptsSchema: any;
   adminAiPromptsPreviewSchema: any;
@@ -603,6 +604,92 @@ export function registerStrategyWriteRoutes(
       newsRiskMode: parsed.data.newsRiskMode,
       now
     });
+
+    return res.json({
+      prompt,
+      generatedPromptText: prompt.promptText,
+      generationMeta: {
+        mode: generationMode,
+        model: generationModel
+      },
+      updatedAt: prompt.updatedAt
+    });
+  });
+
+  app.put("/settings/ai-prompts/own/:id", requireAuth, async (req, res) => {
+    const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
+    if (!strategyFeatureEnabled) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+    const params = userAiPromptTemplateIdParamSchema.safeParse(req.params ?? {});
+    if (!params.success) {
+      return res.status(400).json({ error: "invalid_params", details: params.error.flatten() });
+    }
+
+    const parsed = deps.userAiPromptsGenerateSaveSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const selected = deps.resolveSelectedAiPromptIndicators(parsed.data.indicatorKeys);
+    if (selected.invalidKeys.length > 0) {
+      return res.status(400).json({
+        error: "invalid_indicator_keys",
+        details: { invalidKeys: selected.invalidKeys }
+      });
+    }
+
+    let generatedPromptText = "";
+    let generationMode: "ai" | "fallback" = "fallback";
+    let generationModel = parsed.data.generationMeta?.model ?? deps.getAiModel();
+
+    if (typeof parsed.data.generatedPromptText === "string") {
+      const provided = parsed.data.generatedPromptText.trim();
+      if (!provided) {
+        return res.status(400).json({
+          error: "invalid_payload",
+          details: { reason: "generatedPromptText must not be empty" }
+        });
+      }
+      generatedPromptText = provided;
+      generationMode = parsed.data.generationMeta?.mode ?? "fallback";
+    } else {
+      const generation = await deps.generateHybridPromptText({
+        strategyDescription: parsed.data.strategyDescription,
+        selectedIndicators: selected.selectedIndicators,
+        timeframes: parsed.data.timeframes,
+        runTimeframe: parsed.data.runTimeframe ?? null,
+        billingUserId: user.id
+      }).catch(() => null);
+      if (!generation) {
+        return res.status(500).json({ error: "generation_failed" });
+      }
+      generatedPromptText = generation.promptText;
+      generationMode = generation.mode;
+      generationModel = generation.model;
+    }
+
+    const now = new Date();
+    const prompt = await deps.updateUserAiPromptTemplate(user.id, params.data.id, {
+      name: parsed.data.name,
+      promptText: generatedPromptText,
+      indicatorKeys: selected.selectedIndicators.map((item: any) => item.key),
+      ohlcvBars: parsed.data.ohlcvBars,
+      timeframes: parsed.data.timeframes,
+      runTimeframe: parsed.data.runTimeframe ?? null,
+      promptMode: parsed.data.promptMode,
+      directionPreference: parsed.data.directionPreference,
+      confidenceTargetPct: parsed.data.confidenceTargetPct,
+      slTpSource: parsed.data.slTpSource,
+      newsRiskMode: parsed.data.newsRiskMode,
+      now
+    });
+
+    if (!prompt) {
+      return res.status(404).json({ error: "not_found" });
+    }
 
     return res.json({
       prompt,

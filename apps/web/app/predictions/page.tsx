@@ -2259,6 +2259,9 @@ export default function PredictionsPage() {
             </div>
           </div>
           <div className="predictionCreateBadges">
+            <Link className="btn" href={withLocalePath("/strategies", locale)}>
+              {tPred("create.manageStrategies")}
+            </Link>
             <span className="badge badgeOk" title={tPred("create.autoScheduleAlwaysOn")}>
               {tPred("create.autoScheduleShort")}
             </span>

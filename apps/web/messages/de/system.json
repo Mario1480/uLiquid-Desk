@@ -785,6 +785,9 @@
       "sendTest": "Testnachricht senden"
     },
     "strategy": {
+      "pageTitle": "AI-Strategien",
+      "pageSubtitle": "Erstelle, bearbeite und verwalte deine privaten AI-Prompt-Strategien fuer das Prediction Dashboard.",
+      "backToPredictions": "Zurueck zum Prediction Dashboard",
       "description": "Erstelle und speichere deine eigenen privaten AI-Prompt-Strategien.",
       "featureDisabled": "Der Strategie-Generator ist aktuell über die Admin-Zugriffssteuerung deaktiviert.",
       "ownPromptsTitle": "Eigene Strategien",
@@ -793,10 +796,15 @@
       "runTimeframeLabel": "Run-Timeframe",
       "none": "keins",
       "generatorTitle": "Strategie-Prompt erstellen",
+      "editorTitle": "Strategie-Prompt bearbeiten",
+      "editing": "Wird bearbeitet",
       "promptName": "Prompt-Name",
       "promptNamePlaceholder": "z. B. BTC Trend Pullback Validator",
       "strategyDescription": "Strategie-Beschreibung",
       "strategyPlaceholder": "Beschreibe deine Strategie in Klartext.",
+      "promptText": "Prompt-Text",
+      "promptTextPlaceholder": "Bearbeite den finalen AI-Prompt.",
+      "promptTextHint": "Dieser Text wird bei der Strategie-Auswahl direkt als AI-Prompt verwendet.",
       "promptMode": "Prompt-Modus",
       "promptModeTrading": "Trading-Explainer",
       "promptModeAnalysis": "Marktanalyse",
@@ -827,6 +835,8 @@
       "previewSave": "Speichern",
       "previewGenerating": "Wird generiert...",
       "previewSaving": "Wird gespeichert...",
+      "updatePrompt": "Änderungen speichern",
+      "updateSaving": "Änderungen werden gespeichert...",
       "resultMeta": "Prompt gespeichert ({mode}, {model})",
       "chat": {
         "title": "Prompt Chat",
@@ -871,6 +881,10 @@
         "previewGenerated": "Vorschau generiert ({mode}, {model}).",
         "previewSaveSuccess": "Strategie gespeichert ({mode}, {model}).",
         "previewMissing": "Vorschau ist leer. Bitte zuerst eine Vorschau generieren.",
+        "promptTextRequired": "Bitte einen Prompt-Text eingeben.",
+        "editLoaded": "\"{name}\" wurde zum Bearbeiten geladen.",
+        "editCanceled": "Bearbeitung abgebrochen.",
+        "updated": "Strategie-Prompt aktualisiert.",
         "confirmDelete": "Diesen Strategie-Prompt löschen?",
         "deleted": "Strategie-Prompt gelöscht."
       }
@@ -885,7 +899,9 @@
       "disabledLabel": "Abo & Abrechnung (deaktiviert)"
     },
     "actions": {
-      "delete": "Löschen"
+      "delete": "Löschen",
+      "edit": "Bearbeiten",
+      "cancel": "Abbrechen"
     }
   },
   "settingsRisk": {

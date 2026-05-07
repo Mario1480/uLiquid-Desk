@@ -29,6 +29,7 @@
     "strategyEnforcedShort": "enforced",
     "globalDefault": "global default",
     "globalDefaultShort": "default",
+    "manageStrategies": "Manage AI strategies",
     "strategy": "Strategy",
     "strategyHint": "Unified selector for AI Prompt, Local Strategy or Composite Strategy.",
     "noLicensedStrategy": "No licensed strategy available",

@@ -785,6 +785,9 @@
       "sendTest": "Send test message"
     },
     "strategy": {
+      "pageTitle": "AI Strategies",
+      "pageSubtitle": "Create, edit and manage your private AI prompt strategies for the Predictions Dashboard.",
+      "backToPredictions": "Back to Predictions Dashboard",
       "description": "Create and store your own private AI prompt strategies.",
       "featureDisabled": "Strategy generator is currently disabled by admin access settings.",
       "ownPromptsTitle": "Own strategies",
@@ -793,10 +796,15 @@
       "runTimeframeLabel": "Run timeframe",
       "none": "none",
       "generatorTitle": "Create strategy prompt",
+      "editorTitle": "Edit strategy prompt",
+      "editing": "Editing",
       "promptName": "Prompt name",
       "promptNamePlaceholder": "e.g. BTC Trend Pullback Validator",
       "strategyDescription": "Strategy description",
       "strategyPlaceholder": "Describe your strategy in plain language.",
+      "promptText": "Prompt text",
+      "promptTextPlaceholder": "Edit the final AI prompt.",
+      "promptTextHint": "This text is used directly as the AI prompt when the strategy is selected.",
       "promptMode": "Prompt mode",
       "promptModeTrading": "Trading explainer",
       "promptModeAnalysis": "Market analysis",
@@ -827,6 +835,8 @@
       "previewSave": "Save",
       "previewGenerating": "Generating...",
       "previewSaving": "Saving...",
+      "updatePrompt": "Save changes",
+      "updateSaving": "Saving changes...",
       "resultMeta": "Saved prompt ({mode}, {model})",
       "chat": {
         "title": "Prompt Chat",
@@ -871,6 +881,10 @@
         "previewGenerated": "Preview generated ({mode}, {model}).",
         "previewSaveSuccess": "Strategy saved ({mode}, {model}).",
         "previewMissing": "Preview is empty. Generate a preview first.",
+        "promptTextRequired": "Please enter prompt text.",
+        "editLoaded": "\"{name}\" loaded for editing.",
+        "editCanceled": "Editing canceled.",
+        "updated": "Strategy prompt updated.",
         "confirmDelete": "Delete this strategy prompt?",
         "deleted": "Strategy prompt deleted."
       }
@@ -885,7 +899,9 @@
       "disabledLabel": "Subscription & Billing (Disabled)"
     },
     "actions": {
-      "delete": "Delete"
+      "delete": "Delete",
+      "edit": "Edit",
+      "cancel": "Cancel"
     }
   },
   "settingsRisk": {

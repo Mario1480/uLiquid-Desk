@@ -60,6 +60,8 @@ export type CreateUserAiPromptInput = {
   now: Date;
 };
 
+export type UpdateUserAiPromptInput = Omit<CreateUserAiPromptInput, "userId">;
+
 export type ResolvedAiPromptSelection = {
   runtimeSettings: AiPromptRuntimeSettings;
   source: "own" | "global" | "default";
@@ -113,6 +115,45 @@ function clampOhlcvBars(value: unknown): number {
 
 function makeUserPromptId(): string {
   return `uap_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeUserAiPromptTemplateData(
+  input: Omit<CreateUserAiPromptInput, "userId">
+) {
+  const timeframes = uniqueTimeframes(input.timeframes);
+  const runTimeframe = normalizeRunTimeframe(timeframes, input.runTimeframe);
+  const normalizedByMode = normalizePromptFieldsByMode({
+    promptMode: input.promptMode === "market_analysis" ? "market_analysis" : "trading_explainer",
+    directionPreference: input.directionPreference,
+    confidenceTargetPct: clampConfidence(input.confidenceTargetPct),
+    slTpSource: input.slTpSource,
+    newsRiskMode: input.newsRiskMode,
+    marketAnalysisUpdateEnabled: input.promptMode === "market_analysis"
+  });
+  const indicatorKeys: AiPromptIndicatorKey[] = [];
+  const seenIndicatorKeys = new Set<AiPromptIndicatorKey>();
+  for (const key of input.indicatorKeys) {
+    if (!isAiPromptIndicatorKey(key)) continue;
+    if (seenIndicatorKeys.has(key)) continue;
+    seenIndicatorKeys.add(key);
+    indicatorKeys.push(key);
+  }
+
+  return {
+    name: input.name.trim().slice(0, 64),
+    promptText: sanitizePromptText(input.promptText),
+    indicatorKeys,
+    ohlcvBars: clampOhlcvBars(input.ohlcvBars),
+    timeframes,
+    runTimeframe,
+    timeframe: runTimeframe,
+    directionPreference: normalizedByMode.directionPreference,
+    confidenceTargetPct: normalizedByMode.confidenceTargetPct,
+    slTpSource: normalizedByMode.slTpSource,
+    newsRiskMode: normalizedByMode.newsRiskMode,
+    marketAnalysisUpdateEnabled: normalizedByMode.marketAnalysisUpdateEnabled,
+    updatedAt: input.now
+  };
 }
 
 function toPublicTemplate(row: UserPromptTemplateRow): UserAiPromptTemplate {
@@ -228,46 +269,40 @@ export async function createUserAiPromptTemplate(
   input: CreateUserAiPromptInput
 ): Promise<UserAiPromptTemplate> {
   const now = input.now;
-  const timeframes = uniqueTimeframes(input.timeframes);
-  const runTimeframe = normalizeRunTimeframe(timeframes, input.runTimeframe);
-  const normalizedByMode = normalizePromptFieldsByMode({
-    promptMode: input.promptMode === "market_analysis" ? "market_analysis" : "trading_explainer",
-    directionPreference: input.directionPreference,
-    confidenceTargetPct: clampConfidence(input.confidenceTargetPct),
-    slTpSource: input.slTpSource,
-    newsRiskMode: input.newsRiskMode,
-    marketAnalysisUpdateEnabled: input.promptMode === "market_analysis"
-  });
-  const indicatorKeys: AiPromptIndicatorKey[] = [];
-  const seenIndicatorKeys = new Set<AiPromptIndicatorKey>();
-  for (const key of input.indicatorKeys) {
-    if (!isAiPromptIndicatorKey(key)) continue;
-    if (seenIndicatorKeys.has(key)) continue;
-    seenIndicatorKeys.add(key);
-    indicatorKeys.push(key);
-  }
+  const normalized = normalizeUserAiPromptTemplateData(input);
   const created = await db.userAiPromptTemplate.create({
     data: {
       id: makeUserPromptId(),
       userId: input.userId,
-      name: input.name.trim().slice(0, 64),
-      promptText: sanitizePromptText(input.promptText),
-      indicatorKeys,
-      ohlcvBars: clampOhlcvBars(input.ohlcvBars),
-      timeframes,
-      runTimeframe,
-      timeframe: runTimeframe,
-      directionPreference: normalizedByMode.directionPreference,
-      confidenceTargetPct: normalizedByMode.confidenceTargetPct,
-      slTpSource: normalizedByMode.slTpSource,
-      newsRiskMode: normalizedByMode.newsRiskMode,
-      marketAnalysisUpdateEnabled: normalizedByMode.marketAnalysisUpdateEnabled,
+      ...normalized,
       isPublic: false,
-      createdAt: now,
-      updatedAt: now
+      createdAt: now
     }
   });
   return toPublicTemplate(created as UserPromptTemplateRow);
+}
+
+export async function updateUserAiPromptTemplate(
+  userId: string,
+  templateId: string,
+  input: UpdateUserAiPromptInput
+): Promise<UserAiPromptTemplate | null> {
+  const id = templateId.trim();
+  if (!id) return null;
+  const existing = await db.userAiPromptTemplate.findFirst({
+    where: { id, userId },
+    select: { id: true }
+  });
+  if (!existing) return null;
+
+  const updated = await db.userAiPromptTemplate.update({
+    where: { id: existing.id },
+    data: {
+      ...normalizeUserAiPromptTemplateData(input),
+      isPublic: false
+    }
+  });
+  return toPublicTemplate(updated as UserPromptTemplateRow);
 }
 
 export async function deleteUserAiPromptTemplateById(

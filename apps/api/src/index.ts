@@ -173,7 +173,8 @@ import {
   createUserAiPromptTemplate,
   deleteUserAiPromptTemplateById,
   listUserAiPromptTemplates,
-  resolveAiPromptRuntimeForUserSelection
+  resolveAiPromptRuntimeForUserSelection,
+  updateUserAiPromptTemplate
 } from "./ai/userPromptSettings.js";
 import {
   buildAndAttachHistoryContext
@@ -12077,6 +12078,7 @@ registerStrategyWriteRoutes(app, {
   getAiModel,
   createGeneratedPromptDraft,
   createUserAiPromptTemplate,
+  updateUserAiPromptTemplate,
   deleteUserAiPromptTemplateById,
   adminAiPromptsSchema,
   adminAiPromptsPreviewSchema,

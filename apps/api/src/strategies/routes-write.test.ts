@@ -52,8 +52,12 @@ function createMockRes() {
   };
 }
 
-function getFinalHandler(app: ReturnType<typeof createFakeApp>, path: string) {
-  const handlers = app.routes.post.get(path);
+function getFinalHandler(
+  app: ReturnType<typeof createFakeApp>,
+  path: string,
+  method: keyof ReturnType<typeof createFakeApp>["routes"] = "post"
+) {
+  const handlers = app.routes[method].get(path);
   if (!handlers || handlers.length === 0) {
     throw new Error(`route_not_found:${path}`);
   }
@@ -248,4 +252,105 @@ test("user AI prompt chat returns AI builder response", async () => {
   assert.equal(res.body?.suggestedName, "RSI Pullback");
   assert.equal(res.body?.readyForPreview, true);
   assert.deepEqual(res.body?.generationMeta, { mode: "ai", model: "test-model" });
+});
+
+test("user AI prompt update edits an existing own prompt", async () => {
+  const app = createFakeApp();
+  let capturedUpdate: any = null;
+
+  registerStrategyWriteRoutes(app as any, {
+    readUserFromLocals: (res: any) => res.locals.user,
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "pro",
+      capabilities: {
+        "product.ai_predictions": true
+      }
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
+      capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    isStrategyFeatureEnabledForUser: async () => true,
+    userAiPromptsGenerateSaveSchema: {
+      safeParse(input: any) {
+        return {
+          success: true,
+          data: {
+            name: input.name,
+            strategyDescription: input.strategyDescription,
+            indicatorKeys: input.indicatorKeys ?? [],
+            ohlcvBars: input.ohlcvBars ?? 100,
+            timeframes: input.timeframes ?? [],
+            runTimeframe: input.runTimeframe ?? null,
+            directionPreference: input.directionPreference ?? "either",
+            confidenceTargetPct: input.confidenceTargetPct ?? 60,
+            slTpSource: input.slTpSource ?? "local",
+            newsRiskMode: input.newsRiskMode ?? "off",
+            promptMode: input.promptMode ?? "trading_explainer",
+            generatedPromptText: input.generatedPromptText,
+            generationMeta: input.generationMeta
+          }
+        };
+      }
+    },
+    resolveSelectedAiPromptIndicators: () => ({
+      selectedIndicators: [{ key: "rsi" }],
+      invalidKeys: []
+    }),
+    getAiModel: () => "test-model",
+    updateUserAiPromptTemplate: async (userId: string, id: string, input: any) => {
+      capturedUpdate = { userId, id, input };
+      return {
+        id,
+        name: input.name,
+        promptText: input.promptText,
+        indicatorKeys: input.indicatorKeys,
+        ohlcvBars: input.ohlcvBars,
+        timeframes: input.timeframes,
+        runTimeframe: input.runTimeframe,
+        timeframe: input.runTimeframe,
+        directionPreference: input.directionPreference,
+        confidenceTargetPct: input.confidenceTargetPct,
+        slTpSource: input.slTpSource,
+        newsRiskMode: input.newsRiskMode,
+        promptMode: input.promptMode,
+        marketAnalysisUpdateEnabled: false,
+        isPublic: false,
+        createdAt: "2026-05-07T00:00:00.000Z",
+        updatedAt: "2026-05-07T00:00:00.000Z"
+      };
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "/settings/ai-prompts/own/:id", "put");
+  const res = createMockRes();
+
+  await handler(
+    {
+      params: { id: "uap_1" },
+      body: {
+        name: "Updated prompt",
+        strategyDescription: "Existing prompt text",
+        indicatorKeys: ["rsi"],
+        timeframes: ["15m"],
+        runTimeframe: "15m",
+        generatedPromptText: "Updated generated prompt",
+        generationMeta: { mode: "fallback", model: "test-model" }
+      }
+    },
+    res
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(capturedUpdate?.userId, "user_1");
+  assert.equal(capturedUpdate?.id, "uap_1");
+  assert.equal(capturedUpdate?.input.promptText, "Updated generated prompt");
+  assert.deepEqual(capturedUpdate?.input.indicatorKeys, ["rsi"]);
+  assert.equal(res.body?.prompt?.id, "uap_1");
+  assert.equal(res.body?.generatedPromptText, "Updated generated prompt");
 });
