@@ -15,6 +15,11 @@ import type {
   OrderIntent,
   PositionTpSlParams
 } from "../core/order-normalization.types.js";
+import {
+  buildPositionRiskMetrics,
+  normalizePositionMarginMode,
+  pickFiniteNumber
+} from "../core/position-metrics.js";
 import { ExchangeError } from "../core/exchange-error.types.js";
 import {
   BITGET_DEFAULT_MARGIN_COIN,
@@ -115,13 +120,38 @@ function mapPosition(
         : null;
   const size = Math.abs(signedQty ?? total ?? available ?? 0);
   const entryPrice = toNumber(row.openPriceAvg ?? row.avgOpenPrice ?? row.openAvgPrice ?? row.avgPrice) ?? 0;
+  const leverage = toNumber(row.leverage) ?? undefined;
+  const marginMode = normalizePositionMarginMode(row.marginMode) ?? undefined;
+  const markPrice = toNumber(row.markPrice) ?? undefined;
+  const unrealizedPnl = toNumber(row.unrealizedPL) ?? undefined;
+  const riskMetrics = buildPositionRiskMetrics({
+    side: toPositionSide(row.holdSide, signedQty),
+    size,
+    entryPrice,
+    markPrice,
+    unrealizedPnl,
+    leverage,
+    marginMode,
+    marginUsd: pickFiniteNumber(row.marginSize, row.margin),
+    notionalUsd: pickFiniteNumber(row.notionalUsd, row.positionValue),
+    liquidationPrice: pickFiniteNumber(row.liquidationPrice, row.liqPrice),
+    roePct: pickFiniteNumber(row.returnOnEquity)
+  });
   return {
     symbol: canonical,
     side: toPositionSide(row.holdSide, signedQty),
     size,
     entryPrice,
-    markPrice: toNumber(row.markPrice) ?? undefined,
-    unrealizedPnl: toNumber(row.unrealizedPL) ?? undefined
+    markPrice,
+    unrealizedPnl,
+    leverage: riskMetrics.leverage ?? undefined,
+    marginMode: riskMetrics.marginMode ?? undefined,
+    marginUsd: riskMetrics.marginUsd ?? undefined,
+    notionalUsd: riskMetrics.notionalUsd ?? undefined,
+    liquidationPrice: riskMetrics.liquidationPrice ?? undefined,
+    liquidationDistancePct: riskMetrics.liquidationDistancePct ?? undefined,
+    roePct: riskMetrics.roePct ?? undefined,
+    pnlPct: riskMetrics.pnlPct ?? undefined
   };
 }
 
@@ -696,6 +726,14 @@ export class BitgetFuturesAdapter implements FuturesExchange {
             entryPrice: Number.isFinite(mapped.entryPrice) ? mapped.entryPrice : null,
             markPrice: mapped.markPrice ?? null,
             unrealizedPnl: mapped.unrealizedPnl ?? null,
+            leverage: mapped.leverage ?? null,
+            marginMode: mapped.marginMode ?? null,
+            marginUsd: mapped.marginUsd ?? null,
+            notionalUsd: mapped.notionalUsd ?? null,
+            liquidationPrice: mapped.liquidationPrice ?? null,
+            liquidationDistancePct: mapped.liquidationDistancePct ?? null,
+            roePct: mapped.roePct ?? null,
+            pnlPct: mapped.pnlPct ?? null,
             takeProfitPrice: getNumber(raw, ["takeProfitPrice", "takeProfit", "tp", "presetStopSurplusPrice"]),
             stopLossPrice: getNumber(raw, ["stopLossPrice", "stopLoss", "sl", "presetStopLossPrice"])
           } satisfies NormalizedPosition;

@@ -45,6 +45,13 @@ function maxDate(left: Date | null, right: Date | null): Date | null {
   return left.getTime() >= right.getTime() ? left : right;
 }
 
+function toPositionMarginMode(value: unknown): "isolated" | "cross" | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized.includes("isolated") || normalized === "1") return "isolated";
+  if (normalized.includes("cross") || normalized === "2") return "cross";
+  return null;
+}
+
 function resolveDashboardLastSyncAt(params: {
   accountLastUsedAt?: Date | null;
   aggregateLastSyncAt?: Date | null;
@@ -845,6 +852,15 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
               side: row.side === "short" ? "short" : "long",
               size: Number(row.size ?? 0),
               entryPrice: deps.toFiniteNumber(row.entryPrice),
+              markPrice: deps.toFiniteNumber(row.markPrice),
+              leverage: deps.toFiniteNumber(row.leverage),
+              marginMode: toPositionMarginMode(row.marginMode),
+              marginUsd: deps.toFiniteNumber(row.marginUsd),
+              notionalUsd: deps.toFiniteNumber(row.notionalUsd),
+              liquidationPrice: deps.toFiniteNumber(row.liquidationPrice),
+              liquidationDistancePct: deps.toFiniteNumber(row.liquidationDistancePct),
+              roePct: deps.toFiniteNumber(row.roePct),
+              pnlPct: deps.toFiniteNumber(row.pnlPct),
               stopLossPrice: deps.toFiniteNumber(row.stopLossPrice),
               takeProfitPrice: deps.toFiniteNumber(row.takeProfitPrice),
               unrealizedPnl: deps.toFiniteNumber(row.unrealizedPnl)
@@ -865,6 +881,15 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
             side: row.side === "short" ? "short" : "long",
             size: Number(row.size ?? 0),
             entryPrice: deps.toFiniteNumber(row.entryPrice),
+            markPrice: deps.toFiniteNumber(row.markPrice),
+            leverage: deps.toFiniteNumber(row.leverage),
+            marginMode: toPositionMarginMode(row.marginMode),
+            marginUsd: deps.toFiniteNumber(row.marginUsd),
+            notionalUsd: deps.toFiniteNumber(row.notionalUsd),
+            liquidationPrice: deps.toFiniteNumber(row.liquidationPrice),
+            liquidationDistancePct: deps.toFiniteNumber(row.liquidationDistancePct),
+            roePct: deps.toFiniteNumber(row.roePct),
+            pnlPct: deps.toFiniteNumber(row.pnlPct),
             stopLossPrice: deps.toFiniteNumber(row.stopLossPrice),
             takeProfitPrice: deps.toFiniteNumber(row.takeProfitPrice),
             unrealizedPnl: deps.toFiniteNumber(row.unrealizedPnl)

@@ -121,7 +121,11 @@ export class HyperliquidPositionApi {
           markPriceSource: price?.priceSource ?? undefined,
           unrealizedPL: String(position?.unrealizedPnl ?? "0"),
           leverage: String(position?.leverage?.value ?? ""),
-          marginMode: String(position?.leverage?.type ?? "cross")
+          marginMode: String(position?.leverage?.type ?? "cross"),
+          marginUsed: position?.marginUsed === undefined ? undefined : String(position.marginUsed),
+          positionValue: position?.positionValue === undefined ? undefined : String(position.positionValue),
+          liquidationPrice: position?.liquidationPx === undefined ? undefined : String(position.liquidationPx),
+          returnOnEquity: position?.returnOnEquity === undefined ? undefined : String(position.returnOnEquity)
         } satisfies HyperliquidPositionRaw;
       })
       .filter((row: HyperliquidPositionRaw | null): row is HyperliquidPositionRaw => row !== null);

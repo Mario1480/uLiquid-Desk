@@ -48,6 +48,18 @@ export type MexcPositionRaw = {
   fairPrice?: number | string;
   unrealizedPnl?: number | string;
   leverage?: number | string;
+  marginMode?: number | string;
+  positionMargin?: number | string;
+  margin?: number | string;
+  marginUsd?: number | string;
+  positionValue?: number | string;
+  notional?: number | string;
+  notionalValue?: number | string;
+  liquidatePrice?: number | string;
+  liquidationPrice?: number | string;
+  liqPrice?: number | string;
+  roe?: number | string;
+  returnOnEquity?: number | string;
 };
 
 export type MexcAccountAssetRaw = {

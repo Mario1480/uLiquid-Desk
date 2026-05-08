@@ -12,6 +12,14 @@ export type FuturesPosition = {
   entryPrice: number;
   markPrice?: number;
   unrealizedPnl?: number;
+  leverage?: number;
+  marginMode?: MarginMode;
+  marginUsd?: number;
+  notionalUsd?: number;
+  liquidationPrice?: number;
+  liquidationDistancePct?: number;
+  roePct?: number;
+  pnlPct?: number;
 };
 
 export type AccountState = {

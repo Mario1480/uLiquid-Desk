@@ -3,6 +3,7 @@ import test from "node:test";
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter, toMexcContractInfo } from "../mexc/mexc.adapter.js";
 import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
+import { BinanceFuturesAdapter } from "../binance/binance.adapter.js";
 import { toBitgetContractInfo } from "../bitget/bitget.contract-cache.js";
 import { BitgetRateLimitError } from "../bitget/bitget.errors.js";
 import { mapBitgetError } from "../bitget/bitget-error.mapper.js";
@@ -298,10 +299,14 @@ test("mexc adapter listPositions overlays active tp/sl stop orders onto open pos
         symbol: "BTC_USDT",
         positionId: "position-1",
         positionType: 1,
+        openType: 1,
         holdVol: 5,
         openAvgPrice: 65000,
         fairPrice: 65250,
-        unrealizedPnl: 12.5
+        unrealizedPnl: 12.5,
+        leverage: 10,
+        positionMargin: 32.625,
+        liquidatePrice: 60000
       }
     ]
   };
@@ -324,6 +329,8 @@ test("mexc adapter listPositions overlays active tp/sl stop orders onto open pos
   adapter.toExchangeSymbol = async () => "BTC_USDT";
 
   const rows = await adapter.listPositions({ symbol: "BTCUSDT" });
+  const notionalUsd = 0.005 * 65250;
+  const marginUsd = 32.625;
 
   assert.deepEqual(rows, [
     {
@@ -333,6 +340,14 @@ test("mexc adapter listPositions overlays active tp/sl stop orders onto open pos
       entryPrice: 65000,
       markPrice: 65250,
       unrealizedPnl: 12.5,
+      leverage: 10,
+      marginMode: "isolated",
+      marginUsd,
+      notionalUsd,
+      liquidationPrice: 60000,
+      liquidationDistancePct: ((65250 - 60000) / 65250) * 100,
+      roePct: (12.5 / marginUsd) * 100,
+      pnlPct: (12.5 / notionalUsd) * 100,
       takeProfitPrice: 70000,
       stopLossPrice: 64000
     }
@@ -356,6 +371,10 @@ test("bitget adapter listPositions canonicalizes legacy position symbols before 
         openPriceAvg: "65000",
         markPrice: "65100",
         unrealizedPL: "1.2",
+        leverage: "5",
+        marginMode: "crossed",
+        marginSize: "130.2",
+        liquidationPrice: "60000",
         takeProfit: "70000",
         stopLoss: "64000"
       }
@@ -366,6 +385,8 @@ test("bitget adapter listPositions canonicalizes legacy position symbols before 
   );
 
   const rows = await adapter.listPositions({ symbol: "BTCUSDT" });
+  const notionalUsd = 0.01 * 65100;
+  const marginUsd = 130.2;
 
   assert.deepEqual(rows, [
     {
@@ -375,8 +396,68 @@ test("bitget adapter listPositions canonicalizes legacy position symbols before 
       entryPrice: 65000,
       markPrice: 65100,
       unrealizedPnl: 1.2,
+      leverage: 5,
+      marginMode: "cross",
+      marginUsd,
+      notionalUsd,
+      liquidationPrice: 60000,
+      liquidationDistancePct: ((65100 - 60000) / 65100) * 100,
+      roePct: (1.2 / marginUsd) * 100,
+      pnlPct: (1.2 / notionalUsd) * 100,
       takeProfitPrice: 70000,
       stopLossPrice: 64000
+    }
+  ]);
+});
+
+test("binance adapter listPositions exposes leverage margin and liquidation risk fields", async () => {
+  const adapter = Object.create(BinanceFuturesAdapter.prototype) as any;
+
+  adapter.contractCache = {
+    refresh: async () => undefined
+  };
+  adapter.toExchangeSymbol = async () => "BNBUSDT";
+  adapter.accountApi = {
+    getPositionRisk: async () => [
+      {
+        symbol: "BNBUSDT",
+        positionSide: "BOTH",
+        positionAmt: "5",
+        entryPrice: "643.53",
+        markPrice: "643.99",
+        unRealizedProfit: "2.29",
+        notional: "3219.95",
+        leverage: "10",
+        marginType: "isolated",
+        isolatedMargin: "321.995",
+        liquidationPrice: "579.13"
+      }
+    ]
+  };
+  adapter.tradeApi = {
+    getOpenOrders: async () => []
+  };
+
+  const rows = await adapter.listPositions({ symbol: "BNBUSDT" });
+
+  assert.deepEqual(rows, [
+    {
+      symbol: "BNBUSDT",
+      side: "long",
+      size: 5,
+      entryPrice: 643.53,
+      markPrice: 643.99,
+      unrealizedPnl: 2.29,
+      leverage: 10,
+      marginMode: "isolated",
+      marginUsd: 321.995,
+      notionalUsd: 3219.95,
+      liquidationPrice: 579.13,
+      liquidationDistancePct: ((643.99 - 579.13) / 643.99) * 100,
+      roePct: (2.29 / 321.995) * 100,
+      pnlPct: (2.29 / 3219.95) * 100,
+      takeProfitPrice: null,
+      stopLossPrice: null
     }
   ]);
 });

@@ -39,6 +39,11 @@ import type {
   OrderIntent,
   PositionTpSlParams
 } from "../core/order-normalization.types.js";
+import {
+  buildPositionRiskMetrics,
+  normalizePositionMarginMode,
+  pickFiniteNumber
+} from "../core/position-metrics.js";
 import { mapBinanceError } from "./binance-error.mapper.js";
 import { BinanceAccountApi } from "./binance.account.api.js";
 import {
@@ -109,13 +114,42 @@ function toPositionSide(raw: BinancePositionRisk): "long" | "short" {
 
 function mapPosition(raw: BinancePositionRisk): FuturesPosition {
   const amt = toNumber(raw.positionAmt) ?? 0;
+  const side = toPositionSide(raw);
+  const entryPrice = toNumber(raw.entryPrice) ?? 0;
+  const markPrice = toNumber(raw.markPrice) ?? undefined;
+  const unrealizedPnl = (toNumber(raw.unRealizedProfit) ?? toNumber(raw.unrealizedProfit)) ?? undefined;
+  const isolatedMargin = pickFiniteNumber(raw.isolatedMargin, raw.isolatedWallet);
+  const notionalUsd = Math.abs(pickFiniteNumber(raw.notional) ?? 0) || null;
+  const marginMode =
+    normalizePositionMarginMode(raw.marginType) ??
+    (String(raw.isIsolated ?? "").trim().toLowerCase() === "true" ? "isolated" : null);
+  const riskMetrics = buildPositionRiskMetrics({
+    side,
+    size: Math.abs(amt),
+    entryPrice,
+    markPrice,
+    unrealizedPnl,
+    leverage: pickFiniteNumber(raw.leverage),
+    marginMode,
+    marginUsd: isolatedMargin,
+    notionalUsd,
+    liquidationPrice: pickFiniteNumber(raw.liquidationPrice)
+  });
   return {
     symbol: toCanonicalFallbackSymbol(String(raw.symbol ?? "")),
-    side: toPositionSide(raw),
+    side,
     size: Math.abs(amt),
-    entryPrice: toNumber(raw.entryPrice) ?? 0,
-    markPrice: toNumber(raw.markPrice) ?? undefined,
-    unrealizedPnl: (toNumber(raw.unRealizedProfit) ?? toNumber(raw.unrealizedProfit)) ?? undefined
+    entryPrice,
+    markPrice,
+    unrealizedPnl,
+    leverage: riskMetrics.leverage ?? undefined,
+    marginMode: riskMetrics.marginMode ?? undefined,
+    marginUsd: riskMetrics.marginUsd ?? undefined,
+    notionalUsd: riskMetrics.notionalUsd ?? undefined,
+    liquidationPrice: riskMetrics.liquidationPrice ?? undefined,
+    liquidationDistancePct: riskMetrics.liquidationDistancePct ?? undefined,
+    roePct: riskMetrics.roePct ?? undefined,
+    pnlPct: riskMetrics.pnlPct ?? undefined
   };
 }
 
@@ -669,6 +703,14 @@ export class BinanceFuturesAdapter implements FuturesExchange {
           entryPrice: mapped.entryPrice,
           markPrice: mapped.markPrice ?? null,
           unrealizedPnl: mapped.unrealizedPnl ?? null,
+          leverage: mapped.leverage ?? null,
+          marginMode: mapped.marginMode ?? null,
+          marginUsd: mapped.marginUsd ?? null,
+          notionalUsd: mapped.notionalUsd ?? null,
+          liquidationPrice: mapped.liquidationPrice ?? null,
+          liquidationDistancePct: mapped.liquidationDistancePct ?? null,
+          roePct: mapped.roePct ?? null,
+          pnlPct: mapped.pnlPct ?? null,
           takeProfitPrice: toNumber(tp?.stopPrice),
           stopLossPrice: toNumber(sl?.stopPrice)
         } satisfies NormalizedPosition;

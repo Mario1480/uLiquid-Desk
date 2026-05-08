@@ -32,7 +32,11 @@ test("positions use the same preferred markPx semantics as ticker snapshots", as
                 leverage: {
                   value: "5",
                   type: "cross"
-                }
+                },
+                marginUsed: "6900",
+                positionValue: "35125",
+                liquidationPx: "55200",
+                returnOnEquity: "0.0905797101"
               }
             }
           ]
@@ -46,6 +50,10 @@ test("positions use the same preferred markPx semantics as ticker snapshots", as
 
   assert.equal(positions[0]?.markPrice, "70250");
   assert.equal(positions[0]?.markPriceSource, "markPx");
+  assert.equal(positions[0]?.marginUsed, "6900");
+  assert.equal(positions[0]?.positionValue, "35125");
+  assert.equal(positions[0]?.liquidationPrice, "55200");
+  assert.equal(positions[0]?.returnOnEquity, "0.0905797101");
 });
 
 test("positions fall back to direct info reads when sdk clearinghouse reads fail", async () => {

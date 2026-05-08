@@ -108,6 +108,10 @@ export type BinancePositionRisk = {
   marginAsset?: string;
   isolatedMargin?: string;
   isolatedWallet?: string;
+  leverage?: string;
+  marginType?: string;
+  isIsolated?: boolean | string;
+  liquidationPrice?: string;
   updateTime?: number;
 };
 

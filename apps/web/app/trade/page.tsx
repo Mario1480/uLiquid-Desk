@@ -87,6 +87,14 @@ type PositionItem = {
   entryPrice: number | null;
   markPrice: number | null;
   unrealizedPnl: number | null;
+  leverage: number | null;
+  marginMode: "isolated" | "cross" | null;
+  marginUsd: number | null;
+  notionalUsd: number | null;
+  liquidationPrice: number | null;
+  liquidationDistancePct: number | null;
+  roePct: number | null;
+  pnlPct: number | null;
   takeProfitPrice: number | null;
   stopLossPrice: number | null;
 };
@@ -260,6 +268,17 @@ function fmt(value: number | null | undefined, digits = 2): string {
   });
 }
 
+function fmtPct(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(digits)}%`;
+}
+
+function fmtLeverage(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) return "-";
+  return `${Number(value.toFixed(2)).toLocaleString()}x`;
+}
+
 function fmtConfidence(value: number): string {
   if (!Number.isFinite(value)) return "-";
   const normalized = value <= 1 ? value * 100 : value;
@@ -277,6 +296,25 @@ function numericEqual(a: number | null | undefined, b: number | null | undefined
   if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
   const tolerance = Math.max(1e-8, Math.abs(a) * 1e-8, Math.abs(b) * 1e-8);
   return Math.abs(a - b) <= tolerance;
+}
+
+function toFiniteOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toPositiveOrNull(value: unknown): number | null {
+  const parsed = toFiniteOrNull(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function normalizePositionMarginMode(value: unknown): "isolated" | "cross" | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized.includes("isolated") || normalized === "1") return "isolated";
+  if (normalized.includes("cross") || normalized === "2") return "cross";
+  return null;
 }
 
 function normalizeDeskSymbol(value: string | null | undefined): string {
@@ -305,8 +343,56 @@ function filterRowsForDeskSymbol<T extends { symbol?: string | null }>(
   return rows.filter((row) => normalizeDeskSymbol(row.symbol) === target);
 }
 
-function normalizeDeskPositions(rows: PositionItem[]): PositionItem[] {
-  return rows.filter((row) => Number.isFinite(row.size) && row.size > 0);
+function normalizeDeskPositions(rows: unknown[]): PositionItem[] {
+  return rows
+    .map((raw) => {
+      const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+      const side: PositionItem["side"] = row.side === "short" ? "short" : "long";
+      const size = toFiniteOrNull(row.size) ?? 0;
+      const entryPrice = toFiniteOrNull(row.entryPrice);
+      const markPrice = toFiniteOrNull(row.markPrice);
+      const unrealizedPnl = toFiniteOrNull(row.unrealizedPnl);
+      const leverage = toPositiveOrNull(row.leverage);
+      const notionalUsd = toPositiveOrNull(row.notionalUsd) ?? (
+        size > 0 && (markPrice ?? entryPrice) !== null ? size * ((markPrice ?? entryPrice) as number) : null
+      );
+      const marginUsd = toPositiveOrNull(row.marginUsd) ?? (
+        notionalUsd !== null && leverage !== null ? notionalUsd / leverage : null
+      );
+      const liquidationPrice = toPositiveOrNull(row.liquidationPrice);
+      const liquidationDistancePct = toFiniteOrNull(row.liquidationDistancePct) ?? (
+        liquidationPrice !== null && markPrice !== null && markPrice > 0
+          ? side === "short"
+            ? ((liquidationPrice - markPrice) / markPrice) * 100
+            : ((markPrice - liquidationPrice) / markPrice) * 100
+          : null
+      );
+      const pnlPct = toFiniteOrNull(row.pnlPct) ?? (
+        unrealizedPnl !== null && notionalUsd !== null && notionalUsd > 0 ? (unrealizedPnl / notionalUsd) * 100 : null
+      );
+      const roePct = toFiniteOrNull(row.roePct) ?? (
+        unrealizedPnl !== null && marginUsd !== null && marginUsd > 0 ? (unrealizedPnl / marginUsd) * 100 : null
+      );
+      return {
+        symbol: String(row.symbol ?? ""),
+        side,
+        size,
+        entryPrice,
+        markPrice,
+        unrealizedPnl,
+        leverage,
+        marginMode: normalizePositionMarginMode(row.marginMode),
+        marginUsd,
+        notionalUsd,
+        liquidationPrice,
+        liquidationDistancePct,
+        roePct,
+        pnlPct,
+        takeProfitPrice: toFiniteOrNull(row.takeProfitPrice),
+        stopLossPrice: toFiniteOrNull(row.stopLossPrice)
+      };
+    })
+    .filter((row) => row.symbol.length > 0 && Number.isFinite(row.size) && row.size > 0);
 }
 
 function normalizeDeskOpenOrders(rows: OpenOrderItem[], symbol: string): OpenOrderItem[] {
@@ -2462,6 +2548,13 @@ function TradePageContent() {
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.size")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.entry")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.mark")}</th>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.leverage")}</th>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.notional")}</th>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.margin")}</th>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.roe")}</th>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.pnlPct")}</th>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.liquidation")}</th>
+                      <th style={{ padding: "8px 6px" }}>{t("positions.columns.liqDistance")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.stopLoss")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.takeProfit")}</th>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.pnl")}</th>
@@ -2471,7 +2564,7 @@ function TradePageContent() {
                   <tbody>
                     {positions.length === 0 ? (
                       <tr>
-                        <td colSpan={9} style={{ padding: 10, color: "var(--muted)" }}>{t("positions.empty")}</td>
+                        <td colSpan={16} style={{ padding: 10, color: "var(--muted)" }}>{t("positions.empty")}</td>
                       </tr>
                     ) : (
                       positions.map((position, index) => {
@@ -2494,6 +2587,13 @@ function TradePageContent() {
                             <td style={{ padding: "8px 6px" }}>{fmt(position.size, 6)}</td>
                             <td style={{ padding: "8px 6px" }}>{fmt(position.entryPrice, 4)}</td>
                             <td style={{ padding: "8px 6px" }}>{fmt(position.markPrice, 4)}</td>
+                            <td style={{ padding: "8px 6px" }}>{fmtLeverage(position.leverage)}</td>
+                            <td style={{ padding: "8px 6px" }}>{fmt(position.notionalUsd, 2)}</td>
+                            <td style={{ padding: "8px 6px" }}>{fmt(position.marginUsd, 2)}</td>
+                            <td style={{ padding: "8px 6px", color: (position.roePct ?? 0) >= 0 ? "#34d399" : "#f87171" }}>{fmtPct(position.roePct, 2)}</td>
+                            <td style={{ padding: "8px 6px", color: (position.pnlPct ?? 0) >= 0 ? "#34d399" : "#f87171" }}>{fmtPct(position.pnlPct, 2)}</td>
+                            <td style={{ padding: "8px 6px" }}>{fmt(position.liquidationPrice, 4)}</td>
+                            <td style={{ padding: "8px 6px", color: (position.liquidationDistancePct ?? 0) > 0 ? "inherit" : "#f87171" }}>{fmtPct(position.liquidationDistancePct, 2)}</td>
                             <td style={{ padding: "8px 6px" }}>
                               {isSpotMode ? (
                                 "-"
@@ -2664,6 +2764,22 @@ function TradePageContent() {
                           <div className="tradeMobileRow"><span>{t("positions.columns.size")}</span><strong>{fmt(position.size, 6)}</strong></div>
                           <div className="tradeMobileRow"><span>{t("positions.columns.entry")}</span><strong>{fmt(position.entryPrice, 4)}</strong></div>
                           <div className="tradeMobileRow"><span>{t("positions.columns.mark")}</span><strong>{fmt(position.markPrice, 4)}</strong></div>
+                          <div className="tradeMobileRow"><span>{t("positions.columns.leverage")}</span><strong>{fmtLeverage(position.leverage)}</strong></div>
+                          <div className="tradeMobileRow"><span>{t("positions.columns.notional")}</span><strong>{fmt(position.notionalUsd, 2)}</strong></div>
+                          <div className="tradeMobileRow"><span>{t("positions.columns.margin")}</span><strong>{fmt(position.marginUsd, 2)}</strong></div>
+                          <div className="tradeMobileRow">
+                            <span>{t("positions.columns.roe")}</span>
+                            <strong style={{ color: (position.roePct ?? 0) >= 0 ? "#34d399" : "#f87171" }}>{fmtPct(position.roePct, 2)}</strong>
+                          </div>
+                          <div className="tradeMobileRow">
+                            <span>{t("positions.columns.pnlPct")}</span>
+                            <strong style={{ color: (position.pnlPct ?? 0) >= 0 ? "#34d399" : "#f87171" }}>{fmtPct(position.pnlPct, 2)}</strong>
+                          </div>
+                          <div className="tradeMobileRow"><span>{t("positions.columns.liquidation")}</span><strong>{fmt(position.liquidationPrice, 4)}</strong></div>
+                          <div className="tradeMobileRow">
+                            <span>{t("positions.columns.liqDistance")}</span>
+                            <strong style={{ color: (position.liquidationDistancePct ?? 0) > 0 ? "inherit" : "#f87171" }}>{fmtPct(position.liquidationDistancePct, 2)}</strong>
+                          </div>
                           <div className="tradeMobileRow">
                             <span>{t("positions.columns.stopLoss")}</span>
                             {draft ? (

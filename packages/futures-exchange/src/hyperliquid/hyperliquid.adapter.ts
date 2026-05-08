@@ -25,6 +25,11 @@ import type {
   PositionTpSlParams
 } from "../core/order-normalization.types.js";
 import {
+  buildPositionRiskMetrics,
+  normalizePositionMarginMode,
+  pickFiniteNumber
+} from "../core/position-metrics.js";
+import {
   HYPERLIQUID_DEFAULT_MARGIN_COIN,
   HYPERLIQUID_DEFAULT_PRODUCT_TYPE,
   HYPERLIQUID_ZERO_ADDRESS,
@@ -140,15 +145,47 @@ function mapPosition(row: {
   avgOpenPrice?: string;
   markPrice?: string;
   unrealizedPL?: string;
+  leverage?: string;
+  marginMode?: string;
+  marginUsed?: string;
+  positionValue?: string;
+  liquidationPrice?: string;
+  returnOnEquity?: string;
 }): FuturesPosition {
   const coin = parseCoinFromAnySymbol(String(row.symbol ?? ""));
+  const side = toPositionSide(row.holdSide);
+  const size = toNumber(row.total) ?? 0;
+  const entryPrice = toNumber(row.avgOpenPrice) ?? 0;
+  const markPrice = toNumber(row.markPrice) ?? undefined;
+  const unrealizedPnl = toNumber(row.unrealizedPL) ?? undefined;
+  const riskMetrics = buildPositionRiskMetrics({
+    side,
+    size,
+    entryPrice,
+    markPrice,
+    unrealizedPnl,
+    leverage: pickFiniteNumber(row.leverage),
+    marginMode: normalizePositionMarginMode(row.marginMode),
+    marginUsd: pickFiniteNumber(row.marginUsed),
+    notionalUsd: pickFiniteNumber(row.positionValue),
+    liquidationPrice: pickFiniteNumber(row.liquidationPrice),
+    roePct: pickFiniteNumber(row.returnOnEquity)
+  });
   return {
     symbol: coinToCanonicalSymbol(coin),
-    side: toPositionSide(row.holdSide),
-    size: toNumber(row.total) ?? 0,
-    entryPrice: toNumber(row.avgOpenPrice) ?? 0,
-    markPrice: toNumber(row.markPrice) ?? undefined,
-    unrealizedPnl: toNumber(row.unrealizedPL) ?? undefined
+    side,
+    size,
+    entryPrice,
+    markPrice,
+    unrealizedPnl,
+    leverage: riskMetrics.leverage ?? undefined,
+    marginMode: riskMetrics.marginMode ?? undefined,
+    marginUsd: riskMetrics.marginUsd ?? undefined,
+    notionalUsd: riskMetrics.notionalUsd ?? undefined,
+    liquidationPrice: riskMetrics.liquidationPrice ?? undefined,
+    liquidationDistancePct: riskMetrics.liquidationDistancePct ?? undefined,
+    roePct: riskMetrics.roePct ?? undefined,
+    pnlPct: riskMetrics.pnlPct ?? undefined
   };
 }
 
@@ -592,6 +629,14 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
         entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null,
         markPrice: Number.isFinite(Number(row.markPrice)) ? Number(row.markPrice) : null,
         unrealizedPnl: Number.isFinite(Number(row.unrealizedPnl)) ? Number(row.unrealizedPnl) : null,
+        leverage: row.leverage ?? null,
+        marginMode: row.marginMode ?? null,
+        marginUsd: row.marginUsd ?? null,
+        notionalUsd: row.notionalUsd ?? null,
+        liquidationPrice: row.liquidationPrice ?? null,
+        liquidationDistancePct: row.liquidationDistancePct ?? null,
+        roePct: row.roePct ?? null,
+        pnlPct: row.pnlPct ?? null,
         takeProfitPrice: null,
         stopLossPrice: null
       }));

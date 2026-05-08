@@ -308,6 +308,15 @@ test("mobile dashboard includes running and errored bots plus open positions", a
         side: "long",
         size: 1,
         entryPrice: 100,
+        markPrice: 102,
+        leverage: 5,
+        marginMode: "isolated",
+        marginUsd: 20.4,
+        notionalUsd: 102,
+        liquidationPrice: 80,
+        liquidationDistancePct: 21.568627450980394,
+        roePct: 9.803921568627452,
+        pnlPct: 1.9607843137254901,
         stopLossPrice: 95,
         takeProfitPrice: 110,
         unrealizedPnl: 2
@@ -323,9 +332,82 @@ test("mobile dashboard includes running and errored bots plus open positions", a
   assert.equal(res.body?.bots?.items?.[0]?.trade?.openPnlUsd, 2);
   assert.equal(res.body?.positions?.items?.length, 1);
   assert.equal(res.body?.positions?.items?.[0]?.symbol, "BTCUSDT");
+  assert.equal(res.body?.positions?.items?.[0]?.leverage, 5);
+  assert.equal(res.body?.positions?.items?.[0]?.marginUsd, 20.4);
+  assert.equal(res.body?.positions?.items?.[0]?.liquidationPrice, 80);
   assert.equal(res.body?.predictions?.summary?.up, 1);
   assert.equal(res.body?.predictions?.items?.[0]?.signalMode, "ai_only");
   assert.equal(res.body?.totals?.totalEquity, 600);
+  assert.equal(res.body?.accounts?.[0]?.status, "connected");
+});
+
+test("mobile dashboard uses exchange sync data for account status", async () => {
+  const app = createFakeApp();
+  registerMobileDashboardRoutes(app as any, createBaseDeps({
+    db: {
+      exchangeAccount: {
+        async findMany() {
+          return [
+            {
+              id: "acc_synced",
+              exchange: "hyperliquid",
+              label: "Hyperliquid",
+              createdAt: new Date("2026-05-06T08:00:00.000Z"),
+              lastUsedAt: new Date("2026-05-06T10:00:00.000Z"),
+              spotBudgetTotal: null,
+              spotBudgetAvailable: null,
+              futuresBudgetEquity: 1000,
+              futuresBudgetAvailableMargin: 900,
+              pnlTodayUsd: 12,
+              lastSyncErrorAt: null,
+              lastSyncErrorMessage: null
+            },
+            {
+              id: "acc_error",
+              exchange: "bitget",
+              label: "Bitget",
+              createdAt: new Date("2026-05-06T07:00:00.000Z"),
+              lastUsedAt: new Date("2026-05-06T09:00:00.000Z"),
+              spotBudgetTotal: null,
+              spotBudgetAvailable: null,
+              futuresBudgetEquity: 500,
+              futuresBudgetAvailableMargin: 400,
+              pnlTodayUsd: 0,
+              lastSyncErrorAt: new Date("2026-05-06T09:30:00.000Z"),
+              lastSyncErrorMessage: "sync failed"
+            },
+            {
+              id: "acc_unknown",
+              exchange: "binance",
+              label: "Binance",
+              createdAt: new Date("2026-05-06T06:00:00.000Z"),
+              lastUsedAt: null,
+              spotBudgetTotal: null,
+              spotBudgetAvailable: null,
+              futuresBudgetEquity: null,
+              futuresBudgetAvailableMargin: null,
+              pnlTodayUsd: null,
+              lastSyncErrorAt: null,
+              lastSyncErrorMessage: null
+            }
+          ];
+        }
+      },
+      bot: { async findMany() { return []; } },
+      botTradeState: { async findMany() { return []; } },
+      botTradeHistory: { async findMany() { return []; } },
+      riskEvent: { async findMany() { return []; } },
+      predictionState: { async findMany() { return []; } }
+    }
+  }) as any);
+
+  const res = createMockRes();
+  await getFinalHandler(app)({}, res);
+
+  const statuses = new Map((res.body?.accounts ?? []).map((account: any) => [account.exchangeAccountId, account.status]));
+  assert.equal(statuses.get("acc_synced"), "connected");
+  assert.equal(statuses.get("acc_error"), "error");
+  assert.equal(statuses.get("acc_unknown"), "unknown");
 });
 
 test("mobile dashboard filters inactive and archived grid bots in bot queries", async () => {

@@ -100,6 +100,14 @@ export type BitgetPositionRaw = {
   stopLoss?: string;
   leverage?: string;
   marginMode?: string;
+  marginSize?: string;
+  margin?: string;
+  notionalUsd?: string;
+  positionValue?: string;
+  liquidationPrice?: string;
+  liqPrice?: string;
+  marginRatio?: string;
+  returnOnEquity?: string;
 };
 
 export type BitgetOrderPlaceRequest = {

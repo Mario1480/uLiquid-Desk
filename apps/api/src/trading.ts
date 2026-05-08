@@ -227,6 +227,14 @@ export type NormalizedPosition = {
   entryPrice: number | null;
   markPrice: number | null;
   unrealizedPnl: number | null;
+  leverage: number | null;
+  marginMode: "isolated" | "cross" | null;
+  marginUsd: number | null;
+  notionalUsd: number | null;
+  liquidationPrice: number | null;
+  liquidationDistancePct: number | null;
+  roePct: number | null;
+  pnlPct: number | null;
   takeProfitPrice: number | null;
   stopLossPrice: number | null;
 };
@@ -809,6 +817,76 @@ function getNumber(record: Record<string, unknown> | null, keys: string[]): numb
     if (value !== null) return value;
   }
   return null;
+}
+
+function pickNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = toNumber(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function normalizePositionMarginMode(value: unknown): "isolated" | "cross" | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === "1" || raw.includes("isolated") || raw === "fixed") return "isolated";
+  if (raw === "2" || raw.includes("cross") || raw === "crossed" || raw === "full") return "cross";
+  return null;
+}
+
+function buildPositionRiskFields(input: {
+  side: "long" | "short";
+  size?: number | null;
+  entryPrice?: number | null;
+  markPrice?: number | null;
+  unrealizedPnl?: number | null;
+  leverage?: number | null;
+  marginMode?: "isolated" | "cross" | null;
+  marginUsd?: number | null;
+  notionalUsd?: number | null;
+  liquidationPrice?: number | null;
+  liquidationDistancePct?: number | null;
+  roePct?: number | null;
+  pnlPct?: number | null;
+}) {
+  const leverage = toPositiveNumber(input.leverage);
+  const entryPrice = toPositiveNumber(input.entryPrice);
+  const markPrice = toPositiveNumber(input.markPrice);
+  const size = toPositiveNumber(input.size);
+  const pnl = toNumber(input.unrealizedPnl);
+  const priceForNotional = markPrice ?? entryPrice;
+  const derivedNotional = size !== null && priceForNotional !== null ? size * priceForNotional : null;
+  const notionalUsd = toPositiveNumber(input.notionalUsd) ?? toPositiveNumber(derivedNotional);
+  const marginUsd = toPositiveNumber(input.marginUsd) ?? (
+    notionalUsd !== null && leverage !== null && leverage > 0 ? notionalUsd / leverage : null
+  );
+  const liquidationPrice = toPositiveNumber(input.liquidationPrice);
+  const liquidationDistancePct = toNumber(input.liquidationDistancePct) ?? (
+    liquidationPrice !== null && markPrice !== null && markPrice > 0
+      ? input.side === "short"
+        ? ((liquidationPrice - markPrice) / markPrice) * 100
+        : ((markPrice - liquidationPrice) / markPrice) * 100
+      : null
+  );
+  const pnlPct = toNumber(input.pnlPct) ?? (
+    pnl !== null && notionalUsd !== null && notionalUsd > 0 ? (pnl / notionalUsd) * 100 : null
+  );
+  const rawRoe = toNumber(input.roePct);
+  const roePct = rawRoe !== null
+    ? Math.abs(rawRoe) <= 1 ? rawRoe * 100 : rawRoe
+    : (pnl !== null && marginUsd !== null && marginUsd > 0 ? (pnl / marginUsd) * 100 : null);
+
+  return {
+    leverage,
+    marginMode: input.marginMode ?? null,
+    marginUsd,
+    notionalUsd,
+    liquidationPrice,
+    liquidationDistancePct,
+    roePct,
+    pnlPct
+  };
 }
 
 function normalizeCanonicalSymbol(symbol: string): string {
@@ -1423,13 +1501,34 @@ export async function listPositions(
               ? "long"
               : "short";
       const size = Math.abs(signedQty ?? total ?? available ?? 0);
+      const entryPrice = toNumber(rowRecord.openPriceAvg ?? row.avgOpenPrice ?? rowRecord.openAvgPrice ?? rowRecord.holdAvgPrice ?? rowRecord.avgPrice);
+      const markPrice = toNumber(row.markPrice ?? rowRecord.fairPrice);
+      const unrealizedPnl = toNumber(row.unrealizedPL ?? rowRecord.unrealizedPnl);
+      const marginMode =
+        normalizePositionMarginMode(rowRecord.marginMode ?? rowRecord.marginType ?? rowRecord.openType) ??
+        (String(rowRecord.isIsolated ?? "").trim().toLowerCase() === "true" ? "isolated" : null);
+      const riskFields = buildPositionRiskFields({
+        side,
+        size,
+        entryPrice,
+        markPrice,
+        unrealizedPnl,
+        leverage: pickNumber(rowRecord.leverage, rowRecord.leverageValue),
+        marginMode,
+        marginUsd: pickNumber(rowRecord.marginUsd, rowRecord.marginSize, rowRecord.margin, rowRecord.positionMargin, rowRecord.isolatedMargin, rowRecord.isolatedWallet, rowRecord.marginUsed),
+        notionalUsd: pickNumber(rowRecord.notionalUsd, rowRecord.notional, rowRecord.positionValue, rowRecord.notionalValue),
+        liquidationPrice: pickNumber(rowRecord.liquidationPrice, rowRecord.liquidationPx, rowRecord.liquidatePrice, rowRecord.liqPrice),
+        roePct: pickNumber(rowRecord.roePct, rowRecord.roe, rowRecord.returnOnEquity),
+        pnlPct: pickNumber(rowRecord.pnlPct)
+      });
       return {
         symbol: parsedSymbol,
         side,
         size,
-        entryPrice: toNumber(rowRecord.openPriceAvg ?? row.avgOpenPrice ?? rowRecord.openAvgPrice ?? rowRecord.holdAvgPrice ?? rowRecord.avgPrice),
-        markPrice: toNumber(row.markPrice ?? rowRecord.fairPrice),
-        unrealizedPnl: toNumber(row.unrealizedPL ?? rowRecord.unrealizedPnl),
+        entryPrice,
+        markPrice,
+        unrealizedPnl,
+        ...riskFields,
         takeProfitPrice: toNumber(rowRecord.takeProfit ?? rowRecord.presetStopSurplusPrice),
         stopLossPrice: toNumber(rowRecord.stopLoss ?? rowRecord.presetStopLossPrice)
       } satisfies NormalizedPosition;
@@ -2303,6 +2402,13 @@ export async function listPaperPositions(
         : row.side === "long"
           ? (markPrice - row.entryPrice) * row.qty
           : (row.entryPrice - markPrice) * row.qty;
+    const riskFields = buildPositionRiskFields({
+      side: row.side,
+      size: row.qty,
+      entryPrice: row.entryPrice,
+      markPrice,
+      unrealizedPnl
+    });
     return {
       symbol: row.symbol,
       side: row.side,
@@ -2310,6 +2416,7 @@ export async function listPaperPositions(
       entryPrice: row.entryPrice,
       markPrice,
       unrealizedPnl,
+      ...riskFields,
       takeProfitPrice: row.takeProfitPrice,
       stopLossPrice: row.stopLossPrice
     };
@@ -2947,6 +3054,13 @@ export async function listPaperSpotPositions(
       markPrice === null
         ? null
         : Number(((markPrice - row.entryPrice) * row.qty).toFixed(8));
+    const riskFields = buildPositionRiskFields({
+      side: "long",
+      size: row.qty,
+      entryPrice: row.entryPrice,
+      markPrice,
+      unrealizedPnl
+    });
     out.push({
       symbol: row.symbol,
       side: "long",
@@ -2954,6 +3068,7 @@ export async function listPaperSpotPositions(
       entryPrice: row.entryPrice,
       markPrice,
       unrealizedPnl,
+      ...riskFields,
       takeProfitPrice: null,
       stopLossPrice: null
     });

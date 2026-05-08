@@ -217,6 +217,19 @@ export function toSpotPositionFromHolding(params: {
     entryPrice: Number(params.entryPrice.toFixed(8)),
     markPrice: params.markPrice,
     unrealizedPnl,
+    leverage: null,
+    marginMode: null,
+    marginUsd: null,
+    notionalUsd: params.markPrice !== null
+      ? Number((params.qty * params.markPrice).toFixed(8))
+      : null,
+    liquidationPrice: null,
+    liquidationDistancePct: null,
+    roePct: null,
+    pnlPct:
+      params.markPrice !== null && params.entryPrice > 0
+        ? Number((((params.markPrice - params.entryPrice) / params.entryPrice) * 100).toFixed(4))
+        : null,
     takeProfitPrice: null,
     stopLossPrice: null
   };

@@ -130,6 +130,25 @@ function roundNumber(value: number): number {
   return Number(value.toFixed(6));
 }
 
+function toPositionMarginMode(value: unknown): "isolated" | "cross" | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized.includes("isolated") || normalized === "1") return "isolated";
+  if (normalized.includes("cross") || normalized === "2") return "cross";
+  return null;
+}
+
+function hasSyncedAccountData(account: any, lastRuntimeAt: Date | null): boolean {
+  if (lastRuntimeAt) return true;
+  if (account.lastUsedAt instanceof Date) return true;
+  return [
+    account.spotBudgetTotal,
+    account.spotBudgetAvailable,
+    account.futuresBudgetEquity,
+    account.futuresBudgetAvailableMargin,
+    account.pnlTodayUsd
+  ].some((value) => value !== null && value !== undefined);
+}
+
 function createEmptyTotals() {
   return {
     totalEquity: 0,
@@ -275,12 +294,14 @@ async function readAccountsAndTotals(deps: MobileDashboardRoutesDeps, userId: st
     const spotTotal = deps.toFiniteNumber(account.spotBudgetTotal);
     const spotAvailable = deps.toFiniteNumber(account.spotBudgetAvailable);
     const pnlTodayUsd = deps.toFiniteNumber(account.pnlTodayUsd) ?? 0;
+    const hasSyncError = Boolean(account.lastSyncErrorAt || account.lastSyncErrorMessage);
+    const hasSyncedData = hasSyncedAccountData(account, row?.lastRuntimeAt ?? null);
 
     return {
       exchangeAccountId: String(account.id),
       exchange,
       label: String(account.label ?? "").trim() || exchange.toUpperCase(),
-      status: isPaper ? "connected" : row?.lastRuntimeAt ? "connected" : "unknown",
+      status: hasSyncError ? "error" : (isPaper || hasSyncedData ? "connected" : "unknown"),
       lastSyncAt: toIso(row?.lastRuntimeAt ?? account.lastUsedAt),
       spotBudget:
         spotTotal !== null || spotAvailable !== null
@@ -568,6 +589,15 @@ async function readPositions(deps: MobileDashboardRoutesDeps, userId: string) {
             side: row.side === "short" ? "short" : "long",
             size: Number(row.size ?? 0),
             entryPrice: deps.toFiniteNumber(row.entryPrice),
+            markPrice: deps.toFiniteNumber(row.markPrice),
+            leverage: deps.toFiniteNumber(row.leverage),
+            marginMode: toPositionMarginMode(row.marginMode),
+            marginUsd: deps.toFiniteNumber(row.marginUsd),
+            notionalUsd: deps.toFiniteNumber(row.notionalUsd),
+            liquidationPrice: deps.toFiniteNumber(row.liquidationPrice),
+            liquidationDistancePct: deps.toFiniteNumber(row.liquidationDistancePct),
+            roePct: deps.toFiniteNumber(row.roePct),
+            pnlPct: deps.toFiniteNumber(row.pnlPct),
             stopLossPrice: deps.toFiniteNumber(row.stopLossPrice),
             takeProfitPrice: deps.toFiniteNumber(row.takeProfitPrice),
             unrealizedPnl: deps.toFiniteNumber(row.unrealizedPnl)
@@ -588,6 +618,15 @@ async function readPositions(deps: MobileDashboardRoutesDeps, userId: string) {
           side: row.side === "short" ? "short" : "long",
           size: Number(row.size ?? 0),
           entryPrice: deps.toFiniteNumber(row.entryPrice),
+          markPrice: deps.toFiniteNumber(row.markPrice),
+          leverage: deps.toFiniteNumber(row.leverage),
+          marginMode: toPositionMarginMode(row.marginMode),
+          marginUsd: deps.toFiniteNumber(row.marginUsd),
+          notionalUsd: deps.toFiniteNumber(row.notionalUsd),
+          liquidationPrice: deps.toFiniteNumber(row.liquidationPrice),
+          liquidationDistancePct: deps.toFiniteNumber(row.liquidationDistancePct),
+          roePct: deps.toFiniteNumber(row.roePct),
+          pnlPct: deps.toFiniteNumber(row.pnlPct),
           stopLossPrice: deps.toFiniteNumber(row.stopLossPrice),
           takeProfitPrice: deps.toFiniteNumber(row.takeProfitPrice),
           unrealizedPnl: deps.toFiniteNumber(row.unrealizedPnl)

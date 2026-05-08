@@ -159,6 +159,8 @@ function createDeps(overrides: Record<string, any> = {}) {
     ignoreMissingTable: async (read: any) => read(),
     normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
     toFiniteNumber: (value: unknown) => {
+      if (value === null || value === undefined) return null;
+      if (typeof value === "string" && value.trim() === "") return null;
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : null;
     },
@@ -273,4 +275,57 @@ test("mobile bot health flags stale running bots and degraded predictions", asyn
   assert.equal(res.body?.summary?.running, 1);
   assert.equal(res.body?.items?.[0]?.runtime?.stale, true);
   assert.equal(res.body?.items?.[0]?.warnings.includes("prediction_degraded"), true);
+});
+
+test("mobile position risk prefers exchange leverage margin and liquidation fields", async () => {
+  const app = createFakeApp();
+  const deps = createDeps({
+    resolveMarketDataTradingAccount: async (_userId: string, exchangeAccountId: string) => ({
+      selectedAccount: { id: exchangeAccountId, exchange: "bitget" },
+      marketDataAccount: { id: exchangeAccountId, exchange: "bitget" }
+    }),
+    listPositions: async () => [
+      {
+        symbol: "BNBUSDT",
+        side: "long",
+        size: 5,
+        entryPrice: 643.53,
+        markPrice: 643.99,
+        unrealizedPnl: 2.29,
+        leverage: 5,
+        marginMode: "isolated",
+        marginUsd: 643.99,
+        notionalUsd: 3219.95,
+        liquidationPrice: 522.5,
+        liquidationDistancePct: 18.8652,
+        roePct: 0.3556,
+        pnlPct: 0.0711,
+        stopLossPrice: null,
+        takeProfitPrice: null
+      }
+    ]
+  });
+  deps.state.accounts.push({ id: "acc_live", exchange: "bitget", label: "Bitget Main" });
+  deps.state.bots.push({
+    id: "bot_1",
+    symbol: "BNBUSDT",
+    exchangeAccountId: "acc_live",
+    status: "running",
+    futuresConfig: { leverage: 2 }
+  });
+  registerMobileMonitoringRoutes(app as any, deps as any);
+
+  const handler = getFinalHandler(app, "get", "/mobile/position-risk");
+  const res = createMockRes();
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body.items[0].leverage, 5);
+  assert.equal(res.body.items[0].marginMode, "isolated");
+  assert.equal(res.body.items[0].marginUsd, 643.99);
+  assert.equal(res.body.items[0].liquidationPrice, 522.5);
+  assert.equal(res.body.items[0].liquidationDistancePct, 18.8652);
+  assert.equal(res.body.items[0].roePct, 0.3556);
+  assert.equal(res.body.items[0].pnlPct, 0.0711);
 });

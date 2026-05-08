@@ -95,6 +95,13 @@ function normalizeSymbolInput(value: unknown): string {
     .slice(0, 40);
 }
 
+function normalizePositionMarginMode(value: unknown): "isolated" | "cross" | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw.includes("isolated") || raw === "1") return "isolated";
+  if (raw.includes("cross") || raw === "2") return "cross";
+  return null;
+}
+
 function normalizeExchangeInput(value: unknown, normalizeExchangeValue: (value: string) => string): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "any";
@@ -480,16 +487,27 @@ async function listPositionRiskItems(deps: MobileMonitoringRoutesDeps, userId: s
         const size = deps.toFiniteNumber(row.size) ?? 0;
         const entryPrice = deps.toFiniteNumber(row.entryPrice);
         const markPrice = deps.toFiniteNumber(row.markPrice) ?? entryPrice;
-        const notionalUsd = markPrice !== null ? Math.abs(size * markPrice) : null;
-        const leverage = leverageByAccountSymbol.get(`${exchangeAccountId}:${symbol}`) ?? null;
-        const marginUsd = notionalUsd !== null && leverage !== null && leverage > 0 ? notionalUsd / leverage : null;
+        const notionalUsd = deps.toFiniteNumber(row.notionalUsd) ?? (markPrice !== null ? Math.abs(size * markPrice) : null);
+        const leverage = deps.toFiniteNumber(row.leverage) ?? leverageByAccountSymbol.get(`${exchangeAccountId}:${symbol}`) ?? null;
+        const marginUsd = deps.toFiniteNumber(row.marginUsd) ?? (
+          notionalUsd !== null && leverage !== null && leverage > 0 ? notionalUsd / leverage : null
+        );
         const unrealizedPnl = deps.toFiniteNumber(row.unrealizedPnl);
-        const roePct = unrealizedPnl !== null && marginUsd !== null && marginUsd > 0
+        const roePct = deps.toFiniteNumber(row.roePct) ?? (unrealizedPnl !== null && marginUsd !== null && marginUsd > 0
           ? round((unrealizedPnl / marginUsd) * 100, 4)
-          : null;
-        const pnlPct = notionalUsd !== null && notionalUsd > 0 && unrealizedPnl !== null
+          : null);
+        const pnlPct = deps.toFiniteNumber(row.pnlPct) ?? (notionalUsd !== null && notionalUsd > 0 && unrealizedPnl !== null
           ? round((unrealizedPnl / notionalUsd) * 100, 4)
-          : null;
+          : null);
+        const side = String(row.side ?? "long").toLowerCase() === "short" ? "short" : "long";
+        const liquidationPrice = deps.toFiniteNumber(row.liquidationPrice ?? row.liqPrice);
+        const liquidationDistancePct = deps.toFiniteNumber(row.liquidationDistancePct) ?? (
+          liquidationPrice !== null && markPrice !== null && markPrice > 0
+            ? round(side === "short"
+              ? ((liquidationPrice - markPrice) / markPrice) * 100
+              : ((markPrice - liquidationPrice) / markPrice) * 100, 4)
+            : null
+        );
         const riskLevel =
           roePct !== null && roePct <= -35
             ? "critical"
@@ -502,20 +520,21 @@ async function listPositionRiskItems(deps: MobileMonitoringRoutesDeps, userId: s
           exchange,
           exchangeLabel,
           symbol,
-          side: String(row.side ?? "long").toLowerCase() === "short" ? "short" : "long",
+          side,
           size,
           entryPrice,
           markPrice,
-          liquidationPrice: deps.toFiniteNumber(row.liquidationPrice ?? row.liqPrice),
+          liquidationPrice,
           stopLossPrice: deps.toFiniteNumber(row.stopLossPrice),
           takeProfitPrice: deps.toFiniteNumber(row.takeProfitPrice),
           unrealizedPnl,
           notionalUsd,
           marginUsd,
           leverage,
+          marginMode: normalizePositionMarginMode(row.marginMode),
           roePct,
           pnlPct,
-          liquidationDistancePct: null,
+          liquidationDistancePct,
           riskLevel
         };
       });

@@ -264,6 +264,14 @@ export async function listBitgetSpotPositions(params: {
   entryPrice: number | null;
   markPrice: number | null;
   unrealizedPnl: null;
+  leverage: null;
+  marginMode: null;
+  marginUsd: null;
+  notionalUsd: number | null;
+  liquidationPrice: null;
+  liquidationDistancePct: null;
+  roePct: null;
+  pnlPct: null;
   takeProfitPrice: null;
   stopLossPrice: null;
 }>> {
@@ -292,6 +300,10 @@ export async function listBitgetSpotPositions(params: {
       markPrice = null;
     }
     const size = Number((Number(row.available ?? 0) + Number(row.frozen ?? row.locked ?? row.lock ?? 0)).toFixed(8));
+    const notionalUsd =
+      markPrice !== null && Number.isFinite(markPrice)
+        ? Number((size * markPrice).toFixed(8))
+        : null;
     return {
       symbol,
       side: "long" as const,
@@ -299,6 +311,14 @@ export async function listBitgetSpotPositions(params: {
       entryPrice: markPrice,
       markPrice,
       unrealizedPnl: null,
+      leverage: null,
+      marginMode: null,
+      marginUsd: null,
+      notionalUsd,
+      liquidationPrice: null,
+      liquidationDistancePct: null,
+      roePct: null,
+      pnlPct: null,
       takeProfitPrice: null,
       stopLossPrice: null
     };

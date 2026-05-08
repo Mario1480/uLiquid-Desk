@@ -30,6 +30,11 @@ import type {
   NormalizedPosition,
   PositionTpSlParams
 } from "../core/order-normalization.types.js";
+import {
+  buildPositionRiskMetrics,
+  normalizePositionMarginMode,
+  pickFiniteNumber
+} from "../core/position-metrics.js";
 import { MexcInvalidParamsError, MexcMaintenanceError } from "./mexc.errors.js";
 import { MexcAccountApi } from "./mexc.account.api.js";
 import { MEXC_DEFAULT_MARGIN_COIN, MEXC_DEFAULT_PRODUCT_TYPE } from "./mexc.constants.js";
@@ -143,15 +148,26 @@ function toMexcOpenType(mode: MarginMode): number {
 
 function mapPosition(raw: MexcPositionRaw): FuturesPosition {
   const size = toNumber(raw.holdVol) ?? toNumber(raw.positionVol) ?? 0;
+  const side = toPositionSide(raw.positionType);
+  const entryPrice = toNumber(raw.openAvgPrice) ?? toNumber(raw.holdAvgPrice) ?? toNumber(raw.avgPrice) ?? 0;
+  const markPrice = toNumber(raw.fairPrice) ?? undefined;
+  const unrealizedPnl = toNumber(raw.unrealizedPnl) ?? undefined;
+  const marginMode = normalizePositionMarginMode(raw.openType ?? raw.marginMode) ?? undefined;
+  const leverage = toNumber(raw.leverage) ?? undefined;
 
   return {
     symbol: toCanonicalFallbackSymbol(String(raw.symbol ?? "")),
-    side: toPositionSide(raw.positionType),
+    side,
     size,
-    entryPrice:
-      toNumber(raw.openAvgPrice) ?? toNumber(raw.holdAvgPrice) ?? toNumber(raw.avgPrice) ?? 0,
-    markPrice: toNumber(raw.fairPrice) ?? undefined,
-    unrealizedPnl: toNumber(raw.unrealizedPnl) ?? undefined
+    entryPrice,
+    markPrice,
+    unrealizedPnl,
+    leverage,
+    marginMode,
+    marginUsd: pickFiniteNumber(raw.positionMargin, raw.marginUsd, raw.margin) ?? undefined,
+    notionalUsd: pickFiniteNumber(raw.positionValue, raw.notionalValue, raw.notional) ?? undefined,
+    liquidationPrice: pickFiniteNumber(raw.liquidatePrice, raw.liquidationPrice, raw.liqPrice) ?? undefined,
+    roePct: pickFiniteNumber(raw.roe, raw.returnOnEquity) ?? undefined
   };
 }
 
@@ -247,6 +263,12 @@ export class MexcFuturesAdapter implements FuturesExchange {
           avgOpenPrice: row.entryPrice,
           markPrice: row.markPrice,
           unrealizedPL: row.unrealizedPnl,
+          leverage: row.leverage,
+          marginMode: row.marginMode,
+          marginUsd: row.marginUsd,
+          notional: row.notionalUsd,
+          liquidationPrice: row.liquidationPrice,
+          roe: row.roePct,
           presetStopSurplusPrice: row.takeProfitPrice,
           presetStopLossPrice: row.stopLossPrice
         }));
@@ -309,9 +331,31 @@ export class MexcFuturesAdapter implements FuturesExchange {
       .map((row) => {
         const position = mapPosition(row);
         const contractSize = this.resolveContractSize(position.symbol);
+        const size = Number((position.size * contractSize).toFixed(8));
+        const riskMetrics = buildPositionRiskMetrics({
+          side: position.side,
+          size,
+          entryPrice: position.entryPrice,
+          markPrice: position.markPrice ?? null,
+          unrealizedPnl: position.unrealizedPnl ?? null,
+          leverage: position.leverage ?? null,
+          marginMode: position.marginMode ?? null,
+          marginUsd: position.marginUsd ?? null,
+          notionalUsd: position.notionalUsd ?? null,
+          liquidationPrice: position.liquidationPrice ?? null,
+          roePct: position.roePct ?? null
+        });
         return {
           ...position,
-          size: Number((position.size * contractSize).toFixed(8))
+          size,
+          leverage: riskMetrics.leverage ?? undefined,
+          marginMode: riskMetrics.marginMode ?? undefined,
+          marginUsd: riskMetrics.marginUsd ?? undefined,
+          notionalUsd: riskMetrics.notionalUsd ?? undefined,
+          liquidationPrice: riskMetrics.liquidationPrice ?? undefined,
+          liquidationDistancePct: riskMetrics.liquidationDistancePct ?? undefined,
+          roePct: riskMetrics.roePct ?? undefined,
+          pnlPct: riskMetrics.pnlPct ?? undefined
         };
       })
       .filter((position) => position.symbol.length > 0 && position.size > 0);
@@ -628,6 +672,20 @@ export class MexcFuturesAdapter implements FuturesExchange {
     return positionsRaw
       .map((row) => {
         const mapped = mapPosition(row);
+        const size = Number((mapped.size * this.resolveContractSize(mapped.symbol)).toFixed(8));
+        const riskMetrics = buildPositionRiskMetrics({
+          side: mapped.side,
+          size,
+          entryPrice: mapped.entryPrice,
+          markPrice: mapped.markPrice ?? null,
+          unrealizedPnl: mapped.unrealizedPnl ?? null,
+          leverage: mapped.leverage ?? null,
+          marginMode: mapped.marginMode ?? null,
+          marginUsd: mapped.marginUsd ?? null,
+          notionalUsd: mapped.notionalUsd ?? null,
+          liquidationPrice: mapped.liquidationPrice ?? null,
+          roePct: mapped.roePct ?? null
+        });
         const positionId = toPositionId(row.positionId);
         const matchingStops = stopOrders.filter((item) => toPositionId(item.positionId) === positionId);
         const takeProfitPrice = pickPositiveNumber(
@@ -639,10 +697,18 @@ export class MexcFuturesAdapter implements FuturesExchange {
         return {
           symbol: mapped.symbol,
           side: mapped.side,
-          size: Number((mapped.size * this.resolveContractSize(mapped.symbol)).toFixed(8)),
+          size,
           entryPrice: mapped.entryPrice,
           markPrice: mapped.markPrice ?? null,
           unrealizedPnl: mapped.unrealizedPnl ?? null,
+          leverage: riskMetrics.leverage,
+          marginMode: riskMetrics.marginMode,
+          marginUsd: riskMetrics.marginUsd,
+          notionalUsd: riskMetrics.notionalUsd,
+          liquidationPrice: riskMetrics.liquidationPrice,
+          liquidationDistancePct: riskMetrics.liquidationDistancePct,
+          roePct: riskMetrics.roePct,
+          pnlPct: riskMetrics.pnlPct,
           takeProfitPrice,
           stopLossPrice
         } satisfies NormalizedPosition;

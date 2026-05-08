@@ -68,6 +68,14 @@ export type NormalizedPosition = {
   entryPrice: number | null;
   markPrice: number | null;
   unrealizedPnl: number | null;
+  leverage: number | null;
+  marginMode: MarginMode | null;
+  marginUsd: number | null;
+  notionalUsd: number | null;
+  liquidationPrice: number | null;
+  liquidationDistancePct: number | null;
+  roePct: number | null;
+  pnlPct: number | null;
   takeProfitPrice: number | null;
   stopLossPrice: number | null;
 };

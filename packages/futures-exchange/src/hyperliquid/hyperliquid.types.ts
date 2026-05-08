@@ -78,6 +78,10 @@ export type HyperliquidPositionRaw = {
   unrealizedPL?: string;
   leverage?: string;
   marginMode?: string;
+  marginUsed?: string;
+  positionValue?: string;
+  liquidationPrice?: string;
+  returnOnEquity?: string;
   reduceOnly?: boolean;
 };
 
