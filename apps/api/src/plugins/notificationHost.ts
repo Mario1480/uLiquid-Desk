@@ -237,6 +237,11 @@ function toApiNotificationEvent<TType extends ApiNotificationType>(
     "prediction.tradable": "Tradable prediction detected",
     "prediction.market_analysis_update": "Market analysis update",
     "prediction.outcome": "Prediction outcome",
+    "bot.error": "Bot error",
+    "account.margin_warning": "Account margin warning",
+    "position.opened": "Position opened",
+    "position.pnl_move": "Position PnL movement",
+    "calendar.high_impact": "High impact calendar event",
     "manual_trading.error": "Manual trading error",
     "vault.agent_low_hype": "BotVault agent wallet low on HYPE"
   };
@@ -245,6 +250,11 @@ function toApiNotificationEvent<TType extends ApiNotificationType>(
     "prediction.tradable": "trade",
     "prediction.market_analysis_update": "trade",
     "prediction.outcome": "trade",
+    "bot.error": "error",
+    "account.margin_warning": "risk",
+    "position.opened": "trade",
+    "position.pnl_move": "risk",
+    "calendar.high_impact": "risk",
     "manual_trading.error": "error",
     "vault.agent_low_hype": "risk"
   };
@@ -253,6 +263,11 @@ function toApiNotificationEvent<TType extends ApiNotificationType>(
     "prediction.tradable": "info",
     "prediction.market_analysis_update": "info",
     "prediction.outcome": "info",
+    "bot.error": "error",
+    "account.margin_warning": "warn",
+    "position.opened": "info",
+    "position.pnl_move": "warn",
+    "calendar.high_impact": "warn",
     "manual_trading.error": "error",
     "vault.agent_low_hype": "info"
   };

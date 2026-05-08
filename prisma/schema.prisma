@@ -674,6 +674,7 @@ model User {
   siweNonces                           SiweNonce[]
   onchainActions                       OnchainAction[]
   mobilePushTokens                      MobilePushToken[]
+  mobileWatchlistItems                  MobileWatchlistItem[]
 }
 
 model TelegramLinkSession {
@@ -714,6 +715,23 @@ model MobilePushToken {
   @@index([userId, enabled, revokedAt], map: "mobile_push_tokens_user_enabled_idx")
   @@index([environment, bundleId], map: "mobile_push_tokens_env_bundle_idx")
   @@map("mobile_push_tokens")
+}
+
+model MobileWatchlistItem {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  symbol     String
+  marketType String   @default("perp") @map("market_type")
+  exchange   String   @default("any")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, symbol, marketType, exchange], map: "mobile_watchlist_items_user_symbol_market_exchange_key")
+  @@index([userId, sortOrder], map: "mobile_watchlist_items_user_sort_idx")
+  @@map("mobile_watchlist_items")
 }
 
 model AffiliateProfile {

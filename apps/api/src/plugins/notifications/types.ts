@@ -65,10 +65,30 @@ export type PredictionOutcomeNotificationPayload = {
   tags?: string[];
 };
 
+export type MobileMonitoringNotificationPayload = {
+  userId: string;
+  title: string;
+  message: string;
+  severity?: "info" | "warn" | "error" | "critical";
+  botId?: string | null;
+  exchange?: string | null;
+  exchangeAccountId?: string | null;
+  symbol?: string | null;
+  routeTab?: "dashboard" | "bots" | "positions" | "predictions" | "performance" | "news";
+  routeId?: string | null;
+  requestId?: string | null;
+  tags?: string[];
+};
+
 export type ApiNotificationType =
   | "prediction.tradable"
   | "prediction.market_analysis_update"
   | "prediction.outcome"
+  | "bot.error"
+  | "account.margin_warning"
+  | "position.opened"
+  | "position.pnl_move"
+  | "calendar.high_impact"
   | "manual_trading.error"
   | "vault.agent_low_hype";
 
@@ -76,6 +96,11 @@ export type ApiNotificationPayloadMap = {
   "prediction.tradable": PredictionTradableNotificationPayload;
   "prediction.market_analysis_update": MarketAnalysisUpdateNotificationPayload;
   "prediction.outcome": PredictionOutcomeNotificationPayload;
+  "bot.error": MobileMonitoringNotificationPayload;
+  "account.margin_warning": MobileMonitoringNotificationPayload;
+  "position.opened": MobileMonitoringNotificationPayload;
+  "position.pnl_move": MobileMonitoringNotificationPayload;
+  "calendar.high_impact": MobileMonitoringNotificationPayload;
   "manual_trading.error": {
     userId: string;
     code: string;
@@ -113,6 +138,31 @@ export type ApiNotificationEvent =
       source: "api";
       type: "prediction.outcome";
       payload: ApiNotificationPayloadMap["prediction.outcome"];
+    })
+  | (NotificationEventEnvelope & {
+      source: "api";
+      type: "bot.error";
+      payload: ApiNotificationPayloadMap["bot.error"];
+    })
+  | (NotificationEventEnvelope & {
+      source: "api";
+      type: "account.margin_warning";
+      payload: ApiNotificationPayloadMap["account.margin_warning"];
+    })
+  | (NotificationEventEnvelope & {
+      source: "api";
+      type: "position.opened";
+      payload: ApiNotificationPayloadMap["position.opened"];
+    })
+  | (NotificationEventEnvelope & {
+      source: "api";
+      type: "position.pnl_move";
+      payload: ApiNotificationPayloadMap["position.pnl_move"];
+    })
+  | (NotificationEventEnvelope & {
+      source: "api";
+      type: "calendar.high_impact";
+      payload: ApiNotificationPayloadMap["calendar.high_impact"];
     })
   | (NotificationEventEnvelope & {
       source: "api";

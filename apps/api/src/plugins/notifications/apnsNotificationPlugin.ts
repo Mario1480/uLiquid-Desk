@@ -100,10 +100,14 @@ function apnsHost(environment: ApnsEnvironment): string {
 
 function notificationTitle(event: ApiNotificationEvent): string {
   if (event.type === "prediction.tradable") return "uLiquid Signal";
+  if (isMobileMonitoringEvent(event)) return event.payload.title || "uLiquid Monitoring";
   return "uLiquid AI Prediction";
 }
 
 function notificationBody(event: ApiNotificationEvent): string {
+  if (isMobileMonitoringEvent(event)) {
+    return event.payload.message || "Neue uLiquid Monitoring-Meldung";
+  }
   if (event.type !== "prediction.tradable" && event.type !== "prediction.market_analysis_update") {
     return "Neue uLiquid Benachrichtigung";
   }
@@ -111,6 +115,16 @@ function notificationBody(event: ApiNotificationEvent): string {
   const move = Number(event.payload.expectedMovePct);
   const moveText = Number.isFinite(move) ? ` ${move >= 0 ? "+" : ""}${move.toFixed(2)}%` : "";
   return `${event.payload.symbol} ${event.payload.timeframe} ${signal}${moveText}`;
+}
+
+function isMobileMonitoringEvent(event: ApiNotificationEvent): event is Extract<ApiNotificationEvent, {
+  type: "bot.error" | "account.margin_warning" | "position.opened" | "position.pnl_move" | "calendar.high_impact";
+}> {
+  return event.type === "bot.error"
+    || event.type === "account.margin_warning"
+    || event.type === "position.opened"
+    || event.type === "position.pnl_move"
+    || event.type === "calendar.high_impact";
 }
 
 function buildApnsPayload(event: ApiNotificationEvent) {
@@ -134,7 +148,9 @@ function buildApnsPayload(event: ApiNotificationEvent) {
     timeframe:
       event.type === "prediction.tradable" || event.type === "prediction.market_analysis_update"
         ? event.payload.timeframe
-        : null
+        : null,
+    routeTab: isMobileMonitoringEvent(event) ? event.payload.routeTab ?? null : null,
+    routeId: isMobileMonitoringEvent(event) ? event.payload.routeId ?? null : null
   };
 }
 
@@ -252,10 +268,15 @@ export const apnsNotificationPlugin: ApiNotificationPlugin = {
   },
   canHandle(event): boolean {
     return event.type === "prediction.tradable"
-      || event.type === "prediction.market_analysis_update";
+      || event.type === "prediction.market_analysis_update"
+      || isMobileMonitoringEvent(event);
   },
   async send(event, ctx) {
-    if (event.type !== "prediction.tradable" && event.type !== "prediction.market_analysis_update") {
+    if (
+      event.type !== "prediction.tradable"
+      && event.type !== "prediction.market_analysis_update"
+      && !isMobileMonitoringEvent(event)
+    ) {
       return {
         status: "skipped",
         providerId: APNS_NOTIFICATION_PLUGIN_ID,

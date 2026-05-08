@@ -114,6 +114,7 @@ import { registerManualTradingExecutionRoutes } from "./manual-trading/routes-ex
 import { registerExchangeAccountRoutes } from "./exchange-accounts/routes.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { registerMobileDashboardRoutes } from "./mobile/routes.js";
+import { registerMobileMonitoringRoutes } from "./mobile/monitoringRoutes.js";
 import { registerMobilePushRoutes } from "./mobile/pushRoutes.js";
 import { registerPredictionReadRoutes } from "./predictions/routes-read.js";
 import { registerPredictionGenerateRoutes } from "./predictions/routes-generate.js";
@@ -11832,6 +11833,21 @@ registerMobileDashboardRoutes(app, {
   filterGridBotPositionsForDesk,
   listNews,
   getEconomicCalendarNextSummary
+});
+registerMobileMonitoringRoutes(app, {
+  db,
+  ignoreMissingTable,
+  normalizeExchangeValue,
+  toFiniteNumber,
+  resolveMarketDataTradingAccount,
+  createManualPerpMarketDataClient,
+  createPerpExecutionAdapter,
+  listPaperPositions,
+  listPositions,
+  isPaperTradingAccount,
+  loadGridDeskVisibilityMask,
+  filterGridBotPositionsForDesk,
+  listNews
 });
 registerSiweAuthRoutes(app, { db, siweService, vaultService });
 registerManualTradingMarketDataRoutes(app, {
