@@ -1427,11 +1427,11 @@ export async function listPositions(
         symbol: parsedSymbol,
         side,
         size,
-        entryPrice: toNumber(row.avgOpenPrice ?? rowRecord.openAvgPrice ?? rowRecord.holdAvgPrice ?? rowRecord.avgPrice),
+        entryPrice: toNumber(rowRecord.openPriceAvg ?? row.avgOpenPrice ?? rowRecord.openAvgPrice ?? rowRecord.holdAvgPrice ?? rowRecord.avgPrice),
         markPrice: toNumber(row.markPrice ?? rowRecord.fairPrice),
         unrealizedPnl: toNumber(row.unrealizedPL ?? rowRecord.unrealizedPnl),
-        takeProfitPrice: toNumber(rowRecord.presetStopSurplusPrice),
-        stopLossPrice: toNumber(rowRecord.presetStopLossPrice)
+        takeProfitPrice: toNumber(rowRecord.takeProfit ?? rowRecord.presetStopSurplusPrice),
+        stopLossPrice: toNumber(rowRecord.stopLoss ?? rowRecord.presetStopLossPrice)
       } satisfies NormalizedPosition;
     })
     .filter((row) => row.symbol.length > 0 && row.size > 0)

@@ -114,11 +114,12 @@ function mapPosition(
         ? available
         : null;
   const size = Math.abs(signedQty ?? total ?? available ?? 0);
+  const entryPrice = toNumber(row.openPriceAvg ?? row.avgOpenPrice ?? row.openAvgPrice ?? row.avgPrice) ?? 0;
   return {
     symbol: canonical,
     side: toPositionSide(row.holdSide, signedQty),
     size,
-    entryPrice: toNumber(row.avgOpenPrice) ?? 0,
+    entryPrice,
     markPrice: toNumber(row.markPrice) ?? undefined,
     unrealizedPnl: toNumber(row.unrealizedPL) ?? undefined
   };
@@ -695,8 +696,8 @@ export class BitgetFuturesAdapter implements FuturesExchange {
             entryPrice: Number.isFinite(mapped.entryPrice) ? mapped.entryPrice : null,
             markPrice: mapped.markPrice ?? null,
             unrealizedPnl: mapped.unrealizedPnl ?? null,
-            takeProfitPrice: getNumber(raw, ["takeProfitPrice", "tp", "presetStopSurplusPrice"]),
-            stopLossPrice: getNumber(raw, ["stopLossPrice", "sl", "presetStopLossPrice"])
+            takeProfitPrice: getNumber(raw, ["takeProfitPrice", "takeProfit", "tp", "presetStopSurplusPrice"]),
+            stopLossPrice: getNumber(raw, ["stopLossPrice", "stopLoss", "sl", "presetStopLossPrice"])
           } satisfies NormalizedPosition;
         })
         .filter((row) => row.size > 0)

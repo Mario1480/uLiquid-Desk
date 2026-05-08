@@ -353,9 +353,11 @@ test("bitget adapter listPositions canonicalizes legacy position symbols before 
         symbol: "BTCUSDT_UMCBL",
         holdSide: "long",
         total: "0.01",
-        avgOpenPrice: "65000",
+        openPriceAvg: "65000",
         markPrice: "65100",
-        unrealizedPL: "1.2"
+        unrealizedPL: "1.2",
+        takeProfit: "70000",
+        stopLoss: "64000"
       }
     ]
   };
@@ -373,8 +375,8 @@ test("bitget adapter listPositions canonicalizes legacy position symbols before 
       entryPrice: 65000,
       markPrice: 65100,
       unrealizedPnl: 1.2,
-      takeProfitPrice: null,
-      stopLossPrice: null
+      takeProfitPrice: 70000,
+      stopLossPrice: 64000
     }
   ]);
 });

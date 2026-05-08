@@ -90,9 +90,14 @@ export type BitgetPositionRaw = {
   holdSide?: string;
   total?: string;
   available?: string;
+  openPriceAvg?: string;
   avgOpenPrice?: string;
+  openAvgPrice?: string;
+  avgPrice?: string;
   markPrice?: string;
   unrealizedPL?: string;
+  takeProfit?: string;
+  stopLoss?: string;
   leverage?: string;
   marginMode?: string;
 };
