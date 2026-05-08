@@ -247,6 +247,10 @@ function toBar(row: CandleApiItem & { ts: number }): Bar {
   };
 }
 
+function toOptionalChartPrice(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : Number.NaN;
+}
+
 function computeFetchLimit(periodParams: PeriodParams, timeframe: string): number {
   const exact = Number(periodParams.countBack);
   if (Number.isFinite(exact) && exact > 0) {
@@ -1071,12 +1075,11 @@ export function AdvancedChart({
       const selectedPositionLineText = (label: string) =>
         selectedPositionLabel ? `${selectedPositionLabel} ${label}` : label;
 
-      await buildHorizontalLine(Number(prefill?.suggestedTakeProfit), "#22c55e", "TP", 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(prefill?.suggestedStopLoss), "#ef4444", "SL", 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.entryPrice), "#e2e8f0", selectedPositionLineText(t("position.entry")), 0, 2, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.markPrice), "#f59e0b", selectedPositionLineText(t("position.mark")), 1, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.takeProfitPrice), "#22c55e", selectedPositionLineText(t("position.tp")), 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.stopLossPrice), "#ef4444", selectedPositionLineText(t("position.sl")), 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(toOptionalChartPrice(prefill?.suggestedTakeProfit), "#22c55e", "TP", 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(toOptionalChartPrice(prefill?.suggestedStopLoss), "#ef4444", "SL", 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.takeProfitPrice), "#22c55e", selectedPositionLineText(t("position.tp")), 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.stopLossPrice), "#ef4444", selectedPositionLineText(t("position.sl")), 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.entryPrice), "#e2e8f0", selectedPositionLineText(t("position.entry")), 0, 2, anchorTimeSec, chart, output);
 
       const candleByTimeSec = new Map<number, CandleApiItem & { ts: number }>();
       for (const candle of normalized) {

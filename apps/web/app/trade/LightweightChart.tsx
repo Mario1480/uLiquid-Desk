@@ -1158,29 +1158,7 @@ export function LightweightChart({
     const nextLines: IPriceLine[] = [];
     const selectedPositionLabel = `${selectedPosition.symbol} ${selectedPosition.side.toUpperCase()}`;
     const selectedPositionLineText = (label: string) => `${selectedPositionLabel} ${label}`;
-    if (typeof selectedPosition.entryPrice === "number" && Number.isFinite(selectedPosition.entryPrice)) {
-      nextLines.push(
-        series.createPriceLine({
-          price: selectedPosition.entryPrice,
-          color: "#e2e8f0",
-          lineWidth: 2,
-          lineStyle: LineStyle.Solid,
-          title: selectedPositionLineText(t("position.entry"))
-        })
-      );
-    }
-    if (typeof selectedPosition.markPrice === "number" && Number.isFinite(selectedPosition.markPrice)) {
-      nextLines.push(
-        series.createPriceLine({
-          price: selectedPosition.markPrice,
-          color: "#f59e0b",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          title: selectedPositionLineText(t("position.mark"))
-        })
-      );
-    }
-    if (typeof selectedPosition.takeProfitPrice === "number" && Number.isFinite(selectedPosition.takeProfitPrice)) {
+    if (typeof selectedPosition.takeProfitPrice === "number" && Number.isFinite(selectedPosition.takeProfitPrice) && selectedPosition.takeProfitPrice > 0) {
       nextLines.push(
         series.createPriceLine({
           price: selectedPosition.takeProfitPrice,
@@ -1191,7 +1169,7 @@ export function LightweightChart({
         })
       );
     }
-    if (typeof selectedPosition.stopLossPrice === "number" && Number.isFinite(selectedPosition.stopLossPrice)) {
+    if (typeof selectedPosition.stopLossPrice === "number" && Number.isFinite(selectedPosition.stopLossPrice) && selectedPosition.stopLossPrice > 0) {
       nextLines.push(
         series.createPriceLine({
           price: selectedPosition.stopLossPrice,
@@ -1199,6 +1177,17 @@ export function LightweightChart({
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           title: selectedPositionLineText(t("position.sl"))
+        })
+      );
+    }
+    if (typeof selectedPosition.entryPrice === "number" && Number.isFinite(selectedPosition.entryPrice) && selectedPosition.entryPrice > 0) {
+      nextLines.push(
+        series.createPriceLine({
+          price: selectedPosition.entryPrice,
+          color: "#e2e8f0",
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          title: selectedPositionLineText(t("position.entry"))
         })
       );
     }
