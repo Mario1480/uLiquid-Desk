@@ -114,6 +114,7 @@ import { registerManualTradingExecutionRoutes } from "./manual-trading/routes-ex
 import { registerExchangeAccountRoutes } from "./exchange-accounts/routes.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { registerMobileDashboardRoutes } from "./mobile/routes.js";
+import { registerMobilePushRoutes } from "./mobile/pushRoutes.js";
 import { registerPredictionReadRoutes } from "./predictions/routes-read.js";
 import { registerPredictionGenerateRoutes } from "./predictions/routes-generate.js";
 import { registerPredictionStateRoutes } from "./predictions/routes-state.js";
@@ -11810,6 +11811,7 @@ registerVaultRoutes(app, {
   sendCapabilityDenied
 });
 registerNewsRoutes(app, { db });
+registerMobilePushRoutes(app, { db });
 registerMobileDashboardRoutes(app, {
   db,
   ignoreMissingTable,

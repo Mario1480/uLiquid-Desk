@@ -4,6 +4,7 @@ import { sanitizeOutboundHeaders } from "@mm/core";
 const db = prisma as any;
 const NOTIFICATION_PLUGIN_SETTINGS_KEY_PREFIX = "settings.alerts.notificationPlugins.v1:";
 const NOTIFICATION_DESTINATIONS_SETTINGS_KEY_PREFIX = "settings.alerts.notificationDestinations.v1:";
+export const DEFAULT_NOTIFICATION_PLUGIN_IDS = ["core.notification.telegram", "core.notification.apns"];
 
 export type NotificationPluginSettings = {
   version: 1;
@@ -80,9 +81,9 @@ function mergeOrdered(enabled: string[], order: string[]): string[] {
 export function defaultNotificationPluginSettings(): NotificationPluginSettings {
   return {
     version: 1,
-    enabled: ["core.notification.telegram"],
+    enabled: [...DEFAULT_NOTIFICATION_PLUGIN_IDS],
     disabled: [],
-    order: ["core.notification.telegram"]
+    order: [...DEFAULT_NOTIFICATION_PLUGIN_IDS]
   };
 }
 

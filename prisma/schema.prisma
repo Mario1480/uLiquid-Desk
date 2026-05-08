@@ -673,6 +673,7 @@ model User {
   affiliateAccrualsAttributed          AffiliateAccrual[]                    @relation("AffiliateAccrualReferredUser")
   siweNonces                           SiweNonce[]
   onchainActions                       OnchainAction[]
+  mobilePushTokens                      MobilePushToken[]
 }
 
 model TelegramLinkSession {
@@ -690,6 +691,29 @@ model TelegramLinkSession {
 
   @@index([userId, consumedAt, expiresAt])
   @@index([expiresAt])
+}
+
+model MobilePushToken {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  token       String
+  tokenHash   String    @unique @map("token_hash")
+  platform    String    @default("ios")
+  environment String    @default("production")
+  bundleId    String    @map("bundle_id")
+  deviceId    String?   @map("device_id")
+  appVersion  String?   @map("app_version")
+  enabled     Boolean   @default(true)
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled, revokedAt], map: "mobile_push_tokens_user_enabled_idx")
+  @@index([environment, bundleId], map: "mobile_push_tokens_env_bundle_idx")
+  @@map("mobile_push_tokens")
 }
 
 model AffiliateProfile {

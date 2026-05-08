@@ -15,15 +15,18 @@ import { resolveCapabilitiesForPlan } from "../capabilities/guard.js";
 import { resolveStrategyEntitlementsForWorkspace } from "../license.js";
 import { resolveTelegramUserDestination } from "../telegram/notifications.js";
 import {
+  DEFAULT_NOTIFICATION_PLUGIN_IDS,
   getNotificationDestinationsSettingsForUser,
   getNotificationPluginSettingsForUser
 } from "./notificationSettings.js";
 import { writeNotificationDeliveryAudit } from "./notificationAudit.js";
 import { buildPluginPolicySnapshot } from "./policy.js";
 import {
-  TELEGRAM_NOTIFICATION_PLUGIN_ID,
   telegramNotificationPlugin
 } from "./notifications/telegramNotificationPlugin.js";
+import {
+  apnsNotificationPlugin
+} from "./notifications/apnsNotificationPlugin.js";
 import {
   WEBHOOK_NOTIFICATION_PLUGIN_ID,
   webhookNotificationPlugin
@@ -292,6 +295,9 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     if (!registry.has(telegramNotificationPlugin.manifest.id)) {
       registry.register(telegramNotificationPlugin);
     }
+    if (!registry.has(apnsNotificationPlugin.manifest.id)) {
+      registry.register(apnsNotificationPlugin);
+    }
     if (!registry.has(webhookNotificationPlugin.manifest.id)) {
       registry.register(webhookNotificationPlugin);
     }
@@ -361,9 +367,9 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     const normalizedUserId = String(userId ?? "").trim();
     if (!normalizedUserId) {
       return {
-        enabled: [TELEGRAM_NOTIFICATION_PLUGIN_ID],
+        enabled: [...DEFAULT_NOTIFICATION_PLUGIN_IDS],
         disabled: [],
-        order: [TELEGRAM_NOTIFICATION_PLUGIN_ID],
+        order: [...DEFAULT_NOTIFICATION_PLUGIN_IDS],
         destinations: {
           telegram: { botToken: null, chatId: null },
           webhook: { url: null, headers: {} }
@@ -422,10 +428,7 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
   function buildCandidatesFromUserSettings(settings: UserNotificationSettings): string[] {
     const enabled = settings.enabled.filter((pluginId) => !settings.disabled.includes(pluginId));
     if (enabled.length === 0) {
-      if (settings.disabled.includes(TELEGRAM_NOTIFICATION_PLUGIN_ID)) {
-        return [];
-      }
-      return [TELEGRAM_NOTIFICATION_PLUGIN_ID];
+      return DEFAULT_NOTIFICATION_PLUGIN_IDS.filter((pluginId) => !settings.disabled.includes(pluginId));
     }
 
     const ordered: string[] = [];
@@ -502,6 +505,8 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
       ? normalizePluginIdList(options.pluginIds)
       : buildCandidatesFromUserSettings(settings);
     const deliveries: ApiNotificationDispatchResult["deliveries"] = [];
+    let sent = false;
+    let sentProviderId: string | null = null;
 
     const runProvider = async (plugin: ApiNotificationPlugin) => {
       const first = await runNotificationProviderWithIsolation({
@@ -635,19 +640,15 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
       await auditDelivery(normalizedEvent, result);
 
       if (result.status === "sent") {
-        return {
-          eventId: normalizedEvent.eventId,
-          sent: true,
-          providerId: result.providerId,
-          deliveries
-        };
+        sent = true;
+        sentProviderId = sentProviderId ?? result.providerId;
       }
     }
 
     return {
       eventId: normalizedEvent.eventId,
-      sent: false,
-      providerId: null,
+      sent,
+      providerId: sentProviderId,
       deliveries
     };
   }

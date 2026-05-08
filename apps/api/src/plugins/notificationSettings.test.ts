@@ -7,10 +7,10 @@ import {
   parseStoredNotificationPluginSettings
 } from "./notificationSettings.js";
 
-test("defaultNotificationPluginSettings enables telegram", () => {
+test("defaultNotificationPluginSettings enables telegram and apns", () => {
   const defaults = defaultNotificationPluginSettings();
-  assert.deepEqual(defaults.enabled, ["core.notification.telegram"]);
-  assert.deepEqual(defaults.order, ["core.notification.telegram"]);
+  assert.deepEqual(defaults.enabled, ["core.notification.telegram", "core.notification.apns"]);
+  assert.deepEqual(defaults.order, ["core.notification.telegram", "core.notification.apns"]);
 });
 
 test("parseStoredNotificationPluginSettings normalizes and deduplicates", () => {

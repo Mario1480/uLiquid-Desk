@@ -122,6 +122,15 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     capabilities: ["notification.telegram"]
   },
   {
+    id: "core.notification.apns",
+    kind: "notification",
+    version: "1.0.0",
+    description: "Built-in iOS push notification channel",
+    minPlan: "free",
+    defaultEnabled: true,
+    capabilities: ["notification.apns"]
+  },
+  {
     id: "core.notification.webhook",
     kind: "notification",
     version: "1.0.0",
