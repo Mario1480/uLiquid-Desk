@@ -1065,18 +1065,18 @@ export function AdvancedChart({
 
       const output: EntityId[] = [];
       const anchorTimeSec = Math.floor(latest.ts / 1000);
+      const selectedPositionLabel = selectedPosition
+        ? `${selectedPosition.symbol} ${selectedPosition.side.toUpperCase()}`
+        : "";
+      const selectedPositionLineText = (label: string) =>
+        selectedPositionLabel ? `${selectedPositionLabel} ${label}` : label;
 
-      const suggestedEntry =
-        prefill?.suggestedEntry?.type === "limit" && typeof prefill.suggestedEntry.price === "number"
-          ? prefill.suggestedEntry.price
-          : latest.close;
-      await buildHorizontalLine(suggestedEntry, "#38bdf8", "Entry", 0, 1, anchorTimeSec, chart, output);
       await buildHorizontalLine(Number(prefill?.suggestedTakeProfit), "#22c55e", "TP", 2, 1, anchorTimeSec, chart, output);
       await buildHorizontalLine(Number(prefill?.suggestedStopLoss), "#ef4444", "SL", 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.entryPrice), "#60a5fa", t("position.entry"), 0, 2, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.markPrice), "#f59e0b", t("position.mark"), 1, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.takeProfitPrice), "#22c55e", t("position.tp"), 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(Number(selectedPosition?.stopLossPrice), "#ef4444", t("position.sl"), 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.entryPrice), "#e2e8f0", selectedPositionLineText(t("position.entry")), 0, 2, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.markPrice), "#f59e0b", selectedPositionLineText(t("position.mark")), 1, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.takeProfitPrice), "#22c55e", selectedPositionLineText(t("position.tp")), 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.stopLossPrice), "#ef4444", selectedPositionLineText(t("position.sl")), 2, 1, anchorTimeSec, chart, output);
 
       const candleByTimeSec = new Map<number, CandleApiItem & { ts: number }>();
       for (const candle of normalized) {

@@ -1156,14 +1156,16 @@ export function LightweightChart({
     if (!selectedPosition) return;
 
     const nextLines: IPriceLine[] = [];
+    const selectedPositionLabel = `${selectedPosition.symbol} ${selectedPosition.side.toUpperCase()}`;
+    const selectedPositionLineText = (label: string) => `${selectedPositionLabel} ${label}`;
     if (typeof selectedPosition.entryPrice === "number" && Number.isFinite(selectedPosition.entryPrice)) {
       nextLines.push(
         series.createPriceLine({
           price: selectedPosition.entryPrice,
-          color: "#60a5fa",
+          color: "#e2e8f0",
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
-          title: t("position.entry")
+          title: selectedPositionLineText(t("position.entry"))
         })
       );
     }
@@ -1174,7 +1176,7 @@ export function LightweightChart({
           color: "#f59e0b",
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
-          title: t("position.mark")
+          title: selectedPositionLineText(t("position.mark"))
         })
       );
     }
@@ -1185,7 +1187,7 @@ export function LightweightChart({
           color: "#22c55e",
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          title: t("position.tp")
+          title: selectedPositionLineText(t("position.tp"))
         })
       );
     }
@@ -1196,7 +1198,7 @@ export function LightweightChart({
           color: "#ef4444",
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          title: t("position.sl")
+          title: selectedPositionLineText(t("position.sl"))
         })
       );
     }

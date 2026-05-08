@@ -26,6 +26,7 @@ export type TradingChartPreferences = {
 };
 
 export type SelectedTradePosition = {
+  symbol: string;
   side: "long" | "short";
   entryPrice: number | null;
   markPrice: number | null;

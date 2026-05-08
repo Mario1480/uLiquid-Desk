@@ -280,7 +280,20 @@ function numericEqual(a: number | null | undefined, b: number | null | undefined
 }
 
 function normalizeDeskSymbol(value: string | null | undefined): string {
-  return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const raw = String(value ?? "").trim().toUpperCase();
+  const withoutSettlement = raw.includes(":") ? raw.slice(0, raw.indexOf(":")) : raw;
+  return withoutSettlement.replace(/[^A-Z0-9]/g, "");
+}
+
+function resolveDeskSymbol(value: string | null | undefined, rows: SymbolItem[], fallback: string): string {
+  const normalized = normalizeDeskSymbol(value);
+  if (!normalized) return fallback;
+  const matchingSymbol = rows.find((row) => normalizeDeskSymbol(row.symbol) === normalized);
+  return matchingSymbol?.symbol ?? String(value ?? fallback).trim().toUpperCase();
+}
+
+function getPositionRowKey(position: PositionItem, index: number): string {
+  return `${position.symbol}:${position.side}:${index}`;
 }
 
 function filterRowsForDeskSymbol<T extends { symbol?: string | null }>(
@@ -483,10 +496,11 @@ function TradePageContent() {
   }, [selectedSymbolMeta, symbolSearch, symbols]);
   const selectedPosition = useMemo<SelectedTradePosition | null>(() => {
     if (!selectedPositionKey) return null;
-    const row = positions.find((item, index) => `${item.symbol}:${item.side}:${index}` === selectedPositionKey);
+    const row = positions.find((item, index) => getPositionRowKey(item, index) === selectedPositionKey);
     if (!row) return null;
     if (normalizeDeskSymbol(row.symbol) !== normalizeDeskSymbol(selectedSymbol)) return null;
     return {
+      symbol: row.symbol,
       side: row.side,
       entryPrice: row.entryPrice,
       markPrice: row.markPrice,
@@ -747,6 +761,7 @@ function TradePageContent() {
     }
 
     if (prefill.symbol) {
+      setSelectedPositionKey(null);
       setSelectedSymbol(prefill.symbol.trim().toUpperCase());
     }
 
@@ -794,6 +809,24 @@ function TradePageContent() {
     } catch (e) {
       setSoftWarning(t("messages.settingsSaveFailed", { error: errMsg(e) }));
     }
+  }
+
+  function selectPositionForChart(position: PositionItem, rowKey: string) {
+    if (selectedPositionKey === rowKey) {
+      setSelectedPositionKey(null);
+      return;
+    }
+
+    const nextSymbol = resolveDeskSymbol(position.symbol, symbols, selectedSymbol);
+    setSelectedPositionKey(rowKey);
+    if (normalizeDeskSymbol(nextSymbol) === normalizeDeskSymbol(selectedSymbol)) return;
+
+    setSelectedSymbol(nextSymbol);
+    setSymbolSearch("");
+    if (selectedAccountId) {
+      void reloadLiveTables(selectedAccountId, nextSymbol);
+    }
+    void persistSettings({ symbol: nextSymbol });
   }
 
   function applyLiveRefreshFailures(partialFailures: string[], blockingFailures: string[]) {
@@ -1298,7 +1331,7 @@ function TradePageContent() {
     setActionSuccess(null);
     setSpotOrderSide("buy");
     liveTableReadyRef.current = createLiveTableReadiness();
-  }, [selectedAccountId, selectedSymbol, marketType]);
+  }, [selectedAccountId, marketType]);
 
   async function applyLeverage() {
     if (!selectedAccountId) return;
@@ -1942,6 +1975,7 @@ function TradePageContent() {
                     value={selectedSymbol}
                     onChange={(event) => {
                       const next = event.target.value;
+                      setSelectedPositionKey(null);
                       setSelectedSymbol(next);
                       void reloadLiveTables(selectedAccountId, next);
                       void persistSettings({ symbol: next });
@@ -2441,7 +2475,7 @@ function TradePageContent() {
                       </tr>
                     ) : (
                       positions.map((position, index) => {
-                        const rowKey = `${position.symbol}:${position.side}:${index}`;
+                        const rowKey = getPositionRowKey(position, index);
                         return (
                           <tr
                             key={rowKey}
@@ -2453,9 +2487,7 @@ function TradePageContent() {
                                   : "transparent",
                               cursor: "pointer"
                             }}
-                            onClick={() =>
-                              setSelectedPositionKey((prev) => (prev === rowKey ? null : rowKey))
-                            }
+                            onClick={() => selectPositionForChart(position, rowKey)}
                           >
                             <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>{position.symbol}</td>
                             <td style={{ padding: "8px 6px", color: position.side === "long" ? "#34d399" : "#f87171" }}>{position.side.toUpperCase()}</td>
@@ -2600,7 +2632,7 @@ function TradePageContent() {
               ) : (
                 <div className="tradeMobileList">
                   {positions.map((position, index) => {
-                    const rowKey = `${position.symbol}:${position.side}:${index}`;
+                    const rowKey = getPositionRowKey(position, index);
                     const draft = positionEditDrafts[rowKey];
                     const isSelected = selectedPositionKey === rowKey;
                     const sideToneClass =
@@ -2609,7 +2641,7 @@ function TradePageContent() {
                       <article
                         key={`position_mobile_${rowKey}`}
                         className={`tradeMobileCard ${sideToneClass} ${isSelected ? "tradeMobileCardSelected" : ""}`}
-                        onClick={() => setSelectedPositionKey((prev) => (prev === rowKey ? null : rowKey))}
+                        onClick={() => selectPositionForChart(position, rowKey)}
                       >
                         <div className="tradeMobileHead">
                           <div className="tradeMobileHeadLeft">
