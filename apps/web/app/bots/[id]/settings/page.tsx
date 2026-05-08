@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
+import SymbolSearchSelect from "../../../../components/SymbolSearchSelect";
 
 type StrategyKey = "dummy" | "prediction_copier";
 type ExecutionModeValue = "simple" | "dca" | "grid" | "dip_reversion";
@@ -13,6 +14,11 @@ type CopierOrderType = "market" | "limit";
 type CopierSizingType = "fixed_usd" | "equity_pct" | "risk_pct";
 type CopierSignal = "up" | "down" | "neutral";
 type BacktestTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+
+type SymbolItem = {
+  symbol: string;
+  tradable?: boolean;
+};
 
 type PredictionSource = {
   stateId: string;
@@ -193,6 +199,9 @@ export default function BotSettingsPage() {
   const [sources, setSources] = useState<PredictionSource[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const [symbols, setSymbols] = useState<SymbolItem[]>([]);
+  const [symbolsLoading, setSymbolsLoading] = useState(false);
+  const [symbolsError, setSymbolsError] = useState<string | null>(null);
 
   const [sourceStateId, setSourceStateId] = useState("");
   const [copierTimeframe, setCopierTimeframe] = useState<"5m" | "15m" | "1h" | "4h">("15m");
@@ -411,10 +420,52 @@ export default function BotSettingsPage() {
     };
   }, [strategyKey, exchangeAccountId]);
 
+  useEffect(() => {
+    let mounted = true;
+    async function loadSymbols() {
+      if (!exchangeAccountId || strategyKey === "prediction_copier") {
+        setSymbols([]);
+        setSymbolsError(null);
+        setSymbolsLoading(false);
+        return;
+      }
+      setSymbolsLoading(true);
+      setSymbolsError(null);
+      try {
+        const response = await apiGet<{ items: SymbolItem[]; defaultSymbol?: string | null }>(
+          `/api/symbols?exchangeAccountId=${encodeURIComponent(exchangeAccountId)}&marketType=perp`
+        );
+        if (!mounted) return;
+        const items = Array.isArray(response.items) ? response.items : [];
+        setSymbols(items);
+        setSymbol((previous) => {
+          const normalized = previous.trim().toUpperCase();
+          if (normalized && items.some((item) => item.symbol === normalized)) return normalized;
+          return response.defaultSymbol ?? items.find((item) => item.tradable !== false)?.symbol ?? items[0]?.symbol ?? normalized;
+        });
+      } catch (symbolLoadError) {
+        if (!mounted) return;
+        setSymbols([]);
+        setSymbolsError(errMsg(symbolLoadError));
+      } finally {
+        if (mounted) setSymbolsLoading(false);
+      }
+    }
+    void loadSymbols();
+    return () => {
+      mounted = false;
+    };
+  }, [exchangeAccountId, strategyKey]);
+
   const selectedSource = useMemo(
     () => sources.find((item) => item.stateId === sourceStateId) ?? null,
     [sources, sourceStateId]
   );
+  const symbolOptions = useMemo(() => {
+    const normalized = symbol.trim().toUpperCase();
+    if (!normalized || symbols.some((item) => item.symbol === normalized)) return symbols;
+    return [{ symbol: normalized, meta: symbolsError ? t("fields.symbolLoadFailed") : null }, ...symbols];
+  }, [symbol, symbols, symbolsError, t]);
 
   const selectedExchange = useMemo(
     () => String(bot?.exchangeAccount?.exchange ?? "").trim().toLowerCase(),
@@ -718,7 +769,20 @@ export default function BotSettingsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.symbol")}</span>
-              <input className="input" value={symbol} onChange={(e) => setSymbol(e.target.value)} disabled={strategyKey === "prediction_copier"} />
+              <SymbolSearchSelect
+                value={symbol}
+                onChange={setSymbol}
+                options={symbolOptions}
+                loading={symbolsLoading}
+                loadingLabel={t("fields.symbolLoading")}
+                emptyLabel={t("fields.symbolSearchEmpty")}
+                searchPlaceholder={t("fields.symbolSearchPlaceholder")}
+                restrictedLabel={t("fields.symbolRestricted")}
+                disabled={strategyKey === "prediction_copier"}
+              />
+              {symbolsError && strategyKey !== "prediction_copier" ? (
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("fields.symbolLoadFailed")}: {symbolsError}</span>
+              ) : null}
             </label>
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.marginMode")}</span>

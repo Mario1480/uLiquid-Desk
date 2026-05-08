@@ -53,6 +53,7 @@
     "noAccountAvailable": "Kein Konto verfügbar",
     "pair": "Handelspaar",
     "pairHint": "Handelspaar für die Prognose (aus Exchange-Symbolen).",
+    "pairSearchPlaceholder": "Handelspaar suchen...",
     "loadingPairs": "Handelspaare werden geladen...",
     "noPairAvailable": "Kein Handelspaar verfügbar",
     "restricted": "eingeschränkt",

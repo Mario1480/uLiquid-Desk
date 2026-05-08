@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
+import SymbolSearchSelect from "../../../../components/SymbolSearchSelect";
 import type {
   ExchangeAccount,
   GridInstancePreviewResponse,
@@ -29,6 +30,11 @@ type GridPilotAccess = {
 };
 
 type UserTemplateMode = Extract<GridMode, "long" | "short" | "neutral">;
+
+type SymbolItem = {
+  symbol: string;
+  tradable?: boolean;
+};
 
 type UserTemplateRequestPayload = {
   draftTemplate: {
@@ -80,6 +86,12 @@ function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
   return label.replaceAll("USDT", stablecoinLabel);
 }
 
+function formatSymbolForDisplay(symbol: string, stablecoinLabel: string): string {
+  const normalized = String(symbol ?? "").trim().toUpperCase();
+  if (!normalized) return "";
+  return normalized.replace(/USDT$|USDC$/u, stablecoinLabel);
+}
+
 function optionalPositiveNumber(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -117,6 +129,9 @@ export default function UserGridTemplateCreatePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [symbols, setSymbols] = useState<SymbolItem[]>([]);
+  const [symbolsLoading, setSymbolsLoading] = useState(false);
+  const [symbolsError, setSymbolsError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -146,6 +161,22 @@ export default function UserGridTemplateCreatePage() {
   const previewReady = isPreviewReady(preview, previewLoading, previewError);
   const blockedCodes = previewCodeSummary(preview);
   const canSave = Boolean(name.trim() && exchangeAccountId && previewReady && !saving);
+  const symbolOptions = useMemo(() => {
+    const normalized = symbol.trim().toUpperCase();
+    const options = symbols.map((item) => ({
+      ...item,
+      label: formatSymbolForDisplay(item.symbol, stablecoinLabel)
+    }));
+    if (!normalized || options.some((item) => item.symbol === normalized)) return options;
+    return [
+      {
+        symbol: normalized,
+        label: formatSymbolForDisplay(normalized, stablecoinLabel),
+        meta: symbolsError ? tGrid("templateCreateSymbolsLoadFailed") : null
+      },
+      ...options
+    ];
+  }, [stablecoinLabel, symbol, symbols, symbolsError, tGrid]);
 
   function buildPayload(requireName: boolean): { payload: UserTemplateRequestPayload | null; error: string | null } {
     const nameValue = name.trim();
@@ -243,6 +274,43 @@ export default function UserGridTemplateCreatePage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadSymbols() {
+      if (!exchangeAccountId) {
+        setSymbols([]);
+        setSymbolsError(null);
+        setSymbolsLoading(false);
+        return;
+      }
+      setSymbolsLoading(true);
+      setSymbolsError(null);
+      try {
+        const response = await apiGet<{ items: SymbolItem[]; defaultSymbol?: string | null }>(
+          `/api/symbols?exchangeAccountId=${encodeURIComponent(exchangeAccountId)}&marketType=perp`
+        );
+        if (!mounted) return;
+        const items = Array.isArray(response.items) ? response.items : [];
+        setSymbols(items);
+        setSymbol((previous) => {
+          const normalized = previous.trim().toUpperCase();
+          if (normalized && items.some((item) => item.symbol === normalized)) return normalized;
+          return response.defaultSymbol ?? items.find((item) => item.tradable !== false)?.symbol ?? items[0]?.symbol ?? normalized;
+        });
+      } catch (symbolLoadError) {
+        if (!mounted) return;
+        setSymbols([]);
+        setSymbolsError(errMsg(symbolLoadError));
+      } finally {
+        if (mounted) setSymbolsLoading(false);
+      }
+    }
+    void loadSymbols();
+    return () => {
+      mounted = false;
+    };
+  }, [exchangeAccountId]);
 
   useEffect(() => {
     if (!exchangeAccountId) {
@@ -388,7 +456,20 @@ export default function UserGridTemplateCreatePage() {
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateSymbol")}
-              <input className="input" value={symbol} maxLength={40} onChange={(event) => setSymbol(event.target.value.toUpperCase())} />
+              <SymbolSearchSelect
+                value={symbol}
+                onChange={setSymbol}
+                options={symbolOptions}
+                loading={symbolsLoading}
+                loadingLabel={tGrid("templateCreateSymbolsLoading")}
+                emptyLabel={tGrid("templateCreateSymbolsEmpty")}
+                searchPlaceholder={tGrid("templateCreateSymbolSearchPlaceholder")}
+                restrictedLabel={tGrid("templateCreateSymbolRestricted")}
+                required
+              />
+              {symbolsError ? (
+                <span>{tGrid("templateCreateSymbolsLoadFailed")}: {symbolsError}</span>
+              ) : null}
             </label>
             <label className="gridCatalogField gridTemplateCreateFullSpan">
               {tGrid("templateCreateDescription")}

@@ -5877,6 +5877,96 @@ select.input option:disabled,
     0 12px 24px rgba(0, 0, 0, 0.12);
 }
 
+.symbolSearchSelect {
+  position: relative;
+  min-width: 0;
+}
+
+.symbolSearchSelectInput {
+  padding-right: 36px;
+  text-transform: uppercase;
+}
+
+.symbolSearchSelectChevron {
+  position: absolute;
+  right: 14px;
+  top: 17px;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid rgba(176, 194, 224, 0.72);
+  border-bottom: 1.5px solid rgba(176, 194, 224, 0.72);
+  pointer-events: none;
+  transform: rotate(45deg);
+}
+
+.symbolSearchSelectMenu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(9, 17, 32, 0.98), rgba(6, 12, 24, 0.98));
+  box-shadow: var(--shadow-elevated);
+}
+
+.symbolSearchSelectOption {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.022);
+  color: var(--text);
+  padding: 7px 9px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.symbolSearchSelectOption:hover,
+.symbolSearchSelectOptionActive {
+  border-color: var(--color-border-accent);
+  background: rgba(96, 165, 250, 0.14);
+}
+
+.symbolSearchSelectOption[aria-selected="true"] {
+  border-color: var(--border);
+  background: rgba(96, 165, 250, 0.2);
+}
+
+.symbolSearchSelectSymbol,
+.symbolSearchSelectMeta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbolSearchSelectSymbol {
+  font-weight: 700;
+}
+
+.symbolSearchSelectMeta,
+.symbolSearchSelectState {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.symbolSearchSelectState {
+  padding: 8px 9px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

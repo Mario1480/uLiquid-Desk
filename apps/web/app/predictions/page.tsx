@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import SymbolSearchSelect from "../../components/SymbolSearchSelect";
 import {
   buildTradeDeskPrefillPayload,
   TRADE_DESK_PREFILL_SESSION_KEY,
@@ -949,6 +950,11 @@ export default function PredictionsPage() {
     for (const row of createSymbols) knownSymbols.add(row.symbol.toUpperCase());
     return knownSymbols.has(normalized) ? normalized : null;
   }, [createSymbols, filterSymbol, rows]);
+  const createSymbolOptions = useMemo(() => {
+    const normalized = newSymbol.trim().toUpperCase();
+    if (!normalized || createSymbols.some((item) => item.symbol === normalized)) return createSymbols;
+    return [{ symbol: normalized, meta: symbolsError ? tPred("create.pairsLoadFailed") : null }, ...createSymbols];
+  }, [createSymbols, newSymbol, symbolsError, tPred]);
 
   function buildPerformanceQueryParams(includeBins = false): URLSearchParams {
     const params = new URLSearchParams();
@@ -2385,24 +2391,17 @@ export default function PredictionsPage() {
           <label className="predictionCreateField">
             <div className="predictionCreateLabel">{tPred("create.pair")}</div>
             <div className="predictionCreateHint">{tPred("create.pairHint")}</div>
-            <select
-              className="input"
+            <SymbolSearchSelect
               value={newSymbol}
-              onChange={(e) => setNewSymbol(e.target.value)}
-              disabled={symbolsLoading || createSymbols.length === 0}
-            >
-              {symbolsLoading ? (
-                <option value="">{tPred("create.loadingPairs")}</option>
-              ) : createSymbols.length === 0 ? (
-                <option value="">{tPred("create.noPairAvailable")}</option>
-              ) : (
-                createSymbols.map((symbol) => (
-                  <option key={symbol.symbol} value={symbol.symbol}>
-                    {symbol.symbol} {symbol.tradable ? "" : `(${tPred("create.restricted")})`}
-                  </option>
-                ))
-              )}
-            </select>
+              onChange={setNewSymbol}
+              options={createSymbolOptions}
+              loading={symbolsLoading}
+              loadingLabel={tPred("create.loadingPairs")}
+              emptyLabel={tPred("create.noPairAvailable")}
+              searchPlaceholder={tPred("create.pairSearchPlaceholder")}
+              restrictedLabel={tPred("create.restricted")}
+              disabled={symbolsLoading || createSymbolOptions.length === 0}
+            />
           </label>
 
           <label className="predictionCreateField">

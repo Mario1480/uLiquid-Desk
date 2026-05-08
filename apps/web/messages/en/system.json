@@ -58,6 +58,11 @@
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
+      "symbolSearchPlaceholder": "Search symbol...",
+      "symbolSearchEmpty": "No matching symbol found",
+      "symbolLoading": "Loading symbols...",
+      "symbolLoadFailed": "Symbols could not be loaded",
+      "symbolRestricted": "restricted",
       "exchangeAccount": "Exchange Account",
       "strategy": "Strategy",
       "marginMode": "Margin Mode",
@@ -442,6 +447,11 @@
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
+      "symbolSearchPlaceholder": "Search symbol...",
+      "symbolSearchEmpty": "No matching symbol found",
+      "symbolLoading": "Loading symbols...",
+      "symbolLoadFailed": "Symbols could not be loaded",
+      "symbolRestricted": "restricted",
       "exchangeAccount": "Exchange account",
       "strategy": "Strategy",
       "marginMode": "Margin mode",

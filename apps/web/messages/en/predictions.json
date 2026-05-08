@@ -53,6 +53,7 @@
     "noAccountAvailable": "No account available",
     "pair": "Pair",
     "pairHint": "Trading pair for prediction (from exchange symbols).",
+    "pairSearchPlaceholder": "Search pair...",
     "loadingPairs": "Loading pairs...",
     "noPairAvailable": "No pair available",
     "restricted": "restricted",
