@@ -328,7 +328,7 @@ test("mobile dashboard includes running and errored bots plus open positions", a
   assert.equal(res.body?.totals?.totalEquity, 600);
 });
 
-test("mobile dashboard filters archived grid bots in bot queries", async () => {
+test("mobile dashboard filters inactive and archived grid bots in bot queries", async () => {
   const app = createFakeApp();
   const botQueries: any[] = [];
   registerMobileDashboardRoutes(app as any, createBaseDeps({
@@ -357,6 +357,7 @@ test("mobile dashboard filters archived grid bots in bot queries", async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(botQueries.length, 2);
   for (const query of botQueries) {
+    assert.deepEqual(query.where.status, { in: ["running", "error"] });
     assert.deepEqual(query.where.OR, [
       { gridInstance: { is: null } },
       {
@@ -369,6 +370,69 @@ test("mobile dashboard filters archived grid bots in bot queries", async () => {
       }
     ]);
   }
+});
+
+test("mobile dashboard excludes stopped legacy bots without grid instances", async () => {
+  const app = createFakeApp();
+  registerMobileDashboardRoutes(app as any, createBaseDeps({
+    db: {
+      exchangeAccount: {
+        async findMany() {
+          return [
+            {
+              id: "acc_1",
+              exchange: "hyperliquid",
+              label: "Hyperliquid",
+              createdAt: new Date("2026-05-06T08:00:00.000Z"),
+              lastUsedAt: null,
+              spotBudgetTotal: null,
+              spotBudgetAvailable: null,
+              futuresBudgetEquity: null,
+              futuresBudgetAvailableMargin: null,
+              pnlTodayUsd: null,
+              lastSyncErrorAt: null,
+              lastSyncErrorMessage: null
+            }
+          ];
+        }
+      },
+      bot: {
+        async findMany(args: any) {
+          const activeStatuses = args.where?.status?.in ?? [];
+          if (activeStatuses.includes("running") && activeStatuses.includes("error") && !activeStatuses.includes("stopped")) {
+            return [];
+          }
+          return [
+            {
+              id: "legacy_stopped",
+              name: "Stopped legacy bot",
+              symbol: "BTCUSDT",
+              exchange: "hyperliquid",
+              exchangeAccountId: "acc_1",
+              status: "stopped",
+              lastError: null,
+              futuresConfig: { strategyKey: "futures_grid", marginMode: "isolated", leverage: 1 },
+              exchangeAccount: { id: "acc_1", exchange: "hyperliquid", label: "Hyperliquid" },
+              runtime: { status: "stopped", reason: "queue_completed", updatedAt: new Date("2026-03-28T20:13:16.866Z"), lastHeartbeatAt: null, lastTickAt: null, lastError: null, lastErrorAt: null, mid: null, bid: null, ask: null, freeUsdt: null },
+              botVault: null
+            }
+          ];
+        }
+      },
+      botTradeState: { async findMany() { return []; } },
+      botTradeHistory: { async findMany() { return []; } },
+      riskEvent: { async findMany() { return []; } },
+      predictionState: { async findMany() { return []; } }
+    }
+  }) as any);
+
+  const res = createMockRes();
+  await getFinalHandler(app)({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.bots?.summary?.total, 0);
+  assert.equal(res.body?.bots?.items?.length, 0);
+  assert.equal(res.body?.accounts?.[0]?.bots?.stopped, 0);
 });
 
 test("mobile dashboard marks positions degraded when account reads fail", async () => {

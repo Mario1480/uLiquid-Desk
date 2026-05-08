@@ -66,6 +66,7 @@ const EMPTY_SECTION: SectionState = {
 const MOBILE_NEWS_LIMIT = 8;
 const MOBILE_BOT_LIMIT = 60;
 const MOBILE_PREDICTION_LIMIT = 40;
+const MOBILE_ACTIVE_BOT_STATUSES = ["running", "error"];
 
 function createVisibleMobileBotWhere(userId: string, extra: Record<string, unknown> = {}) {
   return {
@@ -83,6 +84,13 @@ function createVisibleMobileBotWhere(userId: string, extra: Record<string, unkno
       }
     ]
   };
+}
+
+function createActiveVisibleMobileBotWhere(userId: string, extra: Record<string, unknown> = {}) {
+  return createVisibleMobileBotWhere(userId, {
+    ...extra,
+    status: { in: MOBILE_ACTIVE_BOT_STATUSES }
+  });
 }
 
 function toErrorReason(error: unknown): string {
@@ -206,7 +214,7 @@ async function readAccountsAndTotals(deps: MobileDashboardRoutesDeps, userId: st
       }
     }),
     deps.db.bot.findMany({
-      where: createVisibleMobileBotWhere(userId, {
+      where: createActiveVisibleMobileBotWhere(userId, {
         exchangeAccountId: { not: null }
       }),
       select: {
@@ -348,7 +356,7 @@ async function readAccountsAndTotals(deps: MobileDashboardRoutesDeps, userId: st
 
 async function readBots(deps: MobileDashboardRoutesDeps, userId: string) {
   const bots = await deps.db.bot.findMany({
-    where: createVisibleMobileBotWhere(userId),
+    where: createActiveVisibleMobileBotWhere(userId),
     orderBy: [{ updatedAt: "desc" }],
     take: MOBILE_BOT_LIMIT,
     include: {
