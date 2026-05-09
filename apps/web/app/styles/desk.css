@@ -1,0 +1,4822 @@
+/* Dashboard, trading desk, predictions, calendar, and news styles. */
+
+:root {
+  --dashboard-widget-surface: var(--ui-surface-panel);
+  --dashboard-widget-border: var(--ui-border-strong);
+  --dashboard-widget-shadow: var(--ui-shadow);
+}
+
+.dashboardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.statCard {
+  padding: 14px 16px;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.statValue {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.statNote {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.statNoteDanger {
+  color: #fca5a5;
+}
+
+.dashboardTotalsBar {
+  margin-top: 12px;
+}
+
+.dashboardTotalsMeta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardAlertsCard {
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.dashboardInsightsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dashboardInsightCard {
+  padding: 12px;
+  margin: 0;
+}
+
+.dashboardFearGreedCard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboardWalletCard {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  align-content: start;
+  margin-top: 0;
+  max-width: none;
+  background:
+    radial-gradient(circle at 100% -10%, rgba(59, 130, 246, 0.18), transparent 42%),
+    radial-gradient(circle at 0% 110%, rgba(34, 211, 238, 0.14), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.98));
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 14px 28px rgba(0, 0, 0, 0.14);
+}
+
+.dashboardWalletHead,
+.dashboardWalletFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dashboardWalletIntro {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dashboardWalletTitle {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dashboardWalletSubtitle,
+.dashboardWalletMeta,
+.dashboardWalletFooterMeta {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.dashboardWalletGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboardWalletTile {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  min-height: 94px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(14, 24, 39, 0.84), rgba(8, 16, 28, 0.9));
+}
+
+.dashboardWalletTileSkeleton {
+  align-content: start;
+}
+
+.dashboardWalletLabel {
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dashboardWalletValue {
+  font-size: 1rem;
+  line-height: 1.25;
+  color: rgba(244, 248, 255, 0.96);
+  overflow-wrap: anywhere;
+}
+
+.dashboardWalletStateCard {
+  min-height: 254px;
+}
+
+.dashboardWalletState {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  background: linear-gradient(180deg, rgba(40, 24, 10, 0.22), rgba(8, 16, 28, 0.78));
+}
+
+.dashboardBuilderHeader {
+  align-items: flex-start;
+}
+
+.dashboardBuilderActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dashboardBuilderMeta {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardBuilderNotice {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: rgba(92, 45, 0, 0.16);
+  font-size: 13px;
+}
+
+.dashboardBuilderAddWidgetWrap {
+  position: relative;
+}
+
+.dashboardBuilderAddWidgetMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  min-width: 220px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(10, 18, 28, 0.98), rgba(6, 12, 20, 0.98));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.dashboardBuilderAddWidgetItem,
+.dashboardBuilderAddWidgetEmpty {
+  font-size: 13px;
+}
+
+.dashboardBuilderAddWidgetItem {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.dashboardBuilderAddWidgetItem:hover {
+  border-color: var(--color-border-accent);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.dashboardBuilderAddWidgetEmpty {
+  color: var(--muted);
+  padding: 4px 2px;
+}
+
+.dashboardWidgetDesktopGrid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+  grid-auto-flow: dense;
+}
+
+.dashboardWidgetMobileStack {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboardWidgetMobileItem {
+  min-width: 0;
+}
+
+.dashboardWidgetFrame {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.dashboardWidgetFrameEditable {
+  border: 1px dashed rgba(96, 165, 250, 0.35);
+  border-radius: 18px;
+  padding: 42px 10px 10px;
+  background: rgba(9, 16, 24, 0.28);
+}
+
+.dashboardWidgetFrameDragging {
+  z-index: 4;
+}
+
+.dashboardWidgetFrameToolbar {
+  position: absolute;
+  inset: 8px 8px auto 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboardWidgetFrameHandle,
+.dashboardWidgetFrameHide {
+  border: 1px solid var(--color-border-default);
+  background: rgba(7, 17, 26, 0.92);
+  color: inherit;
+  border-radius: 10px;
+  min-height: 32px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.dashboardWidgetFrameHandle {
+  cursor: grab;
+}
+
+.dashboardWidgetFrameHandle:active {
+  cursor: grabbing;
+}
+
+.dashboardWidgetFrameTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboardWidgetFrameBody {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.dashboardWidgetResizeHandle {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(7, 17, 26, 0.92);
+  color: var(--muted);
+  cursor: nwse-resize;
+}
+
+.dashboardWidgetCardFill {
+  height: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dashboardWidgetScrollArea {
+  min-height: 0;
+  overflow: auto;
+}
+
+.dashboardWidgetCardFill .dashboardWidgetScrollArea,
+.dashboardWidgetCardFill .dashboardPerformanceBody {
+  flex: 1 1 auto;
+}
+
+.dashboardAccountsWidget {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.dashboardBotOverviewCard {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboardBotOverviewHead,
+.dashboardBotOverviewRowTop,
+.dashboardAffiliateProfitshareHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dashboardBotOverviewTitle {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.dashboardBotOverviewSubtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.dashboardBotOverviewList {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboardBotOverviewItem {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  padding: 11px 12px;
+  background:
+    linear-gradient(180deg, rgba(12, 22, 38, 0.88), rgba(8, 16, 28, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    var(--shadow-soft);
+}
+
+.dashboardBotOverviewItemCritical {
+  border-color: rgba(239, 68, 68, 0.55);
+  background:
+    linear-gradient(180deg, rgba(60, 15, 18, 0.78), rgba(28, 9, 12, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(239, 68, 68, 0.12),
+    0 14px 30px rgba(75, 10, 18, 0.22);
+}
+
+.dashboardBotOverviewMeta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dashboardBotOverviewName {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.dashboardBotOverviewContext {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboardBotOverviewMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dashboardBotOverviewMetric {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboardBotOverviewMetricLabel {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dashboardBotOverviewMetricValue {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.dashboardBotOverviewMetricPositive {
+  color: #22c55e;
+}
+
+.dashboardBotOverviewMetricNegative {
+  color: #ef4444;
+}
+
+.dashboardBotOverviewMetaLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.dashboardBotOverviewReason {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dashboardBotOverviewReasonCritical {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.dashboardBotOverviewState {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.dashboardAffiliateProfitshareCard {
+  display: grid;
+  gap: 12px;
+  border-color: rgba(45, 212, 191, 0.24);
+  background:
+    radial-gradient(circle at 95% 0%, rgba(45, 212, 191, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(8, 24, 30, 0.96), rgba(6, 15, 22, 0.98));
+}
+
+.dashboardAffiliateProfitshareTitle {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.dashboardAffiliateProfitshareSubtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.dashboardAffiliateProfitshareBody {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboardAffiliateProfitshareGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.dashboardAffiliateProfitshareMetric {
+  min-width: 0;
+  min-height: 76px;
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  padding: 11px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(5, 14, 22, 0.72);
+}
+
+.dashboardAffiliateProfitshareMetric span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dashboardAffiliateProfitshareMetric strong {
+  min-width: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.dashboardAffiliateProfitshareMetricPrimary strong {
+  color: #67e8f9;
+}
+
+.dashboardAffiliateProfitshareMetricRevenue strong {
+  color: #86efac;
+}
+
+.dashboardAffiliateProfitshareValueWithUnit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboardAffiliateProfitshareValueWithUnit em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.dashboardAffiliateProfitshareFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dashboardAffiliateProfitshareState {
+  min-height: 170px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.dashboardWidgetFrameBody > .card,
+.dashboardWidgetFrameBody > .dashboardAccountsWidget,
+.dashboardWidgetFrameBody > .dashboardAlertsCard {
+  min-width: 0;
+}
+
+.dashboardFearGreedImage {
+  display: block;
+  width: 65%;
+  height: auto;
+  border-radius: 1px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dashboardUttCard {
+  display: flex;
+  align-items: center;
+}
+
+.dashboardUttWidgetHost {
+  width: 100%;
+}
+
+.dashboardUttWidgetHost gecko-coin-price-chart-widget {
+  display: block;
+  width: 100%;
+}
+
+.dashboardAlertsTitle {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.dashboardAlertsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dashboardAlertsHead .dashboardAlertsTitle {
+  margin-bottom: 0;
+}
+
+.dashboardAlertsCount {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #dbeafe;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(96, 165, 250, 0.14);
+}
+
+.dashboardAlertsEmpty {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.dashboardAlertsList {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboardAlertLink {
+  text-decoration: none;
+  color: inherit;
+}
+
+.dashboardAlertItem {
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
+}
+
+.dashboardAlertLink:hover .dashboardAlertItem {
+  border-color: var(--color-border-accent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(96, 165, 250, 0.03));
+  transform: translateY(-1px);
+}
+
+.dashboardAlertItem-critical {
+  border-left: 3px solid rgba(239, 68, 68, 0.8);
+}
+
+.dashboardAlertItem-warning {
+  border-left: 3px solid rgba(245, 158, 11, 0.8);
+}
+
+.dashboardAlertItem-info {
+  border-left: 3px solid rgba(56, 189, 248, 0.75);
+}
+
+.dashboardAlertTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.dashboardAlertBadge {
+  letter-spacing: 0.02em;
+}
+
+.dashboardAlertTime {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardAlertText {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.dashboardAlertMessage {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tradeDeskGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.tradeDeskWrap {
+  display: grid;
+  gap: 12px;
+}
+
+.tradeDeskActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tradeDeskSection {
+  padding: 12px;
+  overflow: visible;
+}
+
+.tradeDeskNotice {
+  padding: 12px;
+}
+
+.tradeDeskNoticeError {
+  border-color: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.tradeDeskNoticeWarn {
+  border-color: rgba(245, 158, 11, 0.85);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.tradeDeskNoticeInfo {
+  border-color: rgba(59, 130, 246, 0.85);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.tradeDeskSectionHeader {
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tradeDeskSectionTitle {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.tradeDeskSectionHint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tradeDeskContextGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.tradeDeskField {
+  position: relative;
+  display: grid;
+  gap: 4px;
+}
+
+.tradeDeskField:focus-within {
+  z-index: 6;
+}
+
+.tradeDeskField .symbolSearchSelectMenu {
+  z-index: 90;
+}
+
+.tradeDeskFieldLabel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.tradeDeskSummary {
+  padding: 10px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  border-radius: 16px;
+}
+
+.tradeDeskPane {
+  padding: 10px;
+  min-height: 620px;
+  border-radius: 18px;
+}
+
+.tradeDeskPaneTitle {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.tradeDeskPaneHint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.tradeOrderPanel {
+  display: grid;
+  gap: 10px;
+}
+
+.tradeOrderTopRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tradeOrderModeSwitch,
+.tradeOrderEntryMode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  padding: 4px;
+}
+
+.tradeOrderModeBtn,
+.tradeOrderEntryModeBtn {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.tradeOrderModeBtnActive,
+.tradeOrderEntryModeBtnActive {
+  border-color: rgba(191, 219, 254, 0.14);
+  background:
+    linear-gradient(180deg, rgba(96,165,250,.18), rgba(11,23,42,.28));
+  color: var(--text);
+}
+
+.tradeOrderLeverageControl {
+  display: grid;
+  gap: 4px;
+}
+
+.tradeOrderLeverageLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tradeOrderLeverageGroup {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.tradeOrderLeverageInput {
+  width: 100%;
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
+  color: var(--text);
+  border-radius: 14px;
+  padding: 8px 10px;
+  outline: none;
+  font-weight: 700;
+}
+
+.tradeOrderApplyBtn {
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  color: var(--text);
+  border-radius: 14px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.tradeOrderApplyBtn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.tradeOrderTypeTabs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.tradeOrderTypeTab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 4px 0;
+  cursor: pointer;
+  min-width: 72px;
+}
+
+.tradeOrderTypeTabActive {
+  color: var(--text);
+  border-bottom-color: var(--color-brand-secondary);
+}
+
+.tradeOrderMetaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tradeOrderMetaRow strong {
+  color: var(--text);
+}
+
+.tradeOrderField {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tradeOrderInputRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.tradeOrderInput {
+  width: 100%;
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.tradeOrderMiniBtn {
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 700;
+  min-width: 62px;
+}
+
+.tradeOrderUnitBadge {
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  color: var(--muted);
+  cursor: pointer;
+  appearance: none;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 12px;
+  min-width: 64px;
+}
+
+.tradeOrderUnitBadge:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.tradeModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at top, rgba(96, 165, 250, 0.14), transparent 28%),
+    rgba(2, 6, 23, 0.72);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 16px;
+  backdrop-filter: blur(12px);
+}
+
+.tradeModalCard {
+  width: min(560px, 100%);
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(10, 18, 33, 0.98), rgba(6, 12, 24, 0.98));
+  border: 1px solid var(--color-border-default);
+  border-radius: 22px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  box-shadow: var(--shadow-elevated);
+}
+
+.tradeModalHeader,
+.predictionRunningCardHeader,
+.predictionEventHeader,
+.dashboardOpenPositionsMobileHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.tradeModalHeader h3 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.tradeModalCloseBtn {
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+}
+
+.tradeModalOptions {
+  display: grid;
+  gap: 10px;
+}
+
+.tradeModalOption {
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  color: var(--text);
+  border-radius: 16px;
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.tradeModalOptionActive {
+  border-color: var(--color-border-accent);
+  box-shadow:
+    inset 0 0 0 1px rgba(191, 219, 254, 0.18),
+    0 14px 30px rgba(37, 99, 235, 0.14);
+}
+
+.tradeModalOptionTitle {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.tradeModalOptionDescription {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.tradeModalActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.tradeModalSecondaryBtn,
+.tradeModalPrimaryBtn {
+  border-radius: 16px;
+  padding: 12px;
+  border: 1px solid var(--color-border-default);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.tradeModalSecondaryBtn {
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  color: var(--text);
+}
+
+.tradeModalPrimaryBtn {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.96), rgba(34, 211, 238, 0.92));
+  border-color: rgba(191, 219, 254, 0.18);
+  color: #fff;
+}
+
+@media (max-width: 700px) {
+  .tradeModalHeader h3 {
+    font-size: 22px;
+  }
+  .tradeModalActions {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tradeOrderSlider {
+  width: 100%;
+}
+
+.tradeOrderCheckRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tradeOrderDualStats {
+  display: grid;
+  gap: 4px;
+  margin-top: -2px;
+}
+
+.tradeOrderDualRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tradeOrderDualRow strong {
+  font-size: 13px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.tradeOrderValueLong {
+  color: #24d3a6;
+}
+
+.tradeOrderValueShort {
+  color: #ef4444;
+}
+
+.tradeOrderValueSlash {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.tradeOrderValueUnit {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tradeOrderTpSlGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.tradeOrderActionGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tradeOrderActionGridSingle {
+  grid-template-columns: 1fr;
+}
+
+.tradeOrderInlineNotice {
+  margin-top: 8px;
+  border-radius: 14px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tradeOrderInlineNoticeError {
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(127, 29, 29, 0.28);
+  color: #fecaca;
+}
+
+.tradeOrderInlineNoticeSuccess {
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: rgba(6, 78, 59, 0.28);
+  color: #a7f3d0;
+}
+
+.tradeOrderDivider {
+  height: 1px;
+  background: var(--app-shell-line);
+  margin: 2px 0;
+}
+
+.tradeOrderInfoTitle {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.tradeOrderInfoGrid {
+  display: grid;
+  gap: 6px;
+}
+
+.tradeOrderInfoRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tradeOrderInfoRow strong {
+  color: var(--text);
+}
+
+.tradeOrderSelectedAccount {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tradeTableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tradeDesktopOnly {
+  display: block;
+}
+
+.tradeMobileOnly {
+  display: none;
+}
+
+.tradeDataTable {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tradeDataTable th,
+.tradeDataTable td {
+  white-space: nowrap;
+}
+
+.tradeRowActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tradeTableInput {
+  width: 120px;
+  min-width: 90px;
+}
+
+.tradeMobileList {
+  display: grid;
+  gap: 8px;
+}
+
+.tradeMobileCard {
+  border: 1px solid var(--color-border-default);
+  border-left-width: 3px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.tradeMobileCardSideLong {
+  border-left-color: #24d3a6;
+}
+
+.tradeMobileCardSideShort {
+  border-left-color: #ef4444;
+}
+
+.tradeMobileCardSideNeutral {
+  border-left-color: rgba(148, 163, 184, 0.9);
+}
+
+.tradeMobileCardSelected {
+  border-color: var(--color-border-accent);
+  background:
+    linear-gradient(180deg, rgba(96,165,250,.14), rgba(255,255,255,.02));
+}
+
+.tradeMobileHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tradeMobileHeadLeft,
+.tradeMobileHeadRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tradeMobileTitle {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tradeMobileChip {
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tradeMobileChipLong {
+  border-color: rgba(36, 211, 166, 0.8);
+  color: #9ff0d8;
+}
+
+.tradeMobileChipShort {
+  border-color: rgba(239, 68, 68, 0.8);
+  color: #fecaca;
+}
+
+.tradeMobileChipNeutral {
+  border-color: rgba(148, 163, 184, 0.7);
+  color: #cbd5e1;
+}
+
+.tradeMobileChipStatusOpen {
+  border-color: rgba(59, 130, 246, 0.8);
+  color: #bfdbfe;
+}
+
+.tradeMobileChipStatusFilled {
+  border-color: rgba(36, 211, 166, 0.8);
+  color: #9ff0d8;
+}
+
+.tradeMobileChipStatusCancelled {
+  border-color: rgba(239, 68, 68, 0.8);
+  color: #fecaca;
+}
+
+.tradeMobileChipStatusOther {
+  border-color: rgba(148, 163, 184, 0.7);
+  color: #cbd5e1;
+}
+
+.tradeMobilePnl {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tradeMobileRows {
+  display: grid;
+  gap: 6px;
+}
+
+.tradeMobileRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.tradeMobileRow span {
+  color: var(--muted);
+}
+
+.tradeMobileRow strong {
+  color: var(--text);
+  text-align: right;
+}
+
+.tradeMobileInlineInput {
+  width: 96px;
+  min-width: 80px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.tradeMobileActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tradeMobileActions .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.tradeMobileEmpty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 2px;
+}
+
+.tradeChartMeta {
+  align-items: center;
+}
+
+.tradeChartMarkerToggles,
+.tradeChartIndicatorToggles,
+.tradeChartPresets {
+  align-items: center;
+}
+
+.tradeChartIndicatorToggles > span:first-child {
+  flex-basis: 100%;
+}
+
+.calendarPage {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.calendarFilterCard,
+.calendarSummaryCard,
+.calendarEventsCard,
+.calendarErrorCard {
+  padding: 12px;
+  margin: 0;
+}
+
+.calendarFilterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.calendarFilterField {
+  display: grid;
+  gap: 4px;
+}
+
+.calendarDateInput {
+  min-height: 40px;
+}
+
+.calendarImpactToggleRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 38px;
+  align-items: center;
+}
+
+.calendarFilterActions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.calendarErrorCard {
+  border-color: #ef4444;
+}
+
+.calendarEventCard {
+  margin: 0;
+  padding: 10px;
+  border-left-width: 6px;
+  border-left-style: solid;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.calendarEventCardHigh {
+  border-color: rgba(239, 68, 68, 0.55);
+  border-left-color: rgba(239, 68, 68, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.15);
+}
+
+.calendarEventCardMedium {
+  border-color: rgba(245, 158, 11, 0.5);
+  border-left-color: rgba(245, 158, 11, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.14);
+}
+
+.calendarEventCardLow {
+  border-color: rgba(34, 197, 94, 0.45);
+  border-left-color: rgba(34, 197, 94, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.12);
+}
+
+.calendarEventHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.calendarEventMeta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.calendarEventValues {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.newsPage {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.newsFilterCard,
+.newsMetaCard,
+.newsListCard,
+.newsErrorCard {
+  padding: 12px;
+  margin: 0;
+}
+
+.newsTabRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.newsFilterGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.newsFilterField {
+  display: grid;
+  gap: 4px;
+}
+
+.newsFilterLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.newsFilterActions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.newsMetaCard {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.newsErrorCard {
+  border-color: #ef4444;
+}
+
+.newsEmptyText {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.newsList {
+  display: grid;
+  gap: 8px;
+}
+
+.newsItemCard {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px;
+  margin: 0;
+}
+
+.newsItemContent {
+  min-width: 0;
+}
+
+.newsItemHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.newsItemTime {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.newsItemTitle {
+  display: inline-block;
+  color: var(--text);
+  font-weight: 700;
+  margin-top: 6px;
+  text-decoration: none;
+}
+
+.newsItemTitle:hover {
+  text-decoration: underline;
+}
+
+.newsItemSite {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.newsItemText {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.newsItemImage {
+  width: 120px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.newsBadgeCrypto {
+  border-color: rgba(34, 197, 94, 0.7);
+  color: #bbf7d0;
+}
+
+.newsBadgeGeneral {
+  border-color: rgba(96, 165, 250, 0.7);
+  color: #bfdbfe;
+}
+
+.exchangeOverviewGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 768px) {
+  .exchangeOverviewGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .exchangeOverviewGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.exchangeOverviewCard {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 16px 30px rgba(0, 0, 0, 0.14);
+}
+
+.exchangeOverviewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.exchangeOverviewTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.exchangeOverviewSub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.exchangeOverviewStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.exchangeOverviewStatBlock {
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  padding: 10px;
+  background:
+    linear-gradient(180deg, rgba(12, 22, 38, 0.88), rgba(8, 16, 28, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    var(--shadow-soft);
+}
+
+.exchangeOverviewStatTitle {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+}
+
+.exchangeOverviewStatValue {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: rgba(244, 248, 255, 0.96);
+}
+
+.exchangeOverviewBotStatus {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(232, 238, 247, 0.82);
+}
+
+.exchangeOverviewBotError {
+  color: #fecaca;
+}
+
+.exchangeOverviewAlert {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: #fecaca;
+}
+
+.exchangeOverviewAlertLink {
+  color: #fcd34d;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#open-positions.dashboardSectionAnchor {
+  margin-top: 22px;
+}
+
+.exchangeOverviewActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.exchangeOverviewEmpty {
+  padding: 18px;
+}
+
+.exchangeOverviewSkeleton .skeletonLine,
+.exchangeOverviewSkeleton .skeletonButton {
+  background: linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,255,255,.14), rgba(255,255,255,.08));
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+.predictionsWrap {
+  width: 100%;
+  max-width: 1560px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.predictionsHeaderActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-self: flex-end;
+}
+
+.predictionsHeaderActions .btn {
+  white-space: nowrap;
+}
+
+.predictionsSection {
+  padding: 12px;
+  margin-bottom: 0;
+}
+
+.predictionQuickStatsSection {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.predictionQuickStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.predictionQuickStat {
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  padding: 8px 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+}
+
+.predictionQuickStatLabel {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.predictionQuickStatValue {
+  margin-top: 3px;
+  font-weight: 800;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.predictionQuickStatMeta {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.predictionQuickStatValueWarn {
+  color: #f59e0b;
+}
+
+.predictionsPerformanceHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.predictionsPerformanceActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.predictionsPerformanceResetMeta {
+  margin-top: 2px;
+}
+
+.predictionCreateTitle,
+.predictionsListTitle {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.predictionCreateSection {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 260px at 0% -20%, rgba(59, 130, 246, 0.14), transparent 55%),
+    radial-gradient(900px 200px at 100% -10%, rgba(34, 211, 238, 0.1), transparent 60%),
+    rgba(7, 13, 26, 0.82);
+}
+
+.predictionCreateTitle {
+  margin-bottom: 6px;
+}
+
+.predictionsSectionHint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.predictionCreateHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.predictionCreateHeader > :first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.predictionCreateHeaderActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.predictionManageStrategiesButton {
+  min-height: 34px;
+  padding: 8px 13px;
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.28);
+}
+
+.predictionCreateBadges {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  align-items: center;
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.predictionCreateBadges .badge {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+
+.predictionsWrap .badge {
+  gap: 4px;
+  min-height: 22px;
+  padding: 3px 7px;
+  font-size: 11px;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.predictionCreateGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.predictionCreateField {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border-default);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+}
+
+.predictionCreateFieldPrompt {
+  grid-column: 1 / -1;
+  border-color: rgba(96, 165, 250, 0.34);
+  background: linear-gradient(
+    145deg,
+    rgba(96, 165, 250, 0.17) 0%,
+    rgba(255,255,255,0.02) 58%
+  );
+}
+
+.predictionCreateField .input:disabled {
+  opacity: 0.72;
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.predictionCreateLabel {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.predictionCreateHint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.25;
+}
+
+.predictionCreateHintCompact {
+  color: var(--color-text-secondary);
+}
+
+.predictionCreateFooter {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed rgba(96, 165, 250, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.predictionCreateStatusRow {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.predictionCreateAlert {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.15;
+  border-radius: 999px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.predictionCreateAlertInfo {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--color-border-default);
+}
+
+.predictionCreateAlertWarn {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.predictionCreateActions {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.predictionSubCard {
+  margin-top: 10px;
+  padding: 10px;
+  border-color: var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(8, 16, 32, 0.55), rgba(8, 16, 32, 0.38));
+}
+
+.predictionSubCardHeader {
+  margin-bottom: 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.predictionSubCardTitle {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.predictionSubCardHint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.predictionAutoToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.predictionsQualityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.predictionCalibrationWrap {
+  margin-top: 10px;
+  border-top: 1px solid var(--app-shell-line);
+  padding-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.predictionCalibrationHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.predictionCalibrationEmpty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionCalibrationTableWrap {
+  overflow-x: auto;
+}
+
+.predictionCalibrationTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.predictionCalibrationTable th,
+.predictionCalibrationTable td {
+  text-align: left;
+  padding: 6px 8px;
+  border-top: 1px solid rgba(96, 165, 250, 0.1);
+  white-space: nowrap;
+}
+
+.predictionCalibrationTable thead th {
+  color: var(--muted);
+}
+
+.predictionsRunningHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.predictionsRunningActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.predictionAlert {
+  padding: 12px;
+  margin-bottom: 0;
+}
+
+.predictionAlertError {
+  border-color: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.predictionAlertWarn {
+  border-color: rgba(245, 158, 11, 0.8);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.predictionsRunningDesktopTable {
+  display: block;
+}
+
+.predictionsRunningMobileList {
+  display: none;
+}
+
+.predictionRunningCard {
+  margin: 0 0 8px;
+  padding: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.predictionRunningCard:last-child {
+  margin-bottom: 0;
+}
+
+.predictionRunningCardSymbol {
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.predictionRunningCardMeta {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.predictionRunningCardLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.predictionRunningCardLine span {
+  color: var(--muted);
+}
+
+.predictionRunningCardLine strong {
+  text-align: right;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.predictionRunningCardActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.predictionRunningBadgeActive {
+  border-color: rgba(16, 185, 129, 0.6);
+  color: #10b981;
+}
+
+.predictionRunningBadgePaused {
+  border-color: rgba(148, 163, 184, 0.5);
+  color: #cbd5e1;
+}
+
+.predictionRefreshBadgeDegraded {
+  border-color: rgba(245, 158, 11, 0.65);
+  color: #f59e0b;
+}
+
+.predictionRunningHealthText {
+  margin-top: 4px;
+  max-width: 260px;
+  color: #fbbf24;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.predictionsListHeader {
+  margin-bottom: 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.predictionsListHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionsFiltersGrid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.predictionsFiltersHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.predictionFeedSummaryChips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.predictionFeedChip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px;
+  min-height: 22px;
+  padding: 3px 7px;
+  font-size: 11px;
+  line-height: 1.05;
+  color: var(--muted);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  white-space: nowrap;
+}
+
+.predictionsFiltersActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.predictionsListContent {
+  margin-top: 12px;
+  padding: 12px 10px 0;
+  border-top: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    rgba(96, 165, 250, 0.06) 0%,
+    rgba(255, 255, 255, 0) 56%
+  );
+}
+
+.predictionsListState {
+  padding: 4px 2px 8px;
+}
+
+.predictionsDesktopTableWrap {
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(10, 18, 33, 0.92), rgba(7, 13, 25, 0.96));
+  box-shadow: var(--shadow-soft);
+}
+
+.predictionsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 1100px;
+}
+
+.predictionsTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  color: var(--muted);
+  background: rgba(6, 12, 24, 0.95);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.16);
+  backdrop-filter: blur(6px);
+}
+
+.predictionsTable th,
+.predictionsTable td {
+  padding: 10px 8px;
+  vertical-align: top;
+}
+
+.predictionsTable tbody tr {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.predictionsTable tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.predictionsTable tbody tr:hover {
+  background: rgba(96, 165, 250, 0.07);
+}
+
+.predictionExplanationClamp {
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+.predictionRowDetail {
+  border-top: 1px dashed rgba(96, 165, 250, 0.12);
+}
+
+.predictionRowDetail td {
+  padding: 10px 8px;
+}
+
+.predictionsMobileList {
+  display: none;
+}
+
+.predictionRowCard {
+  margin: 0 0 10px;
+  padding: 10px;
+}
+
+.predictionRowCard:last-child {
+  margin-bottom: 0;
+}
+
+.predictionRowCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.predictionRowCardSymbol {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.predictionRowCardMeta {
+  margin-top: 6px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionRowCardStats {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.predictionRowCardStat {
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  padding: 6px 8px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
+}
+
+.predictionRowCardStatLabel {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.predictionRowCardStatValue {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.predictionRowCardText {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.predictionRowCardExplanation {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.predictionRowCardAuto {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionRowCardActions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.predictionRowCardDetail {
+  margin-top: 8px;
+}
+
+.predictionRowStateReady td {
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.predictionRowStateWarn td {
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.predictionRowStateBlocked td {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.predictionRowCardStateReady {
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.predictionRowCardStateWarn {
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.predictionRowCardStateBlocked {
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.predictionActionBadgeReady {
+  border-color: rgba(16, 185, 129, 0.6);
+  color: #10b981;
+}
+
+.predictionActionBadgeWarn {
+  border-color: rgba(245, 158, 11, 0.65);
+  color: #f59e0b;
+}
+
+.predictionActionBadgeBlocked {
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #cbd5e1;
+}
+
+.predictionRowFlipRecent {
+  box-shadow: inset 3px 0 0 rgba(20, 129, 192, 0.55);
+}
+
+.predictionRowFlipRecent td {
+  background: rgba(20, 129, 192, 0.05);
+}
+
+.predictionDetailPanel {
+  margin: 0;
+  padding: 12px;
+}
+
+.predictionDetailStack {
+  display: grid;
+  gap: 8px;
+}
+
+.predictionDetailHeader {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.predictionDetailHeaderCopy {
+  display: grid;
+  gap: 4px;
+}
+
+.predictionSectionEyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.predictionDetailHeaderActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.predictionMiniBtn {
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.predictionDetailWarning {
+  color: #f59e0b;
+  font-size: 12px;
+}
+
+.predictionContextRow {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.predictionContextSummaryGrid {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.predictionContextSummaryCard {
+  margin: 0;
+  padding: 10px;
+  border-radius: 14px;
+}
+
+.predictionIndicatorValueWrap {
+  overflow-wrap: anywhere;
+}
+
+.predictionContextReason {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.predictionContextExplanation {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  display: grid;
+  gap: 6px;
+}
+
+.predictionContextExplanationText {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.predictionUpdateCell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.predictionUpdateMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionUpdateMetaFresh::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18);
+}
+
+.predictionRefreshMetaWarn {
+  color: #f59e0b;
+}
+
+.predictionChangeCell {
+  display: grid;
+  gap: 4px;
+}
+
+.predictionChangeBadges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.predictionChangeText {
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 190px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge.predictionReasonBadgeTrigger {
+  border-color: rgba(20, 129, 192, 0.9);
+  color: #6ec8ff;
+}
+
+.badge.predictionReasonBadgeScheduled {
+  border-color: rgba(148, 163, 184, 0.9);
+  color: #cbd5e1;
+}
+
+.badge.predictionReasonBadgeManual {
+  border-color: rgba(191, 219, 254, 0.7);
+  color: #dbeafe;
+}
+
+.badge.predictionReasonBadgeUnknown {
+  border-color: rgba(148, 163, 184, 0.45);
+  color: var(--muted);
+}
+
+.badge.calendarImpactBadgeHigh {
+  border-color: rgba(239, 68, 68, 0.9);
+  color: #fca5a5;
+}
+
+.badge.calendarImpactBadgeMedium {
+  border-color: rgba(245, 158, 11, 0.9);
+  color: #fcd34d;
+}
+
+.badge.calendarImpactBadgeLow {
+  border-color: rgba(16, 185, 199, 0.92);
+  color: #67e8f9;
+}
+
+.predictionFlipBadge {
+  border-color: rgba(239, 68, 68, 0.9);
+  color: #ef4444;
+}
+
+.predictionIndicatorGrid {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.predictionIndicatorCard {
+  margin: 0;
+  padding: 8px;
+}
+
+.predictionIndicatorTitle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionIndicatorValue {
+  margin-top: 2px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.predictionIndicatorMeta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.predictionEventList {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.predictionEventItem {
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  padding: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+}
+
+.predictionEventTimestamp {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .predictionDetailHeader,
+  .predictionEventHeader,
+  .predictionContextRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .predictionDetailHeaderActions {
+    width: 100%;
+  }
+
+  .predictionDetailHeaderActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .predictionContextSummaryGrid,
+  .predictionIndicatorGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.predictionEventReason {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionEventDelta {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .tradeDeskWrap {
+    gap: 10px;
+  }
+  .tradeDeskSection {
+    padding: 10px;
+  }
+  .tradeDeskPane {
+    min-height: 0;
+  }
+  .tradeDeskSectionHeader {
+    align-items: flex-start;
+  }
+  .tradeDeskGrid {
+    grid-template-columns: 1fr;
+  }
+  .tradeOrderTopRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .predictionsRunningDesktopTable {
+    display: none;
+  }
+  .predictionsRunningMobileList {
+    display: grid;
+    gap: 8px;
+  }
+  .predictionRunningCardActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 700px) {
+  .statGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .statCard {
+    padding: 12px;
+  }
+  .statValue {
+    font-size: 20px;
+  }
+  .dashboardTotalsBar {
+    margin-top: 8px;
+  }
+  .dashboardTotalsMeta {
+    font-size: 11px;
+  }
+  .dashboardAlertsCard {
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .dashboardInsightsGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .dashboardInsightCard {
+    padding: 10px;
+  }
+  .dashboardWalletCard {
+    margin-top: 10px;
+  }
+  .dashboardWidgetDesktopGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .dashboardBuilderActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .dashboardWidgetFrameEditable {
+    padding: 40px 8px 8px;
+  }
+  .dashboardWalletGrid {
+    grid-template-columns: 1fr;
+  }
+  .dashboardFearGreedImage {
+    width: 50%;
+  }
+  .dashboardAlertsTitle {
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  .dashboardAlertItem {
+    padding: 7px;
+    gap: 3px;
+  }
+  .dashboardAlertBadge {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .dashboardAlertTime {
+    font-size: 11px;
+  }
+  .dashboardAlertText {
+    font-size: 12px;
+  }
+  .dashboardAlertMessage {
+    font-size: 11px;
+  }
+  .dashboardHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .predictionsHeaderActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .tradeDeskActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .tradeDeskContextGrid {
+    grid-template-columns: 1fr;
+  }
+  .tradeDeskSectionTitle {
+    font-size: 15px;
+  }
+  .tradeDeskSectionHint {
+    font-size: 11px;
+  }
+  .predictionsWrap {
+    gap: 10px;
+  }
+  .predictionsSection {
+    padding: 10px;
+  }
+  .predictionCreateTitle,
+  .predictionsListTitle {
+    font-size: 17px;
+  }
+  .predictionsSectionHint {
+    font-size: 11px;
+    margin-bottom: 8px;
+  }
+  .predictionCreateHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .predictionCreateHeaderActions {
+    width: 100%;
+    margin-left: 0;
+    align-items: stretch;
+  }
+  .predictionManageStrategiesButton {
+    width: 100%;
+    justify-content: center;
+  }
+  .predictionCreateBadges {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .predictionCreateBadges .badge {
+    max-width: 100%;
+  }
+  .predictionCreateGrid {
+    grid-template-columns: 1fr;
+  }
+  .predictionCreateField {
+    padding: 9px;
+  }
+  .predictionCreateHint {
+    min-height: 0;
+  }
+  .predictionCreateFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .predictionCreateStatusRow {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .predictionCreateAlert {
+    white-space: normal;
+  }
+  .predictionCreateActions {
+    justify-content: stretch;
+  }
+  .predictionCreateActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .tradeOrderTypeTabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .tradeOrderTypeTab {
+    min-width: 0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+  .tradeOrderTypeTabActive {
+    border-color: var(--border);
+    border-bottom-color: var(--border);
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .tradeOrderActionGrid .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .tradeDesktopOnly {
+    display: none;
+  }
+  .tradeMobileOnly {
+    display: block;
+  }
+  .tradeDataTable {
+    min-width: 760px;
+    font-size: 12px;
+  }
+  .tradeDataTable th,
+  .tradeDataTable td {
+    padding: 7px 5px !important;
+  }
+  .tradeRowActions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    min-width: 84px;
+  }
+  .tradeRowActions .btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 30px;
+    padding: 6px 8px;
+  }
+  .tradeTableInput {
+    width: 96px;
+    min-width: 80px;
+    padding: 7px 8px;
+  }
+  .tradeMobileCard {
+    padding: 9px;
+    gap: 7px;
+  }
+  .tradeMobileHead {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .tradeMobileHeadRight {
+    margin-left: auto;
+  }
+  .tradeMobileRow {
+    font-size: 11px;
+  }
+  .tradeMobileInlineInput {
+    width: 88px;
+    min-width: 72px;
+    font-size: 11px;
+    padding: 6px 7px;
+  }
+  .tradeMobileActions {
+    gap: 6px;
+  }
+  .tradeChartMeta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .tradeChartMarkerToggles,
+  .tradeChartIndicatorToggles,
+  .tradeChartPresets {
+    gap: 8px !important;
+  }
+  .tradeChartIndicatorToggles {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+  }
+  .tradeChartIndicatorToggles > span:first-child {
+    grid-column: 1 / -1;
+  }
+  .tradeChartIndicatorToggles label {
+    min-height: 26px;
+  }
+  .calendarFilterGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .calendarFilterFieldDate {
+    width: 100%;
+  }
+  .calendarDateInput {
+    min-height: 42px;
+    font-size: 16px;
+  }
+  .calendarFilterActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .calendarFilterActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .calendarImpactToggleRow {
+    gap: 8px;
+  }
+  .calendarImpactToggleRow .badge {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 10px;
+  }
+  .calendarEventHeader {
+    align-items: flex-start;
+  }
+  .calendarEventValues {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .newsFilterGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .newsFilterActions {
+    width: 100%;
+  }
+  .newsFilterActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .newsItemCard {
+    grid-template-columns: 1fr;
+    padding: 9px;
+  }
+  .newsItemImage {
+    width: 100%;
+    height: 160px;
+  }
+  .predictionSubCard {
+    margin-top: 9px;
+    padding: 9px;
+  }
+  .predictionSubCardHeader {
+    margin-bottom: 8px;
+  }
+  .predictionsRunningHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .predictionsRunningActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .predictionsRunningActions .input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .predictionQuickStatsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .predictionQuickStatValue {
+    font-size: 18px;
+  }
+  .predictionsFiltersHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .predictionFeedSummaryChips {
+    width: 100%;
+  }
+  .predictionsFiltersActions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .predictionsFiltersActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .predictionsFiltersGrid {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .predictionsListHeader {
+    margin-bottom: 6px;
+  }
+  .predictionsPerformanceHeader {
+    flex-direction: column;
+  }
+  .predictionsPerformanceActions {
+    width: 100%;
+  }
+  .predictionsPerformanceActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .predictionsListContent {
+    margin-top: 8px;
+    padding: 10px 0 0;
+    border-radius: 0;
+    background: none;
+  }
+  .predictionsListState {
+    padding: 2px 0 6px;
+  }
+  .predictionsDesktopTableWrap {
+    display: none;
+  }
+  .predictionsMobileList {
+    display: block;
+  }
+  .predictionRowCard {
+    padding: 9px;
+  }
+  .predictionRowCardStats {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .predictionRowCardStat {
+    padding: 5px 7px;
+  }
+  .predictionRowCardStatValue {
+    font-size: 12px;
+  }
+  .predictionRowCardActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .predictionDetailPanel {
+    padding: 10px;
+  }
+  .predictionContextRow {
+    gap: 5px;
+  }
+  .predictionContextReason {
+    font-size: 11px;
+  }
+  .predictionChangeText {
+    max-width: 100%;
+  }
+  .predictionMiniBtn {
+    width: 100%;
+    justify-content: center;
+  }
+  .predictionIndicatorGrid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .predictionIndicatorCard {
+    padding: 7px;
+  }
+  .predictionIndicatorTitle {
+    font-size: 11px;
+  }
+  .predictionIndicatorValue {
+    font-size: 13px;
+  }
+  .predictionIndicatorMeta {
+    font-size: 11px;
+  }
+  .predictionEventItem {
+    padding: 7px;
+  }
+  .predictionEventTimestamp,
+  .predictionEventReason,
+  .predictionEventDelta {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 520px) {
+  .statGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .tradeDeskSection {
+    padding: 8px;
+  }
+  .tradeDeskSectionTitle {
+    font-size: 14px;
+  }
+  .tradeDeskSectionHint {
+    font-size: 10px;
+  }
+  .tradeDataTable {
+    min-width: 680px;
+    font-size: 11px;
+  }
+  .tradeDataTable th,
+  .tradeDataTable td {
+    padding: 6px 4px !important;
+  }
+  .tradeTableInput {
+    width: 84px;
+    min-width: 72px;
+    padding: 6px 7px;
+    font-size: 11px;
+  }
+  .tradeRowActions {
+    min-width: 72px;
+  }
+  .tradeRowActions .btn {
+    min-height: 28px;
+    padding: 5px 6px;
+    font-size: 11px;
+  }
+  .tradeMobileActions {
+    grid-template-columns: 1fr;
+  }
+  .tradeMobileTitle,
+  .tradeMobilePnl {
+    font-size: 12px;
+  }
+  .tradeMobileChip {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+  .tradeChartMarkerToggles,
+  .tradeChartPresets {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+  }
+  .tradeChartIndicatorToggles {
+    grid-template-columns: 1fr !important;
+  }
+  .tradeChartIndicatorToggles > span:first-child {
+    margin-bottom: 2px;
+  }
+  .tradeChartIndicatorToggles label {
+    min-height: 30px;
+  }
+  .tradeChartPresets .btn,
+  .tradeChartMarkerToggles label {
+    min-height: 34px;
+  }
+  .calendarFilterCard,
+  .calendarSummaryCard,
+  .calendarEventsCard,
+  .calendarErrorCard,
+  .newsFilterCard,
+  .newsMetaCard,
+  .newsListCard,
+  .newsErrorCard {
+    padding: 10px;
+  }
+  .calendarImpactToggleRow .badge {
+    min-height: 36px;
+    padding: 8px 11px;
+    font-size: 11px;
+  }
+  .calendarEventHeader {
+    gap: 6px;
+  }
+  .calendarEventHeader .badge {
+    min-height: 30px;
+  }
+  .calendarEventMeta,
+  .calendarEventValues {
+    font-size: 11px;
+  }
+}
+
+.dashboardSectionAnchor {
+  scroll-margin-top: 90px;
+}
+
+/* Calendar pro panel redesign */
+
+.calendarProPage {
+  gap: 14px;
+}
+
+.calendarProTopbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calendarProTitleRow {
+  display: grid;
+  gap: 4px;
+}
+
+.calendarProSubtitle {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.calendarProControls,
+.calendarProStatusStrip,
+.calendarProEventsCard {
+  border-color: var(--calendar-pro-border);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 100% -20%, var(--calendar-pro-glow-blue), transparent 48%),
+    radial-gradient(circle at 0% 120%, var(--calendar-pro-glow-teal), transparent 44%),
+    linear-gradient(180deg, var(--calendar-pro-surface-1), var(--calendar-pro-surface-2));
+}
+
+.calendarProControls {
+  display: grid;
+  gap: 12px;
+}
+
+.calendarProTabRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.calendarProTab {
+  min-height: 34px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.calendarProTab:hover {
+  border-color: var(--color-border-strong);
+  color: var(--text);
+}
+
+.calendarProTabActive {
+  border-color: var(--color-border-accent);
+  color: #fff;
+  background: linear-gradient(125deg, rgba(37, 99, 235, 0.36), rgba(34, 211, 238, 0.24));
+}
+
+.calendarProTab:focus-visible,
+.calendarProTabRefresh:focus-visible,
+.calendarProImpactToggleActive:focus-visible,
+.calendarProImpactToggleInactive:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.calendarProTabRefresh {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 999px;
+}
+
+.calendarProFilterGrid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  align-items: flex-end;
+}
+
+.calendarProFilterLabel {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.calendarProSearch {
+  min-height: 40px;
+}
+
+.calendarProCurrencySelect {
+  min-width: 132px;
+}
+
+.calendarProImpactToggleActive {
+  background: rgba(255, 255, 255, 0.09);
+  opacity: 1;
+  cursor: pointer;
+}
+
+.calendarProImpactToggleInactive {
+  background: transparent;
+  opacity: 0.62;
+  cursor: pointer;
+}
+
+.calendarCurrencyToggleRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calendarCurrencyToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.calendarCurrencyToggleFlag {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.calendarCurrencyToggleCode {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.calendarFilterFieldCurrency {
+  grid-column: span 2;
+}
+
+@media (max-width: 767px) {
+  .calendarFilterFieldCurrency {
+    grid-column: auto;
+  }
+}
+
+.calendarProFilterActions {
+  justify-content: flex-end;
+}
+
+.calendarProFilterActions .btn {
+  min-width: 120px;
+}
+
+.calendarProStatusStrip {
+  display: grid;
+  gap: 6px;
+  border-left: 3px solid rgba(16, 185, 199, 0.72);
+}
+
+.calendarProStatusStripAlert {
+  border-left-color: rgba(239, 68, 68, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.2);
+}
+
+.calendarProStatusTitle {
+  font-weight: 700;
+}
+
+.calendarProStatusText {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.calendarProErrorCard {
+  border-color: rgba(239, 68, 68, 0.8);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.02));
+}
+
+.calendarProEventsCard {
+  display: grid;
+  gap: 10px;
+}
+
+.calendarProEventsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calendarProEventsTitle {
+  font-weight: 700;
+}
+
+.calendarProEventsCount {
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: rgba(96, 165, 250, 0.16);
+  color: #fff;
+  font-size: 12px;
+}
+
+.calendarProStateText {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.calendarProTableWrap {
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(6, 12, 20, 0.68);
+}
+
+.calendarProTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.calendarProTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  color: var(--muted);
+  background:
+    radial-gradient(circle at 0% 0%, var(--calendar-pro-glow-gold), transparent 34%),
+    rgba(8, 15, 24, 0.96);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.calendarProTable th,
+.calendarProTable td {
+  padding: 10px 8px;
+  vertical-align: top;
+}
+
+.calendarProTable th:first-child,
+.calendarProTable td:first-child {
+  width: 31%;
+}
+
+.calendarProTable tbody tr {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.calendarProTable tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.calendarProTable tbody tr:hover {
+  background: rgba(20, 129, 192, 0.08);
+}
+
+.calendarProEventTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+.calendarProCurrencyCell {
+  display: grid;
+  gap: 2px;
+}
+
+.calendarProCountry,
+.calendarProDateCell {
+  color: var(--muted);
+}
+
+.calendarProValueCell {
+  color: var(--text);
+}
+
+.calendarProMobileList {
+  display: none;
+}
+
+.calendarProMobileCard {
+  margin: 0;
+  border-color: var(--color-border-strong);
+  border-radius: 10px;
+  background: rgba(9, 16, 24, 0.86);
+  display: grid;
+  gap: 7px;
+}
+
+.calendarProMobileHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.calendarProMobileTitle {
+  font-weight: 700;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.calendarProMobileMeta,
+.calendarProMobileValues {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.calendarProMobileValues {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboardInsightSpan2 {
+  grid-column: span 2;
+}
+
+.dashboardInsightSpan3 {
+  grid-column: 1 / -1;
+}
+
+/* Dashboard performance panel */
+
+.dashboardPerformanceProCard {
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 85% -30%, rgba(59, 130, 246, 0.28), transparent 42%),
+    radial-gradient(circle at 8% 120%, rgba(34, 211, 238, 0.2), transparent 50%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.96), rgba(6, 14, 24, 0.98));
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 34px rgba(0, 0, 0, 0.16);
+}
+
+.dashboardPerformanceHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashboardPerformanceBody {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(320px, 1fr);
+  gap: 14px;
+}
+
+.dashboardPerformanceMain {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.dashboardPerformanceTitle {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.dashboardPerformanceSubtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardPerformanceTabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dashboardPerformanceTab {
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.dashboardPerformanceTab:hover {
+  border-color: var(--color-border-accent);
+  color: var(--text);
+}
+
+.dashboardPerformanceTabActive {
+  border-color: var(--color-border-accent);
+  color: #fff;
+  background: linear-gradient(125deg, rgba(59, 130, 246, 0.42), rgba(34, 211, 238, 0.24));
+}
+
+.dashboardPerformanceTab:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.dashboardPerformanceChartWrap {
+  min-height: 500px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(8, 21, 32, 0.78), rgba(6, 14, 24, 0.62));
+  padding: 8px 8px 4px;
+}
+
+.dashboardPerformanceState {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(96, 165, 250, 0.26);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dashboardPerformanceMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.dashboardPerformanceMetricCard {
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(6, 13, 23, 0.76);
+  padding: 8px 9px;
+  min-height: 30px;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+}
+
+.dashboardPerformanceMetricLabel {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dashboardPerformanceMetricValue {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboardPerformanceMetricValueNumber {
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardPerformanceMetricValueUnit {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.dashboardPerformanceMetricValuePositive {
+  color: #67e8f9;
+}
+
+.dashboardPerformanceMetricValueNegative {
+  color: #fca5a5;
+}
+
+.dashboardLossAnalysisCard {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% -30%, rgba(59, 130, 246, 0.25), transparent 48%),
+    linear-gradient(180deg, rgba(6, 14, 24, 0.92), rgba(5, 10, 19, 0.98));
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 34px rgba(0, 0, 0, 0.16);
+}
+
+.dashboardLossAnalysisHead {
+  display: grid;
+  gap: 6px;
+}
+
+.dashboardLossScope {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboardLossScopeChip,
+.dashboardPerformanceSummaryChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 145, 170, 0.2);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(219, 232, 255, 0.82);
+  font-size: 12px;
+}
+
+.dashboardLossAnalysisTitle {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.dashboardLossAnalysisSubtitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardLossSummary {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboardLossAnalysisList {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboardLossRow {
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(7, 13, 22, 0.8);
+  padding: 8px 9px;
+  display: grid;
+  gap: 7px;
+}
+
+.dashboardLossRowTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.dashboardLossRowAccount {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.dashboardLossSeverity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dashboardLossSeverityCritical {
+  border-color: rgba(239, 68, 68, 0.85);
+  color: #fca5a5;
+}
+
+.dashboardLossSeverityWarning {
+  border-color: rgba(245, 158, 11, 0.85);
+  color: #fcd34d;
+}
+
+.dashboardLossSeverityOk {
+  border-color: rgba(16, 185, 199, 0.85);
+  color: #67e8f9;
+}
+
+.dashboardLossTriggerRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboardLossTriggerChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 129, 192, 0.6);
+  color: #7dd3fc;
+  background: rgba(20, 129, 192, 0.12);
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.dashboardLossMeta {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardLossRowAction {
+  width: fit-content;
+  font-size: 12px;
+  text-decoration: none;
+  color: #fff;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  padding: 5px 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dashboardLossRowAction:hover {
+  border-color: var(--color-border-accent);
+}
+
+.dashboardLossRowAction:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.dashboardLossAnalysisFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dashboardPerformanceSummaryChips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+@media (max-width: 900px) {
+  .dashboardPerformanceHead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboardPerformanceChartWrap {
+    min-height: 360px;
+  }
+
+  .dashboardPerformanceMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboardAlertsCard,
+  .dashboardInsightCard,
+  .dashboardLossAnalysisCard {
+    padding: 10px;
+  }
+
+  .dashboardPerformanceSummaryChips,
+  .dashboardLossScope,
+  .dashboardLossSummary {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardPerformanceSummaryChip,
+  .dashboardLossScopeChip,
+  .dashboardLossSeverity {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dashboardPerformanceMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardLossRowTop,
+  .dashboardOpenPositionsHead,
+  .dashboardNewsProHead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboardLossRowAction,
+  .dashboardLossAnalysisFooter .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Dashboard open positions card */
+
+.dashboardOpenPositionsCard {
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+  display: grid;
+  gap: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 34px rgba(0, 0, 0, 0.16);
+}
+
+.dashboardOpenPositionsHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashboardOpenPositionsTitle {
+  font-weight: 700;
+}
+
+.dashboardOpenPositionsSubtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardOpenPositionsFilter {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.dashboardOpenPositionsFilter span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardOpenPositionsMeta {
+  font-size: 12px;
+  color: #fcd34d;
+}
+
+.dashboardOpenPositionsTableWrap {
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(7, 14, 22, 0.8);
+  max-height: 360px;
+  overflow: auto;
+}
+
+.dashboardOpenPositionsTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+}
+
+.dashboardOpenPositionsTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(8, 17, 27, 0.98);
+  color: var(--muted);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(96, 165, 250, 0.14);
+}
+
+.dashboardOpenPositionsTable tbody td {
+  padding: 9px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  vertical-align: top;
+}
+
+.dashboardOpenPositionsRow:hover {
+  background: rgba(20, 129, 192, 0.08);
+}
+
+.dashboardOpenPositionsExchange {
+  display: block;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.dashboardOpenPositionsSymbol {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.dashboardOpenPositionsSide {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dashboardOpenPositionsSideLong {
+  border-color: rgba(16, 185, 199, 0.8);
+  color: #67e8f9;
+}
+
+.dashboardOpenPositionsSideShort {
+  border-color: rgba(239, 68, 68, 0.85);
+  color: #fca5a5;
+}
+
+.dashboardOpenPositionsPnlPositive {
+  color: #67e8f9;
+}
+
+.dashboardOpenPositionsPnlNegative {
+  color: #fca5a5;
+}
+
+.dashboardOpenPositionsAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border-default);
+  color: #fff;
+  text-decoration: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dashboardOpenPositionsAction:hover {
+  border-color: var(--color-border-accent);
+}
+
+.dashboardOpenPositionsAction:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.dashboardOpenPositionsState {
+  min-height: 120px;
+  border: 1px dashed rgba(96, 165, 250, 0.24);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dashboardOpenPositionsMobileList {
+  display: none;
+}
+
+.dashboardOpenPositionsMobileCard {
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(7, 14, 22, 0.8);
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+}
+
+.dashboardOpenPositionsMobileMeta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardOpenPositionsMobileGrid {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.card.dashboardFearGreedCard,
+.card.dashboardUttCard,
+.card.exchangeOverviewCard {
+  border-radius: 18px !important;
+  border-color: var(--color-border-strong) !important;
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 34px rgba(0, 0, 0, 0.16) !important;
+}
+
+.tradeDeskWrap .tradeDeskNoticeError {
+  border-color: rgba(239, 68, 68, 0.92);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.16), rgba(239, 68, 68, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
+}
+
+.tradeDeskWrap .tradeDeskNoticeWarn {
+  border-color: rgba(245, 158, 11, 0.88);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.tradeDeskWrap .tradeDeskNoticeInfo {
+  border-color: rgba(59, 130, 246, 0.88);
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.16), rgba(59, 130, 246, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.2);
+}
+
+.predictionsWrap .predictionAlertError {
+  border-color: rgba(239, 68, 68, 0.92);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.16), rgba(239, 68, 68, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
+}
+
+.predictionsWrap .predictionAlertWarn {
+  border-color: rgba(245, 158, 11, 0.88);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.tradeDeskWrap .tradeDeskSummary,
+.tradeDeskWrap .tradeDeskPane {
+  border-color: var(--color-border-default);
+  background:
+    radial-gradient(circle at 85% -35%, rgba(59, 130, 246, 0.16), transparent 44%),
+    linear-gradient(180deg, rgba(8, 18, 28, 0.92), rgba(6, 13, 22, 0.96));
+}
+
+.predictionsWrap .predictionDetailPanel,
+.predictionsWrap .predictionIndicatorCard,
+.predictionsWrap .predictionSubCard {
+  border-color: var(--color-border-default);
+  background:
+    radial-gradient(circle at 90% -30%, rgba(59, 130, 246, 0.14), transparent 44%),
+    linear-gradient(180deg, rgba(8, 18, 28, 0.9), rgba(6, 13, 22, 0.96));
+}
+
+/* Predictions performance mini metrics should stay compact/neutral */
+
+.predictionsWrap .predictionsQualityGrid > .card {
+  border-radius: 12px;
+  border-color: var(--color-border-default);
+  background: rgba(8, 16, 26, 0.82);
+}
+
+/* Dashboard calendar card alignment */
+
+.dashboardCalendarProCard {
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 34px rgba(0, 0, 0, 0.16);
+}
+
+.dashboardCalendarProHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dashboardCalendarProTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.dashboardCalendarProHead .btn {
+  flex-shrink: 0;
+}
+
+.dashboardCalendarProList {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dashboardCalendarProCount {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboardCalendarProRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.dashboardCalendarProRow .badge {
+  flex-shrink: 0;
+}
+
+.dashboardCalendarProMeta {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* News pro panel redesign */
+
+.newsProPage {
+  gap: 14px;
+}
+
+.newsProTopbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.newsProTitleRow {
+  display: grid;
+  gap: 4px;
+}
+
+.newsProSubtitle {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.newsProControls,
+.newsProStatusStrip,
+.newsProListCard {
+  border-color: var(--calendar-pro-border);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 100% -20%, var(--calendar-pro-glow-blue), transparent 48%),
+    radial-gradient(circle at 0% 120%, var(--calendar-pro-glow-teal), transparent 44%),
+    linear-gradient(180deg, var(--calendar-pro-surface-1), var(--calendar-pro-surface-2));
+}
+
+.newsProControls {
+  display: grid;
+  gap: 12px;
+}
+
+.newsProTabRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.newsProTab {
+  min-height: 34px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.newsProTab:hover {
+  border-color: var(--color-border-strong);
+  color: var(--text);
+}
+
+.newsProTabActive {
+  border-color: var(--color-border-accent);
+  color: #fff;
+  background: linear-gradient(125deg, rgba(37, 99, 235, 0.36), rgba(34, 211, 238, 0.24));
+}
+
+.newsProTab:focus-visible,
+.newsProTabRefresh:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.newsProTabRefresh {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 999px;
+}
+
+.newsProFilterGrid {
+  align-items: flex-end;
+}
+
+.newsProFilterLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.newsProFilterActions {
+  justify-content: flex-end;
+}
+
+.newsProStatusStrip {
+  display: grid;
+  gap: 8px;
+  border-left: 3px solid rgba(20, 129, 192, 0.78);
+}
+
+.newsProStatusTitle {
+  font-weight: 700;
+}
+
+.newsProStatusMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.newsProStatusTag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.newsProErrorCard {
+  border-color: rgba(239, 68, 68, 0.82);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.02));
+}
+
+.newsProStateText {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.newsProListCard {
+  display: grid;
+  gap: 8px;
+}
+
+.newsProList {
+  gap: 10px;
+}
+
+.newsProItemCard {
+  border-color: var(--color-border-strong);
+  border-radius: 10px;
+  background: rgba(9, 16, 24, 0.82);
+}
+
+.newsProItemHeader {
+  margin-bottom: 2px;
+}
+
+.newsProItemTime {
+  color: var(--muted);
+}
+
+.newsProItemTitle {
+  margin-top: 4px;
+}
+
+.newsProItemText {
+  color: var(--muted);
+}
+
+.newsProPage .newsBadgeCrypto {
+  border-color: rgba(16, 185, 199, 0.85);
+  color: #67e8f9;
+}
+
+.newsProPage .newsBadgeGeneral {
+  border-color: rgba(20, 129, 192, 0.8);
+  color: #93c5fd;
+}
+
+/* Dashboard news card alignment */
+
+.dashboardNewsProCard {
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 34px rgba(0, 0, 0, 0.16);
+}
+
+.dashboardNewsProHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dashboardNewsProTitle {
+  font-weight: 700;
+}
+
+.dashboardNewsProList {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboardNewsProRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  text-decoration: none;
+  color: inherit;
+  padding: 8px 9px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: rgba(7, 14, 22, 0.75);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.dashboardNewsProRow:hover {
+  border-color: var(--color-border-accent);
+  background: rgba(9, 18, 28, 0.86);
+}
+
+.dashboardNewsProBadges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboardNewsProContent {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dashboardNewsProTime {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dashboardNewsProTitleText {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+.dashboardNewsProRow:hover .dashboardNewsProTitleText {
+  color: var(--text);
+}
+
+.dashboardNewsProMeta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Dashboard widgets share one outer panel surface. */
+.card.dashboardInsightCard,
+.card.dashboardAlertsCard,
+.card.exchangeOverviewCard,
+.card.exchangeOverviewEmpty {
+  border-color: var(--dashboard-widget-border) !important;
+  background: var(--dashboard-widget-surface) !important;
+  box-shadow: var(--dashboard-widget-shadow) !important;
+}
+
+@media (max-width: 1000px) {
+  .dashboardPerformanceBody {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .calendarProFilterGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendarProFilterActions {
+    justify-content: stretch;
+  }
+
+  .calendarProFilterActions .btn {
+    width: 100%;
+  }
+
+  .calendarProTableWrap {
+    display: none;
+  }
+
+  .calendarProMobileList {
+    display: grid;
+    gap: 8px;
+  }
+
+  .dashboardCalendarProRow {
+    align-items: flex-start;
+  }
+
+  .dashboardCalendarProMeta {
+    white-space: normal;
+  }
+
+  .dashboardInsightSpan2 {
+    grid-column: span 1;
+  }
+
+  .dashboardInsightSpan3 {
+    grid-column: span 1;
+  }
+
+  .dashboardPerformanceChartWrap,
+  .dashboardPerformanceState {
+    min-height: 230px;
+  }
+
+  .dashboardPerformanceMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboardPerformanceMetricValue {
+    font-size: 17px;
+  }
+
+  .dashboardOpenPositionsHead {
+    align-items: stretch;
+  }
+
+  .dashboardOpenPositionsFilter {
+    min-width: 0;
+  }
+
+  .dashboardOpenPositionsFilter .select {
+    width: 100%;
+  }
+
+  .dashboardOpenPositionsTableWrap {
+    display: none;
+  }
+
+  .dashboardOpenPositionsMobileList {
+    display: grid;
+    gap: 8px;
+  }
+
+  .newsProFilterGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .newsProFilterActions .btn {
+    width: 100%;
+  }
+
+  .dashboardNewsProRow {
+    padding: 8px;
+  }
+
+  .dashboardNewsProTitleText,
+  .dashboardNewsProMeta {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}

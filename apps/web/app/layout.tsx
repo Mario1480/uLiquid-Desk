@@ -5,11 +5,16 @@ import { resolveRequestLocale } from "../i18n/request";
 import { getMessages } from "../i18n/messages";
 import { assertWebEnv } from "../lib/startup-env";
 import "./globals.css";
+import "./styles/shell.css";
+import "./styles/desk.css";
+import "./styles/settings-admin.css";
+import "./styles/bots-wallet.css";
 import "./ui-system.css";
 
 assertWebEnv();
 
 export const metadata = { title: "uLiquid Desk" };
+export const viewport = { width: "device-width", initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await resolveRequestLocale();

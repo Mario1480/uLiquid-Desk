@@ -289,6 +289,42 @@
   background: linear-gradient(135deg, rgba(96, 165, 250, 0.96), rgba(34, 211, 238, 0.88));
 }
 
+.btnStart,
+.btn.btnStart,
+.btnStart:hover:not(:disabled),
+.btn.btnStart:hover:not(:disabled) {
+  border-color: rgba(34, 197, 94, 0.8);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.96), rgba(20, 184, 166, 0.88));
+  color: #ecfdf5;
+  box-shadow:
+    0 16px 34px rgba(20, 184, 166, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.btnPause,
+.btn.btnPause,
+.btnPause:hover:not(:disabled),
+.btn.btnPause:hover:not(:disabled) {
+  border-color: rgba(245, 158, 11, 0.78);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.96), rgba(251, 191, 36, 0.86));
+  color: #fff7ed;
+  box-shadow:
+    0 16px 34px rgba(245, 158, 11, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.btnStop,
+.btn.btnStop,
+.btnStop:hover:not(:disabled),
+.btn.btnStop:hover:not(:disabled) {
+  border-color: rgba(239, 68, 68, 0.8);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.96), rgba(244, 63, 94, 0.88));
+  color: #fff1f2;
+  box-shadow:
+    0 16px 34px rgba(239, 68, 68, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
 .input {
   min-height: 40px;
   border-radius: var(--ui-radius-control);

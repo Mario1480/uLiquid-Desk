@@ -1,0 +1,2249 @@
+/* Settings, admin, subscriptions, strategy, and indicator styles. */
+/* Subscription portal */
+.subscriptionPortalWrap {
+  max-width: 1240px;
+}
+.subscriptionPortalTopActions {
+  margin-bottom: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.subscriptionPortalHeader {
+  margin-bottom: 12px;
+}
+.subscriptionPortalHeader h2 {
+  margin: 0 0 6px;
+}
+.subscriptionPortalEyebrow {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.subscriptionPortalMuted {
+  color: var(--muted);
+  font-size: 13px;
+}
+.subscriptionPortalLoading {
+  padding: 12px;
+  font-size: 13px;
+}
+.subscriptionPortalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.subscriptionPortalCard {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.subscriptionCardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.subscriptionCardTitle {
+  font-weight: 700;
+  font-size: 15px;
+}
+.subscriptionStatusBadge {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.subscriptionStatusBadgeActive {
+  border-color: rgba(34, 197, 94, 0.65);
+  color: #a7f3d0;
+  background: rgba(34, 197, 94, 0.12);
+}
+.subscriptionStatusBadgeInactive {
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.12);
+}
+.subscriptionPortalFieldRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.subscriptionPortalWarn {
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.subscriptionFeatureWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+.subscriptionFeatureBadge {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+.subscriptionFeatureBadgeOn {
+  border-color: rgba(20, 129, 192, 0.55);
+  background: rgba(20, 129, 192, 0.15);
+  color: #dbeafe;
+}
+.subscriptionMono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  word-break: break-all;
+}
+.subscriptionPortalCardAction {
+  margin-top: 4px;
+  width: fit-content;
+}
+.subscriptionPortalOrdersCard {
+  margin-top: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+.subscriptionOrdersTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.subscriptionOrdersTable th,
+.subscriptionOrdersTable td {
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  vertical-align: top;
+  text-align: left;
+}
+.subscriptionOrderPackageCell {
+  display: grid;
+  gap: 4px;
+  min-width: 240px;
+}
+.subscriptionOrderPackageLine {
+  font-size: 12px;
+}
+.subscriptionStatusPill {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  padding: 3px 9px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.subscriptionStatusPillpaid {
+  border-color: rgba(34, 197, 94, 0.6);
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+.subscriptionStatusPillpending {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.12);
+  color: #bfdbfe;
+}
+.subscriptionStatusPillfailed,
+.subscriptionStatusPillexpired {
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+}
+.subscriptionPortalUpgradeCard {
+  margin-top: 12px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.subscriptionPortalMessage {
+  margin-top: 10px;
+  color: #fca5a5;
+  font-size: 13px;
+}
+.subscriptionOrderCard {
+  padding: 12px;
+}
+.subscriptionOrderGrid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(340px, 1.25fr) minmax(260px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.subscriptionOrderSection {
+  display: grid;
+  gap: 10px;
+}
+.subscriptionOrderSectionHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.subscriptionOrderSectionTitle {
+  font-weight: 700;
+  font-size: 15px;
+}
+.subscriptionOrderIncluded {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(148, 163, 184, 0.06);
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.subscriptionOrderIncludedTitle {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.subscriptionAddonList {
+  display: grid;
+  gap: 8px;
+}
+.subscriptionAddonItem {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.02);
+}
+.subscriptionAddonItemSelected {
+  border-color: rgba(20, 129, 192, 0.65);
+  background: rgba(20, 129, 192, 0.1);
+}
+.subscriptionAddonTitle {
+  font-size: 13px;
+  font-weight: 700;
+}
+.subscriptionAddonPrice {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #fef3c7;
+}
+.subscriptionAddonQuantityWrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.subscriptionAddonQuantityValue {
+  min-width: 42px;
+  height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
+}
+.subscriptionAddonQuantityWrap .btn {
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.subscriptionAddonQuantityInput {
+  width: 56px;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.subscriptionOrderSummary {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(148, 163, 184, 0.08);
+  display: grid;
+  gap: 8px;
+}
+.subscriptionOrderSummarySticky {
+  position: sticky;
+  top: 10px;
+}
+.subscriptionOrderSummaryHeader {
+  display: grid;
+  gap: 2px;
+}
+.subscriptionOrderSummaryTitle {
+  font-weight: 700;
+}
+.subscriptionOrderLineList {
+  display: grid;
+  gap: 6px;
+}
+.subscriptionOrderSummaryItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.subscriptionOrderSummaryStrong {
+  font-weight: 700;
+}
+.subscriptionOrderSummaryDivider {
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+.subscriptionOrderPayButton {
+  margin-top: 8px;
+  width: 100%;
+}
+.subscriptionOrderSimpleHint {
+  margin-top: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.08);
+  font-size: 12px;
+}
+@media (max-width: 980px) {
+  .subscriptionPortalGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .subscriptionOrderGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .subscriptionOrderSummarySticky {
+    position: static;
+  }
+}
+.settingsWrap {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+.settingsSection {
+  padding: 14px;
+}
+.settingsLandingGrouped {
+  display: grid;
+  gap: 12px;
+}
+.settingsLandingGroupCard {
+  position: relative;
+  overflow: hidden;
+  --settings-group-accent: #facc15;
+  border-color: color-mix(in oklab, var(--settings-group-accent) 42%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--settings-group-accent) 8%, transparent),
+    rgba(255, 255, 255, 0.01) 58%,
+    rgba(255, 255, 255, 0.01)
+  );
+}
+.settingsLandingGroupCard::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: color-mix(in oklab, var(--settings-group-accent) 80%, #ffffff 20%);
+}
+.settingsLandingGroupAdmin {
+  --settings-group-accent: #38bdf8;
+}
+.settingsLandingGroupAccount {
+  --settings-group-accent: #a78bfa;
+}
+.settingsLandingGroupWeb3 {
+  --settings-group-accent: #22c55e;
+}
+.settingsLandingGroupAffiliate {
+  --settings-group-accent: #f59e0b;
+}
+.settingsLandingGroupSettings {
+  --settings-group-accent: #34d399;
+}
+.settingsLandingGroupStrategy {
+  --settings-group-accent: #d8b97a;
+  border-color: color-mix(in oklab, var(--settings-group-accent) 18%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--settings-group-accent) 1.2%, transparent),
+    rgba(255, 255, 255, 0.01) 68%,
+    rgba(255, 255, 255, 0.01)
+  );
+}
+.settingsLandingGroupStrategy::before {
+  background: color-mix(in oklab, var(--settings-group-accent) 40%, #ffffff 60%);
+  opacity: 0.55;
+}
+.settingsLandingGroupStrategy .settingsAccordionItemStrategy.settingsAccordionItemOpen {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(245, 158, 11, 0.02);
+}
+.settingsSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--app-shell-line);
+}
+.settingsSectionMeta {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 10px;
+}
+.settingsAlert {
+  padding: 10px;
+}
+.settingsAlertError {
+  border-color: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.07);
+}
+.settingsAlertSuccess {
+  border-color: rgba(34, 197, 94, 0.9);
+  background: rgba(34, 197, 94, 0.08);
+}
+.settingsAccordion {
+  display: grid;
+  gap: 6px;
+}
+.settingsAccordionItem {
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: rgba(8, 16, 26, 0.72);
+  overflow: hidden;
+}
+.settingsAccordionItemOpen {
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.12), transparent 42%),
+    rgba(8, 18, 30, 0.86);
+}
+.settingsAccordionItemAccess {
+  border-color: rgba(56, 189, 248, 0.36);
+}
+.settingsAccordionItemAccess.settingsAccordionItemOpen {
+  border-color: rgba(56, 189, 248, 0.56);
+  background: rgba(56, 189, 248, 0.08);
+}
+.settingsAccordionItemIntegrations {
+  border-color: rgba(52, 211, 153, 0.36);
+}
+.settingsAccordionItemIntegrations.settingsAccordionItemOpen {
+  border-color: rgba(52, 211, 153, 0.56);
+}
+.settingsAccordionItemAffiliate {
+  border-color: rgba(245, 158, 11, 0.36);
+}
+.settingsAccordionItemAffiliate.settingsAccordionItemOpen {
+  border-color: rgba(245, 158, 11, 0.56);
+  background: rgba(245, 158, 11, 0.08);
+}
+.settingsAccordionItemStrategy {
+  border-color: rgba(245, 158, 11, 0.36);
+}
+.settingsAccordionItemStrategy.settingsAccordionItemOpen {
+  border-color: rgba(245, 158, 11, 0.56);
+  background: rgba(245, 158, 11, 0.08);
+}
+.settingsAccordionTrigger {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+}
+.settingsAccordionTrigger:hover {
+  background: rgba(96, 165, 250, 0.08);
+}
+.settingsAccordionTrigger:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+.settingsAccordionChevron {
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.settingsAccordionChevronOpen {
+  transform: rotate(180deg);
+}
+.settingsAccordionBody {
+  border-top: 1px solid var(--color-border-default);
+  padding: 10px 12px 12px;
+  display: grid;
+  gap: 8px;
+}
+.settingsAccordionDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}
+.settingsAccordionItemDisabled {
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.45);
+  background: rgba(148, 163, 184, 0.06);
+}
+.settingsAccordionItemDisabled .settingsAccordionTrigger {
+  color: #cbd5e1;
+}
+.settingsAccordionItemDisabled .settingsAccordionChevron {
+  color: #cbd5e1;
+}
+.settingsInlineTitle {
+  font-size: 15px;
+  font-weight: 700;
+}
+.settingsMutedText {
+  font-size: 12px;
+  color: var(--muted);
+}
+.settingsFormGrid {
+  display: grid;
+  gap: 10px;
+}
+.settingsWalletLinkCard {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: rgba(8, 16, 26, 0.74);
+}
+.settingsWalletLinkCardWarn {
+  border-color: rgba(245, 158, 11, 0.44);
+  background: rgba(245, 158, 11, 0.06);
+}
+.settingsWalletLinkCardMismatch {
+  border-color: rgba(239, 68, 68, 0.42);
+  background: rgba(239, 68, 68, 0.05);
+}
+.settingsWalletLinkCardReady {
+  border-color: rgba(52, 211, 153, 0.34);
+  background: rgba(16, 185, 129, 0.05);
+}
+.settingsWalletLinkHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.settingsWalletLinkGrid,
+.gridTemplateFormCompact,
+.gridTemplatePreviewInputGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.settingsWalletLinkTile {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: rgba(6, 14, 24, 0.7);
+}
+.settingsWalletLinkTile strong {
+  overflow-wrap: anywhere;
+}
+.settingsWalletLinkActions,
+.settingsPromptStarterRow,
+.settingsPromptChatActions,
+.gridTemplatePreviewBadges,
+.indicatorFormActions,
+.adminCardActions,
+.adminInlineActions,
+.helpQuickLinks,
+.settingsRiskNav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settingsWalletLinkError {
+  color: #ff6b6b;
+  font-size: 12px;
+}
+.settingsTwoColGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.settingsPromptBuilder {
+  display: grid;
+  gap: 10px;
+}
+.settingsPromptChatPanel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(216, 185, 122, 0.28);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(216, 185, 122, 0.05), rgba(6, 14, 24, 0.52)),
+    rgba(8, 16, 26, 0.62);
+}
+.settingsPromptChatHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settingsPromptChatMessages {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(3, 8, 20, 0.36);
+}
+.settingsPromptChatBubble {
+  display: grid;
+  gap: 4px;
+  width: min(78%, 680px);
+  padding: 9px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.settingsPromptChatBubble-assistant {
+  justify-self: start;
+  background: rgba(15, 23, 42, 0.78);
+}
+.settingsPromptChatBubble-user {
+  justify-self: end;
+  border-color: rgba(96, 165, 250, 0.28);
+  background: rgba(59, 130, 246, 0.14);
+}
+.settingsPromptChatRole {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.settingsPromptChatInputRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.settingsPromptChatInput {
+  min-height: 82px;
+  resize: vertical;
+}
+.gridTemplateCreateLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.gridTemplateSubsectionTitle {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  border-top: 1px solid var(--color-border-default);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+.gridTemplatePreviewStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.gridTemplateFormCompact label,
+.gridTemplatePreviewInputGrid label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.gridTemplateFormCompact .input,
+.gridTemplatePreviewInputGrid .input {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.gridTemplateFormCompact textarea.input {
+  min-height: 76px;
+}
+.gridTemplateFormCompact .settingsToggle {
+  font-size: 12px;
+}
+.gridTemplatePreviewStatsGrid > div {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+.gridTemplatePreviewStatsGrid > div strong {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.gridTemplatePreviewCard {
+  background:
+    linear-gradient(160deg, rgba(56, 189, 248, 0.06) 0%, rgba(2, 6, 23, 0) 42%),
+    linear-gradient(200deg, rgba(251, 191, 36, 0.05) 0%, rgba(2, 6, 23, 0) 46%);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
+}
+.gridTemplatePreviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+.gridTemplatePreviewStatsGrid > * {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.24) 0%, rgba(2, 6, 23, 0.16) 100%);
+  padding: 7px 8px;
+}
+.gridTemplatePreviewMetaLine {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.gridTemplatePreviewTagRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.gridTemplatePreviewTagRow .tag {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+.gridTemplatePreviewSticky {
+  position: sticky;
+  top: 88px;
+}
+@media (max-width: 1280px) {
+  .gridTemplateCreateLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .gridTemplatePreviewSticky {
+    position: static;
+  }
+
+  .gridTemplatePreviewStatsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .gridTemplateFormCompact,
+  .gridTemplatePreviewInputGrid,
+  .gridTemplatePreviewStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .gridTemplatePreviewHeader {
+    align-items: flex-start;
+  }
+}
+.settingsField {
+  display: grid;
+  gap: 6px;
+}
+.settingsFieldLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+.settingsAccountList {
+  display: grid;
+  gap: 8px;
+}
+.settingsAccountCard {
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.settingsAccountActions {
+  display: flex;
+  gap: 8px;
+}
+.adminTopActions {
+  margin-bottom: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.adminLandingToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.adminLandingMeta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.adminLandingMaintenanceRow {
+  display: grid;
+  gap: 10px;
+}
+.adminLandingMaintenanceBadge {
+  justify-self: start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+}
+.adminLandingMaintenanceBadgeActive {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde9be;
+}
+.adminLandingMaintenanceBadgeIdle {
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(56, 189, 248, 0.12);
+  color: #c9f1ff;
+}
+.adminLandingSearch {
+  width: min(360px, 100%);
+}
+.adminLandingGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.adminLandingGrouped {
+  display: grid;
+  gap: 14px;
+}
+.adminLandingGroupCard {
+  display: grid;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+  --admin-group-accent: #facc15;
+  border-color: color-mix(in oklab, var(--admin-group-accent) 42%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--admin-group-accent) 8%, transparent),
+    rgba(255, 255, 255, 0.01) 55%,
+    rgba(255, 255, 255, 0.01)
+  );
+}
+.adminLandingGroupCard::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: color-mix(in oklab, var(--admin-group-accent) 80%, #ffffff 20%);
+}
+.adminLandingGroupCard .settingsSectionHeader {
+  margin-bottom: 0;
+}
+.adminLandingGroupCard .settingsSectionMeta {
+  margin-bottom: 0;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--admin-group-accent) 38%, transparent);
+  color: color-mix(in oklab, var(--admin-group-accent) 80%, #ffffff 20%);
+  background: color-mix(in oklab, var(--admin-group-accent) 12%, transparent);
+}
+.adminLandingGroupAccess {
+  --admin-group-accent: #38bdf8;
+}
+.adminLandingGroupIntegrations {
+  --admin-group-accent: #34d399;
+}
+.adminLandingGroupWeb3 {
+  --admin-group-accent: #22c55e;
+}
+.adminLandingGroupStrategy {
+  --admin-group-accent: #f59e0b;
+}
+.adminLandingGroupGrid {
+  margin-top: 4px;
+}
+.adminLandingCard {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 12px;
+  border-color: rgba(255, 193, 7, 0.22);
+  background: rgba(255, 255, 255, 0.01);
+}
+.adminLandingCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.adminLandingDesc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.35;
+  min-height: 34px;
+}
+.adminLandingActions {
+  display: flex;
+  gap: 8px;
+}
+.adminLandingBadge {
+  border-color: rgba(255, 193, 7, 0.48);
+  color: #ffe082;
+  font-size: 11px;
+  padding: 5px 9px;
+}
+.adminStrategiesIndexGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.adminStrategiesIndexLink {
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+.adminStrategiesIndexLink:hover {
+  border-color: rgba(255, 193, 7, 0.42);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  transform: translateY(-1px);
+}
+.adminStrategiesIndexLinkTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.adminStrategiesIndexLinkDesc {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.adminStrategiesIndexLinkAction {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffe082;
+}
+.adminPageIntro {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.indicatorAdminTitle {
+  margin-top: 0;
+  margin-bottom: 4px;
+  letter-spacing: 0.01em;
+}
+.indicatorAdminIntro {
+  margin-bottom: 4px;
+}
+.indicatorCatalogSection {
+  display: grid;
+  gap: 12px;
+  background: linear-gradient(180deg, rgba(255, 193, 7, 0.08), rgba(255, 193, 7, 0.02) 52%, transparent);
+}
+.indicatorCatalogScopeChip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 193, 7, 0.38);
+  border-radius: 999px;
+  font-size: 12px;
+  color: #ffe082;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.indicatorCatalogStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.indicatorCatalogStatCard {
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(16, 24, 38, 0.55);
+}
+.indicatorCatalogStatLabel {
+  font-size: 11px;
+  color: var(--muted);
+}
+.indicatorCatalogStatValue {
+  margin-top: 2px;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.indicatorCatalogGroupList {
+  display: grid;
+  gap: 10px;
+}
+.indicatorCatalogGroupCard {
+  border: 1px solid rgba(255, 193, 7, 0.26);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(16, 24, 38, 0.48);
+  display: grid;
+  gap: 8px;
+}
+.indicatorCatalogGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.indicatorCatalogGroupCount {
+  border: 1px solid rgba(255, 193, 7, 0.28);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #ffd55f;
+}
+.indicatorCatalogAccordionMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.indicatorCatalogItemList {
+  display: grid;
+  gap: 8px;
+}
+.indicatorCatalogItemCard {
+  border: 1px solid rgba(255, 193, 7, 0.2);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.indicatorCatalogItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.indicatorCatalogItemStatus {
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.indicatorCatalogTokenList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.indicatorCatalogToken {
+  border: 1px solid rgba(255, 193, 7, 0.2);
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.5);
+  white-space: nowrap;
+}
+.indicatorOverrideSection {
+  display: grid;
+  gap: 12px;
+}
+.indicatorOverrideModeChip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 193, 7, 0.34);
+  border-radius: 999px;
+  font-size: 11px;
+  color: #ffd55f;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+}
+.indicatorOverrideIntro {
+  margin-top: -6px;
+}
+.indicatorScopeGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.indicatorOverrideSection .indicatorScopeGrid {
+  grid-template-columns: 1fr;
+}
+.indicatorCardGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.indicatorConfigBlock {
+  border: 1px solid rgba(255, 193, 7, 0.2);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  display: grid;
+  gap: 8px;
+}
+.indicatorConfigTitle {
+  font-size: 14px;
+  font-weight: 700;
+}
+.indicatorConfigSubTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffd55f;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.indicatorConfigHint {
+  margin-top: -4px;
+}
+.indicatorConfigGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.indicatorOverrideAccordion .indicatorConfigGrid {
+  grid-template-columns: 1fr;
+}
+.indicatorInlineChecks {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.adminUserCard {
+  padding: 10px;
+}
+.adminUserHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.adminUserActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.adminUserPasswordInput {
+  width: 180px;
+}
+.adminShell {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+}
+.adminSidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.adminMain {
+  padding: 18px;
+}
+.adminNav {
+  display: grid;
+  gap: 8px;
+}
+.adminHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.adminTableWrap {
+  overflow-x: auto;
+}
+.adminTableWrap table {
+  min-width: 640px;
+}
+.adminCards {
+  display: none;
+  gap: 12px;
+}
+.adminCard {
+  padding: 12px;
+}
+.adminMeta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.adminRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.adminFormGrid {
+  display: grid;
+  grid-template-columns: 1fr 160px 140px 140px;
+  gap: 10px;
+  align-items: flex-end;
+}
+.adminFieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+@media (max-width: 900px) {
+  .adminShell {
+    grid-template-columns: 1fr;
+  }
+  .adminSidebar {
+    position: static !important;
+    height: auto !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border);
+  }
+  .adminMain {
+    padding: 14px;
+  }
+  .adminNav {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+  .adminHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .adminFormGrid {
+    grid-template-columns: 1fr;
+  }
+  .adminFieldRow {
+    grid-template-columns: 1fr;
+  }
+  .adminTableWrap table {
+    min-width: 520px;
+  }
+  .adminTableWrap {
+    display: none;
+  }
+  .adminCards {
+    display: grid;
+  }
+}
+@media (max-width: 700px) {
+  .settingsSection {
+    padding: 12px;
+  }
+  .settingsLandingGrouped {
+    gap: 8px;
+  }
+  .settingsAccordion {
+    gap: 5px;
+  }
+  .settingsAccordionTrigger {
+    font-size: 14px;
+    min-height: 42px;
+    padding: 8px 10px;
+  }
+  .settingsAccordionBody {
+    padding: 9px 10px 10px;
+    gap: 7px;
+  }
+  .settingsTwoColGrid {
+    grid-template-columns: 1fr;
+  }
+  .settingsPromptChatBubble {
+    width: 100%;
+  }
+  .settingsPromptChatInputRow {
+    grid-template-columns: 1fr;
+  }
+  .settingsPromptChatInputRow .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .settingsAccountCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .settingsAccountActions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .settingsAccountActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .adminTopActions {
+    margin-bottom: 8px;
+  }
+  .indicatorCatalogScopeChip {
+    width: 100%;
+    justify-content: center;
+  }
+  .indicatorCatalogStatsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .indicatorCatalogStatValue {
+    font-size: 18px;
+  }
+  .indicatorCatalogGroupCard {
+    padding: 8px;
+  }
+  .indicatorCatalogItemCard {
+    padding: 7px;
+  }
+  .indicatorCatalogToken {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .indicatorConfigGrid,
+  .indicatorScopeGrid,
+  .indicatorCardGrid {
+    grid-template-columns: 1fr;
+  }
+  .indicatorFormActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .adminLandingToolbar {
+    align-items: stretch;
+  }
+  .adminLandingSearch {
+    width: 100%;
+  }
+  .adminLandingGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .adminStrategiesIndexGrid {
+    grid-template-columns: 1fr;
+  }
+  .adminLandingGrouped {
+    gap: 8px;
+  }
+  .adminLandingGroupCard {
+    gap: 8px;
+  }
+  .adminLandingGroupGrid {
+    margin-top: 0;
+  }
+  .adminLandingCard {
+    padding: 10px;
+    gap: 8px;
+  }
+  .adminLandingDesc {
+    min-height: 0;
+  }
+  .adminLandingActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .adminUserHead {
+    flex-direction: column;
+  }
+  .adminUserActions {
+    width: 100%;
+  }
+  .adminUserActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .adminUserPasswordInput {
+    width: 100%;
+  }
+}
+/* Platform admin */
+.adminShell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.adminShellContent {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.adminSidebarToggle {
+  display: none;
+}
+.adminSidebarPanel {
+  position: sticky;
+  top: 84px;
+}
+.adminSidebarPanelInner {
+  border: 1px solid rgba(115, 138, 164, 0.18);
+  background:
+    linear-gradient(180deg, rgba(18, 30, 48, 0.92), rgba(10, 19, 32, 0.96)),
+    radial-gradient(circle at top left, rgba(82, 194, 255, 0.12), transparent 48%);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 18px 42px rgba(5, 10, 20, 0.18);
+  overflow: hidden;
+}
+.adminSidebarPanelInner::before {
+  content: "";
+  display: block;
+  height: 3px;
+  margin: -18px -18px 16px;
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.92), rgba(99, 102, 241, 0.55));
+}
+.adminSidebarBrand {
+  margin-bottom: 18px;
+}
+.adminSidebarEyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(188, 209, 229, 0.78);
+}
+.adminSidebarTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f5fbff;
+}
+.adminSidebarCopy {
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(188, 209, 229, 0.72);
+}
+.adminSidebarNav {
+  display: grid;
+  gap: 8px;
+}
+.adminSidebarLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 14px;
+  color: rgba(226, 238, 247, 0.86);
+  text-decoration: none;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.adminSidebarLink:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(130, 187, 233, 0.24);
+  transform: translateX(2px);
+}
+.adminSidebarLinkActive {
+  background: linear-gradient(135deg, rgba(63, 175, 255, 0.24), rgba(58, 222, 167, 0.14));
+  border-color: rgba(101, 204, 255, 0.36);
+  color: #fff;
+}
+.adminSidebarBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 15, 0.4);
+  border: 0;
+  z-index: 39;
+}
+.adminPageStack {
+  display: grid;
+  gap: 18px;
+}
+.adminPageHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+  padding: 22px 24px;
+  border-color: rgba(100, 180, 255, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(12, 22, 40, 0.96), rgba(8, 14, 26, 0.98));
+}
+.adminPageHeaderBody {
+  min-width: 0;
+}
+.adminPageEyebrow {
+  margin-bottom: 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(184, 210, 236, 0.84);
+}
+.adminPageTitle {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 0.98;
+}
+.adminPageDescription {
+  margin: 8px 0 0;
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.adminPageActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.adminSectionNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 0 2px;
+}
+.adminSectionNavLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 145, 170, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 238, 247, 0.84);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+.adminSectionNavLink:hover {
+  border-color: rgba(101, 204, 255, 0.24);
+  background: rgba(96, 165, 250, 0.08);
+  transform: translateY(-1px);
+}
+.adminSectionNavLinkActive {
+  color: #fff;
+  border-color: rgba(101, 204, 255, 0.36);
+  background: linear-gradient(135deg, rgba(63, 175, 255, 0.22), rgba(58, 222, 167, 0.12));
+}
+.adminStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: 14px;
+}
+.adminStatsCard {
+  min-height: 128px;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  border-color: rgba(123, 145, 170, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(10, 18, 33, 0.96), rgba(7, 13, 25, 0.98));
+}
+.adminStatsLabel {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.adminStatsValue {
+  font-size: 31px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.adminStatsValueSmall {
+  font-size: 18px;
+  line-height: 1.3;
+}
+.adminStatsHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.adminStatusBadge {
+  text-transform: capitalize;
+}
+.adminStatusBadgesuccess {
+  background: rgba(40, 167, 69, 0.14);
+  color: #9af0b2;
+}
+.adminStatusBadgewarning {
+  background: rgba(233, 173, 36, 0.14);
+  color: #ffd78a;
+}
+.adminStatusBadgedanger {
+  background: rgba(214, 70, 84, 0.14);
+  color: #ffadb6;
+}
+.adminStatusBadgeneutral {
+  background: rgba(131, 146, 165, 0.18);
+  color: #d5dee8;
+}
+.adminOverviewGrid,
+.adminDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.adminOverviewTopGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.7fr);
+  gap: 14px;
+}
+.adminOverviewPanel {
+  min-width: 0;
+}
+.adminOverviewPanelWide {
+  min-width: 0;
+}
+.adminSectionTitle {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+}
+.adminDetailSectionHeader {
+  display: grid;
+  gap: 6px;
+}
+.adminDetailSectionDescription {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 62ch;
+}
+.adminSectionMeta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.adminOverviewHealth,
+.adminKeyValueList {
+  display: grid;
+  gap: 12px;
+}
+.adminOverviewHealthGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.adminHealthStat {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 145, 170, 0.14);
+  background: rgba(255, 255, 255, 0.025);
+  display: grid;
+  gap: 8px;
+}
+.adminHealthStatValue {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.adminKeyValueRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.adminKeyValueRowWrap {
+  align-items: flex-start;
+}
+.adminListStack {
+  display: grid;
+  gap: 10px;
+}
+.adminListCard {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 145, 170, 0.18);
+  text-decoration: none;
+  color: inherit;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+}
+.adminListCard:hover {
+  border-color: rgba(101, 204, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(96, 165, 250, 0.09), rgba(255, 255, 255, 0.02));
+}
+.adminListCardTop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.adminTrendChart {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  min-height: 220px;
+}
+.adminTrendColumn {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.adminTrendBarTrack {
+  width: 100%;
+  min-height: 140px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(123, 145, 170, 0.14);
+}
+.adminTrendBarFill {
+  width: 100%;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(73, 190, 255, 0.95), rgba(73, 129, 255, 0.68));
+  box-shadow: 0 12px 28px rgba(59, 130, 246, 0.28);
+}
+.adminTrendValue {
+  font-size: 15px;
+}
+.adminTrendLabel {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.adminMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.adminMetricTile {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 145, 170, 0.14);
+  background: rgba(255, 255, 255, 0.025);
+}
+.adminMetricLabel {
+  font-size: 12px;
+  text-transform: capitalize;
+  color: var(--muted);
+}
+.adminMetricValue {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.adminSystemGroupGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.adminSystemGroupCard {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 145, 170, 0.16);
+  background: rgba(255, 255, 255, 0.025);
+}
+.adminFilterBar {
+  padding: 18px;
+  border-color: rgba(123, 145, 170, 0.18);
+}
+.adminFilterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.adminTableWrap {
+  overflow: hidden;
+  padding: 0;
+}
+.adminTableScroller {
+  overflow-x: auto;
+}
+.adminTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+.adminTable th,
+.adminTable td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(123, 145, 170, 0.12);
+  text-align: left;
+  vertical-align: top;
+}
+.adminTable thead th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.adminTableRowInteractive {
+  cursor: pointer;
+}
+.adminTableRowInteractive:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.adminEmptyState {
+  padding: 20px;
+  display: grid;
+  gap: 8px;
+  min-height: 120px;
+  align-content: center;
+}
+.adminPagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  align-items: center;
+}
+.adminChoiceGrid {
+  display: grid;
+  gap: 10px;
+}
+.adminChoiceCard {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(123, 145, 170, 0.18);
+  background: rgba(255, 255, 255, 0.025);
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+.adminChoiceCard:hover {
+  border-color: rgba(101, 204, 255, 0.24);
+  background: rgba(96, 165, 250, 0.06);
+}
+.adminChoiceCardActive {
+  border-color: rgba(101, 204, 255, 0.38);
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.1), rgba(255, 255, 255, 0.03));
+}
+.adminInlineForm {
+  display: grid;
+  gap: 12px;
+}
+.adminMetadataPreview {
+  margin: 0;
+  max-width: 260px;
+  white-space: pre-wrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+.adminLegacyLinkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.adminLegacyLink {
+  display: block;
+  padding: 14px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid rgba(123, 145, 170, 0.16);
+  background: rgba(255, 255, 255, 0.02);
+}
+@media (max-width: 1100px) {
+  .adminOverviewTopGrid,
+  .adminOverviewGrid,
+  .adminDetailGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminTrendChart {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 960px) {
+  .adminShell {
+    grid-template-columns: 1fr;
+  }
+
+  .adminSidebarToggle {
+    display: inline-flex;
+    width: max-content;
+  }
+
+  .adminSidebarPanel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(86vw, 320px);
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    padding: 16px;
+  }
+
+  .adminSidebarPanelOpen {
+    transform: translateX(0);
+  }
+
+  .adminPageHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .adminPageActions {
+    justify-content: flex-start;
+  }
+
+  .adminOverviewHealthGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminTrendChart {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .adminTrendBarTrack {
+    min-height: 120px;
+  }
+}
+@media (max-width: 560px) {
+  .adminStatsGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .adminTrendChart {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  .adminStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminPageHeader {
+    padding: 18px;
+  }
+
+  .adminPageActions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .adminPageActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+.helpPage {
+  display: grid;
+  gap: 16px;
+}
+.helpLead {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.helpSectionList {
+  display: grid;
+  gap: 10px;
+}
+.helpDetailCard {
+  padding: 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 16px;
+  background: rgba(8, 16, 26, 0.72);
+}
+.helpDetailSummary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+.helpDetailSummary::-webkit-details-marker {
+  display: none;
+}
+.helpDetailBody {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+.helpDetailBody div,
+.helpContactCopy {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.gridTemplateCreateLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+.gridTemplateCreateFullSpan {
+  grid-column: 1 / -1;
+}
+.gridTemplateCreatePreviewPanel {
+  position: sticky;
+  top: 86px;
+}
+@media (max-width: 920px) {
+
+  .gridTemplateCreateLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .gridTemplateCreatePreviewPanel {
+    position: static;
+  }
+}
+.settingsRiskPage {
+  display: grid;
+  gap: 10px;
+}
+.settingsRiskHead {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border-radius: 12px;
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.22), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.14), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+}
+.settingsRiskTitle {
+  margin: 0;
+}
+.settingsRiskPanelCard {
+  border-radius: 12px;
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.22), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.14), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+}
+.settingsRiskErrorCard {
+  border-color: rgba(239, 68, 68, 0.92);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.16), rgba(239, 68, 68, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
+  padding: 12px;
+}
+.settingsRiskState {
+  color: var(--muted);
+  padding: 12px;
+}
+.settingsRiskTableCard {
+  padding: 8px;
+}
+.settingsRiskTable {
+  display: grid;
+  gap: 8px;
+}
+.settingsRiskRow {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) repeat(8, minmax(92px, 0.72fr)) minmax(200px, 1fr);
+  gap: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 90% -40%, rgba(59, 130, 246, 0.14), transparent 46%),
+    linear-gradient(180deg, rgba(8, 18, 28, 0.9), rgba(6, 13, 22, 0.96));
+  padding: 8px;
+  align-items: start;
+}
+.settingsRiskRowHead {
+  border-color: var(--color-border-strong);
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.12), rgba(56, 189, 248, 0.04));
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.settingsRiskAccountCell {
+  min-width: 0;
+}
+.settingsRiskAccountLabel {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.settingsRiskAccountMeta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.settingsRiskCell {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.settingsRiskCellLabel {
+  display: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+.settingsRiskInput {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+.settingsRiskInput:focus-visible,
+.settingsRiskActions .btn:focus-visible,
+.settingsRiskNav .btn:focus-visible {
+  outline: 2px solid rgba(16, 185, 199, 0.9);
+  outline-offset: 1px;
+}
+.settingsRiskActions {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.settingsRiskActions .btn {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+.settingsRiskRowMessage {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1200px) {
+  .settingsRiskRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .settingsRiskRowHead {
+    display: none;
+  }
+
+  .settingsRiskAccountCell {
+    order: 1;
+    grid-column: 1 / -1;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+  }
+
+  .settingsRiskCellKey-dailyLossWarnPct {
+    order: 2;
+  }
+
+  .settingsRiskCellKey-dailyLossWarnUsd {
+    order: 3;
+  }
+
+  .settingsRiskCellKey-dailyLossCriticalPct {
+    order: 4;
+  }
+
+  .settingsRiskCellKey-dailyLossCriticalUsd {
+    order: 5;
+  }
+
+  .settingsRiskCellKey-marginWarnPct {
+    order: 6;
+    margin-top: 2px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(16, 185, 199, 0.22);
+  }
+
+  .settingsRiskCellKey-marginWarnUsd {
+    order: 7;
+    margin-top: 2px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(16, 185, 199, 0.22);
+  }
+
+  .settingsRiskCellKey-marginCriticalPct {
+    order: 8;
+  }
+
+  .settingsRiskCellKey-marginCriticalUsd {
+    order: 9;
+  }
+
+  .settingsRiskCellLabel {
+    display: block;
+  }
+
+  .settingsRiskActions {
+    order: 10;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settingsRiskRowMessage {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 767px) {
+
+  .settingsRiskRow {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsRiskCellKey-marginWarnPct,
+  .settingsRiskCellKey-marginWarnUsd {
+    margin-top: 4px;
+  }
+
+  .settingsRiskHead,
+  .settingsRiskTableCard {
+    padding: 10px;
+  }
+
+  .settingsRiskNav .btn {
+    width: 100%;
+  }
+
+  .settingsRiskInput {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .settingsRiskActions {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .settingsRiskActions .btn {
+    min-height: 40px;
+    padding: 10px 12px;
+  }
+}
