@@ -203,6 +203,18 @@ export default function ArbitrumHyperCoreBridgeSection({
     });
   }
 
+  async function refreshActivityQueries() {
+    if (!address) return;
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["funding-history", address]
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["wallet-activity", address]
+      })
+    ]);
+  }
+
   async function pollIntentUntilConfirmed(params: {
     intentId: string;
     attempts: number;
@@ -284,6 +296,7 @@ export default function ArbitrumHyperCoreBridgeSection({
         recoveryHint: "await_wallet_signature"
       });
       intentId = intent.action.id;
+      await refreshActivityQueries();
 
       setDepositState({
         phase: "awaiting_signature",
@@ -305,6 +318,7 @@ export default function ArbitrumHyperCoreBridgeSection({
         reasonCode: "funding_bridge_deposit_submitted",
         recoveryHint: "wait_for_hyperliquid_credit"
       });
+      await refreshActivityQueries();
 
       setDepositState({
         phase: "pending",
@@ -317,6 +331,7 @@ export default function ArbitrumHyperCoreBridgeSection({
         attempts: 12,
         delayMs: 5000
       });
+      await refreshActivityQueries();
 
       setDepositState({
         phase: bridged ? "confirmed" : "pending",
@@ -333,6 +348,7 @@ export default function ArbitrumHyperCoreBridgeSection({
           reasonCode: error instanceof FundingBridgeError ? error.code : "deposit_failed",
           recoveryHint: "retry_action"
         }).catch(() => null);
+        await refreshActivityQueries().catch(() => null);
       }
       setDepositState({
         phase: "error",
@@ -379,6 +395,7 @@ export default function ArbitrumHyperCoreBridgeSection({
         recoveryHint: "await_wallet_signature"
       });
       intentId = intent.action.id;
+      await refreshActivityQueries();
 
       setWithdrawState({
         phase: "awaiting_signature",
@@ -399,6 +416,7 @@ export default function ArbitrumHyperCoreBridgeSection({
         reasonCode: "funding_bridge_withdraw_submitted",
         recoveryHint: "wait_for_arbitrum_credit"
       });
+      await refreshActivityQueries();
 
       setWithdrawState({
         phase: "pending",
@@ -410,6 +428,7 @@ export default function ArbitrumHyperCoreBridgeSection({
         attempts: 24,
         delayMs: 10000
       });
+      await refreshActivityQueries();
 
       setWithdrawState({
         phase: completed ? "confirmed" : "pending",
@@ -425,6 +444,7 @@ export default function ArbitrumHyperCoreBridgeSection({
           reasonCode: error instanceof FundingBridgeError ? error.code : "withdraw_failed",
           recoveryHint: "retry_action"
         }).catch(() => null);
+        await refreshActivityQueries().catch(() => null);
       }
       setWithdrawState({
         phase: "error",

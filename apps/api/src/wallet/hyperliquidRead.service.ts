@@ -10,7 +10,8 @@ type HyperliquidInfoRequest =
   | { type: "vaultDetails"; vaultAddress: `0x${string}`; user?: `0x${string}` }
   | { type: "portfolio"; user: `0x${string}` }
   | { type: "userRole"; user: `0x${string}` }
-  | { type: "userFillsByTime"; user: `0x${string}`; startTime: number };
+  | { type: "userFillsByTime"; user: `0x${string}`; startTime: number }
+  | { type: "userNonFundingLedgerUpdates"; user: `0x${string}`; startTime: number };
 
 export type WalletBalanceSnapshot = {
   symbol: string;
@@ -100,7 +101,7 @@ export type WalletActivityItem = {
   price: number | null;
   closedPnlUsd: number | null;
   feeUsd: number | null;
-  status: "prepared" | "submitted" | "confirmed" | "failed" | null;
+  status: "prepared" | "submitted" | "pending_reconciliation" | "confirmed" | "failed" | null;
   timestamp: number;
   txHash: string | null;
 };
@@ -111,6 +112,7 @@ export type WalletActivitySourceItem = {
   status: string;
   txHash: string | null;
   chainId: number;
+  metadata?: unknown;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -301,8 +303,77 @@ function normalizeActivity(raw: unknown, limit: number): WalletActivityItem[] {
 }
 
 function normalizeActivityStatus(value: string): WalletActivityItem["status"] {
-  if (value === "prepared" || value === "submitted" || value === "confirmed" || value === "failed") {
+  if (
+    value === "prepared" ||
+    value === "submitted" ||
+    value === "pending_reconciliation" ||
+    value === "confirmed" ||
+    value === "failed"
+  ) {
     return value;
+  }
+  return null;
+}
+
+function metadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function fundingAmountSuffix(metadata: Record<string, unknown>): string {
+  const amount = String(metadata.amountFormatted ?? "").trim();
+  const asset = String(metadata.asset ?? "USDC").trim() || "USDC";
+  return amount ? ` (${amount} ${asset})` : "";
+}
+
+function normalizeFundingActionActivity(item: WalletActivitySourceItem, timestamp: number): WalletActivityItem | null {
+  const metadata = metadataRecord(item.metadata);
+  const suffix = fundingAmountSuffix(metadata);
+  const direction = String(metadata.direction ?? "").trim().toLowerCase();
+  const base = {
+    id: item.id,
+    type: "action" as const,
+    symbol: String(metadata.asset ?? "USDC").trim() || "USDC",
+    side: null,
+    size: asNumber(metadata.amountFormatted),
+    price: null,
+    closedPnlUsd: null,
+    feeUsd: null,
+    status: normalizeActivityStatus(String(item.status ?? "").trim().toLowerCase()),
+    timestamp,
+    txHash: item.txHash
+  };
+
+  if (item.actionType === "funding_bridge_deposit") {
+    return {
+      ...base,
+      title: "Hyperliquid deposit",
+      description: `Arbitrum -> Hyperliquid funding intent${suffix}.`
+    };
+  }
+  if (item.actionType === "funding_bridge_withdraw") {
+    return {
+      ...base,
+      title: "Hyperliquid withdraw",
+      description: `Hyperliquid -> Arbitrum funding intent${suffix}.`
+    };
+  }
+  if (item.actionType === "funding_transfer_core_to_evm" || item.actionType === "funding_transfer_evm_to_core") {
+    const coreToEvm = item.actionType === "funding_transfer_core_to_evm";
+    return {
+      ...base,
+      title: coreToEvm ? "Core -> EVM transfer" : "EVM -> Core transfer",
+      description: `Hyperliquid domain transfer intent${suffix}.`
+    };
+  }
+  if (item.actionType === "funding_usd_class_transfer") {
+    const spotToPerp = direction === "spot_to_perp";
+    return {
+      ...base,
+      title: spotToPerp ? "Spot -> Perp USDC transfer" : "Perp -> Spot USDC transfer",
+      description: `Hyperliquid USD class transfer intent${suffix}.`
+    };
   }
   return null;
 }
@@ -313,6 +384,12 @@ function normalizeActionActivity(items: WalletActivitySourceItem[] | null | unde
       const timestampSource = item.updatedAt ?? item.createdAt;
       const timestamp = timestampSource ? Date.parse(timestampSource) : NaN;
       if (!Number.isFinite(timestamp)) continue;
+
+      const fundingAction = normalizeFundingActionActivity(item, timestamp);
+      if (fundingAction) {
+        normalized.push(fundingAction);
+        continue;
+      }
 
       if (item.actionType === "create_master_vault") {
         normalized.push({
@@ -369,6 +446,112 @@ function normalizeActionActivity(items: WalletActivitySourceItem[] | null | unde
       }
     }
   return normalized;
+}
+
+function normalizeLedgerActivity(raw: unknown, limit: number): WalletActivityItem[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((entry: any, index): WalletActivityItem | null => {
+      const timestamp = pickNumber(entry, ["time", "timestamp", "ts"]);
+      if (timestamp === null) return null;
+      const delta = metadataRecord(entry?.delta);
+      const type = String(delta.type ?? "").trim();
+      const txHash = pickString(entry, ["hash", "txHash"]);
+      const id = txHash ? `ledger_${txHash}` : `ledger_${timestamp}_${index}`;
+      const usdc = pickNumber(delta, ["usdc", "usdcValue", "netWithdrawnUsd", "requestedUsd"]);
+      const token = pickString(delta, ["token"]) ?? (usdc !== null ? "USDC" : null);
+      const amount = pickNumber(delta, ["amount"]) ?? usdc;
+      const common = {
+        id,
+        type: "action" as const,
+        symbol: token,
+        side: null,
+        size: amount,
+        price: null,
+        closedPnlUsd: null,
+        feeUsd: pickNumber(delta, ["fee", "commission", "nativeTokenFee"]),
+        status: "confirmed" as const,
+        timestamp,
+        txHash
+      };
+
+      switch (type) {
+        case "deposit":
+          return {
+            ...common,
+            symbol: "USDC",
+            size: usdc,
+            title: "Hyperliquid deposit",
+            description: `Deposit${usdc !== null ? ` ${usdc} USDC` : ""}.`
+          };
+        case "withdraw":
+          return {
+            ...common,
+            symbol: "USDC",
+            size: usdc,
+            title: "Hyperliquid withdraw",
+            description: `Withdraw${usdc !== null ? ` ${usdc} USDC` : ""}.`
+          };
+        case "accountClassTransfer": {
+          const toPerp = delta.toPerp === true;
+          return {
+            ...common,
+            symbol: "USDC",
+            size: usdc,
+            title: toPerp ? "Spot -> Perp USDC transfer" : "Perp -> Spot USDC transfer",
+            description: `${toPerp ? "Spot -> Perp" : "Perp -> Spot"}${usdc !== null ? ` (${usdc} USDC)` : ""}.`
+          };
+        }
+        case "vaultDeposit":
+          return {
+            ...common,
+            symbol: "USDC",
+            size: usdc,
+            title: "Vault deposit",
+            description: `Vault deposit${usdc !== null ? ` ${usdc} USDC` : ""}.`
+          };
+        case "vaultWithdraw":
+          return {
+            ...common,
+            symbol: "USDC",
+            size: usdc,
+            title: "Vault withdraw",
+            description: `Vault withdraw${usdc !== null ? ` ${usdc} USDC` : ""}.`
+          };
+        case "internalTransfer":
+        case "spotTransfer":
+        case "send":
+        case "subAccountTransfer":
+          return {
+            ...common,
+            title: `${token ?? "Token"} transfer`,
+            description: `${type}${amount !== null && token ? ` (${amount} ${token})` : ""}.`
+          };
+        default:
+          return {
+            ...common,
+            title: "Hyperliquid ledger update",
+            description: type || "Ledger update"
+          };
+      }
+    })
+    .filter((entry): entry is WalletActivityItem => Boolean(entry))
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .slice(0, limit);
+}
+
+function dedupeActivityItems(items: WalletActivityItem[], limit: number): WalletActivityItem[] {
+  const seen = new Set<string>();
+  const out: WalletActivityItem[] = [];
+  for (const item of items.sort((left, right) => right.timestamp - left.timestamp)) {
+    const key = item.txHash ? `tx:${item.txHash.toLowerCase()}` : `id:${item.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 async function parseInfoResponse<T>(response: Response): Promise<T> {
@@ -528,18 +711,25 @@ export function createWalletReadService(config: WalletReadConfig = resolveWallet
     if (!user) throw new Error("invalid_wallet_address");
 
     const limit = Math.max(1, Math.min(50, Math.trunc(Number(params.limit ?? 20) || 20)));
-    const rawActivity = await postInfo<unknown>({
-      type: "userFillsByTime",
-      user,
-      startTime: Date.now() - 7 * DAY_MS
-    }).catch(() => []);
+    const startTime = Date.now() - 7 * DAY_MS;
+    const [rawActivity, rawLedger] = await Promise.all([
+      postInfo<unknown>({
+        type: "userFillsByTime",
+        user,
+        startTime
+      }).catch(() => []),
+      postInfo<unknown>({
+        type: "userNonFundingLedgerUpdates",
+        user,
+        startTime
+      }).catch(() => [])
+    ]);
 
-    const activityItems = [
+    const activityItems = dedupeActivityItems([
       ...normalizeActivity(rawActivity, limit),
+      ...normalizeLedgerActivity(rawLedger, limit),
       ...normalizeActionActivity(params.items)
-    ]
-      .sort((left, right) => right.timestamp - left.timestamp)
-      .slice(0, limit);
+    ], limit);
 
     return {
       address: user,

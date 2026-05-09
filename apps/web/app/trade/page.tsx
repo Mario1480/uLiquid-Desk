@@ -23,6 +23,7 @@ import {
   type TradingChartPreferences
 } from "./chartTypes";
 import { TradeChart } from "./TradeChart";
+import SymbolSearchSelect, { type SymbolSearchOption } from "../../components/SymbolSearchSelect";
 
 type ExchangeAccountItem = {
   id: string;
@@ -477,7 +478,6 @@ function TradePageContent() {
 
   const [accounts, setAccounts] = useState<ExchangeAccountItem[]>([]);
   const [symbols, setSymbols] = useState<SymbolItem[]>([]);
-  const [symbolSearch, setSymbolSearch] = useState("");
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState("BTCUSDT");
@@ -570,16 +570,25 @@ function TradePageContent() {
     () => symbols.find((row) => row.symbol === selectedSymbol) ?? null,
     [symbols, selectedSymbol]
   );
-  const filteredSymbols = useMemo(() => {
-    const normalizedSearch = symbolSearch.trim().toUpperCase();
-    const filtered = normalizedSearch
-      ? symbols.filter((row) => row.symbol.includes(normalizedSearch))
-      : symbols;
-    if (selectedSymbolMeta && !filtered.some((row) => row.symbol === selectedSymbolMeta.symbol)) {
-      return [selectedSymbolMeta, ...filtered];
+  const symbolOptions = useMemo<SymbolSearchOption[]>(() => {
+    const options = symbols.map((row) => {
+      const metaParts = [
+        row.baseAsset && row.quoteAsset ? `${row.baseAsset}/${row.quoteAsset}` : null,
+        row.status && row.status.toLowerCase() !== "online" ? row.status : null
+      ].filter(Boolean);
+      return {
+        symbol: row.symbol,
+        label: row.symbol,
+        tradable: row.tradable,
+        meta: metaParts.length > 0 ? metaParts.join(" · ") : null
+      };
+    });
+    const normalizedSelected = selectedSymbol.trim().toUpperCase();
+    if (normalizedSelected && !options.some((row) => row.symbol === normalizedSelected)) {
+      return [{ symbol: normalizedSelected, label: normalizedSelected, meta: null }, ...options];
     }
-    return filtered;
-  }, [selectedSymbolMeta, symbolSearch, symbols]);
+    return options;
+  }, [selectedSymbol, symbols]);
   const selectedPosition = useMemo<SelectedTradePosition | null>(() => {
     if (!selectedPositionKey) return null;
     const row = positions.find((item, index) => getPositionRowKey(item, index) === selectedPositionKey);
@@ -908,11 +917,21 @@ function TradePageContent() {
     if (normalizeDeskSymbol(nextSymbol) === normalizeDeskSymbol(selectedSymbol)) return;
 
     setSelectedSymbol(nextSymbol);
-    setSymbolSearch("");
     if (selectedAccountId) {
       void reloadLiveTables(selectedAccountId, nextSymbol);
     }
     void persistSettings({ symbol: nextSymbol });
+  }
+
+  function selectDeskSymbol(nextSymbol: string) {
+    const next = nextSymbol.trim().toUpperCase();
+    if (!next || normalizeDeskSymbol(next) === normalizeDeskSymbol(selectedSymbol)) return;
+    setSelectedPositionKey(null);
+    setSelectedSymbol(next);
+    if (selectedAccountId) {
+      void reloadLiveTables(selectedAccountId, next);
+    }
+    void persistSettings({ symbol: next });
   }
 
   function applyLiveRefreshFailures(partialFailures: string[], blockingFailures: string[]) {
@@ -2049,36 +2068,17 @@ function TradePageContent() {
 
               <label className="tradeDeskField">
                 <div className="tradeDeskFieldLabel">{t("fields.symbol")}</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  <input
-                    className="input"
-                    value={symbolSearch}
-                    onChange={(event) => setSymbolSearch(event.target.value.toUpperCase())}
-                    placeholder={t("fields.symbolSearchPlaceholder")}
-                  />
-                  <select
-                    className="input"
-                    value={selectedSymbol}
-                    onChange={(event) => {
-                      const next = event.target.value;
-                      setSelectedPositionKey(null);
-                      setSelectedSymbol(next);
-                      void reloadLiveTables(selectedAccountId, next);
-                      void persistSettings({ symbol: next });
-                    }}
-                  >
-                    {filteredSymbols.length === 0 ? (
-                      <option value="" disabled>{t("fields.symbolSearchEmpty")}</option>
-                    ) : null}
-                    {filteredSymbols.map((symbol) => (
-                      <option key={symbol.symbol} value={symbol.symbol}>
-                        {symbol.symbol}
-                        {symbol.baseAsset && symbol.quoteAsset ? ` (${symbol.baseAsset}/${symbol.quoteAsset})` : ""}
-                        {symbol.tradable ? "" : ` (${t("misc.restricted")})`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <SymbolSearchSelect
+                  value={selectedSymbol}
+                  onChange={selectDeskSymbol}
+                  options={symbolOptions}
+                  loading={loading}
+                  loadingLabel={t("fields.symbolLoading")}
+                  emptyLabel={t("fields.symbolSearchEmpty")}
+                  searchPlaceholder={t("fields.symbolSearchPlaceholder")}
+                  restrictedLabel={t("misc.restricted")}
+                  disabled={symbolOptions.length === 0}
+                />
               </label>
 
               <label className="tradeDeskField">

@@ -98,6 +98,18 @@ export default function HyperliquidUsdClassTransferSection({
     });
   }
 
+  async function refreshActivityQueries() {
+    if (!address) return;
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["funding-history", address]
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["wallet-activity", address]
+      })
+    ]);
+  }
+
   async function pollIntentUntilConfirmed(params: {
     intentId: string;
     attempts: number;
@@ -151,6 +163,7 @@ export default function HyperliquidUsdClassTransferSection({
         recoveryHint: "await_wallet_signature"
       });
       intentId = intent.action.id;
+      await refreshActivityQueries();
 
       setExecutionState({
         phase: "awaiting_signature",
@@ -171,6 +184,7 @@ export default function HyperliquidUsdClassTransferSection({
         reasonCode: "usd_class_transfer_submitted",
         recoveryHint: "wait_for_destination_balance"
       });
+      await refreshActivityQueries();
 
       setExecutionState({
         phase: "pending",
@@ -184,6 +198,7 @@ export default function HyperliquidUsdClassTransferSection({
         attempts: 8,
         delayMs: 2500
       });
+      await refreshActivityQueries();
 
       setExecutionState({
         phase: confirmed ? "confirmed" : "pending",
@@ -199,6 +214,7 @@ export default function HyperliquidUsdClassTransferSection({
           reasonCode: error instanceof HyperliquidUsdClassTransferError ? error.code : "usd_class_transfer_failed",
           recoveryHint: "retry_action"
         }).catch(() => null);
+        await refreshActivityQueries().catch(() => null);
       }
       setExecutionState({
         phase: "error",

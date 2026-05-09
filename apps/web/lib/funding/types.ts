@@ -194,7 +194,8 @@ export type FundingHistoryItem = {
     | "transfer_core_to_evm"
     | "transfer_evm_to_core"
     | "transfer_usdc_spot_to_perp"
-    | "transfer_usdc_perp_to_spot";
+    | "transfer_usdc_perp_to_spot"
+    | "hyperliquid_ledger_update";
   title: string;
   description: string;
   locationFrom: FundingLocation | null;

@@ -85,7 +85,7 @@ export default function FundingActionCenter({
     enabled: Boolean(address),
     queryFn: () => apiGet<FundingHistoryResponse>(`/funding/${address}/history`),
     staleTime: 20_000,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: true
   });
 
   const historyItems = useMemo(() => historyQuery.data?.items?.slice(0, 4) ?? [], [historyQuery.data?.items]);

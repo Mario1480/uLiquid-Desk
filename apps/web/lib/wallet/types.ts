@@ -94,7 +94,7 @@ export type WalletActivityItem = {
   price: number | null;
   closedPnlUsd: number | null;
   feeUsd: number | null;
-  status: "prepared" | "submitted" | "confirmed" | "failed" | null;
+  status: "prepared" | "submitted" | "pending_reconciliation" | "confirmed" | "failed" | null;
   timestamp: number;
   txHash: string | null;
 };

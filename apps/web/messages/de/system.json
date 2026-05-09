@@ -998,6 +998,7 @@
       "symbol": "Symbol",
       "symbolSearchPlaceholder": "Symbol suchen...",
       "symbolSearchEmpty": "Keine Symbole gefunden",
+      "symbolLoading": "Symbole werden geladen...",
       "timeframe": "Timeframe",
       "marketType": "Markttyp",
       "perp": "Perp",

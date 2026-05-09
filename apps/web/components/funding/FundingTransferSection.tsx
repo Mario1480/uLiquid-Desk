@@ -217,6 +217,18 @@ export default function FundingTransferSection({
             ? tErrors("switchToArbitrum")
           : null;
 
+  async function refreshActivityQueries() {
+    if (!address) return;
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["funding-history", address]
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["wallet-activity", address]
+      })
+    ]);
+  }
+
   async function pollIntentUntilConfirmed(params: {
     intentId: string;
     attempts: number;
@@ -280,6 +292,7 @@ export default function FundingTransferSection({
         recoveryHint: "await_wallet_signature"
       });
       intentId = intent.action.id;
+      await refreshActivityQueries();
 
       const client = createTransferClient({
         submitCoreToEvm: async (input) => {
@@ -330,11 +343,13 @@ export default function FundingTransferSection({
         reasonCode: "funding_transfer_submitted",
         recoveryHint: "wait_for_destination_balance"
       });
+      await refreshActivityQueries();
       const confirmed = await pollIntentUntilConfirmed({
         intentId,
         attempts: 12,
         delayMs: 5000
       });
+      await refreshActivityQueries();
       setExecutionState({
         ...result,
         phase: confirmed ? "confirmed" : "pending_reconciliation",
@@ -369,6 +384,7 @@ export default function FundingTransferSection({
           reasonCode: error instanceof TransferClientError ? error.code : "transfer_failed",
           recoveryHint: "retry_action"
         }).catch(() => null);
+        await refreshActivityQueries().catch(() => null);
       }
       setExecutionState({
         phase: "error",

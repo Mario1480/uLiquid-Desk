@@ -20,12 +20,14 @@ import type {
   WalletFundingOverview
 } from "./types.js";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const erc20ReadAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
 
 type HyperliquidInfoRequest =
   | { type: "spotClearinghouseState"; user: `0x${string}` }
   | { type: "clearinghouseState"; user: `0x${string}` }
-  | { type: "spotMeta" };
+  | { type: "spotMeta" }
+  | { type: "userNonFundingLedgerUpdates"; user: `0x${string}`; startTime: number };
 
 function toAddress(value: string): `0x${string}` {
   return value.trim().toLowerCase() as `0x${string}`;
@@ -315,6 +317,118 @@ function normalizeFundingIntentActionId(item: FundingHistorySourceItem): Funding
     };
   }
   return null;
+}
+
+function normalizeLedgerFundingHistory(raw: unknown): FundingHistoryResponse["items"] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((entry: any, index): FundingHistoryResponse["items"][number] | null => {
+      const time = asNumber(entry?.time ?? entry?.timestamp ?? entry?.ts);
+      if (time === null) return null;
+      const createdAt = new Date(time).toISOString();
+      const delta = entry?.delta && typeof entry.delta === "object" && !Array.isArray(entry.delta)
+        ? entry.delta as Record<string, unknown>
+        : {};
+      const type = String(delta.type ?? "").trim();
+      const hash = asString(entry?.hash ?? entry?.txHash);
+      const id = hash ? `ledger_${hash}` : `ledger_${time}_${index}`;
+      const usdc = asString(delta.usdc ?? delta.usdcValue ?? delta.netWithdrawnUsd ?? delta.requestedUsd);
+      const token = asString(delta.token) ?? (usdc ? "USDC" : null);
+      const amount = asString(delta.amount) ?? usdc;
+      const amountSuffix = amount && token ? ` (${amount} ${token})` : "";
+
+      if (type === "deposit") {
+        return {
+          id,
+          actionId: "deposit_usdc_to_hyperliquid",
+          title: "Hyperliquid deposit",
+          description: `Hyperliquid ledger deposit${usdc ? ` (${usdc} USDC)` : ""}.`,
+          locationFrom: "arbitrum",
+          locationTo: "hyperCore",
+          status: "confirmed",
+          txHash: hash,
+          chainId: null,
+          createdAt,
+          updatedAt: createdAt
+        };
+      }
+      if (type === "withdraw") {
+        return {
+          id,
+          actionId: "withdraw_usdc_from_hyperliquid",
+          title: "Hyperliquid withdraw",
+          description: `Hyperliquid ledger withdraw${usdc ? ` (${usdc} USDC)` : ""}.`,
+          locationFrom: "hyperCore",
+          locationTo: "arbitrum",
+          status: "confirmed",
+          txHash: hash,
+          chainId: null,
+          createdAt,
+          updatedAt: createdAt
+        };
+      }
+      if (type === "accountClassTransfer") {
+        const toPerp = delta.toPerp === true;
+        return {
+          id,
+          actionId: toPerp ? "transfer_usdc_spot_to_perp" : "transfer_usdc_perp_to_spot",
+          title: toPerp ? "Spot -> Perp USDC transfer" : "Perp -> Spot USDC transfer",
+          description: `Hyperliquid ledger account-class transfer${usdc ? ` (${usdc} USDC)` : ""}.`,
+          locationFrom: "hyperCore",
+          locationTo: "hyperCore",
+          status: "confirmed",
+          txHash: hash,
+          chainId: null,
+          createdAt,
+          updatedAt: createdAt
+        };
+      }
+      if (type === "vaultDeposit" || type === "vaultWithdraw") {
+        return {
+          id,
+          actionId: "hyperliquid_ledger_update",
+          title: type === "vaultDeposit" ? "Vault deposit" : "Vault withdraw",
+          description: `Hyperliquid ledger ${type}${usdc ? ` (${usdc} USDC)` : ""}.`,
+          locationFrom: type === "vaultDeposit" ? "hyperCore" : "masterVault",
+          locationTo: type === "vaultDeposit" ? "masterVault" : "hyperCore",
+          status: "confirmed",
+          txHash: hash,
+          chainId: null,
+          createdAt,
+          updatedAt: createdAt
+        };
+      }
+      if (type === "spotTransfer" || type === "send" || type === "internalTransfer" || type === "subAccountTransfer") {
+        return {
+          id,
+          actionId: "hyperliquid_ledger_update",
+          title: `${token ?? "Token"} transfer`,
+          description: `Hyperliquid ledger ${type}${amountSuffix}.`,
+          locationFrom: "hyperCore",
+          locationTo: "hyperCore",
+          status: "confirmed",
+          txHash: hash,
+          chainId: null,
+          createdAt,
+          updatedAt: createdAt
+        };
+      }
+      return null;
+    })
+    .filter((entry): entry is FundingHistoryResponse["items"][number] => Boolean(entry));
+}
+
+function dedupeFundingHistoryItems(items: FundingHistoryResponse["items"]): FundingHistoryResponse["items"] {
+  const seen = new Set<string>();
+  const out: FundingHistoryResponse["items"] = [];
+  for (const item of items) {
+    const key = item.txHash ? `tx:${item.txHash.toLowerCase()}` : `id:${item.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 function buildTransferCapabilities(config: FundingReadConfig): TransferCapability[] {
@@ -781,13 +895,21 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
         });
       }
     }
-    items.sort((left, right) => Date.parse(String(right.createdAt ?? 0)) - Date.parse(String(left.createdAt ?? 0)));
+    const ledgerItems = normalizeLedgerFundingHistory(
+      await postInfo<unknown>({
+        type: "userNonFundingLedgerUpdates",
+        user: address,
+        startTime: Date.now() - 30 * DAY_MS
+      }).catch(() => [])
+    );
+    const mergedItems = dedupeFundingHistoryItems([...items, ...ledgerItems])
+      .sort((left, right) => Date.parse(String(right.createdAt ?? 0)) - Date.parse(String(left.createdAt ?? 0)));
 
     return {
       address,
       trackingMode: "lightweight",
-      note: "External Hyperliquid handoffs are tracked as lightweight funding intents and reconciled by destination balances.",
-      items,
+      note: "Funding history combines app-tracked funding intents with confirmed Hyperliquid ledger updates.",
+      items: mergedItems,
       updatedAt: new Date().toISOString()
     };
   }
