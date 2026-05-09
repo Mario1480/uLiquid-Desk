@@ -2264,19 +2264,21 @@ export default function PredictionsPage() {
               {tPred("create.hint")}
             </div>
           </div>
-          <div className="predictionCreateBadges">
-            <Link className="btn" href={withLocalePath("/strategies", locale)}>
+          <div className="predictionCreateHeaderActions">
+            <Link className="btn btnPrimary predictionManageStrategiesButton" href={withLocalePath("/strategies", locale)}>
               {tPred("create.manageStrategies")}
             </Link>
-            <span className="badge badgeOk" title={tPred("create.autoScheduleAlwaysOn")}>
-              {tPred("create.autoScheduleShort")}
-            </span>
-            <span
-              className="badge"
-              title={`${tPred("create.signalMode")}: ${createSignalModeLabel} (${createSignalModeScopeTitle})`}
-            >
-              {tPred("create.signalModeShort")}: {createSignalModeLabel} ({createSignalModeScopeLabel})
-            </span>
+            <div className="predictionCreateBadges">
+              <span className="badge badgeOk" title={tPred("create.autoScheduleAlwaysOn")}>
+                {tPred("create.autoScheduleShort")}
+              </span>
+              <span
+                className="badge"
+                title={`${tPred("create.signalMode")}: ${createSignalModeLabel} (${createSignalModeScopeTitle})`}
+              >
+                {tPred("create.signalModeShort")}: {createSignalModeLabel} ({createSignalModeScopeLabel})
+              </span>
+            </div>
           </div>
         </div>
         <div className="predictionCreateGrid">
@@ -2463,65 +2465,67 @@ export default function PredictionsPage() {
         </div>
 
         <div className="predictionCreateFooter">
-          {symbolsError ? (
-          <div className="predictionCreateAlert predictionCreateAlertWarn">
-            {tPred("create.pairsLoadFailed")}: {symbolsError}
+          <div className="predictionCreateStatusRow">
+            {symbolsError ? (
+              <div className="predictionCreateAlert predictionCreateAlertWarn">
+                {tPred("create.pairsLoadFailed")}: {symbolsError}
+              </div>
+            ) : null}
+            {createBlockedByFeature ? (
+              <div className="predictionCreateAlert predictionCreateAlertWarn">
+                {tCommon("licenseGate.body", { feature: createBlockedFeatureTitle })}
+              </div>
+            ) : null}
+            {aiKindAllowed && !publicAiPromptsLoading && allowedAiPrompts.length === 0 ? (
+              <div className="predictionCreateAlert predictionCreateAlertInfo">
+                {tPred("create.noPublicPrompts")}
+              </div>
+            ) : null}
+            {aiKindAllowed && ownStrategyFeatureEnabled && !ownAiPromptsLoading && allowedOwnAiPrompts.length === 0 ? (
+              <div className="predictionCreateAlert predictionCreateAlertInfo">
+                {tPred("create.noOwnStrategies")}
+              </div>
+            ) : null}
+            {localKindAllowed && !localStrategiesLoading && allowedLocalStrategies.length === 0 ? (
+              <div className="predictionCreateAlert predictionCreateAlertInfo">
+                {tPred("create.noLocalStrategies")}
+              </div>
+            ) : null}
+            {compositeKindAllowed && !compositeStrategiesLoading && allowedCompositeStrategies.length === 0 ? (
+              <div className="predictionCreateAlert predictionCreateAlertInfo">
+                {tPred("create.noCompositeStrategies")}
+              </div>
+            ) : null}
+            {subscriptionQuota ? (
+              <div className={createBlockedByLimit ? "predictionCreateAlert predictionCreateAlertWarn" : "predictionCreateAlert predictionCreateAlertInfo"}>
+                {tPred("create.limitStatus", {
+                  bucket:
+                    selectedCreateLimitBucket === "predictionsLocal"
+                      ? tPred("create.limitBucketLocal")
+                      : selectedCreateLimitBucket === "predictionsComposite"
+                        ? tPred("create.limitBucketComposite")
+                        : tPred("create.limitBucketAi"),
+                  runningUsage: selectedCreateRunningUsage,
+                  runningLimit:
+                    selectedCreateRunningLimit === null
+                      ? tPred("create.unlimited")
+                      : String(selectedCreateRunningLimit),
+                  runningRemaining:
+                    selectedCreateRunningRemaining === null
+                      ? tPred("create.unlimited")
+                      : String(selectedCreateRunningRemaining)
+                })}
+              </div>
+            ) : null}
+            {aiKindAllowed && publicAiPromptLicensePolicy ? (
+              <div className="predictionCreateAlert predictionCreateAlertInfo">
+                {tPred("create.allowedPromptIds")}:{" "}
+                {publicAiPromptLicensePolicy.allowedPublicPromptIds.length > 0
+                  ? publicAiPromptLicensePolicy.allowedPublicPromptIds.join(", ")
+                  : "*"}
+              </div>
+            ) : null}
           </div>
-          ) : null}
-          {createBlockedByFeature ? (
-          <div className="predictionCreateAlert predictionCreateAlertWarn">
-            {tCommon("licenseGate.body", { feature: createBlockedFeatureTitle })}
-          </div>
-          ) : null}
-          {aiKindAllowed && !publicAiPromptsLoading && allowedAiPrompts.length === 0 ? (
-          <div className="predictionCreateAlert predictionCreateAlertInfo">
-            {tPred("create.noPublicPrompts")}
-          </div>
-          ) : null}
-          {aiKindAllowed && ownStrategyFeatureEnabled && !ownAiPromptsLoading && allowedOwnAiPrompts.length === 0 ? (
-          <div className="predictionCreateAlert predictionCreateAlertInfo">
-            {tPred("create.noOwnStrategies")}
-          </div>
-          ) : null}
-          {localKindAllowed && !localStrategiesLoading && allowedLocalStrategies.length === 0 ? (
-          <div className="predictionCreateAlert predictionCreateAlertInfo">
-            {tPred("create.noLocalStrategies")}
-          </div>
-          ) : null}
-          {compositeKindAllowed && !compositeStrategiesLoading && allowedCompositeStrategies.length === 0 ? (
-          <div className="predictionCreateAlert predictionCreateAlertInfo">
-            {tPred("create.noCompositeStrategies")}
-          </div>
-          ) : null}
-          {subscriptionQuota ? (
-          <div className={createBlockedByLimit ? "predictionCreateAlert predictionCreateAlertWarn" : "predictionCreateAlert predictionCreateAlertInfo"}>
-            {tPred("create.limitStatus", {
-              bucket:
-                selectedCreateLimitBucket === "predictionsLocal"
-                  ? tPred("create.limitBucketLocal")
-                  : selectedCreateLimitBucket === "predictionsComposite"
-                    ? tPred("create.limitBucketComposite")
-                    : tPred("create.limitBucketAi"),
-              runningUsage: selectedCreateRunningUsage,
-              runningLimit:
-                selectedCreateRunningLimit === null
-                  ? tPred("create.unlimited")
-                  : String(selectedCreateRunningLimit),
-              runningRemaining:
-                selectedCreateRunningRemaining === null
-                  ? tPred("create.unlimited")
-                  : String(selectedCreateRunningRemaining)
-            })}
-          </div>
-          ) : null}
-          {aiKindAllowed && publicAiPromptLicensePolicy ? (
-          <div className="predictionCreateAlert predictionCreateAlertInfo">
-            {tPred("create.allowedPromptIds")}:{" "}
-            {publicAiPromptLicensePolicy.allowedPublicPromptIds.length > 0
-              ? publicAiPromptLicensePolicy.allowedPublicPromptIds.join(", ")
-              : "*"}
-          </div>
-          ) : null}
 
           <div className="predictionCreateActions">
             <button
