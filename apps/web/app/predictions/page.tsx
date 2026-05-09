@@ -7,6 +7,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import SymbolSearchSelect from "../../components/SymbolSearchSelect";
+import { MetricTile, Notice, PageHeader, StatusBadge } from "../components/ui";
 import {
   buildTradeDeskPrefillPayload,
   TRADE_DESK_PREFILL_SESSION_KEY,
@@ -749,10 +750,15 @@ function PredictionAlert(props: {
   tone: PredictionAlertTone;
 }) {
   const toneClass = props.tone === "error" ? "predictionAlertError" : "predictionAlertWarn";
+  const noticeTone = props.tone === "error" ? "danger" : "warning";
   return (
-    <div className={`card predictionAlert ${toneClass}`} role={props.tone === "error" ? "alert" : "status"}>
+    <Notice
+      tone={noticeTone}
+      className={`card predictionAlert ${toneClass}`}
+      role={props.tone === "error" ? "alert" : "status"}
+    >
       <strong>{props.title}:</strong> {props.message}
-    </div>
+    </Notice>
   );
 }
 
@@ -2217,42 +2223,34 @@ export default function PredictionsPage() {
 
   return (
     <div className="predictionsWrap">
-      <div className="dashboardHeader">
-        <div>
-          <h2 style={{ margin: 0 }}>{tPred("title")}</h2>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            {tPred("subtitle")}
-          </div>
-        </div>
-      </div>
+      <PageHeader title={tPred("title")} description={tPred("subtitle")} />
 
       <section className="card predictionsSection predictionQuickStatsSection">
         <div className="predictionQuickStatsGrid">
-          <div className="predictionQuickStat">
-            <div className="predictionQuickStatLabel">{tPred("quickStats.listed")}</div>
-            <div className="predictionQuickStatValue">
-              {filteredRows.length}
-              <span className="predictionQuickStatMeta"> / {rows.length} {tPred("quickStats.total")}</span>
-            </div>
-          </div>
-          <div className="predictionQuickStat">
-            <div className="predictionQuickStatLabel">{tPred("quickStats.actionableNow")}</div>
-            <div className="predictionQuickStatValue">{actionableRowsCount}</div>
-          </div>
-          <div className="predictionQuickStat">
-            <div className="predictionQuickStatLabel">{tPred("quickStats.autoEnabled")}</div>
-            <div className="predictionQuickStatValue">{autoEnabledRowsCount}</div>
-          </div>
-          <div className="predictionQuickStat">
-            <div className="predictionQuickStatLabel">{tPred("quickStats.disagreements")}</div>
-            <div
-              className={`predictionQuickStatValue ${
-                aiDisagreementRowsCount > 0 ? "predictionQuickStatValueWarn" : ""
-              }`}
-            >
-              {aiDisagreementRowsCount}
-            </div>
-          </div>
+          <MetricTile
+            className="predictionQuickStat"
+            label={tPred("quickStats.listed")}
+            value={filteredRows.length}
+            meta={`/ ${rows.length} ${tPred("quickStats.total")}`}
+          />
+          <MetricTile
+            className="predictionQuickStat"
+            label={tPred("quickStats.actionableNow")}
+            value={actionableRowsCount}
+            tone={actionableRowsCount > 0 ? "success" : "neutral"}
+          />
+          <MetricTile
+            className="predictionQuickStat"
+            label={tPred("quickStats.autoEnabled")}
+            value={autoEnabledRowsCount}
+            tone={autoEnabledRowsCount > 0 ? "info" : "neutral"}
+          />
+          <MetricTile
+            className="predictionQuickStat"
+            label={tPred("quickStats.disagreements")}
+            value={aiDisagreementRowsCount}
+            tone={aiDisagreementRowsCount > 0 ? "warning" : "neutral"}
+          />
         </div>
       </section>
 
@@ -2269,15 +2267,15 @@ export default function PredictionsPage() {
               {tPred("create.manageStrategies")}
             </Link>
             <div className="predictionCreateBadges">
-              <span className="badge badgeOk" title={tPred("create.autoScheduleAlwaysOn")}>
+              <StatusBadge tone="success" title={tPred("create.autoScheduleAlwaysOn")}>
                 {tPred("create.autoScheduleShort")}
-              </span>
-              <span
-                className="badge"
+              </StatusBadge>
+              <StatusBadge
+                tone="accent"
                 title={`${tPred("create.signalMode")}: ${createSignalModeLabel} (${createSignalModeScopeTitle})`}
               >
                 {tPred("create.signalModeShort")}: {createSignalModeLabel} ({createSignalModeScopeLabel})
-              </span>
+              </StatusBadge>
             </div>
           </div>
         </div>

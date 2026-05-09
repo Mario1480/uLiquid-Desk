@@ -16,6 +16,7 @@ import type {
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
 import FundingActionCenter from "../funding/FundingActionCenter";
+import { PageHeader } from "../../app/components/ui";
 
 function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
@@ -163,12 +164,7 @@ export default function WalletDashboardClient({
 
   return (
     <div className="walletPage">
-      <div className="dashboardHeader">
-        <div className="walletHeaderIntro">
-          <h2 className="walletPageTitle">{t("title")}</h2>
-          <div className="walletMutedText">{t("subtitle")}</div>
-        </div>
-      </div>
+      <PageHeader title={t("title")} description={t("subtitle")} />
 
       {!isConnected ? (
         <div className="card walletCard walletEmptyState">

@@ -24,6 +24,7 @@ import {
 } from "./chartTypes";
 import { TradeChart } from "./TradeChart";
 import SymbolSearchSelect, { type SymbolSearchOption } from "../../components/SymbolSearchSelect";
+import { Notice, PageHeader } from "../components/ui";
 
 type ExchangeAccountItem = {
   id: string;
@@ -1848,17 +1849,10 @@ function TradePageContent() {
 
   return (
     <div className="tradeDeskWrap">
-      <div className="dashboardHeader">
-        <div>
-          <h2 style={{ margin: 0 }}>{t("title")}</h2>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            {t("subtitle")}
-          </div>
-        </div>
-      </div>
+      <PageHeader title={t("title")} description={t("subtitle")} />
 
       {error ? (
-        <div className="card tradeDeskNotice tradeDeskNoticeError">
+        <Notice tone="danger" className="card tradeDeskNotice tradeDeskNoticeError">
           <strong>{t("alerts.error")}:</strong> {error}
           <div style={{ marginTop: 8 }}>
             <button
@@ -1871,25 +1865,25 @@ function TradePageContent() {
               {t("actions.retry")}
             </button>
           </div>
-        </div>
+        </Notice>
       ) : null}
 
       {actionError ? (
-        <div className="card tradeDeskNotice tradeDeskNoticeError">
+        <Notice tone="danger" className="card tradeDeskNotice tradeDeskNoticeError">
           <strong>{t("alerts.actionFailed")}:</strong> {actionError}
-        </div>
+        </Notice>
       ) : null}
 
       {actionSuccess ? (
-        <div className="card tradeDeskNotice tradeDeskNoticeInfo">
+        <Notice tone="success" className="card tradeDeskNotice tradeDeskNoticeInfo">
           <strong>{t("alerts.actionSuccess")}:</strong> {actionSuccess}
-        </div>
+        </Notice>
       ) : null}
 
       {softWarning ? (
-        <div className="card tradeDeskNotice tradeDeskNoticeWarn">
+        <Notice tone="warning" className="card tradeDeskNotice tradeDeskNoticeWarn">
           <strong>{t("alerts.warning")}:</strong> {softWarning}
-        </div>
+        </Notice>
       ) : null}
 
       {activePrefill ? (

@@ -5,6 +5,7 @@ import { resolveRequestLocale } from "../i18n/request";
 import { getMessages } from "../i18n/messages";
 import { assertWebEnv } from "../lib/startup-env";
 import "./globals.css";
+import "./ui-system.css";
 
 assertWebEnv();
 

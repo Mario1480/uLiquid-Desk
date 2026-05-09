@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../lib/api";
+import { PageHeader } from "../components/ui";
 
 type CalendarImpact = "low" | "medium" | "high";
 type CalendarDayTab = "today" | "tomorrow" | "next3d" | "custom";
@@ -328,12 +329,7 @@ export default function CalendarPage() {
 
   return (
     <div className="calendarPage calendarProPage">
-      <div className="calendarProTopbar">
-        <div className="calendarProTitleRow">
-          <h2 style={{ margin: 0 }}>{t("title")}</h2>
-          <div className="calendarProSubtitle">{t("subtitle")}</div>
-        </div>
-      </div>
+      <PageHeader title={t("title")} description={t("subtitle")} />
 
       <div className="card calendarFilterCard calendarProControls">
         <div className="calendarProTabRow" role="group" aria-label={t("title")}>

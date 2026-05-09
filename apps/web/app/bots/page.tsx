@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { getBotStartStopUi } from "../../src/bots/controls";
+import { MetricTile, Notice, PageHeader } from "../components/ui";
 
 type BotOverviewItem = {
   id: string;
@@ -177,38 +178,25 @@ function BotsPageContent() {
 
   return (
     <div className="botsPage">
-      <div className="dashboardHeader">
-        <div>
-          <h2 style={{ margin: 0 }}>{t("title")}{titleSuffix}</h2>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            {statusFilter ? t("statusFilter", { status: statusFilter }) : t("allStatuses")}
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <PageHeader
+        title={`${t("title")}${titleSuffix}`}
+        description={statusFilter ? t("statusFilter", { status: statusFilter }) : t("allStatuses")}
+        actions={
           <Link href="/bots/new" className="btn btnPrimary">{t("actions.newBot")}</Link>
-        </div>
-      </div>
+        }
+      />
 
       {error ? (
-        <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>
+        <Notice tone="danger" className="card">
           <strong>{t("loadError")}:</strong> {error}
-        </div>
+        </Notice>
       ) : null}
 
       {!loading ? (
         <div className="botsSetupSummaryGrid" style={{ marginBottom: 12 }}>
-          <div className="card botsSetupMetricCard">
-            <div className="botsSetupMetricLabel">{t("metrics.totalBots")}</div>
-            <div className="botsSetupMetricValue">{bots.length}</div>
-          </div>
-          <div className="card botsSetupMetricCard">
-            <div className="botsSetupMetricLabel">{t("metrics.runningBots")}</div>
-            <div className="botsSetupMetricValue">{runningCount}</div>
-          </div>
-          <div className="card botsSetupMetricCard">
-            <div className="botsSetupMetricLabel">{t("metrics.errorBots")}</div>
-            <div className="botsSetupMetricValue">{errorCount}</div>
-          </div>
+          <MetricTile className="card botsSetupMetricCard" label={t("metrics.totalBots")} value={bots.length} />
+          <MetricTile className="card botsSetupMetricCard" label={t("metrics.runningBots")} value={runningCount} tone={runningCount > 0 ? "success" : "neutral"} />
+          <MetricTile className="card botsSetupMetricCard" label={t("metrics.errorBots")} value={errorCount} tone={errorCount > 0 ? "danger" : "neutral"} />
         </div>
       ) : null}
 

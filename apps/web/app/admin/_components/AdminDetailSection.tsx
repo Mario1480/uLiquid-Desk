@@ -1,3 +1,5 @@
+import Section from "../../components/ui/Section";
+
 export default function AdminDetailSection({
   title,
   description,
@@ -8,12 +10,8 @@ export default function AdminDetailSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="card settingsSection adminDetailSection">
-      <div className="settingsSectionHeader adminDetailSectionHeader">
-        <h3 style={{ margin: 0 }}>{title}</h3>
-        {description ? <div className="adminDetailSectionDescription">{description}</div> : null}
-      </div>
+    <Section title={title} description={description} className="settingsSection adminDetailSection">
       {children}
-    </section>
+    </Section>
   );
 }

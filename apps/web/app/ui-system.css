@@ -1,0 +1,610 @@
+/* Global UI system v1: compatible layer for the Dark Desk surface language. */
+:root {
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 20px;
+  --ui-space-6: 24px;
+  --ui-page-gap: var(--ui-space-4);
+  --ui-section-padding: 16px;
+  --ui-section-padding-compact: 12px;
+  --ui-radius-control: 14px;
+  --ui-radius-card: 16px;
+  --ui-radius-panel: 18px;
+  --ui-surface-panel:
+    radial-gradient(circle at 100% -18%, rgba(96, 165, 250, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(10, 18, 33, 0.96), rgba(7, 13, 25, 0.98));
+  --ui-surface-card:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
+  --ui-surface-control:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.022));
+  --ui-border: var(--color-border-default);
+  --ui-border-strong: var(--color-border-strong);
+  --ui-shadow: var(--shadow-panel);
+  --ui-shadow-soft: var(--shadow-soft);
+  --ui-tone-neutral: rgba(148, 163, 184, 0.72);
+  --ui-tone-info: rgba(56, 189, 248, 0.86);
+  --ui-tone-success: rgba(34, 197, 94, 0.86);
+  --ui-tone-warning: rgba(245, 158, 11, 0.9);
+  --ui-tone-danger: rgba(239, 68, 68, 0.9);
+  --ui-tone-accent: rgba(96, 165, 250, 0.9);
+  --warning: #f59e0b;
+}
+
+.uiPage,
+.settingsWrap,
+.predictionsWrap,
+.calendarProPage,
+.newsProPage,
+.walletPage,
+.fundingPage,
+.tradeDeskWrap,
+.adminPageStack {
+  width: 100%;
+  margin-inline: auto;
+  display: grid;
+  gap: var(--ui-page-gap);
+}
+
+.uiPageHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ui-space-4);
+  align-items: end;
+  margin-bottom: var(--ui-space-2);
+}
+
+.uiPageHeaderBody,
+.uiSectionHeaderCopy {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.uiPageEyebrow {
+  margin-bottom: var(--ui-space-2);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.uiPageTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.05;
+}
+
+.uiPageDescription {
+  margin: var(--ui-space-1) 0 0;
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.uiPageActions,
+.uiSectionActions,
+.uiToolbar {
+  display: flex;
+  gap: var(--ui-space-2);
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.uiPageHeader-accent .uiPageEyebrow,
+.uiPageHeader-info .uiPageEyebrow {
+  color: var(--color-accent);
+}
+
+.dashboardHeader {
+  margin-bottom: var(--ui-space-3);
+}
+
+.dashboardHeader h1,
+.dashboardHeader h2 {
+  margin: 0;
+  font-size: clamp(24px, 2.4vw, 32px);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.dashboardHeader p,
+.dashboardHeader > div > div {
+  line-height: 1.45;
+}
+
+.card,
+.uiCard,
+.uiSection,
+.settingsSection,
+.calendarFilterCard,
+.calendarSummaryCard,
+.calendarEventsCard,
+.calendarErrorCard,
+.newsFilterCard,
+.newsMetaCard,
+.newsListCard,
+.newsErrorCard,
+.predictionsSection,
+.indicatorCatalogSection,
+.indicatorOverrideSection,
+.walletEmbeddedSection,
+.fundingBridgeSection {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-panel);
+  background: var(--ui-surface-panel);
+  box-shadow: var(--ui-shadow);
+}
+
+.uiSection {
+  padding: var(--ui-section-padding);
+  overflow: hidden;
+}
+
+.uiSection-compact {
+  padding: var(--ui-section-padding-compact);
+}
+
+.uiSectionHeader,
+.settingsSectionHeader,
+.tradeDeskSectionHeader,
+.walletSectionHeader,
+.calendarProEventsHeader,
+.newsProTopbar,
+.fundingToolbar {
+  display: flex;
+  gap: var(--ui-space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.uiSectionHeader {
+  padding-bottom: var(--ui-space-3);
+  margin-bottom: var(--ui-space-3);
+  border-bottom: 1px solid var(--app-shell-line);
+}
+
+.uiSectionTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.uiSectionDescription {
+  margin-top: var(--ui-space-1);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.uiSectionBody {
+  min-width: 0;
+}
+
+.uiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: var(--ui-space-3);
+}
+
+.uiEmptyState {
+  display: grid;
+  place-items: center;
+  min-height: 116px;
+  padding: var(--ui-space-5);
+  border: 1px dashed rgba(96, 165, 250, 0.28);
+  border-radius: var(--ui-radius-panel);
+  color: var(--muted);
+  text-align: center;
+  background: rgba(5, 14, 24, 0.48);
+}
+
+.uiMetricTile,
+.statCard,
+.predictionQuickStat,
+.adminStatsCard,
+.adminMetricTile,
+.adminHealthStat,
+.walletMetricCard,
+.fundingMetricCard,
+.dashboardAffiliateProfitshareMetric,
+.dashboardPerformanceMetricCard,
+.walletInfoTile,
+.fundingQuickCard {
+  min-width: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  padding: var(--ui-space-3);
+  background: var(--ui-surface-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.uiMetricLabel {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.uiMetricValue {
+  margin-top: var(--ui-space-1);
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.uiMetricMeta {
+  margin-top: var(--ui-space-1);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.uiMetricTile-success {
+  border-color: rgba(34, 197, 94, 0.34);
+}
+
+.uiMetricTile-warning {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.uiMetricTile-danger {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.btn {
+  min-height: 40px;
+  border-radius: var(--ui-radius-control);
+  padding: 9px 14px;
+  background: var(--ui-surface-control);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"],
+.btnDisabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btnPrimary {
+  border-color: rgba(191, 219, 254, 0.22);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.96), rgba(34, 211, 238, 0.88));
+}
+
+.input {
+  min-height: 40px;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-control);
+}
+
+.badge,
+.tag,
+.uiStatusBadge {
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  line-height: 1.15;
+  white-space: nowrap;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.02));
+}
+
+.uiStatusBadge-neutral,
+.tag-neutral {
+  border-color: rgba(148, 163, 184, 0.42);
+  color: #cbd5e1;
+}
+
+.uiStatusBadge-info,
+.badgeInfo,
+.tag-info {
+  border-color: rgba(56, 189, 248, 0.52);
+  color: #cffafe;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.uiStatusBadge-success,
+.badgeOk,
+.tag-success {
+  border-color: rgba(34, 197, 94, 0.58);
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.uiStatusBadge-warning,
+.badgeWarn,
+.tag-warn {
+  border-color: rgba(245, 158, 11, 0.6);
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.uiStatusBadge-danger,
+.badgeDanger,
+.tag-risk {
+  border-color: rgba(239, 68, 68, 0.62);
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.uiStatusBadge-accent {
+  border-color: rgba(96, 165, 250, 0.58);
+  color: #dbeafe;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.uiNotice,
+.settingsAlert,
+.predictionAlert,
+.tradeDeskNotice,
+.walletNotice,
+.fundingBridgeNotice {
+  padding: var(--ui-space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  color: var(--color-text-secondary);
+  background: rgba(8, 16, 30, 0.72);
+  line-height: 1.45;
+}
+
+.uiNotice-info,
+.tradeDeskNoticeInfo {
+  border-color: rgba(56, 189, 248, 0.42);
+  background: rgba(56, 189, 248, 0.08);
+  color: #dff8ff;
+}
+
+.uiNotice-success,
+.settingsAlertSuccess,
+.walletNoticeSuccess,
+.tradeOrderInlineNoticeSuccess {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.08);
+  color: #d8ffe4;
+}
+
+.uiNotice-warning,
+.predictionAlertWarn,
+.tradeDeskNoticeWarn {
+  border-color: rgba(245, 158, 11, 0.52);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fff1bf;
+}
+
+.uiNotice-danger,
+.settingsAlertError,
+.predictionAlertError,
+.tradeDeskNoticeError,
+.walletNoticeError,
+.calendarProErrorCard,
+.newsProErrorCard {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ffe4e6;
+}
+
+.adminPageHeader {
+  padding: 22px 24px;
+  border-color: rgba(100, 180, 255, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(12, 22, 40, 0.96), rgba(8, 14, 26, 0.98));
+}
+
+.adminPageHeader .uiPageTitle {
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 0.98;
+}
+
+.adminPageHeader .uiPageDescription {
+  font-size: 16px;
+}
+
+.predictionCreateBadges,
+.predictionChangeBadges,
+.predictionFeedSummaryChips,
+.fundingBridgeBadges {
+  display: flex;
+  gap: var(--ui-space-1);
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.gridRunningArchiveToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+
+.gridRunningSummaryGrid {
+  margin-bottom: var(--ui-space-3);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --ui-page-gap: 12px;
+    --ui-section-padding: 12px;
+  }
+
+  .uiPageHeader,
+  .dashboardHeader,
+  .adminPageHeader {
+    grid-template-columns: 1fr;
+    gap: var(--ui-space-3);
+    align-items: start;
+  }
+
+  .uiPage,
+  .settingsWrap,
+  .predictionsWrap,
+  .calendarProPage,
+  .newsProPage,
+  .walletPage,
+  .fundingPage,
+  .tradeDeskWrap,
+  .adminPageStack {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .uiSectionHeader,
+  .settingsSectionHeader,
+  .tradeDeskSectionHeader,
+  .walletSectionHeader,
+  .calendarProEventsHeader,
+  .newsProTopbar,
+  .fundingToolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--ui-space-2);
+  }
+
+  .uiSectionHeader > *,
+  .settingsSectionHeader > *,
+  .tradeDeskSectionHeader > *,
+  .walletSectionHeader > *,
+  .calendarProEventsHeader > *,
+  .newsProTopbar > *,
+  .fundingToolbar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .uiPageActions,
+  .uiSectionActions,
+  .predictionsHeaderActions,
+  .tradeDeskActions,
+  .settingsSectionHeader .uiPageActions,
+  .settingsSectionHeader .uiSectionActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .uiPageActions .btn,
+  .uiSectionActions .btn,
+  .predictionsHeaderActions .btn,
+  .tradeDeskActions .btn,
+  .settingsSectionHeader .btn,
+  .walletSectionHeader .btn,
+  .fundingToolbar .btn {
+    width: 100%;
+  }
+
+  .uiPageHeaderBody {
+    width: 100%;
+    max-width: clamp(0px, calc(100vw - 24px), 340px);
+  }
+
+  .uiPageTitle {
+    font-size: 25px;
+  }
+
+  .uiPageDescription {
+    width: 100%;
+    max-width: clamp(0px, calc(100vw - 24px), 340px);
+    font-size: 13px;
+    white-space: normal;
+  }
+
+  .uiSectionHeaderCopy {
+    width: 100%;
+    max-width: clamp(0px, calc(100vw - 48px), 340px);
+  }
+
+  .uiSectionDescription,
+  .settingsMutedText,
+  .predictionsSectionHint {
+    white-space: normal;
+  }
+
+  .predictionQuickStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .predictionCreateSection {
+    padding: 10px;
+  }
+
+  .predictionCreateHeader {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--ui-space-3);
+    margin-bottom: var(--ui-space-3);
+  }
+
+  .predictionCreateHeader > :first-child {
+    min-width: 0;
+  }
+
+  .predictionCreateHeaderActions {
+    display: grid;
+    width: 100%;
+    gap: var(--ui-space-2);
+    align-items: stretch;
+    margin-left: 0;
+  }
+
+  .predictionManageStrategiesButton {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .predictionCreateBadges {
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .predictionCreateBadges .badge,
+  .predictionsWrap .badge {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .predictionCreateGrid {
+    gap: var(--ui-space-2);
+  }
+
+  .predictionCreateField {
+    padding: 9px;
+  }
+
+  .predictionCreateFooter {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--ui-space-2);
+  }
+
+  .predictionCreateStatusRow {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .predictionCreateActions {
+    width: 100%;
+  }
+
+  .predictionCreateActions .btn {
+    width: 100%;
+  }
+}

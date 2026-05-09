@@ -10,6 +10,7 @@ import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
 import { GridClaimDialog, GridMarginDialog } from "../../../components/grid/GridQuickActionDialogs";
 import type { GridFillsResponse, GridInstance, UserOnchainActionsResponse } from "../../../components/grid/types";
+import { MetricTile, Notice, PageHeader, Section } from "../../components/ui";
 import {
   buildGridCycles,
   computeGridUnrealizedPnl,
@@ -367,56 +368,48 @@ function GridBotsDashboardPageContent() {
 
   return (
     <div className="botsPage">
-      <div className="dashboardHeader">
-        <div>
-          <h2 style={{ margin: 0 }}>{tGrid("title")}</h2>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>{tGrid("dashboardSubtitle")}</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <PageHeader
+        title={tGrid("title")}
+        description={tGrid("dashboardSubtitle")}
+        actions={
           <Link href={withLocalePath("/bots/catalog", locale)} className="btn btnPrimary">{tGrid("newInstance")}</Link>
-        </div>
-      </div>
+        }
+      />
 
-      {error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div> : null}
-      {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
+      {error ? <Notice tone="danger" className="card">{error}</Notice> : null}
+      {notice ? <Notice tone="success" className="card">{notice}</Notice> : null}
 
-      <section className="card" style={{ padding: 12, marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>
-          {isShadowVaultMode ? tGrid("demoVaultTitle") : "Bot Vault Funding"}
-        </h3>
-        <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-          {isShadowVaultMode
+      <Section
+        title={isShadowVaultMode ? tGrid("demoVaultTitle") : "Bot Vault Funding"}
+        description={
+          isShadowVaultMode
             ? tGrid("demoVaultOverviewHint")
-            : "Each bot now owns its own persistent Bot Vault. Create, fund, claim, and close it directly from the bot detail page."}
-        </div>
-      </section>
+            : "Each bot now owns its own persistent Bot Vault. Create, fund, claim, and close it directly from the bot detail page."
+        }
+        density="compact"
+      />
 
-      <section className="card" style={{ padding: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <div>
-            <h3 style={{ margin: 0 }}>{tGrid("runningTitle")}</h3>
-            <div className="settingsMutedText" style={{ marginTop: 4 }}>{tGrid("runningSubtitle")}</div>
-          </div>
-          <label className="settingsMutedText" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <Section
+        title={tGrid("runningTitle")}
+        description={tGrid("runningSubtitle")}
+        density="compact"
+        actions={
+          <label className="settingsMutedText gridRunningArchiveToggle">
             <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
             <span>{tGrid("showArchived")}</span>
           </label>
-        </div>
+        }
+      >
 
         {hyperVaultDemoInstances.length > 0 ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 12 }}>
-            <div className="card" style={{ padding: 10 }}>
-              <strong>{tGrid("pilotDemoBotsLabel")}</strong>
-              <div>{formatNumber(hyperVaultDemoInstances.length, 0)}</div>
-            </div>
-            <div className="card" style={{ padding: 10 }}>
-              <strong>{tGrid("pilotDemoRunningLabel")}</strong>
-              <div>{formatNumber(hyperVaultDemoRunningCount, 0)}</div>
-            </div>
-            <div className="card" style={{ padding: 10 }}>
-              <strong>{tGrid("pilotDemoIssuesLabel")}</strong>
-              <div>{formatNumber(hyperVaultDemoIssueCount, 0)}</div>
-            </div>
+          <div className="uiGrid gridRunningSummaryGrid">
+            <MetricTile label={tGrid("pilotDemoBotsLabel")} value={formatNumber(hyperVaultDemoInstances.length, 0)} />
+            <MetricTile label={tGrid("pilotDemoRunningLabel")} value={formatNumber(hyperVaultDemoRunningCount, 0)} />
+            <MetricTile
+              label={tGrid("pilotDemoIssuesLabel")}
+              value={formatNumber(hyperVaultDemoIssueCount, 0)}
+              tone={hyperVaultDemoIssueCount > 0 ? "warning" : "neutral"}
+            />
           </div>
         ) : null}
 
@@ -662,7 +655,7 @@ function GridBotsDashboardPageContent() {
             </div>
           </div>
         )}
-      </section>
+      </Section>
       <GridClaimDialog
         instance={claimDialogInstance}
         onClose={() => setClaimDialogInstanceId("")}

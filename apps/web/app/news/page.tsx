@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
+import { PageHeader } from "../components/ui";
 
 type NewsMode = "all" | "crypto" | "general";
 type NewsFeed = "crypto" | "general";
@@ -135,12 +136,7 @@ export default function NewsPage() {
 
   return (
     <div className="newsPage newsProPage">
-      <div className="newsProTopbar">
-        <div className="newsProTitleRow">
-          <h2 style={{ margin: 0 }}>{t("title")}</h2>
-          <div className="newsProSubtitle">{t("subtitle")}</div>
-        </div>
-      </div>
+      <PageHeader title={t("title")} description={t("subtitle")} />
 
       <div className="card newsFilterCard newsProControls">
         <div className="newsProTabRow">

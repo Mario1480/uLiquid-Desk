@@ -16,6 +16,7 @@ import {
   formatTelegramLinkExpiry,
   type TelegramLinkStatus
 } from "../../src/telegram/linking";
+import { Notice, PageHeader } from "../components/ui";
 import { AffiliateOverview } from "./affiliate/AffiliateOverview";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
@@ -966,20 +967,17 @@ export default function SettingsPage() {
 
   return (
     <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{tMain("title")}</h2>
-      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-        {tMain("subtitle")}
-      </div>
+      <PageHeader title={tMain("title")} description={tMain("subtitle")} />
 
       {error ? (
-        <div className="card settingsAlert settingsAlertError">
+        <Notice tone="danger" className="card settingsAlert settingsAlertError">
           {error}
-        </div>
+        </Notice>
       ) : null}
       {notice ? (
-        <div className="card settingsAlert settingsAlertSuccess">
+        <Notice tone="success" className="card settingsAlert settingsAlertSuccess">
           {notice}
-        </div>
+        </Notice>
       ) : null}
 
       <div className="settingsLandingGrouped">
