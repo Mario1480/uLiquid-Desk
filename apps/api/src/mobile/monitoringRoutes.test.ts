@@ -168,7 +168,16 @@ function createDeps(overrides: Record<string, any> = {}) {
       selectedAccount: { id: exchangeAccountId, exchange: "paper" },
       marketDataAccount: { id: exchangeAccountId, exchange: "paper" }
     }),
-    createManualPerpMarketDataClient: () => ({ close: async () => {} }),
+    normalizeSymbolInput: (value: string | null | undefined) =>
+      String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase() || null,
+    marketTimeframeToBitgetGranularity: (timeframe: string) => timeframe,
+    parseBitgetCandles: (value: unknown) => Array.isArray(value) ? value : [],
+    createManualPerpMarketDataClient: () => ({
+      async getCandles() {
+        return [];
+      },
+      close: async () => {}
+    }),
     createPerpExecutionAdapter: () => ({ close: async () => {} }),
     listPaperPositions: async () => [],
     listPositions: async () => [],
@@ -328,4 +337,42 @@ test("mobile position risk prefers exchange leverage margin and liquidation fiel
   assert.equal(res.body.items[0].liquidationDistancePct, 18.8652);
   assert.equal(res.body.items[0].roePct, 0.3556);
   assert.equal(res.body.items[0].pnlPct, 0.0711);
+});
+
+test("mobile position chart candles are read-only and do not require manual trading route", async () => {
+  const app = createFakeApp();
+  const deps = createDeps({
+    resolveMarketDataTradingAccount: async (_userId: string, exchangeAccountId: string) => ({
+      selectedAccount: { id: exchangeAccountId, exchange: "bitget" },
+      marketDataAccount: { id: exchangeAccountId, exchange: "bitget" }
+    }),
+    createManualPerpMarketDataClient: () => ({
+      async getCandles(params: any) {
+        assert.equal(params.symbol, "BNBUSDT");
+        assert.equal(params.timeframe, "15m");
+        return [
+          { ts: 1778256000000, open: 100, high: 105, low: 99, close: 103, volume: 12.5 }
+        ];
+      },
+      close: async () => {}
+    })
+  });
+  registerMobileMonitoringRoutes(app as any, deps as any);
+
+  const handler = getFinalHandler(app, "get", "/mobile/position-chart/candles");
+  const res = createMockRes();
+  await handler({
+    query: {
+      exchangeAccountId: "acc_live",
+      symbol: "bnbusdt",
+      timeframe: "15m",
+      limit: "50"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.degraded, false);
+  assert.equal(res.body?.exchangeAccountId, "acc_live");
+  assert.equal(res.body?.symbol, "BNBUSDT");
+  assert.equal(res.body?.items?.[0]?.close, 103);
 });

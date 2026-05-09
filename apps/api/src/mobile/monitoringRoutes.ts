@@ -21,7 +21,17 @@ type MobileMonitoringRoutesDeps = {
   authMiddleware?: express.RequestHandler;
   ignoreMissingTable<T>(read: () => Promise<T>): Promise<T | null>;
   normalizeExchangeValue(value: string): string;
+  normalizeSymbolInput(value: string | null | undefined): string | null;
   toFiniteNumber(value: unknown): number | null;
+  marketTimeframeToBitgetGranularity(timeframe: "1m" | "5m" | "15m" | "1h" | "4h" | "1d"): string;
+  parseBitgetCandles(value: unknown): Array<{
+    ts: number | null;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number | null;
+  }>;
   resolveMarketDataTradingAccount(userId: string, exchangeAccountId: string): Promise<any>;
   createManualPerpMarketDataClient(account: any, source: string): any;
   createPerpExecutionAdapter(account: any): any;
@@ -70,6 +80,13 @@ const newsIntelligenceQuerySchema = z.object({
   mode: z.enum(["all", "crypto", "general"]).default("all"),
   q: z.string().trim().max(120).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(30)
+});
+const positionChartCandlesQuerySchema = z.object({
+  exchangeAccountId: z.string().trim().min(1),
+  symbol: z.string().trim().min(1).max(40),
+  marketType: z.enum(["perp"]).default("perp"),
+  timeframe: z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]).default("15m"),
+  limit: z.coerce.number().int().min(20).max(1000).default(500)
 });
 
 function toIso(value: unknown): string | null {
@@ -567,6 +584,77 @@ async function listPositionRiskItems(deps: MobileMonitoringRoutesDeps, userId: s
     failedExchangeAccountIds,
     items
   };
+}
+
+async function readPositionChartCandles(
+  deps: MobileMonitoringRoutesDeps,
+  userId: string,
+  query: z.infer<typeof positionChartCandlesQuerySchema>
+) {
+  const symbol = deps.normalizeSymbolInput(query.symbol);
+  if (!symbol) {
+    return {
+      status: 400,
+      body: { error: "symbol_required" }
+    };
+  }
+
+  const resolved = await deps.resolveMarketDataTradingAccount(userId, query.exchangeAccountId);
+  const perpClient = deps.createManualPerpMarketDataClient(
+    resolved.marketDataAccount,
+    "mobile/position-chart/candles"
+  );
+
+  try {
+    const granularity = deps.marketTimeframeToBitgetGranularity(query.timeframe);
+    const raw = await perpClient.getCandles({
+      symbol,
+      timeframe: query.timeframe,
+      granularity,
+      limit: query.limit
+    });
+    const items = deps.parseBitgetCandles(raw);
+
+    return {
+      status: 200,
+      body: {
+        fetchedAt: new Date().toISOString(),
+        degraded: false,
+        error: null,
+        exchangeAccountId: String(resolved.selectedAccount?.id ?? query.exchangeAccountId),
+        exchange: String(resolved.selectedAccount?.exchange ?? ""),
+        marketDataExchange: resolved.marketDataAccount?.exchange
+          ? String(resolved.marketDataAccount.exchange)
+          : null,
+        marketType: query.marketType,
+        symbol,
+        timeframe: query.timeframe,
+        granularity,
+        items
+      }
+    };
+  } catch (error) {
+    return {
+      status: 200,
+      body: {
+        fetchedAt: new Date().toISOString(),
+        degraded: true,
+        error: toReason(error),
+        exchangeAccountId: String(resolved.selectedAccount?.id ?? query.exchangeAccountId),
+        exchange: String(resolved.selectedAccount?.exchange ?? ""),
+        marketDataExchange: resolved.marketDataAccount?.exchange
+          ? String(resolved.marketDataAccount.exchange)
+          : null,
+        marketType: query.marketType,
+        symbol,
+        timeframe: query.timeframe,
+        granularity: null,
+        items: []
+      }
+    };
+  } finally {
+    await perpClient.close?.();
+  }
 }
 
 async function readAlerts(deps: MobileMonitoringRoutesDeps, userId: string) {
@@ -1245,6 +1333,17 @@ export function registerMobileMonitoringRoutes(app: Express, deps: MobileMonitor
         items: []
       });
     }
+  });
+
+  app.get("/mobile/position-chart/candles", auth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const parsed = positionChartCandlesQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+    }
+
+    const result = await readPositionChartCandles(deps, user.id, parsed.data);
+    return res.status(result.status).json(result.body);
   });
 
   app.get("/mobile/performance", auth, async (req, res) => {
