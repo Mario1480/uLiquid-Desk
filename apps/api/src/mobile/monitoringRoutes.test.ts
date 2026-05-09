@@ -376,3 +376,47 @@ test("mobile position chart candles are read-only and do not require manual trad
   assert.equal(res.body?.symbol, "BNBUSDT");
   assert.equal(res.body?.items?.[0]?.close, 103);
 });
+
+test("mobile position chart ticker returns lightweight live price", async () => {
+  const app = createFakeApp();
+  const deps = createDeps({
+    resolveMarketDataTradingAccount: async (_userId: string, exchangeAccountId: string) => ({
+      selectedAccount: { id: exchangeAccountId, exchange: "bitget" },
+      marketDataAccount: { id: exchangeAccountId, exchange: "bitget" }
+    }),
+    createManualPerpMarketDataClient: () => ({
+      async getTicker(symbol: string) {
+        assert.equal(symbol, "BNBUSDT");
+        return {
+          symbol,
+          last: 650.12,
+          mark: 650.18,
+          bid: 650.1,
+          ask: 650.2,
+          ts: 1778256000123
+        };
+      },
+      close: async () => {}
+    })
+  });
+  registerMobileMonitoringRoutes(app as any, deps as any);
+
+  const handler = getFinalHandler(app, "get", "/mobile/position-chart/ticker");
+  const res = createMockRes();
+  await handler({
+    query: {
+      exchangeAccountId: "acc_live",
+      symbol: "bnbusdt"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.degraded, false);
+  assert.equal(res.body?.exchangeAccountId, "acc_live");
+  assert.equal(res.body?.symbol, "BNBUSDT");
+  assert.equal(res.body?.markPrice, 650.18);
+  assert.equal(res.body?.lastPrice, 650.12);
+  assert.equal(res.body?.bidPrice, 650.1);
+  assert.equal(res.body?.askPrice, 650.2);
+  assert.equal(res.body?.ts, 1778256000123);
+});

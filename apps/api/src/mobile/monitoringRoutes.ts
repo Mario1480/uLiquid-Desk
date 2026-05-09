@@ -88,6 +88,11 @@ const positionChartCandlesQuerySchema = z.object({
   timeframe: z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]).default("15m"),
   limit: z.coerce.number().int().min(20).max(1000).default(500)
 });
+const positionChartTickerQuerySchema = z.object({
+  exchangeAccountId: z.string().trim().min(1),
+  symbol: z.string().trim().min(1).max(40),
+  marketType: z.enum(["perp"]).default("perp")
+});
 
 function toIso(value: unknown): string | null {
   if (value instanceof Date) return value.toISOString();
@@ -650,6 +655,73 @@ async function readPositionChartCandles(
         timeframe: query.timeframe,
         granularity: null,
         items: []
+      }
+    };
+  } finally {
+    await perpClient.close?.();
+  }
+}
+
+async function readPositionChartTicker(
+  deps: MobileMonitoringRoutesDeps,
+  userId: string,
+  query: z.infer<typeof positionChartTickerQuerySchema>
+) {
+  const symbol = deps.normalizeSymbolInput(query.symbol);
+  if (!symbol) {
+    return {
+      status: 400,
+      body: { error: "symbol_required" }
+    };
+  }
+
+  const resolved = await deps.resolveMarketDataTradingAccount(userId, query.exchangeAccountId);
+  const perpClient = deps.createManualPerpMarketDataClient(
+    resolved.marketDataAccount,
+    "mobile/position-chart/ticker"
+  );
+
+  try {
+    const ticker = await perpClient.getTicker(symbol);
+    return {
+      status: 200,
+      body: {
+        fetchedAt: new Date().toISOString(),
+        degraded: false,
+        error: null,
+        exchangeAccountId: String(resolved.selectedAccount?.id ?? query.exchangeAccountId),
+        exchange: String(resolved.selectedAccount?.exchange ?? ""),
+        marketDataExchange: resolved.marketDataAccount?.exchange
+          ? String(resolved.marketDataAccount.exchange)
+          : null,
+        marketType: query.marketType,
+        symbol,
+        markPrice: deps.toFiniteNumber(ticker?.mark),
+        lastPrice: deps.toFiniteNumber(ticker?.last),
+        bidPrice: deps.toFiniteNumber(ticker?.bid),
+        askPrice: deps.toFiniteNumber(ticker?.ask),
+        ts: deps.toFiniteNumber(ticker?.ts)
+      }
+    };
+  } catch (error) {
+    return {
+      status: 200,
+      body: {
+        fetchedAt: new Date().toISOString(),
+        degraded: true,
+        error: toReason(error),
+        exchangeAccountId: String(resolved.selectedAccount?.id ?? query.exchangeAccountId),
+        exchange: String(resolved.selectedAccount?.exchange ?? ""),
+        marketDataExchange: resolved.marketDataAccount?.exchange
+          ? String(resolved.marketDataAccount.exchange)
+          : null,
+        marketType: query.marketType,
+        symbol,
+        markPrice: null,
+        lastPrice: null,
+        bidPrice: null,
+        askPrice: null,
+        ts: null
       }
     };
   } finally {
@@ -1343,6 +1415,17 @@ export function registerMobileMonitoringRoutes(app: Express, deps: MobileMonitor
     }
 
     const result = await readPositionChartCandles(deps, user.id, parsed.data);
+    return res.status(result.status).json(result.body);
+  });
+
+  app.get("/mobile/position-chart/ticker", auth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const parsed = positionChartTickerQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+    }
+
+    const result = await readPositionChartTicker(deps, user.id, parsed.data);
     return res.status(result.status).json(result.body);
   });
 

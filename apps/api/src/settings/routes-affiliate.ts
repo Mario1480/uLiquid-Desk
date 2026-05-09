@@ -5,6 +5,7 @@ import type { BotVaultRuntimeService, BotVaultV3Service } from "../vaults/botVau
 import {
   MAX_AFFILIATE_SELF_FEE_RATE_PCT,
   getAffiliateOverviewForUser,
+  resolveLockedAffiliateFeeConfig,
   setAffiliateSelfSelectedFeeRate
 } from "../affiliate/program.js";
 
@@ -37,18 +38,20 @@ export function registerSettingsAffiliateRoutes(
   app.get("/settings/affiliate", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
     const refreshPayoutWallet = String(req.query.refreshPayoutWallet ?? "true") !== "false";
-    const [overview, payoutWallet] = await Promise.all([
+    const [overview, payoutWallet, lockedFeePreview] = await Promise.all([
       getAffiliateOverviewForUser(deps.db, user.id, { limit: 20 }),
       botVaultRuntimeService
         ? botVaultRuntimeService.getAffiliatePayoutWalletSummary({
             userId: user.id,
             refresh: refreshPayoutWallet
           }).catch(() => null)
-        : Promise.resolve(null)
+        : Promise.resolve(null),
+      resolveLockedAffiliateFeeConfig(deps.db, user.id).catch(() => null)
     ]);
     return res.json({
       ...overview,
       payoutWallet,
+      lockedFeePreview,
       referralPath: `/register?ref=${encodeURIComponent(overview.profile.code)}`
     });
   });

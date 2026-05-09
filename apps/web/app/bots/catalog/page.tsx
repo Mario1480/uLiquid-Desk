@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { useAccount } from "wagmi";
 import { ApiError, apiDelete, apiGet, apiPost } from "../../../lib/api";
 import { buildBotVaultFundingBreakdown, type BotVaultFundingBreakdown } from "../../../components/grid/botVaultFunding";
 import { useOnchainActionFlow } from "../../../components/grid/OnchainVaultActions";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import type { WalletFundingOverview } from "../../../lib/funding/types";
 import type {
   BotVaultSnapshot,
   ExchangeAccount,
@@ -35,6 +37,19 @@ type GridPilotAccess = {
   scope: "global" | "user" | "workspace" | "none";
   provider?: "mock" | "hyperliquid_demo" | "hyperliquid";
   allowLiveHyperliquid?: boolean;
+};
+
+type LaunchFeePreview = {
+  platformFeeRatePct: number;
+  affiliateFeeRatePct: number;
+  totalFeeRatePct: number;
+  affiliateUserId: string | null;
+  affiliateRecipientAddress: string | null;
+  feeConfigLockedAt?: string | null;
+};
+
+type AffiliateLaunchOverview = {
+  lockedFeePreview?: LaunchFeePreview | null;
 };
 
 function usesHyperliquidMarketData(account: ExchangeAccount | null | undefined): boolean {
@@ -288,6 +303,7 @@ export default function GridBotCatalogPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tGrid = useTranslations("grid.marketplace");
+  const { address: connectedWalletAddress } = useAccount();
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
   const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
   const [createdInstance, setCreatedInstance] = useState<GridInstance | null>(null);
@@ -359,6 +375,10 @@ export default function GridBotCatalogPage() {
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
   const [reusableBotVaults, setReusableBotVaults] = useState<BotVaultSnapshot[]>([]);
   const [pilotAccess, setPilotAccess] = useState<GridPilotAccess | null>(null);
+  const [launchFeePreview, setLaunchFeePreview] = useState<LaunchFeePreview | null>(null);
+  const [walletFundingOverview, setWalletFundingOverview] = useState<WalletFundingOverview | null>(null);
+  const [walletFundingLoading, setWalletFundingLoading] = useState(false);
+  const [walletFundingError, setWalletFundingError] = useState<string | null>(null);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -451,8 +471,43 @@ export default function GridBotCatalogPage() {
     [reusableBotVaults, selectedBotVaultId]
   );
   const selectedTemplateTags = useMemo(() => visibleCatalogTags(selectedTemplate), [selectedTemplate]);
-  const stablecoinLabel = usesHyperliquidMarketData(selectedAccount) ? "USDC" : "USDT";
+  const isHyperliquidLaunchAccount = usesHyperliquidMarketData(selectedAccount);
+  const stablecoinLabel = isHyperliquidLaunchAccount ? "USDC" : "USDT";
   const autoMarginActive = marginMode === "AUTO";
+  const requestedExtraMarginUsd = autoMarginActive ? 0 : Number(extraMarginUsd || 0);
+  const launchIncludesCreateFee = isHyperliquidLaunchAccount && !selectedReusableBotVault;
+  const launchFundingBreakdown = useMemo(() => buildBotVaultFundingBreakdown({
+    investUsd: Number(investUsd),
+    extraMarginUsd: requestedExtraMarginUsd,
+    includeCreateFee: launchIncludesCreateFee
+  }), [investUsd, launchIncludesCreateFee, requestedExtraMarginUsd]);
+  const activeLaunchFeePreview = selectedReusableBotVault?.feeConfigSummary ?? launchFeePreview;
+  const platformFeeRatePct = Number(activeLaunchFeePreview?.platformFeeRatePct ?? 0);
+  const affiliateFeeRatePct = Number(activeLaunchFeePreview?.affiliateFeeRatePct ?? 0);
+  const totalFeeRatePct = Number(activeLaunchFeePreview?.totalFeeRatePct ?? platformFeeRatePct + affiliateFeeRatePct);
+  const affiliateLinked = Boolean(activeLaunchFeePreview?.affiliateUserId && affiliateFeeRatePct > 0);
+  const walletUsdcBalance = walletFundingOverview?.hyperEvm?.usdc ?? null;
+  const walletUsdcAvailableValue = walletUsdcBalance?.available && walletUsdcBalance.formatted != null
+    ? Number(walletUsdcBalance.formatted)
+    : null;
+  const walletFundingShortfall = isHyperliquidLaunchAccount
+    && !selectedReusableBotVault
+    && walletUsdcAvailableValue != null
+    && Number.isFinite(walletUsdcAvailableValue)
+    && walletUsdcAvailableValue + 1e-9 < launchFundingBreakdown.totalFundingUsd;
+  const walletUsdcDisplay = !connectedWalletAddress
+    ? tGrid("launchWalletUsdcConnect")
+    : walletFundingLoading
+      ? tGrid("launchWalletUsdcLoading")
+      : walletFundingError || walletUsdcAvailableValue == null || !Number.isFinite(walletUsdcAvailableValue)
+        ? tGrid("launchWalletUsdcUnavailable")
+        : `${formatNumber(walletUsdcAvailableValue, 2)} USDC`;
+  const walletFundingHint = selectedReusableBotVault
+    ? tGrid("launchWalletUsdcReusableHint")
+    : tGrid(launchIncludesCreateFee ? "launchWalletUsdcRequiredWithFee" : "launchWalletUsdcRequired", {
+        amount: formatNumber(launchFundingBreakdown.totalFundingUsd, 2),
+        stablecoin: stablecoinLabel
+      });
   const neutralPreviewHints = useMemo(
     () => deriveNeutralModePreviewHints({ template: selectedTemplate, preview }),
     [preview, selectedTemplate]
@@ -487,11 +542,12 @@ export default function GridBotCatalogPage() {
   async function loadMeta() {
     setLoadingMeta(true);
     try {
-      const [filterResponse, accountResponse, pilotResponse, botVaultResponse] = await Promise.all([
+      const [filterResponse, accountResponse, pilotResponse, botVaultResponse, affiliateResponse] = await Promise.all([
         apiGet<GridTemplateFiltersResponse>("/grid/templates/filters"),
         apiGet<{ items: ExchangeAccount[] }>("/exchange-accounts?purpose=execution"),
         apiGet<GridPilotAccess>("/grid/pilot-access"),
-        apiGet<{ items: BotVaultSnapshot[] }>("/vaults/bot-vaults?reusableOnly=true")
+        apiGet<{ items: BotVaultSnapshot[] }>("/vaults/bot-vaults?reusableOnly=true"),
+        apiGet<AffiliateLaunchOverview>("/settings/affiliate?refreshPayoutWallet=false").catch(() => null)
       ]);
       const allowHyperliquid = Boolean(pilotResponse?.allowed || pilotResponse?.allowLiveHyperliquid);
       const accountItems = (accountResponse.items ?? [])
@@ -511,6 +567,7 @@ export default function GridBotCatalogPage() {
       setAccounts(accountItems);
       setReusableBotVaults(Array.isArray(botVaultResponse.items) ? botVaultResponse.items : []);
       setPilotAccess(pilotResponse ?? null);
+      setLaunchFeePreview(affiliateResponse?.lockedFeePreview ?? null);
       setExchangeAccountId((previous) => previous && accountItems.some((row) => row.id === previous) ? previous : (accountItems[0]?.id ?? ""));
     } catch (loadError) {
       setError(errMsg(loadError));
@@ -595,6 +652,36 @@ export default function GridBotCatalogPage() {
         : ""
     ));
   }, [reusableBotVaults, selectedAccount]);
+
+  useEffect(() => {
+    if (!connectedWalletAddress || !isHyperliquidLaunchAccount) {
+      setWalletFundingOverview(null);
+      setWalletFundingError(null);
+      setWalletFundingLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setWalletFundingLoading(true);
+    setWalletFundingError(null);
+    void apiGet<WalletFundingOverview>(`/funding/${encodeURIComponent(connectedWalletAddress)}/overview`)
+      .then((response) => {
+        if (cancelled) return;
+        setWalletFundingOverview(response);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setWalletFundingOverview(null);
+        setWalletFundingError(errMsg(loadError));
+      })
+      .finally(() => {
+        if (!cancelled) setWalletFundingLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedWalletAddress, isHyperliquidLaunchAccount]);
 
   useEffect(() => {
     if (!selectedTemplate || !exchangeAccountId) {
@@ -735,13 +822,8 @@ export default function GridBotCatalogPage() {
         setError(tGrid("pilotRequired"));
         return;
       }
-      const requestedExtraMarginUsd = autoMarginActive ? 0 : Number(extraMarginUsd || 0);
-      const includesCreateFee = usesHyperliquidMarketData(selectedAccount) && !selectedReusableBotVault;
-      const fundingBreakdown = buildBotVaultFundingBreakdown({
-        investUsd: Number(investUsd),
-        extraMarginUsd: requestedExtraMarginUsd,
-        includeCreateFee: includesCreateFee
-      });
+      const includesCreateFee = launchIncludesCreateFee;
+      const fundingBreakdown = launchFundingBreakdown;
       const created = await apiPost<GridInstanceCreateResponse>(`/grid/templates/${selectedTemplate.id}/instances`, {
         exchangeAccountId,
         investUsd: Number(investUsd),
@@ -1120,6 +1202,42 @@ export default function GridBotCatalogPage() {
                     <div className="gridCatalogSectionHint">{replaceStablecoinUnit(autoMarginActive ? tGrid("launchSetupAutoHint") : tGrid("launchSetupManualHint"), stablecoinLabel)}</div>
                   </div>
                 </div>
+                {isHyperliquidLaunchAccount ? (
+                  <div className="gridCatalogLaunchHighlights">
+                    <div className={`gridCatalogMiniPanel ${walletFundingShortfall ? "gridCatalogMiniPanelWarn" : ""}`}>
+                      <div className="gridCatalogMiniPanelTop">
+                        <span className="gridCatalogMiniPanelLabel">{tGrid("launchWalletUsdcLabel")}</span>
+                        {walletFundingShortfall ? <span className="badge badgeWarn">{tGrid("launchWalletUsdcShortfall")}</span> : null}
+                      </div>
+                      <strong className="gridCatalogMiniPanelValue">{walletUsdcDisplay}</strong>
+                      <div className="gridCatalogMiniPanelHint">{walletFundingHint}</div>
+                    </div>
+                    <div className="gridCatalogMiniPanel">
+                      <div className="gridCatalogMiniPanelTop">
+                        <span className="gridCatalogMiniPanelLabel">{tGrid("launchProfitshareLabel")}</span>
+                        <span className="badge">{tGrid("launchProfitshareTotal", { rate: formatNumber(totalFeeRatePct, 2) })}</span>
+                      </div>
+                      <div className="gridCatalogProfitshareChips">
+                        <span className="badge">{tGrid("launchPlatformShare", { rate: formatNumber(platformFeeRatePct, 2) })}</span>
+                        <span className={`badge ${affiliateLinked ? "badgeOk" : ""}`}>
+                          {affiliateLinked
+                            ? tGrid("launchAffiliateShare", { rate: formatNumber(affiliateFeeRatePct, 2) })
+                            : tGrid("launchAffiliateShareNone")}
+                        </span>
+                      </div>
+                      <div className="gridCatalogMiniPanelHint">
+                        {affiliateLinked
+                          ? tGrid("launchProfitshareLinkedHint", {
+                              platformRate: formatNumber(platformFeeRatePct, 2),
+                              affiliateRate: formatNumber(affiliateFeeRatePct, 2)
+                            })
+                          : tGrid("launchProfitshareUnlinkedHint", {
+                              platformRate: formatNumber(platformFeeRatePct, 2)
+                            })}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="gridCatalogLaunchGrid">
                   <label className="gridCatalogField">
                     {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
