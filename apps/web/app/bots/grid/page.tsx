@@ -9,7 +9,7 @@ import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
 import { GridClaimDialog, GridMarginDialog } from "../../../components/grid/GridQuickActionDialogs";
-import type { GridFillsResponse, GridInstance, UserOnchainActionsResponse } from "../../../components/grid/types";
+import type { GridFillsResponse, GridInstance } from "../../../components/grid/types";
 import { MetricTile, Notice, PageHeader, Section } from "../../components/ui";
 import {
   buildGridCycles,
@@ -105,7 +105,6 @@ function GridBotsDashboardPageContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyInstanceAction, setBusyInstanceAction] = useState<string | null>(null);
   const [gridFeatureEnabled, setGridFeatureEnabled] = useState(true);
-  const [executionMode, setExecutionMode] = useState<"offchain_shadow" | "onchain_simulated" | "onchain_live">("offchain_shadow");
   const [claimDialogInstanceId, setClaimDialogInstanceId] = useState<string>("");
   const [marginDialogInstanceId, setMarginDialogInstanceId] = useState<string>("");
   const latestLoadIdRef = useRef(0);
@@ -192,8 +191,6 @@ function GridBotsDashboardPageContent() {
     ).length,
     [hyperVaultDemoInstances]
   );
-  const isShadowVaultMode = executionMode === "offchain_shadow";
-
   async function load(options?: { background?: boolean }) {
     const isBackground = options?.background === true;
     if (isBackground && backgroundLoadInFlightRef.current) return;
@@ -206,13 +203,7 @@ function GridBotsDashboardPageContent() {
       setError(null);
     }
     try {
-      const [instanceResponse, onchainState] = await Promise.all([
-        apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`),
-        apiGet<UserOnchainActionsResponse>("/vaults/onchain/actions?limit=1").catch(() => null)
-      ]);
-      if (onchainState?.mode) {
-        setExecutionMode(onchainState.mode);
-      }
+      const instanceResponse = await apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`);
       const instanceItems = Array.isArray(instanceResponse.items) ? instanceResponse.items : [];
       if (loadId !== latestLoadIdRef.current) return;
       setInstances(instanceItems);
@@ -378,16 +369,6 @@ function GridBotsDashboardPageContent() {
 
       {error ? <Notice tone="danger" className="card">{error}</Notice> : null}
       {notice ? <Notice tone="success" className="card">{notice}</Notice> : null}
-
-      <Section
-        title={isShadowVaultMode ? tGrid("demoVaultTitle") : "Bot Vault Funding"}
-        description={
-          isShadowVaultMode
-            ? tGrid("demoVaultOverviewHint")
-            : "Each bot now owns its own persistent Bot Vault. Create, fund, claim, and close it directly from the bot detail page."
-        }
-        density="compact"
-      />
 
       <Section
         title={tGrid("runningTitle")}

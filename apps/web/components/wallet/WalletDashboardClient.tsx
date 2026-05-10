@@ -244,7 +244,7 @@ export default function WalletDashboardClient({
                 {agentSetupBusy === "threshold" ? t("agentActions.savingThreshold") : t("agentActions.saveThreshold")}
               </button>
             </div>
-            <div className="fundingToolbar" style={{ marginTop: 12 }}>
+            <div className="fundingToolbar walletAgentActions" style={{ marginTop: 12 }}>
               <button
                 type="button"
                 className="btn btnPrimary"

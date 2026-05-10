@@ -145,7 +145,7 @@ export default function FundingActionCenter({
           {address ? <div className="walletMutedText">{t("connectedWallet", { address: shortAddress(address) })}</div> : null}
         </div>
 
-        <div className="fundingToolbar">
+        <div className="fundingToolbar fundingActionButtons">
           <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>{t("actions.deposit")}</button>
           <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>{t("actions.withdraw")}</button>
           <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>{t("actions.spotPerp")}</button>

@@ -2367,6 +2367,7 @@
 .walletEmbeddedSection {
   display: grid;
   gap: 14px;
+  padding: 18px;
 }
 
 .walletSectionDivider {
@@ -2581,6 +2582,10 @@
 
 @media (max-width: 720px) {
   .walletCard {
+    padding: 14px;
+  }
+
+  .walletEmbeddedSection {
     padding: 14px;
   }
 
@@ -2887,6 +2892,18 @@
 
 .fundingToolbar .btn {
   min-width: 132px;
+}
+
+.walletPage .walletAgentActions,
+.walletPage .fundingActionButtons {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+}
+
+.walletPage .walletAgentActions .btn,
+.walletPage .fundingActionButtons .btn {
+  flex: 0 0 auto;
 }
 
 .fundingQuickGrid {
