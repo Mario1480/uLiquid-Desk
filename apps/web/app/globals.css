@@ -169,12 +169,10 @@ a { color: inherit; }
 }
 
 .card {
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(10, 18, 33, 0.96), rgba(7, 13, 25, 0.98));
-  border: 1px solid var(--color-border-default);
-  border-radius: 18px;
-  box-shadow: var(--shadow-panel);
+  background: var(--ui-surface-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-panel);
+  box-shadow: var(--ui-shadow);
 }
 
 .tradeDeskSection,
@@ -197,12 +195,10 @@ a { color: inherit; }
 .fundingBridgeSection {
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--color-border-default);
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(10, 18, 33, 0.94), rgba(7, 13, 25, 0.98));
-  box-shadow: var(--shadow-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-panel);
+  background: var(--ui-surface-panel);
+  box-shadow: var(--ui-shadow);
 }
 
 .gridModeButtonGroup {
@@ -329,11 +325,10 @@ a { color: inherit; }
 .input {
   width: 100%;
   min-height: 40px;
-  border: 1px solid var(--color-border-default);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.028));
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-control);
   color: var(--text);
-  border-radius: 12px;
+  border-radius: var(--ui-radius-control);
   padding: 10px 12px;
   outline: none;
   box-shadow:
@@ -348,6 +343,7 @@ a { color: inherit; }
 select.input,
 .input:is(select) {
   color-scheme: dark;
+  background: var(--ui-surface-control);
   background-color: rgba(9, 17, 32, 0.96);
 }
 
@@ -419,11 +415,9 @@ select.input option:disabled,
   max-height: 260px;
   overflow: auto;
   padding: 6px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(9, 17, 32, 0.98), rgba(6, 12, 24, 0.98));
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-menu);
+  background: var(--ui-surface-menu);
   box-shadow: var(--shadow-elevated);
 }
 
@@ -645,12 +639,10 @@ select.input option:disabled,
 .botsPriceSupportPage .card,
 .predictionsWrap .card,
 .helpPage .card {
-  border-radius: 18px;
-  border-color: var(--color-border-strong);
-  background:
-    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
-    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+  border-radius: var(--ui-radius-panel);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-panel);
+  box-shadow: var(--ui-shadow);
 }
 
 /* Keep semantic warning/error cards highly visible */

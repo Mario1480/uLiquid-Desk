@@ -607,9 +607,8 @@
   border-radius: 16px;
   padding: 8px 42px 8px 38px;
   font-size: 13px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
-  border-color: var(--color-border-default);
+  background: var(--ui-surface-control);
+  border-color: var(--ui-border);
   box-shadow: var(--shadow-soft);
 }
 
@@ -1079,11 +1078,9 @@
   z-index: 45;
   min-width: 220px;
   padding: 10px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 22px;
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(9, 17, 32, 0.98), rgba(6, 12, 24, 0.98));
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-menu);
+  background: var(--ui-surface-menu);
   box-shadow: var(--shadow-elevated);
   backdrop-filter: blur(20px);
 }
