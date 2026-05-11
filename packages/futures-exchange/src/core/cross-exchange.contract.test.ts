@@ -436,7 +436,7 @@ test("bitget adapter listPositions maps one-way sell hold side as short", async 
   assert.equal(rows[0]?.side, "short");
 });
 
-test("bitget adapter setPositionTpSl uses position TPSL plan orders", async () => {
+test("bitget adapter setPositionTpSl uses position TPSL simultaneous endpoint", async () => {
   const adapter = Object.create(BitgetFuturesAdapter.prototype) as any;
   const cancelCalls: any[] = [];
   const placeCalls: any[] = [];
@@ -460,7 +460,7 @@ test("bitget adapter setPositionTpSl uses position TPSL plan orders", async () =
     cancelPlanOrder: async (params: any) => {
       cancelCalls.push(params);
     },
-    placeTpSlOrder: async (params: any) => {
+    placePositionTpSl: async (params: any) => {
       placeCalls.push(params);
       return {};
     }
@@ -497,21 +497,13 @@ test("bitget adapter setPositionTpSl uses position TPSL plan orders", async () =
       symbol: "BTCUSDT",
       productType: "USDT-FUTURES",
       marginCoin: "USDT",
-      triggerType: "mark_price",
-      executePrice: "0",
       holdSide: "long",
-      planType: "pos_profit",
-      triggerPrice: "70000"
-    },
-    {
-      symbol: "BTCUSDT",
-      productType: "USDT-FUTURES",
-      marginCoin: "USDT",
-      triggerType: "mark_price",
-      executePrice: "0",
-      holdSide: "long",
-      planType: "pos_loss",
-      triggerPrice: "64000"
+      stopSurplusTriggerPrice: "70000",
+      stopSurplusTriggerType: "mark_price",
+      stopSurplusExecutePrice: "0",
+      stopLossTriggerPrice: "64000",
+      stopLossTriggerType: "mark_price",
+      stopLossExecutePrice: "0"
     }
   ]);
 });
@@ -530,7 +522,7 @@ test("bitget adapter setPositionTpSl maps holdSide for one-way position mode", a
   adapter.tradeApi = {
     getPendingPlanOrders: async () => [],
     cancelPlanOrder: async () => undefined,
-    placeTpSlOrder: async (params: any) => {
+    placePositionTpSl: async (params: any) => {
       placeCalls.push(params);
       return {};
     }
@@ -550,11 +542,13 @@ test("bitget adapter setPositionTpSl maps holdSide for one-way position mode", a
       symbol: "BTCUSDT",
       productType: "USDT-FUTURES",
       marginCoin: "USDT",
-      triggerType: "mark_price",
-      executePrice: "0",
       holdSide: "buy",
-      planType: "pos_loss",
-      triggerPrice: "64000"
+      stopSurplusTriggerPrice: undefined,
+      stopSurplusTriggerType: undefined,
+      stopSurplusExecutePrice: undefined,
+      stopLossTriggerPrice: "64000",
+      stopLossTriggerType: "mark_price",
+      stopLossExecutePrice: "0"
     }
   ]);
 });

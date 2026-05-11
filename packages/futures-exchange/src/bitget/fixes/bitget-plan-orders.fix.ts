@@ -95,28 +95,42 @@ export async function upsertBitgetPositionTpSl(params: {
     );
   }
 
-  const commonPayload = {
+  const payload = {
     symbol: params.symbol,
     productType: params.productType,
     marginCoin: params.marginCoin,
     holdSide: params.holdSide,
-    triggerType: "mark_price" as const,
-    executePrice: "0"
+    stopSurplusTriggerPrice:
+      params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
+        ? String(params.takeProfitPrice)
+        : undefined,
+    stopSurplusTriggerType:
+      params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
+        ? "mark_price" as const
+        : undefined,
+    stopSurplusExecutePrice:
+      params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
+        ? "0"
+        : undefined,
+    stopLossTriggerPrice:
+      params.stopLossPrice !== undefined && params.stopLossPrice !== null
+        ? String(params.stopLossPrice)
+        : undefined,
+    stopLossTriggerType:
+      params.stopLossPrice !== undefined && params.stopLossPrice !== null
+        ? "mark_price" as const
+        : undefined,
+    stopLossExecutePrice:
+      params.stopLossPrice !== undefined && params.stopLossPrice !== null
+        ? "0"
+        : undefined
   };
 
-  if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null) {
-    await params.tradeApi.placeTpSlOrder({
-      ...commonPayload,
-      planType: "pos_profit",
-      triggerPrice: String(params.takeProfitPrice)
-    });
-  }
-  if (params.stopLossPrice !== undefined && params.stopLossPrice !== null) {
-    await params.tradeApi.placeTpSlOrder({
-      ...commonPayload,
-      planType: "pos_loss",
-      triggerPrice: String(params.stopLossPrice)
-    });
+  if (
+    (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null)
+    || (params.stopLossPrice !== undefined && params.stopLossPrice !== null)
+  ) {
+    await params.tradeApi.placePositionTpSl(payload);
   }
   return { ok: true };
 }
