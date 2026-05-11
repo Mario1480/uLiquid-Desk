@@ -10,6 +10,7 @@ import enPredictions from "../messages/en/predictions.json";
 import enGrid from "../messages/en/grid.json";
 import enWallet from "../messages/en/wallet.json";
 import enFunding from "../messages/en/funding.json";
+import enAccounts from "../messages/en/accounts.json";
 import deCommon from "../messages/de/common.json";
 import deNav from "../messages/de/nav.json";
 import deAuth from "../messages/de/auth.json";
@@ -22,6 +23,7 @@ import dePredictions from "../messages/de/predictions.json";
 import deGrid from "../messages/de/grid.json";
 import deWallet from "../messages/de/wallet.json";
 import deFunding from "../messages/de/funding.json";
+import deAccounts from "../messages/de/accounts.json";
 import type { AppLocale } from "./config";
 
 export type I18nMessages = {
@@ -37,6 +39,7 @@ export type I18nMessages = {
   grid: typeof enGrid;
   wallet: typeof enWallet;
   funding: typeof enFunding;
+  accounts: typeof enAccounts;
 };
 
 const messagesByLocale: Record<AppLocale, I18nMessages> = {
@@ -52,7 +55,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     predictions: enPredictions,
     grid: enGrid,
     wallet: enWallet,
-    funding: enFunding
+    funding: enFunding,
+    accounts: enAccounts
   },
   de: {
     common: deCommon,
@@ -66,7 +70,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     predictions: dePredictions,
     grid: deGrid,
     wallet: deWallet,
-    funding: deFunding
+    funding: deFunding,
+    accounts: deAccounts
   }
 };
 

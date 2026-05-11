@@ -153,6 +153,12 @@ export default function ExchangeAccountOverviewCard({
       ) : null}
 
       <footer className="exchangeOverviewActions">
+        <Link
+          href={`${withLocalePath("/accounts", locale)}?exchangeAccountId=${encodeURIComponent(overview.exchangeAccountId)}`}
+          className="btn btnPrimary"
+        >
+          {t("assets")}
+        </Link>
         <Link href={withLocalePath("/settings", locale)} className="btn">
           {t("settings")}
         </Link>

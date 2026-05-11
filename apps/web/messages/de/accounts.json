@@ -1,0 +1,58 @@
+{
+  "eyebrow": "Exchange-Accounts",
+  "title": "Account Assets",
+  "subtitle": "Live Spot-Balances fuer alle Exchange-Accounts, inklusive Assets ausserhalb von USDT und USDC.",
+  "actions": {
+    "refresh": "Aktualisieren",
+    "refreshing": "Aktualisiert..."
+  },
+  "summary": {
+    "ariaLabel": "Account-Asset-Zusammenfassung",
+    "accounts": "Accounts",
+    "assets": "Assets",
+    "approxUsd": "Geschaetzter Wert",
+    "partialErrors": "Teilfehler",
+    "visible": "Nach Filtern sichtbar",
+    "spotOnly": "Nur Spot-Assets",
+    "bestEffort": "Best-effort Pricing"
+  },
+  "filters": {
+    "title": "Filter",
+    "description": "Grenze die Uebersicht nach Account, Exchange oder Asset-Symbol ein.",
+    "account": "Account",
+    "exchange": "Exchange",
+    "asset": "Asset",
+    "allAccounts": "Alle Accounts",
+    "allExchanges": "Alle Exchanges",
+    "assetPlaceholder": "BTC, ETH, USDC...",
+    "includeZero": "Null-Balances anzeigen"
+  },
+  "status": {
+    "ok": "Live",
+    "empty": "Leer",
+    "unsupported": "Nicht unterstuetzt",
+    "error": "Fehler"
+  },
+  "account": {
+    "marketData": "Market Data: {exchange}",
+    "updated": "Aktualisiert: {value}",
+    "unsupported": "Spot-Balances werden fuer diese Account-Konfiguration nicht unterstuetzt.",
+    "empty": "Fuer diesen Account wurden keine Spot-Assets mit Balance gefunden.",
+    "noFilterMatch": "Keine Assets passen zum aktuellen Filter."
+  },
+  "table": {
+    "asset": "Asset",
+    "available": "Verfuegbar",
+    "locked": "Gesperrt",
+    "total": "Gesamt",
+    "approxUsd": "Ca. USD",
+    "quote": "Quote"
+  },
+  "empty": {
+    "title": "Keine Account Assets gefunden",
+    "description": "Passe die Filter an oder fuege einen Exchange-Account hinzu, um Live Spot-Balances zu sehen."
+  },
+  "errors": {
+    "loadTitle": "Account Assets konnten nicht geladen werden."
+  }
+}

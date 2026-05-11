@@ -112,6 +112,107 @@ const exchangeUpdateSchema = z.object({
   marketDataExchangeAccountId: z.string().trim().optional()
 });
 
+const exchangeAccountAssetsQuerySchema = z.object({
+  exchangeAccountId: z.string().trim().min(1).optional(),
+  includeZero: z.preprocess((value) => {
+    if (typeof value === "string") {
+      return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+    }
+    return value;
+  }, z.boolean().default(false))
+});
+
+type AccountAssetBalance = {
+  asset: string;
+  available: number | null;
+  locked: number | null;
+  total: number | null;
+  approxUsd: number | null;
+  quoteSymbol: string | null;
+};
+
+function toFiniteNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundAssetNumber(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  return Number(value.toFixed(8));
+}
+
+function roundUsdNumber(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  return Number(value.toFixed(6));
+}
+
+function isStablecoin(asset: string): boolean {
+  return asset === "USDT" || asset === "USDC";
+}
+
+function resolveQuoteAsset(exchange: string): "USDT" | "USDC" {
+  return exchange.trim().toLowerCase() === "hyperliquid" ? "USDC" : "USDT";
+}
+
+function normalizeSpotBalanceRow(row: {
+  coin?: string;
+  asset?: string;
+  available?: string | number;
+  frozen?: string | number;
+  locked?: string | number;
+  lock?: string | number;
+}): Omit<AccountAssetBalance, "approxUsd" | "quoteSymbol"> | null {
+  const asset = String(row.coin ?? row.asset ?? "").trim().toUpperCase();
+  if (!asset) return null;
+  const available = toFiniteNumber(row.available);
+  const locked =
+    toFiniteNumber(row.frozen) ??
+    toFiniteNumber(row.locked) ??
+    toFiniteNumber(row.lock);
+  const total =
+    available === null && locked === null
+      ? null
+      : roundAssetNumber((available ?? 0) + (locked ?? 0));
+  return {
+    asset,
+    available: roundAssetNumber(available),
+    locked: roundAssetNumber(locked),
+    total
+  };
+}
+
+function shouldIncludeAsset(asset: Pick<AccountAssetBalance, "available" | "locked" | "total">, includeZero: boolean): boolean {
+  if (includeZero) return true;
+  const total = asset.total ?? ((asset.available ?? 0) + (asset.locked ?? 0));
+  return Number.isFinite(total) && total > 0;
+}
+
+function sortAccountAssets(a: AccountAssetBalance, b: AccountAssetBalance): number {
+  if (a.approxUsd !== null && b.approxUsd !== null && a.approxUsd !== b.approxUsd) {
+    return b.approxUsd - a.approxUsd;
+  }
+  if (a.approxUsd !== null && b.approxUsd === null) return -1;
+  if (a.approxUsd === null && b.approxUsd !== null) return 1;
+  const aStable = isStablecoin(a.asset);
+  const bStable = isStablecoin(b.asset);
+  if (aStable !== bStable) return aStable ? -1 : 1;
+  return a.asset.localeCompare(b.asset);
+}
+
+function routeErrorPayload(error: unknown): { code: string; message: string } {
+  const codeRaw =
+    (error as { code?: unknown })?.code ??
+    (error as { payload?: { code?: unknown } })?.payload?.code;
+  const messageRaw =
+    error instanceof Error
+      ? error.message
+      : (error as { message?: unknown })?.message ?? String(error ?? "");
+  return {
+    code: String(codeRaw ?? "account_assets_failed"),
+    message: String(messageRaw || "Account assets could not be loaded.")
+  };
+}
+
 export type RegisterExchangeAccountRoutesDeps = {
   db: any;
   decryptSecret(value: string): string;
@@ -137,6 +238,10 @@ export type RegisterExchangeAccountRoutesDeps = {
     account: TradingAccount,
     client: ReturnType<typeof createManualSpotClient>
   ): Promise<{ equity: number | null; availableMargin: number | null }>;
+  createManualSpotClient?(
+    account: TradingAccount,
+    endpoint: string
+  ): ReturnType<typeof createManualSpotClient>;
   persistExchangeSyncSuccess(
     userId: string,
     accountId: string,
@@ -164,6 +269,149 @@ export function registerExchangeAccountRoutes(
   app: express.Express,
   deps: RegisterExchangeAccountRoutesDeps
 ) {
+  app.get("/exchange-accounts/assets", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const parsed = exchangeAccountAssetsQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+    }
+
+    const rows = await deps.db.exchangeAccount.findMany({
+      where: {
+        userId: user.id,
+        ...(parsed.data.exchangeAccountId ? { id: parsed.data.exchangeAccountId } : {})
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        exchange: true,
+        label: true
+      }
+    });
+
+    if (parsed.data.exchangeAccountId && rows.length === 0) {
+      return res.status(404).json({ error: "exchange_account_not_found" });
+    }
+
+    const spotClientFactory = deps.createManualSpotClient ?? createManualSpotClient;
+    const updatedAt = new Date().toISOString();
+    let partialErrors = 0;
+
+    const accounts = await Promise.all(rows.map(async (row: any) => {
+      const base = {
+        exchangeAccountId: String(row.id),
+        exchange: String(row.exchange ?? ""),
+        label: String(row.label ?? ""),
+        marketDataExchange: String(row.exchange ?? ""),
+        updatedAt: null as string | null,
+        error: null as { code: string; message: string } | null,
+        quoteAsset: resolveQuoteAsset(String(row.exchange ?? "")),
+        totals: { assets: 0, approxUsd: null as number | null },
+        assets: [] as AccountAssetBalance[]
+      };
+
+      try {
+        const resolved = await deps.resolveMarketDataTradingAccount(user.id, String(row.id));
+        const selectedExchange = deps.normalizeExchangeValue(String(resolved.selectedAccount.exchange ?? ""));
+        const marketDataExchange = deps.normalizeExchangeValue(String(resolved.marketDataAccount.exchange ?? ""));
+        const quoteAsset = resolveQuoteAsset(marketDataExchange);
+        const supportsSpot = resolveManualSpotSupport({
+          exchange: selectedExchange,
+          marketDataExchange
+        });
+
+        if (!supportsSpot) {
+          return {
+            ...base,
+            exchange: selectedExchange || base.exchange,
+            marketDataExchange,
+            quoteAsset,
+            status: "unsupported" as const
+          };
+        }
+
+        const client = spotClientFactory(resolved.marketDataAccount, "/exchange-accounts/assets");
+        const balanceRows = await client.getBalances();
+        const normalized = balanceRows
+          .map((balanceRow) => normalizeSpotBalanceRow(balanceRow))
+          .filter((asset): asset is Omit<AccountAssetBalance, "approxUsd" | "quoteSymbol"> => Boolean(asset))
+          .filter((asset) => shouldIncludeAsset(asset, parsed.data.includeZero));
+
+        const pricedAssets = await Promise.all(normalized.map(async (asset) => {
+          const total = asset.total;
+          if (total === null) {
+            return {
+              ...asset,
+              approxUsd: null,
+              quoteSymbol: null
+            };
+          }
+          if (isStablecoin(asset.asset)) {
+            return {
+              ...asset,
+              approxUsd: roundUsdNumber(total),
+              quoteSymbol: asset.asset
+            };
+          }
+
+          const quoteSymbol = `${asset.asset}${quoteAsset}`;
+          try {
+            const lastPrice = await client.getLastPrice(quoteSymbol);
+            const price = toFiniteNumber(lastPrice);
+            return {
+              ...asset,
+              approxUsd: price === null ? null : roundUsdNumber(total * price),
+              quoteSymbol
+            };
+          } catch {
+            return {
+              ...asset,
+              approxUsd: null,
+              quoteSymbol
+            };
+          }
+        }));
+
+        pricedAssets.sort(sortAccountAssets);
+        const approxValues = pricedAssets
+          .map((asset) => asset.approxUsd)
+          .filter((value): value is number => value !== null);
+        const approxUsd = approxValues.length
+          ? roundUsdNumber(approxValues.reduce((sum, value) => sum + value, 0))
+          : null;
+
+        return {
+          ...base,
+          exchange: selectedExchange || base.exchange,
+          marketDataExchange,
+          status: pricedAssets.length > 0 ? "ok" as const : "empty" as const,
+          updatedAt,
+          quoteAsset,
+          totals: {
+            assets: pricedAssets.length,
+            approxUsd
+          },
+          assets: pricedAssets
+        };
+      } catch (error) {
+        partialErrors += 1;
+        return {
+          ...base,
+          status: "error" as const,
+          error: routeErrorPayload(error)
+        };
+      }
+    }));
+
+    return res.json({
+      accounts,
+      meta: {
+        updatedAt,
+        partialErrors
+      }
+    });
+  });
+
   app.get("/exchange-accounts", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
     const purpose = typeof req.query.purpose === "string" ? req.query.purpose.trim().toLowerCase() : "";

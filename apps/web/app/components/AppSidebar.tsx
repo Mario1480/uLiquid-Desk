@@ -485,6 +485,14 @@ export default function AppSidebar({
     }
 
     capitalItems.push({
+      key: "accounts",
+      label: tNav("accounts"),
+      href: hrefFor("/accounts"),
+      icon: "accounts",
+      active: pathnameWithoutLocale.startsWith("/accounts")
+    });
+
+    capitalItems.push({
       key: "wallet",
       label: tNav("wallet"),
       href: hrefFor("/wallet"),

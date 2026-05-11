@@ -60,6 +60,14 @@ function getFinalHandler(app: ReturnType<typeof createFakeApp>, path: string) {
   return handlers[handlers.length - 1];
 }
 
+function getFinalGetHandler(app: ReturnType<typeof createFakeApp>, path: string) {
+  const handlers = app.routes.get.get(path);
+  if (!handlers || handlers.length === 0) {
+    throw new Error(`route_not_found:${path}`);
+  }
+  return handlers[handlers.length - 1];
+}
+
 function getFinalPutHandler(app: ReturnType<typeof createFakeApp>, path: string) {
   const handlers = app.routes.put.get(path);
   if (!handlers || handlers.length === 0) {
@@ -198,6 +206,137 @@ test("hyperliquid label-only update preserves credential rotation timer", async 
   assert.equal(updatedData?.label, "New Label");
   assert.equal("credentialsRotatedAt" in updatedData, false);
   assert.equal("credentialsExpiryNoticeSentAt" in updatedData, false);
+});
+
+function createAssetsRouteDeps(overrides: Record<string, any> = {}) {
+  const accounts = [
+    { id: "bitget_1", exchange: "bitget", label: "Bitget Main" },
+    { id: "bitget_2", exchange: "bitget", label: "Bitget Alt" },
+    { id: "paper_1", exchange: "paper", label: "Paper Spot" },
+    { id: "err_1", exchange: "bitget", label: "Broken" }
+  ];
+  const tradingAccounts: Record<string, any> = {
+    bitget_1: { id: "bitget_1", userId: "user_1", exchange: "bitget", label: "Bitget Main" },
+    bitget_2: { id: "bitget_2", userId: "user_1", exchange: "bitget", label: "Bitget Alt" },
+    paper_1: { id: "paper_1", userId: "user_1", exchange: "paper", label: "Paper Spot" },
+    err_1: { id: "err_1", userId: "user_1", exchange: "bitget", label: "Broken" },
+    linked_1: { id: "linked_1", userId: "user_1", exchange: "bitget", label: "Linked Bitget" }
+  };
+  const balancesByAccountId: Record<string, any[]> = {
+    bitget_1: [
+      { coin: "USDT", available: "25", frozen: "0" },
+      { coin: "BTC", available: "0.2", frozen: "0.01" },
+      { coin: "EMPTY", available: "0", frozen: "0" }
+    ],
+    bitget_2: [
+      { asset: "USDC", available: 5, locked: 0 },
+      { asset: "XRP", available: 12, locked: 0 }
+    ],
+    linked_1: [
+      { coin: "USDT", available: "10", frozen: "0" },
+      { coin: "ETH", available: "2", frozen: "0" }
+    ]
+  };
+  const priceBySymbol: Record<string, number> = {
+    BTCUSDT: 50_000,
+    ETHUSDT: 3_000
+  };
+
+  return {
+    db: {
+      exchangeAccount: {
+        findMany: async ({ where }: any) => {
+          const rows = where?.id ? accounts.filter((row) => row.id === where.id) : accounts;
+          return rows.filter((row) => row.id !== "linked_1");
+        }
+      }
+    },
+    normalizeExchangeValue: (value: string) => value.trim().toLowerCase(),
+    resolveMarketDataTradingAccount: async (_userId: string, exchangeAccountId: string) => {
+      const selectedAccount = tradingAccounts[exchangeAccountId];
+      if (!selectedAccount) throw new Error("account_not_found");
+      return {
+        selectedAccount,
+        marketDataAccount: exchangeAccountId === "paper_1" ? tradingAccounts.linked_1 : selectedAccount
+      };
+    },
+    createManualSpotClient: (account: any) => ({
+      getBalances: async () => {
+        if (account.id === "err_1") {
+          const error = new Error("Private spot endpoint unavailable") as Error & { code?: string };
+          error.code = "spot_unavailable";
+          throw error;
+        }
+        return balancesByAccountId[account.id] ?? [];
+      },
+      getLastPrice: async (symbol: string) => {
+        if (!Object.prototype.hasOwnProperty.call(priceBySymbol, symbol)) {
+          throw new Error("price_not_found");
+        }
+        return priceBySymbol[symbol];
+      }
+    }),
+    ...overrides
+  };
+}
+
+test("GET /exchange-accounts/assets normalizes spot assets and isolates account errors", async () => {
+  const app = createFakeApp();
+  registerExchangeAccountRoutes(app as any, createAssetsRouteDeps() as any);
+
+  const handler = getFinalGetHandler(app, "/exchange-accounts/assets");
+  const res = createMockRes();
+
+  await handler({ query: {} }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.accounts?.length, 4);
+  assert.equal(res.body?.meta?.partialErrors, 1);
+
+  const bitget = res.body.accounts.find((row: any) => row.exchangeAccountId === "bitget_1");
+  assert.equal(bitget?.status, "ok");
+  assert.equal(bitget?.quoteAsset, "USDT");
+  assert.equal(bitget?.assets?.length, 2);
+  assert.deepEqual(bitget.assets.map((asset: any) => asset.asset), ["BTC", "USDT"]);
+  assert.equal(bitget.assets[0].total, 0.21);
+  assert.equal(bitget.assets[0].approxUsd, 10500);
+  assert.equal(bitget.totals.approxUsd, 10525);
+
+  const paper = res.body.accounts.find((row: any) => row.exchangeAccountId === "paper_1");
+  assert.equal(paper?.status, "ok");
+  assert.equal(paper?.exchange, "paper");
+  assert.equal(paper?.marketDataExchange, "bitget");
+  assert.deepEqual(paper.assets.map((asset: any) => asset.asset), ["ETH", "USDT"]);
+  assert.equal(paper.assets[0].approxUsd, 6000);
+
+  const bitgetAlt = res.body.accounts.find((row: any) => row.exchangeAccountId === "bitget_2");
+  assert.equal(bitgetAlt?.status, "ok");
+  assert.equal(bitgetAlt?.assets.find((asset: any) => asset.asset === "USDC")?.approxUsd, 5);
+  assert.equal(bitgetAlt?.assets.find((asset: any) => asset.asset === "XRP")?.approxUsd, null);
+
+  const broken = res.body.accounts.find((row: any) => row.exchangeAccountId === "err_1");
+  assert.equal(broken?.status, "error");
+  assert.equal(broken?.error?.code, "spot_unavailable");
+});
+
+test("GET /exchange-accounts/assets supports account filter and includeZero", async () => {
+  const app = createFakeApp();
+  registerExchangeAccountRoutes(app as any, createAssetsRouteDeps() as any);
+
+  const handler = getFinalGetHandler(app, "/exchange-accounts/assets");
+  const res = createMockRes();
+
+  await handler({
+    query: {
+      exchangeAccountId: "bitget_1",
+      includeZero: "true"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.accounts?.length, 1);
+  assert.equal(res.body.accounts[0]?.exchangeAccountId, "bitget_1");
+  assert.ok(res.body.accounts[0]?.assets?.some((asset: any) => asset.asset === "EMPTY" && asset.total === 0));
 });
 
 test("hyperliquid credential update resets credential rotation timer", async () => {

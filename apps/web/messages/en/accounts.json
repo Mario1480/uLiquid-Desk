@@ -1,0 +1,58 @@
+{
+  "eyebrow": "Exchange Accounts",
+  "title": "Account Assets",
+  "subtitle": "Live spot balances for every exchange account, including assets beyond USDT and USDC.",
+  "actions": {
+    "refresh": "Refresh",
+    "refreshing": "Refreshing..."
+  },
+  "summary": {
+    "ariaLabel": "Account asset summary",
+    "accounts": "Accounts",
+    "assets": "Assets",
+    "approxUsd": "Approx. Value",
+    "partialErrors": "Partial Errors",
+    "visible": "Visible after filters",
+    "spotOnly": "Spot assets only",
+    "bestEffort": "Best-effort pricing"
+  },
+  "filters": {
+    "title": "Filters",
+    "description": "Narrow the overview by account, exchange, or asset symbol.",
+    "account": "Account",
+    "exchange": "Exchange",
+    "asset": "Asset",
+    "allAccounts": "All accounts",
+    "allExchanges": "All exchanges",
+    "assetPlaceholder": "BTC, ETH, USDC...",
+    "includeZero": "Show zero balances"
+  },
+  "status": {
+    "ok": "Live",
+    "empty": "Empty",
+    "unsupported": "Unsupported",
+    "error": "Error"
+  },
+  "account": {
+    "marketData": "Market data: {exchange}",
+    "updated": "Updated: {value}",
+    "unsupported": "Spot balances are not supported for this account configuration.",
+    "empty": "No spot assets with balance were found for this account.",
+    "noFilterMatch": "No assets match the current filter."
+  },
+  "table": {
+    "asset": "Asset",
+    "available": "Available",
+    "locked": "Locked",
+    "total": "Total",
+    "approxUsd": "Approx. USD",
+    "quote": "Quote"
+  },
+  "empty": {
+    "title": "No account assets found",
+    "description": "Adjust the filters or add an exchange account to see live spot balances."
+  },
+  "errors": {
+    "loadTitle": "Could not load account assets."
+  }
+}

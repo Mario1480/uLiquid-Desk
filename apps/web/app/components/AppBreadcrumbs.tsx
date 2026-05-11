@@ -39,6 +39,7 @@ type BreadcrumbIconKey =
   | "telegram"
   | "ai"
   | "exchange"
+  | "accounts"
   | "template"
   | "vault"
   | "wallet"
@@ -91,6 +92,7 @@ function iconForSegment(segment: string): BreadcrumbIconKey {
   if (normalized === "predictions") return "predictions";
   if (normalized === "calendar") return "calendar";
   if (normalized === "news") return "news";
+  if (normalized === "accounts") return "accounts";
   if (normalized === "funding") return "funding";
   if (normalized === "settings") return "settings";
   if (normalized === "help") return "help";
@@ -149,6 +151,8 @@ function BreadcrumbIcon({ icon }: { icon: BreadcrumbIconKey }) {
       return <svg {...common}><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M9 3v2M15 3v2M9 19v2M15 19v2M3 9h2M3 15h2M19 9h2M19 15h2" /></svg>;
     case "exchange":
       return <svg {...common}><path d="M3 12h18" /><path d="M12 3a9 9 0 1 1 0 18" /><path d="M12 3a9 9 0 0 0 0 18" /></svg>;
+    case "accounts":
+      return <svg {...common}><circle cx="9" cy="10" r="3" /><path d="M4 19a5 5 0 0 1 10 0" /><path d="M15 9h6M18 6v6" /></svg>;
     case "template":
       return <svg {...common}><path d="M7 4h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><path d="M14 4v5h5" /></svg>;
     case "vault":
@@ -192,6 +196,7 @@ export default function AppBreadcrumbs() {
       predictions: { label: tNav("predictions"), icon: "predictions" as BreadcrumbIconKey },
       calendar: { label: tNav("calendar"), icon: "calendar" as BreadcrumbIconKey },
       news: { label: tNav("news"), icon: "news" as BreadcrumbIconKey },
+      accounts: { label: tNav("accounts"), icon: "accounts" as BreadcrumbIconKey },
       wallet: { label: tNav("wallet"), icon: "wallet" as BreadcrumbIconKey },
       funding: { label: tNav("funding"), icon: "funding" as BreadcrumbIconKey },
       vaults: { label: tNav("vaults"), icon: "vault" as BreadcrumbIconKey },
@@ -301,6 +306,10 @@ export default function AppBreadcrumbs() {
       {
         test: /^\/news$/,
         items: [{ label: root.news.label, path: "/news", icon: root.news.icon }]
+      },
+      {
+        test: /^\/accounts$/,
+        items: [{ label: root.accounts.label, path: "/accounts", icon: root.accounts.icon }]
       },
       {
         test: /^\/wallet$/,
