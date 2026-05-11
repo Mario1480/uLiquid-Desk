@@ -312,6 +312,15 @@ function toPositiveOrNull(value: unknown): number | null {
   return parsed !== null && parsed > 0 ? parsed : null;
 }
 
+function parseOptionalPositivePrice(value: string): { ok: true; value: number | null } | { ok: false } {
+  const trimmed = value.trim();
+  if (trimmed === "") return { ok: true, value: null };
+  const parsed = Number(trimmed);
+  if (Number.isFinite(parsed) && parsed === 0) return { ok: true, value: null };
+  if (Number.isFinite(parsed) && parsed > 0) return { ok: true, value: parsed };
+  return { ok: false };
+}
+
 function normalizePositionMarginMode(value: unknown): "isolated" | "cross" | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized.includes("isolated") || normalized === "1") return "isolated";
@@ -390,15 +399,22 @@ function normalizeDeskPositions(rows: unknown[]): PositionItem[] {
         liquidationDistancePct,
         roePct,
         pnlPct,
-        takeProfitPrice: toFiniteOrNull(row.takeProfitPrice),
-        stopLossPrice: toFiniteOrNull(row.stopLossPrice)
+        takeProfitPrice: toPositiveOrNull(row.takeProfitPrice),
+        stopLossPrice: toPositiveOrNull(row.stopLossPrice)
       };
     })
     .filter((row) => row.symbol.length > 0 && Number.isFinite(row.size) && row.size > 0);
 }
 
 function normalizeDeskOpenOrders(rows: OpenOrderItem[], symbol: string): OpenOrderItem[] {
-  return filterRowsForDeskSymbol(rows, symbol);
+  return filterRowsForDeskSymbol(
+    rows.map((row) => ({
+      ...row,
+      takeProfitPrice: toPositiveOrNull(row.takeProfitPrice),
+      stopLossPrice: toPositiveOrNull(row.stopLossPrice)
+    })),
+    symbol
+  );
 }
 
 function mergeAccountSummary(
@@ -1479,8 +1495,8 @@ function TradePageContent() {
     const parsedQtyInput = Number(qty);
     const parsedPrice = Number(price);
     const parsedLeverage = Number(leverage);
-    const parsedTakeProfit = Number(takeProfitPrice);
-    const parsedStopLoss = Number(stopLossPrice);
+    const parsedTakeProfit = parseOptionalPositivePrice(takeProfitPrice);
+    const parsedStopLoss = parseOptionalPositivePrice(stopLossPrice);
 
     if (!Number.isFinite(parsedQtyInput) || parsedQtyInput <= 0) {
       setActionError(t("messages.quantityGtZero"));
@@ -1533,8 +1549,7 @@ function TradePageContent() {
     if (
       !isSpotMode &&
       tpSlEnabled &&
-      takeProfitPrice.trim().length > 0 &&
-      (!Number.isFinite(parsedTakeProfit) || parsedTakeProfit <= 0)
+      !parsedTakeProfit.ok
     ) {
       setActionError(t("messages.takeProfitGtZero"));
       return;
@@ -1543,8 +1558,7 @@ function TradePageContent() {
     if (
       !isSpotMode &&
       tpSlEnabled &&
-      stopLossPrice.trim().length > 0 &&
-      (!Number.isFinite(parsedStopLoss) || parsedStopLoss <= 0)
+      !parsedStopLoss.ok
     ) {
       setActionError(t("messages.stopLossGtZero"));
       return;
@@ -1568,9 +1582,13 @@ function TradePageContent() {
         qty: parsedQty,
         price: orderType === "limit" ? parsedPrice : undefined,
         takeProfitPrice:
-          !isSpotMode && tpSlEnabled && takeProfitPrice.trim().length > 0 ? parsedTakeProfit : undefined,
+          !isSpotMode && tpSlEnabled && parsedTakeProfit.ok && parsedTakeProfit.value !== null
+            ? parsedTakeProfit.value
+            : undefined,
         stopLossPrice:
-          !isSpotMode && tpSlEnabled && stopLossPrice.trim().length > 0 ? parsedStopLoss : undefined,
+          !isSpotMode && tpSlEnabled && parsedStopLoss.ok && parsedStopLoss.value !== null
+            ? parsedStopLoss.value
+            : undefined,
         leverage: !isSpotMode ? Math.trunc(parsedLeverage) : undefined,
         marginMode: !isSpotMode ? marginMode : undefined,
         reduceOnly: !isSpotMode ? entryMode === "close" : undefined,
@@ -1706,16 +1724,18 @@ function TradePageContent() {
     }
     const draft = positionEditDrafts[rowKey];
     if (!draft) return;
-    const tp = draft.tp.trim() === "" ? null : Number(draft.tp);
-    const sl = draft.sl.trim() === "" ? null : Number(draft.sl);
-    if (tp !== null && (!Number.isFinite(tp) || tp <= 0)) {
+    const parsedTp = parseOptionalPositivePrice(draft.tp);
+    const parsedSl = parseOptionalPositivePrice(draft.sl);
+    if (!parsedTp.ok) {
       setActionError(t("messages.takeProfitGtZero"));
       return;
     }
-    if (sl !== null && (!Number.isFinite(sl) || sl <= 0)) {
+    if (!parsedSl.ok) {
       setActionError(t("messages.stopLossGtZero"));
       return;
     }
+    const tp = parsedTp.value;
+    const sl = parsedSl.value;
     setActionError(null);
     setPositionSavingKey(rowKey);
     try {
@@ -1775,12 +1795,18 @@ function TradePageContent() {
       }
     }
     if (!isSpotMode) {
-      if (draft.tp.trim() !== "") {
-        const value = Number(draft.tp);
-        if (!Number.isFinite(value) || value <= 0) {
-          setActionError(t("messages.takeProfitGtZero"));
-          return;
-        }
+      const parsedTp = parseOptionalPositivePrice(draft.tp);
+      const parsedSl = parseOptionalPositivePrice(draft.sl);
+      if (!parsedTp.ok) {
+        setActionError(t("messages.takeProfitGtZero"));
+        return;
+      }
+      if (!parsedSl.ok) {
+        setActionError(t("messages.stopLossGtZero"));
+        return;
+      }
+      if (parsedTp.value !== null) {
+        const value = parsedTp.value;
         payload.takeProfitPrice = value;
         if (!numericEqual(value, order.takeProfitPrice)) {
           hasEditableChange = true;
@@ -1791,12 +1817,8 @@ function TradePageContent() {
           hasEditableChange = true;
         }
       }
-      if (draft.sl.trim() !== "") {
-        const value = Number(draft.sl);
-        if (!Number.isFinite(value) || value <= 0) {
-          setActionError(t("messages.stopLossGtZero"));
-          return;
-        }
+      if (parsedSl.value !== null) {
+        const value = parsedSl.value;
         payload.stopLossPrice = value;
         if (!numericEqual(value, order.stopLossPrice)) {
           hasEditableChange = true;

@@ -32,6 +32,10 @@ import {
 } from "../trafficControl.js";
 
 const manualMarketTypeSchema = z.enum(["spot", "perp"]);
+const nullableOptionalPositivePriceSchema = z.preprocess(
+  (value) => value === 0 ? null : value,
+  z.number().positive().nullable().optional()
+);
 
 const placeOrderSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
@@ -85,8 +89,8 @@ const editOrderSchema = z.object({
   symbol: z.string().trim().min(1),
   price: z.number().positive().optional(),
   qty: z.number().positive().optional(),
-  takeProfitPrice: z.number().positive().nullable().optional(),
-  stopLossPrice: z.number().positive().nullable().optional()
+  takeProfitPrice: nullableOptionalPositivePriceSchema,
+  stopLossPrice: nullableOptionalPositivePriceSchema
 }).superRefine((value, ctx) => {
   if (
     value.price === undefined &&
@@ -107,8 +111,8 @@ const positionTpSlSchema = z.object({
   marketType: manualMarketTypeSchema.optional(),
   symbol: z.string().trim().min(1),
   side: z.enum(["long", "short"]).optional(),
-  takeProfitPrice: z.number().positive().nullable().optional(),
-  stopLossPrice: z.number().positive().nullable().optional()
+  takeProfitPrice: nullableOptionalPositivePriceSchema,
+  stopLossPrice: nullableOptionalPositivePriceSchema
 }).superRefine((value, ctx) => {
   if (value.takeProfitPrice === undefined && value.stopLossPrice === undefined) {
     ctx.addIssue({

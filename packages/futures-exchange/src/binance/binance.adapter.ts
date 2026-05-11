@@ -599,6 +599,18 @@ export class BinanceFuturesAdapter implements FuturesExchange {
         method: "POST"
       });
     }
+    if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null && params.takeProfitPrice <= 0) {
+      throw new BinanceInvalidParamsError("invalid_take_profit", {
+        endpoint: "/fapi/v1/order",
+        method: "POST"
+      });
+    }
+    if (params.stopLossPrice !== undefined && params.stopLossPrice !== null && params.stopLossPrice <= 0) {
+      throw new BinanceInvalidParamsError("invalid_stop_loss", {
+        endpoint: "/fapi/v1/order",
+        method: "POST"
+      });
+    }
 
     const positionMode = await this.resolvePositionMode();
     await this.cancelManagedTpSlOrders(contract.exchangeSymbol, target.side);

@@ -410,6 +410,56 @@ test("bitget adapter listPositions canonicalizes legacy position symbols before 
   ]);
 });
 
+test("bitget adapter setPositionTpSl uses position TPSL fields expected by place-pos-tpsl", async () => {
+  const adapter = Object.create(BitgetFuturesAdapter.prototype) as any;
+  const cancelCalls: any[] = [];
+  const placeCalls: any[] = [];
+
+  adapter.productType = "USDT-FUTURES";
+  adapter.marginCoin = "USDT";
+  adapter.tradeApi = {
+    getPendingPlanOrders: async () => [
+      { orderId: "tp_1", planType: "profit_plan", holdSide: "long" },
+      { orderId: "sl_1", planType: "loss_plan", holdSide: "long" },
+      { orderId: "short_tp", planType: "profit_plan", holdSide: "short" }
+    ],
+    cancelPlanOrder: async (params: any) => {
+      cancelCalls.push(params);
+    },
+    placePositionTpSl: async (params: any) => {
+      placeCalls.push(params);
+      return {};
+    }
+  };
+  adapter.toExchangeSymbol = async () => "BTCUSDT";
+  adapter.mapError = (error: unknown) => error;
+
+  const result = await adapter.setPositionTpSl({
+    symbol: "BTCUSDT",
+    side: "long",
+    takeProfitPrice: 70000,
+    stopLossPrice: 64000
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(cancelCalls, [
+    { symbol: "BTCUSDT", orderId: "tp_1", productType: "USDT-FUTURES" },
+    { symbol: "BTCUSDT", orderId: "sl_1", productType: "USDT-FUTURES" }
+  ]);
+  assert.deepEqual(placeCalls, [
+    {
+      symbol: "BTCUSDT",
+      productType: "USDT-FUTURES",
+      marginCoin: "USDT",
+      holdSide: "long",
+      stopSurplusTriggerPrice: "70000",
+      stopSurplusTriggerType: "mark_price",
+      stopLossTriggerPrice: "64000",
+      stopLossTriggerType: "mark_price"
+    }
+  ]);
+});
+
 test("binance adapter listPositions exposes leverage margin and liquidation risk fields", async () => {
   const adapter = Object.create(BinanceFuturesAdapter.prototype) as any;
 

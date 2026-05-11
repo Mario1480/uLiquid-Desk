@@ -144,9 +144,12 @@ export type BitgetPositionTpSlRequest = {
   productType: BitgetProductType;
   marginCoin?: string;
   holdSide: "long" | "short";
-  planType: "profit_plan" | "loss_plan";
-  triggerPrice: string;
-  executePrice?: string;
+  stopSurplusTriggerPrice?: string;
+  stopSurplusTriggerType?: "fill_price" | "mark_price";
+  stopSurplusExecutePrice?: string;
+  stopLossTriggerPrice?: string;
+  stopLossTriggerType?: "fill_price" | "mark_price";
+  stopLossExecutePrice?: string;
 };
 
 export type BitgetOrderRaw = {

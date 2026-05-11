@@ -59,26 +59,33 @@ export async function upsertBitgetPositionTpSl(params: {
     );
   }
 
+  const payload = {
+    symbol: params.symbol,
+    productType: params.productType,
+    marginCoin: params.marginCoin,
+    holdSide: params.holdSide,
+    stopSurplusTriggerPrice:
+      params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
+        ? String(params.takeProfitPrice)
+        : undefined,
+    stopSurplusTriggerType:
+      params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
+        ? "mark_price" as const
+        : undefined,
+    stopLossTriggerPrice:
+      params.stopLossPrice !== undefined && params.stopLossPrice !== null
+        ? String(params.stopLossPrice)
+        : undefined,
+    stopLossTriggerType:
+      params.stopLossPrice !== undefined && params.stopLossPrice !== null
+        ? "mark_price" as const
+        : undefined
+  };
+
   if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null) {
-    await params.tradeApi.placePositionTpSl({
-      symbol: params.symbol,
-      productType: params.productType,
-      marginCoin: params.marginCoin,
-      holdSide: params.holdSide,
-      planType: "profit_plan",
-      triggerPrice: String(params.takeProfitPrice)
-    });
-  }
-  if (params.stopLossPrice !== undefined && params.stopLossPrice !== null) {
-    await params.tradeApi.placePositionTpSl({
-      symbol: params.symbol,
-      productType: params.productType,
-      marginCoin: params.marginCoin,
-      holdSide: params.holdSide,
-      planType: "loss_plan",
-      triggerPrice: String(params.stopLossPrice)
-    });
+    await params.tradeApi.placePositionTpSl(payload);
+  } else if (params.stopLossPrice !== undefined && params.stopLossPrice !== null) {
+    await params.tradeApi.placePositionTpSl(payload);
   }
   return { ok: true };
 }
-
