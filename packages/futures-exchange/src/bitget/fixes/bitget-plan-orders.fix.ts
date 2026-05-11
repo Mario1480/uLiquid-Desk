@@ -108,10 +108,6 @@ export async function upsertBitgetPositionTpSl(params: {
       params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
         ? "mark_price" as const
         : undefined,
-    stopSurplusExecutePrice:
-      params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
-        ? "0"
-        : undefined,
     stopLossTriggerPrice:
       params.stopLossPrice !== undefined && params.stopLossPrice !== null
         ? String(params.stopLossPrice)
@@ -120,10 +116,6 @@ export async function upsertBitgetPositionTpSl(params: {
       params.stopLossPrice !== undefined && params.stopLossPrice !== null
         ? "mark_price" as const
         : undefined,
-    stopLossExecutePrice:
-      params.stopLossPrice !== undefined && params.stopLossPrice !== null
-        ? "0"
-        : undefined
   };
 
   if (

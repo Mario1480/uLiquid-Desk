@@ -500,10 +500,8 @@ test("bitget adapter setPositionTpSl uses position TPSL simultaneous endpoint", 
       holdSide: "long",
       stopSurplusTriggerPrice: "70000",
       stopSurplusTriggerType: "mark_price",
-      stopSurplusExecutePrice: "0",
       stopLossTriggerPrice: "64000",
-      stopLossTriggerType: "mark_price",
-      stopLossExecutePrice: "0"
+      stopLossTriggerType: "mark_price"
     }
   ]);
 });
@@ -545,10 +543,8 @@ test("bitget adapter setPositionTpSl maps holdSide for one-way position mode", a
       holdSide: "buy",
       stopSurplusTriggerPrice: undefined,
       stopSurplusTriggerType: undefined,
-      stopSurplusExecutePrice: undefined,
       stopLossTriggerPrice: "64000",
-      stopLossTriggerType: "mark_price",
-      stopLossExecutePrice: "0"
+      stopLossTriggerType: "mark_price"
     }
   ]);
 });
