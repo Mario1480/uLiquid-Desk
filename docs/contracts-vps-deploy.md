@@ -34,6 +34,10 @@ Hinweis:
 
 ## 2) Dry-Run
 
+Vor dem ersten Broadcast die projektweite Onchain-Checkliste abarbeiten:
+
+- `docs/onchain-deploy-security-checklist.md`
+
 ```bash
 cd /opt/uliquid-desk
 ./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod --dry-run
