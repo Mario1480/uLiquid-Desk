@@ -758,7 +758,7 @@ function readBotVaultOnchainContractVersion(value: unknown): "v3" | "v4" {
 }
 
 const BOT_VAULT_RUNTIME_MODEL_WHERE = { in: [...BOT_VAULT_RUNTIME_MODELS] };
-const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"] as const;
 
 function resolveBotVaultRuntimeModelForRow(row: unknown): "bot_vault_v3" | "bot_vault_v4" {
   return resolveBotVaultRuntimeModel(row) ?? BOT_VAULT_RUNTIME_MODEL_V4;

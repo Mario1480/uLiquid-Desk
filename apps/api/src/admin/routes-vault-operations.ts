@@ -31,6 +31,8 @@ const adminVaultSafetyControlsSchema = z.object({
   withdrawsDisabled: z.boolean().optional(),
   gridStartsDisabled: z.boolean().optional(),
   profitClaimsDisabled: z.boolean().optional(),
+  fundingVaultLaunchesDisabled: z.boolean().optional(),
+  fundingVaultWithdrawsDisabled: z.boolean().optional(),
   closeOnlyAllUserIds: z.array(z.string().trim().min(1)).optional(),
   reason: z.string().trim().max(500).nullable().optional()
 });
@@ -544,6 +546,8 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       withdrawsDisabled: parsed.data.withdrawsDisabled ?? current.withdrawsDisabled,
       gridStartsDisabled: parsed.data.gridStartsDisabled ?? current.gridStartsDisabled,
       profitClaimsDisabled: parsed.data.profitClaimsDisabled ?? current.profitClaimsDisabled,
+      fundingVaultLaunchesDisabled: parsed.data.fundingVaultLaunchesDisabled ?? current.fundingVaultLaunchesDisabled,
+      fundingVaultWithdrawsDisabled: parsed.data.fundingVaultWithdrawsDisabled ?? current.fundingVaultWithdrawsDisabled,
       closeOnlyAllUserIds: parsed.data.closeOnlyAllUserIds ?? current.closeOnlyAllUserIds,
       reason: parsed.data.reason ?? current.reason,
       updatedByUserId: user.id
@@ -566,6 +570,8 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
           withdrawsDisabled: current.withdrawsDisabled,
           gridStartsDisabled: current.gridStartsDisabled,
           profitClaimsDisabled: current.profitClaimsDisabled,
+          fundingVaultLaunchesDisabled: current.fundingVaultLaunchesDisabled,
+          fundingVaultWithdrawsDisabled: current.fundingVaultWithdrawsDisabled,
           closeOnlyAllUserIds: nextUserIds,
           reason: parsed.data.reason ?? "admin_close_only_all",
           updatedByUserId: actor.id

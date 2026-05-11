@@ -18,6 +18,7 @@ import {
 } from "../vaults/service.js";
 import type { BotVaultRuntimeService, BotVaultV3Service } from "../vaults/botVaultRuntime.service.js";
 import type { OnchainActionService } from "../vaults/onchainAction.service.js";
+import type { FundingVaultService } from "../vaults/fundingVault.service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
 import { getEffectiveVaultExecutionProvider } from "../vaults/executionProvider.settings.js";
 import { resolveGridHyperliquidPilotAccess } from "../vaults/gridHyperliquidPilot.settings.js";
@@ -39,6 +40,7 @@ const gridBudgetSplitPolicySchema = z.enum([
 const gridMarginPolicySchema = z.enum(["MANUAL_ONLY", "AUTO_ALLOWED"]);
 const gridAutoMarginTriggerTypeSchema = z.enum(["LIQ_DISTANCE_PCT_BELOW", "MARGIN_RATIO_ABOVE"]);
 const gridInstanceMarginModeSchema = z.enum(["MANUAL", "AUTO"]);
+const gridFundingSourceSchema = z.enum(["wallet_direct", "funding_vault"]);
 const gridAutoReservePolicySchema = z.enum(["FIXED_RATIO", "LIQ_GUARD_MAX_GRID"]);
 const gridCatalogDifficultySchema = z.enum(["BEGINNER", "ADVANCED", "EXPERT"]);
 const gridCatalogRiskLevelSchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
@@ -517,6 +519,8 @@ const gridTemplatePreviewSchema = z.object({
 const gridInstanceCreateSchema = z.object({
   exchangeAccountId: z.string().trim().min(1),
   botVaultId: z.string().trim().min(1).optional(),
+  fundingSource: gridFundingSourceSchema.default("wallet_direct"),
+  fundingVaultId: z.string().trim().min(1).optional(),
   investUsd: z.number().positive(),
   extraMarginUsd: z.number().min(0).default(0),
   triggerPrice: z.number().positive().nullable().optional(),
@@ -1323,6 +1327,7 @@ type RegisterGridRoutesDeps = {
   botVaultV3Service?: BotVaultRuntimeService | BotVaultV3Service | null;
   computeGridPreviewAndAllocation?: typeof sharedComputeGridPreviewAndAllocation;
   onchainActionService?: OnchainActionService | null;
+  fundingVaultService?: FundingVaultService | null;
   executionOrchestrator?: ExecutionProviderOrchestrator | null;
   resolveVenueContext: (params: {
     userId: string;
@@ -1357,8 +1362,8 @@ function buildGridProvisioningStatus(row: any) {
   const provisioningRecord = provisioning && typeof provisioning === "object" && !Array.isArray(provisioning)
     ? provisioning as Record<string, unknown>
     : null;
-  const runtimeCreateActionTypes = new Set(["create_bot_vault_v3", "create_bot_vault_v4"]);
-  const runtimeFundActionTypes = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4"]);
+  const runtimeCreateActionTypes = new Set(["create_bot_vault_v3", "create_bot_vault_v4", "launch_bot_vault_from_funding_vault"]);
+  const runtimeFundActionTypes = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"]);
 
   const phase = (() => {
     if (state === "running" || lifecycleState === "execution_active") return null;

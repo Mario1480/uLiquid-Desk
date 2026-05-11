@@ -51,11 +51,22 @@ function actionLabel(actionType: string): string {
       return "Withdraw";
     case "create_bot_vault":
       return "Create BotVault";
-    case "create_bot_vault_v3":
-    case "create_bot_vault_v4":
-      return "Create BotVault";
-    case "reserve_for_bot_vault":
-      return "Reserve for BotVault";
+      case "create_bot_vault_v3":
+      case "create_bot_vault_v4":
+        return "Create BotVault";
+      case "create_funding_vault":
+        return "Create Funding Vault";
+      case "deposit_funding_vault":
+        return "Deposit to Funding Vault";
+      case "withdraw_funding_vault":
+      case "agent_withdraw_funding_vault":
+        return "Withdraw from Funding Vault";
+      case "launch_bot_vault_from_funding_vault":
+        return "Launch from Funding Vault";
+      case "fund_bot_vault_from_funding_vault":
+        return "Fund BotVault from Funding Vault";
+      case "reserve_for_bot_vault":
+        return "Reserve for BotVault";
     case "fund_bot_vault_v3":
     case "fund_bot_vault_v4":
       return "Deposit to BotVault";
@@ -106,12 +117,13 @@ function resolveGasOverride(actionType: string, txRequest: OnchainBuildActionRes
 
 const HYPEREVM_USDC_ADDRESS = getWalletFeatureConfig().usdc.address as `0x${string}` | null;
 const USDC_ALLOWANCE_ACTION_TYPES = new Set([
-  "deposit_master_vault",
-  "reserve_for_bot_vault",
-  "fund_bot_vault_v3",
-  "fund_bot_vault_v4"
-]);
-const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4"]);
+    "deposit_master_vault",
+    "deposit_funding_vault",
+    "reserve_for_bot_vault",
+    "fund_bot_vault_v3",
+    "fund_bot_vault_v4"
+  ]);
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"]);
 
 function requiresUsdcAllowance(actionType: string | null | undefined): boolean {
   return USDC_ALLOWANCE_ACTION_TYPES.has(String(actionType ?? "").trim().toLowerCase());

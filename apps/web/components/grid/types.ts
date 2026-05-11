@@ -310,9 +310,10 @@ export type OnchainActionItem = {
   actionKey: string;
   actionType: string;
   status: string;
-  userId?: string | null;
-  masterVaultId?: string | null;
-  botVaultId?: string | null;
+    userId?: string | null;
+    masterVaultId?: string | null;
+    fundingVaultId?: string | null;
+    botVaultId?: string | null;
   chainId: number;
   txHash: string | null;
   toAddress: string;
@@ -362,11 +363,13 @@ export type GridInstanceCreateResponse =
   | {
       instance: GridInstance;
       botVault?: BotVaultSnapshot | null;
-      provisioningStatus?: GridInstance["provisioningStatus"];
-      onchainAction: OnchainActionItem;
-      txRequest: OnchainTxRequest;
-      mode: "offchain_shadow" | "onchain_simulated" | "onchain_live";
-    };
+        provisioningStatus?: GridInstance["provisioningStatus"];
+        onchainAction: OnchainActionItem;
+        txRequest?: OnchainTxRequest;
+        fundingVaultLaunch?: unknown;
+        fundingVaultRefill?: unknown;
+        mode: "offchain_shadow" | "onchain_simulated" | "onchain_live";
+      };
 
 export type GridInstancePreviewResponse = {
   markPrice: number;

@@ -30,8 +30,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
   const botVaultRuntimeService = deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
   const HYPERVAULT_CREATE_FEE_USD = 1;
-  const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = new Set(["create_bot_vault_v3", "create_bot_vault_v4"]);
-  const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4"]);
+  const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = new Set(["create_bot_vault_v3", "create_bot_vault_v4", "launch_bot_vault_from_funding_vault"]);
+  const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"]);
   const isBotVaultRuntimeProvisioningActionType = (value: string) =>
     BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES.has(value) || BOT_VAULT_RUNTIME_FUND_ACTION_TYPES.has(value);
   type ReusedBotVaultBinding = {
@@ -612,7 +612,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     }
   });
 
-  app.post("/grid/templates/:id/instances", requireAuth, async (req, res) => {
+  const createGridInstanceHandler = async (req: any, res: any) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridInstanceCreateSchema.safeParse(req.body ?? {});
@@ -684,6 +684,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       }
       const autoMarginEnabled = requestedMarginMode === "AUTO";
       const selectedReusableBotVaultId = String(parsed.data.botVaultId ?? "").trim() || null;
+      const fundingSource = String(parsed.data.fundingSource ?? "wallet_direct").trim() === "funding_vault"
+        ? "funding_vault"
+        : "wallet_direct";
+      const requestedFundingVaultId = String(parsed.data.fundingVaultId ?? "").trim() || null;
+      const useFundingVaultSource = fundingSource === "funding_vault";
 
       const fixedLeverage = Number(template.leverageDefault ?? template.leverageMin ?? 1);
       if (fixedLeverage < template.leverageMin || fixedLeverage > template.leverageMax) {
@@ -698,7 +703,20 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         executionContext.provider === "hyperliquid"
         && String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
         && hyperliquidUsage.usesHyperliquid
+        && !selectedReusableBotVaultId
+        && !useFundingVaultSource;
+      const useFundingVaultCreateFlow =
+        useFundingVaultSource
+        && executionContext.provider === "hyperliquid"
+        && String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+        && hyperliquidUsage.usesHyperliquid
         && !selectedReusableBotVaultId;
+      if (useFundingVaultSource && !hyperliquidUsage.usesHyperliquid) {
+        return res.status(400).json({ error: "funding_vault_requires_hyperliquid" });
+      }
+      if (useFundingVaultSource && !deps.fundingVaultService) {
+        return res.status(503).json({ error: "funding_vault_service_unavailable" });
+      }
       if (selectedReusableBotVaultId && !hyperliquidUsage.usesHyperliquid) {
         return res.status(400).json({ error: "grid_bot_vault_requires_hyperliquid" });
       }
@@ -770,10 +788,32 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           ? shared.toTwoDecimals(Math.max(0, requiredBotVaultFundingUsd - Number(reusableFundingRow.availableUsd ?? 0)))
           : 0
         : 0;
-      const useReusableRefillFlow = Boolean(selectedReusableBotVaultId && reusableRefillUsd > 0.000001);
-      if (useReusableRefillFlow && !deps.onchainActionService) {
-        return res.status(503).json({ error: "onchain_action_service_unavailable" });
-      }
+        const useFundingVaultRefillFlow = Boolean(useFundingVaultSource && selectedReusableBotVaultId && reusableRefillUsd > 0.000001);
+        const useReusableRefillFlow = Boolean(!useFundingVaultSource && selectedReusableBotVaultId && reusableRefillUsd > 0.000001);
+        if (useReusableRefillFlow && !deps.onchainActionService) {
+          return res.status(503).json({ error: "onchain_action_service_unavailable" });
+        }
+        const totalFundingVaultLaunchUsd = Number((
+          Number(requiredBotVaultFundingUsd)
+          + (useFundingVaultCreateFlow ? HYPERVAULT_CREATE_FEE_USD : 0)
+        ).toFixed(4));
+        if (useFundingVaultCreateFlow || useFundingVaultRefillFlow) {
+          const overview = await deps.fundingVaultService.getOverview({ userId: user.id });
+          const vault = overview?.fundingVault ?? null;
+          const availableBalance = Number(vault?.availableBalance ?? vault?.freeBalance ?? 0);
+          const requiredUsd = useFundingVaultCreateFlow ? totalFundingVaultLaunchUsd : reusableRefillUsd;
+          if (!vault?.onchainAddress) {
+            return res.status(409).json({ error: "funding_vault_setup_required", overview });
+          }
+          if (availableBalance + 1e-9 < requiredUsd) {
+            return res.status(409).json({
+              error: "funding_vault_insufficient_usdc",
+              requiredUsd,
+              availableUsd: availableBalance,
+              overview
+            });
+          }
+        }
 
       const normalizedTemplate = shared.mapGridTemplateRow(template);
       const botName = parsed.data.name?.trim() || `${template.name} (${template.symbol})`;
@@ -852,14 +892,20 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             tpPct: parsed.data.tpPct ?? template.tpDefaultPct ?? null,
             slPrice: parsed.data.slPrice ?? template.slDefaultPrice ?? null,
             autoMarginEnabled,
-            stateJson: useUnifiedHyperVaultCreateFlow || useReusableRefillFlow
-              ? {
-                  provisioning: {
-                    phase: useReusableRefillFlow ? "pending_reserve_signature" : "pending_signature",
-                    reason: "awaiting_wallet_signature",
-                    idempotencyKey: createProvisioningKey,
-                    startedAt: new Date().toISOString()
-                  }
+              stateJson: useUnifiedHyperVaultCreateFlow || useReusableRefillFlow || useFundingVaultCreateFlow || useFundingVaultRefillFlow
+                ? {
+                    provisioning: {
+                      phase: useFundingVaultCreateFlow
+                        ? "agent_launch_preparing"
+                        : useFundingVaultRefillFlow
+                          ? "agent_refill_preparing"
+                          : useReusableRefillFlow ? "pending_reserve_signature" : "pending_signature",
+                      reason: useFundingVaultCreateFlow || useFundingVaultRefillFlow
+                        ? "awaiting_agent_signature"
+                        : "awaiting_wallet_signature",
+                      idempotencyKey: createProvisioningKey,
+                      startedAt: new Date().toISOString()
+                    }
                 }
               : {},
             metricsJson: {}
@@ -873,17 +919,34 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           gridInstanceId: createdInstance.id,
           botVaultId: selectedReusableBotVaultId ?? undefined,
           allocatedUsd: Number(createdInstance.investUsd ?? 0) + Number(createdInstance.extraMarginUsd ?? 0),
-          deferReservation: useUnifiedHyperVaultCreateFlow || useReusableRefillFlow,
-          idempotencyKey: `${createProvisioningKey}:bot_vault`,
-          metadata: useUnifiedHyperVaultCreateFlow
-            ? {
-                sourceType: "grid_instance_create_pending_onchain",
-                provisioningPhase: "pending_signature",
-                createIdempotencyKey: createProvisioningKey
-              }
-            : useReusableRefillFlow && selectedReusableBotVaultId
+            deferReservation: useUnifiedHyperVaultCreateFlow || useReusableRefillFlow || useFundingVaultCreateFlow || useFundingVaultRefillFlow,
+            idempotencyKey: `${createProvisioningKey}:bot_vault`,
+            metadata: useFundingVaultCreateFlow
               ? {
-                  sourceType: "grid_instance_reuse_pending_refill",
+                  sourceType: "grid_instance_create_pending_funding_vault",
+                  fundingSource: "funding_vault",
+                  fundingVaultId: requestedFundingVaultId,
+                  provisioningPhase: "agent_launch_preparing",
+                  createIdempotencyKey: createProvisioningKey
+                }
+              : useUnifiedHyperVaultCreateFlow
+              ? {
+                  sourceType: "grid_instance_create_pending_onchain",
+                  provisioningPhase: "pending_signature",
+                  createIdempotencyKey: createProvisioningKey
+                }
+              : useFundingVaultRefillFlow && selectedReusableBotVaultId
+                ? {
+                    sourceType: "grid_instance_reuse_pending_funding_vault_refill",
+                    fundingSource: "funding_vault",
+                    fundingVaultId: requestedFundingVaultId,
+                    reusedBotVaultId: selectedReusableBotVaultId,
+                    provisioningPhase: "agent_refill_preparing",
+                    refillUsd: reusableRefillUsd
+                  }
+              : useReusableRefillFlow && selectedReusableBotVaultId
+                ? {
+                    sourceType: "grid_instance_reuse_pending_refill",
                   reusedBotVaultId: selectedReusableBotVaultId,
                   provisioningPhase: "pending_reserve_signature",
                   refillUsd: reusableRefillUsd
@@ -920,13 +983,94 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         reusedBotVaultBinding
       } = createdEntities;
 
-      if (!createdInstanceId || !createdBotId || !createdBotVaultId) {
-        return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_create" });
-      }
+        if (!createdInstanceId || !createdBotId || !createdBotVaultId) {
+          return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_create" });
+        }
 
-      if (useUnifiedHyperVaultCreateFlow) {
-        if (!deps.onchainActionService) {
-          return res.status(503).json({ error: "onchain_action_service_unavailable" });
+        if (useFundingVaultCreateFlow) {
+          try {
+            const botVaultRow = await deps.db.botVault.findUnique({
+              where: { id: createdBotVaultId },
+              select: {
+                controllerAddress: true,
+                agentWallet: true,
+                executionMetadata: true
+              }
+            });
+            const metadata = botVaultRow?.executionMetadata && typeof botVaultRow.executionMetadata === "object" && !Array.isArray(botVaultRow.executionMetadata)
+              ? botVaultRow.executionMetadata as Record<string, unknown>
+              : {};
+            const feeConfig = metadata.feeConfig && typeof metadata.feeConfig === "object" && !Array.isArray(metadata.feeConfig)
+              ? metadata.feeConfig as Record<string, unknown>
+              : {};
+            const launch = await deps.fundingVaultService.launchBotVault({
+              userId: user.id,
+              fundingVaultId: requestedFundingVaultId,
+              botVaultId: createdBotVaultId,
+              gridInstanceId: createdInstanceId,
+              templateId: String(template.id),
+              botId: createdBotId,
+              allocationUsd: totalFundingVaultLaunchUsd,
+              controllerAddress: String(botVaultRow?.controllerAddress ?? ""),
+              agentWallet: botVaultRow?.agentWallet ? String(botVaultRow.agentWallet) : null,
+              platformFeeRatePct: Number(feeConfig.platformFeeRatePct ?? 0),
+              affiliateFeeRatePct: Number(feeConfig.affiliateFeeRatePct ?? 0),
+              affiliateRecipientAddress: feeConfig.affiliateRecipientAddress ? String(feeConfig.affiliateRecipientAddress) : null,
+              actionKey: `grid:funding_vault_launch:${createdInstanceId}:${createProvisioningKey}`
+            });
+
+            const instance = await deps.loadGridInstanceForUser({
+              db: deps.db,
+              userId: user.id,
+              instanceId: createdInstanceId
+            });
+            if (!instance) {
+              return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_funding_vault_launch" });
+            }
+            const mapped = shared.mapGridInstanceRow(instance);
+            return res.status(201).json({
+              instance: mapped,
+              botVault: mapped.botVault ?? null,
+              provisioningStatus: mapped.provisioningStatus ?? {
+                phase: "submitted_waiting_indexer",
+                reason: "agent_signed_funding_vault_launch",
+                pendingActionId: String(launch.action.id),
+                walletSignatureRequired: false
+              },
+              fundingVaultLaunch: launch,
+              onchainAction: launch.action,
+              mode: launch.mode
+            });
+          } catch (buildError) {
+            await deps.db.$transaction(async (tx: any) => {
+              await tx.onchainAction.deleteMany({ where: { botVaultId: createdBotVaultId, status: "prepared" } }).catch(() => ({ count: 0 }));
+              await tx.botVault.deleteMany({ where: { id: createdBotVaultId } });
+              await tx.gridBotInstance.deleteMany({ where: { id: createdInstanceId } });
+              await tx.botRuntime.deleteMany({ where: { botId: createdBotId } }).catch(() => ({ count: 0 }));
+              await tx.futuresBotConfig.deleteMany({ where: { botId: createdBotId } }).catch(() => ({ count: 0 }));
+              await tx.bot.deleteMany({ where: { id: createdBotId } }).catch(() => ({ count: 0 }));
+            }).catch((cleanupError: unknown) => {
+              logger.warn("grid_instance_funding_vault_launch_cleanup_failed", {
+                userId: user.id,
+                createdBotId,
+                createdBotVaultId,
+                createdInstanceId,
+                buildError: String(buildError),
+                cleanupError: String(cleanupError)
+              });
+            });
+            const reason = String(buildError);
+            const status = reason.includes("funding_vault_") ? 409 : 500;
+            return res.status(status).json({
+              error: "grid_instance_create_failed",
+              reason
+            });
+          }
+        }
+
+        if (useUnifiedHyperVaultCreateFlow) {
+          if (!deps.onchainActionService) {
+            return res.status(503).json({ error: "onchain_action_service_unavailable" });
         }
         const totalAllocationUsd = Number((
           Number(computed.allocation.gridInvestUsd ?? 0)
@@ -1024,10 +1168,69 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             error: "grid_instance_create_failed",
             reason: String(buildError)
           });
+          }
         }
-      }
 
-      if (useReusableRefillFlow) {
+        if (useFundingVaultRefillFlow) {
+          try {
+            const refill = await deps.fundingVaultService.fundExistingBotVault({
+              userId: user.id,
+              fundingVaultId: requestedFundingVaultId,
+              botVaultId: createdBotVaultId,
+              gridInstanceId: createdInstanceId,
+              amountUsd: reusableRefillUsd,
+              actionKey: `grid:funding_vault_refill:${createdInstanceId}:${createProvisioningKey}`
+            });
+            const instance = await deps.loadGridInstanceForUser({
+              db: deps.db,
+              userId: user.id,
+              instanceId: createdInstanceId
+            });
+            if (!instance) {
+              return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_funding_vault_refill" });
+            }
+            const mapped = shared.mapGridInstanceRow(instance);
+            return res.status(201).json({
+              instance: mapped,
+              botVault: mapped.botVault ?? null,
+              provisioningStatus: mapped.provisioningStatus ?? {
+                phase: "submitted_waiting_reserve_indexer",
+                reason: "agent_signed_funding_vault_refill",
+                pendingActionId: String(refill.action.id),
+                walletSignatureRequired: false
+              },
+              fundingVaultRefill: refill,
+              onchainAction: refill.action,
+              mode: refill.mode
+            });
+          } catch (buildError) {
+            try {
+              if (reusedBotVaultBinding) {
+                await deps.db.botVault.update({
+                  where: { id: String(reusedBotVaultBinding.botVaultId) },
+                  data: buildReusedBotVaultRollbackData(reusedBotVaultBinding)
+                });
+              }
+              await deps.db.$transaction(async (tx: any) => {
+                await tx.onchainAction.deleteMany({ where: { botVaultId: createdBotVaultId, status: "prepared" } }).catch(() => ({ count: 0 }));
+                await tx.gridBotInstance.deleteMany({ where: { id: createdInstanceId } });
+                await tx.botRuntime.deleteMany({ where: { botId: createdBotId } }).catch(() => ({ count: 0 }));
+                await tx.futuresBotConfig.deleteMany({ where: { botId: createdBotId } }).catch(() => ({ count: 0 }));
+                await tx.bot.deleteMany({ where: { id: createdBotId } }).catch(() => ({ count: 0 }));
+              });
+            } catch {
+              // best effort rollback
+            }
+            const reason = String(buildError);
+            const status = reason.includes("funding_vault_") ? 409 : 500;
+            return res.status(status).json({
+              error: "grid_instance_create_failed",
+              reason
+            });
+          }
+        }
+
+        if (useReusableRefillFlow) {
         if (!deps.onchainActionService) {
           return res.status(503).json({ error: "onchain_action_service_unavailable" });
         }
@@ -1256,6 +1459,18 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_create_failed", reason });
     }
+  };
+
+  app.post("/grid/templates/:id/instances", requireAuth, createGridInstanceHandler);
+  app.post("/mobile/grid/launch", requireAuth, async (req, res) => {
+    const templateId = String(req.body?.templateId ?? req.body?.id ?? "").trim();
+    if (!templateId) return res.status(400).json({ error: "invalid_payload", reason: "template_id_required" });
+    req.params = { ...(req.params ?? {}), id: templateId };
+    req.body = {
+      ...(req.body ?? {}),
+      fundingSource: "funding_vault"
+    };
+    return createGridInstanceHandler(req, res);
   });
 
   app.get("/grid/instances", requireAuth, async (req, res) => {

@@ -9,6 +9,7 @@ import { createTransferReadService } from "../transfers/transferRead.service.js"
 import type { TransferReadService } from "../transfers/types.js";
 import type { VaultService } from "../vaults/service.js";
 import type { OnchainActionService } from "../vaults/onchainAction.service.js";
+import type { FundingVaultService } from "../vaults/fundingVault.service.js";
 import {
   closeBotVaultOnchain,
   recoverBotVaultClosedFunds,
@@ -61,6 +62,15 @@ const onchainDepositMasterTxSchema = z.object({
 });
 
 const onchainWithdrawMasterTxSchema = z.object({
+  amountUsd: z.number().positive(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const fundingVaultCreateTxSchema = z.object({
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const fundingVaultAmountTxSchema = z.object({
   amountUsd: z.number().positive(),
   actionKey: z.string().trim().min(1).max(190).optional()
 });
@@ -298,6 +308,7 @@ export function registerVaultRoutes(
     /** @deprecated Use botVaultRuntimeService for new call sites. */
     botVaultV3Service?: BotVaultRuntimeService | BotVaultV3Service | null;
     onchainActionService?: OnchainActionService | null;
+    fundingVaultService?: FundingVaultService | null;
     walletReadService?: WalletReadService | null;
     fundingReadService?: FundingReadService | null;
     transferReadService?: TransferReadService | null;
@@ -316,6 +327,7 @@ export function registerVaultRoutes(
   }
 ) {
   const onchainActionService = deps.onchainActionService ?? null;
+  const fundingVaultService = deps.fundingVaultService ?? null;
   const botVaultRuntimeService = deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
   const walletReadService = deps.walletReadService ?? createWalletReadService();
   const fundingReadService = deps.fundingReadService ?? createFundingReadService();
@@ -484,6 +496,12 @@ export function registerVaultRoutes(
     ) {
       return { status: 409, error: "onchain_claim_unavailable", reason };
     }
+    if (reason.includes("funding_vault_launches_disabled") || reason.includes("funding_vault_withdraws_disabled")) {
+      return { status: 409, error: "funding_vault_disabled", reason };
+    }
+    if (reason.includes("funding_vault_insufficient_usdc") || reason.includes("funding_vault_agent_hype_low")) {
+      return { status: 409, error: "funding_vault_not_ready", reason };
+    }
     if (includesBotVaultRuntimeReason(reason, "controller_action_required")) {
       return { status: 409, error: "onchain_controller_action_required", reason };
     }
@@ -517,6 +535,13 @@ export function registerVaultRoutes(
     if (
       reason.includes("wallet_address_required")
       || reason.includes("master_vault_onchain_address_missing")
+      || reason.includes("funding_vault_onchain_address_missing")
+      || reason.includes("funding_vault_factory_address_missing")
+      || reason.includes("funding_vault_operator_missing")
+      || reason.includes("agent_wallet_required")
+      || reason.includes("agent_wallet_secret_missing")
+      || reason.includes("agent_wallet_secret_mismatch")
+      || reason.includes("controller_address_required")
       || reason.includes("bot_vault_onchain_address_missing")
       || includesBotVaultRuntimeReason(reason, "factory_address_missing")
       || includesBotVaultRuntimeReason(reason, "beneficiary_missing")
@@ -535,6 +560,7 @@ export function registerVaultRoutes(
     if (
       reason.includes("bot_vault_not_found")
       || reason.includes("master_vault_not_found")
+      || reason.includes("funding_vault_not_found")
       || reason.includes("onchain_action_not_found")
       || reason.includes("user_not_found")
     ) {
@@ -840,6 +866,98 @@ export function registerVaultRoutes(
   app.post("/vaults/onchain/master/create-tx", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
   app.post("/vaults/onchain/master/deposit-tx", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
   app.post("/vaults/onchain/master/withdraw-tx", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+
+  app.get("/vaults/funding-vault", requireAuth, requireVaultProductAccess, async (_req, res) => {
+    if (!fundingVaultService) {
+      return res.status(503).json({ error: "funding_vault_service_unavailable" });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      return res.json(await fundingVaultService.getOverview({ userId: user.id }));
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/funding-vault/create-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!fundingVaultService) {
+      return res.status(503).json({ error: "funding_vault_service_unavailable" });
+    }
+    const parsed = fundingVaultCreateTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    const user = getUserFromLocals(res);
+    try {
+      const result = await fundingVaultService.buildCreateTx({
+        userId: user.id,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json(result);
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/funding-vault/deposit-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!fundingVaultService) {
+      return res.status(503).json({ error: "funding_vault_service_unavailable" });
+    }
+    const parsed = fundingVaultAmountTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    const user = getUserFromLocals(res);
+    try {
+      const result = await fundingVaultService.buildDepositTx({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json(result);
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/funding-vault/withdraw-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!fundingVaultService) {
+      return res.status(503).json({ error: "funding_vault_service_unavailable" });
+    }
+    const parsed = fundingVaultAmountTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    const user = getUserFromLocals(res);
+    try {
+      const result = await fundingVaultService.buildOwnerWithdrawTx({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json(result);
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/funding-vault/agent-withdraw", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!fundingVaultService) {
+      return res.status(503).json({ error: "funding_vault_service_unavailable" });
+    }
+    const parsed = fundingVaultAmountTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    const user = getUserFromLocals(res);
+    try {
+      const result = await fundingVaultService.agentWithdrawToOwner({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json(result);
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
 
   app.post("/vaults/onchain/bot-vaults/:id/create-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {

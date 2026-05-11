@@ -4,15 +4,40 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { apiGet } from "../../lib/api";
+import { ApiError, apiGet, apiPost } from "../../lib/api";
 import type { FundingFeatureConfig, FundingHistoryResponse, WalletFundingOverview } from "../../lib/funding/types";
 import type { TransferFeatureConfig, WalletTransferOverview } from "../../lib/transfers/types";
 import { formatDateTime, formatToken, shortAddress } from "../../lib/wallet/format";
+import { useOnchainActionFlow } from "../grid/OnchainVaultActions";
+import { createIdempotencyKey } from "../grid/utils";
 import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "./FundingTransferSection";
 import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
 
 type ActiveModal = "deposit" | "withdraw" | "spot_perp" | "core_evm" | null;
+
+type FundingVaultOverview = {
+  mode: "offchain_shadow" | "onchain_simulated" | "onchain_live" | string;
+  fundingVault?: {
+    id: string | null;
+    onchainAddress: string | null;
+    operatorAddress: string | null;
+    freeBalance: number;
+    reservedBalance: number;
+    availableBalance: number;
+    status: string;
+    lastSyncedAt: string | null;
+  } | null;
+  linkedWalletAddress?: string | null;
+  agentWalletAddress?: string | null;
+  ready?: boolean;
+  setup?: {
+    canCreate?: boolean;
+    needsLinkedWallet?: boolean;
+    needsAgentWallet?: boolean;
+    needsOnchainAddress?: boolean;
+  };
+};
 
 function displayBalance(value: string | null | undefined, symbol: string, maxDecimals = 2): string {
   if (!value) return "-";
@@ -28,6 +53,26 @@ function statusBadgeClass(status: FundingHistoryResponse["items"][number]["statu
 
 function overviewStatusClass(ok: boolean): string {
   return ok ? "badgeOk" : "badgeWarn";
+}
+
+function errMsg(error: unknown): string {
+  if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
+  if (error && typeof error === "object" && "message" in error) return String((error as any).message);
+  return String(error);
+}
+
+function formatFundingVaultUsd(value: unknown): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  return `${numeric.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })} USDC`;
+}
+
+function parsePositiveUsd(value: string): number | null {
+  const numeric = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
 }
 
 function hasPositiveRawBalance(balance: { raw: string | null; available: boolean } | null | undefined): boolean {
@@ -50,6 +95,166 @@ function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<
     case "core_evm":
       return t("actions.coreEvm");
   }
+}
+
+function FundingVaultQuickCard({ address }: { address: string | undefined }) {
+  const t = useTranslations("funding.actionCenter");
+  const tCommon = useTranslations("funding.common");
+  const [depositAmount, setDepositAmount] = useState("25");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [localNotice, setLocalNotice] = useState<string | null>(null);
+
+  const overviewQuery = useQuery({
+    queryKey: ["funding-vault-overview", address],
+    enabled: Boolean(address),
+    queryFn: () => apiGet<FundingVaultOverview>("/vaults/funding-vault"),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false
+  });
+
+  const flow = useOnchainActionFlow(async () => {
+    await overviewQuery.refetch();
+  });
+
+  const overview = overviewQuery.data ?? null;
+  const vault = overview?.fundingVault ?? null;
+  const ready = Boolean(vault?.onchainAddress && overview?.agentWalletAddress);
+  const canCreate = Boolean(overview?.setup?.canCreate);
+  const busy = Boolean(flow.busyKey) || agentBusy;
+  const actionError = localError ?? flow.error ?? (overviewQuery.error ? errMsg(overviewQuery.error) : null);
+  const actionNotice = localNotice ?? flow.notice ?? null;
+
+  async function ensureWalletReady() {
+    if (flow.mode === "offchain_shadow") throw new Error(t("fundingVault.modeDisabled"));
+    if (!flow.isConnected) throw new Error(t("fundingVault.connectWallet"));
+    if (!flow.walletMatches) throw new Error(t("fundingVault.walletMismatch"));
+    if (flow.chainMismatch) await flow.requestChainSwitch();
+  }
+
+  async function executeWalletAction(kind: "create" | "deposit" | "withdraw") {
+    setLocalError(null);
+    setLocalNotice(null);
+    try {
+      await ensureWalletReady();
+      const amount = kind === "deposit" ? parsePositiveUsd(depositAmount) : kind === "withdraw" ? parsePositiveUsd(withdrawAmount) : null;
+      if (kind !== "create" && !amount) throw new Error(t("fundingVault.positiveAmount"));
+      const ok = await flow.executeAction({
+        busyKey: `funding-vault-${kind}`,
+        buildPath:
+          kind === "create"
+            ? "/vaults/funding-vault/create-tx"
+            : kind === "deposit"
+              ? "/vaults/funding-vault/deposit-tx"
+              : "/vaults/funding-vault/withdraw-tx",
+        body: {
+          ...(amount ? { amountUsd: amount } : {}),
+          actionKey: createIdempotencyKey(`funding-vault-${kind}`)
+        }
+      });
+      if (ok) {
+        if (kind === "deposit") setDepositAmount("");
+        if (kind === "withdraw") setWithdrawAmount("");
+        setLocalNotice(t("fundingVault.txSubmitted"));
+        await overviewQuery.refetch();
+      }
+    } catch (error) {
+      setLocalError(errMsg(error));
+    }
+  }
+
+  async function executeAgentWithdraw() {
+    const amount = parsePositiveUsd(withdrawAmount);
+    if (!amount) {
+      setLocalError(t("fundingVault.positiveAmount"));
+      return;
+    }
+    setAgentBusy(true);
+    setLocalError(null);
+    setLocalNotice(null);
+    try {
+      await apiPost("/vaults/funding-vault/agent-withdraw", {
+        amountUsd: amount,
+        actionKey: createIdempotencyKey("funding-vault-agent-withdraw")
+      });
+      setWithdrawAmount("");
+      setLocalNotice(t("fundingVault.agentWithdrawSubmitted"));
+      await Promise.all([
+        overviewQuery.refetch(),
+        flow.load().catch(() => undefined)
+      ]);
+    } catch (error) {
+      setLocalError(errMsg(error));
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  return (
+    <article className="walletInfoTile fundingQuickCard">
+      <div className="fundingQuickHeader">
+        <strong>{t("fundingVault.title")}</strong>
+        <span className={`badge ${overviewStatusClass(ready)}`}>
+          {ready ? tCommon("ready") : t("fundingVault.setupRequired")}
+        </span>
+      </div>
+      <div className="walletMutedText">{t("fundingVault.subtitle")}</div>
+      <div className="fundingQuickStats">
+        <span>{t("fundingVault.available")}: <strong>{formatFundingVaultUsd(vault?.availableBalance)}</strong></span>
+        <span>{t("fundingVault.reserved")}: <strong>{formatFundingVaultUsd(vault?.reservedBalance)}</strong></span>
+        <span>{t("fundingVault.vault")}: <strong>{vault?.onchainAddress ? shortAddress(vault.onchainAddress) : "-"}</strong></span>
+        <span>{t("fundingVault.agent")}: <strong>{overview?.agentWalletAddress ? shortAddress(overview.agentWalletAddress) : "-"}</strong></span>
+      </div>
+
+      <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+        {!vault?.onchainAddress ? (
+          <button
+            type="button"
+            className="btn btnPrimary"
+            onClick={() => void executeWalletAction("create")}
+            disabled={!canCreate || busy}
+          >
+            {flow.busyKey === "funding-vault-create" ? t("fundingVault.creating") : t("fundingVault.create")}
+          </button>
+        ) : null}
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8 }}>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="0.01"
+            value={depositAmount}
+            onChange={(event) => setDepositAmount(event.target.value)}
+            placeholder={t("fundingVault.depositPlaceholder")}
+          />
+          <button type="button" className="btn" onClick={() => void executeWalletAction("deposit")} disabled={!ready || busy}>
+            {t("fundingVault.deposit")}
+          </button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 8 }}>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="0.01"
+            value={withdrawAmount}
+            onChange={(event) => setWithdrawAmount(event.target.value)}
+            placeholder={t("fundingVault.withdrawPlaceholder")}
+          />
+          <button type="button" className="btn" onClick={() => void executeWalletAction("withdraw")} disabled={!ready || busy}>
+            {t("fundingVault.ownerWithdraw")}
+          </button>
+          <button type="button" className="btn btnPrimary" onClick={() => void executeAgentWithdraw()} disabled={!ready || busy}>
+            {t("fundingVault.agentWithdraw")}
+          </button>
+        </div>
+      </div>
+      {actionNotice ? <div className="walletNotice walletNoticeSuccess" style={{ marginTop: 10 }}>{actionNotice}</div> : null}
+      {actionError ? <div className="walletNotice walletNoticeError" style={{ marginTop: 10 }}>{actionError}</div> : null}
+      {overviewQuery.isLoading ? <div className="walletMutedText" style={{ marginTop: 10 }}>{t("fundingVault.loading")}</div> : null}
+    </article>
+  );
 }
 
 export default function FundingActionCenter({
@@ -192,6 +397,8 @@ export default function FundingActionCenter({
               <span>{t("cards.evmHype")}: <strong>{displayBalance(transfer.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
             </div>
           </article>
+
+          <FundingVaultQuickCard address={address} />
         </div>
       </section>
 

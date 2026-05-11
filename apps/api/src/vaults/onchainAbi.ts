@@ -84,6 +84,38 @@ export const botVaultFactoryV4Abi = parseAbi([
   "event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient)"
 ]);
 
+export const fundingVaultFactoryV1Abi = parseAbi([
+  "function usdc() view returns (address)",
+  "function botVaultFactory() view returns (address)",
+  "function fundingVaultOf(address owner) view returns (address)",
+  "function createFundingVault(address operator) returns (address fundingVault)",
+  "event FundingVaultCreated(address indexed owner, address indexed operator, address indexed fundingVault)"
+]);
+
+export const fundingVaultV1Abi = parseAbi([
+  "function usdc() view returns (address)",
+  "function botVaultFactory() view returns (address)",
+  "function owner() view returns (address)",
+  "function operator() view returns (address)",
+  "function operatorPaused() view returns (bool)",
+  "function usedActionIds(bytes32 actionId) view returns (bool)",
+  "function balance() view returns (uint256)",
+  "function deposit(uint256 amount)",
+  "function ownerWithdraw(uint256 amount)",
+  "function operatorWithdrawToOwner(uint256 amount, bytes32 actionId)",
+  "function setOperator(address nextOperator)",
+  "function setOperatorPaused(bool paused)",
+  "function launchBotVault((address controller,address agentWallet,bytes32 templateId,bytes32 botId,uint256 amount,uint256 platformFeeRatePct,uint256 affiliateFeeRatePct,address affiliateRecipient) params, bytes32 actionId) returns (address botVault)",
+  "function fundExistingBotVault(address botVault, uint256 amount, bytes32 actionId)",
+  "event Deposited(address indexed sender, uint256 amount, uint256 balanceAfter)",
+  "event OwnerWithdrawn(address indexed owner, uint256 amount, uint256 balanceAfter)",
+  "event OperatorWithdrawnToOwner(address indexed operator, bytes32 indexed actionId, uint256 amount, uint256 balanceAfter)",
+  "event OperatorUpdated(address indexed previousOperator, address indexed nextOperator)",
+  "event OperatorPauseUpdated(bool paused)",
+  "event BotVaultLaunched(address indexed operator, bytes32 indexed actionId, bytes32 indexed botId, address botVault, uint256 amount)",
+  "event BotVaultFunded(address indexed operator, bytes32 indexed actionId, address indexed botVault, uint256 amount)"
+]);
+
 export const masterVaultAbi = parseAbi(masterVaultAbiCommon);
 export const masterVaultV2Abi = parseAbi([
   ...masterVaultAbiCommon,
@@ -219,6 +251,13 @@ export const onchainEventNames = new Set<string>([
   "BotVaultClosed",
   "BotVaultRecovered",
   "BotVaultV3Created",
+  "FundingVaultCreated",
+  "OwnerWithdrawn",
+  "OperatorWithdrawnToOwner",
+  "OperatorUpdated",
+  "OperatorPauseUpdated",
+  "BotVaultLaunched",
+  "BotVaultFunded",
   "TreasuryFeePaid",
   "AffiliateFeePaid",
   "TreasuryRecipientUpdated",

@@ -161,7 +161,7 @@ async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
     where: {
       botVaultId: params.botVaultId,
       userId: params.userId,
-      actionType: { in: ["create_bot_vault_v3", "create_bot_vault_v4"] },
+      actionType: { in: ["create_bot_vault_v3", "create_bot_vault_v4", "launch_bot_vault_from_funding_vault"] },
       status: "confirmed",
       txHash: { not: null }
     },
@@ -440,6 +440,7 @@ function mapActionRow(row: any) {
     status: String(row.status),
     userId: row.userId ? String(row.userId) : null,
     masterVaultId: row.masterVaultId ? String(row.masterVaultId) : null,
+    fundingVaultId: row.fundingVaultId ? String(row.fundingVaultId) : null,
     botVaultId: row.botVaultId ? String(row.botVaultId) : null,
     chainId: Number(row.chainId),
     txHash: row.txHash ? String(row.txHash) : null,
@@ -660,6 +661,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionType: OnchainActionType;
     userId: string;
     masterVaultId?: string | null;
+    fundingVaultId?: string | null;
     botVaultId?: string | null;
     txRequest: OnchainTxRequest;
     metadata?: Record<string, unknown>;
@@ -677,6 +679,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           status: "prepared",
           userId: params.userId,
           masterVaultId: params.masterVaultId ?? null,
+          fundingVaultId: params.fundingVaultId ?? null,
           botVaultId: params.botVaultId ?? null,
           chainId: params.txRequest.chainId,
           toAddress: params.txRequest.to,

@@ -52,6 +52,25 @@ type AffiliateLaunchOverview = {
   lockedFeePreview?: LaunchFeePreview | null;
 };
 
+type FundingVaultOverview = {
+  mode?: string;
+  fundingVault?: {
+    id: string | null;
+    onchainAddress: string | null;
+    freeBalance?: number;
+    reservedBalance?: number;
+    availableBalance?: number;
+    status?: string;
+  } | null;
+  ready?: boolean;
+  setup?: {
+    canCreate?: boolean;
+    needsLinkedWallet?: boolean;
+    needsAgentWallet?: boolean;
+    needsOnchainAddress?: boolean;
+  } | null;
+};
+
 function usesHyperliquidMarketData(account: ExchangeAccount | null | undefined): boolean {
   const exchange = String(account?.exchange ?? "").trim().toLowerCase();
   const marketDataExchange = String(account?.marketDataExchange ?? "").trim().toLowerCase();
@@ -375,10 +394,13 @@ export default function GridBotCatalogPage() {
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
   const [reusableBotVaults, setReusableBotVaults] = useState<BotVaultSnapshot[]>([]);
   const [pilotAccess, setPilotAccess] = useState<GridPilotAccess | null>(null);
-  const [launchFeePreview, setLaunchFeePreview] = useState<LaunchFeePreview | null>(null);
-  const [walletFundingOverview, setWalletFundingOverview] = useState<WalletFundingOverview | null>(null);
-  const [walletFundingLoading, setWalletFundingLoading] = useState(false);
-  const [walletFundingError, setWalletFundingError] = useState<string | null>(null);
+    const [launchFeePreview, setLaunchFeePreview] = useState<LaunchFeePreview | null>(null);
+    const [walletFundingOverview, setWalletFundingOverview] = useState<WalletFundingOverview | null>(null);
+    const [walletFundingLoading, setWalletFundingLoading] = useState(false);
+    const [walletFundingError, setWalletFundingError] = useState<string | null>(null);
+    const [fundingVaultOverview, setFundingVaultOverview] = useState<FundingVaultOverview | null>(null);
+    const [fundingVaultLoading, setFundingVaultLoading] = useState(false);
+    const [fundingVaultError, setFundingVaultError] = useState<string | null>(null);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -395,9 +417,10 @@ export default function GridBotCatalogPage() {
   const [ownOnly, setOwnOnly] = useState(() => searchParams.get("ownOnly") === "true");
   const [catalogView, setCatalogView] = useState<"grid" | "list">("grid");
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  const [exchangeAccountId, setExchangeAccountId] = useState("");
-  const [selectedBotVaultId, setSelectedBotVaultId] = useState("");
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+    const [exchangeAccountId, setExchangeAccountId] = useState("");
+    const [selectedBotVaultId, setSelectedBotVaultId] = useState("");
+    const [fundingSource, setFundingSource] = useState<"wallet_direct" | "funding_vault">("wallet_direct");
   const [investUsd, setInvestUsd] = useState("300");
   const [extraMarginUsd, setExtraMarginUsd] = useState("0");
   const [tpPct, setTpPct] = useState("");
@@ -495,13 +518,31 @@ export default function GridBotCatalogPage() {
     && walletUsdcAvailableValue != null
     && Number.isFinite(walletUsdcAvailableValue)
     && walletUsdcAvailableValue + 1e-9 < launchFundingBreakdown.totalFundingUsd;
-  const walletUsdcDisplay = !connectedWalletAddress
-    ? tGrid("launchWalletUsdcConnect")
+    const walletUsdcDisplay = !connectedWalletAddress
+      ? tGrid("launchWalletUsdcConnect")
     : walletFundingLoading
       ? tGrid("launchWalletUsdcLoading")
       : walletFundingError || walletUsdcAvailableValue == null || !Number.isFinite(walletUsdcAvailableValue)
         ? tGrid("launchWalletUsdcUnavailable")
-        : `${formatNumber(walletUsdcAvailableValue, 2)} USDC`;
+          : `${formatNumber(walletUsdcAvailableValue, 2)} USDC`;
+    const fundingVaultAvailableValue = Number(fundingVaultOverview?.fundingVault?.availableBalance ?? fundingVaultOverview?.fundingVault?.freeBalance ?? NaN);
+    const fundingVaultReady = Boolean(fundingVaultOverview?.fundingVault?.onchainAddress);
+    const effectiveFundingSource = isHyperliquidLaunchAccount ? fundingSource : "wallet_direct";
+    const usesFundingVaultLaunch = effectiveFundingSource === "funding_vault";
+    const fundingVaultShortfall = usesFundingVaultLaunch
+      && Number.isFinite(fundingVaultAvailableValue)
+      && fundingVaultAvailableValue + 1e-9 < launchFundingBreakdown.totalFundingUsd;
+    const fundingVaultDisplay = fundingVaultLoading
+      ? tGrid("launchWalletUsdcLoading")
+      : fundingVaultError || !fundingVaultReady || !Number.isFinite(fundingVaultAvailableValue)
+        ? tGrid("launchFundingVaultUnavailable")
+        : `${formatNumber(fundingVaultAvailableValue, 2)} USDC`;
+    const fundingVaultHint = fundingVaultReady
+      ? tGrid("launchFundingVaultRequired", {
+          amount: formatNumber(launchFundingBreakdown.totalFundingUsd, 2),
+          stablecoin: stablecoinLabel
+        })
+      : tGrid("launchFundingVaultSetupHint");
   const walletFundingHint = selectedReusableBotVault
     ? tGrid("launchWalletUsdcReusableHint")
     : tGrid(launchIncludesCreateFee ? "launchWalletUsdcRequiredWithFee" : "launchWalletUsdcRequired", {
@@ -524,11 +565,12 @@ export default function GridBotCatalogPage() {
       && exchangeAccountId
       && !creating
       && !previewLoading
-      && previewReadyForLaunch
-      && !previewInsufficient
-      && Number(investUsd) > 0
-      && (autoMarginActive || Number(extraMarginUsd) >= 0)
-  );
+        && previewReadyForLaunch
+        && !previewInsufficient
+        && Number(investUsd) > 0
+        && (autoMarginActive || Number(extraMarginUsd) >= 0)
+        && (!usesFundingVaultLaunch || (fundingVaultReady && !fundingVaultShortfall))
+    );
   const hasActiveFilters = Boolean(
     search.trim()
       || selectedCategory !== "ALL"
@@ -653,9 +695,9 @@ export default function GridBotCatalogPage() {
     ));
   }, [reusableBotVaults, selectedAccount]);
 
-  useEffect(() => {
-    if (!connectedWalletAddress || !isHyperliquidLaunchAccount) {
-      setWalletFundingOverview(null);
+    useEffect(() => {
+      if (!connectedWalletAddress || !isHyperliquidLaunchAccount) {
+        setWalletFundingOverview(null);
       setWalletFundingError(null);
       setWalletFundingLoading(false);
       return;
@@ -680,8 +722,45 @@ export default function GridBotCatalogPage() {
 
     return () => {
       cancelled = true;
-    };
-  }, [connectedWalletAddress, isHyperliquidLaunchAccount]);
+      };
+    }, [connectedWalletAddress, isHyperliquidLaunchAccount]);
+
+    useEffect(() => {
+      if (!isHyperliquidLaunchAccount) {
+        setFundingVaultOverview(null);
+        setFundingVaultError(null);
+        setFundingVaultLoading(false);
+        setFundingSource("wallet_direct");
+        return;
+      }
+
+      let cancelled = false;
+      setFundingVaultLoading(true);
+      setFundingVaultError(null);
+      void apiGet<FundingVaultOverview>("/vaults/funding-vault")
+        .then((response) => {
+          if (cancelled) return;
+          setFundingVaultOverview(response);
+        })
+        .catch((loadError) => {
+          if (cancelled) return;
+          setFundingVaultOverview(null);
+          setFundingVaultError(errMsg(loadError));
+        })
+        .finally(() => {
+          if (!cancelled) setFundingVaultLoading(false);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [isHyperliquidLaunchAccount]);
+
+    useEffect(() => {
+      if (fundingSource === "funding_vault" && !fundingVaultReady) {
+        setFundingSource("wallet_direct");
+      }
+    }, [fundingSource, fundingVaultReady]);
 
   useEffect(() => {
     if (!selectedTemplate || !exchangeAccountId) {
@@ -831,13 +910,15 @@ export default function GridBotCatalogPage() {
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
         tpPct: tpPct.trim() ? Number(tpPct) : null,
         slPrice: slPrice.trim() ? Number(slPrice) : null,
-        marginMode,
-        autoMarginEnabled: autoMarginActive,
-        botVaultId: selectedReusableBotVault?.id ?? undefined,
-        idempotencyKey: provisionCreateKey.current
-      });
-      if (created && typeof created === "object" && "txRequest" in created && "onchainAction" in created) {
-        const instanceId = String(created.instance?.id ?? "");
+          marginMode,
+          autoMarginEnabled: autoMarginActive,
+          botVaultId: selectedReusableBotVault?.id ?? undefined,
+          fundingSource: effectiveFundingSource,
+          fundingVaultId: usesFundingVaultLaunch ? fundingVaultOverview?.fundingVault?.id ?? undefined : undefined,
+          idempotencyKey: provisionCreateKey.current
+        });
+        if (created && typeof created === "object" && "instance" in created && "onchainAction" in created) {
+          const instanceId = String(created.instance?.id ?? "");
         if (instanceId) setCreatedInstanceId(instanceId);
         setCreatedInstance(created.instance ?? null);
         setProvisioningMeta({
@@ -848,21 +929,26 @@ export default function GridBotCatalogPage() {
           stablecoinLabel,
           includesCreateFee,
           ...fundingBreakdown
-        });
-        setSelectedTemplateId("");
-        await flow.executeBuiltAction({
-          busyKey: "create-grid-bot-catalog",
-          built: {
-            ok: true,
-            mode: created.mode,
-            action: created.onchainAction,
-            txRequest: created.txRequest
-          },
-          onBeforeTxSubmittedError: async () => {
-            await cleanupPendingProvisioningInstance(instanceId || null);
+          });
+          setSelectedTemplateId("");
+          if (created.txRequest) {
+            await flow.executeBuiltAction({
+              busyKey: "create-grid-bot-catalog",
+              built: {
+                ok: true,
+                mode: created.mode,
+                action: created.onchainAction,
+                txRequest: created.txRequest
+              },
+              onBeforeTxSubmittedError: async () => {
+                await cleanupPendingProvisioningInstance(instanceId || null);
+              }
+            });
+            setNotice(null);
+          } else {
+            setNotice(tGrid("provisioningTrackerSubmitted"));
+            provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
           }
-        });
-        setNotice(null);
       } else {
         setNotice(tGrid("createdAutoStarted"));
         setSelectedTemplateId("");
@@ -1152,10 +1238,10 @@ export default function GridBotCatalogPage() {
                   {selectedTemplate.isOwnTemplate ? <span className="badge badgeOk">{tGrid("catalogOwnTemplate")}</span> : null}
                   {selectedTemplate.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
                 </div>
-	                <div className="gridCatalogDrawerMetaBlock">
-	                  <div className="gridCatalogDrawerMetaEyebrow">{tGrid("catalogMetaSummary")}</div>
-	                  <div className="gridCatalogDrawerMetaValue">{formatCatalogEnumLabel(selectedTemplate.mode)} · {formatCatalogEnumLabel(selectedTemplate.gridMode)} · {rangeSummary(selectedTemplate)} · {selectedTemplate.leverageDefault}x</div>
-	                </div>
+                  <div className="gridCatalogDrawerMetaBlock">
+                    <div className="gridCatalogDrawerMetaEyebrow">{tGrid("catalogMetaSummary")}</div>
+                    <div className="gridCatalogDrawerMetaValue">{formatCatalogEnumLabel(selectedTemplate.mode)} · {formatCatalogEnumLabel(selectedTemplate.gridMode)} · {rangeSummary(selectedTemplate)} · {selectedTemplate.leverageDefault}x</div>
+                  </div>
                 {selectedTemplate.catalogCategory ? (
                   <div className="gridCatalogDrawerCategory">
                     {tGrid("catalogCardCategory", { category: selectedTemplate.catalogCategory })}
@@ -1174,10 +1260,10 @@ export default function GridBotCatalogPage() {
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateSymbol")}</strong>
                 <div className="gridCatalogStatValue">{selectedTemplate.symbol}</div>
               </div>
-	              <div className="card gridCatalogStatCard">
-	                <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateMode")}</strong>
-	                <div className="gridCatalogStatValue">{formatCatalogEnumLabel(selectedTemplate.mode)} · {formatCatalogEnumLabel(selectedTemplate.gridMode)}</div>
-	              </div>
+                <div className="card gridCatalogStatCard">
+                  <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateMode")}</strong>
+                  <div className="gridCatalogStatValue">{formatCatalogEnumLabel(selectedTemplate.mode)} · {formatCatalogEnumLabel(selectedTemplate.gridMode)}</div>
+                </div>
               <div className="card gridCatalogStatCard">
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateRange")}</strong>
                 <div className="gridCatalogStatValue">{rangeSummary(selectedTemplate)}</div>
@@ -1204,15 +1290,23 @@ export default function GridBotCatalogPage() {
                 </div>
                 {isHyperliquidLaunchAccount ? (
                   <div className="gridCatalogLaunchHighlights">
-                    <div className={`gridCatalogMiniPanel ${walletFundingShortfall ? "gridCatalogMiniPanelWarn" : ""}`}>
+                      <div className={`gridCatalogMiniPanel ${walletFundingShortfall ? "gridCatalogMiniPanelWarn" : ""}`}>
                       <div className="gridCatalogMiniPanelTop">
                         <span className="gridCatalogMiniPanelLabel">{tGrid("launchWalletUsdcLabel")}</span>
                         {walletFundingShortfall ? <span className="badge badgeWarn">{tGrid("launchWalletUsdcShortfall")}</span> : null}
                       </div>
                       <strong className="gridCatalogMiniPanelValue">{walletUsdcDisplay}</strong>
-                      <div className="gridCatalogMiniPanelHint">{walletFundingHint}</div>
-                    </div>
-                    <div className="gridCatalogMiniPanel">
+                        <div className="gridCatalogMiniPanelHint">{walletFundingHint}</div>
+                      </div>
+                      <div className={`gridCatalogMiniPanel ${fundingVaultShortfall ? "gridCatalogMiniPanelWarn" : ""}`}>
+                        <div className="gridCatalogMiniPanelTop">
+                          <span className="gridCatalogMiniPanelLabel">{tGrid("launchFundingVaultLabel")}</span>
+                          {fundingVaultShortfall ? <span className="badge badgeWarn">{tGrid("launchWalletUsdcShortfall")}</span> : null}
+                        </div>
+                        <strong className="gridCatalogMiniPanelValue">{fundingVaultDisplay}</strong>
+                        <div className="gridCatalogMiniPanelHint">{fundingVaultHint}</div>
+                      </div>
+                      <div className="gridCatalogMiniPanel">
                       <div className="gridCatalogMiniPanelTop">
                         <span className="gridCatalogMiniPanelLabel">{tGrid("launchProfitshareLabel")}</span>
                         <span className="badge">{tGrid("launchProfitshareTotal", { rate: formatNumber(totalFeeRatePct, 2) })}</span>
@@ -1247,9 +1341,16 @@ export default function GridBotCatalogPage() {
                       )) : <option value="">{tGrid("noExecutionAccountsOption")}</option>}
                     </select>
                   </label>
-                  {usesHyperliquidMarketData(selectedAccount) ? (
-                    <>
-                      <label className="gridCatalogField">
+                    {usesHyperliquidMarketData(selectedAccount) ? (
+                      <>
+                        <label className="gridCatalogField">
+                          {tGrid("launchFundingSourceLabel")}
+                          <select className="input" value={fundingSource} onChange={(event) => setFundingSource(event.target.value === "funding_vault" ? "funding_vault" : "wallet_direct")}>
+                            <option value="wallet_direct">{tGrid("launchFundingSourceWallet")}</option>
+                            <option value="funding_vault" disabled={!fundingVaultReady}>{tGrid("launchFundingSourceVault")}</option>
+                          </select>
+                        </label>
+                        <label className="gridCatalogField">
                         {tGrid("botVaultReuseLabel")}
                         <select className="input" value={selectedBotVaultId} onChange={(event) => setSelectedBotVaultId(event.target.value)}>
                           <option value="">{tGrid("botVaultReuseCreateNew")}</option>

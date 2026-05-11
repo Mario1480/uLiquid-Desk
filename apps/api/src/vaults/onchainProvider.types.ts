@@ -31,7 +31,13 @@ export type OnchainActionType =
   | "funding_transfer_evm_to_core"
   | "funding_usd_class_transfer"
   | "set_treasury_recipient"
-  | "set_profit_share_fee_rate";
+  | "set_profit_share_fee_rate"
+  | "create_funding_vault"
+  | "deposit_funding_vault"
+  | "withdraw_funding_vault"
+  | "agent_withdraw_funding_vault"
+  | "launch_bot_vault_from_funding_vault"
+  | "fund_bot_vault_from_funding_vault";
 
 export interface OnchainProvider {
   buildCreateMasterVaultTx(input: {

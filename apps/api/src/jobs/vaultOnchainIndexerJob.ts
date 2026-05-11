@@ -25,11 +25,14 @@ import {
   readMasterVaultState
 } from "../vaults/onchainProvider.js";
 import {
-  botVaultAbi,
-  botVaultFactoryV3Abi,
-  botVaultV2Abi,
-  botVaultV3Abi,
-  masterVaultAbi,
+    botVaultAbi,
+    botVaultFactoryV3Abi,
+    botVaultFactoryV4Abi,
+    botVaultV2Abi,
+    botVaultV3Abi,
+    fundingVaultFactoryV1Abi,
+    fundingVaultV1Abi,
+    masterVaultAbi,
   masterVaultFactoryAbi,
   masterVaultFactoryV2Abi,
   masterVaultV2Abi
@@ -75,8 +78,8 @@ const ARCHIVE_WINDOW_BLOCKS = Math.max(
   1,
   Number(process.env.VAULT_ONCHAIN_INDEXER_ARCHIVE_WINDOW_BLOCKS ?? "3000")
 );
-const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = ["create_bot_vault_v3", "create_bot_vault_v4"] as const;
-const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
+const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = ["create_bot_vault_v3", "create_bot_vault_v4", "launch_bot_vault_from_funding_vault"] as const;
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"] as const;
 const INDEXER_EVENT_TX_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.VAULT_ONCHAIN_INDEXER_EVENT_TX_TIMEOUT_MS ?? "60000")
@@ -745,8 +748,11 @@ function decodeKnownEvent(log: Log): DecodedEvent | null {
   for (const abi of [
     masterVaultFactoryAbi,
     masterVaultFactoryV2Abi,
-    botVaultFactoryV3Abi,
-    masterVaultAbi,
+      botVaultFactoryV3Abi,
+      botVaultFactoryV4Abi,
+      fundingVaultFactoryV1Abi,
+      fundingVaultV1Abi,
+      masterVaultAbi,
     masterVaultV2Abi,
     botVaultAbi,
     botVaultV2Abi,
@@ -808,7 +814,12 @@ function resolveActionContractVersion(actionType: string, metadata: Record<strin
   if (explicit === "v1" || explicit === "v2" || explicit === "v3" || explicit === "v4") return explicit;
   if (actionType === "create_master_vault" || actionType === "fund_bot_vault_hypercore") return "v2";
   if (actionType === "create_bot_vault_v3" || actionType === "fund_bot_vault_v3") return "v3";
-  if (actionType === "create_bot_vault_v4" || actionType === "fund_bot_vault_v4") return "v4";
+  if (
+    actionType === "create_bot_vault_v4"
+    || actionType === "fund_bot_vault_v4"
+    || actionType === "launch_bot_vault_from_funding_vault"
+    || actionType === "fund_bot_vault_from_funding_vault"
+  ) return "v4";
   return "v1";
 }
 
@@ -1074,15 +1085,26 @@ export function createVaultOnchainIndexerJob(
           txHash: true,
           metadata: true,
           masterVaultId: true,
+          fundingVaultId: true,
           botVaultId: true,
-          masterVault: {
-            select: {
-              id: true,
-              onchainAddress: true,
-              contractVersion: true
-            }
-          },
-          botVault: {
+            masterVault: {
+              select: {
+                id: true,
+                onchainAddress: true,
+                contractVersion: true
+              }
+            },
+            fundingVault: {
+              select: {
+                id: true,
+                onchainAddress: true,
+                userId: true,
+                contractVersion: true,
+                freeBalance: true,
+                reservedBalance: true
+              }
+            },
+            botVault: {
             select: {
               id: true,
               userId: true,
@@ -1158,13 +1180,46 @@ export function createVaultOnchainIndexerJob(
                     txHash,
                     status: "confirmed"
                   }).catch(() => undefined);
-                  await markGridProvisioningPendingReserve({
-                    tx,
-                    botVaultId: String(action.botVault?.id),
-                    gridInstanceId: action.botVault?.gridInstanceId ? String(action.botVault.gridInstanceId) : null,
-                    txHash,
-                    allocationUsd: readDeferredProvisioningAllocationUsd(action.botVault?.executionMetadata)
-                  });
+                    if (String(action.actionType) === "launch_bot_vault_from_funding_vault") {
+                      await syncBotVaultFromChain({
+                        tx,
+                        client,
+                        botVault: action.botVault,
+                        address: resolvedVaultAddress
+                      }).catch(() => undefined);
+                      const allocationUsd = Number(metadata.amountUsd ?? readDeferredProvisioningAllocationUsd(action.botVault?.executionMetadata) ?? 0);
+                      await markGridProvisioningPendingHypercoreFunding({
+                        tx,
+                        botVaultId: String(action.botVault?.id),
+                        gridInstanceId: action.botVault?.gridInstanceId ? String(action.botVault.gridInstanceId) : null,
+                        txHash,
+                        allocationUsd
+                      });
+                      if (action.fundingVault?.id && Number.isFinite(allocationUsd) && allocationUsd > 0) {
+                        const currentFreeBalance = Number(action.fundingVault.freeBalance ?? 0);
+                        const currentReservedBalance = Number(action.fundingVault.reservedBalance ?? 0);
+                        const nextFreeBalance = currentFreeBalance - currentReservedBalance >= -1e-9
+                          ? Math.max(0, currentFreeBalance - allocationUsd)
+                          : currentFreeBalance;
+                        const nextReservedBalance = Math.max(0, currentReservedBalance - allocationUsd);
+                        await tx.fundingVault.update({
+                          where: { id: String(action.fundingVault.id) },
+                          data: {
+                            freeBalance: nextFreeBalance,
+                            reservedBalance: nextReservedBalance,
+                            lastSyncedAt: new Date()
+                          }
+                        }).catch(() => undefined);
+                      }
+                    } else {
+                      await markGridProvisioningPendingReserve({
+                        tx,
+                        botVaultId: String(action.botVault?.id),
+                        gridInstanceId: action.botVault?.gridInstanceId ? String(action.botVault.gridInstanceId) : null,
+                        txHash,
+                        allocationUsd: readDeferredProvisioningAllocationUsd(action.botVault?.executionMetadata)
+                      });
+                    }
                 }, {
                   maxWait: 5_000,
                   timeout: INDEXER_EVENT_TX_TIMEOUT_MS
@@ -1253,10 +1308,30 @@ export function createVaultOnchainIndexerJob(
                   masterVaultId: String(action.masterVaultId),
                   address: masterVaultAddress
                 });
+                }
               }
-            }
 
-            if (action.actionType === "create_bot_vault" && action.botVault) {
+              if (action.actionType === "create_funding_vault" && action.fundingVaultId) {
+                const factoryAddress = normalizeAddress(metadata.factoryAddress);
+                const createdEvent = findDecodedReceiptEvent(receipt, "FundingVaultCreated", factoryAddress);
+                const fundingVaultAddress = normalizeAddress(createdEvent?.decoded.args.fundingVault);
+                const operatorAddress = normalizeAddress(createdEvent?.decoded.args.operator ?? metadata.operatorAddress);
+                if (fundingVaultAddress) {
+                  await tx.fundingVault.update({
+                    where: { id: String(action.fundingVaultId) },
+                    data: {
+                      onchainAddress: fundingVaultAddress,
+                      factoryAddress: factoryAddress || null,
+                      operatorAddress: operatorAddress || undefined,
+                      contractVersion: "v1",
+                      status: "active",
+                      lastSyncedAt: new Date()
+                    }
+                  }).catch(() => undefined);
+                }
+              }
+
+              if (action.actionType === "create_bot_vault" && action.botVault) {
               const createdEvent = findDecodedReceiptEvent(receipt, "BotVaultCreated");
               const botAddress = normalizeAddress(createdEvent?.decoded.args.botVault ?? action.botVault.vaultAddress);
               const agentWallet = normalizeAddress(createdEvent?.decoded.args.agentWallet ?? action.botVault.agentWallet);
@@ -1355,13 +1430,40 @@ export function createVaultOnchainIndexerJob(
                   }
                 });
               }
-              await markGridProvisioningPendingReserve({
-                tx,
-                botVaultId: String(action.botVault.id),
-                gridInstanceId: action.botVault.gridInstanceId ? String(action.botVault.gridInstanceId) : null,
-                txHash,
-                allocationUsd: readDeferredProvisioningAllocationUsd(action.botVault.executionMetadata)
-              });
+              if (String(action.actionType) === "launch_bot_vault_from_funding_vault") {
+                const allocationUsd = Number(metadata.amountUsd ?? readDeferredProvisioningAllocationUsd(action.botVault.executionMetadata) ?? 0);
+                await markGridProvisioningPendingHypercoreFunding({
+                  tx,
+                  botVaultId: String(action.botVault.id),
+                  gridInstanceId: action.botVault.gridInstanceId ? String(action.botVault.gridInstanceId) : null,
+                  txHash,
+                  allocationUsd
+                });
+                if (action.fundingVault?.id && Number.isFinite(allocationUsd) && allocationUsd > 0) {
+                  const currentFreeBalance = Number(action.fundingVault.freeBalance ?? 0);
+                  const currentReservedBalance = Number(action.fundingVault.reservedBalance ?? 0);
+                  const nextFreeBalance = currentFreeBalance - currentReservedBalance >= -1e-9
+                    ? Math.max(0, currentFreeBalance - allocationUsd)
+                    : currentFreeBalance;
+                  const nextReservedBalance = Math.max(0, currentReservedBalance - allocationUsd);
+                  await tx.fundingVault.update({
+                    where: { id: String(action.fundingVault.id) },
+                    data: {
+                      freeBalance: nextFreeBalance,
+                      reservedBalance: nextReservedBalance,
+                      lastSyncedAt: new Date()
+                    }
+                  }).catch(() => undefined);
+                }
+              } else {
+                await markGridProvisioningPendingReserve({
+                  tx,
+                  botVaultId: String(action.botVault.id),
+                  gridInstanceId: action.botVault.gridInstanceId ? String(action.botVault.gridInstanceId) : null,
+                  txHash,
+                  allocationUsd: readDeferredProvisioningAllocationUsd(action.botVault.executionMetadata)
+                });
+              }
             }
 
             if (action.actionType === "reserve_for_bot_vault" && action.botVault && action.masterVault?.id) {
@@ -1452,6 +1554,25 @@ export function createVaultOnchainIndexerJob(
                 allocationUsd: Number(metadata.amountUsd ?? readDeferredProvisioningAllocationUsd(action.botVault.executionMetadata) ?? 0),
                 runtimeModel
               });
+              if (String(action.actionType) === "fund_bot_vault_from_funding_vault" && action.fundingVault?.id) {
+                const allocationUsd = Number(metadata.amountUsd ?? readDeferredProvisioningAllocationUsd(action.botVault.executionMetadata) ?? 0);
+                if (Number.isFinite(allocationUsd) && allocationUsd > 0) {
+                  const currentFreeBalance = Number(action.fundingVault.freeBalance ?? 0);
+                  const currentReservedBalance = Number(action.fundingVault.reservedBalance ?? 0);
+                  const nextFreeBalance = currentFreeBalance - currentReservedBalance >= -1e-9
+                    ? Math.max(0, currentFreeBalance - allocationUsd)
+                    : currentFreeBalance;
+                  const nextReservedBalance = Math.max(0, currentReservedBalance - allocationUsd);
+                  await tx.fundingVault.update({
+                    where: { id: String(action.fundingVault.id) },
+                    data: {
+                      freeBalance: nextFreeBalance,
+                      reservedBalance: nextReservedBalance,
+                      lastSyncedAt: new Date()
+                    }
+                  }).catch(() => undefined);
+                }
+              }
               if (botAddress && isAddress(botAddress) && shouldQueueBotVaultV3AutoActivate({
                 vaultModel: action.botVault.vaultModel,
                 executionMetadata: action.botVault.executionMetadata

@@ -141,6 +141,8 @@ export function normalizeGridProvisioningPhase(value: string | null | undefined)
     case "submitted_waiting_reserve_indexer":
     case "pending_hypercore_funding_signature":
     case "submitted_waiting_hypercore_funding_indexer":
+    case "agent_launch_preparing":
+    case "agent_refill_preparing":
     case "ready":
     case "completed":
       return phase;

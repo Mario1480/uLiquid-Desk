@@ -12,6 +12,8 @@ type VaultSafetyResponse = {
   withdrawsDisabled: boolean;
   gridStartsDisabled: boolean;
   profitClaimsDisabled: boolean;
+  fundingVaultLaunchesDisabled: boolean;
+  fundingVaultWithdrawsDisabled: boolean;
   closeOnlyAllUserIds: string[];
   reason: string | null;
   updatedByUserId: string | null;
@@ -63,6 +65,8 @@ export default function AdminVaultSafetyPage() {
   const [withdrawsDisabled, setWithdrawsDisabled] = useState(false);
   const [gridStartsDisabled, setGridStartsDisabled] = useState(false);
   const [profitClaimsDisabled, setProfitClaimsDisabled] = useState(false);
+  const [fundingVaultLaunchesDisabled, setFundingVaultLaunchesDisabled] = useState(false);
+  const [fundingVaultWithdrawsDisabled, setFundingVaultWithdrawsDisabled] = useState(false);
   const [closeOnlyUsersInput, setCloseOnlyUsersInput] = useState("");
   const [reason, setReason] = useState("");
   const [closeOnlyTargetUserId, setCloseOnlyTargetUserId] = useState("");
@@ -88,6 +92,8 @@ export default function AdminVaultSafetyPage() {
       setWithdrawsDisabled(payload.withdrawsDisabled);
       setGridStartsDisabled(payload.gridStartsDisabled);
       setProfitClaimsDisabled(payload.profitClaimsDisabled);
+      setFundingVaultLaunchesDisabled(payload.fundingVaultLaunchesDisabled);
+      setFundingVaultWithdrawsDisabled(payload.fundingVaultWithdrawsDisabled);
       setCloseOnlyUsersInput(payload.closeOnlyAllUserIds.join("\n"));
       setReason(payload.reason ?? "");
       setLastCloseOnlyResult(null);
@@ -113,6 +119,8 @@ export default function AdminVaultSafetyPage() {
         withdrawsDisabled,
         gridStartsDisabled,
         profitClaimsDisabled,
+        fundingVaultLaunchesDisabled,
+        fundingVaultWithdrawsDisabled,
         closeOnlyAllUserIds: parsedCloseOnlyUsers,
         reason: reason.trim() || undefined
       });
@@ -122,6 +130,8 @@ export default function AdminVaultSafetyPage() {
       setWithdrawsDisabled(payload.withdrawsDisabled);
       setGridStartsDisabled(payload.gridStartsDisabled);
       setProfitClaimsDisabled(payload.profitClaimsDisabled);
+      setFundingVaultLaunchesDisabled(payload.fundingVaultLaunchesDisabled);
+      setFundingVaultWithdrawsDisabled(payload.fundingVaultWithdrawsDisabled);
       setCloseOnlyUsersInput(payload.closeOnlyAllUserIds.join("\n"));
       setReason(payload.reason ?? "");
       setNotice(t("messages.saved"));
@@ -152,6 +162,8 @@ export default function AdminVaultSafetyPage() {
       setWithdrawsDisabled(payload.safety.withdrawsDisabled);
       setGridStartsDisabled(payload.safety.gridStartsDisabled);
       setProfitClaimsDisabled(payload.safety.profitClaimsDisabled);
+      setFundingVaultLaunchesDisabled(payload.safety.fundingVaultLaunchesDisabled);
+      setFundingVaultWithdrawsDisabled(payload.safety.fundingVaultWithdrawsDisabled);
       setCloseOnlyUsersInput(payload.safety.closeOnlyAllUserIds.join("\n"));
       setReason(payload.safety.reason ?? "");
       setLastCloseOnlyResult(payload.result);
@@ -187,49 +199,65 @@ export default function AdminVaultSafetyPage() {
               {t("sourceLabel")}: {settings?.source ?? "default"} · {t("lastUpdatedLabel")}: {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
             </div>
 
-	            <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
-	              <input
-	                type="checkbox"
-	                checked={haltNewOrders}
-	                onChange={(event) => setHaltNewOrders(event.target.checked)}
-	              />
-	              <span>{t("haltNewOrdersLabel")}</span>
-	            </label>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+                <input
+                  type="checkbox"
+                  checked={haltNewOrders}
+                  onChange={(event) => setHaltNewOrders(event.target.checked)}
+                />
+                <span>{t("haltNewOrdersLabel")}</span>
+              </label>
 
-	            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
-	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-	                <input
-	                  type="checkbox"
-	                  checked={depositsDisabled}
-	                  onChange={(event) => setDepositsDisabled(event.target.checked)}
-	                />
-	                <span>Deposits disabled</span>
-	              </label>
-	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-	                <input
-	                  type="checkbox"
-	                  checked={withdrawsDisabled}
-	                  onChange={(event) => setWithdrawsDisabled(event.target.checked)}
-	                />
-	                <span>Withdraws disabled</span>
-	              </label>
-	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-	                <input
-	                  type="checkbox"
-	                  checked={gridStartsDisabled}
-	                  onChange={(event) => setGridStartsDisabled(event.target.checked)}
-	                />
-	                <span>Grid starts disabled</span>
-	              </label>
-	              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-	                <input
-	                  type="checkbox"
-	                  checked={profitClaimsDisabled}
-	                  onChange={(event) => setProfitClaimsDisabled(event.target.checked)}
-	                />
-	                <span>Profit claims disabled</span>
-	              </label>
-	            </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={depositsDisabled}
+                    onChange={(event) => setDepositsDisabled(event.target.checked)}
+                  />
+                  <span>Deposits disabled</span>
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={withdrawsDisabled}
+                    onChange={(event) => setWithdrawsDisabled(event.target.checked)}
+                  />
+                  <span>Withdraws disabled</span>
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={gridStartsDisabled}
+                    onChange={(event) => setGridStartsDisabled(event.target.checked)}
+                  />
+                  <span>Grid starts disabled</span>
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={profitClaimsDisabled}
+                    onChange={(event) => setProfitClaimsDisabled(event.target.checked)}
+                  />
+                  <span>Profit claims disabled</span>
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={fundingVaultLaunchesDisabled}
+                    onChange={(event) => setFundingVaultLaunchesDisabled(event.target.checked)}
+                  />
+                  <span>Funding Vault launches disabled</span>
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={fundingVaultWithdrawsDisabled}
+                    onChange={(event) => setFundingVaultWithdrawsDisabled(event.target.checked)}
+                  />
+                  <span>Funding Vault withdraws disabled</span>
+                </label>
+              </div>
 
             <div className="settingsFormGrid">
               <label>

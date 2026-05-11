@@ -76,6 +76,17 @@ export function resolveBotVaultV4FactoryAddress(
   return resolveBotVaultFactoryAddress(mode, "v4");
 }
 
+export function resolveFundingVaultFactoryAddress(
+  mode: VaultExecutionMode
+): `0x${string}` | null {
+  const liveEnvKey = process.env.FUNDING_VAULT_FACTORY_ADDRESS;
+  const simEnvKey = process.env.FUNDING_VAULT_SIM_FACTORY_ADDRESS;
+  if (mode === "onchain_live") {
+    return readAddress(liveEnvKey);
+  }
+  return readAddress(simEnvKey ?? liveEnvKey);
+}
+
 export function normalizeOnchainContractVersion(value: unknown, fallback: OnchainContractVersion = "v1"): OnchainContractVersion {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "v4") return "v4";

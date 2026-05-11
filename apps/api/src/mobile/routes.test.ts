@@ -6,12 +6,17 @@ type RouteMap = Map<string, Array<(...args: any[]) => any>>;
 
 function createFakeApp() {
   const getRoutes: RouteMap = new Map();
+  const postRoutes: RouteMap = new Map();
   return {
     get(path: string, ...handlers: Array<(...args: any[]) => any>) {
       getRoutes.set(path, handlers);
     },
+    post(path: string, ...handlers: Array<(...args: any[]) => any>) {
+      postRoutes.set(path, handlers);
+    },
     routes: {
-      get: getRoutes
+      get: getRoutes,
+      post: postRoutes
     }
   };
 }
@@ -45,8 +50,16 @@ function getHandlers(app: ReturnType<typeof createFakeApp>, path = "/mobile/dash
   return handlers;
 }
 
-function getFinalHandler(app: ReturnType<typeof createFakeApp>) {
-  const handlers = getHandlers(app);
+function getFinalHandler(app: ReturnType<typeof createFakeApp>, path = "/mobile/dashboard") {
+  const handlers = getHandlers(app, path);
+  return handlers[handlers.length - 1];
+}
+
+function getFinalPostHandler(app: ReturnType<typeof createFakeApp>, path: string) {
+  const handlers = app.routes.post.get(path);
+  if (!handlers || handlers.length === 0) {
+    throw new Error(`route_not_found:${path}`);
+  }
   return handlers[handlers.length - 1];
 }
 
@@ -181,6 +194,53 @@ test("mobile dashboard returns empty state with stable sections", async () => {
   assert.equal(res.body?.predictions?.summary?.total, 0);
   assert.equal(Array.isArray(res.body?.positions?.items), true);
   assert.equal(res.body?.sections?.bots?.degraded, false);
+});
+
+test("mobile funding vault overview delegates to the funding vault service", async () => {
+  const app = createFakeApp();
+  registerMobileDashboardRoutes(app as any, createBaseDeps({
+    fundingVaultService: {
+      getOverview: async ({ userId }: any) => ({
+        userId,
+        fundingVault: {
+          id: "fv_1",
+          availableBalance: 42,
+          onchainAddress: "0xfunding"
+        }
+      })
+    }
+  }) as any);
+
+  const handler = getFinalHandler(app, "/mobile/funding-vault");
+  const res = createMockRes();
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.fundingVault?.id, "fv_1");
+  assert.equal(res.body?.fundingVault?.availableBalance, 42);
+});
+
+test("mobile funding vault agent withdraw validates payload and delegates to service", async () => {
+  const app = createFakeApp();
+  let captured: any = null;
+  registerMobileDashboardRoutes(app as any, createBaseDeps({
+    fundingVaultService: {
+      agentWithdrawToOwner: async (input: any) => {
+        captured = input;
+        return { ok: true, txHash: "0xabc" };
+      }
+    }
+  }) as any);
+
+  const handler = getFinalPostHandler(app, "/mobile/funding-vault/agent-withdraw");
+  const res = createMockRes();
+  await handler({ body: { amountUsd: 12.5, actionKey: "mobile-withdraw-1" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(captured?.userId, "user_1");
+  assert.equal(captured?.amountUsd, 12.5);
+  assert.equal(captured?.actionKey, "mobile-withdraw-1");
 });
 
 test("mobile dashboard includes running and errored bots plus open positions", async () => {

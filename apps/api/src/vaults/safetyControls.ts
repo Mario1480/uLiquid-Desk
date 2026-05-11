@@ -6,6 +6,8 @@ export type VaultSafetyControls = {
   withdrawsDisabled: boolean;
   gridStartsDisabled: boolean;
   profitClaimsDisabled: boolean;
+  fundingVaultLaunchesDisabled: boolean;
+  fundingVaultWithdrawsDisabled: boolean;
   closeOnlyAllUserIds: string[];
   updatedByUserId: string | null;
   updatedAt: string | null;
@@ -31,6 +33,8 @@ export function parseVaultSafetyControls(value: unknown): VaultSafetyControls {
     withdrawsDisabled: record.withdrawsDisabled === true || envFlag("BOTVAULT_WITHDRAWS_DISABLED") || globalDisabled,
     gridStartsDisabled: record.gridStartsDisabled === true || envFlag("GRIDBOT_STARTS_DISABLED") || globalDisabled,
     profitClaimsDisabled: record.profitClaimsDisabled === true || envFlag("BOTVAULT_PROFIT_CLAIMS_DISABLED") || globalDisabled,
+    fundingVaultLaunchesDisabled: record.fundingVaultLaunchesDisabled === true || envFlag("FUNDING_VAULT_LAUNCHES_DISABLED") || globalDisabled,
+    fundingVaultWithdrawsDisabled: record.fundingVaultWithdrawsDisabled === true || envFlag("FUNDING_VAULT_WITHDRAWS_DISABLED") || globalDisabled,
     closeOnlyAllUserIds: userIds,
     updatedByUserId: typeof record.updatedByUserId === "string" && record.updatedByUserId.trim()
       ? record.updatedByUserId.trim()
@@ -50,6 +54,8 @@ export function buildVaultSafetyControls(input: {
   withdrawsDisabled?: boolean;
   gridStartsDisabled?: boolean;
   profitClaimsDisabled?: boolean;
+  fundingVaultLaunchesDisabled?: boolean;
+  fundingVaultWithdrawsDisabled?: boolean;
   closeOnlyAllUserIds?: string[];
   updatedByUserId?: string | null;
   reason?: string | null;
@@ -60,6 +66,8 @@ export function buildVaultSafetyControls(input: {
     withdrawsDisabled: input.withdrawsDisabled === true,
     gridStartsDisabled: input.gridStartsDisabled === true,
     profitClaimsDisabled: input.profitClaimsDisabled === true,
+    fundingVaultLaunchesDisabled: input.fundingVaultLaunchesDisabled === true,
+    fundingVaultWithdrawsDisabled: input.fundingVaultWithdrawsDisabled === true,
     closeOnlyAllUserIds: Array.from(new Set((input.closeOnlyAllUserIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean))),
     updatedByUserId: input.updatedByUserId?.trim() || null,
     updatedAt: new Date().toISOString(),

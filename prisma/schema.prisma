@@ -654,6 +654,7 @@ model User {
   gridTemplateFavorites                GridTemplateFavorite[]
   gridBotInstances                     GridBotInstance[]
   masterVault                          MasterVault?
+  fundingVault                         FundingVault?
   agentWallet                          String?                               @unique @map("agent_wallet")
   agentWalletVersion                   Int                                   @default(1) @map("agent_wallet_version")
   agentSecretRef                       String?                               @map("agent_secret_ref")
@@ -1312,6 +1313,33 @@ model MasterVault {
   @@map("master_vaults")
 }
 
+model FundingVault {
+  id                    String    @id @default(cuid())
+  userId                String    @unique @map("user_id")
+  onchainAddress        String?   @unique @map("onchain_address")
+  factoryAddress        String?   @map("factory_address")
+  contractVersion       String    @default("v1") @map("contract_version")
+  operatorAddress       String?   @map("operator_address")
+  operatorVersion       Int       @default(1) @map("operator_version")
+  operatorSecretRef     String?   @map("operator_secret_ref")
+  freeBalance           Float     @default(0) @map("free_balance")
+  reservedBalance       Float     @default(0) @map("reserved_balance")
+  totalDeposited        Float     @default(0) @map("total_deposited")
+  totalWithdrawn        Float     @default(0) @map("total_withdrawn")
+  status                String    @default("active")
+  lastSyncedAt          DateTime? @map("last_synced_at")
+  metadata              Json?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botVaults      BotVault[]
+  onchainActions OnchainAction[]
+
+  @@index([status, updatedAt(sort: Desc)], map: "funding_vaults_status_updated_idx")
+  @@map("funding_vaults")
+}
+
 model AgentWalletSecret {
   id                  String   @id @default(cuid())
   userId              String   @map("user_id")
@@ -1333,6 +1361,8 @@ model BotVault {
   id                     String         @id @default(cuid())
   userId                 String         @map("user_id")
   masterVaultId          String?        @map("master_vault_id")
+  fundingVaultId         String?        @map("funding_vault_id")
+  fundingSource          String         @default("wallet_direct") @map("funding_source")
   templateId             String         @default("legacy_grid_default") @map("template_id")
   gridInstanceId         String?        @unique @map("grid_instance_id")
   botId                  String?        @unique @map("bot_id")
@@ -1375,6 +1405,7 @@ model BotVault {
 
   user                  User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   masterVault           MasterVault?                   @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
+  fundingVault          FundingVault?                  @relation(fields: [fundingVaultId], references: [id], onDelete: SetNull)
   template              BotTemplate                    @relation(fields: [templateId], references: [id], onDelete: Restrict)
   gridInstance          GridBotInstance?               @relation(fields: [gridInstanceId], references: [id], onDelete: Cascade)
   bot                   Bot?                           @relation(fields: [botId], references: [id], onDelete: Cascade)
@@ -1394,6 +1425,7 @@ model BotVault {
   @@index([templateId], map: "bot_vaults_template_idx")
   @@index([userId, updatedAt(sort: Desc)], map: "bot_vaults_user_updated_idx")
   @@index([masterVaultId, updatedAt(sort: Desc)], map: "bot_vaults_master_updated_idx")
+  @@index([fundingVaultId, updatedAt(sort: Desc)], map: "bot_vaults_funding_vault_updated_idx")
   @@index([status, updatedAt(sort: Desc)], map: "bot_vaults_status_updated_idx")
   @@map("bot_vaults")
 }
@@ -1618,6 +1650,7 @@ model OnchainAction {
   status        String   @default("prepared")
   userId        String?  @map("user_id")
   masterVaultId String?  @map("master_vault_id")
+  fundingVaultId String? @map("funding_vault_id")
   botVaultId    String?  @map("bot_vault_id")
   chainId       Int      @map("chain_id")
   toAddress     String   @map("to_address")
@@ -1630,11 +1663,13 @@ model OnchainAction {
 
   user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   masterVault MasterVault? @relation(fields: [masterVaultId], references: [id], onDelete: SetNull)
+  fundingVault FundingVault? @relation(fields: [fundingVaultId], references: [id], onDelete: SetNull)
   botVault    BotVault?    @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt(sort: Desc)], map: "onchain_actions_status_created_idx")
   @@index([userId, createdAt(sort: Desc)], map: "onchain_actions_user_created_idx")
   @@index([masterVaultId, createdAt(sort: Desc)], map: "onchain_actions_master_created_idx")
+  @@index([fundingVaultId, createdAt(sort: Desc)], map: "onchain_actions_funding_vault_created_idx")
   @@index([botVaultId, createdAt(sort: Desc)], map: "onchain_actions_bot_created_idx")
   @@map("onchain_actions")
 }

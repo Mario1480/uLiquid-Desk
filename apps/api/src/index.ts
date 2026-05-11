@@ -400,6 +400,7 @@ import { createFeeSettlementService } from "./vaults/feeSettlement.service.js";
 import { createBotVaultTradingReconciliationService } from "./vaults/tradingReconciliation.service.js";
 import { createRiskPolicyService } from "./vaults/riskPolicy.service.js";
 import { createOnchainActionService } from "./vaults/onchainAction.service.js";
+import { createFundingVaultService } from "./vaults/fundingVault.service.js";
 import {
   buildVaultSafetyControls,
   GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY,
@@ -533,6 +534,7 @@ const executionLifecycleService = createExecutionLifecycleService(db, {
   logger
 });
 const onchainActionService = createOnchainActionService(db, { logger });
+const fundingVaultService = createFundingVaultService(db);
 const tradingReconciliationService = createBotVaultTradingReconciliationService(db, { logger });
 const feeSettlementService = createFeeSettlementService(db, {
   masterVaultService,
@@ -1784,6 +1786,8 @@ const adminVaultSafetyControlsSchema = z.object({
   withdrawsDisabled: z.boolean().optional(),
   gridStartsDisabled: z.boolean().optional(),
   profitClaimsDisabled: z.boolean().optional(),
+  fundingVaultLaunchesDisabled: z.boolean().optional(),
+  fundingVaultWithdrawsDisabled: z.boolean().optional(),
   closeOnlyAllUserIds: z.array(z.string().trim().min(1)).optional(),
   reason: z.string().trim().max(500).nullable().optional()
 });
@@ -2931,6 +2935,8 @@ async function setVaultSafetyControlsSettings(input: {
   withdrawsDisabled?: boolean;
   gridStartsDisabled?: boolean;
   profitClaimsDisabled?: boolean;
+  fundingVaultLaunchesDisabled?: boolean;
+  fundingVaultWithdrawsDisabled?: boolean;
   closeOnlyAllUserIds: string[];
   reason?: string | null;
   updatedByUserId: string;
@@ -2941,6 +2947,8 @@ async function setVaultSafetyControlsSettings(input: {
     withdrawsDisabled: input.withdrawsDisabled,
     gridStartsDisabled: input.gridStartsDisabled,
     profitClaimsDisabled: input.profitClaimsDisabled,
+    fundingVaultLaunchesDisabled: input.fundingVaultLaunchesDisabled,
+    fundingVaultWithdrawsDisabled: input.fundingVaultWithdrawsDisabled,
     closeOnlyAllUserIds: input.closeOnlyAllUserIds,
     reason: input.reason ?? null,
     updatedByUserId: input.updatedByUserId
@@ -11818,6 +11826,7 @@ registerGridRoutes(app, {
   botVaultRuntimeService,
   botVaultV3Service,
   onchainActionService,
+  fundingVaultService,
   executionOrchestrator,
   resolveVenueContext: async (params) => resolveGridVenueContext(params)
 });
@@ -11826,6 +11835,7 @@ registerVaultRoutes(app, {
   botVaultRuntimeService,
   botVaultV3Service,
   onchainActionService,
+  fundingVaultService,
   resolvePlanCapabilitiesForUserId,
   isCapabilityAllowed,
   sendCapabilityDenied
@@ -11850,6 +11860,7 @@ registerMobileDashboardRoutes(app, {
   isPaperTradingAccount,
   loadGridDeskVisibilityMask,
   filterGridBotPositionsForDesk,
+  fundingVaultService,
   listNews,
   getEconomicCalendarNextSummary
 });

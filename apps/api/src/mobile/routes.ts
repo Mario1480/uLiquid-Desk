@@ -1,8 +1,10 @@
 import type express from "express";
 import type { Express } from "express";
+import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { getEconomicCalendarNextSummary as defaultGetEconomicCalendarNextSummary } from "../services/economicCalendar/index.js";
 import { listNews as defaultListNews } from "../services/news/index.js";
+import type { FundingVaultService } from "../vaults/fundingVault.service.js";
 
 type GridDeskVisibilityMask = {
   symbolsByAccount: Map<string, Set<string>>;
@@ -48,6 +50,7 @@ type MobileDashboardRoutesDeps = {
     visibilityMask: GridDeskVisibilityMask,
     exchangeAccountId: string
   ): T[];
+  fundingVaultService?: FundingVaultService | null;
   listNews?: typeof defaultListNews;
   getEconomicCalendarNextSummary?: typeof defaultGetEconomicCalendarNextSummary;
 };
@@ -67,6 +70,24 @@ const MOBILE_NEWS_LIMIT = 8;
 const MOBILE_BOT_LIMIT = 60;
 const MOBILE_PREDICTION_LIMIT = 40;
 const MOBILE_ACTIVE_BOT_STATUSES = ["running", "error"];
+
+const mobileFundingVaultAmountSchema = z.object({
+  amountUsd: z.number().positive(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+function mapMobileFundingVaultError(error: unknown) {
+  const reason = error instanceof Error ? error.message : String(error);
+  if (reason.includes("funding_vault_not_found")) return { status: 404, error: "funding_vault_not_found", reason };
+  if (reason.includes("funding_vault_onchain_address_missing")) return { status: 409, error: "funding_vault_setup_required", reason };
+  if (reason.includes("funding_vault_withdraws_disabled")) return { status: 409, error: "funding_vault_withdraws_disabled", reason };
+  if (reason.includes("funding_vault_operator_missing") || reason.includes("agent_wallet_secret_missing")) {
+    return { status: 409, error: "funding_vault_agent_not_ready", reason };
+  }
+  if (reason.includes("funding_vault_agent_hype_low")) return { status: 409, error: "funding_vault_agent_hype_low", reason };
+  if (reason.includes("vault_execution_mode_offchain_shadow")) return { status: 409, error: "onchain_mode_required", reason };
+  return { status: 500, error: "funding_vault_action_failed", reason };
+}
 
 function createVisibleMobileBotWhere(userId: string, extra: Record<string, unknown> = {}) {
   return {
@@ -756,6 +777,34 @@ async function readPredictions(deps: MobileDashboardRoutesDeps, userId: string) 
 
 export function registerMobileDashboardRoutes(app: Express, deps: MobileDashboardRoutesDeps) {
   const auth = deps.authMiddleware ?? requireAuth;
+
+  app.get("/mobile/funding-vault", auth, async (_req, res) => {
+    if (!deps.fundingVaultService) return res.status(503).json({ error: "funding_vault_service_unavailable" });
+    const user = getUserFromLocals(res);
+    try {
+      return res.json(await deps.fundingVaultService.getOverview({ userId: user.id }));
+    } catch (error) {
+      const mapped = mapMobileFundingVaultError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/mobile/funding-vault/agent-withdraw", auth, async (req, res) => {
+    if (!deps.fundingVaultService) return res.status(503).json({ error: "funding_vault_service_unavailable" });
+    const parsed = mobileFundingVaultAmountSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    const user = getUserFromLocals(res);
+    try {
+      return res.json(await deps.fundingVaultService.agentWithdrawToOwner({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      }));
+    } catch (error) {
+      const mapped = mapMobileFundingVaultError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
 
   app.get("/mobile/dashboard", auth, async (_req, res) => {
     const user = getUserFromLocals(res);

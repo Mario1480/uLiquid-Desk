@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   resolveBotVaultFactoryAddress,
+  resolveFundingVaultFactoryAddress,
   resolveHyperEvmWriteRpcUrl
 } from "./onchainAddressBook.js";
 
@@ -75,7 +76,7 @@ test("resolveBotVaultFactoryAddress resolves dedicated v4 factory envs", () => {
       "0x00000000000000000000000000000000000000a4"
     );
     assert.equal(
-      resolveBotVaultFactoryAddress("onchain_sim", "v4"),
+      resolveBotVaultFactoryAddress("onchain_simulated", "v4"),
       "0x00000000000000000000000000000000000000b4"
     );
     assert.equal(
@@ -86,5 +87,29 @@ test("resolveBotVaultFactoryAddress resolves dedicated v4 factory envs", () => {
     process.env.BOT_VAULT_V3_FACTORY_ADDRESS = previous.BOT_VAULT_V3_FACTORY_ADDRESS;
     process.env.BOT_VAULT_V4_FACTORY_ADDRESS = previous.BOT_VAULT_V4_FACTORY_ADDRESS;
     process.env.BOT_VAULT_V4_SIM_FACTORY_ADDRESS = previous.BOT_VAULT_V4_SIM_FACTORY_ADDRESS;
+  }
+});
+
+test("resolveFundingVaultFactoryAddress resolves live and simulated factory envs", () => {
+  const previous = {
+    FUNDING_VAULT_FACTORY_ADDRESS: process.env.FUNDING_VAULT_FACTORY_ADDRESS,
+    FUNDING_VAULT_SIM_FACTORY_ADDRESS: process.env.FUNDING_VAULT_SIM_FACTORY_ADDRESS
+  };
+
+  process.env.FUNDING_VAULT_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.FUNDING_VAULT_SIM_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f2";
+
+  try {
+    assert.equal(
+      resolveFundingVaultFactoryAddress("onchain_live"),
+      "0x00000000000000000000000000000000000000f1"
+    );
+    assert.equal(
+      resolveFundingVaultFactoryAddress("onchain_simulated"),
+      "0x00000000000000000000000000000000000000f2"
+    );
+  } finally {
+    process.env.FUNDING_VAULT_FACTORY_ADDRESS = previous.FUNDING_VAULT_FACTORY_ADDRESS;
+    process.env.FUNDING_VAULT_SIM_FACTORY_ADDRESS = previous.FUNDING_VAULT_SIM_FACTORY_ADDRESS;
   }
 });

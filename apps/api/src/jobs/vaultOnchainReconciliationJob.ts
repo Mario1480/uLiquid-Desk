@@ -43,8 +43,8 @@ const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
   Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
 );
 const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS = BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES * 60_000;
-const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = ["create_bot_vault_v3", "create_bot_vault_v4"] as const;
-const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
+const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = ["create_bot_vault_v3", "create_bot_vault_v4", "launch_bot_vault_from_funding_vault"] as const;
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"] as const;
 const MONEY_FLOW_PENDING_ALERT_MS = Math.max(
   60,
   Math.trunc(Number(process.env.BOTVAULT_MONEY_FLOW_PENDING_ALERT_SECONDS ?? "600") || 600)
