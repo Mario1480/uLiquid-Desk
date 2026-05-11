@@ -88,7 +88,8 @@ function inferExchangeId(error: unknown): ExchangeId | "unknown" {
     explicit === "mexc" ||
     explicit === "hyperliquid" ||
     explicit === "paper" ||
-    explicit === "binance"
+    explicit === "binance" ||
+    explicit === "bingx"
   ) {
     return explicit;
   }
@@ -97,6 +98,7 @@ function inferExchangeId(error: unknown): ExchangeId | "unknown" {
   if (message.includes("mexc")) return "mexc";
   if (message.includes("hyperliquid")) return "hyperliquid";
   if (message.includes("binance")) return "binance";
+  if (message.includes("bingx")) return "bingx";
   return "unknown";
 }
 

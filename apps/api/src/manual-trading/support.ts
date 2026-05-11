@@ -30,6 +30,14 @@ const BINANCE_PERP_ENABLED = !["0", "false", "off", "no"].includes(
   String(process.env.BINANCE_PERP_ENABLED ?? "1").trim().toLowerCase()
 );
 
+const BINGX_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
+  String(process.env.BINGX_SPOT_ENABLED ?? "1").trim().toLowerCase()
+);
+
+const BINGX_PERP_ENABLED = !["0", "false", "off", "no"].includes(
+  String(process.env.BINGX_PERP_ENABLED ?? "1").trim().toLowerCase()
+);
+
 const MEXC_PERP_ENABLED =
   typeof process.env.MEXC_PERP_ENABLED === "string"
     ? !["0", "false", "off", "no"].includes(
@@ -93,6 +101,7 @@ export function resolveManualSpotSupport(params: {
   const exchange = String(params.exchange ?? "").toLowerCase();
   const marketDataExchange = String(params.marketDataExchange ?? exchange).toLowerCase();
   if (exchange === "binance" && marketDataExchange === "binance") return BINANCE_SPOT_ENABLED;
+  if (exchange === "bingx" && marketDataExchange === "bingx") return BINGX_SPOT_ENABLED;
   if (exchange === "bitget" && marketDataExchange === "bitget") return true;
   if (exchange === "hyperliquid" && marketDataExchange === "hyperliquid") return true;
   if (exchange === "mexc" && marketDataExchange === "mexc") return MEXC_SPOT_ENABLED;
@@ -112,6 +121,7 @@ export function resolveManualPerpSupport(params: {
   const exchange = String(params.exchange ?? "").toLowerCase();
   const marketDataExchange = String(params.marketDataExchange ?? exchange).toLowerCase();
   if (exchange === "binance") return BINANCE_PERP_ENABLED;
+  if (exchange === "bingx") return BINGX_PERP_ENABLED;
   if (exchange === "paper") {
     return resolvePaperLinkedMarketDataSupport({
       marketType: "perp",
@@ -137,6 +147,13 @@ export function ensureManualSpotEligibility(resolved: ManualResolvedTradingAccou
   if (selected === "binance" && marketData === "binance") {
     if (!BINANCE_SPOT_ENABLED) {
       throw new ManualTradingError("binance_spot_disabled", 403, "binance_spot_disabled");
+    }
+    return;
+  }
+
+  if (selected === "bingx" && marketData === "bingx") {
+    if (!BINGX_SPOT_ENABLED) {
+      throw new ManualTradingError("bingx_spot_disabled", 403, "bingx_spot_disabled");
     }
     return;
   }
@@ -173,6 +190,10 @@ export function ensureManualPerpEligibility(resolved: ManualResolvedTradingAccou
 
   if (selected === "binance" && !BINANCE_PERP_ENABLED) {
     throw new ManualTradingError("binance_perp_disabled", 400, "binance_perp_disabled");
+  }
+
+  if (selected === "bingx" && !BINGX_PERP_ENABLED) {
+    throw new ManualTradingError("bingx_perp_disabled", 400, "bingx_perp_disabled");
   }
 
   if (selected === "paper") {
@@ -331,6 +352,8 @@ export {
   MANUAL_TRADING_SPOT_ENABLED,
   MEXC_PERP_ENABLED,
   MEXC_SPOT_ENABLED,
+  BINGX_PERP_ENABLED,
+  BINGX_SPOT_ENABLED,
   marketTimeframeToBitgetSpotGranularity,
   normalizeSpotSymbol,
   splitCanonicalSymbol

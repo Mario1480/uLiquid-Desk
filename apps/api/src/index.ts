@@ -2004,6 +2004,12 @@ const BINANCE_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
 const BINANCE_PERP_ENABLED = !["0", "false", "off", "no"].includes(
   String(process.env.BINANCE_PERP_ENABLED ?? "1").trim().toLowerCase()
 );
+const BINGX_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
+  String(process.env.BINGX_SPOT_ENABLED ?? "1").trim().toLowerCase()
+);
+const BINGX_PERP_ENABLED = !["0", "false", "off", "no"].includes(
+  String(process.env.BINGX_PERP_ENABLED ?? "1").trim().toLowerCase()
+);
 const MARKET_WS_POLL_INTERVAL_MS = Math.max(
   500,
   Number(process.env.MARKET_WS_POLL_INTERVAL_MS ?? "1000")
@@ -2197,11 +2203,23 @@ function isBinanceEnabledAtRuntime(): boolean {
   return BINANCE_SPOT_ENABLED || BINANCE_PERP_ENABLED;
 }
 
+function getBingxExchangeLabel(): string {
+  if (BINGX_SPOT_ENABLED && BINGX_PERP_ENABLED) return "BingX (Spot + USD-M Perp)";
+  if (BINGX_SPOT_ENABLED) return "BingX (Spot)";
+  if (BINGX_PERP_ENABLED) return "BingX (USD-M Perp)";
+  return "BingX (Disabled)";
+}
+
+function isBingxEnabledAtRuntime(): boolean {
+  return BINGX_SPOT_ENABLED || BINGX_PERP_ENABLED;
+}
+
 const EXCHANGE_OPTION_CATALOG = [
   { value: "bitget", label: "Bitget (Futures)" },
   { value: "hyperliquid", label: "Hyperliquid (Perps)" },
   { value: "mexc", label: getMexcExchangeLabel() },
   { value: "binance", label: getBinanceExchangeLabel() },
+  { value: "bingx", label: getBingxExchangeLabel() },
   { value: "paper", label: "Paper (Simulated Trading)" }
 ] as const;
 
@@ -2216,6 +2234,9 @@ function getRuntimeEnabledExchangeValues(): Set<ExchangeOption["value"]> {
   }
   if (isBinanceEnabledAtRuntime()) {
     enabled.add("binance");
+  }
+  if (isBingxEnabledAtRuntime()) {
+    enabled.add("bingx");
   }
   return enabled;
 }
@@ -7078,7 +7099,7 @@ async function runExchangeAutoSyncCycle() {
     const accounts: ExchangeAccountSecrets[] = await db.exchangeAccount.findMany({
       where: {
         exchange: {
-          in: ["bitget", "hyperliquid", "mexc", "binance"]
+          in: ["bitget", "hyperliquid", "mexc", "binance", "bingx"]
         }
       },
       select: {
@@ -11951,6 +11972,7 @@ registerExchangeAccountRoutes(app, {
   normalizeExchangeValue,
   isMexcEnabledAtRuntime,
   isBinanceEnabledAtRuntime,
+  isBingxEnabledAtRuntime,
   getAllowedExchangeValues,
   listPaperMarketDataAccountIds,
   setPaperMarketDataAccountId,
@@ -12708,7 +12730,7 @@ async function handleMarketWsConnection(
         });
 
         unsubs.push(
-          context.adapter.onTicker((payload) => {
+          context.adapter.onTicker?.((payload) => {
             const row = coerceFirstItem(extractWsDataArray(payload));
             const normalized = normalizeTickerPayload(row);
             wsSend(socket, {
@@ -12719,10 +12741,10 @@ async function handleMarketWsConnection(
                 symbol
               }
             });
-          })
+          }) ?? (() => undefined)
         );
         unsubs.push(
-          context.adapter.onDepth((payload) => {
+          context.adapter.onDepth?.((payload) => {
             const row = coerceFirstItem(extractWsDataArray(payload));
             const normalized = normalizeOrderBookPayload(row);
             wsSend(socket, {
@@ -12730,7 +12752,7 @@ async function handleMarketWsConnection(
               symbol,
               data: normalized
             });
-          })
+          }) ?? (() => undefined)
         );
         unsubs.push(
           (context.adapter as any).onTrades((payload: unknown) => {
@@ -12748,10 +12770,10 @@ async function handleMarketWsConnection(
         );
 
         await Promise.all([
-          context.adapter.subscribeTicker(symbol),
-          context.adapter.subscribeDepth(symbol),
-          (context.adapter as any).subscribeTrades(symbol)
-        ]);
+          context.adapter.subscribeTicker?.(symbol),
+          context.adapter.subscribeDepth?.(symbol),
+          (context.adapter as any).subscribeTrades?.(symbol)
+        ].filter(Boolean));
 
         const exchangeSymbol = await context.adapter.toExchangeSymbol(symbol);
 
@@ -13015,28 +13037,28 @@ async function handleUserWsConnection(
 
         if (!paperMode) {
           unsubs.push(
-            context.adapter.onFill((event) => {
+            context.adapter.onFill?.((event) => {
               wsSend(socket, {
                 type: "fill",
                 data: event
               });
-            })
+            }) ?? (() => undefined)
           );
           unsubs.push(
-            context.adapter.onOrderUpdate((event) => {
+            context.adapter.onOrderUpdate?.((event) => {
               wsSend(socket, {
                 type: "order",
                 data: event
               });
-            })
+            }) ?? (() => undefined)
           );
           unsubs.push(
-            context.adapter.onPositionUpdate((event) => {
+            context.adapter.onPositionUpdate?.((event) => {
               wsSend(socket, {
                 type: "position",
                 data: event
               });
-            })
+            }) ?? (() => undefined)
           );
         }
 

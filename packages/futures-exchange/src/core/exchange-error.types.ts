@@ -1,4 +1,4 @@
-export type ExchangeId = "bitget" | "mexc" | "hyperliquid" | "paper" | "binance";
+export type ExchangeId = "bitget" | "mexc" | "hyperliquid" | "paper" | "binance" | "bingx";
 
 export type ExchangeErrorCode =
   | "EX_AUTH"
@@ -48,4 +48,3 @@ export class ExchangeError extends Error {
 export function isExchangeError(value: unknown): value is ExchangeError {
   return value instanceof ExchangeError;
 }
-

@@ -15,6 +15,9 @@ export const RUNNER_MEXC_PERP_ENABLED =
 export const RUNNER_BINANCE_PERP_ENABLED = !["0", "false", "off", "no"].includes(
   String(process.env.BINANCE_PERP_ENABLED ?? "1").trim().toLowerCase()
 );
+export const RUNNER_BINGX_PERP_ENABLED = !["0", "false", "off", "no"].includes(
+  String(process.env.BINGX_PERP_ENABLED ?? "1").trim().toLowerCase()
+);
 
 const adapterCache = new Map<string, SupportedFuturesAdapter>();
 
@@ -280,6 +283,7 @@ export function getOrCreateRunnerFuturesAdapter(
   if (exchange === "paper") return null;
   if (exchange === "mexc" && !RUNNER_MEXC_PERP_ENABLED) return null;
   if (exchange === "binance" && !RUNNER_BINANCE_PERP_ENABLED) return null;
+  if (exchange === "bingx" && !RUNNER_BINGX_PERP_ENABLED) return null;
   const cached = adapterCache.get(resolution.cacheKey);
   if (cached) return cached;
   const resolved = createResolvedFuturesAdapter(
@@ -292,7 +296,8 @@ export function getOrCreateRunnerFuturesAdapter(
     },
     {
       allowMexcPerp: RUNNER_MEXC_PERP_ENABLED,
-      allowBinancePerp: RUNNER_BINANCE_PERP_ENABLED
+      allowBinancePerp: RUNNER_BINANCE_PERP_ENABLED,
+      allowBingxPerp: RUNNER_BINGX_PERP_ENABLED
     }
   );
   if (resolved.kind !== "adapter") return null;

@@ -13,6 +13,16 @@ import type {
 } from "../../lib/wallet/types";
 import { TARGET_CHAIN_ID } from "../../lib/web3/config";
 
+type FundingVaultOverview = {
+  fundingVault?: {
+    onchainAddress: string | null;
+    availableBalance: number;
+    reservedBalance: number;
+    status: string;
+  } | null;
+  ready?: boolean;
+};
+
 function DashboardWalletSkeleton() {
   return (
     <div className="card dashboardInsightCard dashboardWalletCard" aria-hidden="true">
@@ -57,6 +67,14 @@ export default function DashboardWalletCard() {
     queryFn: () => apiGet<AgentWalletSummaryResponse>("/agent-wallet")
   });
 
+  const fundingVaultQuery = useQuery({
+    queryKey: ["dashboard-wallet-funding-vault", address],
+    enabled: Boolean(isConnected && address),
+    queryFn: () => apiGet<FundingVaultOverview>("/vaults/funding-vault"),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false
+  });
+
   if (!isConnected) return null;
 
   const walletHref = withLocalePath("/wallet", locale);
@@ -90,6 +108,18 @@ export default function DashboardWalletCard() {
   const networkReady = overview.network.chainId === TARGET_CHAIN_ID;
   const botVaultValue = formatUsd(overview.vaultSummary.totalEquityUsd);
   const agentWallet = agentWalletQuery.data ?? null;
+  const fundingVault = fundingVaultQuery.data?.fundingVault ?? null;
+  const fundingVaultAddress = fundingVault?.onchainAddress ?? null;
+  const fundingVaultBalance = fundingVaultAddress
+    ? `${formatToken(fundingVault?.availableBalance ?? null, 2)} USDC`
+    : "\u2014";
+  const fundingVaultMeta = fundingVaultQuery.isLoading
+    ? t("fundingWalletLoading")
+    : fundingVaultAddress
+      ? t("fundingWalletMeta", {
+          reserved: `${formatToken(fundingVault?.reservedBalance ?? 0, 2)} USDC`
+        })
+      : t("fundingWalletSetupRequired");
   const masterAgentStateLabel =
     agentWallet?.lowHypeState === "low"
       ? t("masterAgentLowStateLow")
@@ -140,6 +170,13 @@ export default function DashboardWalletCard() {
           <span className="dashboardWalletLabel">{t("masterVaultAvailable")}</span>
           <strong className="dashboardWalletValue">{botVaultValue}</strong>
           <span className="dashboardWalletMeta">{botVaultMeta}</span>
+        </div>
+        <div className="dashboardWalletTile">
+          <span className="dashboardWalletLabel">{t("fundingWallet")}</span>
+          <strong className="dashboardWalletValue">{fundingVaultAddress ? shortAddress(fundingVaultAddress) : "\u2014"}</strong>
+          <span className="dashboardWalletMeta">
+            {t("fundingWalletBalance", { balance: fundingVaultBalance })} · {fundingVaultMeta}
+          </span>
         </div>
         <div className="dashboardWalletTile">
           <span className="dashboardWalletLabel">{t("masterAgentWallet")}</span>

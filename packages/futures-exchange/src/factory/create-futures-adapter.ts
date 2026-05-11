@@ -1,8 +1,10 @@
 import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
 import { BinanceFuturesAdapter } from "../binance/binance.adapter.js";
+import { BingxFuturesAdapter } from "../bingx/bingx.adapter.js";
 import {
   BITGET_FUTURES_CAPABILITIES,
   BINANCE_FUTURES_CAPABILITIES,
+  BINGX_FUTURES_CAPABILITIES,
   HYPERLIQUID_FUTURES_CAPABILITIES,
   MEXC_FUTURES_CAPABILITIES,
   PAPER_FUTURES_CAPABILITIES,
@@ -21,8 +23,8 @@ import {
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 
-export type FuturesAdapterExchange = "bitget" | "hyperliquid" | "mexc" | "binance" | "paper";
-export type LiveFuturesAdapterExchange = "bitget" | "hyperliquid" | "mexc" | "binance";
+export type FuturesAdapterExchange = "bitget" | "hyperliquid" | "mexc" | "binance" | "bingx" | "paper";
+export type LiveFuturesAdapterExchange = "bitget" | "hyperliquid" | "mexc" | "binance" | "bingx";
 
 export type FuturesAdapterAccount = {
   exchange: FuturesAdapterExchange | string;
@@ -35,6 +37,7 @@ export type FuturesAdapterAccount = {
 export type CreateFuturesAdapterOptions = {
   allowMexcPerp?: boolean;
   allowBinancePerp?: boolean;
+  allowBingxPerp?: boolean;
   bitgetProductType?: string;
   bitgetMarginCoin?: string;
   hyperliquidRestBaseUrl?: string;
@@ -42,6 +45,9 @@ export type CreateFuturesAdapterOptions = {
   binanceRestBaseUrl?: string;
   binanceProductType?: string;
   binanceMarginCoin?: string;
+  bingxRestBaseUrl?: string;
+  bingxProductType?: string;
+  bingxMarginCoin?: string;
   mexcRestBaseUrl?: string;
   mexcWsUrl?: string;
   mexcProductType?: string;
@@ -51,6 +57,7 @@ export type CreateFuturesAdapterOptions = {
 export type SupportedFuturesAdapter =
   | BitgetFuturesAdapter
   | BinanceFuturesAdapter
+  | BingxFuturesAdapter
   | HyperliquidFuturesAdapter
   | MexcFuturesAdapter;
 
@@ -58,6 +65,7 @@ export type FuturesVenueResolutionCode =
   | "paper_account_requires_market_data_resolution"
   | "mexc_perp_disabled"
   | "binance_perp_disabled"
+  | "bingx_perp_disabled"
   | "unsupported_exchange";
 
 export type ResolvedAdapterFuturesVenue = {
@@ -80,9 +88,9 @@ export type ResolvedPaperFuturesVenue = {
 
 export type ResolvedBlockedFuturesVenue = {
   requestedExchange: string;
-  normalizedExchange: "mexc" | "binance";
+  normalizedExchange: "mexc" | "binance" | "bingx";
   kind: "blocked";
-  code: "mexc_perp_disabled" | "binance_perp_disabled";
+  code: "mexc_perp_disabled" | "binance_perp_disabled" | "bingx_perp_disabled";
   capabilities: FuturesVenueCapabilities;
 };
 
@@ -210,6 +218,32 @@ export function resolveFuturesVenue(
           restBaseUrl: options.binanceRestBaseUrl ?? process.env.BINANCE_PERP_BASE_URL,
           productType: options.binanceProductType ?? process.env.BINANCE_PRODUCT_TYPE ?? "USDT-FUTURES",
           marginCoin: options.binanceMarginCoin ?? process.env.BINANCE_MARGIN_COIN ?? "USDT"
+        })
+    };
+  }
+  if (exchange === "bingx") {
+    if (options.allowBingxPerp === false) {
+      return {
+        requestedExchange,
+        normalizedExchange: "bingx",
+        kind: "blocked",
+        code: "bingx_perp_disabled",
+        capabilities: BINGX_FUTURES_CAPABILITIES
+      };
+    }
+    return {
+      requestedExchange,
+      normalizedExchange: "bingx",
+      kind: "adapter",
+      code: null,
+      capabilities: BINGX_FUTURES_CAPABILITIES,
+      createAdapter: () =>
+        new BingxFuturesAdapter({
+          apiKey: account.apiKey,
+          apiSecret: account.apiSecret,
+          restBaseUrl: options.bingxRestBaseUrl ?? process.env.BINGX_REST_BASE_URL,
+          productType: options.bingxProductType ?? process.env.BINGX_PRODUCT_TYPE ?? "USDT-FUTURES",
+          marginCoin: options.bingxMarginCoin ?? process.env.BINGX_MARGIN_COIN ?? "USDT"
         })
     };
   }

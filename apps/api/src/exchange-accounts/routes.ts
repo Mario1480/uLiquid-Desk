@@ -221,6 +221,7 @@ export type RegisterExchangeAccountRoutesDeps = {
   normalizeExchangeValue(value: string): string;
   isMexcEnabledAtRuntime(): boolean;
   isBinanceEnabledAtRuntime(): boolean;
+  isBingxEnabledAtRuntime(): boolean;
   getAllowedExchangeValues(): Promise<string[]>;
   listPaperMarketDataAccountIds(exchangeAccountIds: string[]): Promise<Record<string, string | null>>;
   setPaperMarketDataAccountId(exchangeAccountId: string, marketDataExchangeAccountId: string): Promise<void>;
@@ -525,6 +526,9 @@ export function registerExchangeAccountRoutes(
     if (requestedExchange === "binance" && !deps.isBinanceEnabledAtRuntime()) {
       return res.status(403).json({ error: "exchange_disabled", code: "binance_disabled", message: "Binance integration is disabled by runtime flag." });
     }
+    if (requestedExchange === "bingx" && !deps.isBingxEnabledAtRuntime()) {
+      return res.status(403).json({ error: "exchange_disabled", code: "bingx_disabled", message: "BingX integration is disabled by runtime flag." });
+    }
     const allowedExchanges = await deps.getAllowedExchangeValues();
     if (!allowedExchanges.includes(requestedExchange)) {
       return res.status(400).json({ error: "exchange_not_allowed", allowed: allowedExchanges });
@@ -772,7 +776,7 @@ export function registerExchangeAccountRoutes(
         try {
           const summary = await deps.getPaperAccountState(resolved.selectedAccount, perpClient);
           let paperSpotBudget: Awaited<ReturnType<typeof syncExchangeAccount>>["spotBudget"] = null;
-          if (marketDataExchange === "bitget" || marketDataExchange === "binance") {
+          if (marketDataExchange === "bitget" || marketDataExchange === "binance" || marketDataExchange === "bingx") {
             try {
               const spotClient = createManualSpotClient(resolved.marketDataAccount, "/exchange-accounts/:id/test-connection");
               const spotSummary = await deps.getPaperSpotAccountState(resolved.selectedAccount, spotClient);

@@ -24,7 +24,8 @@ export class CcxtPerpAdapter implements FuturesExchange {
       exchangeId !== "mexc" &&
       exchangeId !== "hyperliquid" &&
       exchangeId !== "paper" &&
-      exchangeId !== "binance"
+      exchangeId !== "binance" &&
+      exchangeId !== "bingx"
     ) {
       throw new Error(`ccxt_perp_exchange_not_supported:${exchangeId}`);
     }

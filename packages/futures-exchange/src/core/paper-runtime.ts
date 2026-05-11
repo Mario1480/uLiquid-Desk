@@ -6,6 +6,8 @@ export type PaperRuntimePolicyFlags = {
   mexcPerpEnabled: boolean;
   binanceSpotEnabled: boolean;
   binancePerpEnabled: boolean;
+  bingxSpotEnabled: boolean;
+  bingxPerpEnabled: boolean;
 };
 
 export type PaperRuntimeContract = {
@@ -124,6 +126,9 @@ export function resolvePaperLinkedMarketDataSupport(
     if (marketDataExchange === "binance" && flags.binanceSpotEnabled) {
       return { supported: true, code: null };
     }
+    if (marketDataExchange === "bingx" && flags.bingxSpotEnabled) {
+      return { supported: true, code: null };
+    }
     if (marketDataExchange === "mexc" && flags.mexcSpotEnabled) {
       return { supported: true, code: null };
     }
@@ -137,7 +142,8 @@ export function resolvePaperLinkedMarketDataSupport(
     marketDataExchange === "bitget" ||
     marketDataExchange === "hyperliquid" ||
     (marketDataExchange === "mexc" && flags.mexcPerpEnabled) ||
-    (marketDataExchange === "binance" && flags.binancePerpEnabled)
+    (marketDataExchange === "binance" && flags.binancePerpEnabled) ||
+    (marketDataExchange === "bingx" && flags.bingxPerpEnabled)
   ) {
     return { supported: true, code: null };
   }
@@ -159,7 +165,9 @@ export function readPaperRuntimePolicyFlagsFromEnv(): PaperRuntimePolicyFlags {
     mexcSpotEnabled: readBoolEnv("MEXC_SPOT_ENABLED", true),
     mexcPerpEnabled: readBoolEnv("MEXC_PERP_ENABLED", mexcFuturesEnabledLegacy),
     binanceSpotEnabled: readBoolEnv("BINANCE_SPOT_ENABLED", true),
-    binancePerpEnabled: readBoolEnv("BINANCE_PERP_ENABLED", true)
+    binancePerpEnabled: readBoolEnv("BINANCE_PERP_ENABLED", true),
+    bingxSpotEnabled: readBoolEnv("BINGX_SPOT_ENABLED", true),
+    bingxPerpEnabled: readBoolEnv("BINGX_PERP_ENABLED", true)
   };
 }
 

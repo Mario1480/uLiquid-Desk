@@ -34,6 +34,7 @@ const MEXC_PERP_ENABLED = envEnabled(
   MEXC_FUTURES_ENABLED_LEGACY
 );
 const BINANCE_PERP_ENABLED = envEnabled("BINANCE_PERP_ENABLED", true);
+const BINGX_PERP_ENABLED = envEnabled("BINGX_PERP_ENABLED", true);
 
 function resolvePerpVenueForAccount(account: TradingAccount): ResolvedPerpVenue {
   return resolveFuturesVenue(
@@ -46,7 +47,8 @@ function resolvePerpVenueForAccount(account: TradingAccount): ResolvedPerpVenue 
     },
     {
       allowMexcPerp: MEXC_PERP_ENABLED,
-      allowBinancePerp: BINANCE_PERP_ENABLED
+      allowBinancePerp: BINANCE_PERP_ENABLED,
+      allowBingxPerp: BINGX_PERP_ENABLED
     }
   );
 }
@@ -726,18 +728,18 @@ export class PerpExchangeBridge implements ExchangeClient, ExchangeStream {
 
   async subscribeMarket(symbol: string) {
     await Promise.all([
-      this.adapter.subscribeTicker(symbol),
-      this.adapter.subscribeDepth(symbol),
-      (this.adapter as any).subscribeTrades(symbol)
-    ]);
+      this.adapter.subscribeTicker?.(symbol),
+      this.adapter.subscribeDepth?.(symbol),
+      (this.adapter as any).subscribeTrades?.(symbol)
+    ].filter(Boolean));
   }
 
   onTicker(callback: (payload: unknown) => void) {
-    return this.adapter.onTicker(callback as any);
+    return this.adapter.onTicker?.(callback as any) ?? (() => undefined);
   }
 
   onDepth(callback: (payload: unknown) => void) {
-    return this.adapter.onDepth(callback as any);
+    return this.adapter.onDepth?.(callback as any) ?? (() => undefined);
   }
 
   onTrades(callback: (payload: unknown) => void) {
@@ -745,15 +747,15 @@ export class PerpExchangeBridge implements ExchangeClient, ExchangeStream {
   }
 
   onOrderUpdate(callback: (payload: unknown) => void) {
-    return this.adapter.onOrderUpdate(callback as any);
+    return this.adapter.onOrderUpdate?.(callback as any) ?? (() => undefined);
   }
 
   onPositionUpdate(callback: (payload: unknown) => void) {
-    return this.adapter.onPositionUpdate(callback as any);
+    return this.adapter.onPositionUpdate?.(callback as any) ?? (() => undefined);
   }
 
   onFill(callback: (payload: unknown) => void) {
-    return this.adapter.onFill(callback as any);
+    return this.adapter.onFill?.(callback as any) ?? (() => undefined);
   }
 
   async close() {
@@ -1132,6 +1134,7 @@ export async function resolveTradingAccount(userId: string, exchangeAccountId?: 
     exchange !== "hyperliquid" &&
     exchange !== "mexc" &&
     exchange !== "binance" &&
+    exchange !== "bingx" &&
     !isPaperExchange(exchange)
   ) {
     throw new ManualTradingError(`exchange_not_supported:${exchange}`, 400, "exchange_not_supported");
@@ -1258,7 +1261,8 @@ export function createFuturesAdapter(account: TradingAccount): PerpExecutionAdap
     },
     {
       allowMexcPerp: MEXC_PERP_ENABLED,
-      allowBinancePerp: BINANCE_PERP_ENABLED
+      allowBinancePerp: BINANCE_PERP_ENABLED,
+      allowBingxPerp: BINGX_PERP_ENABLED
     }
   );
 
@@ -3108,6 +3112,7 @@ export async function placePaperSpotOrder(
     side: "buy" | "sell";
     type: "market" | "limit";
     qty: number;
+    quoteQty?: number;
     price?: number;
   }
 ): Promise<{ orderId: string }> {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
 import { BinanceFuturesAdapter } from "../binance/binance.adapter.js";
+import { BingxFuturesAdapter } from "../bingx/bingx.adapter.js";
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 import {
@@ -39,11 +40,15 @@ test("createFuturesAdapter creates adapter by exchange", async () => {
   const binance = createFuturesAdapter({ exchange: "binance", ...credentials });
   assert.equal(binance instanceof BinanceFuturesAdapter, true);
 
+  const bingx = createFuturesAdapter({ exchange: "bingx", ...credentials });
+  assert.equal(bingx instanceof BingxFuturesAdapter, true);
+
   await Promise.all([
     bitget.close(),
     hyper.close(),
     mexc.close(),
-    binance.close()
+    binance.close(),
+    bingx.close()
   ]);
 });
 
@@ -67,9 +72,17 @@ test("createFuturesAdapter enforces exchange policy flags", async () => {
       error instanceof FuturesAdapterFactoryError && error.code === "binance_perp_disabled"
   );
 
+  assert.throws(
+    () => createFuturesAdapter({ exchange: "bingx", ...credentials }, { allowBingxPerp: false }),
+    (error: unknown) =>
+      error instanceof FuturesAdapterFactoryError && error.code === "bingx_perp_disabled"
+  );
+
   const binance = createFuturesAdapter({ exchange: "binance", ...credentials });
   assert.equal(binance instanceof BinanceFuturesAdapter, true);
-  await binance.close();
+  const bingx = createFuturesAdapter({ exchange: "bingx", ...credentials });
+  assert.equal(bingx instanceof BingxFuturesAdapter, true);
+  await Promise.all([binance.close(), bingx.close()]);
 });
 
 test("createResolvedFuturesAdapter exposes paper/runtime resolution without throwing", async () => {
@@ -108,6 +121,14 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   assert.equal(binance.capabilities.supportsPerpExecution, true);
   assert.equal(binance.capabilities.supportsGridExecution, true);
   assert.equal(binance.capabilities.supportsOrderEditing, true);
+
+  const bingx = resolveFuturesVenue({ exchange: "bingx", ...credentials });
+  assert.equal(bingx.kind, "adapter");
+  assert.equal(bingx.code, null);
+  assert.equal(bingx.capabilities.supportsPerpMarketData, true);
+  assert.equal(bingx.capabilities.supportsPerpExecution, true);
+  assert.equal(bingx.capabilities.supportsGridExecution, true);
+  assert.equal(bingx.capabilities.supportsOrderEditing, false);
 
   const mexcBlocked = resolveFuturesVenue(
     { exchange: "mexc", ...credentials },
@@ -197,6 +218,15 @@ test("futures venue capability registry exposes enforceable feature support by v
   assert.equal(binance.supportsLeverage, true);
   assert.equal(binance.supportsMarginModeControl, true);
   assert.equal(binance.supportsOrderEditing, true);
+
+  const bingx = getFuturesVenueCapabilities("bingx");
+  assert.equal(bingx.connectorKind, "live_adapter");
+  assert.equal(bingx.adapterFactoryAvailable, true);
+  assert.equal(bingx.supportsPerpExecution, true);
+  assert.equal(bingx.supportsLeverage, true);
+  assert.equal(bingx.supportsMarginModeControl, true);
+  assert.equal(bingx.supportsOrderEditing, false);
+  assert.equal(bingx.supportsPositionTpSl, true);
 });
 
 test("futures venue capability validation blocks high-risk mismatches per venue", () => {
@@ -214,6 +244,12 @@ test("futures venue capability validation blocks high-risk mismatches per venue"
     [{ feature: "perp_execution" }]
   );
   assert.equal(binance.ok, true);
+
+  const bingx = validateFuturesVenueRequirements(
+    getFuturesVenueCapabilities("bingx"),
+    [{ feature: "position_tpsl" }, { feature: "position_close" }]
+  );
+  assert.equal(bingx.ok, true);
 
   const bitget = validateFuturesVenueRequirements(
     getFuturesVenueCapabilities("bitget"),

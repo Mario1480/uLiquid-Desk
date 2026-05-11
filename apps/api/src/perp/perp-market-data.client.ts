@@ -1,5 +1,6 @@
 import {
   type BinanceFuturesAdapter,
+  type BingxFuturesAdapter,
   type BitgetFuturesAdapter,
   createResolvedFuturesAdapter,
   type HyperliquidFuturesAdapter,
@@ -11,7 +12,7 @@ import {
   type TradingAccount
 } from "../trading.js";
 
-type SupportedFuturesAdapter = BinanceFuturesAdapter | BitgetFuturesAdapter | HyperliquidFuturesAdapter | MexcFuturesAdapter;
+type SupportedFuturesAdapter = BinanceFuturesAdapter | BingxFuturesAdapter | BitgetFuturesAdapter | HyperliquidFuturesAdapter | MexcFuturesAdapter;
 
 type PerpSymbolItem = {
   symbol: string;

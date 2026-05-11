@@ -284,7 +284,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
         try {
           const resolved = await deps.resolveMarketDataTradingAccount(user.id, paperAccountId);
           const marketDataExchange = deps.normalizeExchangeValue(resolved.marketDataAccount.exchange);
-          if (marketDataExchange !== "bitget" && marketDataExchange !== "binance") return;
+          if (marketDataExchange !== "bitget" && marketDataExchange !== "binance" && marketDataExchange !== "bingx") return;
           const spotClient = deps.createManualSpotClient(resolved.marketDataAccount, "dashboard/exchange-overview");
           const spotSummary = await deps.getPaperSpotAccountState(resolved.selectedAccount, spotClient);
           paperSpotBudgetByAccount.set(paperAccountId, {

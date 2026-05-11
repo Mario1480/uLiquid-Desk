@@ -207,6 +207,32 @@ export const BINANCE_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
 
 export const BINANCE_MARKET_DATA_CAPABILITIES = BINANCE_FUTURES_CAPABILITIES;
 
+export const BINGX_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
+  venue: "bingx",
+  connectorKind: "live_adapter",
+  adapterFactoryAvailable: true,
+  supportsPerpMarketData: true,
+  supportsPerpExecution: true,
+  requiresLinkedMarketData: false,
+  supportedOrderTypes: ORDER_TYPES_MARKET_AND_LIMIT,
+  supportsReduceOnly: true,
+  supportedPositionModes: POSITION_MODE_ONE_WAY_AND_HEDGE,
+  supportedMarginModes: CROSS_AND_ISOLATED,
+  supportsLeverage: true,
+  supportsMarginModeControl: true,
+  supportsOrderEditing: false,
+  supportsPositionTpSl: true,
+  supportsPositionClose: true,
+  supportsPositionReads: true,
+  supportsBalanceReads: true,
+  supportsTransfers: false,
+  supportsFundingSync: true,
+  supportsGridExecution: true,
+  supportsVaultExecution: false
+};
+
+export const BINGX_MARKET_DATA_CAPABILITIES = BINGX_FUTURES_CAPABILITIES;
+
 export const UNKNOWN_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "unknown",
   connectorKind: "unsupported",
@@ -238,6 +264,7 @@ export function getFuturesVenueCapabilities(exchange: string | null | undefined)
   if (normalized === "mexc") return MEXC_FUTURES_CAPABILITIES;
   if (normalized === "paper") return PAPER_FUTURES_CAPABILITIES;
   if (normalized === "binance") return BINANCE_FUTURES_CAPABILITIES;
+  if (normalized === "bingx") return BINGX_FUTURES_CAPABILITIES;
   return UNKNOWN_FUTURES_CAPABILITIES;
 }
 

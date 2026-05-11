@@ -3,6 +3,8 @@ import test from "node:test";
 
 process.env.BINANCE_SPOT_ENABLED = "1";
 process.env.BINANCE_PERP_ENABLED = "1";
+process.env.BINGX_SPOT_ENABLED = "1";
+process.env.BINGX_PERP_ENABLED = "1";
 
 const {
   ensureManualPerpEligibility,
@@ -82,4 +84,21 @@ test("manual eligibility accepts direct Binance spot and perp accounts", () => {
   };
   assert.doesNotThrow(() => ensureManualSpotEligibility(resolved));
   assert.doesNotThrow(() => ensureManualPerpEligibility(resolved));
+});
+
+test("manual support includes direct BingX spot and perp accounts", () => {
+  assert.equal(
+    resolveManualSpotSupport({
+      exchange: "bingx",
+      marketDataExchange: "bingx"
+    }),
+    true
+  );
+  assert.equal(
+    resolveManualPerpSupport({
+      exchange: "bingx",
+      marketDataExchange: "bingx"
+    }),
+    true
+  );
 });

@@ -83,6 +83,7 @@ test("paper exchange account creation is denied when paper trading gate is disab
     normalizeExchangeValue: (value: string) => value.trim().toLowerCase(),
     isMexcEnabledAtRuntime: () => true,
     isBinanceEnabledAtRuntime: () => true,
+    isBingxEnabledAtRuntime: () => true,
     getAllowedExchangeValues: async () => ["paper", "bitget"],
     resolvePlanCapabilitiesForUserId: async () => ({
       plan: "free",
@@ -136,6 +137,7 @@ test("hyperliquid exchange account creation starts credential rotation timer", a
     normalizeExchangeValue: (value: string) => value.trim().toLowerCase(),
     isMexcEnabledAtRuntime: () => true,
     isBinanceEnabledAtRuntime: () => true,
+    isBingxEnabledAtRuntime: () => true,
     getAllowedExchangeValues: async () => ["hyperliquid", "paper", "bitget"],
     resolvePlanCapabilitiesForUserId: async () => ({ plan: "pro", capabilities: { "product.paper_trading": true } }),
     isCapabilityAllowed: () => true,

@@ -20,6 +20,7 @@ It is intentionally operational rather than marketing-oriented: the goal is to s
 | MEXC | `adapter` or `blocked` | yes | yes | no | yes | yes | Perp enablement still policy-gated in some environments |
 | Paper | `paper` | yes (via linked venue) | simulated | yes | yes | yes | First-class product path, but still being hardened into a normal connector |
 | Binance | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Futures connector; writes remain kill-switch gated during rollout |
+| BingX | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Perp connector; REST-only v1, perp writes kill-switch gated by default |
 
 ## Shared capability intent
 
@@ -74,5 +75,5 @@ The central runtime registry and validation helpers now live in:
 ## Current gaps to keep visible
 
 - Paper still does not exist as a full normalized adapter implementation.
-- Hyperliquid and MEXC need continued parity review against Bitget-level expectations.
+- Hyperliquid, MEXC, Binance and BingX need continued parity review against Bitget-level expectations.
 - Some product policies still exist above the adapter boundary in API/runner orchestration and need further consolidation.

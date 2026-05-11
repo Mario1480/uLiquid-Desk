@@ -12,7 +12,9 @@ const baseFlags: PaperPolicyFlags = {
   mexcSpotEnabled: true,
   mexcPerpEnabled: false,
   binanceSpotEnabled: false,
-  binancePerpEnabled: false
+  binancePerpEnabled: false,
+  bingxSpotEnabled: false,
+  bingxPerpEnabled: false
 };
 
 test("paper spot supports bitget market data by default", () => {
@@ -48,9 +50,15 @@ test("paper spot gates binance market data behind spot flag", () => {
     { ...baseFlags, binanceSpotEnabled: true }
   );
   assert.deepEqual(allowed, { supported: true, code: null });
+
+  const bingxAllowed = resolvePaperLinkedMarketDataSupport(
+    { marketType: "spot", marketDataExchange: "bingx" },
+    { ...baseFlags, bingxSpotEnabled: true }
+  );
+  assert.deepEqual(bingxAllowed, { supported: true, code: null });
 });
 
-test("paper perp supports hyperliquid and gates mexc or binance by flags", () => {
+test("paper perp supports hyperliquid and gates mexc, binance or bingx by flags", () => {
   const hyperliquid = resolvePaperLinkedMarketDataSupport(
     { marketType: "perp", marketDataExchange: "hyperliquid" },
     baseFlags
@@ -71,6 +79,12 @@ test("paper perp supports hyperliquid and gates mexc or binance by flags", () =>
     { ...baseFlags, mexcPerpEnabled: true }
   );
   assert.deepEqual(mexcAllowed, { supported: true, code: null });
+
+  const bingxAllowed = resolvePaperLinkedMarketDataSupport(
+    { marketType: "perp", marketDataExchange: "bingx" },
+    { ...baseFlags, bingxPerpEnabled: true }
+  );
+  assert.deepEqual(bingxAllowed, { supported: true, code: null });
 });
 
 test("paper policy rejects unsupported linked exchanges with stable manual trading code", () => {

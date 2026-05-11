@@ -1,4 +1,4 @@
-import { BinanceRestClient, CcxtSpotClient, CcxtSpotError, precisionToStep, toApiSymbol } from "@mm/exchange";
+import { BinanceRestClient, BingxRestClient, CcxtSpotClient, CcxtSpotError, precisionToStep, toApiSymbol } from "@mm/exchange";
 import { logger } from "../logger.js";
 import type { NormalizedOrder, TradingAccount } from "../trading.js";
 import { ManualTradingError } from "../trading.js";
@@ -56,8 +56,8 @@ export type SpotClient = {
   }>>;
   getSummary(preferredCurrency?: string): Promise<{ equity: number | null; available: number | null; currency: string }>;
   getOpenOrders(symbol?: string): Promise<NormalizedOrder[]>;
-  placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }>;
-  editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }>;
+  placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }): Promise<{ orderId: string }>;
+  editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }): Promise<{ orderId: string }>;
   cancelOrder(symbol: string, orderId: string): Promise<void>;
   cancelAll(symbol?: string): Promise<{ requested: number; cancelled: number; failed: number }>;
   getLastPrice(symbol: string): Promise<number | null>;
@@ -121,7 +121,7 @@ function resolveBackend(exchange: string, forced?: SpotBackend): SpotBackend {
   if (forced) return forced;
   const normalized = String(exchange ?? "").trim().toLowerCase();
   const configured = CEX_SPOT_BACKEND_OVERRIDES[normalized] ?? CEX_SPOT_DEFAULT_BACKEND;
-  if (configured === "native" && normalized !== "bitget" && normalized !== "hyperliquid" && normalized !== "binance") {
+  if (configured === "native" && normalized !== "bitget" && normalized !== "hyperliquid" && normalized !== "binance" && normalized !== "bingx") {
     return "ccxt";
   }
   return configured;
@@ -314,14 +314,15 @@ class CcxtSpotBridge implements SpotClient {
     }
   }
 
-  async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }> {
+  async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }): Promise<{ orderId: string }> {
     try {
       const placed = await this.client.placeOrder({
         symbol: toCanonicalSymbol(input.symbol),
         side: input.side,
         type: input.type,
         qty: input.qty,
-        price: input.price
+        price: input.price,
+        quoteQty: input.quoteQty
       });
       return { orderId: placed.id };
     } catch (error) {
@@ -329,7 +330,7 @@ class CcxtSpotBridge implements SpotClient {
     }
   }
 
-  async editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }> {
+  async editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }): Promise<{ orderId: string }> {
     await this.cancelOrder(input.symbol, input.orderId);
     return this.placeOrder(input);
   }
@@ -390,12 +391,12 @@ class GuardedSpotClient implements SpotClient {
   getOpenOrders(symbol?: string) { return this.delegate.getOpenOrders(symbol); }
   getLastPrice(symbol: string) { return this.delegate.getLastPrice(symbol); }
 
-  async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }) {
+  async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }) {
     this.assertWriteEnabled();
     return this.delegate.placeOrder(input);
   }
 
-  async editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }) {
+  async editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }) {
     this.assertWriteEnabled();
     return this.delegate.editOrder(input);
   }
@@ -459,11 +460,11 @@ class NativeBitgetSpotBridge implements SpotClient {
     return this.delegate.getOpenOrders(symbol);
   }
 
-  placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }) {
+  placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }) {
     return this.delegate.placeOrder(input);
   }
 
-  editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }) {
+  editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }) {
     return this.delegate.editOrder(input);
   }
 
@@ -480,8 +481,8 @@ class NativeBitgetSpotBridge implements SpotClient {
   }
 }
 
-class NativeBinanceSpotBridge implements SpotClient {
-  constructor(private readonly delegate: BinanceRestClient) {}
+class NativeSignedRestSpotBridge implements SpotClient {
+  constructor(private readonly delegate: BinanceRestClient | BingxRestClient) {}
 
   getBackendTag(): "native" | "ccxt" {
     return "native";
@@ -551,18 +552,19 @@ class NativeBinanceSpotBridge implements SpotClient {
     }));
   }
 
-  async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }> {
+  async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }): Promise<{ orderId: string }> {
     const placed = await this.delegate.placeOrder({
       symbol: normalizeSpotSymbol(input.symbol),
       side: input.side,
       type: input.type,
       qty: input.qty,
-      price: input.price
+      price: input.price,
+      quoteQty: input.quoteQty
     });
     return { orderId: placed.id };
   }
 
-  async editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }> {
+  async editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number; quoteQty?: number }): Promise<{ orderId: string }> {
     await this.cancelOrder(input.symbol, input.orderId);
     return this.placeOrder(input);
   }
@@ -615,7 +617,16 @@ function createNativeBinanceSpotClient(account: TradingAccount): SpotClient {
     account.apiKey,
     account.apiSecret
   );
-  return new NativeBinanceSpotBridge(delegate);
+  return new NativeSignedRestSpotBridge(delegate);
+}
+
+function createNativeBingxSpotClient(account: TradingAccount): SpotClient {
+  const delegate = new BingxRestClient(
+    (process.env.BINGX_REST_BASE_URL ?? "https://open-api.bingx.com").replace(/\/+$/, ""),
+    account.apiKey,
+    account.apiSecret
+  );
+  return new NativeSignedRestSpotBridge(delegate);
 }
 
 function createNativeHyperliquidSpotClient(account: TradingAccount): SpotClient {
@@ -718,13 +729,18 @@ export function createSpotClient(account: TradingAccount, options: CreateSpotCli
       emitSelection("native", false);
       return new GuardedSpotClient(client, exchange, writeEnabled);
     }
+    if (exchange === "bingx") {
+      const client = createNativeBingxSpotClient(account);
+      emitSelection("native", false);
+      return new GuardedSpotClient(client, exchange, writeEnabled);
+    }
     throw new ManualTradingError(
       `spot_native_backend_not_supported:${exchange}`,
       400,
       "spot_native_backend_not_supported"
     );
   } catch (error) {
-    if (backend === "ccxt" && (exchange === "bitget" || exchange === "hyperliquid" || exchange === "binance")) {
+    if (backend === "ccxt" && (exchange === "bitget" || exchange === "hyperliquid" || exchange === "binance" || exchange === "bingx")) {
       logger.warn("spot_client_backend_fallback_native", {
         exchange,
         endpoint: options.endpoint ?? null,
@@ -735,7 +751,9 @@ export function createSpotClient(account: TradingAccount, options: CreateSpotCli
           ? createNativeBitgetSpotClient(account)
           : exchange === "hyperliquid"
             ? createNativeHyperliquidSpotClient(account)
-            : createNativeBinanceSpotClient(account);
+            : exchange === "binance"
+              ? createNativeBinanceSpotClient(account)
+              : createNativeBingxSpotClient(account);
       emitSelection("native", true);
       return new GuardedSpotClient(client, exchange, writeEnabled);
     }

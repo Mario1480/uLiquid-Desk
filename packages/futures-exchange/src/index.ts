@@ -18,4 +18,7 @@ export * from "./mexc/mexc-error.mapper.js";
 export * from "./binance/binance.adapter.js";
 export * from "./binance/binance-error.mapper.js";
 export * from "./binance/binance.signing.js";
+export * from "./bingx/bingx.adapter.js";
+export * from "./bingx/bingx-error.mapper.js";
+export * from "./bingx/bingx.signing.js";
 export * from "./ccxt/ccxt.perp.adapter.js";

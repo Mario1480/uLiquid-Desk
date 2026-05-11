@@ -28,12 +28,18 @@ Coverage:
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/retry-policy.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bitget/bitget-error.mapper.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/mexc/mexc-error.mapper.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/binance/binance-error.mapper.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bingx/bingx.signing.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bingx/bingx-error.mapper.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bingx/bingx.adapter.test.ts`
 
 Venues covered:
 
 - Bitget
 - Hyperliquid
 - MEXC
+- Binance
+- BingX
 - Paper (resolution/capability semantics)
 
 ## 2. API execution and Paper behavior
@@ -89,7 +95,7 @@ Coverage:
 
 ## 5. What this matrix is supposed to catch
 
-- venue resolution drift between Bitget, Hyperliquid, MEXC, and Paper
+- venue resolution drift between Bitget, Hyperliquid, MEXC, Binance, BingX, and Paper
 - exchange error mapping regressions
 - retry policy changes that alter live behavior
 - Paper execution-context regressions
@@ -108,7 +114,7 @@ Coverage:
 The following still need wider coverage over time:
 
 - broader manual trading desk flows
-- more detailed Hyperliquid and MEXC adapter parity tests
+- more detailed Hyperliquid, MEXC, Binance and BingX adapter parity tests
 - deeper Paper fill/PnL/funding semantics
 - more Grid venue-constraint edge cases
 - full Grid route/integration flows with a live or mocked Python planner process

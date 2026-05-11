@@ -35,6 +35,7 @@ import {
   fetchBinancePerpMarkPrice,
   getOrCreateRunnerFuturesAdapter,
   readMarkPriceFromAdapter,
+  RUNNER_BINGX_PERP_ENABLED,
   RUNNER_BINANCE_PERP_ENABLED,
   RUNNER_MEXC_PERP_ENABLED
 } from "./execution/futuresVenueRuntime.js";
@@ -61,7 +62,7 @@ export type PredictionCopierSide = "long" | "short";
 
 export type PredictionCopierConfig = {
   botType: "prediction_copier";
-  exchange: "bitget" | "hyperliquid" | "mexc" | "binance" | "paper";
+  exchange: "bitget" | "hyperliquid" | "mexc" | "binance" | "bingx" | "paper";
   accountId: string;
   sourceStateId: string | null;
   sourceSnapshot: {
@@ -291,11 +292,12 @@ function normalizeTimeframe(value: unknown): PredictionCopierTimeframe {
   return "15m";
 }
 
-function normalizeExecutionExchange(value: unknown): "bitget" | "hyperliquid" | "mexc" | "binance" | "paper" {
+function normalizeExecutionExchange(value: unknown): "bitget" | "hyperliquid" | "mexc" | "binance" | "bingx" | "paper" {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "hyperliquid") return "hyperliquid";
   if (normalized === "mexc") return "mexc";
   if (normalized === "binance") return "binance";
+  if (normalized === "bingx") return "bingx";
   return normalized === "paper" ? "paper" : "bitget";
 }
 
@@ -821,7 +823,7 @@ export type PredictionCopierPreparedTick =
       now: Date;
       symbol: string;
       config: PredictionCopierConfig;
-      executionExchange: "bitget" | "hyperliquid" | "mexc" | "binance" | "paper";
+      executionExchange: "bitget" | "hyperliquid" | "mexc" | "binance" | "bingx" | "paper";
       paperContext: RunnerPaperExecutionContext | null;
       adapter: SupportedFuturesAdapter | null;
       tradeState: BotTradeState;
@@ -880,12 +882,14 @@ export async function preparePredictionCopierTick(
     executionExchange === "hyperliquid" ||
     executionExchange === "mexc" ||
     executionExchange === "binance" ||
+    executionExchange === "bingx" ||
     executionExchange === "paper";
   const marketDataSupported =
     marketDataExchange === "bitget" ||
     marketDataExchange === "hyperliquid" ||
     marketDataExchange === "mexc" ||
-    marketDataExchange === "binance";
+    marketDataExchange === "binance" ||
+    marketDataExchange === "bingx";
   if (!executionSupported || !marketDataSupported) {
     return {
       kind: "blocked",
@@ -912,6 +916,16 @@ export async function preparePredictionCopierTick(
       result: createBlockedPredictionCopierTick({
         config,
         reason: "binance_perp_disabled"
+      })
+    };
+  }
+
+  if (!RUNNER_BINGX_PERP_ENABLED && (executionExchange === "bingx" || marketDataExchange === "bingx")) {
+    return {
+      kind: "blocked",
+      result: createBlockedPredictionCopierTick({
+        config,
+        reason: "bingx_perp_disabled"
       })
     };
   }
@@ -1243,7 +1257,7 @@ export async function preparePredictionCopierTick(
     now,
     symbol,
     config,
-    executionExchange: executionExchange as "bitget" | "hyperliquid" | "mexc" | "binance" | "paper",
+    executionExchange: executionExchange as "bitget" | "hyperliquid" | "mexc" | "binance" | "bingx" | "paper",
     paperContext,
     adapter,
     tradeState,

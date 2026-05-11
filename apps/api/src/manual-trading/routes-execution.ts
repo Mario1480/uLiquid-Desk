@@ -44,6 +44,7 @@ const placeOrderSchema = z.object({
   type: z.enum(["market", "limit"]),
   side: z.enum(["long", "short", "buy", "sell"]),
   qty: z.number().positive(),
+  quoteQty: z.number().positive().optional(),
   price: z.number().positive().optional(),
   takeProfitPrice: z.number().positive().optional(),
   stopLossPrice: z.number().positive().optional(),
@@ -159,6 +160,7 @@ export type RegisterManualTradingExecutionRoutesDeps = {
       side: "buy" | "sell";
       type: "market" | "limit";
       qty: number;
+      quoteQty?: number;
       price?: number;
     }
   ): Promise<{ orderId: string }>;
@@ -398,6 +400,7 @@ export function registerManualTradingExecutionRoutes(
             side,
             type: parsed.data.type,
             qty: parsed.data.qty,
+            quoteQty: parsed.data.quoteQty,
             price: parsed.data.price
           });
           return res.status(201).json({
@@ -413,6 +416,7 @@ export function registerManualTradingExecutionRoutes(
           side,
           type: parsed.data.type,
           qty: parsed.data.qty,
+          quoteQty: parsed.data.quoteQty,
           price: parsed.data.price
         });
         return res.status(201).json({

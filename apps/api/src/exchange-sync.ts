@@ -1,13 +1,14 @@
 import {
   buildHyperliquidReadKey,
   BinanceFuturesAdapter,
+  BingxFuturesAdapter,
   createResolvedFuturesAdapter,
   executeHyperliquidRead,
   FuturesAdapterFactoryError,
   HyperliquidFuturesAdapter,
   MexcFuturesAdapter
 } from "@mm/futures-exchange";
-import { BinanceRestClient, CcxtSpotClient, CcxtSpotError } from "@mm/exchange";
+import { BinanceRestClient, BingxRestClient, CcxtSpotClient, CcxtSpotError } from "@mm/exchange";
 import {
   BitgetHttpError,
   requestBitgetApi,
@@ -97,14 +98,17 @@ const MEXC_PERP_ENABLED = envEnabled(
 );
 const BINANCE_SPOT_ENABLED = envEnabled("BINANCE_SPOT_ENABLED", true);
 const BINANCE_PERP_ENABLED = envEnabled("BINANCE_PERP_ENABLED", true);
+const BINGX_SPOT_ENABLED = envEnabled("BINGX_SPOT_ENABLED", true);
+const BINGX_PERP_ENABLED = envEnabled("BINGX_PERP_ENABLED", true);
 
-type SyncExchange = "bitget" | "mexc" | "hyperliquid" | "binance";
+type SyncExchange = "bitget" | "mexc" | "hyperliquid" | "binance" | "bingx";
 type SyncErrorKind = "auth_failed" | "rate_limited" | "timeout" | "network_error" | "sync_failed";
 
 function exchangeLabel(exchange: SyncExchange): string {
   if (exchange === "mexc") return "MEXC";
   if (exchange === "bitget") return "Bitget";
   if (exchange === "hyperliquid") return "Hyperliquid";
+  if (exchange === "bingx") return "BingX";
   return "Binance";
 }
 
@@ -336,7 +340,11 @@ async function readHyperliquidSyncSnapshot(params: {
             apiSecret: params.apiSecret?.trim() || "",
             passphrase: params.passphrase?.trim() || undefined
           },
-          { allowBinancePerp: BINANCE_PERP_ENABLED, allowMexcPerp: MEXC_PERP_ENABLED }
+          {
+            allowBinancePerp: BINANCE_PERP_ENABLED,
+            allowBingxPerp: BINGX_PERP_ENABLED,
+            allowMexcPerp: MEXC_PERP_ENABLED
+          }
         );
         if (resolved.kind !== "adapter") {
           throw new ExchangeSyncError("Hyperliquid sync is unavailable for this venue.", 400, resolved.resolution.code);
@@ -666,6 +674,75 @@ async function syncBinanceAccount(input: ExchangeSyncInput): Promise<ExchangeSyn
   }
 }
 
+async function syncBingxAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
+  if (!input.apiKey?.trim() || !input.apiSecret?.trim()) {
+    throw new ExchangeSyncError("BingX API key and secret are required for account sync.", 401, "bingx_auth_failed");
+  }
+  const restBaseUrl = (process.env.BINGX_REST_BASE_URL ?? "https://open-api.bingx.com").replace(/\/+$/, "");
+  let futuresAdapter: BingxFuturesAdapter | null = null;
+  try {
+    const spotPromise = BINGX_SPOT_ENABLED
+      ? new BingxRestClient(restBaseUrl, input.apiKey, input.apiSecret).getSummary("USDT")
+      : Promise.resolve(null);
+    futuresAdapter = BINGX_PERP_ENABLED
+      ? new BingxFuturesAdapter({
+          apiKey: input.apiKey,
+          apiSecret: input.apiSecret,
+          restBaseUrl,
+          writeEnabled: false
+        })
+      : null;
+    const futuresPromise = futuresAdapter
+      ? Promise.all([
+          futuresAdapter.getAccountState(),
+          futuresAdapter.getPositions().catch(() => [])
+        ])
+      : Promise.resolve(null);
+
+    const [spotSummary, futuresSnapshot] = await Promise.all([
+      spotPromise,
+      futuresPromise
+    ]);
+
+    const futuresState = futuresSnapshot?.[0] ?? null;
+    const positions = futuresSnapshot?.[1] ?? [];
+    const pnlTodayUsd = positions.length > 0
+      ? positions.reduce((sum, row) => sum + (toNumber(row.unrealizedPnl) ?? 0), 0)
+      : null;
+
+    return {
+      syncedAt: new Date(),
+      spotBudget: spotSummary
+        ? {
+            total: spotSummary.equity,
+            available: spotSummary.available,
+            currency: spotSummary.currency
+          }
+        : null,
+      futuresBudget: {
+        equity: futuresState ? futuresState.equity : null,
+        availableMargin: futuresState?.availableMargin ?? null,
+        marginCoin: BINGX_PERP_ENABLED ? "USDT" : null
+      },
+      pnlTodayUsd,
+      details: {
+        exchange: "bingx",
+        endpoint: `${BINGX_SPOT_ENABLED ? "signed:/openApi/spot/v1/account/balance" : "spot_disabled"} + ${BINGX_PERP_ENABLED ? "signed:/openApi/swap/v3/user/balance" : "perp_disabled"}`,
+        productType: BINGX_SPOT_ENABLED && BINGX_PERP_ENABLED ? "spot+usdm_perp" : BINGX_SPOT_ENABLED ? "spot" : "usdm_perp"
+      }
+    };
+  } catch (error) {
+    if (error instanceof ExchangeSyncError) throw error;
+    throw toExchangeSyncError({
+      exchange: "bingx",
+      error,
+      fallbackMessage: "BingX account sync failed."
+    });
+  } finally {
+    await futuresAdapter?.close().catch(() => undefined);
+  }
+}
+
 export async function syncExchangeAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
   const exchange = input.exchange.trim().toLowerCase();
   if (exchange === "bitget") {
@@ -696,6 +773,16 @@ export async function syncExchangeAccount(input: ExchangeSyncInput): Promise<Exc
       );
     }
     return syncBinanceAccount(input);
+  }
+  if (exchange === "bingx") {
+    if (!BINGX_SPOT_ENABLED && !BINGX_PERP_ENABLED) {
+      throw new ExchangeSyncError(
+        "BingX integration is disabled by runtime flag.",
+        403,
+        "bingx_disabled"
+      );
+    }
+    return syncBingxAccount(input);
   }
 
   throw new ExchangeSyncError(
