@@ -549,6 +549,46 @@ test("bitget adapter setPositionTpSl maps holdSide for one-way position mode", a
   ]);
 });
 
+test("bitget adapter setPositionTpSl falls back to position posMode for holdSide", async () => {
+  const adapter = Object.create(BitgetFuturesAdapter.prototype) as any;
+  const placeCalls: any[] = [];
+
+  adapter.productType = "USDT-FUTURES";
+  adapter.marginCoin = "USDT";
+  adapter.defaultPositionMode = "one-way";
+  adapter.positionModeHint = null;
+  adapter.accountApi = {
+    getPositionMode: async () => {
+      throw new Error("Request URL NOT FOUND");
+    }
+  };
+  adapter.positionApi = {
+    getAllPositions: async (params: any) => {
+      assert.deepEqual(params, { productType: "USDT-FUTURES", marginCoin: "USDT" });
+      return [{ symbol: "BTCUSDT", holdSide: "long", total: "1", posMode: "hedge_mode" }];
+    }
+  };
+  adapter.tradeApi = {
+    getPendingPlanOrders: async () => [],
+    cancelPlanOrder: async () => undefined,
+    placePositionTpSl: async (params: any) => {
+      placeCalls.push(params);
+      return {};
+    }
+  };
+  adapter.toExchangeSymbol = async () => "BTCUSDT";
+  adapter.mapError = (error: unknown) => error;
+
+  const result = await adapter.setPositionTpSl({
+    symbol: "BTCUSDT",
+    side: "long",
+    stopLossPrice: 64000
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(placeCalls[0]?.holdSide, "long");
+});
+
 test("binance adapter listPositions exposes leverage margin and liquidation risk fields", async () => {
   const adapter = Object.create(BinanceFuturesAdapter.prototype) as any;
 

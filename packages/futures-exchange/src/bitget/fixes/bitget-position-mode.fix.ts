@@ -1,5 +1,6 @@
 import type { BitgetAccountApi } from "../bitget.account.api.js";
 import type { BitgetProductType } from "../bitget.constants.js";
+import type { BitgetPositionApi } from "../bitget.position.api.js";
 
 export type BitgetPositionModeHint = {
   mode: "one-way" | "hedge";
@@ -8,7 +9,9 @@ export type BitgetPositionModeHint = {
 
 export async function resolveBitgetPositionMode(params: {
   accountApi: BitgetAccountApi;
+  positionApi?: BitgetPositionApi;
   productType: BitgetProductType;
+  marginCoin?: string;
   defaultPositionMode: "one-way" | "hedge";
   currentHint: BitgetPositionModeHint;
   nowMs: number;
@@ -29,6 +32,23 @@ export async function resolveBitgetPositionMode(params: {
     const mode: "one-way" | "hedge" = text.includes("hedge") ? "hedge" : "one-way";
     return { mode, ts: params.nowMs };
   } catch {
+    try {
+      const positions = await params.positionApi?.getAllPositions({
+        productType: params.productType,
+        marginCoin: params.marginCoin
+      });
+      const positionMode = (positions ?? [])
+        .map((row) => String(row.posMode ?? "").toLowerCase())
+        .find((text) => text.includes("hedge") || text.includes("one_way"));
+      if (positionMode) {
+        return {
+          mode: positionMode.includes("hedge") ? "hedge" : "one-way",
+          ts: params.nowMs
+        };
+      }
+    } catch {
+      // Fall through to the configured default when Bitget does not expose mode via positions.
+    }
     return { mode: params.defaultPositionMode, ts: params.nowMs };
   }
 }
@@ -49,4 +69,3 @@ export function isBitgetMarginModeLockedError(error: unknown): boolean {
   return text.includes("margin mode cannot be adjusted")
     || text.includes("currently holding positions or orders");
 }
-

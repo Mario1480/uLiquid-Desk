@@ -88,6 +88,9 @@ export type BitgetAccountRaw = {
 export type BitgetPositionRaw = {
   symbol?: string;
   holdSide?: string;
+  posMode?: string;
+  marginCoin?: string;
+  productType?: string;
   total?: string;
   available?: string;
   openPriceAvg?: string;

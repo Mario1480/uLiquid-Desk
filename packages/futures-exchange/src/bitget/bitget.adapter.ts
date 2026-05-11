@@ -438,7 +438,9 @@ export class BitgetFuturesAdapter implements FuturesExchange {
     const cacheMs = Number(process.env.BITGET_POSITION_MODE_CACHE_MS ?? "60000");
     this.positionModeHint = await resolveBitgetPositionMode({
       accountApi: this.accountApi,
+      positionApi: this.positionApi,
       productType: this.productType,
+      marginCoin: this.marginCoin,
       defaultPositionMode: this.defaultPositionMode,
       currentHint: this.positionModeHint,
       nowMs: Date.now(),
