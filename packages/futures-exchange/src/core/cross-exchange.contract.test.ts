@@ -449,11 +449,14 @@ test("bitget adapter setPositionTpSl uses position TPSL plan orders", async () =
     getPositionMode: async () => ({ posMode: "hedge_mode" })
   };
   adapter.tradeApi = {
-    getPendingPlanOrders: async () => [
+    getPendingPlanOrders: async (params: any) => {
+      assert.equal(params.planType, "profit_loss");
+      return [
       { orderId: "tp_1", planType: "profit_plan", holdSide: "long" },
       { orderId: "sl_1", planType: "loss_plan", holdSide: "long" },
       { orderId: "short_tp", planType: "profit_plan", holdSide: "short" }
-    ],
+      ];
+    },
     cancelPlanOrder: async (params: any) => {
       cancelCalls.push(params);
     },
@@ -474,8 +477,20 @@ test("bitget adapter setPositionTpSl uses position TPSL plan orders", async () =
 
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(cancelCalls, [
-    { symbol: "BTCUSDT", orderId: "tp_1", productType: "USDT-FUTURES" },
-    { symbol: "BTCUSDT", orderId: "sl_1", productType: "USDT-FUTURES" }
+    {
+      symbol: "BTCUSDT",
+      orderId: "tp_1",
+      marginCoin: "USDT",
+      planType: "profit_plan",
+      productType: "USDT-FUTURES"
+    },
+    {
+      symbol: "BTCUSDT",
+      orderId: "sl_1",
+      marginCoin: "USDT",
+      planType: "loss_plan",
+      productType: "USDT-FUTURES"
+    }
   ]);
   assert.deepEqual(placeCalls, [
     {

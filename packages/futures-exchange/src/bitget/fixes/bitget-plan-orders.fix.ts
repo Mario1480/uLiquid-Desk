@@ -23,12 +23,35 @@ function toPlanKind(value: unknown): "tp" | "sl" | null {
 }
 
 type BitgetPositionTpSlHoldSide = "long" | "short" | "buy" | "sell";
+type BitgetCancelPlanType = "normal_plan" | "profit_plan" | "loss_plan" | "pos_profit" | "pos_loss" | "moving_plan";
 
 function toComparableHoldSide(value: unknown): "long" | "short" | null {
   const text = String(value ?? "").trim().toLowerCase();
   if (text === "long" || text === "buy") return "long";
   if (text === "short" || text === "sell") return "short";
   return null;
+}
+
+function toCancelPlanType(row: Record<string, unknown>, kind: "tp" | "sl"): BitgetCancelPlanType {
+  const planType = String(row.planType ?? "").trim().toLowerCase();
+  if (
+    planType === "normal_plan"
+    || planType === "profit_plan"
+    || planType === "loss_plan"
+    || planType === "pos_profit"
+    || planType === "pos_loss"
+    || planType === "moving_plan"
+  ) {
+    return planType;
+  }
+
+  const orderSource = String(row.orderSource ?? "").trim().toLowerCase();
+  if (orderSource.includes("pos_profit")) return "pos_profit";
+  if (orderSource.includes("pos_loss")) return "pos_loss";
+  if (orderSource.includes("profit")) return "profit_plan";
+  if (orderSource.includes("loss")) return "loss_plan";
+
+  return kind === "tp" ? "pos_profit" : "pos_loss";
 }
 
 export async function upsertBitgetPositionTpSl(params: {
@@ -44,6 +67,7 @@ export async function upsertBitgetPositionTpSl(params: {
   const pendingRaw = await params.tradeApi.getPendingPlanOrders({
     productType: params.productType,
     symbol: params.symbol,
+    planType: "profit_loss",
     pageSize: 100
   });
   const pendingRows = toOrderRows(pendingRaw);
@@ -63,6 +87,8 @@ export async function upsertBitgetPositionTpSl(params: {
         await params.tradeApi.cancelPlanOrder({
           symbol: params.symbol,
           orderId,
+          marginCoin: params.marginCoin,
+          planType: toCancelPlanType(row, kind),
           productType: params.productType
         });
       })

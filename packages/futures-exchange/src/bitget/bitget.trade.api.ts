@@ -66,6 +66,7 @@ export class BitgetTradeApi {
   getPendingPlanOrders(params: {
     productType?: BitgetProductType;
     symbol?: string;
+    planType?: "normal_plan" | "track_plan" | "profit_loss";
     pageSize?: number;
     idLessThan?: string;
   } = {}): Promise<BitgetOrderRaw[]> {
@@ -75,6 +76,7 @@ export class BitgetTradeApi {
       query: {
         productType: params.productType ?? BITGET_DEFAULT_PRODUCT_TYPE,
         symbol: params.symbol,
+        planType: params.planType ?? "profit_loss",
         limit: params.pageSize,
         idLessThan: params.idLessThan
       }
@@ -100,6 +102,8 @@ export class BitgetTradeApi {
   cancelPlanOrder(params: {
     symbol: string;
     orderId: string;
+    marginCoin?: string;
+    planType?: "normal_plan" | "profit_plan" | "loss_plan" | "pos_profit" | "pos_loss" | "moving_plan";
     productType?: BitgetProductType;
   }): Promise<unknown> {
     return this.rest.requestPrivate({
@@ -107,7 +111,13 @@ export class BitgetTradeApi {
       endpoint: "/api/v2/mix/order/cancel-plan-order",
       body: {
         symbol: params.symbol,
-        orderId: params.orderId,
+        orderIdList: [
+          {
+            orderId: params.orderId
+          }
+        ],
+        marginCoin: params.marginCoin,
+        planType: params.planType,
         productType: params.productType ?? BITGET_DEFAULT_PRODUCT_TYPE
       }
     });
