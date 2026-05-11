@@ -143,7 +143,7 @@ export type BitgetPositionTpSlRequest = {
   symbol: string;
   productType: BitgetProductType;
   marginCoin?: string;
-  holdSide: "long" | "short";
+  holdSide: "long" | "short" | "buy" | "sell";
   stopSurplusTriggerPrice?: string;
   stopSurplusTriggerType?: "fill_price" | "mark_price";
   stopSurplusExecutePrice?: string;

@@ -417,6 +417,11 @@ test("bitget adapter setPositionTpSl uses position TPSL fields expected by place
 
   adapter.productType = "USDT-FUTURES";
   adapter.marginCoin = "USDT";
+  adapter.defaultPositionMode = "one-way";
+  adapter.positionModeHint = null;
+  adapter.accountApi = {
+    getPositionMode: async () => ({ posMode: "hedge_mode" })
+  };
   adapter.tradeApi = {
     getPendingPlanOrders: async () => [
       { orderId: "tp_1", planType: "profit_plan", holdSide: "long" },
@@ -454,8 +459,55 @@ test("bitget adapter setPositionTpSl uses position TPSL fields expected by place
       holdSide: "long",
       stopSurplusTriggerPrice: "70000",
       stopSurplusTriggerType: "mark_price",
+      stopSurplusExecutePrice: "0",
       stopLossTriggerPrice: "64000",
-      stopLossTriggerType: "mark_price"
+      stopLossTriggerType: "mark_price",
+      stopLossExecutePrice: "0"
+    }
+  ]);
+});
+
+test("bitget adapter setPositionTpSl maps holdSide for one-way position mode", async () => {
+  const adapter = Object.create(BitgetFuturesAdapter.prototype) as any;
+  const placeCalls: any[] = [];
+
+  adapter.productType = "USDT-FUTURES";
+  adapter.marginCoin = "USDT";
+  adapter.defaultPositionMode = "one-way";
+  adapter.positionModeHint = null;
+  adapter.accountApi = {
+    getPositionMode: async () => ({ posMode: "one_way_mode" })
+  };
+  adapter.tradeApi = {
+    getPendingPlanOrders: async () => [],
+    cancelPlanOrder: async () => undefined,
+    placePositionTpSl: async (params: any) => {
+      placeCalls.push(params);
+      return {};
+    }
+  };
+  adapter.toExchangeSymbol = async () => "BTCUSDT";
+  adapter.mapError = (error: unknown) => error;
+
+  const result = await adapter.setPositionTpSl({
+    symbol: "BTCUSDT",
+    side: "long",
+    stopLossPrice: 64000
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(placeCalls, [
+    {
+      symbol: "BTCUSDT",
+      productType: "USDT-FUTURES",
+      marginCoin: "USDT",
+      holdSide: "buy",
+      stopSurplusTriggerPrice: undefined,
+      stopSurplusTriggerType: undefined,
+      stopSurplusExecutePrice: undefined,
+      stopLossTriggerPrice: "64000",
+      stopLossTriggerType: "mark_price",
+      stopLossExecutePrice: "0"
     }
   ]);
 });

@@ -179,6 +179,14 @@ function getString(record: Record<string, unknown> | null, keys: string[]): stri
   return null;
 }
 
+function toBitgetPositionTpSlHoldSide(
+  mode: "one-way" | "hedge",
+  side: "long" | "short"
+): "long" | "short" | "buy" | "sell" {
+  if (mode === "hedge") return side;
+  return side === "long" ? "buy" : "sell";
+}
+
 function toOrderRows(value: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(value)) {
     return value.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
@@ -539,12 +547,14 @@ export class BitgetFuturesAdapter implements FuturesExchange {
       }
 
       const exchangeSymbol = await this.toExchangeSymbol(normalizedSymbol);
+      const positionMode = await this.resolvePositionMode();
       return await upsertBitgetPositionTpSl({
         tradeApi: this.tradeApi,
         symbol: exchangeSymbol,
         productType: this.productType,
         marginCoin: this.marginCoin,
-        holdSide: side,
+        positionSide: side,
+        holdSide: toBitgetPositionTpSlHoldSide(positionMode, side),
         takeProfitPrice: params.takeProfitPrice,
         stopLossPrice: params.stopLossPrice
       });

@@ -22,12 +22,22 @@ function toPlanKind(value: unknown): "tp" | "sl" | null {
   return null;
 }
 
+type BitgetPositionTpSlHoldSide = "long" | "short" | "buy" | "sell";
+
+function toComparableHoldSide(value: unknown): "long" | "short" | null {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (text === "long" || text === "buy") return "long";
+  if (text === "short" || text === "sell") return "short";
+  return null;
+}
+
 export async function upsertBitgetPositionTpSl(params: {
   tradeApi: BitgetTradeApi;
   symbol: string;
   productType: BitgetProductType;
   marginCoin: string;
-  holdSide: "long" | "short";
+  positionSide: "long" | "short";
+  holdSide: BitgetPositionTpSlHoldSide;
   takeProfitPrice?: number | null;
   stopLossPrice?: number | null;
 }): Promise<{ ok: true }> {
@@ -44,8 +54,8 @@ export async function upsertBitgetPositionTpSl(params: {
   if (cancelKinds.size > 0) {
     await Promise.allSettled(
       pendingRows.map(async (row) => {
-        const rowSide = String(row.holdSide ?? row.posSide ?? "").toLowerCase();
-        if (rowSide && rowSide !== params.holdSide) return;
+        const rowSide = toComparableHoldSide(row.holdSide ?? row.posSide ?? row.positionSide);
+        if (rowSide && rowSide !== params.positionSide) return;
         const kind = toPlanKind(row.planType ?? row.stopType ?? row.triggerType);
         if (!kind || !cancelKinds.has(kind)) return;
         const orderId = String(row.orderId ?? row.planOrderId ?? "").trim();
@@ -72,6 +82,10 @@ export async function upsertBitgetPositionTpSl(params: {
       params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
         ? "mark_price" as const
         : undefined,
+    stopSurplusExecutePrice:
+      params.takeProfitPrice !== undefined && params.takeProfitPrice !== null
+        ? "0"
+        : undefined,
     stopLossTriggerPrice:
       params.stopLossPrice !== undefined && params.stopLossPrice !== null
         ? String(params.stopLossPrice)
@@ -79,6 +93,10 @@ export async function upsertBitgetPositionTpSl(params: {
     stopLossTriggerType:
       params.stopLossPrice !== undefined && params.stopLossPrice !== null
         ? "mark_price" as const
+        : undefined,
+    stopLossExecutePrice:
+      params.stopLossPrice !== undefined && params.stopLossPrice !== null
+        ? "0"
         : undefined
   };
 
