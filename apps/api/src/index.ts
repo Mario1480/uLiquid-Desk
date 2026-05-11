@@ -10930,6 +10930,24 @@ function pickWsSymbol(
   return contracts.find((row) => row.apiAllowed)?.canonicalSymbol ?? contracts[0]?.canonicalSymbol ?? null;
 }
 
+function summarizeManualTradingErrorDetails(error: unknown): Record<string, unknown> | null {
+  const details = (error as { details?: unknown })?.details;
+  const detailRecord = details && typeof details === "object" && !Array.isArray(details)
+    ? details as Record<string, unknown>
+    : null;
+  const bitget = detailRecord?.bitget && typeof detailRecord.bitget === "object" && !Array.isArray(detailRecord.bitget)
+    ? detailRecord.bitget as Record<string, unknown>
+    : null;
+  if (!bitget) return null;
+  return {
+    bitgetEndpoint: bitget.endpoint,
+    bitgetMethod: bitget.method,
+    bitgetStatus: bitget.status,
+    bitgetCode: bitget.code,
+    bitgetResponseBody: bitget.responseBody
+  };
+}
+
 function sendManualTradingError(res: express.Response, error: unknown) {
   const result = buildManualTradingErrorResponse(error);
   const message =
@@ -10945,8 +10963,9 @@ function sendManualTradingError(res: express.Response, error: unknown) {
     typeof (res.locals as { user?: { id?: unknown } })?.user?.id === "string"
       ? String((res.locals as { user?: { id?: string } }).user?.id ?? "").trim()
       : "";
+  const details = summarizeManualTradingErrorDetails(error);
   // eslint-disable-next-line no-console
-  console.error("[manual-trading]", message, { status: result.status, code });
+  console.error("[manual-trading]", message, { status: result.status, code, ...(details ?? {}) });
   if (userId) {
     void dispatchManualTradingErrorNotification({
       userId,

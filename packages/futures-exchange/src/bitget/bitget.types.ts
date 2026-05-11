@@ -152,6 +152,21 @@ export type BitgetPositionTpSlRequest = {
   stopLossExecutePrice?: string;
 };
 
+export type BitgetTpSlOrderRequest = {
+  symbol: string;
+  productType: BitgetProductType;
+  marginCoin?: string;
+  planType: "profit_plan" | "loss_plan" | "pos_profit" | "pos_loss" | "moving_plan";
+  triggerPrice: string;
+  triggerType?: "fill_price" | "mark_price";
+  executePrice?: string;
+  holdSide: "long" | "short" | "buy" | "sell";
+  size?: string;
+  rangeRate?: string;
+  clientOid?: string;
+  stpMode?: "none" | "cancel_taker" | "cancel_maker" | "cancel_both";
+};
+
 export type BitgetOrderRaw = {
   orderId?: string;
   clientOid?: string;

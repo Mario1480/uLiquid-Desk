@@ -4,7 +4,8 @@ import type {
   BitgetOrderModifyRequest,
   BitgetOrderPlaceRequest,
   BitgetOrderRaw,
-  BitgetPositionTpSlRequest
+  BitgetPositionTpSlRequest,
+  BitgetTpSlOrderRequest
 } from "./bitget.types.js";
 
 export class BitgetTradeApi {
@@ -84,6 +85,14 @@ export class BitgetTradeApi {
     return this.rest.requestPrivate({
       method: "POST",
       endpoint: "/api/v2/mix/order/place-pos-tpsl",
+      body: payload
+    });
+  }
+
+  placeTpSlOrder(payload: BitgetTpSlOrderRequest): Promise<unknown> {
+    return this.rest.requestPrivate({
+      method: "POST",
+      endpoint: "/api/v2/mix/order/place-tpsl-order",
       body: payload
     });
   }

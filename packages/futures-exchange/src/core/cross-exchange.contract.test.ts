@@ -410,7 +410,33 @@ test("bitget adapter listPositions canonicalizes legacy position symbols before 
   ]);
 });
 
-test("bitget adapter setPositionTpSl uses position TPSL fields expected by place-pos-tpsl", async () => {
+test("bitget adapter listPositions maps one-way sell hold side as short", async () => {
+  const adapter = Object.create(BitgetFuturesAdapter.prototype) as any;
+
+  adapter.productType = "USDT-FUTURES";
+  adapter.marginCoin = "USDT";
+  adapter.contractCache = {
+    refresh: async () => undefined
+  };
+  adapter.positionApi = {
+    getAllPositions: async () => [
+      {
+        symbol: "ETHUSDT",
+        holdSide: "sell",
+        total: "0.2",
+        openPriceAvg: "3000",
+        markPrice: "2900"
+      }
+    ]
+  };
+  adapter.toCanonicalSymbol = (symbol: string) => symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+
+  const rows = await adapter.listPositions({ symbol: "ETHUSDT" });
+
+  assert.equal(rows[0]?.side, "short");
+});
+
+test("bitget adapter setPositionTpSl uses position TPSL plan orders", async () => {
   const adapter = Object.create(BitgetFuturesAdapter.prototype) as any;
   const cancelCalls: any[] = [];
   const placeCalls: any[] = [];
@@ -431,7 +457,7 @@ test("bitget adapter setPositionTpSl uses position TPSL fields expected by place
     cancelPlanOrder: async (params: any) => {
       cancelCalls.push(params);
     },
-    placePositionTpSl: async (params: any) => {
+    placeTpSlOrder: async (params: any) => {
       placeCalls.push(params);
       return {};
     }
@@ -456,13 +482,21 @@ test("bitget adapter setPositionTpSl uses position TPSL fields expected by place
       symbol: "BTCUSDT",
       productType: "USDT-FUTURES",
       marginCoin: "USDT",
+      triggerType: "mark_price",
+      executePrice: "0",
       holdSide: "long",
-      stopSurplusTriggerPrice: "70000",
-      stopSurplusTriggerType: "mark_price",
-      stopSurplusExecutePrice: "0",
-      stopLossTriggerPrice: "64000",
-      stopLossTriggerType: "mark_price",
-      stopLossExecutePrice: "0"
+      planType: "pos_profit",
+      triggerPrice: "70000"
+    },
+    {
+      symbol: "BTCUSDT",
+      productType: "USDT-FUTURES",
+      marginCoin: "USDT",
+      triggerType: "mark_price",
+      executePrice: "0",
+      holdSide: "long",
+      planType: "pos_loss",
+      triggerPrice: "64000"
     }
   ]);
 });
@@ -481,7 +515,7 @@ test("bitget adapter setPositionTpSl maps holdSide for one-way position mode", a
   adapter.tradeApi = {
     getPendingPlanOrders: async () => [],
     cancelPlanOrder: async () => undefined,
-    placePositionTpSl: async (params: any) => {
+    placeTpSlOrder: async (params: any) => {
       placeCalls.push(params);
       return {};
     }
@@ -501,13 +535,11 @@ test("bitget adapter setPositionTpSl maps holdSide for one-way position mode", a
       symbol: "BTCUSDT",
       productType: "USDT-FUTURES",
       marginCoin: "USDT",
+      triggerType: "mark_price",
+      executePrice: "0",
       holdSide: "buy",
-      stopSurplusTriggerPrice: undefined,
-      stopSurplusTriggerType: undefined,
-      stopSurplusExecutePrice: undefined,
-      stopLossTriggerPrice: "64000",
-      stopLossTriggerType: "mark_price",
-      stopLossExecutePrice: "0"
+      planType: "pos_loss",
+      triggerPrice: "64000"
     }
   ]);
 });

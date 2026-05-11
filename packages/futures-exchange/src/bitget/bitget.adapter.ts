@@ -74,8 +74,8 @@ function toNumber(value: unknown): number | null {
 
 function toPositionSide(raw: unknown, signedQty?: number | null): "long" | "short" {
   const text = String(raw ?? "").toLowerCase();
-  if (text.includes("long")) return "long";
-  if (text.includes("short")) return "short";
+  if (text.includes("long") || text === "buy") return "long";
+  if (text.includes("short") || text === "sell") return "short";
   if (typeof signedQty === "number" && Number.isFinite(signedQty) && signedQty > 0) return "long";
   return "short";
 }
@@ -520,7 +520,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
       const normalizedSymbol = normalizeCanonicalSymbol(params.symbol);
       if (!normalizedSymbol) {
         throw new BitgetInvalidParamsError("symbol_required", {
-          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          endpoint: "/api/v2/mix/order/place-tpsl-order",
           method: "POST"
         });
       }
@@ -529,19 +529,19 @@ export class BitgetFuturesAdapter implements FuturesExchange {
         (await this.listPositions({ symbol: normalizedSymbol }))[0]?.side;
       if (side !== "long" && side !== "short") {
         throw new BitgetInvalidParamsError("position_side_required", {
-          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          endpoint: "/api/v2/mix/order/place-tpsl-order",
           method: "POST"
         });
       }
       if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null && params.takeProfitPrice <= 0) {
         throw new BitgetInvalidParamsError("invalid_take_profit", {
-          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          endpoint: "/api/v2/mix/order/place-tpsl-order",
           method: "POST"
         });
       }
       if (params.stopLossPrice !== undefined && params.stopLossPrice !== null && params.stopLossPrice <= 0) {
         throw new BitgetInvalidParamsError("invalid_stop_loss", {
-          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          endpoint: "/api/v2/mix/order/place-tpsl-order",
           method: "POST"
         });
       }
