@@ -113,13 +113,13 @@ test("perp execution service blocks unsupported order editing before adapter cal
   assert.equal(editCalls, 0);
 });
 
-test("perp execution service blocks unsupported position tpsl controls before adapter calls", async () => {
+test("perp execution service blocks unsupported position tpsl venues before adapter calls", async () => {
   let setTpSlCalls = 0;
 
   const service = createPerpExecutionService({
     isPaperTradingAccount: () => false,
     createPerpExecutionAdapter: () => ({
-      exchangeId: "mexc",
+      exchangeId: "unknown",
       close: async () => undefined
     } as any),
     createPerpMarketDataClient: () => ({
@@ -135,20 +135,20 @@ test("perp execution service blocks unsupported position tpsl controls before ad
     () => service.setPositionTpSl({
       resolved: {
         selectedAccount: {
-          id: "acc_mexc",
+          id: "acc_unknown",
           userId: "user_1",
-          exchange: "mexc",
-          label: "MEXC",
+          exchange: "unknown",
+          label: "Unknown",
           apiKey: "key",
           apiSecret: "secret",
           passphrase: null,
           marketDataExchangeAccountId: null
         },
         marketDataAccount: {
-          id: "acc_mexc",
+          id: "acc_unknown",
           userId: "user_1",
-          exchange: "mexc",
-          label: "MEXC",
+          exchange: "unknown",
+          label: "Unknown",
           apiKey: "key",
           apiSecret: "secret",
           passphrase: null,
@@ -159,8 +159,8 @@ test("perp execution service blocks unsupported position tpsl controls before ad
       takeProfitPrice: 70000
     }),
     (error: any) => {
-      assert.equal(error?.code, "venue_position_tpsl_unsupported");
-      assert.match(String(error?.message ?? ""), /does not support position tp\/sl/i);
+      assert.equal(error?.code, "execution_venue_unsupported");
+      assert.match(String(error?.message ?? ""), /execution_venue_unsupported/i);
       return true;
     }
   );

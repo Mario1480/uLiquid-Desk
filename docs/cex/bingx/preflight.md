@@ -42,7 +42,7 @@ Status: implemented for native REST v1. Spot and USD-M perpetual swap public/pri
 - REST base: `BINGX_REST_BASE_URL=https://open-api.bingx.com`
 - Spot flag: `BINGX_SPOT_ENABLED=1`
 - Perp flag: `BINGX_PERP_ENABLED=1`
-- Perp write kill switch: `BINGX_PERP_WRITE_ENABLED=0`
+- Perp write kill switch: `BINGX_PERP_WRITE_ENABLED=1` by default; set `0` to block live writes.
 - Credentials: `apiKey` + `apiSecret`; no passphrase.
 - Canonical symbol: `BTCUSDT`; BingX REST symbol: `BTC-USDT`.
 

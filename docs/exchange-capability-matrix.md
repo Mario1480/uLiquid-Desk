@@ -20,7 +20,7 @@ It is intentionally operational rather than marketing-oriented: the goal is to s
 | MEXC | `adapter` or `blocked` | yes | yes | no | yes | yes | Perp enablement still policy-gated in some environments |
 | Paper | `paper` | yes (via linked venue) | simulated | yes | yes | yes | First-class product path, but still being hardened into a normal connector |
 | Binance | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Futures connector; writes remain kill-switch gated during rollout |
-| BingX | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Perp connector; REST-only v1, perp writes kill-switch gated by default |
+| BingX | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Perp connector; REST-only v1, perp writes enabled by default and can be disabled with `BINGX_PERP_WRITE_ENABLED=0` |
 
 ## Shared capability intent
 

@@ -31,6 +31,7 @@ import type {
 } from "../futures-exchange.interface.js";
 import type {
   ClosePositionParams,
+  EditOrderParams,
   NormalizedOrder,
   NormalizedOrderIntent,
   NormalizedPosition,
@@ -226,6 +227,36 @@ function mapOrderQty(row: BingxOrderResponse): number | null {
   return Number(Math.max(0, orig - executed).toFixed(12));
 }
 
+function parseEmbeddedStopPrice(value: unknown): number | null {
+  if (!value) return null;
+  const record = typeof value === "string"
+    ? (() => {
+        try {
+          const parsed = JSON.parse(value) as unknown;
+          return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+        } catch {
+          return null;
+        }
+      })()
+    : value && typeof value === "object"
+      ? value as Record<string, unknown>
+      : null;
+  if (!record) return null;
+  return toNumber(record.stopPrice ?? record.triggerPrice ?? record.price);
+}
+
+function getOrderTakeProfitPrice(row: BingxOrderResponse): number | null {
+  const type = String(row.type ?? row.origType ?? "").toUpperCase();
+  if (type.includes("TAKE_PROFIT")) return toNumber(row.stopPrice);
+  return parseEmbeddedStopPrice(row.takeProfit) ?? toNumber(row.takeProfitPrice);
+}
+
+function getOrderStopLossPrice(row: BingxOrderResponse): number | null {
+  const type = String(row.type ?? row.origType ?? "").toUpperCase();
+  if (type.includes("STOP")) return toNumber(row.stopPrice);
+  return parseEmbeddedStopPrice(row.stopLoss) ?? toNumber(row.stopLossPrice);
+}
+
 function pickOrderId(response: BingxOrderResponse): string | null {
   const candidates = [response.orderId, response.clientOrderId, response.clientOrderID];
   for (const candidate of candidates) {
@@ -303,7 +334,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
     this.productType = config.productType ?? process.env.BINGX_PRODUCT_TYPE ?? BINGX_USDM_DEFAULT_PRODUCT_TYPE;
     this.marginCoin = config.marginCoin ?? process.env.BINGX_MARGIN_COIN ?? BINGX_USDM_DEFAULT_MARGIN_COIN;
     this.writeEnabled = config.writeEnabled ?? !["0", "false", "off", "no"].includes(
-      String(process.env.BINGX_PERP_WRITE_ENABLED ?? "0").trim().toLowerCase()
+      String(process.env.BINGX_PERP_WRITE_ENABLED ?? "1").trim().toLowerCase()
     );
 
     this.rest = new BingxRestClient(config);
@@ -541,6 +572,70 @@ export class BingxFuturesAdapter implements FuturesExchange {
     };
   }
 
+  async editOrder(params: EditOrderParams): Promise<PlaceOrderResult> {
+    this.assertWriteEnabled();
+    const contract = await this.requireTradeableContract(params.symbol);
+    const current = await this.tradeApi.getOrder({
+      symbol: contract.exchangeSymbol,
+      orderId: params.orderId
+    });
+    if (String(current.type ?? current.origType ?? "").toUpperCase() !== "LIMIT") {
+      throw new BingxInvalidParamsError("Only LIMIT orders can be edited on BingX USD-M", {
+        endpoint: "/openApi/swap/v2/trade/order",
+        method: "POST"
+      });
+    }
+
+    const side: OrderSide = String(current.side ?? "BUY").toUpperCase() === "SELL" ? "sell" : "buy";
+    const price = params.price ?? toNumber(current.price) ?? 0;
+    const qty = params.qty ?? mapOrderQty(current) ?? 0;
+    const takeProfitPrice = params.takeProfitPrice === undefined
+      ? getOrderTakeProfitPrice(current) ?? undefined
+      : params.takeProfitPrice ?? undefined;
+    const stopLossPrice = params.stopLossPrice === undefined
+      ? getOrderStopLossPrice(current) ?? undefined
+      : params.stopLossPrice ?? undefined;
+
+    const normalized = await this.normalizeOrderIntent({
+      symbol: contract.canonicalSymbol,
+      side,
+      type: "limit",
+      qty,
+      price,
+      reduceOnly: boolish(current.reduceOnly) ?? undefined,
+      takeProfitPrice,
+      stopLossPrice,
+      context: {
+        source: "manual_api",
+        reason: "edit_order"
+      }
+    });
+    await this.validateOrderIntent(normalized);
+    const positionMode = await this.resolvePositionMode();
+    const payload = this.buildOrderRequest(normalized, positionMode);
+
+    await this.tradeApi.cancelOrder({
+      symbol: contract.exchangeSymbol,
+      orderId: params.orderId
+    });
+    const result = await this.tradeApi.placeOrder(payload);
+    const orderId = pickOrderId(result);
+    if (!orderId) {
+      throw new BingxInvalidParamsError("BingX edit replacement did not return order id", {
+        endpoint: "/openApi/swap/v2/trade/order",
+        method: "POST"
+      });
+    }
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "venue_ack",
+      receiptStatus: "unknown",
+      orderId,
+      clientOrderId: payload.clientOrderId
+    };
+  }
+
   async setPositionTpSl(params: PositionTpSlParams): Promise<{ ok: true }> {
     this.assertWriteEnabled();
     const contract = await this.requireTradeableContract(params.symbol);
@@ -631,8 +726,8 @@ export class BingxFuturesAdapter implements FuturesExchange {
           price: toNumber(row.price),
           qty: mapOrderQty(row),
           triggerPrice: toNumber(row.stopPrice),
-          takeProfitPrice: type.includes("TAKE_PROFIT") ? toNumber(row.stopPrice) : null,
-          stopLossPrice: type.includes("STOP") ? toNumber(row.stopPrice) : null,
+          takeProfitPrice: getOrderTakeProfitPrice(row),
+          stopLossPrice: getOrderStopLossPrice(row),
           reduceOnly: boolish(row.reduceOnly),
           createdAt: toIsoFromMs(row.time ?? row.updateTime),
           raw: row

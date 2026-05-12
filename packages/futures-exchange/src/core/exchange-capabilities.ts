@@ -220,7 +220,7 @@ export const BINGX_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   supportedMarginModes: CROSS_AND_ISOLATED,
   supportsLeverage: true,
   supportsMarginModeControl: true,
-  supportsOrderEditing: false,
+  supportsOrderEditing: true,
   supportsPositionTpSl: true,
   supportsPositionClose: true,
   supportsPositionReads: true,

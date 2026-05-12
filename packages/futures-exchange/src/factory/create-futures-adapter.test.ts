@@ -128,7 +128,7 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   assert.equal(bingx.capabilities.supportsPerpMarketData, true);
   assert.equal(bingx.capabilities.supportsPerpExecution, true);
   assert.equal(bingx.capabilities.supportsGridExecution, true);
-  assert.equal(bingx.capabilities.supportsOrderEditing, false);
+  assert.equal(bingx.capabilities.supportsOrderEditing, true);
 
   const mexcBlocked = resolveFuturesVenue(
     { exchange: "mexc", ...credentials },
@@ -225,7 +225,7 @@ test("futures venue capability registry exposes enforceable feature support by v
   assert.equal(bingx.supportsPerpExecution, true);
   assert.equal(bingx.supportsLeverage, true);
   assert.equal(bingx.supportsMarginModeControl, true);
-  assert.equal(bingx.supportsOrderEditing, false);
+  assert.equal(bingx.supportsOrderEditing, true);
   assert.equal(bingx.supportsPositionTpSl, true);
 });
 

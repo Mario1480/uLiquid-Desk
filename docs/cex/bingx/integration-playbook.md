@@ -24,7 +24,7 @@ Preflight: `docs/cex/bingx/preflight.md`
   - `BINGX_SPOT_ENABLED=1`
   - `BINGX_PERP_ENABLED=1`
   - `BINGX_RECV_WINDOW_MS=5000`
-  - `BINGX_PERP_WRITE_ENABLED=0`
+  - `BINGX_PERP_WRITE_ENABLED=1`
 
 ## 1.1) Endpoints & Fields (from preflight)
 
@@ -89,7 +89,8 @@ Meta fields: `tickSize`, `stepSize`, `minNotional` (minQty/maxQty deprecated)
 - [ ] getMyTrades
 - [ ] perp contracts
 - [ ] perp account/positions read
-- [ ] perp passive limit order + cancel with `BINGX_PERP_WRITE_ENABLED=1`
+- [ ] perp passive limit order + cancel
+- [ ] perp limit order edit via cancel-and-replace
 
 ## 5) Notes / Risks
 - Open orders response may not include `clientOrderID` consistently; preserve it when present.

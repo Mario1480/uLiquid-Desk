@@ -277,7 +277,7 @@ set_env_value "${APP_DIR}/.env.prod" "BINGX_REST_BASE_URL" "https://open-api.bin
 set_env_value "${APP_DIR}/.env.prod" "BINGX_SPOT_ENABLED" "1"
 set_env_value "${APP_DIR}/.env.prod" "BINGX_PERP_ENABLED" "1"
 set_env_value "${APP_DIR}/.env.prod" "BINGX_RECV_WINDOW_MS" "5000"
-set_env_value "${APP_DIR}/.env.prod" "BINGX_PERP_WRITE_ENABLED" "0"
+set_env_value "${APP_DIR}/.env.prod" "BINGX_PERP_WRITE_ENABLED" "1"
 
 echo "==> Syncing .env.prod with latest prod template keys"
 "${APP_DIR}/scripts/sync_env_files.sh" --target "${APP_DIR}/.env.prod" --root "${APP_DIR}"
