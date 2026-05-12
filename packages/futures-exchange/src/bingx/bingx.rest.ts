@@ -6,7 +6,7 @@ import {
   BINGX_USDM_DEFAULT_TIMEOUT_MS
 } from "./bingx.constants.js";
 import { mapBingxError } from "./bingx-error.mapper.js";
-import { toBingxError, type BingxApiError } from "./bingx.errors.js";
+import { parseBingxRateLimitUntilMs, toBingxError, type BingxApiError } from "./bingx.errors.js";
 import {
   buildBingxQueryString,
   buildSignedBingxJsonBody,
@@ -41,6 +41,8 @@ export type BingxRestClientOptions = Pick<
 >;
 
 export class BingxRestClient {
+  private static readonly endpointCooldowns = new Map<string, number>();
+
   readonly baseUrl: string;
   readonly apiKey?: string;
   readonly apiSecret?: string;
@@ -64,6 +66,42 @@ export class BingxRestClient {
     this.options.log({ at: nowIso(), ...entry });
   }
 
+  private endpointCooldownKey(params: { method: HttpMethod; endpoint: string }): string {
+    return `${this.apiKey ?? "public"}|${params.method}|${params.endpoint}`;
+  }
+
+  private activeEndpointCooldownError(params: { method: HttpMethod; endpoint: string }): BingxApiError | null {
+    const cooldownKey = this.endpointCooldownKey(params);
+    const cooldownUntilMs = BingxRestClient.endpointCooldowns.get(cooldownKey) ?? 0;
+    const now = Date.now();
+    if (cooldownUntilMs <= now) {
+      if (cooldownUntilMs > 0) BingxRestClient.endpointCooldowns.delete(cooldownKey);
+      return null;
+    }
+
+    return toBingxError({
+      endpoint: params.endpoint,
+      method: params.method,
+      status: 429,
+      bingxCode: 100410,
+      message: `BingX endpoint rate limit cooldown active until ${new Date(cooldownUntilMs).toISOString()}`,
+      responseBody: {
+        localCooldown: true,
+        rateLimitUntilMs: cooldownUntilMs,
+        retryAfterMs: cooldownUntilMs - now
+      }
+    });
+  }
+
+  private rememberEndpointCooldown(params: { method: HttpMethod; endpoint: string }, error: BingxApiError): void {
+    const cooldownUntilMs =
+      error.options.rateLimitUntilMs
+      ?? parseBingxRateLimitUntilMs(error.options.responseBody)
+      ?? parseBingxRateLimitUntilMs(error.message);
+    if (cooldownUntilMs === null || cooldownUntilMs <= Date.now()) return;
+    BingxRestClient.endpointCooldowns.set(this.endpointCooldownKey(params), cooldownUntilMs);
+  }
+
   private async doRequest<T>(params: {
     method: HttpMethod;
     endpoint: string;
@@ -74,6 +112,9 @@ export class BingxRestClient {
   }): Promise<T> {
     const start = Date.now();
     const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const activeCooldown = this.activeEndpointCooldownError(params);
+    if (activeCooldown) throw activeCooldown;
+
     const headers: Record<string, string> = {
       Accept: "application/json",
       "Content-Type": "application/json"
@@ -144,7 +185,7 @@ export class BingxRestClient {
       const ok = res.ok && okByCode;
 
       if (!ok) {
-        throw toBingxError({
+        const apiError = toBingxError({
           endpoint: params.endpoint,
           method: params.method,
           status: res.status,
@@ -152,6 +193,8 @@ export class BingxRestClient {
           message: typeof obj.msg === "string" ? obj.msg : typeof obj.message === "string" ? obj.message : `HTTP ${res.status}`,
           responseBody: json
         });
+        this.rememberEndpointCooldown(params, apiError);
+        throw apiError;
       }
 
       this.log({
@@ -196,6 +239,8 @@ export class BingxRestClient {
       } catch (error) {
         lastError = error;
         const mapped = mapBingxError(error);
+        const cooldownUntilMs = parseBingxRateLimitUntilMs(error);
+        if (cooldownUntilMs !== null && cooldownUntilMs > Date.now()) break;
         const retry = shouldRetryExchangeError(mapped.code, {
           attempt,
           maxAttempts: this.retryAttempts,

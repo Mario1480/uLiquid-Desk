@@ -21,6 +21,21 @@ type RequestOpts = {
   auth?: "NONE" | "SIGNED";
 };
 
+type BingxClientError = Error & {
+  status?: number;
+  code?: string;
+  exchange?: "bingx";
+  retryable?: boolean;
+  retryAfterMs?: number;
+  retryAfterAt?: string;
+  options?: {
+    status?: number;
+    code?: string;
+    bingxCode?: number;
+    responseBody?: unknown;
+  };
+};
+
 export type BingxSpotSymbolInfo = {
   symbol: string;
   exchangeSymbol: string;
@@ -40,6 +55,79 @@ function sleep(ms: number) {
 
 function withJitter(ms: number) {
   return Math.floor(ms * (0.8 + Math.random() * 0.4));
+}
+
+function parseBingxRateLimitUntilMs(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 1_500_000_000_000) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const matches = value.match(/\b\d{13}\b/g);
+    if (!matches) return null;
+    for (const match of matches) {
+      const parsed = Number(match);
+      if (Number.isFinite(parsed) && parsed > 1_500_000_000_000) return parsed;
+    }
+    return null;
+  }
+  if (value instanceof Error) {
+    return parseBingxRateLimitUntilMs(value.message)
+      ?? parseBingxRateLimitUntilMs((value as { options?: unknown }).options);
+  }
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["rateLimitUntilMs", "retryAfterAt", "msg", "message", "responseBody"]) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    const nested = record[key];
+    if (key === "retryAfterAt" && typeof nested === "string") {
+      const parsedDate = Date.parse(nested);
+      if (Number.isFinite(parsedDate)) return parsedDate;
+    }
+    const parsed = parseBingxRateLimitUntilMs(nested);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function isBingxRateLimitResponse(status: number, code: number, message: string): boolean {
+  const lower = message.toLowerCase();
+  return status === 429
+    || code === 100410
+    || lower.includes("100410")
+    || lower.includes("too many requests")
+    || lower.includes("rate limit")
+    || lower.includes("trigger frequency limit")
+    || lower.includes("disabled period");
+}
+
+function createBingxClientError(params: {
+  status: number;
+  code: number;
+  message: string;
+  responseBody: unknown;
+}): BingxClientError {
+  const rateLimited = isBingxRateLimitResponse(params.status, params.code, params.message);
+  const rateLimitUntilMs = parseBingxRateLimitUntilMs(params.responseBody) ?? parseBingxRateLimitUntilMs(params.message);
+  const status = rateLimited ? 429 : params.status;
+  const err = new Error(
+    `BingX API error ${status}: ${params.message} (${JSON.stringify(params.responseBody)})`
+  ) as BingxClientError;
+  err.status = status;
+  err.exchange = "bingx";
+  err.retryable = rateLimited || status >= 500;
+  if (rateLimited) err.code = "EX_RATE_LIMIT";
+  if (rateLimitUntilMs !== null) {
+    err.retryAfterMs = Math.max(0, rateLimitUntilMs - Date.now());
+    err.retryAfterAt = new Date(rateLimitUntilMs).toISOString();
+  }
+  err.options = {
+    status,
+    code: err.code,
+    bingxCode: Number.isFinite(params.code) ? params.code : undefined,
+    responseBody: params.responseBody
+  };
+  return err;
 }
 
 function parseNumber(value: unknown): number {
@@ -92,6 +180,7 @@ function normalizeSpotSymbol(symbol: string): string {
 export class BingxRestClient {
   private static queue: Promise<unknown> = Promise.resolve();
   private static lastRequestAt = 0;
+  private static readonly endpointCooldowns = new Map<string, number>();
   private static readonly minGapMs = Number(process.env.BINGX_MIN_GAP_MS || "120");
   private readonly metaCache = new Map<string, { meta: BingxSymbolMeta; ts: number }>();
   private readonly metaTtlMs = 10 * 60_000;
@@ -111,6 +200,39 @@ export class BingxRestClient {
     return run;
   }
 
+  private endpointCooldownKey(opts: Pick<RequestOpts, "method" | "path" | "auth">): string {
+    return `${this.apiKey || "public"}|${opts.auth ?? "NONE"}|${opts.method}|${opts.path}`;
+  }
+
+  private getActiveEndpointCooldownError(opts: Pick<RequestOpts, "method" | "path" | "auth">): BingxClientError | null {
+    const key = this.endpointCooldownKey(opts);
+    const cooldownUntilMs = BingxRestClient.endpointCooldowns.get(key) ?? 0;
+    const now = Date.now();
+    if (cooldownUntilMs <= now) {
+      if (cooldownUntilMs > 0) BingxRestClient.endpointCooldowns.delete(key);
+      return null;
+    }
+
+    return createBingxClientError({
+      status: 429,
+      code: 100410,
+      message: `BingX endpoint rate limit cooldown active until ${new Date(cooldownUntilMs).toISOString()}`,
+      responseBody: {
+        localCooldown: true,
+        rateLimitUntilMs: cooldownUntilMs,
+        retryAfterMs: cooldownUntilMs - now
+      }
+    });
+  }
+
+  private rememberEndpointCooldown(opts: Pick<RequestOpts, "method" | "path" | "auth">, error: BingxClientError): void {
+    const cooldownUntilMs =
+      parseBingxRateLimitUntilMs(error.options?.responseBody)
+      ?? parseBingxRateLimitUntilMs(error.message);
+    if (cooldownUntilMs === null || cooldownUntilMs <= Date.now()) return;
+    BingxRestClient.endpointCooldowns.set(this.endpointCooldownKey(opts), cooldownUntilMs);
+  }
+
   private async parseJson(res: Response, label: string): Promise<any> {
     const text = await res.text();
     if (!text) return {};
@@ -128,6 +250,9 @@ export class BingxRestClient {
   private async request<T>(opts: RequestOpts): Promise<T> {
     return BingxRestClient.enqueue(async () => {
       const { method, path, params = {}, auth = "NONE" } = opts;
+      const activeCooldown = this.getActiveEndpointCooldownError({ method, path, auth });
+      if (activeCooldown) throw activeCooldown;
+
       const url = new URL(path, this.baseUrl);
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -167,7 +292,16 @@ export class BingxRestClient {
         const code = hasApiError ? Number(json.code) : 0;
         if (!res.ok || (hasApiError && Number.isFinite(code) && code !== 0)) {
           const msg = json?.msg || json?.message || res.statusText || "request_failed";
-          const err = new Error(`BingX API error ${res.status}: ${msg} (${JSON.stringify(json)})`);
+          const err = createBingxClientError({
+            status: res.status,
+            code,
+            message: String(msg),
+            responseBody: json
+          });
+          if (err.code === "EX_RATE_LIMIT") {
+            this.rememberEndpointCooldown({ method, path, auth }, err);
+            throw err;
+          }
           if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
             const backoff = Math.min(30_000, 1000 * Math.pow(2, attempt));
             await sleep(withJitter(backoff));

@@ -43,7 +43,15 @@ export function classifyBingxErrorCode(error: unknown): ExchangeErrorCode {
   const text = toLowerMessage(error);
   if (text.includes("network") || text.includes("fetch failed") || text.includes("econn")) return "EX_NETWORK";
   if (text.includes("timeout") || text.includes("timed out") || text.includes("abort")) return "EX_TIMEOUT";
-  if (text.includes("rate limit") || text.includes("too many") || text.includes("429") || text.includes("418")) return "EX_RATE_LIMIT";
+  if (
+    text.includes("rate limit")
+    || text.includes("too many")
+    || text.includes("429")
+    || text.includes("418")
+    || text.includes("100410")
+    || text.includes("trigger frequency limit")
+    || text.includes("disabled period")
+  ) return "EX_RATE_LIMIT";
   if (text.includes("service unavailable") || text.includes("upstream")) return "EX_UPSTREAM_UNAVAILABLE";
   if (text.includes("order not") || text.includes("not exist")) return "EX_ORDER_NOT_FOUND";
   if (text.includes("reduceonly") || text.includes("reduce only")) return "EX_REDUCE_ONLY_REJECTED";
@@ -69,10 +77,12 @@ export function mapBingxError(error: unknown): ExchangeError {
     code,
     message: toMessage(error),
     retryable,
-    httpStatus: toStatus(
-      error,
-      code === "EX_AUTH" ? 401 : retryable ? 502 : code === "EX_ORDER_NOT_FOUND" ? 404 : 400
-    ),
+    httpStatus: code === "EX_RATE_LIMIT"
+      ? 429
+      : toStatus(
+          error,
+          code === "EX_AUTH" ? 401 : retryable ? 502 : code === "EX_ORDER_NOT_FOUND" ? 404 : 400
+        ),
     details: error instanceof BingxApiError ? toExchangeErrorDetails(error) : undefined,
     cause: error
   });

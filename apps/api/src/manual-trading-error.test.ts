@@ -50,3 +50,17 @@ test("manual trading error response maps generic upstream error to exchange_erro
   assert.equal(result.payload.exchange, "bitget");
   assert.equal(result.payload.retryable, true);
 });
+
+test("manual trading error response maps BingX 100410 HTTP 500 as rate limited", () => {
+  const result = buildManualTradingErrorResponse({
+    status: 500,
+    message: "code:100410:The endpoint trigger frequency limit rule is currently in the disabled period and will be unblocked after 1778582037390",
+    exchange: "bingx"
+  });
+
+  assert.equal(result.status, 429);
+  assert.equal(result.payload.error, "exchange_error");
+  assert.equal(result.payload.code, "EX_RATE_LIMIT");
+  assert.equal(result.payload.exchange, "bingx");
+  assert.equal(result.payload.retryable, true);
+});

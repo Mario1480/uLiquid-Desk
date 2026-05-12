@@ -23,8 +23,13 @@ function inferExchangeErrorCode(params: {
   }
   if (
     params.status === 429 ||
+    code === "ex_rate_limit" ||
+    code === "100410" ||
+    message.includes("100410") ||
     message.includes("rate limit") ||
-    message.includes("too many")
+    message.includes("too many") ||
+    message.includes("trigger frequency limit") ||
+    message.includes("disabled period")
   ) {
     return "EX_RATE_LIMIT";
   }
@@ -109,19 +114,46 @@ function isRetryableExchangeCode(code: ExchangeErrorCode): boolean {
     || code === "EX_UPSTREAM_UNAVAILABLE";
 }
 
+function normalizeExchangeHttpStatus(status: number, code: ExchangeErrorCode): number {
+  if (code === "EX_RATE_LIMIT" && status >= 500) return 429;
+  return status;
+}
+
+function retryMetadata(error: unknown): Record<string, unknown> {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const options = record.options && typeof record.options === "object" && !Array.isArray(record.options)
+    ? record.options as Record<string, unknown>
+    : {};
+  const details = record.details && typeof record.details === "object" && !Array.isArray(record.details)
+    ? record.details as Record<string, unknown>
+    : {};
+  const bingx = details.bingx && typeof details.bingx === "object" && !Array.isArray(details.bingx)
+    ? details.bingx as Record<string, unknown>
+    : {};
+
+  const retryAfterMs = record.retryAfterMs ?? options.retryAfterMs ?? bingx.retryAfterMs;
+  const retryAfterAt = record.retryAfterAt ?? options.retryAfterAt ?? bingx.retryAfterAt;
+  return {
+    ...(typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) ? { retryAfterMs } : {}),
+    ...(typeof retryAfterAt === "string" && retryAfterAt.trim() ? { retryAfterAt } : {})
+  };
+}
+
 export function buildManualTradingErrorResponse(error: unknown): {
   status: number;
   payload: Record<string, unknown>;
 } {
   if (isExchangeError(error)) {
+    const status = normalizeExchangeHttpStatus(error.httpStatus, error.code);
     return {
-      status: error.httpStatus,
+      status,
       payload: {
         error: "exchange_error",
         code: error.code,
         message: error.message,
         exchange: error.exchange,
-        retryable: error.retryable
+        retryable: error.retryable,
+        ...retryMetadata(error)
       }
     };
   }
@@ -164,6 +196,8 @@ export function buildManualTradingErrorResponse(error: unknown): {
   const message =
     error instanceof Error
       ? error.message
+      : typeof unknown?.message === "string" && unknown.message.trim()
+        ? unknown.message
       : typeof unknown?.options?.message === "string" && unknown.options.message.trim()
         ? unknown.options.message
         : "Unexpected manual trading failure.";
@@ -176,15 +210,17 @@ export function buildManualTradingErrorResponse(error: unknown): {
       ? Boolean(unknown.retryable)
       : isRetryableExchangeCode(standardizedCode);
   const exchange = inferExchangeId(error);
+  const responseStatus = normalizeExchangeHttpStatus(status, standardizedCode);
 
   return {
-    status,
+    status: responseStatus,
     payload: {
       error: "exchange_error",
       code: standardizedCode,
       message,
       exchange,
-      retryable
+      retryable,
+      ...retryMetadata(error)
     }
   };
 }

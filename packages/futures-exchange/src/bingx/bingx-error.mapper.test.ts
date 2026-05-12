@@ -16,6 +16,22 @@ test("mapBingxError maps rate limits as retryable", () => {
   assert.equal(mapped.httpStatus, 429);
 });
 
+test("mapBingxError maps BingX 100410 HTTP 500 disabled period as 429", () => {
+  const mapped = mapBingxError(new BingxRateLimitError(
+    "code:100410:The endpoint trigger frequency limit rule is currently in the disabled period and will be unblocked after 1778582037390",
+    {
+      endpoint: "/openApi/swap/v2/trade/openOrders",
+      method: "GET",
+      status: 500,
+      bingxCode: 100410
+    }
+  ));
+
+  assert.equal(mapped.code, "EX_RATE_LIMIT");
+  assert.equal(mapped.retryable, true);
+  assert.equal(mapped.httpStatus, 429);
+});
+
 test("mapBingxError maps precision style messages", () => {
   const mapped = mapBingxError(new BingxInvalidParamsError("precision invalid: step size", {
     endpoint: "/openApi/swap/v2/trade/order",
