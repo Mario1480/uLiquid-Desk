@@ -296,6 +296,62 @@ function pickOrderId(response: BingxOrderResponse, fallbackClientOrderId?: strin
   return null;
 }
 
+function textRef(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function rawOrderRecord(row: NormalizedOrder): Record<string, unknown> | null {
+  return row.raw && typeof row.raw === "object" ? row.raw as Record<string, unknown> : null;
+}
+
+function looksLikeGeneratedClientOrderId(value: string): boolean {
+  return value.startsWith("uliq_");
+}
+
+function venueOrderId(row: NormalizedOrder): string | null {
+  const raw = rawOrderRecord(row);
+  return textRef(raw?.orderId ?? raw?.orderID);
+}
+
+function clientOrderId(row: NormalizedOrder): string | null {
+  const raw = rawOrderRecord(row);
+  const rawClientId = textRef(raw?.clientOrderId ?? raw?.clientOrderID);
+  if (rawClientId) return rawClientId;
+  return looksLikeGeneratedClientOrderId(row.orderId) ? row.orderId : null;
+}
+
+function matchesOrderReference(row: NormalizedOrder, orderId: string): boolean {
+  return row.orderId === orderId || venueOrderId(row) === orderId || clientOrderId(row) === orderId;
+}
+
+function cancelOrderReference(orderId: string, row?: NormalizedOrder | null): {
+  query: { orderId?: string; clientOrderId?: string };
+  clientOrderId?: string;
+} {
+  const venueId = row ? venueOrderId(row) : null;
+  const clientId = row ? clientOrderId(row) : null;
+  if (venueId) {
+    return {
+      query: { orderId: venueId },
+      clientOrderId: clientId ?? undefined
+    };
+  }
+  if (clientId) {
+    return {
+      query: { clientOrderId: clientId },
+      clientOrderId: clientId
+    };
+  }
+  if (looksLikeGeneratedClientOrderId(orderId)) {
+    return {
+      query: { clientOrderId: orderId },
+      clientOrderId: orderId
+    };
+  }
+  return { query: { orderId } };
+}
+
 function toMarginType(mode: MarginMode): "CROSSED" | "ISOLATED" {
   return mode === "isolated" ? "ISOLATED" : "CROSSED";
 }
@@ -573,7 +629,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
   async cancelOrder(orderId: string): Promise<CancelOrderResult> {
     this.assertWriteEnabled();
     const open = await this.listOpenOrders();
-    const found = open.find((row) => row.orderId === orderId);
+    const found = open.find((row) => matchesOrderReference(row, orderId));
     if (!found) {
       throw new BingxInvalidParamsError("symbol_required_for_order_cancel", {
         endpoint: "/openApi/swap/v2/trade/order",
@@ -592,13 +648,17 @@ export class BingxFuturesAdapter implements FuturesExchange {
         method: "DELETE"
       });
     }
-    await this.tradeApi.cancelOrder({ symbol: exchangeSymbol, orderId: params.orderId });
+    const open = await this.listOpenOrders({ symbol: params.symbol }).catch(() => []);
+    const found = open.find((row) => matchesOrderReference(row, params.orderId)) ?? null;
+    const reference = cancelOrderReference(params.orderId, found);
+    await this.tradeApi.cancelOrder({ symbol: exchangeSymbol, ...reference.query });
     return {
       status: "confirmed",
       submitted: true,
       confirmationSource: "venue_ack",
       receiptStatus: "unknown",
-      orderId: params.orderId
+      orderId: params.orderId,
+      clientOrderId: reference.clientOrderId
     };
   }
 

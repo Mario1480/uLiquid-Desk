@@ -24,10 +24,10 @@ function rows<T>(value: unknown): T[] {
 
 function normalizeOrderReferenceParams(params: BingxOrderReferenceParams): Record<string, unknown> {
   const { clientOrderId, clientOrderID, ...rest } = params;
-  return {
-    ...rest,
-    clientOrderID: clientOrderID ?? clientOrderId
-  };
+  const query: Record<string, unknown> = { ...rest };
+  const clientReference = String(clientOrderId ?? clientOrderID ?? "").trim();
+  if (clientReference) query.clientOrderId = clientReference;
+  return query;
 }
 
 export class BingxTradeApi {

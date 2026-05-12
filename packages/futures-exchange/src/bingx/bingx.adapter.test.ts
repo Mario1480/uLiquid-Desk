@@ -61,6 +61,30 @@ test("BingxTradeApi sends order placement as signed JSON body", async () => {
   });
 });
 
+test("BingxTradeApi sends cancel client references as clientOrderId", async () => {
+  let request: Record<string, unknown> | null = null;
+  const api = new BingxTradeApi({
+    requestPrivate: async (params: Record<string, unknown>) => {
+      request = params;
+      return {};
+    }
+  } as any);
+
+  await api.cancelOrder({
+    symbol: "BTC-USDT",
+    clientOrderID: "uliq_abc"
+  });
+
+  assert.deepEqual(request, {
+    method: "DELETE",
+    endpoint: "/openApi/swap/v2/trade/order",
+    query: {
+      symbol: "BTC-USDT",
+      clientOrderId: "uliq_abc"
+    }
+  });
+});
+
 test("BingxAccountApi sends leverage and margin writes as signed JSON body", async () => {
   const requests: Record<string, unknown>[] = [];
   const api = new BingxAccountApi({
@@ -277,6 +301,99 @@ test("BingX placeOrder falls back to clientOrderID when ack omits venue order id
   assert.equal(result.orderId, result.clientOrderId);
   assert.equal(result.confirmationSource, "venue_ack");
   assert.equal(result.status, "confirmed");
+
+  await adapter.close();
+});
+
+test("BingX cancelOrderByParams resolves generated client ids to venue order ids", async () => {
+  const adapter = new BingxFuturesAdapter({
+    apiKey: "key",
+    apiSecret: "secret",
+    writeEnabled: true
+  });
+  let cancelPayload: Record<string, unknown> | null = null;
+
+  (adapter as any).toExchangeSymbol = async () => "BTC-USDT";
+  (adapter as any).listOpenOrders = async () => [{
+    orderId: "venue_1",
+    symbol: "BTCUSDT",
+    side: "buy",
+    type: "limit",
+    status: "open",
+    price: null,
+    qty: null,
+    triggerPrice: null,
+    takeProfitPrice: null,
+    stopLossPrice: null,
+    reduceOnly: null,
+    createdAt: null,
+    raw: {
+      orderId: "venue_1",
+      clientOrderID: "uliq_abc"
+    }
+  }];
+  (adapter.tradeApi as any).cancelOrder = async (payload: Record<string, unknown>) => {
+    cancelPayload = payload;
+    return {};
+  };
+
+  const result = await adapter.cancelOrderByParams({
+    symbol: "BTCUSDT",
+    orderId: "uliq_abc"
+  });
+
+  assert.deepEqual(cancelPayload, {
+    symbol: "BTC-USDT",
+    orderId: "venue_1"
+  });
+  assert.equal(result.orderId, "uliq_abc");
+  assert.equal(result.clientOrderId, "uliq_abc");
+
+  await adapter.close();
+});
+
+test("BingX cancelOrderByParams sends generated client ids with BingX cancel casing", async () => {
+  const adapter = new BingxFuturesAdapter({
+    apiKey: "key",
+    apiSecret: "secret",
+    writeEnabled: true
+  });
+  let cancelPayload: Record<string, unknown> | null = null;
+
+  (adapter as any).toExchangeSymbol = async () => "BTC-USDT";
+  (adapter as any).listOpenOrders = async () => [{
+    orderId: "uliq_abc",
+    symbol: "BTCUSDT",
+    side: "buy",
+    type: "limit",
+    status: "open",
+    price: null,
+    qty: null,
+    triggerPrice: null,
+    takeProfitPrice: null,
+    stopLossPrice: null,
+    reduceOnly: null,
+    createdAt: null,
+    raw: {
+      clientOrderID: "uliq_abc"
+    }
+  }];
+  (adapter.tradeApi as any).cancelOrder = async (payload: Record<string, unknown>) => {
+    cancelPayload = payload;
+    return {};
+  };
+
+  const result = await adapter.cancelOrderByParams({
+    symbol: "BTCUSDT",
+    orderId: "uliq_abc"
+  });
+
+  assert.deepEqual(cancelPayload, {
+    symbol: "BTC-USDT",
+    clientOrderId: "uliq_abc"
+  });
+  assert.equal(result.orderId, "uliq_abc");
+  assert.equal(result.clientOrderId, "uliq_abc");
 
   await adapter.close();
 });
