@@ -37,7 +37,8 @@ export class BingxTradeApi {
     return this.rest.requestPrivate<BingxOrderResponse>({
       method: "POST",
       endpoint: "/openApi/swap/v2/trade/order",
-      query: params as unknown as Record<string, unknown>
+      query: params as unknown as Record<string, unknown>,
+      bodyFormat: "json"
     });
   }
 

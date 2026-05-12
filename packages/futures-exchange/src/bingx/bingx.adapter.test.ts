@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BingxFuturesAdapter, toBingxContractInfo } from "./bingx.adapter.js";
+import { BingxTradeApi } from "./bingx.trade.api.js";
 
 test("toBingxContractInfo maps BingX USD-M contract precision and symbols", () => {
   const mapped = toBingxContractInfo({
@@ -26,6 +27,37 @@ test("toBingxContractInfo maps BingX USD-M contract precision and symbols", () =
   assert.equal(mapped.minVol, 0.0001);
   assert.equal(mapped.minNotional, 2);
   assert.equal(mapped.apiAllowed, true);
+});
+
+test("BingxTradeApi sends order placement as signed JSON body", async () => {
+  let request: Record<string, unknown> | null = null;
+  const api = new BingxTradeApi({
+    requestPrivate: async (params: Record<string, unknown>) => {
+      request = params;
+      return { orderId: "order_1" };
+    }
+  } as any);
+
+  await api.placeOrder({
+    symbol: "ETH-USDT",
+    side: "BUY",
+    positionSide: "LONG",
+    type: "MARKET",
+    quantity: 0.01
+  });
+
+  assert.deepEqual(request, {
+    method: "POST",
+    endpoint: "/openApi/swap/v2/trade/order",
+    query: {
+      symbol: "ETH-USDT",
+      side: "BUY",
+      positionSide: "LONG",
+      type: "MARKET",
+      quantity: 0.01
+    },
+    bodyFormat: "json"
+  });
 });
 
 test("BingX editOrder replaces open limit order with normalized payload", async () => {

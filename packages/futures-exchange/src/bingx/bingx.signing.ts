@@ -29,7 +29,7 @@ export function buildSignedBingxQuery(params: {
   timestampMs: number;
   recvWindowMs: number;
 }): string {
-  const signedParams = {
+  const signedParams: Record<string, BingxSignableValue> = {
     ...(params.params ?? {}),
     recvWindow: params.recvWindowMs,
     timestamp: params.timestampMs
@@ -38,4 +38,26 @@ export function buildSignedBingxQuery(params: {
   const queryString = buildBingxQueryString(signedParams);
   const signature = signBingxQuery(signingString, params.secret);
   return `${queryString}&signature=${signature}`;
+}
+
+export function buildSignedBingxJsonBody(params: {
+  params?: Record<string, BingxSignableValue>;
+  secret: string;
+  timestampMs: number;
+  recvWindowMs: number;
+}): Record<string, string | number | boolean> {
+  const signedParams: Record<string, BingxSignableValue> = {
+    ...(params.params ?? {}),
+    recvWindow: params.recvWindowMs,
+    timestamp: params.timestampMs
+  };
+  const signingString = buildBingxSigningString(signedParams);
+  const signature = signBingxQuery(signingString, params.secret);
+  const bodyEntries = Object.entries(signedParams)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .sort(([a], [b]) => a.localeCompare(b));
+  return {
+    ...Object.fromEntries(bodyEntries),
+    signature
+  } as Record<string, string | number | boolean>;
 }

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildBingxQueryString,
   buildBingxSigningString,
+  buildSignedBingxJsonBody,
   buildSignedBingxQuery,
   signBingxQuery
 } from "./bingx.signing.js";
@@ -53,4 +54,30 @@ test("buildSignedBingxQuery signs raw params but emits encoded JSON query string
     signed,
     "recvWindow=5000&symbol=BTC-USDT&takeProfit=%7B%22type%22%3A%22TAKE_PROFIT_MARKET%22%2C%22stopPrice%22%3A70000%7D&timestamp=1700000000000&signature=3ae62f9fdb5d88e55967a0c7586d6d107a5431655f5463ccfec309bb37aa2fa3"
   );
+});
+
+test("buildSignedBingxJsonBody signs sorted params and keeps JSON body fields", () => {
+  const signed = buildSignedBingxJsonBody({
+    params: {
+      symbol: "ETH-USDT",
+      side: "BUY",
+      positionSide: "LONG",
+      type: "MARKET",
+      quantity: 0.01
+    },
+    secret: "secret",
+    timestampMs: 1700000000000,
+    recvWindowMs: 5000
+  });
+
+  assert.deepEqual(signed, {
+    positionSide: "LONG",
+    quantity: 0.01,
+    recvWindow: 5000,
+    side: "BUY",
+    symbol: "ETH-USDT",
+    timestamp: 1700000000000,
+    type: "MARKET",
+    signature: "f97b42f3b93269f87d8a4c2078a77b654e1efa9165661bfe9d97003cbdaaaeae"
+  });
 });

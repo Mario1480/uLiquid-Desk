@@ -66,7 +66,7 @@ function isUpstreamCode(code?: number): boolean {
 }
 
 function isInvalidParamsCode(code?: number): boolean {
-  return code === 400 || code === 100400 || code === 80016 || code === 101204;
+  return code === 400 || code === 100400 || code === 109400 || code === 80016 || code === 101204;
 }
 
 export function toBingxError(params: {

@@ -7,7 +7,11 @@ import {
 } from "./bingx.constants.js";
 import { mapBingxError } from "./bingx-error.mapper.js";
 import { toBingxError, type BingxApiError } from "./bingx.errors.js";
-import { buildBingxQueryString, buildSignedBingxQuery } from "./bingx.signing.js";
+import {
+  buildBingxQueryString,
+  buildSignedBingxJsonBody,
+  buildSignedBingxQuery
+} from "./bingx.signing.js";
 import { computeRetryDelayMs, shouldRetryExchangeError } from "../core/retry-policy.js";
 import type { BingxAdapterConfig, BingxLogEntry, HttpMethod } from "./bingx.types.js";
 
@@ -66,6 +70,7 @@ export class BingxRestClient {
     query?: Record<string, unknown>;
     privateAuth: boolean;
     apiKeyAuth?: boolean;
+    bodyFormat?: "query" | "json";
   }): Promise<T> {
     const start = Date.now();
     const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
@@ -74,6 +79,7 @@ export class BingxRestClient {
       "Content-Type": "application/json"
     };
 
+    let body: string | undefined;
     let queryString = buildBingxQueryString(
       (params.query ?? {}) as Record<string, string | number | boolean | undefined | null>
     );
@@ -86,12 +92,22 @@ export class BingxRestClient {
         });
       }
       headers["X-BX-APIKEY"] = this.apiKey;
-      queryString = buildSignedBingxQuery({
-        params: params.query as Record<string, string | number | boolean | undefined | null>,
-        secret: this.apiSecret,
-        timestampMs: Date.now(),
-        recvWindowMs: this.recvWindowMs
-      });
+      if (params.bodyFormat === "json") {
+        body = JSON.stringify(buildSignedBingxJsonBody({
+          params: params.query as Record<string, string | number | boolean | undefined | null>,
+          secret: this.apiSecret,
+          timestampMs: Date.now(),
+          recvWindowMs: this.recvWindowMs
+        }));
+        queryString = "";
+      } else {
+        queryString = buildSignedBingxQuery({
+          params: params.query as Record<string, string | number | boolean | undefined | null>,
+          secret: this.apiSecret,
+          timestampMs: Date.now(),
+          recvWindowMs: this.recvWindowMs
+        });
+      }
     } else if (params.apiKeyAuth) {
       if (!this.apiKey) {
         throw toBingxError({
@@ -110,6 +126,7 @@ export class BingxRestClient {
       const res = await fetch(url, {
         method: params.method,
         headers,
+        body,
         signal: controller.signal
       });
       const text = await res.text();
@@ -221,6 +238,7 @@ export class BingxRestClient {
     method: HttpMethod;
     endpoint: string;
     query?: Record<string, unknown>;
+    bodyFormat?: "query" | "json";
   }): Promise<T> {
     return this.withRetry({
       operation: `${params.method} ${params.endpoint}`,
@@ -229,6 +247,7 @@ export class BingxRestClient {
         method: params.method,
         endpoint: params.endpoint,
         query: params.query,
+        bodyFormat: params.bodyFormat,
         privateAuth: true
       })
     });
