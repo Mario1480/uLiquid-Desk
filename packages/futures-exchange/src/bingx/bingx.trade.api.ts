@@ -46,7 +46,8 @@ export class BingxTradeApi {
     return this.rest.requestPrivate<BingxOrderResponse>({
       method: "DELETE",
       endpoint: "/openApi/swap/v2/trade/order",
-      query: normalizeOrderReferenceParams(params)
+      query: normalizeOrderReferenceParams(params),
+      bodyFormat: "json"
     });
   }
 

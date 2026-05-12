@@ -82,7 +82,8 @@ test("BingxTradeApi sends cancel client references as clientOrderId", async () =
     query: {
       symbol: "BTC-USDT",
       clientOrderId: "uliq_abc"
-    }
+    },
+    bodyFormat: "json"
   });
 });
 
