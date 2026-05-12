@@ -10964,6 +10964,18 @@ function summarizeManualTradingErrorDetails(error: unknown): Record<string, unkn
   const detailRecord = details && typeof details === "object" && !Array.isArray(details)
     ? details as Record<string, unknown>
     : null;
+  const bingx = detailRecord?.bingx && typeof detailRecord.bingx === "object" && !Array.isArray(detailRecord.bingx)
+    ? detailRecord.bingx as Record<string, unknown>
+    : null;
+  if (bingx) {
+    return {
+      bingxEndpoint: bingx.endpoint,
+      bingxMethod: bingx.method,
+      bingxStatus: bingx.status,
+      bingxCode: bingx.bingxCode,
+      bingxResponseBody: bingx.responseBody
+    };
+  }
   const bitget = detailRecord?.bitget && typeof detailRecord.bitget === "object" && !Array.isArray(detailRecord.bitget)
     ? detailRecord.bitget as Record<string, unknown>
     : null;

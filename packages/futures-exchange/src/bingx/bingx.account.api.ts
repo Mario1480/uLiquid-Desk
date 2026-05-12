@@ -61,7 +61,8 @@ export class BingxAccountApi {
         symbol,
         leverage,
         side
-      }
+      },
+      bodyFormat: "json"
     });
   }
 
@@ -81,7 +82,8 @@ export class BingxAccountApi {
         query: {
           symbol,
           marginType
-        }
+        },
+        bodyFormat: "json"
       });
     } catch (error) {
       if (isAlreadySetMarginTypeError(error)) return { ok: true, alreadySet: true };

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { BingxAccountApi } from "./bingx.account.api.js";
 import { BingxFuturesAdapter, toBingxContractInfo } from "./bingx.adapter.js";
 import { BingxTradeApi } from "./bingx.trade.api.js";
 
@@ -58,6 +59,41 @@ test("BingxTradeApi sends order placement as signed JSON body", async () => {
     },
     bodyFormat: "json"
   });
+});
+
+test("BingxAccountApi sends leverage and margin writes as signed JSON body", async () => {
+  const requests: Record<string, unknown>[] = [];
+  const api = new BingxAccountApi({
+    requestPrivate: async (params: Record<string, unknown>) => {
+      requests.push(params);
+      return {};
+    }
+  } as any);
+
+  await api.setMarginType("ETH-USDT", "ISOLATED");
+  await api.setLeverage("ETH-USDT", 5, "LONG");
+
+  assert.deepEqual(requests, [
+    {
+      method: "POST",
+      endpoint: "/openApi/swap/v2/trade/marginType",
+      query: {
+        symbol: "ETH-USDT",
+        marginType: "ISOLATED"
+      },
+      bodyFormat: "json"
+    },
+    {
+      method: "POST",
+      endpoint: "/openApi/swap/v2/trade/leverage",
+      query: {
+        symbol: "ETH-USDT",
+        leverage: 5,
+        side: "LONG"
+      },
+      bodyFormat: "json"
+    }
+  ]);
 });
 
 test("BingX editOrder replaces open limit order with normalized payload", async () => {
