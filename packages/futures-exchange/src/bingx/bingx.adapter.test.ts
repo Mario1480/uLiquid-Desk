@@ -169,11 +169,12 @@ test("BingX editOrder replaces open limit order with normalized payload", async 
     stopLossPrice: 60000
   });
 
-  assert.equal(result.orderId, "new_1");
+  assert.match(String(result.orderId), /^uliq_/);
+  assert.equal(result.orderId, result.clientOrderId);
   assert.equal(calls[0]?.kind, "cancel");
   assert.deepEqual(calls[0]?.payload, {
     symbol: "BTC-USDT",
-    orderId: "old_1"
+    clientOrderId: "old_1"
   });
   assert.equal(calls[1]?.kind, "place");
   assert.equal(calls[1]?.payload.symbol, "BTC-USDT");
@@ -237,8 +238,8 @@ test("BingX placeOrder uses Swap V2 clientOrderID and TP/SL quantities", async (
     stopLossPrice: 60000
   });
 
-  assert.equal(result.orderId, "order_1");
   assert.match(String(result.clientOrderId), /^uliq_/);
+  assert.equal(result.orderId, result.clientOrderId);
   const payload = placed[0] ?? {};
   assert.equal(payload.symbol, "BTC-USDT");
   assert.equal(payload.type, "MARKET");
@@ -305,7 +306,36 @@ test("BingX placeOrder falls back to clientOrderID when ack omits venue order id
   await adapter.close();
 });
 
-test("BingX cancelOrderByParams resolves generated client ids to venue order ids", async () => {
+test("BingX listOpenOrders exposes client order ids as action references", async () => {
+  const adapter = new BingxFuturesAdapter({
+    apiKey: "key",
+    apiSecret: "secret",
+    writeEnabled: true
+  });
+
+  (adapter.contractCache as any).refresh = async () => undefined;
+  (adapter as any).toExchangeSymbol = async () => "BTC-USDT";
+  (adapter as any).toCanonicalSymbol = () => "BTCUSDT";
+  (adapter.tradeApi as any).getOpenOrders = async () => [{
+    orderId: "1736011869418901234",
+    clientOrderId: "uliq_abc",
+    symbol: "BTC-USDT",
+    side: "BUY",
+    type: "LIMIT",
+    status: "PENDING",
+    price: "65000",
+    origQty: "0.01"
+  }];
+
+  const orders = await adapter.listOpenOrders({ symbol: "BTCUSDT" });
+
+  assert.equal(orders[0]?.orderId, "uliq_abc");
+  assert.equal((orders[0]?.raw as any).orderId, "1736011869418901234");
+
+  await adapter.close();
+});
+
+test("BingX cancelOrderByParams prefers exact client ids over venue order ids", async () => {
   const adapter = new BingxFuturesAdapter({
     apiKey: "key",
     apiSecret: "secret",
@@ -344,7 +374,7 @@ test("BingX cancelOrderByParams resolves generated client ids to venue order ids
 
   assert.deepEqual(cancelPayload, {
     symbol: "BTC-USDT",
-    orderId: "venue_1"
+    clientOrderId: "uliq_abc"
   });
   assert.equal(result.orderId, "uliq_abc");
   assert.equal(result.clientOrderId, "uliq_abc");

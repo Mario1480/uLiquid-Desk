@@ -271,11 +271,11 @@ function pickOrderIdFromValue(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   const candidates = [
+    record.clientOrderId,
+    record.clientOrderID,
     record.orderId,
     record.orderID,
-    record.id,
-    record.clientOrderId,
-    record.clientOrderID
+    record.id
   ];
   for (const candidate of candidates) {
     const text = String(candidate ?? "").trim();
@@ -305,8 +305,8 @@ function rawOrderRecord(row: NormalizedOrder): Record<string, unknown> | null {
   return row.raw && typeof row.raw === "object" ? row.raw as Record<string, unknown> : null;
 }
 
-function looksLikeGeneratedClientOrderId(value: string): boolean {
-  return value.startsWith("uliq_");
+function looksLikeClientOrderId(value: string): boolean {
+  return !/^\d+$/.test(value.trim());
 }
 
 function venueOrderId(row: NormalizedOrder): string | null {
@@ -318,11 +318,15 @@ function clientOrderId(row: NormalizedOrder): string | null {
   const raw = rawOrderRecord(row);
   const rawClientId = textRef(raw?.clientOrderId ?? raw?.clientOrderID);
   if (rawClientId) return rawClientId;
-  return looksLikeGeneratedClientOrderId(row.orderId) ? row.orderId : null;
+  return looksLikeClientOrderId(row.orderId) ? row.orderId : null;
 }
 
 function matchesOrderReference(row: NormalizedOrder, orderId: string): boolean {
   return row.orderId === orderId || venueOrderId(row) === orderId || clientOrderId(row) === orderId;
+}
+
+function orderReferenceFromInput(orderId: string): { orderId?: string; clientOrderId?: string } {
+  return looksLikeClientOrderId(orderId) ? { clientOrderId: orderId } : { orderId };
 }
 
 function cancelOrderReference(orderId: string, row?: NormalizedOrder | null): {
@@ -331,22 +335,22 @@ function cancelOrderReference(orderId: string, row?: NormalizedOrder | null): {
 } {
   const venueId = row ? venueOrderId(row) : null;
   const clientId = row ? clientOrderId(row) : null;
-  if (venueId) {
-    return {
-      query: { orderId: venueId },
-      clientOrderId: clientId ?? undefined
-    };
-  }
   if (clientId) {
     return {
       query: { clientOrderId: clientId },
       clientOrderId: clientId
     };
   }
-  if (looksLikeGeneratedClientOrderId(orderId)) {
+  if (looksLikeClientOrderId(orderId)) {
     return {
       query: { clientOrderId: orderId },
       clientOrderId: orderId
+    };
+  }
+  if (venueId) {
+    return {
+      query: { orderId: venueId },
+      clientOrderId: undefined
     };
   }
   return { query: { orderId } };
@@ -667,7 +671,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
     const contract = await this.requireTradeableContract(params.symbol);
     const current = await this.tradeApi.getOrder({
       symbol: contract.exchangeSymbol,
-      orderId: params.orderId
+      ...orderReferenceFromInput(params.orderId)
     });
     if (String(current.type ?? current.origType ?? "").toUpperCase() !== "LIMIT") {
       throw new BingxInvalidParamsError("Only LIMIT orders can be edited on BingX USD-M", {
@@ -706,7 +710,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
 
     await this.tradeApi.cancelOrder({
       symbol: contract.exchangeSymbol,
-      orderId: params.orderId
+      ...orderReferenceFromInput(params.orderId)
     });
     const result = await this.tradeApi.placeOrder(payload);
     const orderId = pickOrderId(result, payload.clientOrderID);
@@ -808,7 +812,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
         const symbol = this.toCanonicalSymbol(rawSymbol) ?? toCanonicalFallbackSymbol(rawSymbol);
         const type = String(row.type ?? row.origType ?? "").toUpperCase();
         return {
-          orderId: String(row.orderId ?? row.clientOrderId ?? row.clientOrderID ?? ""),
+          orderId: String(row.clientOrderId ?? row.clientOrderID ?? row.orderId ?? ""),
           symbol,
           side: row.side ? String(row.side).toLowerCase() : null,
           type: type ? type.toLowerCase() : null,

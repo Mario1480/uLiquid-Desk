@@ -28,6 +28,13 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function preserveLargeBingxIds(jsonText: string): string {
+  return jsonText.replace(
+    /"((?:orderId|triggerOrderId|positionId|positionID))"\s*:\s*(-?\d{16,})(?=\s*[,}\]])/g,
+    (_match, key: string, value: string) => `"${key}":"${value}"`
+  );
+}
+
 function readPositiveMs(value: unknown, fallback: number): number {
   const parsed = Number(value);
   if (Number.isFinite(parsed) && parsed > 0) return Math.trunc(parsed);
@@ -296,7 +303,7 @@ export class BingxRestClient {
       const text = await res.text();
       let json: unknown;
       try {
-        json = text ? JSON.parse(text) : {};
+        json = text ? JSON.parse(preserveLargeBingxIds(text)) : {};
       } catch {
         json = { msg: text };
       }
