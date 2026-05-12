@@ -238,6 +238,49 @@ test("BingX placeOrder uses Swap V2 clientOrderID and TP/SL quantities", async (
   await adapter.close();
 });
 
+test("BingX placeOrder falls back to clientOrderID when ack omits venue order id", async () => {
+  const adapter = new BingxFuturesAdapter({
+    apiKey: "key",
+    apiSecret: "secret",
+    writeEnabled: true
+  });
+  const placed: Record<string, unknown>[] = [];
+
+  (adapter.contractCache as any).getByCanonical = async () => ({
+    canonicalSymbol: "BTCUSDT",
+    exchangeSymbol: "BTC-USDT",
+    minVol: 0.0001,
+    maxVol: null,
+    tickSize: 0.1,
+    stepSize: 0.0001,
+    minLeverage: 1,
+    maxLeverage: 125,
+    apiAllowed: true,
+    minNotional: null
+  });
+  (adapter.accountApi as any).getPositionMode = async () => ({
+    dualSidePosition: true
+  });
+  (adapter.tradeApi as any).placeOrder = async (payload: Record<string, unknown>) => {
+    placed.push(payload);
+    return {};
+  };
+
+  const result = await adapter.placeOrder({
+    symbol: "BTCUSDT",
+    side: "buy",
+    type: "market",
+    qty: 0.01234
+  });
+
+  assert.match(String(result.clientOrderId), /^uliq_/);
+  assert.equal(result.orderId, result.clientOrderId);
+  assert.equal(result.confirmationSource, "venue_ack");
+  assert.equal(result.status, "confirmed");
+
+  await adapter.close();
+});
+
 test("BingX setPositionTpSl sends conditional close payloads accepted by Swap V2", async () => {
   const adapter = new BingxFuturesAdapter({
     apiKey: "key",

@@ -260,12 +260,39 @@ function getOrderStopLossPrice(row: BingxOrderResponse): number | null {
   return parseEmbeddedStopPrice(row.stopLoss) ?? toNumber(row.stopLossPrice);
 }
 
-function pickOrderId(response: BingxOrderResponse): string | null {
-  const candidates = [response.orderId, response.clientOrderId, response.clientOrderID];
+function pickOrderIdFromValue(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = pickOrderIdFromValue(item);
+      if (nested) return nested;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const candidates = [
+    record.orderId,
+    record.orderID,
+    record.id,
+    record.clientOrderId,
+    record.clientOrderID
+  ];
   for (const candidate of candidates) {
     const text = String(candidate ?? "").trim();
     if (text) return text;
   }
+  for (const nestedKey of ["order", "data", "result"]) {
+    const nested = pickOrderIdFromValue(record[nestedKey]);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function pickOrderId(response: BingxOrderResponse, fallbackClientOrderId?: string): string | null {
+  const picked = pickOrderIdFromValue(response);
+  if (picked) return picked;
+  const fallback = String(fallbackClientOrderId ?? "").trim();
+  if (fallback) return fallback;
   return null;
 }
 
@@ -526,7 +553,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
     const positionMode = await this.resolvePositionMode();
     const payload = this.buildOrderRequest(intent, positionMode);
     const result = await this.tradeApi.placeOrder(payload);
-    const orderId = pickOrderId(result);
+    const orderId = pickOrderId(result, payload.clientOrderID);
     if (!orderId) {
       throw new BingxInvalidParamsError("BingX did not return order id", {
         endpoint: "/openApi/swap/v2/trade/order",
@@ -622,7 +649,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       orderId: params.orderId
     });
     const result = await this.tradeApi.placeOrder(payload);
-    const orderId = pickOrderId(result);
+    const orderId = pickOrderId(result, payload.clientOrderID);
     if (!orderId) {
       throw new BingxInvalidParamsError("BingX edit replacement did not return order id", {
         endpoint: "/openApi/swap/v2/trade/order",
