@@ -133,10 +133,9 @@ export type BingxOrderRequest = {
   stopPrice?: number | string;
   timeInForce?: "GTC" | "IOC" | "FOK" | "PostOnly";
   reduceOnly?: "true" | "false";
-  closePosition?: "true" | "false";
   positionSide?: "BOTH" | "LONG" | "SHORT";
   workingType?: "MARK_PRICE" | "CONTRACT_PRICE";
-  clientOrderId?: string;
+  clientOrderID?: string;
   takeProfit?: string;
   stopLoss?: string;
 };

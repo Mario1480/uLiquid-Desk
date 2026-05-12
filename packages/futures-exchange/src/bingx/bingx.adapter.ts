@@ -199,18 +199,21 @@ function toCanonicalClientOrderId(value: string | undefined, fallbackPrefix: str
   return raw.replace(/[^.A-Za-z0-9_:/-]/g, "_").slice(0, CLIENT_ID_LIMIT);
 }
 
-function toManagedClientOrderId(kind: "tp" | "sl", symbol: string, side: "long" | "short"): string {
-  return toCanonicalClientOrderId(`${TPSL_CLIENT_ID_PREFIX}_${kind}_${side}_${symbol}_${Date.now()}`, "uliq");
-}
-
 function isManagedTpSlOrder(row: BingxOrderResponse, symbol?: string, side?: "long" | "short"): boolean {
   const clientOrderId = String(row.clientOrderId ?? row.clientOrderID ?? "");
-  if (!clientOrderId.startsWith(TPSL_CLIENT_ID_PREFIX)) return false;
   if (symbol && String(row.symbol ?? "").toUpperCase() !== symbol.toUpperCase()) return false;
+  const type = String(row.type ?? row.origType ?? "").toUpperCase();
+  const isTpSl = type.includes("STOP") || type.includes("TAKE_PROFIT");
+  if (!clientOrderId.startsWith(TPSL_CLIENT_ID_PREFIX) && !isTpSl) return false;
   if (side) {
     const positionSide = String(row.positionSide ?? "").toUpperCase();
     if (side === "long" && positionSide === "SHORT") return false;
     if (side === "short" && positionSide === "LONG") return false;
+    const orderSide = String(row.side ?? "").toUpperCase();
+    if (positionSide === "BOTH" || positionSide === "") {
+      if (side === "long" && orderSide === "BUY") return false;
+      if (side === "short" && orderSide === "SELL") return false;
+    }
   }
   return true;
 }
@@ -536,7 +539,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       confirmationSource: "venue_ack",
       receiptStatus: "unknown",
       orderId,
-      clientOrderId: payload.clientOrderId
+      clientOrderId: payload.clientOrderID
     };
   }
 
@@ -632,7 +635,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       confirmationSource: "venue_ack",
       receiptStatus: "unknown",
       orderId,
-      clientOrderId: payload.clientOrderId
+      clientOrderId: payload.clientOrderID
     };
   }
 
@@ -873,7 +876,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       side: toBingxOrderSide(intent.side),
       type: toBingxOrderType(intent.type),
       quantity: intent.normalizedQty,
-      clientOrderId: toCanonicalClientOrderId(intent.clientOrderId, "uliq")
+      clientOrderID: toCanonicalClientOrderId(intent.clientOrderId, "uliq")
     };
     if (intent.type === "limit") {
       payload.price = intent.normalizedPrice;
@@ -884,7 +887,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       positionMode === "hedge"
         ? this.resolveOrderPositionSide(intent.side, Boolean(intent.reduceOnly))
         : "BOTH";
-    if (intent.reduceOnly) payload.reduceOnly = "true";
+    if (intent.reduceOnly && positionMode === "one-way") payload.reduceOnly = "true";
     if (!intent.reduceOnly) {
       this.attachEntryTpSl(payload, intent);
     }
@@ -905,6 +908,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       const trigger = roundPriceToTick(intent.takeProfitPrice, tickSize, "nearest");
       payload.takeProfit = JSON.stringify({
         type: "TAKE_PROFIT_MARKET",
+        quantity: intent.normalizedQty,
         stopPrice: trigger,
         workingType: "MARK_PRICE"
       });
@@ -913,6 +917,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       const trigger = roundPriceToTick(intent.stopLossPrice, tickSize, "nearest");
       payload.stopLoss = JSON.stringify({
         type: "STOP_MARKET",
+        quantity: intent.normalizedQty,
         stopPrice: trigger,
         workingType: "MARK_PRICE"
       });
@@ -940,9 +945,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
       type: params.kind === "tp" ? "TAKE_PROFIT_MARKET" : "STOP_MARKET",
       quantity,
       stopPrice,
-      workingType: "MARK_PRICE",
-      closePosition: "true",
-      clientOrderId: toManagedClientOrderId(params.kind, params.contract.canonicalSymbol, params.side)
+      workingType: "MARK_PRICE"
     };
     payload.positionSide = params.positionMode === "hedge"
       ? params.side === "long" ? "LONG" : "SHORT"

@@ -4,6 +4,13 @@ import type {
 } from "./bingx.types.js";
 import type { BingxRestClient } from "./bingx.rest.js";
 
+type BingxOrderReferenceParams = {
+  symbol: string;
+  orderId?: string;
+  clientOrderId?: string;
+  clientOrderID?: string;
+};
+
 function rows<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
   if (value && typeof value === "object") {
@@ -13,6 +20,14 @@ function rows<T>(value: unknown): T[] {
     }
   }
   return [];
+}
+
+function normalizeOrderReferenceParams(params: BingxOrderReferenceParams): Record<string, unknown> {
+  const { clientOrderId, clientOrderID, ...rest } = params;
+  return {
+    ...rest,
+    clientOrderID: clientOrderID ?? clientOrderId
+  };
 }
 
 export class BingxTradeApi {
@@ -26,11 +41,11 @@ export class BingxTradeApi {
     });
   }
 
-  cancelOrder(params: { symbol: string; orderId?: string; clientOrderId?: string }): Promise<BingxOrderResponse> {
+  cancelOrder(params: BingxOrderReferenceParams): Promise<BingxOrderResponse> {
     return this.rest.requestPrivate<BingxOrderResponse>({
       method: "DELETE",
       endpoint: "/openApi/swap/v2/trade/order",
-      query: params
+      query: normalizeOrderReferenceParams(params)
     });
   }
 
@@ -51,11 +66,11 @@ export class BingxTradeApi {
     return rows<BingxOrderResponse>(data);
   }
 
-  getOrder(params: { symbol: string; orderId?: string; clientOrderId?: string }): Promise<BingxOrderResponse> {
+  getOrder(params: BingxOrderReferenceParams): Promise<BingxOrderResponse> {
     return this.rest.requestPrivate<BingxOrderResponse>({
       method: "GET",
       endpoint: "/openApi/swap/v2/trade/order",
-      query: params
+      query: normalizeOrderReferenceParams(params)
     });
   }
 
