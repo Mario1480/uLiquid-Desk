@@ -28,6 +28,12 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function readPositiveMs(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return Math.trunc(parsed);
+  return fallback;
+}
+
 export type BingxRestClientOptions = Pick<
   BingxAdapterConfig,
   | "apiKey"
@@ -40,8 +46,16 @@ export type BingxRestClientOptions = Pick<
   | "log"
 >;
 
+type BingxReadCacheEntry = {
+  value?: unknown;
+  expiresAt: number;
+  staleUntil: number;
+  inFlight?: Promise<unknown>;
+};
+
 export class BingxRestClient {
   private static readonly endpointCooldowns = new Map<string, number>();
+  private static readonly readCache = new Map<string, BingxReadCacheEntry>();
 
   readonly baseUrl: string;
   readonly apiKey?: string;
@@ -68,6 +82,105 @@ export class BingxRestClient {
 
   private endpointCooldownKey(params: { method: HttpMethod; endpoint: string }): string {
     return `${this.apiKey ?? "public"}|${params.method}|${params.endpoint}`;
+  }
+
+  private isOpenOrdersRead(params: { method: HttpMethod; endpoint: string }): boolean {
+    return params.method === "GET" && params.endpoint === "/openApi/swap/v2/trade/openOrders";
+  }
+
+  private readCacheTtlMs(): number {
+    return readPositiveMs(process.env.BINGX_OPEN_ORDERS_CACHE_TTL_MS, 60_000);
+  }
+
+  private readCacheStaleMs(): number {
+    return readPositiveMs(process.env.BINGX_OPEN_ORDERS_CACHE_STALE_MS, 10 * 60_000);
+  }
+
+  private readCacheKey(params: {
+    method: HttpMethod;
+    endpoint: string;
+    query?: Record<string, unknown>;
+  }): string {
+    const queryString = buildBingxQueryString(
+      (params.query ?? {}) as Record<string, string | number | boolean | undefined | null>
+    );
+    return `${this.apiKey ?? "public"}|${params.method}|${params.endpoint}|${queryString}`;
+  }
+
+  private getCachedRead<T>(
+    params: {
+      method: HttpMethod;
+      endpoint: string;
+      query?: Record<string, unknown>;
+    },
+    mode: "fresh" | "stale"
+  ): T | null {
+    if (!this.isOpenOrdersRead(params)) return null;
+    const cached = BingxRestClient.readCache.get(this.readCacheKey(params));
+    if (!cached || cached.value === undefined) return null;
+    const now = Date.now();
+    if (mode === "fresh" && cached.expiresAt > now) return cached.value as T;
+    if (mode === "stale" && cached.staleUntil > now) return cached.value as T;
+    if (cached.staleUntil <= now && !cached.inFlight) {
+      BingxRestClient.readCache.delete(this.readCacheKey(params));
+    }
+    return null;
+  }
+
+  private getCachedReadInFlight<T>(params: {
+    method: HttpMethod;
+    endpoint: string;
+    query?: Record<string, unknown>;
+  }): Promise<T> | null {
+    if (!this.isOpenOrdersRead(params)) return null;
+    const cached = BingxRestClient.readCache.get(this.readCacheKey(params));
+    return cached?.inFlight ? cached.inFlight as Promise<T> : null;
+  }
+
+  private rememberCachedRead<T>(params: {
+    method: HttpMethod;
+    endpoint: string;
+    query?: Record<string, unknown>;
+  }, value: T): void {
+    if (!this.isOpenOrdersRead(params)) return;
+    const now = Date.now();
+    BingxRestClient.readCache.set(this.readCacheKey(params), {
+      value,
+      expiresAt: now + this.readCacheTtlMs(),
+      staleUntil: now + this.readCacheStaleMs()
+    });
+  }
+
+  private rememberCachedReadInFlight<T>(params: {
+    method: HttpMethod;
+    endpoint: string;
+    query?: Record<string, unknown>;
+  }, inFlight: Promise<T>): void {
+    if (!this.isOpenOrdersRead(params)) return;
+    const key = this.readCacheKey(params);
+    const current = BingxRestClient.readCache.get(key);
+    BingxRestClient.readCache.set(key, {
+      value: current?.value,
+      expiresAt: current?.expiresAt ?? 0,
+      staleUntil: current?.staleUntil ?? 0,
+      inFlight
+    });
+    void inFlight.finally(() => {
+      const latest = BingxRestClient.readCache.get(key);
+      if (latest?.inFlight === inFlight) {
+        delete latest.inFlight;
+        if (latest.value === undefined && latest.staleUntil <= Date.now()) {
+          BingxRestClient.readCache.delete(key);
+        }
+      }
+    }).catch(() => undefined);
+  }
+
+  private clearOpenOrdersReadCache(): void {
+    const prefix = `${this.apiKey ?? "public"}|GET|/openApi/swap/v2/trade/openOrders|`;
+    for (const key of BingxRestClient.readCache.keys()) {
+      if (key.startsWith(prefix)) BingxRestClient.readCache.delete(key);
+    }
   }
 
   private activeEndpointCooldownError(params: { method: HttpMethod; endpoint: string }): BingxApiError | null {
@@ -112,8 +225,18 @@ export class BingxRestClient {
   }): Promise<T> {
     const start = Date.now();
     const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const freshCache = this.getCachedRead<T>(params, "fresh");
+    if (freshCache !== null) return freshCache;
+
+    const inFlight = this.getCachedReadInFlight<T>(params);
+    if (inFlight) return inFlight;
+
     const activeCooldown = this.activeEndpointCooldownError(params);
-    if (activeCooldown) throw activeCooldown;
+    if (activeCooldown) {
+      const staleCache = this.getCachedRead<T>(params, "stale");
+      if (staleCache !== null) return staleCache;
+      throw activeCooldown;
+    }
 
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -194,6 +317,8 @@ export class BingxRestClient {
           responseBody: json
         });
         this.rememberEndpointCooldown(params, apiError);
+        const staleCache = this.getCachedRead<T>(params, "stale");
+        if (staleCache !== null) return staleCache;
         throw apiError;
       }
 
@@ -206,7 +331,10 @@ export class BingxRestClient {
         ok: true,
         requestId
       });
-      return (Object.prototype.hasOwnProperty.call(obj, "data") ? obj.data : json) as T;
+      const value = (Object.prototype.hasOwnProperty.call(obj, "data") ? obj.data : json) as T;
+      this.rememberCachedRead(params, value);
+      if (params.method !== "GET") this.clearOpenOrdersReadCache();
+      return value;
     } catch (error) {
       const err = error as BingxApiError;
       this.log({
@@ -232,6 +360,7 @@ export class BingxRestClient {
   }): Promise<T> {
     let attempt = 0;
     let lastError: unknown;
+
     while (attempt < this.retryAttempts) {
       attempt += 1;
       try {
@@ -285,7 +414,8 @@ export class BingxRestClient {
     query?: Record<string, unknown>;
     bodyFormat?: "query" | "json";
   }): Promise<T> {
-    return this.withRetry({
+    const operation = `${params.method} ${params.endpoint}`;
+    const run = this.withRetry({
       operation: `${params.method} ${params.endpoint}`,
       idempotent: params.method === "GET",
       fn: () => this.doRequest<T>({
@@ -296,5 +426,10 @@ export class BingxRestClient {
         privateAuth: true
       })
     });
+    if (this.isOpenOrdersRead(params)) this.rememberCachedReadInFlight(params, run);
+    if (params.method !== "GET" && operation.includes("/openApi/swap/v2/trade/")) {
+      void run.then(() => this.clearOpenOrdersReadCache(), () => undefined);
+    }
+    return run;
   }
 }

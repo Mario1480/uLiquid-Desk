@@ -36,6 +36,12 @@ type BingxClientError = Error & {
   };
 };
 
+type BingxReadCacheEntry = {
+  value?: unknown;
+  expiresAt: number;
+  staleUntil: number;
+};
+
 export type BingxSpotSymbolInfo = {
   symbol: string;
   exchangeSymbol: string;
@@ -55,6 +61,12 @@ function sleep(ms: number) {
 
 function withJitter(ms: number) {
   return Math.floor(ms * (0.8 + Math.random() * 0.4));
+}
+
+function readPositiveMs(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return Math.trunc(parsed);
+  return fallback;
 }
 
 function parseBingxRateLimitUntilMs(value: unknown): number | null {
@@ -181,6 +193,7 @@ export class BingxRestClient {
   private static queue: Promise<unknown> = Promise.resolve();
   private static lastRequestAt = 0;
   private static readonly endpointCooldowns = new Map<string, number>();
+  private static readonly readCache = new Map<string, BingxReadCacheEntry>();
   private static readonly minGapMs = Number(process.env.BINGX_MIN_GAP_MS || "120");
   private readonly metaCache = new Map<string, { meta: BingxSymbolMeta; ts: number }>();
   private readonly metaTtlMs = 10 * 60_000;
@@ -202,6 +215,55 @@ export class BingxRestClient {
 
   private endpointCooldownKey(opts: Pick<RequestOpts, "method" | "path" | "auth">): string {
     return `${this.apiKey || "public"}|${opts.auth ?? "NONE"}|${opts.method}|${opts.path}`;
+  }
+
+  private isOpenOrdersRead(opts: Pick<RequestOpts, "method" | "path">): boolean {
+    return opts.method === "GET" && opts.path === "/openApi/spot/v1/trade/openOrders";
+  }
+
+  private readCacheTtlMs(): number {
+    return readPositiveMs(process.env.BINGX_OPEN_ORDERS_CACHE_TTL_MS, 60_000);
+  }
+
+  private readCacheStaleMs(): number {
+    return readPositiveMs(process.env.BINGX_OPEN_ORDERS_CACHE_STALE_MS, 10 * 60_000);
+  }
+
+  private readCacheKey(opts: Pick<RequestOpts, "method" | "path" | "auth" | "params">): string {
+    const queryString = buildBingxQueryString(opts.params ?? {});
+    return `${this.apiKey || "public"}|${opts.auth ?? "NONE"}|${opts.method}|${opts.path}|${queryString}`;
+  }
+
+  private getCachedRead<T>(
+    opts: Pick<RequestOpts, "method" | "path" | "auth" | "params">,
+    mode: "fresh" | "stale"
+  ): T | null {
+    if (!this.isOpenOrdersRead(opts)) return null;
+    const key = this.readCacheKey(opts);
+    const cached = BingxRestClient.readCache.get(key);
+    if (!cached || cached.value === undefined) return null;
+    const now = Date.now();
+    if (mode === "fresh" && cached.expiresAt > now) return cached.value as T;
+    if (mode === "stale" && cached.staleUntil > now) return cached.value as T;
+    if (cached.staleUntil <= now) BingxRestClient.readCache.delete(key);
+    return null;
+  }
+
+  private rememberCachedRead<T>(opts: Pick<RequestOpts, "method" | "path" | "auth" | "params">, value: T): void {
+    if (!this.isOpenOrdersRead(opts)) return;
+    const now = Date.now();
+    BingxRestClient.readCache.set(this.readCacheKey(opts), {
+      value,
+      expiresAt: now + this.readCacheTtlMs(),
+      staleUntil: now + this.readCacheStaleMs()
+    });
+  }
+
+  private clearOpenOrdersReadCache(): void {
+    const prefix = `${this.apiKey || "public"}|SIGNED|GET|/openApi/spot/v1/trade/openOrders|`;
+    for (const key of BingxRestClient.readCache.keys()) {
+      if (key.startsWith(prefix)) BingxRestClient.readCache.delete(key);
+    }
   }
 
   private getActiveEndpointCooldownError(opts: Pick<RequestOpts, "method" | "path" | "auth">): BingxClientError | null {
@@ -250,8 +312,15 @@ export class BingxRestClient {
   private async request<T>(opts: RequestOpts): Promise<T> {
     return BingxRestClient.enqueue(async () => {
       const { method, path, params = {}, auth = "NONE" } = opts;
+      const freshCache = this.getCachedRead<T>({ method, path, params, auth }, "fresh");
+      if (freshCache !== null) return freshCache;
+
       const activeCooldown = this.getActiveEndpointCooldownError({ method, path, auth });
-      if (activeCooldown) throw activeCooldown;
+      if (activeCooldown) {
+        const staleCache = this.getCachedRead<T>({ method, path, params, auth }, "stale");
+        if (staleCache !== null) return staleCache;
+        throw activeCooldown;
+      }
 
       const url = new URL(path, this.baseUrl);
       const headers: Record<string, string> = {
@@ -300,6 +369,8 @@ export class BingxRestClient {
           });
           if (err.code === "EX_RATE_LIMIT") {
             this.rememberEndpointCooldown({ method, path, auth }, err);
+            const staleCache = this.getCachedRead<T>({ method, path, params, auth }, "stale");
+            if (staleCache !== null) return staleCache;
             throw err;
           }
           if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
@@ -311,7 +382,10 @@ export class BingxRestClient {
           throw err;
         }
 
-        return (hasApiError && Object.prototype.hasOwnProperty.call(json, "data") ? json.data : json) as T;
+        const value = (hasApiError && Object.prototype.hasOwnProperty.call(json, "data") ? json.data : json) as T;
+        this.rememberCachedRead({ method, path, params, auth }, value);
+        if (method !== "GET" && path.includes("/openApi/spot/v1/trade/")) this.clearOpenOrdersReadCache();
+        return value;
       }
     });
   }
