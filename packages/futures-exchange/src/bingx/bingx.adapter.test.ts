@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { BingxAccountApi } from "./bingx.account.api.js";
 import { BingxFuturesAdapter, toBingxContractInfo } from "./bingx.adapter.js";
+import { BingxInvalidParamsError } from "./bingx.errors.js";
 import { BingxTradeApi } from "./bingx.trade.api.js";
 
 test("toBingxContractInfo maps BingX USD-M contract precision and symbols", () => {
@@ -424,6 +425,114 @@ test("BingX cancelOrderByParams sends generated client ids with BingX cancel cas
   });
   assert.equal(result.orderId, "uliq_abc");
   assert.equal(result.clientOrderId, "uliq_abc");
+
+  await adapter.close();
+});
+
+test("BingX cancelOrderByParams retries venue order id when client reference is rejected", async () => {
+  const adapter = new BingxFuturesAdapter({
+    apiKey: "key",
+    apiSecret: "secret",
+    writeEnabled: true
+  });
+  const cancelPayloads: Record<string, unknown>[] = [];
+
+  (adapter as any).toExchangeSymbol = async () => "BTC-USDT";
+  (adapter as any).listOpenOrders = async () => [{
+    orderId: "uliq_abc",
+    symbol: "BTCUSDT",
+    side: "buy",
+    type: "limit",
+    status: "open",
+    price: null,
+    qty: null,
+    triggerPrice: null,
+    takeProfitPrice: null,
+    stopLossPrice: null,
+    reduceOnly: null,
+    createdAt: null,
+    raw: {
+      orderId: "1736011869418901234",
+      clientOrderId: "uliq_abc"
+    }
+  }];
+  (adapter.tradeApi as any).cancelOrder = async (payload: Record<string, unknown>) => {
+    cancelPayloads.push(payload);
+    if (payload.clientOrderId) {
+      throw new BingxInvalidParamsError("Invalid parameters, err:The request you constructed does not meet the requirements.", {
+        endpoint: "/openApi/swap/v2/trade/order",
+        method: "DELETE",
+        status: 500
+      });
+    }
+    return {};
+  };
+
+  const result = await adapter.cancelOrderByParams({
+    symbol: "BTCUSDT",
+    orderId: "uliq_abc"
+  });
+
+  assert.deepEqual(cancelPayloads, [
+    {
+      symbol: "BTC-USDT",
+      clientOrderId: "uliq_abc"
+    },
+    {
+      symbol: "BTC-USDT",
+      orderId: "1736011869418901234"
+    }
+  ]);
+  assert.equal(result.orderId, "uliq_abc");
+  assert.equal(result.clientOrderId, "uliq_abc");
+
+  await adapter.close();
+});
+
+test("BingX cancelOrderByParams resolves mismatched symbol hints from all open orders", async () => {
+  const adapter = new BingxFuturesAdapter({
+    apiKey: "key",
+    apiSecret: "secret",
+    writeEnabled: true
+  });
+  let cancelPayload: Record<string, unknown> | null = null;
+
+  (adapter as any).toExchangeSymbol = async (symbol: string) => symbol === "ETHUSDT" ? "ETH-USDT" : "BTC-USDT";
+  (adapter as any).listOpenOrders = async (params?: { symbol?: string }) => {
+    if (params?.symbol) return [];
+    return [{
+      orderId: "uliq_abc",
+      symbol: "BTCUSDT",
+      side: "buy",
+      type: "limit",
+      status: "open",
+      price: null,
+      qty: null,
+      triggerPrice: null,
+      takeProfitPrice: null,
+      stopLossPrice: null,
+      reduceOnly: null,
+      createdAt: null,
+      raw: {
+        orderId: "1736011869418901234",
+        clientOrderId: "uliq_abc"
+      }
+    }];
+  };
+  (adapter.tradeApi as any).cancelOrder = async (payload: Record<string, unknown>) => {
+    cancelPayload = payload;
+    return {};
+  };
+
+  await adapter.cancelOrderByParams({
+    symbol: "ETHUSDT",
+    orderId: "uliq_abc"
+  });
+
+  assert.deepEqual(cancelPayload, {
+    symbol: "BTC-USDT",
+    clientOrderId: "uliq_abc"
+  });
 
   await adapter.close();
 });

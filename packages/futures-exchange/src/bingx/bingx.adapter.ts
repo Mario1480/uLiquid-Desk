@@ -356,6 +356,42 @@ function cancelOrderReference(orderId: string, row?: NormalizedOrder | null): {
   return { query: { orderId } };
 }
 
+function alternateCancelOrderReference(
+  orderId: string,
+  row: NormalizedOrder | null,
+  previous: { query: { orderId?: string; clientOrderId?: string } }
+): { query: { orderId?: string; clientOrderId?: string }; clientOrderId?: string } | null {
+  const venueId = row ? venueOrderId(row) : null;
+  const clientId = row ? clientOrderId(row) : looksLikeClientOrderId(orderId) ? orderId : null;
+  if (previous.query.clientOrderId && venueId) {
+    return { query: { orderId: venueId }, clientOrderId: clientId ?? undefined };
+  }
+  if (previous.query.orderId && clientId) {
+    return { query: { clientOrderId: clientId }, clientOrderId: clientId };
+  }
+  return null;
+}
+
+function cancelReferenceKind(reference: { query: { orderId?: string; clientOrderId?: string } }): "orderId" | "clientOrderId" {
+  return reference.query.clientOrderId ? "clientOrderId" : "orderId";
+}
+
+function maskReference(value: unknown): string | undefined {
+  const text = String(value ?? "").trim();
+  if (!text) return undefined;
+  if (text.length <= 8) return text;
+  return `${text.slice(0, 4)}...${text.slice(-4)}`;
+}
+
+function isRetryableCancelReferenceError(error: unknown): boolean {
+  if (!(error instanceof BingxInvalidParamsError)) return false;
+  const text = error.message.toLowerCase();
+  return text.includes("invalid")
+    || text.includes("parameter")
+    || text.includes("requirements")
+    || text.includes("sample code");
+}
+
 function toMarginType(mode: MarginMode): "CROSSED" | "ISOLATED" {
   return mode === "isolated" ? "ISOLATED" : "CROSSED";
 }
@@ -645,7 +681,7 @@ export class BingxFuturesAdapter implements FuturesExchange {
 
   async cancelOrderByParams(params: { orderId: string; symbol?: string }): Promise<CancelOrderResult> {
     this.assertWriteEnabled();
-    const exchangeSymbol = params.symbol ? await this.toExchangeSymbol(params.symbol) : null;
+    let exchangeSymbol = params.symbol ? await this.toExchangeSymbol(params.symbol) : null;
     if (!exchangeSymbol) {
       throw new BingxInvalidParamsError("symbol_required_for_order_cancel", {
         endpoint: "/openApi/swap/v2/trade/order",
@@ -653,9 +689,30 @@ export class BingxFuturesAdapter implements FuturesExchange {
       });
     }
     const open = await this.listOpenOrders({ symbol: params.symbol }).catch(() => []);
-    const found = open.find((row) => matchesOrderReference(row, params.orderId)) ?? null;
+    let found = open.find((row) => matchesOrderReference(row, params.orderId)) ?? null;
+    if (!found) {
+      const allOpen = await this.listOpenOrders().catch(() => []);
+      found = allOpen.find((row) => matchesOrderReference(row, params.orderId)) ?? null;
+      if (found) exchangeSymbol = await this.toExchangeSymbol(found.symbol);
+    }
     const reference = cancelOrderReference(params.orderId, found);
-    await this.tradeApi.cancelOrder({ symbol: exchangeSymbol, ...reference.query });
+    try {
+      await this.tradeApi.cancelOrder({ symbol: exchangeSymbol, ...reference.query });
+    } catch (error) {
+      const alternate = alternateCancelOrderReference(params.orderId, found, reference);
+      if (!alternate || !isRetryableCancelReferenceError(error)) throw error;
+      console.warn("[bingx] retrying cancel with alternate order reference", {
+        symbol: exchangeSymbol,
+        firstReference: cancelReferenceKind(reference),
+        firstOrderId: maskReference(reference.query.orderId),
+        firstClientOrderId: maskReference(reference.query.clientOrderId),
+        retryReference: cancelReferenceKind(alternate),
+        retryOrderId: maskReference(alternate.query.orderId),
+        retryClientOrderId: maskReference(alternate.query.clientOrderId),
+        reason: error instanceof Error ? error.message : String(error)
+      });
+      await this.tradeApi.cancelOrder({ symbol: exchangeSymbol, ...alternate.query });
+    }
     return {
       status: "confirmed",
       submitted: true,
