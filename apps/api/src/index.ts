@@ -116,6 +116,7 @@ import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { registerMobileDashboardRoutes } from "./mobile/routes.js";
 import { registerMobileMonitoringRoutes } from "./mobile/monitoringRoutes.js";
 import { registerMobilePushRoutes } from "./mobile/pushRoutes.js";
+import { registerMobileTradingRoutes } from "./mobile/tradingRoutes.js";
 import { registerPredictionReadRoutes } from "./predictions/routes-read.js";
 import { registerPredictionGenerateRoutes } from "./predictions/routes-generate.js";
 import { registerPredictionStateRoutes } from "./predictions/routes-state.js";
@@ -11914,6 +11915,37 @@ registerMobileMonitoringRoutes(app, {
   loadGridDeskVisibilityMask,
   filterGridBotPositionsForDesk,
   listNews
+});
+registerMobileTradingRoutes(app, {
+  getTradingSettings,
+  resolveMarketDataTradingAccount,
+  sendManualTradingError,
+  normalizeSpotSymbol,
+  normalizeSymbolInput,
+  createPerpExecutionAdapter,
+  isPaperTradingAccount,
+  getPaperAccountState,
+  getPaperSpotAccountState,
+  listPaperPositions,
+  listPaperSpotPositions,
+  listPaperOpenOrders,
+  listPaperSpotOpenOrders,
+  listPositions,
+  listOpenOrders,
+  loadGridDeskVisibilityMask,
+  filterGridBotPositionsForDesk,
+  filterGridBotOrdersForDesk,
+  splitCanonicalSymbol,
+  placePaperOrder,
+  placePaperSpotOrder,
+  cancelPaperOrder,
+  cancelPaperSpotOrder,
+  setPaperPositionTpSl,
+  setPositionTpSl,
+  cancelAllOrders,
+  closePositionsMarket,
+  closePaperPosition,
+  closePaperSpotPosition
 });
 registerSiweAuthRoutes(app, { db, siweService, vaultService });
 registerManualTradingMarketDataRoutes(app, {
