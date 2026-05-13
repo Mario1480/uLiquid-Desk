@@ -675,6 +675,7 @@ export function AdvancedChart({
   const lastPersistedHeightRef = useRef<number>(chartPreferences?.chartHeight ?? 520);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>(t("status.loadingCandles"));
+  const [widgetReadyVersion, setWidgetReadyVersion] = useState(0);
   const normalizedTimeframe = resolutionToDeskTimeframe(deskTimeframeToResolution(timeframe), "15m");
   const loadingCandlesMessage = t("status.loadingCandles");
   const readyAdvancedMessage = t("status.readyAdvanced");
@@ -868,6 +869,7 @@ export function AdvancedChart({
         widget.onChartReady(() => {
           if (disposed) return;
           widgetReadyRef.current = true;
+          setWidgetReadyVersion((version) => version + 1);
           setStatusMessage(readyAdvancedMessage);
           void syncStudies();
         });
@@ -901,12 +903,32 @@ export function AdvancedChart({
   useEffect(() => {
     const widget = widgetRef.current;
     if (!widget || !widgetReadyRef.current) return;
+    let active = true;
 
     setStatusMessage(loadingCandlesMessage);
+    try {
+      widget.resetCache();
+      widget.activeChart().resetData();
+    } catch {
+      // Keep symbol changes usable if the library rejects cache invalidation.
+    }
     widget.setSymbol(symbol, deskTimeframeToResolution(normalizedTimeframe), () => {
+      if (!active) return;
       setStatusMessage(readyAdvancedMessage);
     });
-  }, [loadingCandlesMessage, normalizedTimeframe, readyAdvancedMessage, symbol]);
+
+    return () => {
+      active = false;
+    };
+  }, [
+    exchangeAccountId,
+    loadingCandlesMessage,
+    marketType,
+    normalizedTimeframe,
+    readyAdvancedMessage,
+    symbol,
+    widgetReadyVersion
+  ]);
 
   useEffect(() => {
     if (!exchangeAccountId || !symbol) return;
