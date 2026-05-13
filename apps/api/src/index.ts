@@ -12876,6 +12876,7 @@ async function handleUserWsConnection(
   let context: MarketWsContext | null = null;
   let spotClient: SpotClient | null = null;
   let perpClient: PerpMarketDataClient | null = null;
+  let pollingLiveAdapter: PerpExecutionAdapter | null = null;
   let cleaned = false;
   let balanceTimer: NodeJS.Timeout | null = null;
   const unsubs: Array<() => void> = [];
@@ -12887,8 +12888,10 @@ async function handleUserWsConnection(
     if (balanceTimer) clearInterval(balanceTimer);
     if (context) await context.stop();
     if (perpClient) await perpClient.close();
+    if (pollingLiveAdapter) await pollingLiveAdapter.close();
     spotClient = null;
     perpClient = null;
+    pollingLiveAdapter = null;
     balanceTimer = null;
     context = null;
   };
@@ -12987,23 +12990,42 @@ async function handleUserWsConnection(
       };
       if (resolvePerpMarketStreamingMode(resolvedPerpContext) === "market_data_poll") {
         ensureManualPerpEligibility(preResolved);
-        perpClient = createPollingPerpMarketDataClient(resolvedPerpContext, "/ws/user");
+        const paperMode = isPaperTradingAccount(preResolved.selectedAccount);
+        if (paperMode) {
+          perpClient = createPollingPerpMarketDataClient(resolvedPerpContext, "/ws/user");
+        } else {
+          pollingLiveAdapter = createPerpExecutionAdapter(preResolved.marketDataAccount);
+        }
 
         await saveTradingSettings(user.id, {
           exchangeAccountId: preResolved.selectedAccount.id,
           marketType
         });
 
-      const sendSummary = async () => {
-          if (!perpClient) return;
+        const sendSummary = async () => {
           const visibilityMask = await loadGridDeskVisibilityMask(user.id, [
             String(preResolved.selectedAccount.id)
           ]);
-          const [accountSummary, positions, openOrders] = await Promise.all([
-            getPaperAccountState(preResolved.selectedAccount, perpClient),
-            listPaperPositions(preResolved.selectedAccount, perpClient),
-            listPaperOpenOrders(preResolved.selectedAccount, perpClient)
-          ]);
+          const [accountSummary, positions, openOrders] = await (async () => {
+            if (paperMode) {
+              const reader = perpClient;
+              if (!reader) return [null, [], []] as const;
+              return Promise.all([
+                getPaperAccountState(preResolved.selectedAccount, reader),
+                listPaperPositions(preResolved.selectedAccount, reader),
+                listPaperOpenOrders(preResolved.selectedAccount, reader)
+              ]);
+            }
+
+            const adapter = pollingLiveAdapter;
+            if (!adapter) return [null, [], []] as const;
+            return Promise.all([
+              adapter.getAccountState(),
+              listPositions(adapter),
+              listOpenOrders(adapter)
+            ]);
+          })();
+          if (!accountSummary) return;
           wsSend(socket, {
             type: "account",
             data: {
