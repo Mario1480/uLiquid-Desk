@@ -12,6 +12,7 @@ import { assertWebEnv } from "./lib/startup-env";
 assertWebEnv();
 
 const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/maintenance", "/favicon.ico"];
+const PUBLIC_ASSET_EXTENSION_PATTERN = /\.(css|js|map|json|txt|xml|png|jpg|jpeg|svg|gif|ico|webp|avif|woff|woff2|ttf|eot|wasm)$/i;
 
 type SessionState = {
   status: "valid" | "invalid" | "unknown";
@@ -65,10 +66,18 @@ const ADMIN_INTEGRATED_REDIRECTS: Array<{
   { pattern: /^\/admin(?:\/legacy)?\/billing$/, target: "/admin/licenses/packages" }
 ];
 
+function isPublicAssetPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/_next")
+    || pathname.startsWith("/images")
+    || pathname.startsWith("/static")
+    || PUBLIC_ASSET_EXTENSION_PATTERN.test(pathname)
+  );
+}
+
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(path))) return true;
-  if (pathname.startsWith("/_next") || pathname.startsWith("/images") || pathname.startsWith("/api")) return true;
-  if (pathname.match(/\.(png|jpg|jpeg|svg|gif|ico|webp)$/)) return true;
+  if (pathname.startsWith("/api") || isPublicAssetPath(pathname)) return true;
   return false;
 }
 
@@ -198,8 +207,7 @@ export async function middleware(req: NextRequest) {
     });
 
   if (!localeFromPath) {
-    if (pathname.startsWith("/_next") || pathname.startsWith("/api")) return NextResponse.next();
-    if (pathname.startsWith("/images") || pathname.match(/\.(png|jpg|jpeg|svg|gif|ico|webp)$/)) {
+    if (pathname.startsWith("/api") || isPublicAssetPath(pathname)) {
       return NextResponse.next();
     }
     return redirectToLocalizedPath(req, locale, pathname);

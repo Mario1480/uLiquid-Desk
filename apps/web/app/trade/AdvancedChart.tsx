@@ -109,8 +109,10 @@ declare global {
 }
 
 const CHART_CANDLE_FETCH_LIMIT = 1000;
+const ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT = 350;
+const ADVANCED_CHART_CANDLE_CACHE_TTL_MS = 4000;
 const ADVANCED_CHART_SUBSCRIBE_POLL_MS = 10000;
-const ADVANCED_CHART_CANDLES_POLL_MS = 5000;
+const ADVANCED_CHART_CANDLES_POLL_MS = 30000;
 const ADVANCED_CHART_MARKERS_POLL_MS = 15000;
 const MIN_CHART_HEIGHT = 280;
 const MAX_CHART_HEIGHT = 900;
@@ -125,6 +127,10 @@ const DATAFEED_CONFIGURATION: DatafeedConfiguration = {
 };
 
 let tradingViewScriptPromise: Promise<TradingViewGlobal> | null = null;
+const advancedChartCandleCache = new Map<string, {
+  expiresAt: number;
+  promise: Promise<CandleApiItem[]>;
+}>();
 
 const ADVANCED_SUPPORTED_INDICATOR_KEYS = [
   "ema5",
@@ -159,6 +165,64 @@ function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
   if (error && typeof error === "object" && "message" in error) return String((error as { message?: unknown }).message);
   return String(error);
+}
+
+function buildCandlesPath(params: {
+  exchangeAccountId: string;
+  symbol: string;
+  timeframe: string;
+  limit: number;
+  marketType: "spot" | "perp";
+}): string {
+  return `/api/market/candles?exchangeAccountId=${encodeURIComponent(params.exchangeAccountId)}&symbol=${encodeURIComponent(params.symbol)}&timeframe=${encodeURIComponent(params.timeframe)}&limit=${params.limit}&marketType=${encodeURIComponent(params.marketType)}`;
+}
+
+function pruneAdvancedChartCandleCache(now = Date.now()): void {
+  for (const [key, entry] of advancedChartCandleCache) {
+    if (entry.expiresAt <= now) {
+      advancedChartCandleCache.delete(key);
+    }
+  }
+
+  while (advancedChartCandleCache.size > 60) {
+    const oldestKey = advancedChartCandleCache.keys().next().value;
+    if (!oldestKey) break;
+    advancedChartCandleCache.delete(oldestKey);
+  }
+}
+
+async function fetchAdvancedChartCandles(params: {
+  exchangeAccountId: string;
+  symbol: string;
+  timeframe: string;
+  limit: number;
+  marketType: "spot" | "perp";
+}): Promise<CandleApiItem[]> {
+  const cacheKey = [
+    params.exchangeAccountId,
+    params.marketType,
+    params.symbol.trim().toUpperCase(),
+    params.timeframe,
+    params.limit
+  ].join("::");
+  const now = Date.now();
+  const cached = advancedChartCandleCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.promise;
+  }
+
+  pruneAdvancedChartCandleCache(now);
+  const promise = apiGet<CandlesResponse>(buildCandlesPath(params))
+    .then((payload) => payload.items ?? [])
+    .catch((error) => {
+      advancedChartCandleCache.delete(cacheKey);
+      throw error;
+    });
+  advancedChartCandleCache.set(cacheKey, {
+    expiresAt: now + ADVANCED_CHART_CANDLE_CACHE_TTL_MS,
+    promise
+  });
+  return promise;
 }
 
 function toWsBase(url: string): string {
@@ -390,10 +454,14 @@ function buildAdvancedDatafeed(params: {
     timeframe: string,
     limit: number
   ): Promise<Bar[]> => {
-    const payload = await apiGet<CandlesResponse>(
-      `/api/market/candles?exchangeAccountId=${encodeURIComponent(params.exchangeAccountId)}&symbol=${encodeURIComponent(symbolName)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}&marketType=${encodeURIComponent(params.marketType)}`
-    );
-    return normalizeCandles(payload.items ?? [])
+    const items = await fetchAdvancedChartCandles({
+      exchangeAccountId: params.exchangeAccountId,
+      symbol: symbolName,
+      timeframe,
+      limit,
+      marketType: params.marketType
+    });
+    return normalizeCandles(items)
       .map(toBar)
       .filter((bar): bar is Bar => isSaneAdvancedChartBar(bar));
   };
@@ -931,17 +999,21 @@ export function AdvancedChart({
   ]);
 
   useEffect(() => {
-    if (!exchangeAccountId || !symbol) return;
+    if (!exchangeAccountId || !symbol || !widgetReadyRef.current) return;
     let active = true;
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const fetchCandles = async () => {
       try {
-        const payload = await apiGet<CandlesResponse>(
-          `/api/market/candles?exchangeAccountId=${encodeURIComponent(exchangeAccountId)}&symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(normalizedTimeframe)}&limit=${CHART_CANDLE_FETCH_LIMIT}&marketType=${encodeURIComponent(marketType)}`
-        );
+        const items = await fetchAdvancedChartCandles({
+          exchangeAccountId,
+          symbol,
+          timeframe: normalizedTimeframe,
+          limit: ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT,
+          marketType
+        });
         if (!active) return;
-        setRawCandles(payload.items ?? []);
+        setRawCandles(items);
       } catch {
         if (!active) return;
         setRawCandles([]);
@@ -957,10 +1029,13 @@ export function AdvancedChart({
       active = false;
       if (timer) clearInterval(timer);
     };
-  }, [exchangeAccountId, marketType, normalizedTimeframe, symbol]);
+  }, [exchangeAccountId, marketType, normalizedTimeframe, symbol, widgetReadyVersion]);
 
   useEffect(() => {
-    if (!exchangeAccountId || !symbol) return;
+    if (!exchangeAccountId || !symbol || (!showUpMarkers && !showDownMarkers)) {
+      setPredictionMarkers([]);
+      return;
+    }
     let active = true;
     let timer: ReturnType<typeof setInterval> | null = null;
 
