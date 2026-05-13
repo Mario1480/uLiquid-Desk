@@ -13,8 +13,9 @@ import { createIdempotencyKey } from "../grid/utils";
 import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "./FundingTransferSection";
 import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
+import RelayBotVaultFundingSection from "./RelayBotVaultFundingSection";
 
-type ActiveModal = "deposit" | "withdraw" | "spot_perp" | "core_evm" | null;
+type ActiveModal = "botvault_funding" | "deposit" | "withdraw" | "spot_perp" | "core_evm" | null;
 
 type FundingVaultOverview = {
   mode: "offchain_shadow" | "onchain_simulated" | "onchain_live" | string;
@@ -86,6 +87,8 @@ function hasPositiveRawBalance(balance: { raw: string | null; available: boolean
 
 function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<ActiveModal, null>) {
   switch (activeModal) {
+    case "botvault_funding":
+      return t("actions.botvaultFunding");
     case "deposit":
       return t("actions.deposit");
     case "withdraw":
@@ -335,6 +338,7 @@ export default function FundingActionCenter({
   const transfer = transferQuery.data;
   const hyperCoreOk = hasPositiveRawBalance(funding.hyperCore.usdc) || hasPositiveRawBalance(funding.hyperCore.hype);
   const hyperEvmOk = hasPositiveRawBalance(funding.hyperEvm.usdc) || hasPositiveRawBalance(funding.hyperEvm.hype);
+  const relayReady = funding.actions.some((item) => item.id === "relay_botvault_usdc_funding" && item.enabled);
   const depositReady = funding.bridge.deposit.enabled;
   const withdrawReady = funding.bridge.withdraw.enabled;
   const spotPerpReady = hasPositiveRawBalance(funding.hyperCore.usdc) || hasPositiveRawBalance(funding.bridge.creditedBalance);
@@ -351,13 +355,27 @@ export default function FundingActionCenter({
         </div>
 
         <div className="fundingToolbar fundingActionButtons">
-          <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>{t("actions.deposit")}</button>
+          <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("botvault_funding")}>{t("actions.botvaultFunding")}</button>
+          <button type="button" className="btn" onClick={() => setActiveModal("deposit")}>{t("actions.deposit")}</button>
           <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>{t("actions.withdraw")}</button>
           <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>{t("actions.spotPerp")}</button>
           <button type="button" className="btn" onClick={() => setActiveModal("core_evm")}>{t("actions.coreEvm")}</button>
         </div>
 
         <div className="fundingQuickGrid">
+          <article className="walletInfoTile fundingQuickCard">
+            <div className="fundingQuickHeader">
+              <strong>{t("cards.relayTitle")}</strong>
+              <span className={`badge ${overviewStatusClass(relayReady)}`}>{relayReady ? tCommon("ready") : t("attention")}</span>
+            </div>
+            <div className="walletMutedText">{t("cards.relaySubtitle")}</div>
+            <div className="fundingQuickStats">
+              <span>{t("cards.arbitrumUsdc")}: <strong>{displayBalance(funding.arbitrum.usdc.formatted, "USDC")}</strong></span>
+              <span>{t("cards.evmUsdc")}: <strong>{displayBalance(funding.hyperEvm.usdc.formatted, "USDC")}</strong></span>
+              <span>{t("cards.evmHype")}: <strong>{displayBalance(funding.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
+            </div>
+          </article>
+
           <article className="walletInfoTile fundingQuickCard">
             <div className="fundingQuickHeader">
               <strong>{t("cards.bridgeTitle")}</strong>
@@ -449,6 +467,7 @@ export default function FundingActionCenter({
               </button>
             </div>
             <div className="fundingModalBody">
+              {activeModal === "botvault_funding" ? <RelayBotVaultFundingSection config={fundingConfig} presentation="modal" key="relay-botvault-modal" /> : null}
               {activeModal === "deposit" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="deposit" key="deposit-modal" /> : null}
               {activeModal === "withdraw" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="withdraw" key="withdraw-modal" /> : null}
               {activeModal === "spot_perp" ? <HyperliquidUsdClassTransferSection config={fundingConfig} presentation="modal" initialDirection="perp_to_spot" key="spot-perp-modal" /> : null}

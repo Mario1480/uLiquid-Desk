@@ -16,6 +16,8 @@ export type FundingStageStatus = "success" | "warning" | "missing" | "unknown";
 export type FundingActionId =
   | "fund_arbitrum_usdc"
   | "fund_arbitrum_eth"
+  | "relay_botvault_usdc_funding"
+  | "relay_botvault_hype_topup"
   | "deposit_usdc_to_hyperliquid"
   | "obtain_hype_bootstrap"
   | "transfer_usdc_core_to_evm"
@@ -195,6 +197,8 @@ export type FundingHistoryItem = {
   id: string;
   actionId:
     | FundingActionId
+    | "funding_relay_usdc_to_hyperevm"
+    | "funding_relay_hype_topup"
     | "create_master_vault"
     | "withdraw_master_vault"
     | "master_vault_deposit"
@@ -239,4 +243,61 @@ export type FundingReadService = {
   getFundingReadiness(params: { address: string }): Promise<FundingReadinessResponse>;
   getFundingHistory(params: { address: string; items?: FundingHistorySourceItem[] | null }): Promise<FundingHistoryResponse>;
   getFundingExternalLinks(params: { address: string }): Promise<FundingExternalLinksResponse>;
+};
+
+export type RelayFundingAsset = "USDC" | "HYPE";
+
+export type RelayFundingAmount = {
+  raw: string;
+  formatted: string;
+  symbol: RelayFundingAsset | "ETH";
+  decimals: number;
+  chainId: number;
+};
+
+export type RelayFundingTransactionRequest = {
+  chainId: number;
+  to: `0x${string}`;
+  data: `0x${string}`;
+  value: string;
+};
+
+export type RelayFundingStep = {
+  id: string;
+  kind: string;
+  requestId: string | null;
+  items: Array<{
+    status: string;
+    tx: RelayFundingTransactionRequest;
+  }>;
+};
+
+export type RelayFundingQuoteLeg = {
+  legId: "usdc" | "hype_topup";
+  asset: RelayFundingAsset;
+  sourceAmount: RelayFundingAmount;
+  destinationAmount: RelayFundingAmount;
+  feeAmount: RelayFundingAmount | null;
+  gasAmount: RelayFundingAmount | null;
+  timeEstimateSeconds: number | null;
+  requestId: string | null;
+  steps: RelayFundingStep[];
+};
+
+export type RelayFundingQuote = {
+  provider: "relay";
+  originChainId: number;
+  destinationChainId: number;
+  usdc: RelayFundingQuoteLeg;
+  hypeTopup: RelayFundingQuoteLeg | null;
+  createdAt: string;
+};
+
+export type RelayFundingStatus = {
+  provider: "relay";
+  requestId: string;
+  status: "pending" | "success" | "failed" | "unknown";
+  rawStatus: string | null;
+  txHash: string | null;
+  updatedAt: string;
 };

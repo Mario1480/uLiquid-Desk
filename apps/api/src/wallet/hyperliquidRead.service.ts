@@ -352,6 +352,20 @@ function normalizeFundingActionActivity(item: WalletActivitySourceItem, timestam
       description: `Arbitrum -> Hyperliquid funding intent${suffix}.`
     };
   }
+  if (item.actionType === "funding_relay_usdc_to_hyperevm") {
+    return {
+      ...base,
+      title: "BotVault wallet funding",
+      description: `Relay Arbitrum -> HyperEVM USDC funding intent${suffix}.`
+    };
+  }
+  if (item.actionType === "funding_relay_hype_topup") {
+    return {
+      ...base,
+      title: "HyperEVM gas top-up",
+      description: `Relay Arbitrum -> HyperEVM HYPE gas top-up intent${suffix}.`
+    };
+  }
   if (item.actionType === "funding_bridge_withdraw") {
     return {
       ...base,

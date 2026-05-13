@@ -181,7 +181,7 @@ export function evaluateFundingReadiness(input: EvaluateFundingReadinessInput): 
           status: "warning",
           balanceLabel: null,
           detail: describeUnavailable(input.hyperEvm.usdc, "HyperEVM USDC balance unavailable."),
-          actionId: "transfer_usdc_core_to_evm",
+          actionId: "relay_botvault_usdc_funding",
           blocking: true
         })
       : (evmUsdc ?? 0) > 0
@@ -197,8 +197,8 @@ export function evaluateFundingReadiness(input: EvaluateFundingReadinessInput): 
             balanceLabel: balanceLabel(input.hyperEvm.usdc),
             detail: (coreUsdc ?? 0) > 0
               ? "Move USDC from HyperCore to HyperEVM."
-              : "HyperEVM still needs USDC before deposit.",
-            actionId: "transfer_usdc_core_to_evm",
+              : "Bridge USDC directly to HyperEVM before deposit.",
+            actionId: (coreUsdc ?? 0) > 0 ? "transfer_usdc_core_to_evm" : "relay_botvault_usdc_funding",
             blocking: true
           })
   );
@@ -209,7 +209,7 @@ export function evaluateFundingReadiness(input: EvaluateFundingReadinessInput): 
           status: "warning",
           balanceLabel: null,
           detail: describeUnavailable(input.hyperEvm.hype, "HyperEVM HYPE balance unavailable."),
-          actionId: "transfer_hype_core_to_evm",
+          actionId: "relay_botvault_hype_topup",
           blocking: true
         })
       : (evmHype ?? 0) > 0
@@ -225,8 +225,8 @@ export function evaluateFundingReadiness(input: EvaluateFundingReadinessInput): 
             balanceLabel: balanceLabel(input.hyperEvm.hype),
             detail: (coreHype ?? 0) > 0
               ? "Move HYPE from HyperCore to HyperEVM for gas."
-              : "HyperEVM gas uses HYPE, not ETH.",
-            actionId: "transfer_hype_core_to_evm",
+              : "Use Relay to add a small amount of HYPE for HyperEVM gas.",
+            actionId: (coreHype ?? 0) > 0 ? "transfer_hype_core_to_evm" : "relay_botvault_hype_topup",
             blocking: true
           })
   );
@@ -265,9 +265,9 @@ export function evaluateFundingReadiness(input: EvaluateFundingReadinessInput): 
   } else if (input.arbitrum.eth.available && (arbEth ?? 0) <= 0) {
     recommendedAction = "fund_arbitrum_eth";
   } else if ((coreUsdc ?? 0) <= 0 && (evmUsdc ?? 0) <= 0) {
-    recommendedAction = "deposit_usdc_to_hyperliquid";
+    recommendedAction = "relay_botvault_usdc_funding";
   } else if ((coreHype ?? 0) <= 0 && (evmHype ?? 0) <= 0) {
-    recommendedAction = "obtain_hype_bootstrap";
+    recommendedAction = "relay_botvault_hype_topup";
   } else if ((evmUsdc ?? 0) <= 0 && (coreUsdc ?? 0) > 0) {
     recommendedAction = "transfer_usdc_core_to_evm";
   } else if ((evmHype ?? 0) <= 0 && (coreHype ?? 0) > 0) {

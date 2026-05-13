@@ -1278,6 +1278,105 @@ test("POST /funding/:address/intents creates durable funding intent for linked w
   assert.equal(calls[0]?.walletAddress, wallet);
 });
 
+test("POST /funding/:address/relay/quote delegates to Relay service for linked wallet", async () => {
+  const app = createFakeApp();
+  const wallet = "0x1234567890123456789012345678901234567890";
+  const calls: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    relayFundingService: {
+      async getQuote(input: any) {
+        calls.push(input);
+        return {
+          provider: "relay",
+          originChainId: 42161,
+          destinationChainId: 999,
+          usdc: { destinationAmount: { formatted: "9.99" } },
+          hypeTopup: null,
+          createdAt: "2026-05-13T00:00:00.000Z"
+        };
+      },
+      async getStatus() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/:address/relay/quote");
+  const res = createMockRes("user_1", wallet);
+  await handler({
+    params: { address: wallet },
+    body: {
+      usdcAmount: "10",
+      includeHypeTopup: true,
+      hypeTopupUsdcAmount: "5"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls[0]?.user, wallet);
+  assert.equal(calls[0]?.includeHypeTopup, true);
+});
+
+test("POST /funding/:address/relay/quote rejects wallet mismatch", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    relayFundingService: {
+      async getQuote() {
+        throw new Error("not_used");
+      },
+      async getStatus() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/:address/relay/quote");
+  const res = createMockRes("user_1", "0x1234567890123456789012345678901234567890");
+  await handler({
+    params: { address: "0x9999999999999999999999999999999999999999" },
+    body: { usdcAmount: "10" }
+  }, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.error, "wallet_address_mismatch");
+});
+
+test("GET /funding/relay/status validates request id and delegates", async () => {
+  const app = createFakeApp();
+  const requestId = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    relayFundingService: {
+      async getQuote() {
+        throw new Error("not_used");
+      },
+      async getStatus(input: any) {
+        return {
+          provider: "relay",
+          requestId: input.requestId,
+          status: "pending",
+          rawStatus: "waiting",
+          txHash: null,
+          updatedAt: "2026-05-13T00:00:00.000Z"
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/funding/relay/status");
+  const res = createMockRes("user_1", "0x1234567890123456789012345678901234567890");
+  await handler({ query: { requestId } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.requestId, requestId);
+  assert.equal(res.body?.status, "pending");
+});
+
 test("POST /funding/:address/intents rejects wallet mismatch", async () => {
   const app = createFakeApp();
 

@@ -63,14 +63,17 @@
     "connectedWallet": "Connected wallet: {address}",
     "attention": "Attention",
     "actions": {
+      "botvaultFunding": "Fund BotVault wallet",
       "deposit": "Deposit",
       "withdraw": "Withdraw",
       "spotPerp": "Perps ↔ Spot",
       "coreEvm": "EVM ↔ Core"
     },
     "cards": {
-      "bridgeTitle": "Arbitrum ↔ HyperCore",
-      "bridgeSubtitle": "Official bridge for native Arbitrum USDC.",
+      "relayTitle": "BotVault wallet",
+      "relaySubtitle": "Bridge USDC directly to HyperEVM and add HYPE gas if needed.",
+      "bridgeTitle": "Trading account funding",
+      "bridgeSubtitle": "Arbitrum -> HyperCore route for Hyperliquid trading balances.",
       "arbitrumUsdc": "Arbitrum USDC",
       "tradingUsdc": "Trading wallet USDC",
       "bridgeTiming": "Timing",
@@ -119,6 +122,51 @@
     "modal": {
       "subtitle": "Review the transfer details and confirm the action in your wallet.",
       "close": "Close"
+    }
+  },
+  "relay": {
+    "title": "Fund BotVault wallet",
+    "subtitle": "Bridge Arbitrum USDC directly to HyperEVM and optionally add HYPE for gas.",
+    "networkReady": "Arbitrum ready",
+    "networkMismatch": "Wrong network",
+    "amountPlaceholder": "USDC to bridge",
+    "maxButton": "Max",
+    "switchNetwork": "Switch to Arbitrum",
+    "txLink": "View transaction",
+    "balances": {
+      "arbitrumUsdc": "Arbitrum USDC",
+      "hyperEvmUsdc": "HyperEVM USDC",
+      "hyperEvmHype": "HyperEVM HYPE"
+    },
+    "topup": {
+      "label": "Add HYPE for HyperEVM gas",
+      "amountPlaceholder": "USDC to convert to HYPE",
+      "usdcToHype": "USDC -> HYPE"
+    },
+    "quote": {
+      "button": "Preview route",
+      "loading": "Fetching Relay quote...",
+      "loadingShort": "Quoting...",
+      "usdcOut": "USDC received",
+      "hypeOut": "HYPE received",
+      "relayFee": "Relay fee",
+      "eta": "ETA",
+      "notIncluded": "Not included"
+    },
+    "execute": {
+      "button": "Fund BotVault wallet",
+      "busy": "Funding...",
+      "awaitingHype": "Confirm the HYPE gas top-up transactions in your wallet.",
+      "awaitingUsdc": "Confirm the USDC bridge transactions in your wallet.",
+      "pendingHype": "HYPE top-up submitted. Waiting for Relay settlement.",
+      "pendingUsdc": "USDC bridge submitted. Waiting for Relay settlement.",
+      "confirmed": "Relay funding submitted and balances are reconciling."
+    },
+    "errors": {
+      "overviewMissing": "Funding overview is unavailable.",
+      "walletMissing": "Connect your wallet to continue.",
+      "switchFailed": "Could not switch to Arbitrum.",
+      "relayFailed": "Relay reported a failed settlement."
     }
   },
   "history": {

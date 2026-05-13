@@ -271,6 +271,36 @@ function normalizeFundingIntentActionId(item: FundingHistorySourceItem): Funding
       updatedAt: item.updatedAt
     };
   }
+  if (item.actionType === "funding_relay_usdc_to_hyperevm") {
+    return {
+      id: item.id,
+      actionId: "relay_botvault_usdc_funding",
+      title: "BotVault wallet funding",
+      description: `Relay Arbitrum -> HyperEVM USDC funding intent${suffix}.`,
+      locationFrom: "arbitrum",
+      locationTo: "hyperEvm",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "funding_relay_hype_topup") {
+    return {
+      id: item.id,
+      actionId: "relay_botvault_hype_topup",
+      title: "HyperEVM gas top-up",
+      description: `Relay Arbitrum -> HyperEVM HYPE gas top-up intent${suffix}.`,
+      locationFrom: "arbitrum",
+      locationTo: "hyperEvm",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
   if (item.actionType === "funding_bridge_withdraw") {
     return {
       id: item.id,
@@ -491,6 +521,34 @@ function createActionMap(params: {
       href: null,
       chainId: params.config.arbitrum.chainId,
       asset: "ETH",
+      external: false
+    },
+    relay_botvault_usdc_funding: {
+      id: "relay_botvault_usdc_funding",
+      kind: "client_write",
+      label: "Fund BotVault wallet",
+      description: "Bridge Arbitrum USDC directly to HyperEVM with Relay.",
+      locationFrom: "arbitrum",
+      locationTo: "hyperEvm",
+      enabled: Boolean(params.config.arbitrum.usdcAddress && params.config.hyperEvm.usdcAddress),
+      reason: params.config.arbitrum.usdcAddress && params.config.hyperEvm.usdcAddress ? null : "relay_token_config_missing",
+      href: null,
+      chainId: params.config.arbitrum.chainId,
+      asset: "USDC",
+      external: false
+    },
+    relay_botvault_hype_topup: {
+      id: "relay_botvault_hype_topup",
+      kind: "client_write",
+      label: "Add HyperEVM HYPE gas",
+      description: "Use Relay to bridge a small Arbitrum USDC amount into HyperEVM HYPE for gas.",
+      locationFrom: "arbitrum",
+      locationTo: "hyperEvm",
+      enabled: Boolean(params.config.arbitrum.usdcAddress),
+      reason: params.config.arbitrum.usdcAddress ? null : "relay_token_config_missing",
+      href: null,
+      chainId: params.config.arbitrum.chainId,
+      asset: "HYPE",
       external: false
     },
     deposit_usdc_to_hyperliquid: {

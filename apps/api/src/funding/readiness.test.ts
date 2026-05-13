@@ -102,17 +102,17 @@ test("readiness recommends funding Arbitrum ETH after USDC exists", () => {
   assert.equal(readiness.recommendedAction, "fund_arbitrum_eth");
 });
 
-test("readiness recommends Hyperliquid deposit when Arbitrum is funded but HyperCore USDC is missing", () => {
+test("readiness recommends Relay BotVault funding when Arbitrum is funded but HyperEVM USDC is missing", () => {
   const readiness = evaluateFundingReadiness(
     makeInput({
       arbUsdc: available("USDC", "120", 6),
       arbEth: available("ETH", "0.05", 18)
     })
   );
-  assert.equal(readiness.recommendedAction, "deposit_usdc_to_hyperliquid");
+  assert.equal(readiness.recommendedAction, "relay_botvault_usdc_funding");
 });
 
-test("readiness recommends HYPE bootstrap when neither Core nor EVM has HYPE", () => {
+test("readiness recommends Relay HYPE top-up when neither Core nor EVM has HYPE", () => {
   const readiness = evaluateFundingReadiness(
     makeInput({
       arbUsdc: available("USDC", "120", 6),
@@ -120,7 +120,7 @@ test("readiness recommends HYPE bootstrap when neither Core nor EVM has HYPE", (
       coreUsdc: available("USDC", "120", 6)
     })
   );
-  assert.equal(readiness.recommendedAction, "obtain_hype_bootstrap");
+  assert.equal(readiness.recommendedAction, "relay_botvault_hype_topup");
 });
 
 test("readiness recommends USDC transfer when HyperCore has USDC and HyperEVM has none", () => {

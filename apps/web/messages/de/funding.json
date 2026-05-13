@@ -63,14 +63,17 @@
     "connectedWallet": "Verbundene Wallet: {address}",
     "attention": "Achtung",
     "actions": {
+      "botvaultFunding": "BotVault-Wallet funden",
       "deposit": "Einzahlen",
       "withdraw": "Auszahlen",
       "spotPerp": "Perps ↔ Spot",
       "coreEvm": "EVM ↔ Core"
     },
     "cards": {
-      "bridgeTitle": "Arbitrum ↔ HyperCore",
-      "bridgeSubtitle": "Offizielle Bridge für natives Arbitrum-USDC.",
+      "relayTitle": "BotVault-Wallet",
+      "relaySubtitle": "Bridge USDC direkt zu HyperEVM und fuege bei Bedarf HYPE-Gas hinzu.",
+      "bridgeTitle": "Trading-Account Funding",
+      "bridgeSubtitle": "Arbitrum -> HyperCore Route fuer Hyperliquid-Trading-Balances.",
       "arbitrumUsdc": "Arbitrum-USDC",
       "tradingUsdc": "Trading-Wallet USDC",
       "bridgeTiming": "Timing",
@@ -119,6 +122,51 @@
     "modal": {
       "subtitle": "Prüfe die Transferdetails und bestätige die Aktion in deiner Wallet.",
       "close": "Schließen"
+    }
+  },
+  "relay": {
+    "title": "BotVault-Wallet funden",
+    "subtitle": "Bridge Arbitrum-USDC direkt zu HyperEVM und fuege optional HYPE fuer Gas hinzu.",
+    "networkReady": "Arbitrum bereit",
+    "networkMismatch": "Falsches Netzwerk",
+    "amountPlaceholder": "USDC bridgen",
+    "maxButton": "Max",
+    "switchNetwork": "Zu Arbitrum wechseln",
+    "txLink": "Transaktion ansehen",
+    "balances": {
+      "arbitrumUsdc": "Arbitrum-USDC",
+      "hyperEvmUsdc": "HyperEVM-USDC",
+      "hyperEvmHype": "HyperEVM-HYPE"
+    },
+    "topup": {
+      "label": "HYPE fuer HyperEVM-Gas hinzufuegen",
+      "amountPlaceholder": "USDC, die zu HYPE werden",
+      "usdcToHype": "USDC -> HYPE"
+    },
+    "quote": {
+      "button": "Route pruefen",
+      "loading": "Relay-Quote wird geladen...",
+      "loadingShort": "Quote...",
+      "usdcOut": "USDC erhalten",
+      "hypeOut": "HYPE erhalten",
+      "relayFee": "Relay-Gebuehr",
+      "eta": "ETA",
+      "notIncluded": "Nicht enthalten"
+    },
+    "execute": {
+      "button": "BotVault-Wallet funden",
+      "busy": "Funding...",
+      "awaitingHype": "Bestaetige die HYPE-Gas-Top-up-Transaktionen in deiner Wallet.",
+      "awaitingUsdc": "Bestaetige die USDC-Bridge-Transaktionen in deiner Wallet.",
+      "pendingHype": "HYPE-Top-up gesendet. Warte auf Relay-Settlement.",
+      "pendingUsdc": "USDC-Bridge gesendet. Warte auf Relay-Settlement.",
+      "confirmed": "Relay-Funding gesendet, Balances werden abgeglichen."
+    },
+    "errors": {
+      "overviewMissing": "Funding-Uebersicht ist nicht verfuegbar.",
+      "walletMissing": "Verbinde deine Wallet, um fortzufahren.",
+      "switchFailed": "Wechsel zu Arbitrum fehlgeschlagen.",
+      "relayFailed": "Relay meldet ein fehlgeschlagenes Settlement."
     }
   },
   "history": {
