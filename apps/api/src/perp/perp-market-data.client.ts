@@ -116,6 +116,64 @@ function toBinanceInterval(value?: string | null): string {
   return "15m";
 }
 
+function toBingxInterval(value?: string | null): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "1m") return "1m";
+  if (normalized === "5m") return "5m";
+  if (normalized === "15m") return "15m";
+  if (normalized === "1h" || normalized === "1hutc") return "1h";
+  if (normalized === "4h" || normalized === "4hutc") return "4h";
+  if (normalized === "1d" || normalized === "1dutc") return "1d";
+  return "15m";
+}
+
+const PERP_SYMBOL_QUOTES = ["USDT", "USDC", "USD", "BTC", "ETH"] as const;
+
+function splitCanonicalPerpSymbol(value: string): { base: string; quote: string } | null {
+  const canonical = normalizeCanonicalSymbol(value);
+  for (const quote of PERP_SYMBOL_QUOTES) {
+    if (canonical.endsWith(quote) && canonical.length > quote.length) {
+      return {
+        base: canonical.slice(0, -quote.length),
+        quote
+      };
+    }
+  }
+  return null;
+}
+
+function toBingxSwapSymbol(value: string): string {
+  const raw = String(value ?? "").trim().toUpperCase();
+  const separated = raw.match(/^([A-Z0-9]+)[/-]([A-Z0-9]+)$/);
+  if (separated) return `${separated[1]}-${separated[2]}`;
+  const split = splitCanonicalPerpSymbol(raw);
+  return split ? `${split.base}-${split.quote}` : normalizeCanonicalSymbol(raw);
+}
+
+function precisionToStep(value: unknown): number | null {
+  const precision = toNumber(value);
+  if (precision === null || precision < 0) return null;
+  return Number(`1e-${Math.trunc(precision)}`);
+}
+
+function parseOrderBookLevels(value: unknown): Array<[number, number]> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((level) => {
+      if (!Array.isArray(level)) return null;
+      const price = toNumber(level[0]);
+      const qty = toNumber(level[1]);
+      if (price === null || qty === null) return null;
+      return [price, qty] as [number, number];
+    })
+    .filter((level): level is [number, number] => level !== null);
+}
+
+function isBingxApiStateEnabled(value: unknown): boolean {
+  const normalized = String(value ?? "true").trim().toLowerCase();
+  return normalized !== "false" && normalized !== "0" && normalized !== "disabled";
+}
+
 function isOpaqueCandleError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
   const normalized = message.trim().toLowerCase();
@@ -495,7 +553,201 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
   }
 }
 
+class BingxUsdMPerpClient implements PerpMarketDataClient {
+  private readonly baseUrl: string;
+
+  constructor() {
+    this.baseUrl = (process.env.BINGX_REST_BASE_URL ?? "https://open-api.bingx.com").replace(/\/+$/, "");
+  }
+
+  private async fetchJson(path: string, query?: Record<string, string | number | undefined>): Promise<unknown> {
+    const search = new URLSearchParams();
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        if (value === undefined) continue;
+        search.set(key, String(value));
+      }
+    }
+    const url = `${this.baseUrl}${path}${search.size > 0 ? `?${search.toString()}` : ""}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: controller.signal
+      });
+      const text = await response.text();
+      let payload: unknown = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = text;
+      }
+      const record = toRecord(payload);
+      const code = record?.code === undefined ? 0 : Number(record.code);
+      if (!response.ok || code !== 0) {
+        throw new ManualTradingError(
+          `bingx_perp_market_data_http_${response.status}`,
+          response.status >= 500 ? 502 : 400,
+          "bingx_perp_market_data_failed"
+        );
+      }
+      return record && Object.prototype.hasOwnProperty.call(record, "data") ? record.data : payload;
+    } catch (error) {
+      if (error instanceof ManualTradingError) throw error;
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ManualTradingError(
+          "bingx_perp_market_data_timeout",
+          504,
+          "bingx_perp_market_data_timeout"
+        );
+      }
+      throw new ManualTradingError(
+        "bingx_perp_market_data_network_error",
+        502,
+        "bingx_perp_market_data_network_error"
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async listSymbols(): Promise<PerpSymbolItem[]> {
+    const payload = await this.fetchJson("/openApi/swap/v2/quote/contracts");
+    const rows = Array.isArray(payload) ? payload : [];
+    return rows
+      .map((entry) => {
+        const row = toRecord(entry);
+        const exchangeSymbol = String(row?.symbol ?? "");
+        const symbol = normalizeCanonicalSymbol(exchangeSymbol);
+        const status = String(row?.status ?? "");
+        const openEnabled = isBingxApiStateEnabled(row?.apiStateOpen);
+        const closeEnabled = isBingxApiStateEnabled(row?.apiStateClose);
+        return {
+          symbol,
+          exchangeSymbol,
+          status,
+          tradable: status === "1" && openEnabled && closeEnabled,
+          tickSize: precisionToStep(row?.pricePrecision),
+          stepSize: precisionToStep(row?.quantityPrecision),
+          minQty: toNumber(row?.tradeMinQuantity ?? row?.tradeMinLimit),
+          maxQty: null,
+          minLeverage: null,
+          maxLeverage: null,
+          quoteAsset: row?.currency ? String(row.currency).toUpperCase() : null,
+          baseAsset: row?.asset ? String(row.asset).toUpperCase() : null
+        };
+      })
+      .filter((row) => row.symbol.length > 0 && row.exchangeSymbol.length > 0)
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+  }
+
+  async getCandles(params: {
+    symbol: string;
+    timeframe?: string;
+    granularity?: string;
+    startTime?: number;
+    endTime?: number;
+    limit?: number;
+  }): Promise<unknown> {
+    const symbol = toBingxSwapSymbol(params.symbol);
+    const interval = toBingxInterval(params.granularity ?? params.timeframe);
+    const payload = await this.fetchJson("/openApi/swap/v3/quote/klines", {
+      symbol,
+      interval,
+      limit: Math.max(20, Math.min(1000, Math.trunc(params.limit ?? 500))),
+      startTime: params.startTime,
+      endTime: params.endTime
+    });
+    return Array.isArray(payload) ? payload : [];
+  }
+
+  async getTicker(symbol: string) {
+    const exchangeSymbol = toBingxSwapSymbol(symbol);
+    const raw = await this.fetchJson("/openApi/swap/v2/quote/bookTicker", {
+      symbol: exchangeSymbol
+    });
+    const rawRecord = toRecord(raw);
+    const row = toRecord(rawRecord?.book_ticker ?? rawRecord?.bookTicker ?? raw);
+    const bid = toNumber(row?.bid_price ?? row?.bidPrice ?? row?.bid);
+    const ask = toNumber(row?.ask_price ?? row?.askPrice ?? row?.ask);
+    const last = bid !== null && ask !== null ? (bid + ask) / 2 : null;
+    return {
+      symbol: normalizeCanonicalSymbol(symbol),
+      last,
+      mark: last,
+      bid,
+      ask,
+      ts: pickNumber(row, ["time", "ts", "timestamp", "T", "lastUpdateId"]),
+      raw
+    };
+  }
+
+  async getDepth(symbol: string, limit = 50) {
+    const exchangeSymbol = toBingxSwapSymbol(symbol);
+    const raw = await this.fetchJson("/openApi/swap/v2/quote/depth", {
+      symbol: exchangeSymbol,
+      limit: Math.max(5, Math.min(200, Math.trunc(limit)))
+    });
+    const row = toRecord(raw);
+    return {
+      bids: parseOrderBookLevels(row?.bids),
+      asks: parseOrderBookLevels(row?.asks),
+      ts: pickNumber(row, ["T", "ts", "timestamp", "time", "t"]),
+      raw
+    };
+  }
+
+  async getTrades(symbol: string, limit = 60) {
+    const exchangeSymbol = toBingxSwapSymbol(symbol);
+    const raw = await this.fetchJson("/openApi/swap/v2/quote/trades", {
+      symbol: exchangeSymbol,
+      limit: Math.max(1, Math.min(100, Math.trunc(limit)))
+    });
+    const rows = Array.isArray(raw) ? raw : [];
+    return rows.map((entry) => {
+      const row = toRecord(entry);
+      const isBuyerMaker = typeof row?.isBuyerMaker === "boolean" ? row.isBuyerMaker : null;
+      return {
+        symbol: normalizeCanonicalSymbol(symbol),
+        price: toNumber(row?.price ?? row?.p),
+        qty: toNumber(row?.qty ?? row?.q),
+        side: isBuyerMaker === null ? null : isBuyerMaker ? "sell" : "buy",
+        ts: pickNumber(row, ["time", "ts", "timestamp", "T"]),
+        raw: entry
+      };
+    });
+  }
+
+  async getLastPrice(symbol: string): Promise<number | null> {
+    const exchangeSymbol = toBingxSwapSymbol(symbol);
+    try {
+      const raw = await this.fetchJson("/openApi/swap/v2/quote/price", { symbol: exchangeSymbol });
+      const row = toRecord(raw);
+      const direct = toNumber(row?.price);
+      if (direct !== null && direct > 0) return direct;
+    } catch {
+      // Fallback below.
+    }
+    const ticker = await this.getTicker(symbol);
+    return Number.isFinite(Number(ticker.last)) && Number(ticker.last) > 0 ? Number(ticker.last) : null;
+  }
+
+  async close(): Promise<void> {
+    // public REST client has no persistent resources
+  }
+}
+
 export function createPerpMarketDataClient(account: TradingAccount): PerpMarketDataClient {
+  const exchange = String(account.exchange ?? "").trim().toLowerCase();
+  if (exchange === "binance") {
+    return new BinanceUsdMPerpClient();
+  }
+  if (exchange === "bingx") {
+    return new BingxUsdMPerpClient();
+  }
+
   const adapterResult = createResolvedFuturesAdapter({
     exchange: account.exchange,
     apiKey: account.apiKey,
