@@ -7,7 +7,6 @@ import {
   validatePositiveInteger,
   validateSecretKeyMaterial,
   validateServiceEnv,
-  validateUrlList,
   type EnvMap
 } from "@mm/core";
 
@@ -46,6 +45,32 @@ function validateNonPlaceholderToken(value: string): string | null {
   }
   if (value.length < 24) {
     return "must be at least 24 characters";
+  }
+  return null;
+}
+
+function validateCorsOriginList(value: string): string | null {
+  const entries = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (entries.length === 0) return "must include at least one origin";
+  for (const entry of entries) {
+    if (entry === "*") continue;
+    try {
+      const parsed = new URL(entry);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") continue;
+      if (
+        (parsed.protocol === "capacitor:" || parsed.protocol === "ionic:")
+        && parsed.hostname === "localhost"
+      ) {
+        continue;
+      }
+      return "must use http/https or mobile webview origins capacitor://localhost/ionic://localhost";
+    } catch {
+      return "must be a valid origin URL";
+    }
   }
   return null;
 }
@@ -94,7 +119,7 @@ export function assertApiEnv(env: EnvMap = process.env): void {
       names: ["CORS_ORIGINS"],
       required: production,
       message: "CORS_ORIGINS is required in production.",
-      validate: (value) => validateUrlList(value)
+      validate: (value) => validateCorsOriginList(value)
     },
     {
       names: ["SIWE_ALLOWED_DOMAINS"],
