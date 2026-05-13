@@ -16,6 +16,7 @@ import {
 } from "../../../src/bots/botVaultView";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
+import Web3Providers from "../../components/Web3Providers";
 
 type BotDetail = {
   id: string;
@@ -335,7 +336,7 @@ function toUtcDayEndIso(value: string | null): string | null {
   return new Date(Date.UTC(yy, mm - 1, dd, 23, 59, 59, 999)).toISOString();
 }
 
-export default function BotDetailsPage() {
+function BotDetailsPageContent() {
   const t = useTranslations("system.botsDetails");
   const locale = useLocale() as AppLocale;
   const params = useParams();
@@ -1217,5 +1218,13 @@ function InfoRow({ label, value }: { label: string; value: string | number }) {
       <div className="botsSetupMetricLabel">{label}</div>
       <div className="botsSetupMetricValue botsSetupMetricValueCompact">{String(value)}</div>
     </div>
+  );
+}
+
+export default function BotDetailsPage() {
+  return (
+    <Web3Providers>
+      <BotDetailsPageContent />
+    </Web3Providers>
   );
 }

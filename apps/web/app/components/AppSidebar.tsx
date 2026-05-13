@@ -539,7 +539,7 @@ export default function AppSidebar({
       <div className="appSidebarInner">
         <div className="appSidebarTop">
           <Link href={hrefFor("/")} className="appSidebarLogo" aria-label="uLiquid Desk" onClick={onClose}>
-            <img src="/images/logo.png" alt="uLiquid Desk logo" className="appSidebarLogoMark" />
+            <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appSidebarLogoMark" />
             <span className="appSidebarLogoText">{tCommon("betaLabel")}</span>
           </Link>
           <button

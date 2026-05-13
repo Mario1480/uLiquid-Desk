@@ -34,7 +34,7 @@ export default function AuthHeader() {
     <header className="authHeader">
       <div className="authHeaderInner">
         <Link href={withLocalePath("/", locale)} className="appLogo authHeaderLogo" aria-label="uLiquid Desk">
-          <img src="/images/logo.png" alt="uLiquid Desk logo" className="appLogoMark" />
+          <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appLogoMark" />
         </Link>
 
         <div className="authHeaderToolbar">

@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount, useDisconnect } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { TARGET_CHAIN, TARGET_CHAIN_ID, TARGET_CHAIN_NAME, isWeb3ModalReady, wagmiConfig } from "../../lib/web3/config";
-import { getWeb3ModalInitState, initWeb3Modal, openWeb3Modal } from "../../lib/web3/modal";
+import { getWeb3ModalInitState, openWeb3Modal } from "../../lib/web3/modal";
+import Web3Providers from "./Web3Providers";
 
 function shortAddress(value: string | undefined): string {
   if (!value) return "";
@@ -29,7 +30,13 @@ function CopyIcon() {
   );
 }
 
-function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) {
+function WalletConnectionWidgetContent({
+  modalReady,
+  onModalStateChange
+}: {
+  modalReady: boolean;
+  onModalStateChange: () => void;
+}) {
   const tWallet = useTranslations("nav.header.wallet");
   const { address, chainId, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
@@ -71,7 +78,7 @@ function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) 
         return;
       } catch {
         if (modalReady) {
-          await openWeb3Modal({ view: "Networks" });
+          await openWeb3Modal({ view: "Networks" }).finally(onModalStateChange);
         }
         return;
       } finally {
@@ -80,7 +87,7 @@ function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) 
     }
     if (!isConnected) {
       if (!modalReady) return;
-      await openWeb3Modal({ view: "Connect" });
+      await openWeb3Modal({ view: "Connect" }).finally(onModalStateChange);
       return;
     }
     setMenuOpen((current) => !current);
@@ -101,7 +108,7 @@ function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) 
       setMenuOpen(false);
       await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
     } catch {
-      await openWeb3Modal({ view: "Networks" });
+      await openWeb3Modal({ view: "Networks" }).finally(onModalStateChange);
     }
   }
 
@@ -210,15 +217,20 @@ function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) 
 }
 
 export default function WalletConnectionWidget() {
+  return (
+    <Web3Providers>
+      <WalletConnectionWidgetInner />
+    </Web3Providers>
+  );
+}
+
+function WalletConnectionWidgetInner() {
   const [modalInitState, setModalInitState] = useState(() => getWeb3ModalInitState());
 
-  useEffect(() => {
-    if (!isWeb3ModalReady || modalInitState.initialized) return;
-    void initWeb3Modal().then((state) => {
-      setModalInitState(state);
-    });
-  }, [modalInitState.initialized]);
+  function refreshModalState() {
+    setModalInitState(getWeb3ModalInitState());
+  }
 
-  const modalReady = isWeb3ModalReady && modalInitState.initialized;
-  return <WalletConnectionWidgetContent modalReady={modalReady} />;
+  const modalReady = isWeb3ModalReady && !modalInitState.error;
+  return <WalletConnectionWidgetContent modalReady={modalReady} onModalStateChange={refreshModalState} />;
 }

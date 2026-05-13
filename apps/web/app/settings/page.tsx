@@ -17,6 +17,7 @@ import {
   type TelegramLinkStatus
 } from "../../src/telegram/linking";
 import { Notice, PageHeader } from "../components/ui";
+import Web3Providers from "../components/Web3Providers";
 import { AffiliateOverview } from "./affiliate/AffiliateOverview";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
@@ -199,7 +200,7 @@ function formatOptionalDateTime(value: string | null | undefined): string {
   return date.toLocaleString();
 }
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const tMain = useTranslations("system.settingsMain");
   const tRisk = useTranslations("system.settingsRisk");
   const tCommon = useTranslations("settings.common");
@@ -1948,5 +1949,13 @@ export default function SettingsPage() {
       </div>
 
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Web3Providers>
+      <SettingsPageContent />
+    </Web3Providers>
   );
 }

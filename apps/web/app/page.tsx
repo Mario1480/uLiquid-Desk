@@ -9,22 +9,12 @@ import {
   useState
 } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useLocale, useTranslations } from "next-intl";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
-} from "recharts";
-import { useAccount } from "wagmi";
 import ExchangeAccountOverviewCard, {
 type ExchangeAccountOverview
 } from "./components/ExchangeAccountOverviewCard";
 import AlertsFeed, { type DashboardAlert } from "../components/dashboard/AlertsFeed";
-import DashboardWalletCard from "../components/dashboard/DashboardWalletCard";
 import DashboardWidgetFrame from "../components/dashboard/DashboardWidgetFrame";
 import type { GridInstance } from "../components/grid/types";
 import {
@@ -52,6 +42,15 @@ import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
 } from "../src/access/accessSection";
+
+const DashboardPerformanceAreaChart = dynamic(
+  () => import("../components/dashboard/DashboardPerformanceAreaChart"),
+  { ssr: false }
+);
+const DashboardWalletCard = dynamic(
+  () => import("../components/dashboard/DashboardWalletCard"),
+  { ssr: false }
+);
 
 type EconomicCalendarSummary = {
   id: string;
@@ -451,7 +450,6 @@ function DashboardSkeletonCard() {
 export default function Page() {
   const t = useTranslations("dashboard");
   const locale = useLocale() as AppLocale;
-  const { isConnected } = useAccount();
   const gridRef = useRef<HTMLDivElement | null>(null);
   const overviewPollInFlightRef = useRef(false);
   const [overview, setOverview] = useState<ExchangeAccountOverview[]>([]);
@@ -1078,64 +1076,12 @@ export default function Page() {
                 <div className="dashboardPerformanceState">{t("performance.none")}</div>
               ) : (
                 <div className="dashboardPerformanceChartWrap">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={performanceChartData} margin={{ top: 14, right: 14, left: 6, bottom: 2 }}>
-                      <defs>
-                        <linearGradient id="dashboardPerformanceAreaFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="rgba(16, 185, 199, 0.78)" />
-                          <stop offset="95%" stopColor="rgba(16, 185, 199, 0.05)" />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                      <XAxis
-                        dataKey="ts"
-                        type="number"
-                        domain={["dataMin", "dataMax"]}
-                        tickFormatter={(value) =>
-                          formatPerformanceAxisTick(Number(value), performanceRange, locale)
-                        }
-                        stroke="rgba(255,255,255,0.48)"
-                        tickLine={false}
-                        axisLine={false}
-                        minTickGap={24}
-                      />
-                      <YAxis
-                        tickFormatter={(value) => formatUsdt(Number(value), locale, 0)}
-                        stroke="rgba(255,255,255,0.48)"
-                        tickLine={false}
-                        axisLine={false}
-                        width={92}
-                        padding={{ top: 30, bottom: 4 }}
-                      />
-                      <Tooltip
-                        formatter={(value: number) => [formatUsdt(value, locale), t("performance.metrics.equity")]}
-                        labelFormatter={(value) =>
-                          new Date(Number(value)).toLocaleString(resolveIntlLocale(locale), {
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })
-                        }
-                        contentStyle={{
-                          border: "1px solid rgba(255,193,7,0.34)",
-                          background: "rgba(7, 17, 26, 0.95)",
-                          borderRadius: 10
-                        }}
-                        labelStyle={{ color: "var(--muted)" }}
-                        itemStyle={{ color: "var(--text)" }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="totalEquity"
-                        stroke="rgba(16, 185, 199, 0.95)"
-                        strokeWidth={2}
-                        fill="url(#dashboardPerformanceAreaFill)"
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <DashboardPerformanceAreaChart
+                    data={performanceChartData}
+                    equityLabel={t("performance.metrics.equity")}
+                    locale={locale}
+                    range={performanceRange}
+                  />
                 </div>
               )}
 
@@ -1716,7 +1662,7 @@ export default function Page() {
       )
     },
     wallet: {
-      available: isConnected,
+      available: true,
       title: t("walletCard.title"),
       render: () => <DashboardWalletCard />
     },
@@ -1900,7 +1846,6 @@ export default function Page() {
     filteredRiskItems,
     filteredRiskSummary,
     gridBotsOverviewLoadError,
-    isConnected,
     loading,
     locale,
     newsItems,

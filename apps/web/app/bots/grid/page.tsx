@@ -27,6 +27,7 @@ import {
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../../src/access/productFeatureGates";
+import Web3Providers from "../../components/Web3Providers";
 
 type GridInstanceSummaryStats = {
   gridProfitUsd: number;
@@ -658,8 +659,10 @@ function GridBotsDashboardPageContent() {
 export default function GridBotsDashboardPage() {
   const tBots = useTranslations("system.botsList");
   return (
-    <Suspense fallback={<div>{tBots("loadingPage")}</div>}>
-      <GridBotsDashboardPageContent />
-    </Suspense>
+    <Web3Providers>
+      <Suspense fallback={<div>{tBots("loadingPage")}</div>}>
+        <GridBotsDashboardPageContent />
+      </Suspense>
+    </Web3Providers>
   );
 }

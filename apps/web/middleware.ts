@@ -286,5 +286,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next).*)"]
+  matcher: [
+    "/((?!api|_next|static|images|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:css|js|mjs|map|json|txt|xml|png|jpg|jpeg|svg|gif|ico|webp|avif|woff|woff2|ttf|eot|wasm)$).*)"
+  ]
 };

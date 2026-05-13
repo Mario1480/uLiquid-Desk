@@ -11,6 +11,7 @@ import {
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
+import Web3Providers from "../components/Web3Providers";
 
 type SubscriptionFeatureResponse = {
   featureGates?: ProductFeatureGateMap;
@@ -48,5 +49,9 @@ export default function VaultsPage() {
     );
   }
 
-  return <VaultsIndexClient _config={config} />;
+  return (
+    <Web3Providers>
+      <VaultsIndexClient _config={config} />
+    </Web3Providers>
+  );
 }

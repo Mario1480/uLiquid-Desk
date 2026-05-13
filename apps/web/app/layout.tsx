@@ -1,6 +1,6 @@
 import { NextIntlClientProvider } from "next-intl";
 import AppShell from "./components/AppShell";
-import Web3Providers from "./components/Web3Providers";
+import QueryProviders from "./components/QueryProviders";
 import { resolveRequestLocale } from "../i18n/request";
 import { getMessages } from "../i18n/messages";
 import { assertWebEnv } from "../lib/startup-env";
@@ -24,9 +24,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={locale}>
       <body>
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <Web3Providers>
+          <QueryProviders>
             <AppShell>{children}</AppShell>
-          </Web3Providers>
+          </QueryProviders>
           <footer className="appFooter">
             <div className="container appFooterInner">
               <div className="appFooterCopy">© 2026 uLiquid</div>

@@ -10,6 +10,7 @@ import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 import AdminPageHeader from "../_components/AdminPageHeader";
+import Web3Providers from "../../components/Web3Providers";
 
 type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
 type VaultExecutionProvider = "mock" | "hyperliquid_demo" | "hyperliquid";
@@ -113,7 +114,7 @@ function errMsg(e: unknown): string {
   return String(e);
 }
 
-export default function AdminVaultExecutionPage() {
+function AdminVaultExecutionPageContent() {
   const t = useTranslations("admin.vaultExecution");
   const tCommon = useTranslations("admin.common");
   const locale = useLocale() as AppLocale;
@@ -585,5 +586,13 @@ export default function AdminVaultExecutionPage() {
         </>
       ) : null}
     </div>
+  );
+}
+
+export default function AdminVaultExecutionPage() {
+  return (
+    <Web3Providers>
+      <AdminVaultExecutionPageContent />
+    </Web3Providers>
   );
 }

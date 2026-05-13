@@ -30,6 +30,7 @@ import {
 } from "../../../components/grid/utils";
 import { buildGridCatalogQuery, updateGridCatalogFavoriteState } from "../../../src/grid/catalog";
 import { deriveNeutralModePreviewHints } from "../../../src/grid/neutralModeHints";
+import Web3Providers from "../../components/Web3Providers";
 
 type GridPilotAccess = {
   allowed: boolean;
@@ -317,7 +318,7 @@ function formatGridPreviewError(message: string, tGrid: ReturnType<typeof useTra
   return message;
 }
 
-export default function GridBotCatalogPage() {
+function GridBotCatalogPageContent() {
   const locale = useLocale() as AppLocale;
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1616,5 +1617,13 @@ export default function GridBotCatalogPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function GridBotCatalogPage() {
+  return (
+    <Web3Providers>
+      <GridBotCatalogPageContent />
+    </Web3Providers>
   );
 }

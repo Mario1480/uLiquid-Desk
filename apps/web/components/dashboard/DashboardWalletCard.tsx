@@ -12,6 +12,7 @@ import type {
   WalletOverviewResponse
 } from "../../lib/wallet/types";
 import { TARGET_CHAIN_ID } from "../../lib/web3/config";
+import Web3Providers from "../../app/components/Web3Providers";
 
 type FundingVaultOverview = {
   fundingVault?: {
@@ -50,10 +51,11 @@ function DashboardWalletSkeleton() {
   );
 }
 
-export default function DashboardWalletCard() {
+function DashboardWalletCardContent() {
   const t = useTranslations("dashboard.walletCard");
   const locale = useLocale() as AppLocale;
   const { address, isConnected } = useAccount();
+  const walletHref = withLocalePath("/wallet", locale);
 
   const overviewQuery = useQuery({
     queryKey: ["dashboard-wallet-overview", address],
@@ -75,9 +77,26 @@ export default function DashboardWalletCard() {
     refetchOnWindowFocus: false
   });
 
-  if (!isConnected) return null;
-
-  const walletHref = withLocalePath("/wallet", locale);
+  if (!isConnected) {
+    return (
+      <section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
+        <div className="dashboardWalletIntro">
+          <div className="dashboardWalletTitle">{t("title")}</div>
+          <div className="dashboardWalletSubtitle">{t("subtitle")}</div>
+        </div>
+        <div className="dashboardWalletState">
+          <strong>{t("title")}</strong>
+          <div className="dashboardWalletMeta">{t("subtitle")}</div>
+        </div>
+        <div className="dashboardWalletFooter">
+          <div className="dashboardWalletFooterMeta">{t("unavailableFooter")}</div>
+          <Link href={walletHref} className="btn btnPrimary">
+            {t("open")}
+          </Link>
+        </div>
+      </section>
+    );
+  }
 
   if (overviewQuery.isLoading && !overviewQuery.data) {
     return <DashboardWalletSkeleton />;
@@ -199,5 +218,13 @@ export default function DashboardWalletCard() {
         </Link>
       </div>
     </section>
+  );
+}
+
+export default function DashboardWalletCard() {
+  return (
+    <Web3Providers>
+      <DashboardWalletCardContent />
+    </Web3Providers>
   );
 }

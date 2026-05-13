@@ -11,6 +11,7 @@ import { wagmiConfig } from "../../lib/web3/config";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
+import Web3Providers from "../components/Web3Providers";
 
 function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
   if (e instanceof ApiError) {
@@ -30,7 +31,7 @@ function mapSiweErrorCode(error: unknown): string {
   return "siwe_unexpected_error";
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const t = useTranslations("auth");
   const locale = useLocale() as AppLocale;
   const router = useRouter();
@@ -180,5 +181,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Web3Providers>
+      <LoginPageContent />
+    </Web3Providers>
   );
 }

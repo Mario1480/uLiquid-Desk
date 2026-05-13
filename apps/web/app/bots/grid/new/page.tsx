@@ -25,6 +25,7 @@ import {
   readAllowedGridExchanges
 } from "../../../../components/grid/utils";
 import { deriveNeutralModePreviewHints } from "../../../../src/grid/neutralModeHints";
+import Web3Providers from "../../../components/Web3Providers";
 
 type GridPilotAccess = {
   allowed: boolean;
@@ -104,7 +105,7 @@ function isBlockingProvisioningPhase(phase: string | null | undefined): boolean 
   );
 }
 
-export default function GridBotsCreatePage() {
+function GridBotsCreatePageContent() {
   const tGrid = useTranslations("grid.marketplace");
   const router = useRouter();
 
@@ -756,5 +757,13 @@ export default function GridBotsCreatePage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function GridBotsCreatePage() {
+  return (
+    <Web3Providers>
+      <GridBotsCreatePageContent />
+    </Web3Providers>
   );
 }
