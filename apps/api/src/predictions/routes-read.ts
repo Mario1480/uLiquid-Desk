@@ -9,6 +9,8 @@ import {
 import { resolvePredictionPerformanceMetrics } from "./performanceMetrics.js";
 import { toPredictionRefreshHealthDto } from "./refreshHealth.js";
 
+const PREDICTION_ANALYTICS_SAMPLE_LIMIT = 750;
+
 const predictionListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   mode: z.enum(["state", "history"]).default("state")
@@ -38,6 +40,29 @@ const thresholdsLatestQuerySchema = z.object({
   timeframe: z.enum(["5m", "15m", "1h", "4h", "1d"]).optional(),
   tf: z.enum(["5m", "15m", "1h", "4h", "1d"]).optional()
 });
+
+function predictionReadHandler(
+  handler: (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => Promise<unknown> | unknown
+): express.RequestHandler {
+  return async (req, res, next) => {
+    try {
+      await handler(req, res, next);
+    } catch (error) {
+      console.warn("[predictions:read] request failed", {
+        path: req.path,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      });
+      if (res.headersSent) {
+        return next(error);
+      }
+      return res.status(503).json({ error: "prediction_read_unavailable" });
+    }
+  };
+}
 
 export type RegisterPredictionReadRoutesDeps = {
   db: any;
@@ -108,7 +133,7 @@ export function registerPredictionReadRoutes(
   app: express.Express,
   deps: RegisterPredictionReadRoutesDeps
 ) {
-  app.get("/api/predictions", requireAuth, async (req, res) => {
+  app.get("/api/predictions", requireAuth, predictionReadHandler(async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = predictionListQuerySchema.safeParse(req.query);
     if (!parsed.success) {
@@ -212,7 +237,32 @@ export function registerPredictionReadRoutes(
     const rows = await deps.db.prediction.findMany({
       where: { userId: user.id },
       orderBy: [{ tsCreated: "desc" }, { createdAt: "desc" }],
-      take: parsed.data.limit
+      take: parsed.data.limit,
+      select: {
+        id: true,
+        botId: true,
+        symbol: true,
+        marketType: true,
+        timeframe: true,
+        tsCreated: true,
+        signal: true,
+        expectedMovePct: true,
+        confidence: true,
+        explanation: true,
+        tags: true,
+        featuresSnapshot: true,
+        entryPrice: true,
+        stopLossPrice: true,
+        takeProfitPrice: true,
+        horizonMs: true,
+        outcomeStatus: true,
+        outcomeResult: true,
+        outcomePnlPct: true,
+        maxFavorablePct: true,
+        maxAdversePct: true,
+        outcomeEvaluatedAt: true,
+        outcomeMeta: true
+      }
     });
 
     const botIds = rows
@@ -367,18 +417,18 @@ export function registerPredictionReadRoutes(
     return res.json({
       items
     });
-  });
+  }));
 
-  app.post("/api/predictions/performance/reset", requireAuth, async (_req, res) => {
+  app.post("/api/predictions/performance/reset", requireAuth, predictionReadHandler(async (_req, res) => {
     const user = getUserFromLocals(res);
     const resetAt = await deps.setPredictionPerformanceResetAt(user.id, new Date().toISOString());
     return res.json({
       ok: true,
       resetAt
     });
-  });
+  }));
 
-  app.get("/api/predictions/quality", requireAuth, async (req, res) => {
+  app.get("/api/predictions/quality", requireAuth, predictionReadHandler(async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = predictionQualityQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
@@ -407,7 +457,7 @@ export function registerPredictionReadRoutes(
     const rowsRaw = await deps.db.prediction.findMany({
       where,
       orderBy: { tsCreated: "desc" },
-      take: 2000,
+      take: PREDICTION_ANALYTICS_SAMPLE_LIMIT,
       select: {
         tsCreated: true,
         signal: true,
@@ -531,9 +581,9 @@ export function registerPredictionReadRoutes(
         deltaAiVsLocalPct: deltaAiVsLocal24hPct
       }
     });
-  });
+  }));
 
-  app.get("/api/predictions/metrics", requireAuth, async (req, res) => {
+  app.get("/api/predictions/metrics", requireAuth, predictionReadHandler(async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = predictionMetricsQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
@@ -570,13 +620,13 @@ export function registerPredictionReadRoutes(
     const rows = await deps.db.prediction.findMany({
       where,
       orderBy: [{ tsCreated: "desc" }],
-      take: 5000,
+      take: PREDICTION_ANALYTICS_SAMPLE_LIMIT,
       select: {
         id: true,
         signal: true,
         confidence: true,
         expectedMovePct: true,
-        featuresSnapshot: true,
+        featuresSnapshot: Boolean(signalSource),
         outcomeMeta: true,
         outcomePnlPct: true
       }
@@ -625,9 +675,9 @@ export function registerPredictionReadRoutes(
       bins: parsed.data.bins,
       ...summary
     });
-  });
+  }));
 
-  app.get("/api/predictions/evaluation-summary", requireAuth, async (req, res) => {
+  app.get("/api/predictions/evaluation-summary", requireAuth, predictionReadHandler(async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = predictionMetricsQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
@@ -664,7 +714,7 @@ export function registerPredictionReadRoutes(
     const rows = await deps.db.prediction.findMany({
       where,
       orderBy: [{ tsCreated: "desc" }],
-      take: 5000,
+      take: PREDICTION_ANALYTICS_SAMPLE_LIMIT,
       select: {
         signal: true,
         confidence: true,
@@ -754,9 +804,9 @@ export function registerPredictionReadRoutes(
       bins: parsed.data.bins,
       ...summary
     });
-  });
+  }));
 
-  app.get("/api/thresholds/latest", requireAuth, async (req, res) => {
+  app.get("/api/thresholds/latest", requireAuth, predictionReadHandler(async (req, res) => {
     const parsed = thresholdsLatestQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
@@ -790,9 +840,9 @@ export function registerPredictionReadRoutes(
       version: resolved.version,
       thresholds: resolved.thresholds
     });
-  });
+  }));
 
-  app.get("/api/predictions/running", requireAuth, async (req, res) => {
+  app.get("/api/predictions/running", requireAuth, predictionReadHandler(async (req, res) => {
     const user = getUserFromLocals(res);
     const refreshIntervalsMs = await deps.resolveGlobalPredictionRefreshIntervalsMs();
 
@@ -914,6 +964,6 @@ export function registerPredictionReadRoutes(
     items.sort((a, b) => Number(a.dueInSec ?? 0) - Number(b.dueInSec ?? 0));
 
     return res.json({ items });
-  });
+  }));
 
 }
