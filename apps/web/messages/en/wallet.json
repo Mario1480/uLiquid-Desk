@@ -76,14 +76,14 @@
     "configAddress": "Config address: {address}",
     "loadError": "Failed to load wallet overview.",
     "emptyTitle": "Connect a wallet to begin",
-    "emptyDescription": "Once connected, this page will load your HyperEVM balances, vault exposure, and recent Hyperliquid activity.",
+    "emptyDescription": "Connect a wallet to load HyperEVM balances, vault exposure, and recent Hyperliquid activity. Funding Vault details remain available below for direct USDC deposits.",
     "recentActivityTitle": "Recent activity",
     "recentActivitySubtitle": "Latest detected trades and wallet activity.",
     "expandRecentActivity": "Expand",
     "collapseRecentActivity": "Collapse",
     "noRecentActivity": "No recent fills returned for this wallet yet.",
     "fundingSectionTitle": "Funding & transfer",
-    "fundingSectionSubtitle": "Bridge USDC from Arbitrum, rebalance between Hyperliquid Spot and Perps, and move assets between HyperCore and HyperEVM.",
+    "fundingSectionSubtitle": "Manage the Funding Vault, bridge USDC from Arbitrum, rebalance between Hyperliquid Spot and Perps, and move assets between HyperCore and HyperEVM.",
     "usdc": "USDC"
   },
   "vaults": {

@@ -167,9 +167,19 @@ export default function WalletDashboardClient({
       <PageHeader title={t("title")} description={t("subtitle")} />
 
       {!isConnected ? (
-        <div className="card walletCard walletEmptyState">
-          <h3 style={{ marginTop: 0 }}>{t("emptyTitle")}</h3>
-          <p className="walletMutedText">{t("emptyDescription")}</p>
+        <div className="walletStack">
+          <div className="card walletCard walletEmptyState">
+            <h3 style={{ marginTop: 0 }}>{t("emptyTitle")}</h3>
+            <p className="walletMutedText">{t("emptyDescription")}</p>
+          </div>
+          <section className="walletEmbeddedSection">
+            <div className="walletSectionDivider" />
+            <div className="walletEmbeddedSectionIntro">
+              <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
+              <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
+            </div>
+            <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
+          </section>
         </div>
       ) : (
         <div className="walletStack">

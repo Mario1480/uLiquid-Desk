@@ -78,6 +78,21 @@ function hasPositiveRawBalance(balance: { raw: string | null; available: boolean
   }
 }
 
+async function copyTextToClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
 function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<ActiveModal, null>) {
   switch (activeModal) {
     case "botvault_funding":
@@ -95,13 +110,43 @@ function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<
   }
 }
 
-function FundingVaultQuickCard({ address, onManage }: { address: string | undefined; onManage: () => void }) {
+function FundingVaultAddressCopy({ vaultAddress }: { vaultAddress: string | null | undefined }) {
+  const t = useTranslations("funding.actionCenter");
+  const [copied, setCopied] = useState(false);
+
+  async function copyAddress() {
+    if (!vaultAddress) return;
+    try {
+      await copyTextToClipboard(vaultAddress);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className={`fundingVaultAddressCopy${vaultAddress ? "" : " isEmpty"}`}>
+      <div className="fundingVaultAddressCopyText">
+        <span className="walletLabel">{t("fundingVault.directDeposit")}</span>
+        <code title={vaultAddress ?? undefined}>{vaultAddress ? shortAddress(vaultAddress) : "-"}</code>
+        <div className="walletMutedText">{t("fundingVault.directDepositHint")}</div>
+      </div>
+      {vaultAddress ? (
+        <button type="button" className="btn" onClick={() => void copyAddress()}>
+          {copied ? t("fundingVault.copiedAddress") : t("fundingVault.copyAddress")}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
 
   const overviewQuery = useQuery({
-    queryKey: ["funding-vault-overview", address],
-    enabled: Boolean(address),
+    queryKey: ["funding-vault-overview"],
     queryFn: () => apiGet<FundingVaultOverview>("/vaults/funding-vault"),
     staleTime: 10_000,
     refetchOnWindowFocus: false
@@ -126,7 +171,9 @@ function FundingVaultQuickCard({ address, onManage }: { address: string | undefi
         <span>{t("fundingVault.vault")}: <strong>{vault?.onchainAddress ? shortAddress(vault.onchainAddress) : "-"}</strong></span>
         <span>{t("fundingVault.agent")}: <strong>{overview?.agentWalletAddress ? shortAddress(overview.agentWalletAddress) : "-"}</strong></span>
       </div>
+      <FundingVaultAddressCopy vaultAddress={vault?.onchainAddress} />
       {overviewQuery.isLoading ? <div className="walletMutedText">{t("fundingVault.loading")}</div> : null}
+      {overviewQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(overviewQuery.error)}</div> : null}
       <div className="fundingQuickCardActions">
         <button type="button" className="btn btnPrimary" onClick={onManage}>
           {t("fundingVault.manage")}
@@ -136,7 +183,7 @@ function FundingVaultQuickCard({ address, onManage }: { address: string | undefi
   );
 }
 
-function FundingVaultManagementSection({ address }: { address: string | undefined }) {
+function FundingVaultManagementSection() {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
   const [depositAmount, setDepositAmount] = useState("25");
@@ -146,8 +193,7 @@ function FundingVaultManagementSection({ address }: { address: string | undefine
   const [localNotice, setLocalNotice] = useState<string | null>(null);
 
   const overviewQuery = useQuery({
-    queryKey: ["funding-vault-overview", address],
-    enabled: Boolean(address),
+    queryKey: ["funding-vault-overview"],
     queryFn: () => apiGet<FundingVaultOverview>("/vaults/funding-vault"),
     staleTime: 10_000,
     refetchOnWindowFocus: false
@@ -250,6 +296,8 @@ function FundingVaultManagementSection({ address }: { address: string | undefine
         <span>{t("fundingVault.agent")}: <strong>{overview?.agentWalletAddress ? shortAddress(overview.agentWalletAddress) : "-"}</strong></span>
       </div>
 
+      <FundingVaultAddressCopy vaultAddress={vault?.onchainAddress} />
+
       <div className="fundingVaultModalControls">
         {!vault?.onchainAddress ? (
           <button
@@ -329,14 +377,44 @@ export default function FundingActionCenter({
     staleTime: 10_000,
     refetchOnWindowFocus: false
   });
-  const anyError = fundingQuery.error || transferQuery.error;
+  const anyError = isConnected ? fundingQuery.error || transferQuery.error : null;
+
+  const activeModalDialog = activeModal ? (
+    <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveModal(null)}>
+      <div className="fundingModalCard" role="dialog" aria-modal="true" aria-label={modalTitle(t, activeModal)} onClick={(event) => event.stopPropagation()}>
+        <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
+          <button
+            type="button"
+            className="fundingModalCloseButton"
+            aria-label={t("modal.close")}
+            onClick={() => setActiveModal(null)}
+          >
+            ×
+          </button>
+        </div>
+        <div className="fundingModalBody">
+          {activeModal === "botvault_funding" ? <RelayBotVaultFundingSection config={fundingConfig} presentation="modal" key="relay-botvault-modal" /> : null}
+          {activeModal === "deposit" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="deposit" key="deposit-modal" /> : null}
+          {activeModal === "withdraw" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="withdraw" key="withdraw-modal" /> : null}
+          {activeModal === "spot_perp" ? <HyperliquidUsdClassTransferSection config={fundingConfig} presentation="modal" initialDirection="perp_to_spot" key="spot-perp-modal" /> : null}
+          {activeModal === "core_evm" ? <FundingTransferSection config={transferConfig} presentation="modal" initialDirection="core_to_evm" initialAsset="USDC" key="core-evm-modal" /> : null}
+          {activeModal === "funding_vault" ? <FundingVaultManagementSection key="funding-vault-modal" /> : null}
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   if (!isConnected) {
     return (
-      <div className="card walletCard walletEmptyState">
-        <h3 style={{ marginTop: 0 }}>{t("connectTitle")}</h3>
-        <div className="walletMutedText">{t("connectDescription")}</div>
-      </div>
+      <section className="walletStack">
+        <section className="card walletCard fundingActionShell">
+          <div className="fundingQuickGrid fundingQuickGridSingle">
+            <FundingVaultQuickCard onManage={() => setActiveModal("funding_vault")} />
+          </div>
+          <div className="walletNotice">{t("fundingVault.connectForFundingRoutes")}</div>
+        </section>
+        {activeModalDialog}
+      </section>
     );
   }
 
@@ -455,34 +533,11 @@ export default function FundingActionCenter({
             </div>
           </article>
 
-          <FundingVaultQuickCard address={address} onManage={() => setActiveModal("funding_vault")} />
+          <FundingVaultQuickCard onManage={() => setActiveModal("funding_vault")} />
         </div>
       </section>
 
-      {activeModal ? (
-        <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveModal(null)}>
-          <div className="fundingModalCard" role="dialog" aria-modal="true" aria-label={modalTitle(t, activeModal)} onClick={(event) => event.stopPropagation()}>
-            <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
-              <button
-                type="button"
-                className="fundingModalCloseButton"
-                aria-label={t("modal.close")}
-                onClick={() => setActiveModal(null)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="fundingModalBody">
-              {activeModal === "botvault_funding" ? <RelayBotVaultFundingSection config={fundingConfig} presentation="modal" key="relay-botvault-modal" /> : null}
-              {activeModal === "deposit" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="deposit" key="deposit-modal" /> : null}
-              {activeModal === "withdraw" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="withdraw" key="withdraw-modal" /> : null}
-              {activeModal === "spot_perp" ? <HyperliquidUsdClassTransferSection config={fundingConfig} presentation="modal" initialDirection="perp_to_spot" key="spot-perp-modal" /> : null}
-              {activeModal === "core_evm" ? <FundingTransferSection config={transferConfig} presentation="modal" initialDirection="core_to_evm" initialAsset="USDC" key="core-evm-modal" /> : null}
-              {activeModal === "funding_vault" ? <FundingVaultManagementSection address={address} key="funding-vault-modal" /> : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {activeModalDialog}
     </section>
   );
 }

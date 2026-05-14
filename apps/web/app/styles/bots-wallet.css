@@ -2893,6 +2893,10 @@
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.fundingQuickGridSingle {
+  grid-template-columns: minmax(0, 420px);
+}
+
 .fundingQuickCard {
   display: flex;
   flex-direction: column;
@@ -2936,6 +2940,43 @@
 
 .fundingQuickCardActionsSplit .btn {
   flex-basis: 104px;
+}
+
+.fundingVaultAddressCopy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fundingVaultAddressCopy.isEmpty {
+  grid-template-columns: 1fr;
+}
+
+.fundingVaultAddressCopyText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fundingVaultAddressCopy code {
+  display: block;
+  max-width: 100%;
+  color: rgba(244, 248, 255, 0.94);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fundingVaultAddressCopy .btn {
+  min-width: 118px;
 }
 
 .fundingModalOverlay {
@@ -3264,8 +3305,18 @@
 
   .fundingQuickCardActions,
   .fundingQuickCardActions .btn,
+  .fundingVaultAddressCopy,
   .fundingVaultModalAmountGrid,
   .fundingVaultModalWithdrawGrid {
+    width: 100%;
+  }
+
+  .fundingQuickGridSingle,
+  .fundingVaultAddressCopy {
+    grid-template-columns: 1fr;
+  }
+
+  .fundingVaultAddressCopy .btn {
     width: 100%;
   }
 

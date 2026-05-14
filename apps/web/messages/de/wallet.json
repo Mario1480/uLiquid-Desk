@@ -76,14 +76,14 @@
     "configAddress": "Config-Adresse: {address}",
     "loadError": "Wallet-Übersicht konnte nicht geladen werden.",
     "emptyTitle": "Wallet verbinden, um zu starten",
-    "emptyDescription": "Sobald eine Wallet verbunden ist, lädt diese Seite deine HyperEVM-Balances, Vault-Exposure und letzte Hyperliquid-Aktivität.",
+    "emptyDescription": "Verbinde eine Wallet, um HyperEVM-Balances, Vault-Exposure und letzte Hyperliquid-Aktivität zu laden. Funding-Vault-Details bleiben unten für direkte USDC-Einzahlungen verfügbar.",
     "recentActivityTitle": "Letzte Aktivität",
     "recentActivitySubtitle": "Die letzten erkannten Trades und Bewegungen dieser Wallet.",
     "expandRecentActivity": "Öffnen",
     "collapseRecentActivity": "Schließen",
     "noRecentActivity": "Für diese Wallet wurden noch keine letzten Fills gefunden.",
     "fundingSectionTitle": "Funding & Transfer",
-    "fundingSectionSubtitle": "Bridge USDC von Arbitrum, verteile Guthaben zwischen Hyperliquid Spot und Perps und verschiebe Assets zwischen HyperCore und HyperEVM.",
+    "fundingSectionSubtitle": "Verwalte den Funding Vault, bridge USDC von Arbitrum, verteile Guthaben zwischen Hyperliquid Spot und Perps und verschiebe Assets zwischen HyperCore und HyperEVM.",
     "usdc": "USDC"
   },
   "vaults": {
