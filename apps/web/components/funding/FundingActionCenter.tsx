@@ -13,9 +13,8 @@ import { createIdempotencyKey } from "../grid/utils";
 import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "./FundingTransferSection";
 import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
-import RelayBotVaultFundingSection from "./RelayBotVaultFundingSection";
 
-type ActiveModal = "botvault_funding" | "deposit" | "withdraw" | "spot_perp" | "core_evm" | "funding_vault" | null;
+type ActiveModal = "deposit" | "withdraw" | "spot_perp" | "core_evm" | null;
 
 type FundingVaultOverview = {
   mode: "offchain_shadow" | "onchain_simulated" | "onchain_live" | string;
@@ -95,8 +94,6 @@ async function copyTextToClipboard(value: string): Promise<void> {
 
 function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<ActiveModal, null>) {
   switch (activeModal) {
-    case "botvault_funding":
-      return t("actions.botvaultFunding");
     case "deposit":
       return t("actions.deposit");
     case "withdraw":
@@ -105,8 +102,6 @@ function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<
       return t("actions.spotPerp");
     case "core_evm":
       return t("actions.coreEvm");
-    case "funding_vault":
-      return t("fundingVault.title");
   }
 }
 
@@ -141,7 +136,7 @@ function FundingVaultAddressCopy({ vaultAddress }: { vaultAddress: string | null
   );
 }
 
-function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
+export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
 
@@ -183,7 +178,52 @@ function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
   );
 }
 
-function FundingVaultManagementSection() {
+export function BotVaultWalletQuickCard({ onFund }: { onFund: () => void }) {
+  const t = useTranslations("funding.actionCenter");
+  const tCommon = useTranslations("funding.common");
+  const { address, isConnected } = useAccount();
+
+  const fundingQuery = useQuery({
+    queryKey: ["funding-overview", address],
+    enabled: Boolean(address),
+    queryFn: () => apiGet<WalletFundingOverview>(`/funding/${address}/overview`),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false
+  });
+
+  const funding = fundingQuery.data ?? null;
+  const relayReady = Boolean(funding?.actions.some((item) => item.id === "relay_botvault_usdc_funding" && item.enabled));
+  const loading = Boolean(isConnected && fundingQuery.isLoading);
+
+  return (
+    <article className="walletInfoTile fundingQuickCard">
+      <div className="fundingQuickHeader">
+        <strong>{t("cards.relayTitle")}</strong>
+        <span className={`badge ${overviewStatusClass(relayReady)}`}>
+          {loading ? t("loading") : relayReady ? tCommon("ready") : t("attention")}
+        </span>
+      </div>
+      <div className="walletMutedText">{t("cards.relaySubtitle")}</div>
+      {isConnected ? (
+        <div className="fundingQuickStats">
+          <span>{t("cards.arbitrumUsdc")}: <strong>{displayBalance(funding?.arbitrum.usdc.formatted, "USDC")}</strong></span>
+          <span>{t("cards.evmUsdc")}: <strong>{displayBalance(funding?.hyperEvm.usdc.formatted, "USDC")}</strong></span>
+          <span>{t("cards.evmHype")}: <strong>{displayBalance(funding?.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
+        </div>
+      ) : (
+        <div className="walletNotice walletNoticeCompact">{t("cards.relayConnectHint")}</div>
+      )}
+      {fundingQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(fundingQuery.error)}</div> : null}
+      <div className="fundingQuickCardActions">
+        <button type="button" className="btn btnPrimary" onClick={onFund} disabled={!isConnected || loading}>
+          {t("actions.botvaultFunding")}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+export function FundingVaultManagementSection() {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
   const [depositAmount, setDepositAmount] = useState("25");
@@ -393,12 +433,10 @@ export default function FundingActionCenter({
           </button>
         </div>
         <div className="fundingModalBody">
-          {activeModal === "botvault_funding" ? <RelayBotVaultFundingSection config={fundingConfig} presentation="modal" key="relay-botvault-modal" /> : null}
           {activeModal === "deposit" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="deposit" key="deposit-modal" /> : null}
           {activeModal === "withdraw" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="withdraw" key="withdraw-modal" /> : null}
           {activeModal === "spot_perp" ? <HyperliquidUsdClassTransferSection config={fundingConfig} presentation="modal" initialDirection="perp_to_spot" key="spot-perp-modal" /> : null}
           {activeModal === "core_evm" ? <FundingTransferSection config={transferConfig} presentation="modal" initialDirection="core_to_evm" initialAsset="USDC" key="core-evm-modal" /> : null}
-          {activeModal === "funding_vault" ? <FundingVaultManagementSection key="funding-vault-modal" /> : null}
         </div>
       </div>
     </div>
@@ -408,10 +446,7 @@ export default function FundingActionCenter({
     return (
       <section className="walletStack">
         <section className="card walletCard fundingActionShell">
-          <div className="fundingQuickGrid fundingQuickGridSingle">
-            <FundingVaultQuickCard onManage={() => setActiveModal("funding_vault")} />
-          </div>
-          <div className="walletNotice">{t("fundingVault.connectForFundingRoutes")}</div>
+          <div className="walletNotice">{t("connectDescription")}</div>
         </section>
         {activeModalDialog}
       </section>
@@ -448,7 +483,6 @@ export default function FundingActionCenter({
   const transfer = transferQuery.data;
   const hyperCoreOk = hasPositiveRawBalance(funding.hyperCore.usdc) || hasPositiveRawBalance(funding.hyperCore.hype);
   const hyperEvmOk = hasPositiveRawBalance(funding.hyperEvm.usdc) || hasPositiveRawBalance(funding.hyperEvm.hype);
-  const relayReady = funding.actions.some((item) => item.id === "relay_botvault_usdc_funding" && item.enabled);
   const depositReady = funding.bridge.deposit.enabled;
   const withdrawReady = funding.bridge.withdraw.enabled;
   const spotPerpReady = hasPositiveRawBalance(funding.hyperCore.usdc) || hasPositiveRawBalance(funding.bridge.creditedBalance);
@@ -457,24 +491,6 @@ export default function FundingActionCenter({
     <section className="walletStack">
       <section className="card walletCard fundingActionShell">
         <div className="fundingQuickGrid">
-          <article className="walletInfoTile fundingQuickCard">
-            <div className="fundingQuickHeader">
-              <strong>{t("cards.relayTitle")}</strong>
-              <span className={`badge ${overviewStatusClass(relayReady)}`}>{relayReady ? tCommon("ready") : t("attention")}</span>
-            </div>
-            <div className="walletMutedText">{t("cards.relaySubtitle")}</div>
-            <div className="fundingQuickStats">
-              <span>{t("cards.arbitrumUsdc")}: <strong>{displayBalance(funding.arbitrum.usdc.formatted, "USDC")}</strong></span>
-              <span>{t("cards.evmUsdc")}: <strong>{displayBalance(funding.hyperEvm.usdc.formatted, "USDC")}</strong></span>
-              <span>{t("cards.evmHype")}: <strong>{displayBalance(funding.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
-            </div>
-            <div className="fundingQuickCardActions">
-              <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("botvault_funding")}>
-                {t("actions.botvaultFunding")}
-              </button>
-            </div>
-          </article>
-
           <article className="walletInfoTile fundingQuickCard">
             <div className="fundingQuickHeader">
               <strong>{t("cards.bridgeTitle")}</strong>
@@ -532,8 +548,6 @@ export default function FundingActionCenter({
               </button>
             </div>
           </article>
-
-          <FundingVaultQuickCard onManage={() => setActiveModal("funding_vault")} />
         </div>
       </section>
 

@@ -55,13 +55,14 @@
     "confirmedSuccess": "Transfer auf HyperEVM bestaetigt und an HyperCore weitergeleitet."
   },
   "actionCenter": {
-    "title": "Funding-Aktionen",
-    "subtitle": "Nutze die Schnellaktionen, um Funds zu verschieben, ohne den ganzen Funding-Stack aufzuklappen.",
-    "connectTitle": "Verbinde eine Wallet, um Funding-Aktionen zu verwalten",
-    "connectDescription": "Die verbundene Wallet wird für Signaturen und Onchain-Bestätigungen verwendet.",
+    "title": "Hyperliquid Transfers",
+    "subtitle": "Nutze die Schnellaktionen fuer Trading-Account Funding, Spot/Perps und Core/EVM Transfers.",
+    "connectTitle": "Verbinde eine Wallet, um Hyperliquid Transfers zu nutzen",
+    "connectDescription": "Verbinde eine Wallet, um Trading-Account Funding, Spot/Perps und Core/EVM Transfers zu signieren.",
     "loadError": "Der Funding-Aktionsbereich konnte gerade nicht geladen werden.",
     "connectedWallet": "Verbundene Wallet: {address}",
     "attention": "Achtung",
+    "loading": "Lädt",
     "actions": {
       "botvaultFunding": "BotVault-Wallet funden",
       "deposit": "Einzahlen",
@@ -72,6 +73,7 @@
     "cards": {
       "relayTitle": "BotVault-Wallet",
       "relaySubtitle": "Bridge USDC direkt zu HyperEVM und fuege bei Bedarf HYPE-Gas hinzu.",
+      "relayConnectHint": "Verbinde eine Wallet, um Arbitrum-USDC direkt zur BotVault-Wallet auf HyperEVM zu bridgen.",
       "bridgeTitle": "Trading-Account Funding",
       "bridgeSubtitle": "Arbitrum -> HyperCore Route fuer Hyperliquid-Trading-Balances.",
       "arbitrumUsdc": "Arbitrum-USDC",

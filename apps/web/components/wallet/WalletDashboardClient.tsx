@@ -15,7 +15,12 @@ import type {
 } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
-import FundingActionCenter from "../funding/FundingActionCenter";
+import FundingActionCenter, {
+  BotVaultWalletQuickCard,
+  FundingVaultManagementSection,
+  FundingVaultQuickCard
+} from "../funding/FundingActionCenter";
+import RelayBotVaultFundingSection from "../funding/RelayBotVaultFundingSection";
 import { PageHeader } from "../../app/components/ui";
 
 function errMsg(error: unknown): string {
@@ -32,6 +37,7 @@ export default function WalletDashboardClient({
   transferConfig: TransferFeatureConfig;
 }) {
   const t = useTranslations("wallet.dashboard");
+  const tFundingAction = useTranslations("funding.actionCenter");
   const { address, isConnected } = useAccount();
   const connection = useConnection();
   const { sendTransactionAsync, isPending: isWalletPending } = useSendTransaction();
@@ -42,6 +48,7 @@ export default function WalletDashboardClient({
   const [agentActionBusy, setAgentActionBusy] = useState<"fund" | "withdraw" | null>(null);
   const [agentSetupBusy, setAgentSetupBusy] = useState<"create" | "threshold" | null>(null);
   const [activeAgentModal, setActiveAgentModal] = useState<"fund" | "withdraw" | null>(null);
+  const [activeBotVaultSystemModal, setActiveBotVaultSystemModal] = useState<"botvault_funding" | "funding_vault" | null>(null);
   const [agentActionError, setAgentActionError] = useState<string | null>(null);
   const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
   const activityQuery = useQuery({
@@ -51,17 +58,32 @@ export default function WalletDashboardClient({
   });
   const agentWalletQuery = useQuery({
     queryKey: ["wallet-agent-wallet"],
-    enabled: isConnected,
     queryFn: () => apiGet<AgentWalletSummaryResponse>("/agent-wallet")
   });
   const masterAgentSummary = agentWalletQuery.data ?? null;
   const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
-  const masterAgentStateLabel =
-    masterAgentSummary?.lowHypeState === "low"
-      ? t("masterAgentLowStateLow")
-      : masterAgentSummary?.lowHypeState === "unavailable"
-        ? t("masterAgentLowStateUnavailable")
-        : t("masterAgentLowStateOk");
+  const agentReady = Boolean(masterAgentSummary?.address && masterAgentSummary.lowHypeState === "ok");
+  const masterAgentStateLabel = agentWalletQuery.isLoading
+    ? t("agentActions.loadingWallet")
+    : agentWalletQuery.error
+      ? t("agentActions.loadError")
+      : masterAgentSummary?.lowHypeState === "low"
+        ? t("masterAgentLowStateLow")
+        : masterAgentSummary?.lowHypeState === "unavailable"
+          ? t("masterAgentLowStateUnavailable")
+          : t("masterAgentLowStateOk");
+  const agentLaunchNotice = agentWalletQuery.isLoading
+    ? t("agentActions.loadingWallet")
+    : agentWalletQuery.error
+      ? errMsg(agentWalletQuery.error)
+      : !masterAgentSummary?.address
+        ? t("agentActions.launchBlockedMissing")
+        : masterAgentSummary.lowHypeState !== "ok"
+          ? t("agentActions.launchBlockedLowHype")
+          : t("agentActions.launchReady");
+  const agentLaunchNoticeClass = agentReady
+    ? "walletNotice walletNoticeCompact"
+    : "walletNotice walletNoticeCompact walletNoticeError";
 
   useEffect(() => {
     setAgentThresholdInput(masterAgentSummary ? String(masterAgentSummary.lowHypeThreshold) : "0.05");
@@ -162,133 +184,123 @@ export default function WalletDashboardClient({
     }
   }
 
+  const agentWalletCard = (
+    <article className="walletInfoTile fundingQuickCard walletAgentSystemCard">
+      <div className="fundingQuickHeader">
+        <strong>{t("masterAgentWallet")}</strong>
+        <span className={`badge ${agentReady ? "badgeOk" : "badgeWarn"}`}>{masterAgentStateLabel}</span>
+      </div>
+      <div className="walletMutedText">{t("agentActions.subtitle")}</div>
+
+      <div className="walletInfoGrid walletInfoGridCompact walletAgentSystemStats">
+        <div className="walletInfoTile walletInfoTileCompact">
+          <span className="walletLabel">{t("masterAgentWallet")}</span>
+          <strong>{shortAddress(masterAgentSummary?.address ?? null)}</strong>
+        </div>
+        <div className="walletInfoTile walletInfoTileCompact">
+          <span className="walletLabel">{t("masterAgentHypeBalance")}</span>
+          <strong>{masterAgentSummary?.hypeBalance ? `${formatToken(masterAgentSummary.hypeBalance, 4)} HYPE` : "—"}</strong>
+        </div>
+        <div className="walletInfoTile walletInfoTileCompact">
+          <span className="walletLabel">{t("hypeBalanceHint")}</span>
+          <strong>{masterAgentSummary ? `${masterAgentSummary.lowHypeThreshold} HYPE` : "—"}</strong>
+          <div className="walletMutedText">{masterAgentSummary?.updatedAt ? formatDateTime(masterAgentSummary.updatedAt) : masterAgentStateLabel}</div>
+        </div>
+      </div>
+
+      <div className="walletAgentStatusRow">
+        <div className={agentLaunchNoticeClass}>{agentLaunchNotice}</div>
+        {!isConnected ? (
+          <div className="walletNotice walletNoticeCompact">{t("agentActions.connectWalletFirst")}</div>
+        ) : null}
+        {agentActionError ? (
+          <div className="walletNotice walletNoticeCompact walletNoticeError">{agentActionError}</div>
+        ) : null}
+        {agentActionNotice ? (
+          <div className="walletNotice walletNoticeCompact">{agentActionNotice}</div>
+        ) : null}
+      </div>
+
+      {!masterAgentSummary?.address ? (
+        <div className="walletAgentControls">
+          <button
+            type="button"
+            className="btn btnPrimary"
+            onClick={() => void createAgentWallet()}
+            disabled={agentSetupBusy !== null || agentWalletQuery.isLoading}
+          >
+            {agentSetupBusy === "create" ? t("agentActions.creatingWallet") : t("agentActions.createWallet")}
+          </button>
+        </div>
+      ) : null}
+
+      <div className="walletAgentControls walletAgentThresholdRow">
+        <input
+          className="input"
+          value={agentThresholdInput}
+          onChange={(event) => setAgentThresholdInput(event.target.value)}
+          placeholder={t("agentActions.thresholdPlaceholder")}
+        />
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void saveAgentThreshold()}
+          disabled={agentSetupBusy !== null || agentWalletQuery.isLoading}
+        >
+          {agentSetupBusy === "threshold" ? t("agentActions.savingThreshold") : t("agentActions.saveThreshold")}
+        </button>
+      </div>
+
+      <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
+        <button
+          type="button"
+          className="btn btnPrimary"
+          onClick={() => setActiveAgentModal("fund")}
+          disabled={!isConnected || !masterAgentSummary?.address || agentActionBusy !== null || isWalletPending}
+        >
+          {agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund")}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setActiveAgentModal("withdraw")}
+          disabled={!masterAgentSummary?.address || agentActionBusy !== null}
+        >
+          {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
+        </button>
+      </div>
+    </article>
+  );
+
   return (
     <div className="walletPage">
       <PageHeader title={t("title")} description={t("subtitle")} />
 
-      {!isConnected ? (
-        <div className="walletStack">
-          <div className="card walletCard walletEmptyState">
-            <h3 style={{ marginTop: 0 }}>{t("emptyTitle")}</h3>
-            <p className="walletMutedText">{t("emptyDescription")}</p>
+      <div className="walletStack">
+        <section className="card walletCard walletBotVaultSystemCard">
+          <div className="walletSectionHeader">
+            <div className="walletSectionIntro">
+              <h3 className="walletSectionTitle">{t("botVaultSystemTitle")}</h3>
+              <div className="walletMutedText">{t("botVaultSystemSubtitle")}</div>
+            </div>
           </div>
-          <section className="walletEmbeddedSection">
-            <div className="walletSectionDivider" />
-            <div className="walletEmbeddedSectionIntro">
-              <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
-              <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
-            </div>
-            <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
-          </section>
-        </div>
-      ) : (
-        <div className="walletStack">
-          <section className="card walletCard">
-            <div className="walletSectionIntro" style={{ marginBottom: 12 }}>
-              <h3 className="walletSectionTitle">{t("masterAgentWallet")}</h3>
-              <div className="walletMutedText">{t("agentActions.subtitle")}</div>
-            </div>
-            <div className="walletInfoGrid">
-              <div className="walletInfoTile">
-                <span className="walletLabel">{t("masterAgentWallet")}</span>
-                <strong>{shortAddress(masterAgentSummary?.address ?? null)}</strong>
-              </div>
-              <div className="walletInfoTile">
-                <span className="walletLabel">{t("masterAgentHypeBalance")}</span>
-                <strong>{masterAgentSummary?.hypeBalance ? `${formatToken(masterAgentSummary.hypeBalance, 4)} HYPE` : "—"}</strong>
-              </div>
-              <div className="walletInfoTile">
-                <span className="walletLabel">{t("hypeBalanceHint")}</span>
-                <strong>{masterAgentSummary ? `${masterAgentSummary.lowHypeThreshold} HYPE` : "—"}</strong>
-                <div className="walletMutedText">{masterAgentSummary?.updatedAt ? formatDateTime(masterAgentSummary.updatedAt) : masterAgentStateLabel}</div>
-              </div>
-            </div>
-            {!masterAgentSummary?.address ? (
-              <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
-                {t("agentActions.launchBlockedMissing")}
-              </div>
-            ) : masterAgentSummary.lowHypeState !== "ok" ? (
-              <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
-                {t("agentActions.launchBlockedLowHype")}
-              </div>
-            ) : (
-              <div className="walletNotice" style={{ marginTop: 12 }}>
-                {t("agentActions.launchReady")}
-              </div>
-            )}
-            {agentActionError ? (
-              <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
-                {agentActionError}
-              </div>
-            ) : null}
-            {agentActionNotice ? (
-              <div className="walletNotice" style={{ marginTop: 12 }}>
-                {agentActionNotice}
-              </div>
-            ) : null}
-            {!masterAgentSummary?.address ? (
-              <div className="fundingToolbar" style={{ marginTop: 12 }}>
-                <button
-                  type="button"
-                  className="btn btnPrimary"
-                  onClick={() => void createAgentWallet()}
-                  disabled={agentSetupBusy !== null}
-                >
-                  {agentSetupBusy === "create" ? t("agentActions.creatingWallet") : t("agentActions.createWallet")}
-                </button>
-              </div>
-            ) : null}
-            <div className="fundingToolbar" style={{ marginTop: 12 }}>
-              <input
-                className="input"
-                value={agentThresholdInput}
-                onChange={(event) => setAgentThresholdInput(event.target.value)}
-                placeholder={t("agentActions.thresholdPlaceholder")}
-              />
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void saveAgentThreshold()}
-                disabled={agentSetupBusy !== null}
-              >
-                {agentSetupBusy === "threshold" ? t("agentActions.savingThreshold") : t("agentActions.saveThreshold")}
-              </button>
-            </div>
-            <div className="fundingToolbar walletAgentActions" style={{ marginTop: 12 }}>
-              <button
-                type="button"
-                className="btn btnPrimary"
-                onClick={() => setActiveAgentModal("fund")}
-                disabled={!masterAgentSummary?.address || agentActionBusy !== null || isWalletPending}
-              >
-                {agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund")}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setActiveAgentModal("withdraw")}
-                disabled={!masterAgentSummary?.address || agentActionBusy !== null}
-              >
-                {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
-              </button>
-            </div>
-            <div className="walletMutedText" style={{ marginTop: 12 }}>
-              {t("agentActions.hint", { chain: TARGET_CHAIN_NAME })}
-            </div>
-            <div className="walletMutedText" style={{ marginTop: 8 }}>
-              {t("agentActions.setupHint")}
-            </div>
-          </section>
+          <div className="walletBotVaultSystemGrid">
+            <BotVaultWalletQuickCard onFund={() => setActiveBotVaultSystemModal("botvault_funding")} />
+            <FundingVaultQuickCard onManage={() => setActiveBotVaultSystemModal("funding_vault")} />
+            {agentWalletCard}
+          </div>
+        </section>
 
-          <section className="walletEmbeddedSection">
-            <div className="walletSectionDivider" />
-            <div className="walletEmbeddedSectionIntro">
-              <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
-              <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
-            </div>
-            <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
-          </section>
+        <section className="walletEmbeddedSection walletHyperliquidTransferSection">
+          <div className="walletSectionDivider" />
+          <div className="walletEmbeddedSectionIntro">
+            <h3 className="walletSectionTitle">{t("hyperliquidTransfersTitle")}</h3>
+            <div className="walletMutedText">{t("hyperliquidTransfersSubtitle")}</div>
+          </div>
+          <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
+        </section>
 
+        {isConnected ? (
           <section className="card walletCard walletAccordionCard">
             <button
               type="button"
@@ -346,8 +358,42 @@ export default function WalletDashboardClient({
               </div>
             ) : null}
           </section>
+        ) : null}
+      </div>
+
+      {activeBotVaultSystemModal ? (
+        <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveBotVaultSystemModal(null)}>
+          <div
+            className="fundingModalCard"
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              activeBotVaultSystemModal === "botvault_funding"
+                ? tFundingAction("actions.botvaultFunding")
+                : tFundingAction("fundingVault.title")
+            }
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
+              <button
+                type="button"
+                className="fundingModalCloseButton"
+                aria-label={tFundingAction("modal.close")}
+                onClick={() => setActiveBotVaultSystemModal(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="fundingModalBody">
+              {activeBotVaultSystemModal === "botvault_funding" ? (
+                <RelayBotVaultFundingSection config={fundingConfig} presentation="modal" key="relay-botvault-modal" />
+              ) : (
+                <FundingVaultManagementSection key="funding-vault-modal" />
+              )}
+            </div>
+          </div>
         </div>
-      )}
+      ) : null}
 
       {activeAgentModal ? (
         <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveAgentModal(null)}>

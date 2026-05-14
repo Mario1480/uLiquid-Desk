@@ -2216,6 +2216,11 @@
   grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
 }
 
+.walletInfoGridCompact {
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
 .walletVaultGrid {
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 }
@@ -2434,6 +2439,105 @@
 
 .walletCardActions {
   margin-top: auto;
+}
+
+.walletAgentCard {
+  gap: 10px;
+  padding: 14px;
+}
+
+.walletAgentHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.walletAgentHeaderActions,
+.walletAgentControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.walletAgentHeaderActions .btn {
+  min-width: 112px;
+}
+
+.walletInfoTileCompact {
+  min-height: 68px;
+  padding: 10px 12px;
+  gap: 4px;
+}
+
+.walletAgentStatusRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.walletNoticeCompact {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.walletAgentThresholdRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) auto;
+  justify-content: start;
+}
+
+.walletAgentThresholdRow .input {
+  min-height: 38px;
+}
+
+.walletAgentHintStack {
+  display: grid;
+  gap: 3px;
+}
+
+.walletAgentHintStack .walletMutedText {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.walletBotVaultSystemCard {
+  gap: 16px;
+}
+
+.walletBotVaultSystemGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.walletHyperliquidTransferSection {
+  padding-top: 10px;
+}
+
+.walletAgentSystemCard {
+  min-height: 232px;
+}
+
+.walletAgentSystemStats {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.walletAgentSystemCard .walletAgentStatusRow {
+  grid-template-columns: 1fr;
+}
+
+.walletAgentSystemCard .walletAgentThresholdRow {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.walletAgentSystemCard .walletAgentControls .btn {
+  width: 100%;
+  justify-content: center;
 }
 
 .walletSectionHeader {
@@ -2877,16 +2981,6 @@
   min-width: 132px;
 }
 
-.walletPage .walletAgentActions {
-  justify-content: flex-start;
-  align-items: center;
-  gap: 10px;
-}
-
-.walletPage .walletAgentActions .btn {
-  flex: 0 0 auto;
-}
-
 .fundingQuickGrid {
   display: grid;
   gap: 16px;
@@ -3268,6 +3362,25 @@
 @media (max-width: 720px) {
 
   .walletActivityItem {
+    grid-template-columns: 1fr;
+  }
+
+  .walletAgentHeader,
+  .walletAgentHeaderActions,
+  .walletAgentControls {
+    width: 100%;
+  }
+
+  .walletAgentHeaderActions .btn,
+  .walletAgentControls .btn {
+    flex: 1 1 140px;
+  }
+
+  .walletAgentThresholdRow {
+    grid-template-columns: 1fr;
+  }
+
+  .walletBotVaultSystemGrid {
     grid-template-columns: 1fr;
   }
 

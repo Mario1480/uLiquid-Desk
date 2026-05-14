@@ -55,13 +55,14 @@
     "confirmedSuccess": "Transfer confirmed on HyperEVM and forwarded to HyperCore."
   },
   "actionCenter": {
-    "title": "Funding actions",
-    "subtitle": "Use the quick actions below to move funds without opening the full funding stack.",
-    "connectTitle": "Connect a wallet to manage funding actions",
-    "connectDescription": "The connected wallet is used for signatures and onchain confirmations.",
+    "title": "Hyperliquid transfers",
+    "subtitle": "Use the quick actions for trading account funding, Spot/Perps, and Core/EVM transfers.",
+    "connectTitle": "Connect a wallet to use Hyperliquid transfers",
+    "connectDescription": "Connect a wallet to sign trading account funding, Spot/Perps, and Core/EVM transfers.",
     "loadError": "Unable to load the funding action hub right now.",
     "connectedWallet": "Connected wallet: {address}",
     "attention": "Attention",
+    "loading": "Loading",
     "actions": {
       "botvaultFunding": "Fund BotVault wallet",
       "deposit": "Deposit",
@@ -72,6 +73,7 @@
     "cards": {
       "relayTitle": "BotVault wallet",
       "relaySubtitle": "Bridge USDC directly to HyperEVM and add HYPE gas if needed.",
+      "relayConnectHint": "Connect a wallet to bridge Arbitrum USDC directly to the BotVault wallet on HyperEVM.",
       "bridgeTitle": "Trading account funding",
       "bridgeSubtitle": "Arbitrum -> HyperCore route for Hyperliquid trading balances.",
       "arbitrumUsdc": "Arbitrum USDC",
