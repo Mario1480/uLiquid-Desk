@@ -18,33 +18,13 @@ import {
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
-
-type SidebarIconName =
-  | "dashboard"
-  | "manualTrading"
-  | "bots"
-  | "grid"
-  | "strategies"
-  | "predictions"
-  | "calendar"
-  | "news"
-  | "settings"
-  | "admin"
-  | "help"
-  | "logout"
-  | "overview"
-  | "riskAlerts"
-  | "marketContext"
-  | "accounts"
-  | "wallet"
-  | "funding"
-  | "vaults";
+import { AppIcon, type AppIconName } from "./AppIcon";
 
 type SidebarItem = {
   key: string;
   label: string;
   href: string;
-  icon: SidebarIconName;
+  icon: AppIconName;
   active: boolean;
 };
 
@@ -84,178 +64,6 @@ type MeResponse = {
 type SubscriptionFeatureResponse = {
   featureGates?: ProductFeatureGateMap;
 };
-
-function SidebarGlyph({ icon }: { icon: SidebarIconName }) {
-  const common = {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    className: "appSidebarGlyph"
-  };
-
-  switch (icon) {
-    case "dashboard":
-      return (
-        <svg {...common}>
-          <rect x="3" y="3" width="8" height="8" rx="1.5" />
-          <rect x="13" y="3" width="8" height="5" rx="1.5" />
-          <rect x="13" y="10" width="8" height="11" rx="1.5" />
-          <rect x="3" y="13" width="8" height="8" rx="1.5" />
-        </svg>
-      );
-    case "manualTrading":
-      return (
-        <svg {...common}>
-          <path d="M4 16l5-5 4 3 7-7" />
-          <path d="M20 10V6h-4" />
-          <path d="M4 20h16" />
-        </svg>
-      );
-    case "bots":
-      return (
-        <svg {...common}>
-          <rect x="5" y="8" width="14" height="11" rx="2" />
-          <path d="M9 8V5h6v3" />
-          <circle cx="10" cy="13" r="1" />
-          <circle cx="14" cy="13" r="1" />
-          <path d="M8 17h8" />
-        </svg>
-      );
-    case "grid":
-      return (
-        <svg {...common}>
-          <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
-        </svg>
-      );
-    case "strategies":
-      return (
-        <svg {...common}>
-          <path d="M5 7h6v6H5z" />
-          <path d="M13 5h6v6h-6z" />
-          <path d="M9 13h6v6H9z" />
-          <path d="M11 10h2M15 11v2" />
-        </svg>
-      );
-    case "predictions":
-      return (
-        <svg {...common}>
-          <path d="M4 19V5" />
-          <path d="M4 19h16" />
-          <path d="M7 14l3-3 3 2 4-5" />
-        </svg>
-      );
-    case "calendar":
-      return (
-        <svg {...common}>
-          <rect x="3" y="5" width="18" height="16" rx="2" />
-          <path d="M8 3v4M16 3v4M3 10h18" />
-          <path d="M8 14h3M8 18h5" />
-        </svg>
-      );
-    case "news":
-      return (
-        <svg {...common}>
-          <rect x="4" y="5" width="16" height="14" rx="2" />
-          <path d="M8 9h8M8 13h8M8 17h5" />
-        </svg>
-      );
-    case "settings":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-        </svg>
-      );
-    case "admin":
-      return (
-        <svg {...common}>
-          <path d="M12 3l7 4v5c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V7z" />
-          <path d="M12 9v6M9 12h6" />
-        </svg>
-      );
-    case "help":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M9.5 9a2.5 2.5 0 1 1 4.3 1.8c-.7.7-1.8 1.3-1.8 2.7" />
-          <circle cx="12" cy="17" r=".7" fill="currentColor" stroke="none" />
-        </svg>
-      );
-    case "logout":
-      return (
-        <svg {...common}>
-          <path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" />
-          <path d="M14 8l4 4-4 4" />
-          <path d="M18 12H9" />
-        </svg>
-      );
-    case "overview":
-      return (
-        <svg {...common}>
-          <path d="M4 13h6V4H4z" />
-          <path d="M14 9h6V4h-6z" />
-          <path d="M14 20h6v-9h-6z" />
-          <path d="M4 20h6v-5H4z" />
-        </svg>
-      );
-    case "riskAlerts":
-      return (
-        <svg {...common}>
-          <path d="M12 4l9 15H3z" />
-          <path d="M12 9v5" />
-          <circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none" />
-        </svg>
-      );
-    case "marketContext":
-      return (
-        <svg {...common}>
-          <path d="M3 7h18" />
-          <path d="M3 12h18" />
-          <path d="M3 17h18" />
-          <circle cx="8" cy="7" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="11" cy="17" r="1.5" fill="currentColor" stroke="none" />
-        </svg>
-      );
-    case "accounts":
-      return (
-        <svg {...common}>
-          <circle cx="9" cy="10" r="3" />
-          <path d="M4 19a5 5 0 0 1 10 0" />
-          <path d="M15 9h6M18 6v6" />
-        </svg>
-      );
-    case "wallet":
-      return (
-        <svg {...common}>
-          <rect x="3" y="6" width="18" height="12" rx="2" />
-          <path d="M3 10h18" />
-          <path d="M16 12h.01" />
-        </svg>
-      );
-    case "funding":
-      return (
-        <svg {...common}>
-          <path d="M4 7h10" />
-          <path d="M10 3l4 4-4 4" />
-          <path d="M20 17H10" />
-          <path d="M14 13l-4 4 4 4" />
-        </svg>
-      );
-    case "vaults":
-      return (
-        <svg {...common}>
-          <path d="M6 7h12l-1 11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z" />
-          <path d="M9 7V5a3 3 0 0 1 6 0v2" />
-        </svg>
-      );
-    default:
-      return null;
-  }
-}
 
 export default function AppSidebar({
   isOpen,
@@ -564,7 +372,7 @@ export default function AppSidebar({
                   onClick={onClose}
                   aria-current={item.active ? "page" : undefined}
                 >
-                  <span className="appSidebarLinkIcon" aria-hidden><SidebarGlyph icon={item.icon} /></span>
+                  <span className="appSidebarLinkIcon" aria-hidden><AppIcon name={item.icon} className="appSidebarGlyph" /></span>
                   <span className="appSidebarLinkLabel">{item.label}</span>
                 </Link>
               ))}
@@ -605,7 +413,7 @@ export default function AppSidebar({
             onClick={() => void handleLogout()}
             disabled={logoutLoading}
           >
-            <span className="appSidebarLinkIcon" aria-hidden><SidebarGlyph icon="logout" /></span>
+            <span className="appSidebarLinkIcon" aria-hidden><AppIcon name="logout" className="appSidebarGlyph" /></span>
             <span className="appSidebarLinkLabel">
               {logoutLoading ? tNav("loggingOut") : tNav("logout")}
             </span>

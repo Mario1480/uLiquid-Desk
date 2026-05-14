@@ -9,6 +9,7 @@ import {
   withLocalePath,
   type AppLocale
 } from "../../i18n/config";
+import { AppIcon, type AppIconName } from "./AppIcon";
 
 type BreadcrumbItem = {
   label: string;
@@ -17,34 +18,7 @@ type BreadcrumbItem = {
   tone?: "default" | "settings" | "admin";
 };
 
-type BreadcrumbIconKey =
-  | "dashboard"
-  | "trade"
-  | "bots"
-  | "grid"
-  | "predictions"
-  | "calendar"
-  | "news"
-  | "settings"
-  | "help"
-  | "admin"
-  | "detail"
-  | "plus"
-  | "risk"
-  | "users"
-  | "audit"
-  | "subscription"
-  | "billing"
-  | "server"
-  | "telegram"
-  | "ai"
-  | "exchange"
-  | "accounts"
-  | "template"
-  | "vault"
-  | "wallet"
-  | "funding"
-  | "generic";
+type BreadcrumbIconKey = AppIconName;
 
 function humanizeSegment(segment: string): string {
   return segment
@@ -98,82 +72,6 @@ function iconForSegment(segment: string): BreadcrumbIconKey {
   if (normalized === "help") return "help";
   if (normalized === "admin") return "admin";
   return "generic";
-}
-
-function BreadcrumbIcon({ icon }: { icon: BreadcrumbIconKey }) {
-  const common = {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const
-  };
-
-  switch (icon) {
-    case "dashboard":
-      return <svg {...common}><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="5" rx="1.5" /><rect x="13" y="10" width="8" height="11" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /></svg>;
-    case "trade":
-      return <svg {...common}><path d="M4 16l5-5 4 3 7-7" /><path d="M20 10V6h-4" /><path d="M4 20h16" /></svg>;
-    case "bots":
-      return <svg {...common}><rect x="5" y="8" width="14" height="11" rx="2" /><path d="M9 8V5h6v3" /><circle cx="10" cy="13" r="1" /><circle cx="14" cy="13" r="1" /><path d="M8 17h8" /></svg>;
-    case "grid":
-      return <svg {...common}><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" /></svg>;
-    case "predictions":
-      return <svg {...common}><path d="M4 19V5" /><path d="M4 19h16" /><path d="M7 14l3-3 3 2 4-5" /></svg>;
-    case "calendar":
-      return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>;
-    case "news":
-      return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 13h8M8 17h5" /></svg>;
-    case "settings":
-      return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg>;
-    case "help":
-      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 4.3 1.8c-.7.7-1.8 1.3-1.8 2.7" /><circle cx="12" cy="17" r=".7" fill="currentColor" stroke="none" /></svg>;
-    case "admin":
-      return <svg {...common}><path d="M12 3l7 4v5c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V7z" /><path d="M12 9v6M9 12h6" /></svg>;
-    case "plus":
-      return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
-    case "risk":
-      return <svg {...common}><path d="M12 4l9 15H3z" /><path d="M12 9v5" /><circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none" /></svg>;
-    case "users":
-      return <svg {...common}><circle cx="9" cy="10" r="3" /><path d="M4 19a5 5 0 0 1 10 0" /><path d="M17 8h3M18.5 6.5v3" /></svg>;
-    case "audit":
-      return <svg {...common}><path d="M8 7h8M8 12h8M8 17h5" /><rect x="4" y="4" width="16" height="16" rx="2" /></svg>;
-    case "subscription":
-      return <svg {...common}><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /></svg>;
-    case "billing":
-      return <svg {...common}><path d="M12 3v18" /><path d="M16.5 7.5c0-1.9-1.8-3.5-4.5-3.5S7.5 5.3 7.5 7.2 9 10 12 10s4.5 1.4 4.5 3.3-1.8 3.7-4.5 3.7-4.5-1.6-4.5-3.5" /></svg>;
-    case "server":
-      return <svg {...common}><rect x="4" y="4" width="16" height="6" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /><path d="M8 7h.01M8 17h.01" /></svg>;
-    case "telegram":
-      return <svg {...common}><path d="M21 4L3 11l6 2 2 6 10-15z" /><path d="M9 13l4 3" /></svg>;
-    case "ai":
-      return <svg {...common}><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M9 3v2M15 3v2M9 19v2M15 19v2M3 9h2M3 15h2M19 9h2M19 15h2" /></svg>;
-    case "exchange":
-      return <svg {...common}><path d="M3 12h18" /><path d="M12 3a9 9 0 1 1 0 18" /><path d="M12 3a9 9 0 0 0 0 18" /></svg>;
-    case "accounts":
-      return <svg {...common}><circle cx="9" cy="10" r="3" /><path d="M4 19a5 5 0 0 1 10 0" /><path d="M15 9h6M18 6v6" /></svg>;
-    case "template":
-      return <svg {...common}><path d="M7 4h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><path d="M14 4v5h5" /></svg>;
-    case "vault":
-      return <svg {...common}><path d="M5 7h14l-1 11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg>;
-    case "wallet":
-      return <svg {...common}><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /><path d="M16 12h.01" /></svg>;
-    case "funding":
-      return <svg {...common}><path d="M4 7h10" /><path d="M10 3l4 4-4 4" /><path d="M20 17H10" /><path d="M14 13l-4 4 4 4" /></svg>;
-    case "detail":
-      return <svg {...common}><rect x="5" y="4" width="14" height="16" rx="2" /><path d="M9 9h6M9 13h6" /></svg>;
-    default:
-      return <svg {...common}><circle cx="12" cy="12" r="8" /></svg>;
-  }
-}
-
-function BreadcrumbChevron() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
 }
 
 export default function AppBreadcrumbs() {
@@ -696,7 +594,7 @@ export default function AppBreadcrumbs() {
                       className={`appBreadcrumbsIcon ${isFirst ? "appBreadcrumbsIconHome" : ""}`}
                       aria-hidden="true"
                     >
-                      <BreadcrumbIcon icon={item.icon} />
+                      <AppIcon name={item.icon} />
                     </span>
                     {!isFirst ? <span className="appBreadcrumbsLabel">{item.label}</span> : null}
                   </Link>
@@ -709,14 +607,14 @@ export default function AppBreadcrumbs() {
                       className={`appBreadcrumbsIcon appBreadcrumbsIconCurrent ${isFirst ? "appBreadcrumbsIconHome" : ""}`}
                       aria-hidden="true"
                     >
-                      <BreadcrumbIcon icon={item.icon} />
+                      <AppIcon name={item.icon} />
                     </span>
                     {!isFirst ? <span className="appBreadcrumbsLabel">{item.label}</span> : null}
                   </span>
                 )}
                 {!isLast ? (
                   <span className="appBreadcrumbsSeparator" aria-hidden="true">
-                    {hideOnMobile ? "..." : <BreadcrumbChevron />}
+                    {hideOnMobile ? "..." : <AppIcon name="chevronRight" />}
                   </span>
                 ) : null}
               </li>
