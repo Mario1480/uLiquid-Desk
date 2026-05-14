@@ -2512,11 +2512,15 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+}
+
+.walletBotVaultSystemGrid > .fundingQuickCard {
+  height: 100%;
 }
 
 .walletHyperliquidTransferSection {
-  padding-top: 10px;
+  gap: 16px;
 }
 
 .walletAgentSystemCard {
@@ -2969,6 +2973,13 @@
   padding: 18px;
 }
 
+.fundingActionEmbedded,
+.fundingActionEmbeddedLoading {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
 .fundingToolbar {
   display: flex;
   gap: 10px;
@@ -2985,6 +2996,15 @@
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: stretch;
+}
+
+.fundingQuickGrid > .fundingQuickCard {
+  height: 100%;
+}
+
+.fundingQuickGridEmbedded {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .fundingQuickGridSingle {

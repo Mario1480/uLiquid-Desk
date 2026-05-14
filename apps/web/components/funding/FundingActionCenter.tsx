@@ -392,10 +392,12 @@ export function FundingVaultManagementSection() {
 
 export default function FundingActionCenter({
   fundingConfig,
-  transferConfig
+  transferConfig,
+  embedded = false
 }: {
   fundingConfig: FundingFeatureConfig;
   transferConfig: TransferFeatureConfig;
+  embedded?: boolean;
 }) {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
@@ -444,27 +446,35 @@ export default function FundingActionCenter({
 
   if (!isConnected) {
     return (
-      <section className="walletStack">
-        <section className="card walletCard fundingActionShell">
+      <section className={embedded ? "fundingActionEmbedded" : "walletStack"}>
+        {embedded ? (
           <div className="walletNotice">{t("connectDescription")}</div>
-        </section>
+        ) : (
+          <section className="card walletCard fundingActionShell">
+            <div className="walletNotice">{t("connectDescription")}</div>
+          </section>
+        )}
         {activeModalDialog}
       </section>
     );
   }
 
   if (fundingQuery.isLoading || transferQuery.isLoading) {
-    return (
-      <section className="walletStack">
-        <div className="card walletCard fundingActionShell">
-          <div className="skeletonLine skeletonLineLg" />
-          <div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} />
-          <div className="walletInfoGrid" style={{ marginTop: 16 }}>
-            <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
-            <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
-            <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
-          </div>
+    const loadingContent = (
+      <div className={embedded ? "fundingActionEmbeddedLoading" : "card walletCard fundingActionShell"}>
+        <div className="skeletonLine skeletonLineLg" />
+        <div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} />
+        <div className="walletInfoGrid" style={{ marginTop: 16 }}>
+          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
+          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
+          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
         </div>
+      </div>
+    );
+
+    return (
+      <section className={embedded ? "fundingActionEmbedded" : "walletStack"}>
+        {loadingContent}
       </section>
     );
   }
@@ -487,70 +497,71 @@ export default function FundingActionCenter({
   const withdrawReady = funding.bridge.withdraw.enabled;
   const spotPerpReady = hasPositiveRawBalance(funding.hyperCore.usdc) || hasPositiveRawBalance(funding.bridge.creditedBalance);
 
-  return (
-    <section className="walletStack">
-      <section className="card walletCard fundingActionShell">
-        <div className="fundingQuickGrid">
-          <article className="walletInfoTile fundingQuickCard">
-            <div className="fundingQuickHeader">
-              <strong>{t("cards.bridgeTitle")}</strong>
-              <span className={`badge ${overviewStatusClass(depositReady && withdrawReady)}`}>{depositReady && withdrawReady ? tCommon("ready") : t("attention")}</span>
-            </div>
-            <div className="walletMutedText">{t("cards.bridgeSubtitle")}</div>
-            <div className="fundingQuickStats">
-              <span>{t("cards.arbitrumUsdc")}: <strong>{displayBalance(funding.arbitrum.usdc.formatted, "USDC")}</strong></span>
-              <span>{t("cards.tradingUsdc")}: <strong>{displayBalance(funding.bridge.creditedBalance.formatted, "USDC")}</strong></span>
-              <span>{t("cards.bridgeTiming")}: <strong>{t("cards.bridgeTimingValue")}</strong></span>
-            </div>
-            <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
-              <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>
-                {t("actions.deposit")}
-              </button>
-              <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>
-                {t("actions.withdraw")}
-              </button>
-            </div>
-          </article>
-
-          <article className="walletInfoTile fundingQuickCard">
-            <div className="fundingQuickHeader">
-              <strong>{t("cards.spotPerpTitle")}</strong>
-              <span className={`badge ${overviewStatusClass(spotPerpReady)}`}>{spotPerpReady ? tCommon("ready") : t("attention")}</span>
-            </div>
-            <div className="walletMutedText">{t("cards.spotPerpSubtitle")}</div>
-            <div className="fundingQuickStats">
-              <span>{t("cards.spotUsdc")}: <strong>{displayBalance(funding.hyperCore.usdc.formatted, "USDC")}</strong></span>
-              <span>{t("cards.perpUsdc")}: <strong>{displayBalance(funding.bridge.creditedBalance.formatted, "USDC")}</strong></span>
-              <span>{t("cards.spotPerpTiming")}: <strong>{t("cards.spotPerpTimingValue")}</strong></span>
-            </div>
-            <div className="fundingQuickCardActions">
-              <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>
-                {t("actions.spotPerp")}
-              </button>
-            </div>
-          </article>
-
-          <article className="walletInfoTile fundingQuickCard">
-            <div className="fundingQuickHeader">
-              <strong>{t("cards.coreEvmTitle")}</strong>
-              <span className={`badge ${overviewStatusClass(hyperCoreOk && hyperEvmOk)}`}>{hyperCoreOk && hyperEvmOk ? tCommon("ready") : t("attention")}</span>
-            </div>
-            <div className="walletMutedText">{t("cards.coreEvmSubtitle")}</div>
-            <div className="fundingQuickStats">
-              <span>{t("cards.coreUsdc")}: <strong>{displayBalance(transfer.hyperCore.usdc.formatted, "USDC")}</strong></span>
-              <span>{t("cards.coreHype")}: <strong>{displayBalance(transfer.hyperCore.hype.formatted, "HYPE", 4)}</strong></span>
-              <span>{t("cards.evmUsdc")}: <strong>{displayBalance(transfer.hyperEvm.usdc.formatted, "USDC")}</strong></span>
-              <span>{t("cards.evmHype")}: <strong>{displayBalance(transfer.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
-            </div>
-            <div className="fundingQuickCardActions">
-              <button type="button" className="btn" onClick={() => setActiveModal("core_evm")}>
-                {t("actions.coreEvm")}
-              </button>
-            </div>
-          </article>
+  const fundingCards = (
+    <div className={`fundingQuickGrid${embedded ? " fundingQuickGridEmbedded" : ""}`}>
+      <article className="walletInfoTile fundingQuickCard">
+        <div className="fundingQuickHeader">
+          <strong>{t("cards.bridgeTitle")}</strong>
+          <span className={`badge ${overviewStatusClass(depositReady && withdrawReady)}`}>{depositReady && withdrawReady ? tCommon("ready") : t("attention")}</span>
         </div>
-      </section>
+        <div className="walletMutedText">{t("cards.bridgeSubtitle")}</div>
+        <div className="fundingQuickStats">
+          <span>{t("cards.arbitrumUsdc")}: <strong>{displayBalance(funding.arbitrum.usdc.formatted, "USDC")}</strong></span>
+          <span>{t("cards.tradingUsdc")}: <strong>{displayBalance(funding.bridge.creditedBalance.formatted, "USDC")}</strong></span>
+          <span>{t("cards.bridgeTiming")}: <strong>{t("cards.bridgeTimingValue")}</strong></span>
+        </div>
+        <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
+          <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>
+            {t("actions.deposit")}
+          </button>
+          <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>
+            {t("actions.withdraw")}
+          </button>
+        </div>
+      </article>
 
+      <article className="walletInfoTile fundingQuickCard">
+        <div className="fundingQuickHeader">
+          <strong>{t("cards.spotPerpTitle")}</strong>
+          <span className={`badge ${overviewStatusClass(spotPerpReady)}`}>{spotPerpReady ? tCommon("ready") : t("attention")}</span>
+        </div>
+        <div className="walletMutedText">{t("cards.spotPerpSubtitle")}</div>
+        <div className="fundingQuickStats">
+          <span>{t("cards.spotUsdc")}: <strong>{displayBalance(funding.hyperCore.usdc.formatted, "USDC")}</strong></span>
+          <span>{t("cards.perpUsdc")}: <strong>{displayBalance(funding.bridge.creditedBalance.formatted, "USDC")}</strong></span>
+          <span>{t("cards.spotPerpTiming")}: <strong>{t("cards.spotPerpTimingValue")}</strong></span>
+        </div>
+        <div className="fundingQuickCardActions">
+          <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>
+            {t("actions.spotPerp")}
+          </button>
+        </div>
+      </article>
+
+      <article className="walletInfoTile fundingQuickCard">
+        <div className="fundingQuickHeader">
+          <strong>{t("cards.coreEvmTitle")}</strong>
+          <span className={`badge ${overviewStatusClass(hyperCoreOk && hyperEvmOk)}`}>{hyperCoreOk && hyperEvmOk ? tCommon("ready") : t("attention")}</span>
+        </div>
+        <div className="walletMutedText">{t("cards.coreEvmSubtitle")}</div>
+        <div className="fundingQuickStats">
+          <span>{t("cards.coreUsdc")}: <strong>{displayBalance(transfer.hyperCore.usdc.formatted, "USDC")}</strong></span>
+          <span>{t("cards.coreHype")}: <strong>{displayBalance(transfer.hyperCore.hype.formatted, "HYPE", 4)}</strong></span>
+          <span>{t("cards.evmUsdc")}: <strong>{displayBalance(transfer.hyperEvm.usdc.formatted, "USDC")}</strong></span>
+          <span>{t("cards.evmHype")}: <strong>{displayBalance(transfer.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
+        </div>
+        <div className="fundingQuickCardActions">
+          <button type="button" className="btn" onClick={() => setActiveModal("core_evm")}>
+            {t("actions.coreEvm")}
+          </button>
+        </div>
+      </article>
+    </div>
+  );
+
+  return (
+    <section className={embedded ? "fundingActionEmbedded" : "walletStack"}>
+      {embedded ? fundingCards : <section className="card walletCard fundingActionShell">{fundingCards}</section>}
       {activeModalDialog}
     </section>
   );

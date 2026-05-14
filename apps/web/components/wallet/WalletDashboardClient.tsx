@@ -292,12 +292,13 @@ export default function WalletDashboardClient({
         </section>
 
         <section className="walletEmbeddedSection walletHyperliquidTransferSection">
-          <div className="walletSectionDivider" />
-          <div className="walletEmbeddedSectionIntro">
-            <h3 className="walletSectionTitle">{t("hyperliquidTransfersTitle")}</h3>
-            <div className="walletMutedText">{t("hyperliquidTransfersSubtitle")}</div>
+          <div className="walletSectionHeader">
+            <div className="walletSectionIntro">
+              <h3 className="walletSectionTitle">{t("hyperliquidTransfersTitle")}</h3>
+              <div className="walletMutedText">{t("hyperliquidTransfersSubtitle")}</div>
+            </div>
           </div>
-          <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
+          <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} embedded />
         </section>
 
         {isConnected ? (
