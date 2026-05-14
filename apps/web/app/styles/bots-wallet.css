@@ -2861,8 +2861,8 @@
 
 .fundingActionShell {
   display: grid;
-  gap: 22px;
-  padding: 22px;
+  gap: 16px;
+  padding: 18px;
 }
 
 .fundingToolbar {
@@ -2877,29 +2877,27 @@
   min-width: 132px;
 }
 
-.walletPage .walletAgentActions,
-.walletPage .fundingActionButtons {
+.walletPage .walletAgentActions {
   justify-content: flex-start;
   align-items: center;
   gap: 10px;
 }
 
-.walletPage .walletAgentActions .btn,
-.walletPage .fundingActionButtons .btn {
+.walletPage .walletAgentActions .btn {
   flex: 0 0 auto;
 }
 
 .fundingQuickGrid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
 .fundingQuickCard {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  min-height: 156px;
-  align-content: start;
+  min-height: 232px;
   padding: 16px;
 }
 
@@ -2923,43 +2921,21 @@
   font-weight: 700;
 }
 
-.fundingMiniHistoryCard {
-  display: grid;
-  gap: 18px;
-  padding: 20px 22px;
+.fundingQuickCardActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: auto;
 }
 
-.fundingMiniHistoryList {
-  display: grid;
-  gap: 12px;
-}
-
-.fundingMiniHistoryItem {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--color-border-default);
-  background: linear-gradient(180deg, rgba(14, 24, 39, 0.8), rgba(8, 16, 28, 0.88));
-}
-
-.fundingMiniHistoryMain,
-.fundingMiniHistoryMeta {
+.fundingQuickCardActions .btn {
+  flex: 1 1 132px;
   min-width: 0;
+  justify-content: center;
 }
 
-.fundingMiniHistoryMain {
-  display: grid;
-  gap: 4px;
-}
-
-.fundingMiniHistoryMeta {
-  display: grid;
-  gap: 6px;
-  justify-items: end;
-  text-align: right;
+.fundingQuickCardActionsSplit .btn {
+  flex-basis: 104px;
 }
 
 .fundingModalOverlay {
@@ -3186,6 +3162,38 @@
   line-height: 1.4;
 }
 
+.fundingVaultModalStats {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fundingVaultModalControls,
+.fundingVaultModalFeedbackStack {
+  display: grid;
+  gap: 10px;
+}
+
+.fundingVaultModalAmountGrid,
+.fundingVaultModalWithdrawGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.fundingVaultModalAmountGrid {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.fundingVaultModalWithdrawGrid {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.fundingVaultModalAmountGrid .btn,
+.fundingVaultModalWithdrawGrid .btn {
+  min-width: 132px;
+}
+
 .fundingModalPrimaryActionRow,
 .fundingModalSection .walletActionRow {
   width: 100%;
@@ -3250,13 +3258,20 @@
     min-width: 0;
   }
 
-  .fundingMiniHistoryItem {
-    grid-template-columns: 1fr;
+  .fundingQuickCard {
+    min-height: auto;
   }
 
-  .fundingMiniHistoryMeta {
-    justify-items: start;
-    text-align: left;
+  .fundingQuickCardActions,
+  .fundingQuickCardActions .btn,
+  .fundingVaultModalAmountGrid,
+  .fundingVaultModalWithdrawGrid {
+    width: 100%;
+  }
+
+  .fundingVaultModalAmountGrid,
+  .fundingVaultModalWithdrawGrid {
+    grid-template-columns: 1fr;
   }
 
   .fundingModalOverlay {

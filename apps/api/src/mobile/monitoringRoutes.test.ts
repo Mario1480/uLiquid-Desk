@@ -63,7 +63,9 @@ function createDeps(overrides: Record<string, any> = {}) {
     accounts: [] as any[],
     predictions: [] as any[],
     tradeStates: [] as any[],
-    riskEvents: [] as any[]
+    riskEvents: [] as any[],
+    tradeHistory: [] as any[],
+    gridFills: [] as any[]
   };
   const db = {
     mobileWatchlistItem: {
@@ -142,7 +144,12 @@ function createDeps(overrides: Record<string, any> = {}) {
     },
     botTradeHistory: {
       async findMany() {
-        return [];
+        return state.tradeHistory;
+      }
+    },
+    gridBotFillEvent: {
+      async findMany() {
+        return state.gridFills;
       }
     },
     predictionEvent: {
@@ -337,6 +344,80 @@ test("mobile position risk prefers exchange leverage margin and liquidation fiel
   assert.equal(res.body.items[0].liquidationDistancePct, 18.8652);
   assert.equal(res.body.items[0].roePct, 0.3556);
   assert.equal(res.body.items[0].pnlPct, 0.0711);
+});
+
+test("mobile performance includes grid fill cycles in trade metrics", async () => {
+  const app = createFakeApp();
+  const deps = createDeps();
+  const now = Date.now();
+  deps.state.accounts.push({ id: "acc_grid", exchange: "hyperliquid", label: "Hyper" });
+  deps.state.bots.push({
+    id: "bot_grid",
+    name: "BTC Grid",
+    symbol: "BTCUSDC",
+    exchangeAccountId: "acc_grid",
+    status: "running"
+  });
+  deps.state.gridFills.push(
+    {
+      id: "fill_1",
+      side: "buy",
+      gridLeg: "main",
+      gridIndex: 1,
+      fillPrice: 100,
+      fillQty: 1,
+      fillNotionalUsd: 100,
+      feeUsd: 0,
+      fillTs: new Date(now - 3_600_000)
+    },
+    {
+      id: "fill_2",
+      side: "sell",
+      gridLeg: "main",
+      gridIndex: 2,
+      fillPrice: 110,
+      fillQty: 1,
+      fillNotionalUsd: 110,
+      feeUsd: 0,
+      fillTs: new Date(now - 3_000_000)
+    },
+    {
+      id: "fill_3",
+      side: "buy",
+      gridLeg: "main",
+      gridIndex: 3,
+      fillPrice: 100,
+      fillQty: 1,
+      fillNotionalUsd: 100,
+      feeUsd: 0,
+      fillTs: new Date(now - 2_400_000)
+    },
+    {
+      id: "fill_4",
+      side: "sell",
+      gridLeg: "main",
+      gridIndex: 4,
+      fillPrice: 95,
+      fillQty: 1,
+      fillNotionalUsd: 95,
+      feeUsd: 0,
+      fillTs: new Date(now - 1_800_000)
+    }
+  );
+  registerMobileMonitoringRoutes(app as any, deps as any);
+
+  const handler = getFinalHandler(app, "get", "/mobile/performance");
+  const res = createMockRes();
+  await handler({ query: { range: "7d" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.summary?.trades, 2);
+  assert.equal(res.body?.summary?.wins, 1);
+  assert.equal(res.body?.summary?.losses, 1);
+  assert.equal(res.body?.summary?.winRatePct, 50);
+  assert.equal(res.body?.summary?.profitFactor, 2);
+  assert.equal(res.body?.summary?.netPnlUsd, 5);
+  assert.equal(res.body?.summary?.avgHoldMinutes, 10);
 });
 
 test("mobile position chart candles are read-only and do not require manual trading route", async () => {

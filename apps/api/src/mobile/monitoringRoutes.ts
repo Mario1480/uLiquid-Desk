@@ -2,7 +2,10 @@ import type express from "express";
 import type { Express } from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import { computeCoreMetricsFromClosedTrades } from "../bots/tradeHistory.js";
+import {
+  computeCoreMetricsFromClosedTrades,
+  type BotTradeHistoryCoreTrade
+} from "../bots/tradeHistory.js";
 import {
   evaluateNewsRiskForSymbol,
   getEconomicCalendarNextSummary,
@@ -93,6 +96,24 @@ const positionChartTickerQuerySchema = z.object({
   symbol: z.string().trim().min(1).max(40),
   marketType: z.enum(["perp"]).default("perp")
 });
+
+type MobileGridPerformanceFill = {
+  id: string;
+  side: string;
+  gridLeg: string;
+  gridIndex: number;
+  fillPrice: number;
+  fillQty: number;
+  fillNotionalUsd: number | null;
+  feeUsd: number | null;
+  fillTs: Date | null;
+};
+
+type MobileGridPendingLot = {
+  fill: MobileGridPerformanceFill;
+  qty: number;
+  feePerUnit: number;
+};
 
 function toIso(value: unknown): string | null {
   if (value instanceof Date) return value.toISOString();
@@ -961,6 +982,155 @@ function performanceRangeStart(range: z.infer<typeof performanceRangeSchema>, no
   return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 }
 
+function toDateOrNull(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toFinitePerformanceNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function gridFillNotional(fill: MobileGridPerformanceFill): number {
+  const notional = toFinitePerformanceNumber(fill.fillNotionalUsd);
+  if (notional !== null && notional > 0) return notional;
+  return fill.fillPrice * fill.fillQty;
+}
+
+function gridPendingLotKey(gridLeg: string, expectedIndex: number): string {
+  return `${gridLeg}:${expectedIndex}`;
+}
+
+function pushGridPendingLot(
+  pending: Map<string, MobileGridPendingLot[]>,
+  fill: MobileGridPerformanceFill,
+  expectedIndex: number,
+  lot: MobileGridPendingLot
+) {
+  const key = gridPendingLotKey(fill.gridLeg, expectedIndex);
+  pending.set(key, [...(pending.get(key) ?? []), lot]);
+}
+
+function popGridPendingLot(pending: Map<string, MobileGridPendingLot[]>, key: string) {
+  const lots = pending.get(key) ?? [];
+  lots.shift();
+  if (lots.length === 0) {
+    pending.delete(key);
+    return;
+  }
+  pending.set(key, lots);
+}
+
+function findGridPendingLot(
+  pending: Map<string, MobileGridPendingLot[]>,
+  closeFill: MobileGridPerformanceFill
+): { key: string; lot: MobileGridPendingLot } | null {
+  const exactKey = gridPendingLotKey(closeFill.gridLeg, closeFill.gridIndex);
+  const exactLot = pending.get(exactKey)?.[0] ?? null;
+  if (exactLot) return { key: exactKey, lot: exactLot };
+
+  let best: { key: string; lot: MobileGridPendingLot; fillTsMs: number; distance: number } | null = null;
+  for (const [key, lots] of pending.entries()) {
+    const lot = lots[0];
+    if (!lot) continue;
+    if (lot.fill.gridLeg !== closeFill.gridLeg) continue;
+    if (lot.fill.side === closeFill.side) continue;
+    const openTs = lot.fill.fillTs?.getTime() ?? 0;
+    const closeTs = closeFill.fillTs?.getTime() ?? 0;
+    if (openTs > closeTs) continue;
+    const distance = Math.abs(closeFill.gridIndex - lot.fill.gridIndex);
+    if (!best || openTs < best.fillTsMs || (openTs === best.fillTsMs && distance < best.distance)) {
+      best = { key, lot, fillTsMs: openTs, distance };
+    }
+  }
+  return best ? { key: best.key, lot: best.lot } : null;
+}
+
+function allocateGridFeePart(totalFee: number | null, partQty: number, totalQty: number): number {
+  const fee = toFinitePerformanceNumber(totalFee) ?? 0;
+  if (fee <= 0 || partQty <= 0 || totalQty <= 0) return 0;
+  return fee * (partQty / totalQty);
+}
+
+function computeGridCycleRealizedPnl(
+  openLot: MobileGridPendingLot,
+  closeFill: MobileGridPerformanceFill,
+  matchedQty: number,
+  closeFeePart: number
+): number {
+  const openQty = Math.max(openLot.fill.fillQty, 1e-12);
+  const closeQty = Math.max(closeFill.fillQty, 1e-12);
+  const openUnitNotional = gridFillNotional(openLot.fill) / openQty;
+  const closeUnitNotional = gridFillNotional(closeFill) / closeQty;
+  const openFeePart = openLot.feePerUnit * matchedQty;
+
+  if (openLot.fill.side === "buy") {
+    return (closeUnitNotional - openUnitNotional) * matchedQty - openFeePart - closeFeePart;
+  }
+  return (openUnitNotional - closeUnitNotional) * matchedQty - openFeePart - closeFeePart;
+}
+
+function buildGridPerformanceTrades(
+  fills: MobileGridPerformanceFill[],
+  from: Date,
+  now: Date
+): BotTradeHistoryCoreTrade[] {
+  const pendingBuysBySellIndex = new Map<string, MobileGridPendingLot[]>();
+  const pendingSellsByBuyIndex = new Map<string, MobileGridPendingLot[]>();
+  const trades: BotTradeHistoryCoreTrade[] = [];
+  const sorted = fills
+    .filter((fill) => fill.fillTs && fill.fillQty > 0 && fill.fillPrice > 0 && (fill.side === "buy" || fill.side === "sell"))
+    .sort((a, b) => (a.fillTs?.getTime() ?? 0) - (b.fillTs?.getTime() ?? 0));
+
+  for (const fill of sorted) {
+    let remainingQty = fill.fillQty;
+    const matchingQueue = fill.side === "buy" ? pendingSellsByBuyIndex : pendingBuysBySellIndex;
+
+    while (remainingQty > 0) {
+      const matched = findGridPendingLot(matchingQueue, fill);
+      if (!matched) break;
+
+      const matchedQty = Math.min(remainingQty, matched.lot.qty);
+      const closeFeePart = allocateGridFeePart(fill.feeUsd, matchedQty, fill.fillQty);
+      const realizedPnlUsd = computeGridCycleRealizedPnl(matched.lot, fill, matchedQty, closeFeePart);
+      const exitTs = fill.fillTs;
+
+      if (exitTs && exitTs >= from && exitTs <= now) {
+        trades.push({
+          id: `grid:${matched.lot.fill.id}:${fill.id}:${trades.length}`,
+          side: matched.lot.fill.side === "buy" ? "long" : "short",
+          entryTs: matched.lot.fill.fillTs,
+          exitTs,
+          entryPrice: matched.lot.fill.fillPrice,
+          exitPrice: fill.fillPrice,
+          realizedPnlUsd
+        });
+      }
+
+      matched.lot.qty = Number((matched.lot.qty - matchedQty).toFixed(12));
+      remainingQty = Number((remainingQty - matchedQty).toFixed(12));
+      if (matched.lot.qty <= 0) popGridPendingLot(matchingQueue, matched.key);
+    }
+
+    if (remainingQty > 0) {
+      const openFeePart = allocateGridFeePart(fill.feeUsd, remainingQty, fill.fillQty);
+      const lot: MobileGridPendingLot = {
+        fill,
+        qty: Number(remainingQty.toFixed(12)),
+        feePerUnit: remainingQty > 0 ? openFeePart / remainingQty : 0
+      };
+      const expectedCloseIndex = fill.side === "buy" ? fill.gridIndex + 1 : fill.gridIndex - 1;
+      const targetQueue = fill.side === "buy" ? pendingBuysBySellIndex : pendingSellsByBuyIndex;
+      pushGridPendingLot(targetQueue, fill, expectedCloseIndex, lot);
+    }
+  }
+
+  return trades;
+}
+
 async function readPerformance(deps: MobileMonitoringRoutesDeps, userId: string, query: z.infer<typeof performanceQuerySchema>) {
   const now = new Date();
   const from = performanceRangeStart(query.range, now);
@@ -998,7 +1168,6 @@ async function readPerformance(deps: MobileMonitoringRoutesDeps, userId: string,
 
   const tradeWhere: Record<string, unknown> = {
     userId,
-    status: "closed",
     exitTs: {
       gte: from,
       lte: now
@@ -1033,7 +1202,67 @@ async function readPerformance(deps: MobileMonitoringRoutesDeps, userId: string,
     exitPrice: deps.toFiniteNumber(row.exitPrice),
     realizedPnlUsd: deps.toFiniteNumber(row.realizedPnlUsd)
   }));
-  const metrics = computeCoreMetricsFromClosedTrades(trades);
+  const gridLookbackDays = query.range === "30d" ? 60 : query.range === "7d" ? 30 : 7;
+  const gridFrom = new Date(from.getTime() - gridLookbackDays * 24 * 60 * 60 * 1000);
+  const gridInstanceWhere: Record<string, unknown> = { userId };
+  if (query.exchangeAccountId) gridInstanceWhere.exchangeAccountId = query.exchangeAccountId;
+  if (query.symbol) {
+    gridInstanceWhere.template = { is: { symbol: normalizeSymbolInput(query.symbol) } };
+  }
+  const gridFillWhere: Record<string, unknown> = {
+    fillTs: {
+      gte: gridFrom,
+      lte: now
+    },
+    instance: { is: gridInstanceWhere }
+  };
+  if (query.botId) gridFillWhere.botId = query.botId;
+  const gridFillModel = deps.db?.gridBotFillEvent;
+  const gridFillsRaw = gridFillModel?.findMany
+    ? await deps.ignoreMissingTable(() =>
+        gridFillModel.findMany({
+          where: gridFillWhere,
+          orderBy: [{ fillTs: "asc" }, { id: "asc" }],
+          take: 5000,
+          select: {
+            id: true,
+            side: true,
+            gridLeg: true,
+            gridIndex: true,
+            fillPrice: true,
+            fillQty: true,
+            fillNotionalUsd: true,
+            feeUsd: true,
+            fillTs: true
+          }
+        })
+      )
+    : [];
+  const gridTrades = (Array.isArray(gridFillsRaw) ? gridFillsRaw : [])
+    .map((row: any): MobileGridPerformanceFill | null => {
+      const fillTs = toDateOrNull(row.fillTs);
+      const fillPrice = deps.toFiniteNumber(row.fillPrice);
+      const fillQty = deps.toFiniteNumber(row.fillQty);
+      const gridIndex = Number(row.gridIndex);
+      const side = String(row.side ?? "").trim().toLowerCase();
+      if (!fillTs || fillPrice === null || fillQty === null || !Number.isFinite(gridIndex)) return null;
+      return {
+        id: String(row.id),
+        side,
+        gridLeg: String(row.gridLeg ?? ""),
+        gridIndex,
+        fillPrice,
+        fillQty,
+        fillNotionalUsd: deps.toFiniteNumber(row.fillNotionalUsd),
+        feeUsd: deps.toFiniteNumber(row.feeUsd),
+        fillTs
+      };
+    })
+    .filter((row): row is MobileGridPerformanceFill => Boolean(row));
+  const metrics = computeCoreMetricsFromClosedTrades([
+    ...trades,
+    ...buildGridPerformanceTrades(gridTrades, from, now)
+  ]);
   const filterRows = await Promise.all([
     deps.db.exchangeAccount.findMany({
       where: { userId },

@@ -270,6 +270,15 @@ export default function WalletDashboardClient({
             </div>
           </section>
 
+          <section className="walletEmbeddedSection">
+            <div className="walletSectionDivider" />
+            <div className="walletEmbeddedSectionIntro">
+              <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
+              <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
+            </div>
+            <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
+          </section>
+
           <section className="card walletCard walletAccordionCard">
             <button
               type="button"
@@ -326,15 +335,6 @@ export default function WalletDashboardClient({
                 )}
               </div>
             ) : null}
-          </section>
-
-          <section className="walletEmbeddedSection">
-            <div className="walletSectionDivider" />
-            <div className="walletEmbeddedSectionIntro">
-              <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
-              <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
-            </div>
-            <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
           </section>
         </div>
       )}

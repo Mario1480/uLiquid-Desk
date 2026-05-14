@@ -99,6 +99,7 @@
       "reserved": "Reserved",
       "vault": "Vault",
       "agent": "Agent",
+      "manage": "Manage",
       "create": "Create Funding Vault",
       "creating": "Creating...",
       "deposit": "Deposit",

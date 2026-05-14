@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
-import type { FundingFeatureConfig, FundingHistoryResponse, WalletFundingOverview } from "../../lib/funding/types";
+import type { FundingFeatureConfig, WalletFundingOverview } from "../../lib/funding/types";
 import type { TransferFeatureConfig, WalletTransferOverview } from "../../lib/transfers/types";
-import { formatDateTime, formatToken, shortAddress } from "../../lib/wallet/format";
+import { formatToken, shortAddress } from "../../lib/wallet/format";
 import { useOnchainActionFlow } from "../grid/OnchainVaultActions";
 import { createIdempotencyKey } from "../grid/utils";
 import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
@@ -15,7 +15,7 @@ import FundingTransferSection from "./FundingTransferSection";
 import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
 import RelayBotVaultFundingSection from "./RelayBotVaultFundingSection";
 
-type ActiveModal = "botvault_funding" | "deposit" | "withdraw" | "spot_perp" | "core_evm" | null;
+type ActiveModal = "botvault_funding" | "deposit" | "withdraw" | "spot_perp" | "core_evm" | "funding_vault" | null;
 
 type FundingVaultOverview = {
   mode: "offchain_shadow" | "onchain_simulated" | "onchain_live" | string;
@@ -43,13 +43,6 @@ type FundingVaultOverview = {
 function displayBalance(value: string | null | undefined, symbol: string, maxDecimals = 2): string {
   if (!value) return "-";
   return `${formatToken(value, maxDecimals)} ${symbol}`;
-}
-
-function statusBadgeClass(status: FundingHistoryResponse["items"][number]["status"]): string {
-  if (status === "confirmed") return "badgeOk";
-  if (status === "failed") return "badgeDanger";
-  if (status === "submitted" || status === "pending_reconciliation") return "badgeWarn";
-  return "";
 }
 
 function overviewStatusClass(ok: boolean): string {
@@ -97,10 +90,53 @@ function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<
       return t("actions.spotPerp");
     case "core_evm":
       return t("actions.coreEvm");
+    case "funding_vault":
+      return t("fundingVault.title");
   }
 }
 
-function FundingVaultQuickCard({ address }: { address: string | undefined }) {
+function FundingVaultQuickCard({ address, onManage }: { address: string | undefined; onManage: () => void }) {
+  const t = useTranslations("funding.actionCenter");
+  const tCommon = useTranslations("funding.common");
+
+  const overviewQuery = useQuery({
+    queryKey: ["funding-vault-overview", address],
+    enabled: Boolean(address),
+    queryFn: () => apiGet<FundingVaultOverview>("/vaults/funding-vault"),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false
+  });
+
+  const overview = overviewQuery.data ?? null;
+  const vault = overview?.fundingVault ?? null;
+  const ready = Boolean(vault?.onchainAddress && overview?.agentWalletAddress);
+
+  return (
+    <article className="walletInfoTile fundingQuickCard">
+      <div className="fundingQuickHeader">
+        <strong>{t("fundingVault.title")}</strong>
+        <span className={`badge ${overviewStatusClass(ready)}`}>
+          {ready ? tCommon("ready") : t("fundingVault.setupRequired")}
+        </span>
+      </div>
+      <div className="walletMutedText">{t("fundingVault.subtitle")}</div>
+      <div className="fundingQuickStats">
+        <span>{t("fundingVault.available")}: <strong>{formatFundingVaultUsd(vault?.availableBalance)}</strong></span>
+        <span>{t("fundingVault.reserved")}: <strong>{formatFundingVaultUsd(vault?.reservedBalance)}</strong></span>
+        <span>{t("fundingVault.vault")}: <strong>{vault?.onchainAddress ? shortAddress(vault.onchainAddress) : "-"}</strong></span>
+        <span>{t("fundingVault.agent")}: <strong>{overview?.agentWalletAddress ? shortAddress(overview.agentWalletAddress) : "-"}</strong></span>
+      </div>
+      {overviewQuery.isLoading ? <div className="walletMutedText">{t("fundingVault.loading")}</div> : null}
+      <div className="fundingQuickCardActions">
+        <button type="button" className="btn btnPrimary" onClick={onManage}>
+          {t("fundingVault.manage")}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function FundingVaultManagementSection({ address }: { address: string | undefined }) {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
   const [depositAmount, setDepositAmount] = useState("25");
@@ -195,22 +231,26 @@ function FundingVaultQuickCard({ address }: { address: string | undefined }) {
   }
 
   return (
-    <article className="walletInfoTile fundingQuickCard">
-      <div className="fundingQuickHeader">
-        <strong>{t("fundingVault.title")}</strong>
-        <span className={`badge ${overviewStatusClass(ready)}`}>
-          {ready ? tCommon("ready") : t("fundingVault.setupRequired")}
-        </span>
+    <section className="card walletCard fundingModalSection">
+      <div className="walletSectionHeader fundingModalTitleBlock">
+        <div className="walletSectionIntro">
+          <h3 className="walletSectionTitle">{t("fundingVault.title")}</h3>
+          <div className="walletMutedText">{t("fundingVault.subtitle")}</div>
+        </div>
       </div>
-      <div className="walletMutedText">{t("fundingVault.subtitle")}</div>
-      <div className="fundingQuickStats">
+
+      <div className="fundingModalDirectionPill">
+        <span>{ready ? tCommon("ready") : t("fundingVault.setupRequired")}</span>
+      </div>
+
+      <div className="fundingQuickStats fundingVaultModalStats">
         <span>{t("fundingVault.available")}: <strong>{formatFundingVaultUsd(vault?.availableBalance)}</strong></span>
         <span>{t("fundingVault.reserved")}: <strong>{formatFundingVaultUsd(vault?.reservedBalance)}</strong></span>
         <span>{t("fundingVault.vault")}: <strong>{vault?.onchainAddress ? shortAddress(vault.onchainAddress) : "-"}</strong></span>
         <span>{t("fundingVault.agent")}: <strong>{overview?.agentWalletAddress ? shortAddress(overview.agentWalletAddress) : "-"}</strong></span>
       </div>
 
-      <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+      <div className="fundingVaultModalControls">
         {!vault?.onchainAddress ? (
           <button
             type="button"
@@ -221,7 +261,7 @@ function FundingVaultQuickCard({ address }: { address: string | undefined }) {
             {flow.busyKey === "funding-vault-create" ? t("fundingVault.creating") : t("fundingVault.create")}
           </button>
         ) : null}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8 }}>
+        <div className="fundingVaultModalAmountGrid">
           <input
             className="input"
             type="number"
@@ -235,7 +275,7 @@ function FundingVaultQuickCard({ address }: { address: string | undefined }) {
             {t("fundingVault.deposit")}
           </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 8 }}>
+        <div className="fundingVaultModalWithdrawGrid">
           <input
             className="input"
             type="number"
@@ -253,10 +293,12 @@ function FundingVaultQuickCard({ address }: { address: string | undefined }) {
           </button>
         </div>
       </div>
-      {actionNotice ? <div className="walletNotice walletNoticeSuccess" style={{ marginTop: 10 }}>{actionNotice}</div> : null}
-      {actionError ? <div className="walletNotice walletNoticeError" style={{ marginTop: 10 }}>{actionError}</div> : null}
-      {overviewQuery.isLoading ? <div className="walletMutedText" style={{ marginTop: 10 }}>{t("fundingVault.loading")}</div> : null}
-    </article>
+      <div className="fundingVaultModalFeedbackStack">
+        {actionNotice ? <div className="walletNotice walletNoticeSuccess">{actionNotice}</div> : null}
+        {actionError ? <div className="walletNotice walletNoticeError">{actionError}</div> : null}
+        {overviewQuery.isLoading ? <div className="walletMutedText">{t("fundingVault.loading")}</div> : null}
+      </div>
+    </section>
   );
 }
 
@@ -287,17 +329,7 @@ export default function FundingActionCenter({
     staleTime: 10_000,
     refetchOnWindowFocus: false
   });
-
-  const historyQuery = useQuery({
-    queryKey: ["funding-history", address],
-    enabled: Boolean(address),
-    queryFn: () => apiGet<FundingHistoryResponse>(`/funding/${address}/history`),
-    staleTime: 20_000,
-    refetchOnWindowFocus: true
-  });
-
-  const historyItems = useMemo(() => historyQuery.data?.items?.slice(0, 4) ?? [], [historyQuery.data?.items]);
-  const anyError = fundingQuery.error || transferQuery.error || historyQuery.error;
+  const anyError = fundingQuery.error || transferQuery.error;
 
   if (!isConnected) {
     return (
@@ -346,22 +378,6 @@ export default function FundingActionCenter({
   return (
     <section className="walletStack">
       <section className="card walletCard fundingActionShell">
-        <div className="walletSectionHeader">
-          <div className="walletSectionIntro">
-            <h3 className="walletSectionTitle">{t("title")}</h3>
-            <div className="walletMutedText">{t("subtitle")}</div>
-          </div>
-          {address ? <div className="walletMutedText">{t("connectedWallet", { address: shortAddress(address) })}</div> : null}
-        </div>
-
-        <div className="fundingToolbar fundingActionButtons">
-          <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("botvault_funding")}>{t("actions.botvaultFunding")}</button>
-          <button type="button" className="btn" onClick={() => setActiveModal("deposit")}>{t("actions.deposit")}</button>
-          <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>{t("actions.withdraw")}</button>
-          <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>{t("actions.spotPerp")}</button>
-          <button type="button" className="btn" onClick={() => setActiveModal("core_evm")}>{t("actions.coreEvm")}</button>
-        </div>
-
         <div className="fundingQuickGrid">
           <article className="walletInfoTile fundingQuickCard">
             <div className="fundingQuickHeader">
@@ -373,6 +389,11 @@ export default function FundingActionCenter({
               <span>{t("cards.arbitrumUsdc")}: <strong>{displayBalance(funding.arbitrum.usdc.formatted, "USDC")}</strong></span>
               <span>{t("cards.evmUsdc")}: <strong>{displayBalance(funding.hyperEvm.usdc.formatted, "USDC")}</strong></span>
               <span>{t("cards.evmHype")}: <strong>{displayBalance(funding.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
+            </div>
+            <div className="fundingQuickCardActions">
+              <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("botvault_funding")}>
+                {t("actions.botvaultFunding")}
+              </button>
             </div>
           </article>
 
@@ -387,6 +408,14 @@ export default function FundingActionCenter({
               <span>{t("cards.tradingUsdc")}: <strong>{displayBalance(funding.bridge.creditedBalance.formatted, "USDC")}</strong></span>
               <span>{t("cards.bridgeTiming")}: <strong>{t("cards.bridgeTimingValue")}</strong></span>
             </div>
+            <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
+              <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>
+                {t("actions.deposit")}
+              </button>
+              <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>
+                {t("actions.withdraw")}
+              </button>
+            </div>
           </article>
 
           <article className="walletInfoTile fundingQuickCard">
@@ -399,6 +428,11 @@ export default function FundingActionCenter({
               <span>{t("cards.spotUsdc")}: <strong>{displayBalance(funding.hyperCore.usdc.formatted, "USDC")}</strong></span>
               <span>{t("cards.perpUsdc")}: <strong>{displayBalance(funding.bridge.creditedBalance.formatted, "USDC")}</strong></span>
               <span>{t("cards.spotPerpTiming")}: <strong>{t("cards.spotPerpTimingValue")}</strong></span>
+            </div>
+            <div className="fundingQuickCardActions">
+              <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>
+                {t("actions.spotPerp")}
+              </button>
             </div>
           </article>
 
@@ -414,43 +448,15 @@ export default function FundingActionCenter({
               <span>{t("cards.evmUsdc")}: <strong>{displayBalance(transfer.hyperEvm.usdc.formatted, "USDC")}</strong></span>
               <span>{t("cards.evmHype")}: <strong>{displayBalance(transfer.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
             </div>
+            <div className="fundingQuickCardActions">
+              <button type="button" className="btn" onClick={() => setActiveModal("core_evm")}>
+                {t("actions.coreEvm")}
+              </button>
+            </div>
           </article>
 
-          <FundingVaultQuickCard address={address} />
+          <FundingVaultQuickCard address={address} onManage={() => setActiveModal("funding_vault")} />
         </div>
-      </section>
-
-      <section className="card walletCard fundingMiniHistoryCard">
-        <div className="walletSectionHeader">
-          <div className="walletSectionIntro">
-            <h3 className="walletSectionTitle">{t("history.title")}</h3>
-            <div className="walletMutedText">{t("history.subtitle")}</div>
-          </div>
-          <span className="badge">{historyItems.length}</span>
-        </div>
-        {historyQuery.isLoading ? (
-          <>
-            <div className="skeletonLine skeletonLineMd" />
-            <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
-          </>
-        ) : historyItems.length ? (
-          <div className="fundingMiniHistoryList">
-            {historyItems.map((item) => (
-              <article key={item.id} className="fundingMiniHistoryItem">
-                <div className="fundingMiniHistoryMain">
-                  <strong>{item.title}</strong>
-                  <div className="walletMutedText">{item.description}</div>
-                </div>
-                <div className="fundingMiniHistoryMeta">
-                  <span className={`badge ${statusBadgeClass(item.status)}`}>{item.status}</span>
-                  <div className="walletMutedText">{item.createdAt ? formatDateTime(item.createdAt) : "-"}</div>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="walletMutedText">{t("history.empty")}</div>
-        )}
       </section>
 
       {activeModal ? (
@@ -472,6 +478,7 @@ export default function FundingActionCenter({
               {activeModal === "withdraw" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="withdraw" key="withdraw-modal" /> : null}
               {activeModal === "spot_perp" ? <HyperliquidUsdClassTransferSection config={fundingConfig} presentation="modal" initialDirection="perp_to_spot" key="spot-perp-modal" /> : null}
               {activeModal === "core_evm" ? <FundingTransferSection config={transferConfig} presentation="modal" initialDirection="core_to_evm" initialAsset="USDC" key="core-evm-modal" /> : null}
+              {activeModal === "funding_vault" ? <FundingVaultManagementSection address={address} key="funding-vault-modal" /> : null}
             </div>
           </div>
         </div>
