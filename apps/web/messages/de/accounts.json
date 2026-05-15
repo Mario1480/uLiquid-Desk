@@ -10,10 +10,13 @@
     "ariaLabel": "Account-Asset-Zusammenfassung",
     "accounts": "Accounts",
     "assets": "Assets",
+    "perpAccounts": "Perp Accounts",
     "approxUsd": "Geschaetzter Wert",
     "partialErrors": "Teilfehler",
     "visible": "Nach Filtern sichtbar",
-    "spotOnly": "Nur Spot-Assets",
+    "spotAssets": "Spot-Assets",
+    "perpEnabled": "Perp-State geladen",
+    "spotAndPerp": "Spot-Assets plus Perp-Equity",
     "bestEffort": "Best-effort Pricing"
   },
   "filters": {
@@ -36,9 +39,25 @@
   "account": {
     "marketData": "Market Data: {exchange}",
     "updated": "Aktualisiert: {value}",
+    "spotStatus": "Spot: {status}",
+    "perpStatus": "Perp: {status}",
     "unsupported": "Spot-Balances werden fuer diese Account-Konfiguration nicht unterstuetzt.",
     "empty": "Fuer diesen Account wurden keine Spot-Assets mit Balance gefunden.",
     "noFilterMatch": "Keine Assets passen zum aktuellen Filter."
+  },
+  "spot": {
+    "title": "Spot Assets",
+    "unsupported": "Spot-Balances werden fuer diese Account-Konfiguration nicht unterstuetzt.",
+    "empty": "Fuer diesen Account wurden keine Spot-Assets mit Balance gefunden.",
+    "noFilterMatch": "Keine Assets passen zum aktuellen Filter."
+  },
+  "perp": {
+    "title": "Perp Account",
+    "unsupported": "Perp-Account-State wird fuer diese Account-Konfiguration nicht unterstuetzt.",
+    "equity": "Equity",
+    "availableMargin": "Available Margin",
+    "marginAsset": "Margin Asset",
+    "marginMode": "Margin Mode"
   },
   "table": {
     "asset": "Asset",

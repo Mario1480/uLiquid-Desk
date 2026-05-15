@@ -17,17 +17,30 @@ type AccountAsset = {
   quoteSymbol: string | null;
 };
 
+type AccountMarketStatus = "ok" | "empty" | "unsupported" | "error";
+
+type AccountPerpOverview = {
+  status: AccountMarketStatus;
+  updatedAt: string | null;
+  error: { code: string; message: string } | null;
+  marginAsset: "USDT" | "USDC";
+  equityUsd: number | null;
+  availableMarginUsd: number | null;
+  marginMode: string | null;
+};
+
 type AccountAssetOverview = {
   exchangeAccountId: string;
   exchange: string;
   label: string;
   marketDataExchange: string;
-  status: "ok" | "empty" | "unsupported" | "error";
+  status: AccountMarketStatus;
   updatedAt: string | null;
   error: { code: string; message: string } | null;
   quoteAsset: "USDT" | "USDC";
   totals: { assets: number; approxUsd: number | null };
   assets: AccountAsset[];
+  perp: AccountPerpOverview;
 };
 
 type AccountAssetsResponse = {
@@ -74,7 +87,7 @@ function errMsg(error: unknown): string {
   return String(error);
 }
 
-function statusClass(status: AccountAssetOverview["status"]): string {
+function statusClass(status: AccountMarketStatus): string {
   if (status === "ok") return "badge badgeOk";
   if (status === "error") return "badge badgeDanger";
   return "badge badgeWarn";
@@ -135,16 +148,22 @@ export default function AccountAssetsClient() {
 
   const summary = useMemo(() => {
     let assetCount = 0;
+    let perpAccountCount = 0;
     let approxUsd = 0;
     let hasApproxUsd = false;
     let partialErrors = 0;
 
     for (const account of visibleAccounts) {
-      if (account.status === "error") partialErrors += 1;
+      if (account.status === "error" || account.perp.status === "error") partialErrors += 1;
+      if (account.perp.status !== "unsupported") perpAccountCount += 1;
       assetCount += account.visibleAssets.length;
       for (const asset of account.visibleAssets) {
         if (asset.approxUsd === null) continue;
         approxUsd += asset.approxUsd;
+        hasApproxUsd = true;
+      }
+      if (account.perp.equityUsd !== null) {
+        approxUsd += account.perp.equityUsd;
         hasApproxUsd = true;
       }
     }
@@ -152,6 +171,7 @@ export default function AccountAssetsClient() {
     return {
       accounts: visibleAccounts.length,
       assets: assetCount,
+      perpAccounts: perpAccountCount,
       approxUsd: hasApproxUsd ? approxUsd : null,
       partialErrors
     };
@@ -194,12 +214,17 @@ export default function AccountAssetsClient() {
         <div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.assets")}</div>
           <div className="uiMetricValue">{isInitialLoading ? "--" : summary.assets}</div>
-          <div className="uiMetricMeta">{t("summary.spotOnly")}</div>
+          <div className="uiMetricMeta">{t("summary.spotAssets")}</div>
+        </div>
+        <div className="uiMetricTile">
+          <div className="uiMetricLabel">{t("summary.perpAccounts")}</div>
+          <div className="uiMetricValue">{isInitialLoading ? "--" : summary.perpAccounts}</div>
+          <div className="uiMetricMeta">{t("summary.perpEnabled")}</div>
         </div>
         <div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.approxUsd")}</div>
           <div className="uiMetricValue">{isInitialLoading ? "--" : formatUsd(summary.approxUsd)}</div>
-          <div className="uiMetricMeta">{t("summary.bestEffort")}</div>
+          <div className="uiMetricMeta">{t("summary.spotAndPerp")}</div>
         </div>
         <div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.partialErrors")}</div>
@@ -285,75 +310,124 @@ export default function AccountAssetsClient() {
                   <div className="accountsAccountMeta">
                     {t("account.marketData", { exchange: account.marketDataExchange.toUpperCase() })}
                     {" | "}
-                    {t("account.updated", { value: formatDateTime(account.updatedAt) })}
+                    {t("account.updated", { value: formatDateTime(account.updatedAt ?? account.perp.updatedAt) })}
                   </div>
                 </div>
                 <div className="accountsAccountHeaderRight">
-                  <span className={statusClass(account.status)}>{t(`status.${account.status}`)}</span>
+                  <span className={statusClass(account.status)}>
+                    {t("account.spotStatus", { status: t(`status.${account.status}`) })}
+                  </span>
+                  <span className={statusClass(account.perp.status)}>
+                    {t("account.perpStatus", { status: t(`status.${account.perp.status}`) })}
+                  </span>
                   <span className="badge">{account.quoteAsset}</span>
                 </div>
               </header>
 
-              {account.error ? (
-                <div className="accountsInlineError">
-                  <strong>{account.error.code}</strong>
-                  <span>{account.error.message}</span>
+              <div className="accountsMarketSection">
+                <div className="accountsMarketSectionHeader">
+                  <h3>{t("spot.title")}</h3>
+                  <span>{formatUsd(account.totals.approxUsd)}</span>
                 </div>
-              ) : null}
 
-              {account.status === "unsupported" ? (
-                <div className="accountsMutedState">{t("account.unsupported")}</div>
-              ) : account.status === "empty" ? (
-                <div className="accountsMutedState">{t("account.empty")}</div>
-              ) : account.visibleAssets.length === 0 ? (
-                <div className="accountsMutedState">{t("account.noFilterMatch")}</div>
-              ) : (
-                <>
-                  <div className="accountsDesktopTableWrap">
-                    <table className="accountsAssetTable">
-                      <thead>
-                        <tr>
-                          <th>{t("table.asset")}</th>
-                          <th>{t("table.available")}</th>
-                          <th>{t("table.locked")}</th>
-                          <th>{t("table.total")}</th>
-                          <th>{t("table.approxUsd")}</th>
-                          <th>{t("table.quote")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {account.visibleAssets.map((asset) => (
-                          <tr key={`${account.exchangeAccountId}-${asset.asset}`}>
-                            <td><strong>{asset.asset}</strong></td>
-                            <td>{formatNumber(asset.available)}</td>
-                            <td>{formatNumber(asset.locked)}</td>
-                            <td>{formatNumber(asset.total)}</td>
-                            <td>{formatUsd(asset.approxUsd)}</td>
-                            <td>{asset.quoteSymbol ?? "--"}</td>
+                {account.error ? (
+                  <div className="accountsInlineError">
+                    <strong>{account.error.code}</strong>
+                    <span>{account.error.message}</span>
+                  </div>
+                ) : null}
+
+                {account.status === "unsupported" ? (
+                  <div className="accountsMutedState">{t("spot.unsupported")}</div>
+                ) : account.status === "empty" ? (
+                  <div className="accountsMutedState">{t("spot.empty")}</div>
+                ) : account.visibleAssets.length === 0 ? (
+                  <div className="accountsMutedState">{t("spot.noFilterMatch")}</div>
+                ) : (
+                  <>
+                    <div className="accountsDesktopTableWrap">
+                      <table className="accountsAssetTable">
+                        <thead>
+                          <tr>
+                            <th>{t("table.asset")}</th>
+                            <th>{t("table.available")}</th>
+                            <th>{t("table.locked")}</th>
+                            <th>{t("table.total")}</th>
+                            <th>{t("table.approxUsd")}</th>
+                            <th>{t("table.quote")}</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {account.visibleAssets.map((asset) => (
+                            <tr key={`${account.exchangeAccountId}-${asset.asset}`}>
+                              <td><strong>{asset.asset}</strong></td>
+                              <td>{formatNumber(asset.available)}</td>
+                              <td>{formatNumber(asset.locked)}</td>
+                              <td>{formatNumber(asset.total)}</td>
+                              <td>{formatUsd(asset.approxUsd)}</td>
+                              <td>{asset.quoteSymbol ?? "--"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-                  <div className="accountsMobileAssetList">
-                    {account.visibleAssets.map((asset) => (
-                      <article key={`${account.exchangeAccountId}-${asset.asset}-mobile`} className="accountsMobileAssetCard">
-                        <div className="accountsMobileAssetTop">
-                          <strong>{asset.asset}</strong>
-                          <span>{formatUsd(asset.approxUsd)}</span>
-                        </div>
-                        <div className="accountsMobileAssetGrid">
-                          <div><span>{t("table.available")}</span><strong>{formatNumber(asset.available)}</strong></div>
-                          <div><span>{t("table.locked")}</span><strong>{formatNumber(asset.locked)}</strong></div>
-                          <div><span>{t("table.total")}</span><strong>{formatNumber(asset.total)}</strong></div>
-                          <div><span>{t("table.quote")}</span><strong>{asset.quoteSymbol ?? "--"}</strong></div>
-                        </div>
-                      </article>
-                    ))}
+                    <div className="accountsMobileAssetList">
+                      {account.visibleAssets.map((asset) => (
+                        <article key={`${account.exchangeAccountId}-${asset.asset}-mobile`} className="accountsMobileAssetCard">
+                          <div className="accountsMobileAssetTop">
+                            <strong>{asset.asset}</strong>
+                            <span>{formatUsd(asset.approxUsd)}</span>
+                          </div>
+                          <div className="accountsMobileAssetGrid">
+                            <div><span>{t("table.available")}</span><strong>{formatNumber(asset.available)}</strong></div>
+                            <div><span>{t("table.locked")}</span><strong>{formatNumber(asset.locked)}</strong></div>
+                            <div><span>{t("table.total")}</span><strong>{formatNumber(asset.total)}</strong></div>
+                            <div><span>{t("table.quote")}</span><strong>{asset.quoteSymbol ?? "--"}</strong></div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="accountsMarketSection">
+                <div className="accountsMarketSectionHeader">
+                  <h3>{t("perp.title")}</h3>
+                  <span>{formatUsd(account.perp.equityUsd)}</span>
+                </div>
+
+                {account.perp.error ? (
+                  <div className="accountsInlineError">
+                    <strong>{account.perp.error.code}</strong>
+                    <span>{account.perp.error.message}</span>
                   </div>
-                </>
-              )}
+                ) : null}
+
+                {account.perp.status === "unsupported" ? (
+                  <div className="accountsMutedState">{t("perp.unsupported")}</div>
+                ) : account.perp.status === "error" ? null : (
+                  <div className="accountsPerpGrid">
+                    <div className="accountsPerpMetric">
+                      <span>{t("perp.equity")}</span>
+                      <strong>{formatUsd(account.perp.equityUsd)}</strong>
+                    </div>
+                    <div className="accountsPerpMetric">
+                      <span>{t("perp.availableMargin")}</span>
+                      <strong>{formatUsd(account.perp.availableMarginUsd)}</strong>
+                    </div>
+                    <div className="accountsPerpMetric">
+                      <span>{t("perp.marginAsset")}</span>
+                      <strong>{account.perp.marginAsset}</strong>
+                    </div>
+                    <div className="accountsPerpMetric">
+                      <span>{t("perp.marginMode")}</span>
+                      <strong>{account.perp.marginMode ?? "--"}</strong>
+                    </div>
+                  </div>
+                )}
+              </div>
             </section>
           ))}
         </div>

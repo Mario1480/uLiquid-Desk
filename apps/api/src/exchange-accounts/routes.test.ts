@@ -243,6 +243,12 @@ function createAssetsRouteDeps(overrides: Record<string, any> = {}) {
     BTCUSDT: 50_000,
     ETHUSDT: 3_000
   };
+  const perpStateByAccountId: Record<string, any> = {
+    bitget_1: { equity: 1_200.1234567, availableMargin: 900.5, marginMode: "cross" },
+    bitget_2: { equity: 75, availableMargin: 25, marginMode: "isolated" },
+    paper_1: { equity: 500, availableMargin: 300, marginMode: "cross" },
+    err_1: { equity: 0, availableMargin: 0, marginMode: "cross" }
+  };
 
   return {
     db: {
@@ -278,6 +284,20 @@ function createAssetsRouteDeps(overrides: Record<string, any> = {}) {
         return priceBySymbol[symbol];
       }
     }),
+    createManualPerpMarketDataClient: () => ({
+      close: async () => undefined
+    }),
+    getPaperAccountState: async (account: any) => perpStateByAccountId[account.id] ?? {
+      equity: null,
+      availableMargin: null
+    },
+    createPerpExecutionAdapter: (account: any) => ({
+      getAccountState: async () => perpStateByAccountId[account.id] ?? {
+        equity: null,
+        availableMargin: null
+      },
+      close: async () => undefined
+    }),
     ...overrides
   };
 }
@@ -303,6 +323,11 @@ test("GET /exchange-accounts/assets normalizes spot assets and isolates account 
   assert.equal(bitget.assets[0].total, 0.21);
   assert.equal(bitget.assets[0].approxUsd, 10500);
   assert.equal(bitget.totals.approxUsd, 10525);
+  assert.equal(bitget.perp.status, "ok");
+  assert.equal(bitget.perp.marginAsset, "USDT");
+  assert.equal(bitget.perp.equityUsd, 1200.123457);
+  assert.equal(bitget.perp.availableMarginUsd, 900.5);
+  assert.equal(bitget.perp.marginMode, "cross");
 
   const paper = res.body.accounts.find((row: any) => row.exchangeAccountId === "paper_1");
   assert.equal(paper?.status, "ok");
@@ -310,15 +335,20 @@ test("GET /exchange-accounts/assets normalizes spot assets and isolates account 
   assert.equal(paper?.marketDataExchange, "bitget");
   assert.deepEqual(paper.assets.map((asset: any) => asset.asset), ["ETH", "USDT"]);
   assert.equal(paper.assets[0].approxUsd, 6000);
+  assert.equal(paper.perp.status, "ok");
+  assert.equal(paper.perp.equityUsd, 500);
+  assert.equal(paper.perp.availableMarginUsd, 300);
 
   const bitgetAlt = res.body.accounts.find((row: any) => row.exchangeAccountId === "bitget_2");
   assert.equal(bitgetAlt?.status, "ok");
   assert.equal(bitgetAlt?.assets.find((asset: any) => asset.asset === "USDC")?.approxUsd, 5);
   assert.equal(bitgetAlt?.assets.find((asset: any) => asset.asset === "XRP")?.approxUsd, null);
+  assert.equal(bitgetAlt?.perp.status, "ok");
 
   const broken = res.body.accounts.find((row: any) => row.exchangeAccountId === "err_1");
   assert.equal(broken?.status, "error");
   assert.equal(broken?.error?.code, "spot_unavailable");
+  assert.equal(broken?.perp.status, "empty");
 });
 
 test("GET /exchange-accounts/assets supports account filter and includeZero", async () => {
@@ -339,6 +369,37 @@ test("GET /exchange-accounts/assets supports account filter and includeZero", as
   assert.equal(res.body?.accounts?.length, 1);
   assert.equal(res.body.accounts[0]?.exchangeAccountId, "bitget_1");
   assert.ok(res.body.accounts[0]?.assets?.some((asset: any) => asset.asset === "EMPTY" && asset.total === 0));
+});
+
+test("GET /exchange-accounts/assets keeps spot assets when perp state fails", async () => {
+  const app = createFakeApp();
+  registerExchangeAccountRoutes(app as any, createAssetsRouteDeps({
+    createPerpExecutionAdapter: () => ({
+      getAccountState: async () => {
+        const error = new Error("Perp account state unavailable") as Error & { code?: string };
+        error.code = "perp_unavailable";
+        throw error;
+      },
+      close: async () => undefined
+    })
+  }) as any);
+
+  const handler = getFinalGetHandler(app, "/exchange-accounts/assets");
+  const res = createMockRes();
+
+  await handler({
+    query: {
+      exchangeAccountId: "bitget_2"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.meta?.partialErrors, 1);
+  assert.equal(res.body?.accounts?.length, 1);
+  assert.equal(res.body.accounts[0]?.status, "ok");
+  assert.equal(res.body.accounts[0]?.assets?.length, 2);
+  assert.equal(res.body.accounts[0]?.perp?.status, "error");
+  assert.equal(res.body.accounts[0]?.perp?.error?.code, "perp_unavailable");
 });
 
 test("hyperliquid credential update resets credential rotation timer", async () => {

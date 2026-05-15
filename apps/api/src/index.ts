@@ -12025,6 +12025,8 @@ registerExchangeAccountRoutes(app, {
   resolveMarketDataTradingAccount,
   getPaperAccountState,
   getPaperSpotAccountState,
+  createManualPerpMarketDataClient,
+  createPerpExecutionAdapter,
   persistExchangeSyncSuccess,
   persistExchangeSyncFailure,
   executeExchangeSync,

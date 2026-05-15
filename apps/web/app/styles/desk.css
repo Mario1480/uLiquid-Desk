@@ -1944,6 +1944,37 @@
   flex-shrink: 0;
 }
 
+.accountsMarketSection {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.accountsMarketSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.accountsMarketSectionHeader h3 {
+  margin: 0;
+  color: rgba(244, 248, 255, 0.94);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.accountsMarketSectionHeader span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .accountsMutedState {
   padding: 16px;
   border: 1px dashed rgba(148, 163, 184, 0.28);
@@ -2039,6 +2070,37 @@
   overflow-wrap: anywhere;
 }
 
+.accountsPerpGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.accountsPerpMetric {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(5, 14, 24, 0.34);
+}
+
+.accountsPerpMetric span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.accountsPerpMetric strong {
+  color: rgba(244, 248, 255, 0.95);
+  font-size: 15px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .accountsFilters {
     grid-template-columns: 1fr 1fr;
@@ -2046,6 +2108,10 @@
 
   .accountsZeroToggle {
     justify-content: center;
+  }
+
+  .accountsPerpGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2069,6 +2135,15 @@
   .accountsMobileAssetList {
     display: grid;
     gap: 10px;
+  }
+
+  .accountsMarketSectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accountsPerpGrid {
+    grid-template-columns: 1fr;
   }
 }
 

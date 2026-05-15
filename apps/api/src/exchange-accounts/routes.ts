@@ -4,7 +4,11 @@ import { z } from "zod";
 import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { type syncExchangeAccount, ExchangeSyncError } from "../exchange-sync.js";
-import type { TradingAccount } from "../trading.js";
+import {
+  createPerpExecutionAdapter,
+  type PerpExecutionAdapter,
+  type TradingAccount
+} from "../trading.js";
 import {
   createManualPerpMarketDataClient,
   createManualSpotClient,
@@ -131,6 +135,18 @@ type AccountAssetBalance = {
   quoteSymbol: string | null;
 };
 
+type AccountMarketStatus = "ok" | "empty" | "unsupported" | "error";
+
+type AccountPerpOverview = {
+  status: AccountMarketStatus;
+  updatedAt: string | null;
+  error: { code: string; message: string } | null;
+  marginAsset: "USDT" | "USDC";
+  equityUsd: number | null;
+  availableMarginUsd: number | null;
+  marginMode: string | null;
+};
+
 function toFiniteNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -152,6 +168,32 @@ function isStablecoin(asset: string): boolean {
 
 function resolveQuoteAsset(exchange: string): "USDT" | "USDC" {
   return exchange.trim().toLowerCase() === "hyperliquid" ? "USDC" : "USDT";
+}
+
+function createEmptyPerpOverview(marginAsset: "USDT" | "USDC"): AccountPerpOverview {
+  return {
+    status: "unsupported",
+    updatedAt: null,
+    error: null,
+    marginAsset,
+    equityUsd: null,
+    availableMarginUsd: null,
+    marginMode: null
+  };
+}
+
+function normalizeMarginMode(value: unknown): string | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes("isolated")) return "isolated";
+  if (normalized.includes("cross")) return "cross";
+  return normalized;
+}
+
+function resolvePerpStatus(equityUsd: number | null, availableMarginUsd: number | null): AccountMarketStatus {
+  if (equityUsd === null && availableMarginUsd === null) return "empty";
+  if ((equityUsd ?? 0) <= 0 && (availableMarginUsd ?? 0) <= 0) return "empty";
+  return "ok";
 }
 
 function normalizeSpotBalanceRow(row: {
@@ -234,7 +276,7 @@ export type RegisterExchangeAccountRoutesDeps = {
   getPaperAccountState(
     account: TradingAccount,
     reader: ReturnType<typeof createManualPerpMarketDataClient>
-  ): Promise<{ equity: number | null; availableMargin: number | null }>;
+  ): Promise<{ equity: number | null; availableMargin: number | null; marginMode?: string | null }>;
   getPaperSpotAccountState(
     account: TradingAccount,
     client: ReturnType<typeof createManualSpotClient>
@@ -243,6 +285,11 @@ export type RegisterExchangeAccountRoutesDeps = {
     account: TradingAccount,
     endpoint: string
   ): ReturnType<typeof createManualSpotClient>;
+  createManualPerpMarketDataClient?(
+    account: TradingAccount,
+    endpoint: string
+  ): ReturnType<typeof createManualPerpMarketDataClient>;
+  createPerpExecutionAdapter?(account: TradingAccount): PerpExecutionAdapter;
   persistExchangeSyncSuccess(
     userId: string,
     accountId: string,
@@ -295,113 +342,186 @@ export function registerExchangeAccountRoutes(
     }
 
     const spotClientFactory = deps.createManualSpotClient ?? createManualSpotClient;
+    const perpMarketDataClientFactory = deps.createManualPerpMarketDataClient ?? createManualPerpMarketDataClient;
+    const perpExecutionAdapterFactory = deps.createPerpExecutionAdapter ?? createPerpExecutionAdapter;
     const updatedAt = new Date().toISOString();
     let partialErrors = 0;
 
     const accounts = await Promise.all(rows.map(async (row: any) => {
+      const baseExchange = String(row.exchange ?? "");
+      const baseQuoteAsset = resolveQuoteAsset(baseExchange);
       const base = {
         exchangeAccountId: String(row.id),
-        exchange: String(row.exchange ?? ""),
+        exchange: baseExchange,
         label: String(row.label ?? ""),
-        marketDataExchange: String(row.exchange ?? ""),
+        marketDataExchange: baseExchange,
         updatedAt: null as string | null,
         error: null as { code: string; message: string } | null,
-        quoteAsset: resolveQuoteAsset(String(row.exchange ?? "")),
+        quoteAsset: baseQuoteAsset,
         totals: { assets: 0, approxUsd: null as number | null },
-        assets: [] as AccountAssetBalance[]
+        assets: [] as AccountAssetBalance[],
+        perp: createEmptyPerpOverview(baseQuoteAsset)
       };
 
+      let resolved: { selectedAccount: TradingAccount; marketDataAccount: TradingAccount };
       try {
-        const resolved = await deps.resolveMarketDataTradingAccount(user.id, String(row.id));
-        const selectedExchange = deps.normalizeExchangeValue(String(resolved.selectedAccount.exchange ?? ""));
-        const marketDataExchange = deps.normalizeExchangeValue(String(resolved.marketDataAccount.exchange ?? ""));
-        const quoteAsset = resolveQuoteAsset(marketDataExchange);
+        resolved = await deps.resolveMarketDataTradingAccount(user.id, String(row.id));
+      } catch (error) {
+        const payload = routeErrorPayload(error);
+        partialErrors += 1;
+        return {
+          ...base,
+          status: "error" as const,
+          error: payload,
+          perp: {
+            ...base.perp,
+            status: "error" as const,
+            error: payload
+          }
+        };
+      }
+
+      const selectedExchange = deps.normalizeExchangeValue(String(resolved.selectedAccount.exchange ?? ""));
+      const marketDataExchange = deps.normalizeExchangeValue(String(resolved.marketDataAccount.exchange ?? ""));
+      const quoteAsset = resolveQuoteAsset(marketDataExchange);
+
+      let status: AccountMarketStatus = "unsupported";
+      let spotUpdatedAt: string | null = null;
+      let spotError: { code: string; message: string } | null = null;
+      let totals = { assets: 0, approxUsd: null as number | null };
+      let assets: AccountAssetBalance[] = [];
+
+      try {
         const supportsSpot = resolveManualSpotSupport({
           exchange: selectedExchange,
           marketDataExchange
         });
 
-        if (!supportsSpot) {
-          return {
-            ...base,
-            exchange: selectedExchange || base.exchange,
-            marketDataExchange,
-            quoteAsset,
-            status: "unsupported" as const
-          };
-        }
+        if (supportsSpot) {
+          const client = spotClientFactory(resolved.marketDataAccount, "/exchange-accounts/assets");
+          const balanceRows = await client.getBalances();
+          const normalized = balanceRows
+            .map((balanceRow) => normalizeSpotBalanceRow(balanceRow))
+            .filter((asset): asset is Omit<AccountAssetBalance, "approxUsd" | "quoteSymbol"> => Boolean(asset))
+            .filter((asset) => shouldIncludeAsset(asset, parsed.data.includeZero));
 
-        const client = spotClientFactory(resolved.marketDataAccount, "/exchange-accounts/assets");
-        const balanceRows = await client.getBalances();
-        const normalized = balanceRows
-          .map((balanceRow) => normalizeSpotBalanceRow(balanceRow))
-          .filter((asset): asset is Omit<AccountAssetBalance, "approxUsd" | "quoteSymbol"> => Boolean(asset))
-          .filter((asset) => shouldIncludeAsset(asset, parsed.data.includeZero));
+          const pricedAssets = await Promise.all(normalized.map(async (asset) => {
+            const total = asset.total;
+            if (total === null) {
+              return {
+                ...asset,
+                approxUsd: null,
+                quoteSymbol: null
+              };
+            }
+            if (isStablecoin(asset.asset)) {
+              return {
+                ...asset,
+                approxUsd: roundUsdNumber(total),
+                quoteSymbol: asset.asset
+              };
+            }
 
-        const pricedAssets = await Promise.all(normalized.map(async (asset) => {
-          const total = asset.total;
-          if (total === null) {
-            return {
-              ...asset,
-              approxUsd: null,
-              quoteSymbol: null
-            };
-          }
-          if (isStablecoin(asset.asset)) {
-            return {
-              ...asset,
-              approxUsd: roundUsdNumber(total),
-              quoteSymbol: asset.asset
-            };
-          }
+            const quoteSymbol = `${asset.asset}${quoteAsset}`;
+            try {
+              const lastPrice = await client.getLastPrice(quoteSymbol);
+              const price = toFiniteNumber(lastPrice);
+              return {
+                ...asset,
+                approxUsd: price === null ? null : roundUsdNumber(total * price),
+                quoteSymbol
+              };
+            } catch {
+              return {
+                ...asset,
+                approxUsd: null,
+                quoteSymbol
+              };
+            }
+          }));
 
-          const quoteSymbol = `${asset.asset}${quoteAsset}`;
-          try {
-            const lastPrice = await client.getLastPrice(quoteSymbol);
-            const price = toFiniteNumber(lastPrice);
-            return {
-              ...asset,
-              approxUsd: price === null ? null : roundUsdNumber(total * price),
-              quoteSymbol
-            };
-          } catch {
-            return {
-              ...asset,
-              approxUsd: null,
-              quoteSymbol
-            };
-          }
-        }));
+          pricedAssets.sort(sortAccountAssets);
+          const approxValues = pricedAssets
+            .map((asset) => asset.approxUsd)
+            .filter((value): value is number => value !== null);
+          const approxUsd = approxValues.length
+            ? roundUsdNumber(approxValues.reduce((sum, value) => sum + value, 0))
+            : null;
 
-        pricedAssets.sort(sortAccountAssets);
-        const approxValues = pricedAssets
-          .map((asset) => asset.approxUsd)
-          .filter((value): value is number => value !== null);
-        const approxUsd = approxValues.length
-          ? roundUsdNumber(approxValues.reduce((sum, value) => sum + value, 0))
-          : null;
-
-        return {
-          ...base,
-          exchange: selectedExchange || base.exchange,
-          marketDataExchange,
-          status: pricedAssets.length > 0 ? "ok" as const : "empty" as const,
-          updatedAt,
-          quoteAsset,
-          totals: {
+          status = pricedAssets.length > 0 ? "ok" : "empty";
+          spotUpdatedAt = updatedAt;
+          totals = {
             assets: pricedAssets.length,
             approxUsd
-          },
-          assets: pricedAssets
-        };
+          };
+          assets = pricedAssets;
+        }
       } catch (error) {
-        partialErrors += 1;
-        return {
-          ...base,
-          status: "error" as const,
+        status = "error";
+        spotError = routeErrorPayload(error);
+      }
+
+      let perp = createEmptyPerpOverview(quoteAsset);
+      try {
+        const supportsPerp = resolveManualPerpSupport({
+          exchange: selectedExchange,
+          marketDataExchange
+        });
+
+        if (supportsPerp) {
+          const accountState = selectedExchange === "paper"
+            ? await (async () => {
+                const client = perpMarketDataClientFactory(resolved.marketDataAccount, "/exchange-accounts/assets");
+                try {
+                  return deps.getPaperAccountState(resolved.selectedAccount, client);
+                } finally {
+                  await client.close();
+                }
+              })()
+            : await (async () => {
+                const adapter = perpExecutionAdapterFactory(resolved.marketDataAccount);
+                try {
+                  return adapter.getAccountState();
+                } finally {
+                  await adapter.close();
+                }
+              })();
+          const equityUsd = roundUsdNumber(toFiniteNumber(accountState?.equity));
+          const availableMarginUsd = roundUsdNumber(toFiniteNumber(accountState?.availableMargin));
+          perp = {
+            status: resolvePerpStatus(equityUsd, availableMarginUsd),
+            updatedAt,
+            error: null,
+            marginAsset: quoteAsset,
+            equityUsd,
+            availableMarginUsd,
+            marginMode: normalizeMarginMode(accountState?.marginMode)
+          };
+        }
+      } catch (error) {
+        perp = {
+          ...createEmptyPerpOverview(quoteAsset),
+          status: "error",
           error: routeErrorPayload(error)
         };
       }
+
+      if (status === "error" || perp.status === "error") {
+        partialErrors += 1;
+      }
+
+      return {
+        ...base,
+        exchange: selectedExchange || base.exchange,
+        marketDataExchange,
+        status,
+        updatedAt: spotUpdatedAt,
+        error: spotError,
+        quoteAsset,
+        totals,
+        assets,
+        perp
+      };
     }));
 
     return res.json({

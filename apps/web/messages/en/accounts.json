@@ -10,10 +10,13 @@
     "ariaLabel": "Account asset summary",
     "accounts": "Accounts",
     "assets": "Assets",
+    "perpAccounts": "Perp Accounts",
     "approxUsd": "Approx. Value",
     "partialErrors": "Partial Errors",
     "visible": "Visible after filters",
-    "spotOnly": "Spot assets only",
+    "spotAssets": "Spot assets",
+    "perpEnabled": "Perp state loaded",
+    "spotAndPerp": "Spot assets plus perp equity",
     "bestEffort": "Best-effort pricing"
   },
   "filters": {
@@ -36,9 +39,25 @@
   "account": {
     "marketData": "Market data: {exchange}",
     "updated": "Updated: {value}",
+    "spotStatus": "Spot: {status}",
+    "perpStatus": "Perp: {status}",
     "unsupported": "Spot balances are not supported for this account configuration.",
     "empty": "No spot assets with balance were found for this account.",
     "noFilterMatch": "No assets match the current filter."
+  },
+  "spot": {
+    "title": "Spot Assets",
+    "unsupported": "Spot balances are not supported for this account configuration.",
+    "empty": "No spot assets with balance were found for this account.",
+    "noFilterMatch": "No assets match the current filter."
+  },
+  "perp": {
+    "title": "Perp Account",
+    "unsupported": "Perp account state is not supported for this account configuration.",
+    "equity": "Equity",
+    "availableMargin": "Available Margin",
+    "marginAsset": "Margin Asset",
+    "marginMode": "Margin Mode"
   },
   "table": {
     "asset": "Asset",
