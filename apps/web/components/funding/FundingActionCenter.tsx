@@ -138,6 +138,35 @@ function FundingVaultAddressCopy({ vaultAddress }: { vaultAddress: string | null
   );
 }
 
+function FundingVaultInlineAddressCopy({ vaultAddress }: { vaultAddress: string | null | undefined }) {
+  const t = useTranslations("funding.actionCenter");
+  const [copied, setCopied] = useState(false);
+
+  async function copyAddress() {
+    if (!vaultAddress) return;
+    await navigator.clipboard.writeText(vaultAddress);
+    setCopied(true);
+    globalThis.setTimeout(() => setCopied(false), 1_200);
+  }
+
+  if (!vaultAddress) return <strong>-</strong>;
+
+  return (
+    <span className="fundingVaultInlineAddress">
+      <strong>{shortAddress(vaultAddress)}</strong>
+      <button
+        type="button"
+        className="fundingVaultInlineCopyButton"
+        onClick={() => void copyAddress()}
+        aria-label={copied ? t("fundingVault.copiedAddress") : t("fundingVault.copyAddress")}
+        title={copied ? t("fundingVault.copiedAddress") : t("fundingVault.copyAddress")}
+      >
+        <AppIcon name={copied ? "check" : "copy"} />
+      </button>
+    </span>
+  );
+}
+
 export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
@@ -165,10 +194,9 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
       <div className="fundingQuickStats">
         <span>{t("fundingVault.available")}: <strong>{formatFundingVaultUsd(vault?.availableBalance)}</strong></span>
         <span>{t("fundingVault.reserved")}: <strong>{formatFundingVaultUsd(vault?.reservedBalance)}</strong></span>
-        <span>{t("fundingVault.vault")}: <strong>{vault?.onchainAddress ? shortAddress(vault.onchainAddress) : "-"}</strong></span>
+        <span>{t("fundingVault.vault")}: <FundingVaultInlineAddressCopy vaultAddress={vault?.onchainAddress} /></span>
         <span>{t("fundingVault.agent")}: <strong>{overview?.agentWalletAddress ? shortAddress(overview.agentWalletAddress) : "-"}</strong></span>
       </div>
-      <FundingVaultAddressCopy vaultAddress={vault?.onchainAddress} />
       {overviewQuery.isLoading ? <div className="walletMutedText">{t("fundingVault.loading")}</div> : null}
       {overviewQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(overviewQuery.error)}</div> : null}
       <div className="fundingQuickCardActions">

@@ -2536,12 +2536,18 @@
 }
 
 .walletAgentSystemCard .walletAgentThresholdRow {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
 }
 
 .walletAgentSystemCard .walletAgentControls .btn {
   width: 100%;
   justify-content: center;
+}
+
+.walletAgentSystemCard .walletAgentThresholdRow .btn {
+  width: auto;
+  min-width: 154px;
 }
 
 .walletSectionHeader {
@@ -3093,6 +3099,40 @@
   min-width: 118px;
 }
 
+.fundingVaultInlineAddress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.fundingVaultInlineCopyButton {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-control);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.fundingVaultInlineCopyButton:hover,
+.fundingVaultInlineCopyButton:focus-visible {
+  border-color: var(--ui-border-strong);
+  color: var(--text);
+  background: var(--ui-surface-card);
+}
+
+.fundingVaultInlineCopyButton svg {
+  width: 13px;
+  height: 13px;
+}
+
 .fundingModalOverlay {
   position: fixed;
   inset: 0;
@@ -3555,6 +3595,10 @@
 
   .walletAgentThresholdRow {
     grid-template-columns: 1fr;
+  }
+
+  .walletAgentSystemCard .walletAgentThresholdRow .btn {
+    width: 100%;
   }
 
   .walletBotVaultSystemGrid {
