@@ -38,6 +38,7 @@ import type {
   RelayFundingDirection,
   WalletFundingOverview
 } from "../../lib/funding/types";
+import { AppIcon } from "../../app/components/AppIcon";
 import { buildExplorerTxUrl, formatToken } from "../../lib/wallet/format";
 
 function createLiveBalance(symbol: string, decimals: number, value: bigint | undefined): FundingBalance | null {
@@ -364,6 +365,10 @@ export default function RelayBotVaultFundingSection({
   const busy = state.phase === "quoting" || state.phase === "awaiting_signature" || state.phase === "submitted" || state.phase === "pending";
   const usdcOut = quote?.usdc.destinationAmount.formatted ?? null;
   const hypeOut = quote?.hypeTopup?.destinationAmount.formatted ?? null;
+  const sourceUsdcBalance = isWithdrawal ? overview?.hyperEvm.usdc : overview?.arbitrum.usdc;
+  const destinationUsdcBalance = isWithdrawal ? overview?.arbitrum.usdc : overview?.hyperEvm.usdc;
+  const sourceUsdcLabel = isWithdrawal ? t("balances.hyperEvmUsdc") : t("balances.arbitrumUsdc");
+  const destinationUsdcLabel = isWithdrawal ? t("balances.arbitrumUsdc") : t("balances.hyperEvmUsdc");
 
   if (overviewQuery.isLoading) {
     return (
@@ -379,7 +384,7 @@ export default function RelayBotVaultFundingSection({
   }
 
   return (
-    <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
+    <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection fundingRelayModalSection" : ""}`}>
       <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
         <div className="walletSectionIntro">
           {presentation === "modal" ? (
@@ -395,65 +400,88 @@ export default function RelayBotVaultFundingSection({
         </span>
       </div>
 
-      <div className="fundingBridgeGrid">
-        <div className="walletInfoTile">
-          <strong>{isWithdrawal ? t("balances.hyperEvmUsdc") : t("balances.arbitrumUsdc")}</strong>
-          <div className="walletMutedText">{displayBalance(isWithdrawal ? overview.hyperEvm.usdc : overview.arbitrum.usdc)}</div>
+      <div className="fundingRelayRouteStrip" aria-hidden="true">
+        <div className="fundingRelayRouteNode">
+          <span className="uiMetricLabel">{sourceUsdcLabel}</span>
+          <strong>{isWithdrawal ? tCommon("locationHyperEvm") : tCommon("locationArbitrum")}</strong>
         </div>
-        <div className="walletInfoTile">
-          <strong>{isWithdrawal ? t("balances.arbitrumUsdc") : t("balances.hyperEvmUsdc")}</strong>
-          <div className="walletMutedText">{displayBalance(isWithdrawal ? overview.arbitrum.usdc : overview.hyperEvm.usdc)}</div>
+        <div className="fundingRelayRouteArrow">
+          <AppIcon name="chevronRight" size="1em" strokeWidth={1.8} aria-hidden />
         </div>
-        <div className="walletInfoTile">
-          <strong>{t("balances.hyperEvmHype")}</strong>
-          <div className="walletMutedText">{displayBalance(overview.hyperEvm.hype, 6)}</div>
+        <div className="fundingRelayRouteNode">
+          <span className="uiMetricLabel">{destinationUsdcLabel}</span>
+          <strong>{isWithdrawal ? tCommon("locationArbitrum") : tCommon("locationHyperEvm")}</strong>
         </div>
       </div>
 
-      <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
-        <input
-          className="walletAmountInput"
-          type="number"
-          min="0"
-          step="0.01"
-          value={amount}
-          onChange={(event) => {
-            setAmount(event.target.value);
-            clearQuote();
-          }}
-          placeholder={t("amountPlaceholder")}
-          disabled={busy}
-        />
-        <button
-          type="button"
-          className="btn"
-          disabled={busy || !(isWithdrawal ? overview.hyperEvm.usdc.available : overview.arbitrum.usdc.available)}
-          onClick={() => {
-            setAmount((isWithdrawal ? overview.hyperEvm.usdc.formatted : overview.arbitrum.usdc.formatted) ?? amount);
-            clearQuote();
-          }}
-        >
-          {t("maxButton")}
-        </button>
+      <div className="fundingRelayBalanceGrid">
+        <div className="uiMetricTile fundingRelayBalanceTile">
+          <span className="uiMetricLabel">{sourceUsdcLabel}</span>
+          <strong className="uiMetricValue">{displayBalance(sourceUsdcBalance)}</strong>
+        </div>
+        <div className="uiMetricTile fundingRelayBalanceTile">
+          <span className="uiMetricLabel">{destinationUsdcLabel}</span>
+          <strong className="uiMetricValue">{displayBalance(destinationUsdcBalance)}</strong>
+        </div>
+        <div className="uiMetricTile fundingRelayBalanceTile">
+          <span className="uiMetricLabel">{t("balances.hyperEvmHype")}</span>
+          <strong className="uiMetricValue">{displayBalance(overview.hyperEvm.hype, 6)}</strong>
+        </div>
+      </div>
+
+      <div className="fundingRelayPanel">
+        <div className="fundingRelayPanelHeader">
+          <span className="uiMetricLabel">{t("amountPlaceholder")}</span>
+          <strong>USDC</strong>
+        </div>
+        <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField fundingRelayAmountRow" : ""}`}>
+          <input
+            className="walletAmountInput"
+            type="number"
+            min="0"
+            step="0.01"
+            value={amount}
+            onChange={(event) => {
+              setAmount(event.target.value);
+              clearQuote();
+            }}
+            placeholder={t("amountPlaceholder")}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            className="btn"
+            disabled={busy || !sourceUsdcBalance?.available}
+            onClick={() => {
+              setAmount(sourceUsdcBalance?.formatted ?? amount);
+              clearQuote();
+            }}
+          >
+            {t("maxButton")}
+          </button>
+        </div>
       </div>
 
       {!isWithdrawal ? (
-        <label className="walletNotice" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-          <input
-            type="checkbox"
-            checked={includeHypeTopup}
-            onChange={(event) => {
-              setIncludeHypeTopup(event.target.checked);
-              clearQuote();
-            }}
-            disabled={busy}
-          />
-          <span>{t("topup.label")}</span>
-        </label>
+        <div className={`fundingRelayTopupCard${includeHypeTopup ? " isActive" : ""}`}>
+          <label className="fundingRelayTopupToggle">
+            <input
+              type="checkbox"
+              checked={includeHypeTopup}
+              onChange={(event) => {
+                setIncludeHypeTopup(event.target.checked);
+                clearQuote();
+              }}
+              disabled={busy}
+            />
+            <span>{t("topup.label")}</span>
+          </label>
+          <span className="walletMutedText">{displayBalance(overview.hyperEvm.hype, 6)}</span>
+        </div>
       ) : null}
 
       {!isWithdrawal && includeHypeTopup ? (
-        <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`} style={{ marginTop: 10 }}>
+        <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField fundingRelayAmountRow" : ""}`}>
           <input
             className="walletAmountInput"
             type="number"
@@ -471,24 +499,24 @@ export default function RelayBotVaultFundingSection({
         </div>
       ) : null}
 
-      <div className="fundingMetricsGrid" style={{ marginTop: 14 }}>
-        <div className="walletInfoTile">
-          <strong>{t("quote.usdcOut")}</strong>
-          <div className="walletMutedText">{usdcOut ? `${formatToken(usdcOut, 6)} USDC` : "-"}</div>
+      <div className="fundingRelayQuoteGrid">
+        <div className="uiMetricTile fundingRelayQuoteTile">
+          <span className="uiMetricLabel">{t("quote.usdcOut")}</span>
+          <div className="uiMetricMeta">{usdcOut ? `${formatToken(usdcOut, 6)} USDC` : "-"}</div>
         </div>
         {!isWithdrawal ? (
-          <div className="walletInfoTile">
-            <strong>{t("quote.hypeOut")}</strong>
-            <div className="walletMutedText">{hypeOut ? `${formatToken(hypeOut, 6)} HYPE` : includeHypeTopup ? "-" : t("quote.notIncluded")}</div>
+          <div className="uiMetricTile fundingRelayQuoteTile">
+            <span className="uiMetricLabel">{t("quote.hypeOut")}</span>
+            <div className="uiMetricMeta">{hypeOut ? `${formatToken(hypeOut, 6)} HYPE` : includeHypeTopup ? "-" : t("quote.notIncluded")}</div>
           </div>
         ) : null}
-        <div className="walletInfoTile">
-          <strong>{t("quote.relayFee")}</strong>
-          <div className="walletMutedText">{quoteFeesLabel(quote)}</div>
+        <div className="uiMetricTile fundingRelayQuoteTile">
+          <span className="uiMetricLabel">{t("quote.relayFee")}</span>
+          <div className="uiMetricMeta">{quoteFeesLabel(quote)}</div>
         </div>
-        <div className="walletInfoTile">
-          <strong>{t("quote.eta")}</strong>
-          <div className="walletMutedText">{quoteEtaLabel(quote)}</div>
+        <div className="uiMetricTile fundingRelayQuoteTile">
+          <span className="uiMetricLabel">{t("quote.eta")}</span>
+          <div className="uiMetricMeta">{quoteEtaLabel(quote)}</div>
         </div>
       </div>
 
