@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { AppIcon } from "../components/AppIcon";
+
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL?.trim() || "https://docs.uliquid.vip";
 
 const HELP_SECTION_KEYS = [
   { id: "getting-started", key: "gettingStarted", lines: 2 },
@@ -44,6 +45,17 @@ export default function HelpPage() {
               {s.title}
             </a>
           ))}
+        </div>
+      </section>
+
+      <section className="card authCard">
+        <h3 className="authHeading">{t("docs.title")}</h3>
+        <div className="helpContactCopy">{t("docs.body")}</div>
+        <div>
+          <a className="btn btnPrimary" href={DOCS_URL} target="_blank" rel="noreferrer">
+            <AppIcon name="external" />
+            {t("docs.cta")}
+          </a>
         </div>
       </section>
 

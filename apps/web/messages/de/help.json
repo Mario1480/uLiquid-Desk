@@ -2,6 +2,11 @@
   "title": "Support und Hilfe",
   "subtitle": "Leitfäden für Einrichtung, Sicherheit und Fehlerbehebung.",
   "quickLinks": "Schnelllinks",
+  "docs": {
+    "title": "Vollständige Dokumentation",
+    "body": "Öffne die uLiquid Desk Knowledge Base für vollständige Produkt-Guides, Setup-Flows, Admin-Betrieb und Troubleshooting. Die Dokumentation ist auf Englisch verfügbar.",
+    "cta": "Knowledge Base öffnen"
+  },
   "contactTitle": "Support kontaktieren",
   "contactBody": "Bitte Workspace-Name, Bot-Name oder ID, Zeitstempel, Screenshot und relevante API/Runner-Logs angeben.",
   "sections": {

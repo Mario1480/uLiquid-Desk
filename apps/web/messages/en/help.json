@@ -2,6 +2,11 @@
   "title": "Support & Help",
   "subtitle": "Guides for setup, security, and troubleshooting.",
   "quickLinks": "Quick Links",
+  "docs": {
+    "title": "Full Documentation",
+    "body": "Open the uLiquid Desk Knowledge Base for complete product guides, setup flows, admin operations, and troubleshooting.",
+    "cta": "Open Knowledge Base"
+  },
   "contactTitle": "Contact Support",
   "contactBody": "Please include your workspace name, bot name or ID, a timestamp, a screenshot, and relevant api/runner logs.",
   "sections": {

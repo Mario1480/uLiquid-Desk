@@ -96,6 +96,7 @@ Required in production:
 
 Optional:
 
+- `NEXT_PUBLIC_DOCS_URL`
 - `API_URL`
 - `API_BASE_URL`
 - `NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID`
