@@ -4,6 +4,7 @@ import { parseUnits } from "viem";
 import type { Address, PublicClient, WalletClient } from "viem";
 import { apiGet, apiPost } from "../api";
 import type {
+  RelayFundingDirection,
   RelayFundingQuote,
   RelayFundingQuoteLeg,
   RelayFundingStatus,
@@ -46,6 +47,16 @@ type ValidateRelayFundingInput = {
   arbitrumUsdcAvailable: boolean;
   arbitrumEthRaw: string | null;
   arbitrumEthAvailable: boolean;
+  connectedChainId: number | null | undefined;
+  expectedChainId: number;
+};
+
+type ValidateRelayWithdrawalInput = {
+  usdcAmount: string;
+  hyperEvmUsdcRaw: string | null;
+  hyperEvmUsdcAvailable: boolean;
+  hyperEvmHypeRaw: string | null;
+  hyperEvmHypeAvailable: boolean;
   connectedChainId: number | null | undefined;
   expectedChainId: number;
 };
@@ -113,7 +124,34 @@ export function validateRelayFunding(input: ValidateRelayFundingInput): {
   };
 }
 
+export function validateRelayWithdrawal(input: ValidateRelayWithdrawalInput): {
+  usdcAmount: string;
+  totalSourceRaw: bigint;
+} {
+  const usdcAmount = normalizedAmount(input.usdcAmount);
+  const totalSourceRaw = parseUnits(usdcAmount, 6);
+
+  if (input.connectedChainId !== input.expectedChainId) {
+    throw new RelayFundingError("wrong_chain", "Switch to HyperEVM to continue.");
+  }
+  if (!input.hyperEvmUsdcAvailable) {
+    throw new RelayFundingError("source_balance_unavailable", "HyperEVM USDC balance is unavailable.");
+  }
+  if (totalSourceRaw > rawBalance(input.hyperEvmUsdcRaw)) {
+    throw new RelayFundingError("insufficient_balance", "Insufficient HyperEVM USDC balance for the selected withdrawal route.");
+  }
+  if (!input.hyperEvmHypeAvailable || rawBalance(input.hyperEvmHypeRaw) <= BigInt(0)) {
+    throw new RelayFundingError("missing_gas_balance", "HyperEVM HYPE gas balance is required.");
+  }
+
+  return {
+    usdcAmount,
+    totalSourceRaw
+  };
+}
+
 export function getRelayQuote(address: string, input: {
+  direction?: RelayFundingDirection;
   usdcAmount: string;
   includeHypeTopup: boolean;
   hypeTopupUsdcAmount: string;

@@ -178,7 +178,7 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
   );
 }
 
-export function BotVaultWalletQuickCard({ onFund }: { onFund: () => void }) {
+export function BotVaultWalletQuickCard({ onFund, onWithdraw }: { onFund: () => void; onWithdraw: () => void }) {
   const t = useTranslations("funding.actionCenter");
   const tCommon = useTranslations("funding.common");
   const { address, isConnected } = useAccount();
@@ -193,14 +193,16 @@ export function BotVaultWalletQuickCard({ onFund }: { onFund: () => void }) {
 
   const funding = fundingQuery.data ?? null;
   const relayReady = Boolean(funding?.actions.some((item) => item.id === "relay_botvault_usdc_funding" && item.enabled));
+  const withdrawalReady = Boolean(funding?.actions.some((item) => item.id === "relay_botvault_usdc_withdrawal" && item.enabled));
   const loading = Boolean(isConnected && fundingQuery.isLoading);
+  const routeReady = relayReady || withdrawalReady;
 
   return (
     <article className="walletInfoTile fundingQuickCard">
       <div className="fundingQuickHeader">
         <strong>{t("cards.relayTitle")}</strong>
-        <span className={`badge ${overviewStatusClass(relayReady)}`}>
-          {loading ? t("loading") : relayReady ? tCommon("ready") : t("attention")}
+        <span className={`badge ${overviewStatusClass(routeReady)}`}>
+          {loading ? t("loading") : routeReady ? tCommon("ready") : t("attention")}
         </span>
       </div>
       <div className="walletMutedText">{t("cards.relaySubtitle")}</div>
@@ -214,9 +216,12 @@ export function BotVaultWalletQuickCard({ onFund }: { onFund: () => void }) {
         <div className="walletNotice walletNoticeCompact">{t("cards.relayConnectHint")}</div>
       )}
       {fundingQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(fundingQuery.error)}</div> : null}
-      <div className="fundingQuickCardActions">
+      <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
         <button type="button" className="btn btnPrimary" onClick={onFund} disabled={!isConnected || loading}>
           {t("actions.botvaultFunding")}
+        </button>
+        <button type="button" className="btn" onClick={onWithdraw} disabled={!isConnected || loading}>
+          {t("actions.botvaultWithdrawal")}
         </button>
       </div>
     </article>

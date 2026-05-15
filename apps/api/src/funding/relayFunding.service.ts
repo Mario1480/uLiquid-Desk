@@ -19,6 +19,7 @@ export type RelayFundingService = {
   getQuote(input: {
     user: string;
     usdcAmount: string;
+    direction?: "arbitrum_to_hyperevm" | "hyperevm_to_arbitrum";
     includeHypeTopup?: boolean;
     hypeTopupUsdcAmount?: string;
   }): Promise<RelayFundingQuote>;
@@ -227,6 +228,9 @@ export function createRelayFundingService(deps: RelayFundingServiceDeps = {}): R
 
   async function postRelayQuote(input: {
     user: string;
+    originChainId: number;
+    destinationChainId: number;
+    originCurrency: string;
     destinationCurrency: string;
     amountRaw: string;
   }): Promise<Record<string, any>> {
@@ -236,9 +240,9 @@ export function createRelayFundingService(deps: RelayFundingServiceDeps = {}): R
       body: JSON.stringify({
         user: input.user,
         recipient: input.user,
-        originChainId: config.arbitrum.chainId,
-        destinationChainId: config.hyperEvm.chainId,
-        originCurrency: config.arbitrum.usdcAddress,
+        originChainId: input.originChainId,
+        destinationChainId: input.destinationChainId,
+        originCurrency: input.originCurrency,
         destinationCurrency: input.destinationCurrency,
         amount: input.amountRaw,
         tradeType: "EXACT_INPUT"
@@ -258,7 +262,21 @@ export function createRelayFundingService(deps: RelayFundingServiceDeps = {}): R
         throw new Error("relay_token_config_missing");
       }
       const user = input.user.trim().toLowerCase();
-      const usdcAmount = decimalAmount(input.usdcAmount, config.arbitrum.usdcDecimals, FUNDING_MAX_USDC);
+      const direction = input.direction ?? "arbitrum_to_hyperevm";
+      if (direction !== "arbitrum_to_hyperevm" && direction !== "hyperevm_to_arbitrum") {
+        throw new Error("relay_invalid_direction");
+      }
+      if (direction === "hyperevm_to_arbitrum" && input.includeHypeTopup) {
+        throw new Error("relay_hype_topup_not_supported");
+      }
+      const originUsdcDecimals = direction === "hyperevm_to_arbitrum"
+        ? config.hyperEvm.usdcDecimals
+        : config.arbitrum.usdcDecimals;
+      const originChainId = direction === "hyperevm_to_arbitrum" ? config.hyperEvm.chainId : config.arbitrum.chainId;
+      const destinationChainId = direction === "hyperevm_to_arbitrum" ? config.arbitrum.chainId : config.hyperEvm.chainId;
+      const originUsdcAddress = direction === "hyperevm_to_arbitrum" ? config.hyperEvm.usdcAddress : config.arbitrum.usdcAddress;
+      const destinationUsdcAddress = direction === "hyperevm_to_arbitrum" ? config.arbitrum.usdcAddress : config.hyperEvm.usdcAddress;
+      const usdcAmount = decimalAmount(input.usdcAmount, originUsdcDecimals, FUNDING_MAX_USDC);
       const includeHypeTopup = Boolean(input.includeHypeTopup);
       const hypeAmount = includeHypeTopup
         ? decimalAmount(input.hypeTopupUsdcAmount ?? "5", config.arbitrum.usdcDecimals, HYPE_TOPUP_MAX_USDC)
@@ -267,12 +285,18 @@ export function createRelayFundingService(deps: RelayFundingServiceDeps = {}): R
       const [usdcRaw, hypeRaw] = await Promise.all([
         postRelayQuote({
           user,
-          destinationCurrency: config.hyperEvm.usdcAddress,
+          originChainId,
+          destinationChainId,
+          originCurrency: originUsdcAddress,
+          destinationCurrency: destinationUsdcAddress,
           amountRaw: usdcAmount.raw
         }),
         hypeAmount
           ? postRelayQuote({
               user,
+              originChainId: config.arbitrum.chainId,
+              destinationChainId: config.hyperEvm.chainId,
+              originCurrency: config.arbitrum.usdcAddress,
               destinationCurrency: RELAY_NATIVE_ADDRESS,
               amountRaw: hypeAmount.raw
             })
@@ -281,14 +305,15 @@ export function createRelayFundingService(deps: RelayFundingServiceDeps = {}): R
 
       return {
         provider: "relay",
-        originChainId: config.arbitrum.chainId,
-        destinationChainId: config.hyperEvm.chainId,
+        direction,
+        originChainId,
+        destinationChainId,
         usdc: normalizeLeg({
-          legId: "usdc",
+          legId: direction === "hyperevm_to_arbitrum" ? "usdc_withdrawal" : "usdc",
           asset: "USDC",
           raw: usdcRaw,
-          originChainId: config.arbitrum.chainId,
-          destinationChainId: config.hyperEvm.chainId
+          originChainId,
+          destinationChainId
         }),
         hypeTopup: hypeRaw
           ? normalizeLeg({

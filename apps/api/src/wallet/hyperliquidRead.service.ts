@@ -359,6 +359,13 @@ function normalizeFundingActionActivity(item: WalletActivitySourceItem, timestam
       description: `Relay Arbitrum -> HyperEVM USDC funding intent${suffix}.`
     };
   }
+  if (item.actionType === "funding_relay_usdc_to_arbitrum") {
+    return {
+      ...base,
+      title: "BotVault wallet withdrawal",
+      description: `Relay HyperEVM -> Arbitrum USDC withdrawal intent${suffix}.`
+    };
+  }
   if (item.actionType === "funding_relay_hype_topup") {
     return {
       ...base,

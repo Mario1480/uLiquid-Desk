@@ -1290,6 +1290,7 @@ test("POST /funding/:address/relay/quote delegates to Relay service for linked w
         calls.push(input);
         return {
           provider: "relay",
+          direction: "arbitrum_to_hyperevm",
           originChainId: 42161,
           destinationChainId: 999,
           usdc: { destinationAmount: { formatted: "9.99" } },
@@ -1317,6 +1318,47 @@ test("POST /funding/:address/relay/quote delegates to Relay service for linked w
   assert.equal(res.statusCode, 200);
   assert.equal(calls[0]?.user, wallet);
   assert.equal(calls[0]?.includeHypeTopup, true);
+});
+
+test("POST /funding/:address/relay/quote forwards reverse Relay direction", async () => {
+  const app = createFakeApp();
+  const wallet = "0x1234567890123456789012345678901234567890";
+  const calls: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    relayFundingService: {
+      async getQuote(input: any) {
+        calls.push(input);
+        return {
+          provider: "relay",
+          direction: "hyperevm_to_arbitrum",
+          originChainId: 999,
+          destinationChainId: 42161,
+          usdc: { destinationAmount: { formatted: "9.99" } },
+          hypeTopup: null,
+          createdAt: "2026-05-13T00:00:00.000Z"
+        };
+      },
+      async getStatus() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/:address/relay/quote");
+  const res = createMockRes("user_1", wallet);
+  await handler({
+    params: { address: wallet },
+    body: {
+      direction: "hyperevm_to_arbitrum",
+      usdcAmount: "10"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls[0]?.direction, "hyperevm_to_arbitrum");
+  assert.equal(calls[0]?.user, wallet);
 });
 
 test("POST /funding/:address/relay/quote rejects wallet mismatch", async () => {

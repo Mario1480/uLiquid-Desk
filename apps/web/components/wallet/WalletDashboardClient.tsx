@@ -48,7 +48,7 @@ export default function WalletDashboardClient({
   const [agentActionBusy, setAgentActionBusy] = useState<"fund" | "withdraw" | null>(null);
   const [agentSetupBusy, setAgentSetupBusy] = useState<"create" | "threshold" | null>(null);
   const [activeAgentModal, setActiveAgentModal] = useState<"fund" | "withdraw" | null>(null);
-  const [activeBotVaultSystemModal, setActiveBotVaultSystemModal] = useState<"botvault_funding" | "funding_vault" | null>(null);
+  const [activeBotVaultSystemModal, setActiveBotVaultSystemModal] = useState<"botvault_funding" | "botvault_withdrawal" | "funding_vault" | null>(null);
   const [agentActionError, setAgentActionError] = useState<string | null>(null);
   const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
   const activityQuery = useQuery({
@@ -285,7 +285,10 @@ export default function WalletDashboardClient({
             </div>
           </div>
           <div className="walletBotVaultSystemGrid">
-            <BotVaultWalletQuickCard onFund={() => setActiveBotVaultSystemModal("botvault_funding")} />
+            <BotVaultWalletQuickCard
+              onFund={() => setActiveBotVaultSystemModal("botvault_funding")}
+              onWithdraw={() => setActiveBotVaultSystemModal("botvault_withdrawal")}
+            />
             <FundingVaultQuickCard onManage={() => setActiveBotVaultSystemModal("funding_vault")} />
             {agentWalletCard}
           </div>
@@ -371,6 +374,8 @@ export default function WalletDashboardClient({
             aria-label={
               activeBotVaultSystemModal === "botvault_funding"
                 ? tFundingAction("actions.botvaultFunding")
+                : activeBotVaultSystemModal === "botvault_withdrawal"
+                  ? tFundingAction("actions.botvaultWithdrawal")
                 : tFundingAction("fundingVault.title")
             }
             onClick={(event) => event.stopPropagation()}
@@ -388,6 +393,8 @@ export default function WalletDashboardClient({
             <div className="fundingModalBody">
               {activeBotVaultSystemModal === "botvault_funding" ? (
                 <RelayBotVaultFundingSection config={fundingConfig} presentation="modal" key="relay-botvault-modal" />
+              ) : activeBotVaultSystemModal === "botvault_withdrawal" ? (
+                <RelayBotVaultFundingSection config={fundingConfig} presentation="modal" direction="hyperevm_to_arbitrum" key="relay-botvault-withdrawal-modal" />
               ) : (
                 <FundingVaultManagementSection key="funding-vault-modal" />
               )}

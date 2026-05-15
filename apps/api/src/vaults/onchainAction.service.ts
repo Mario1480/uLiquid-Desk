@@ -531,6 +531,7 @@ const FUNDING_INTENT_ACTION_TYPES = new Set<string>([
   "funding_bridge_deposit",
   "funding_bridge_withdraw",
   "funding_relay_usdc_to_hyperevm",
+  "funding_relay_usdc_to_arbitrum",
   "funding_relay_hype_topup",
   "funding_transfer_core_to_evm",
   "funding_transfer_evm_to_core",

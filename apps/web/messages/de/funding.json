@@ -65,6 +65,7 @@
     "loading": "Lädt",
     "actions": {
       "botvaultFunding": "BotVault-Wallet funden",
+      "botvaultWithdrawal": "Zu Arbitrum auszahlen",
       "deposit": "Einzahlen",
       "withdraw": "Auszahlen",
       "spotPerp": "Perps ↔ Spot",
@@ -72,8 +73,8 @@
     },
     "cards": {
       "relayTitle": "BotVault-Wallet",
-      "relaySubtitle": "Bridge USDC direkt zu HyperEVM und fuege bei Bedarf HYPE-Gas hinzu.",
-      "relayConnectHint": "Verbinde eine Wallet, um Arbitrum-USDC direkt zur BotVault-Wallet auf HyperEVM zu bridgen.",
+      "relaySubtitle": "Bridge USDC zu HyperEVM fuer BotVault-Starts oder hole ungenutztes USDC zurueck nach Arbitrum.",
+      "relayConnectHint": "Verbinde eine Wallet, um die BotVault-Wallet auf HyperEVM zu funden oder USDC nach Arbitrum auszuzahlen.",
       "bridgeTitle": "Trading-Account Funding",
       "bridgeSubtitle": "Arbitrum -> HyperCore Route fuer Hyperliquid-Trading-Balances.",
       "arbitrumUsdc": "Arbitrum-USDC",
@@ -174,6 +175,46 @@
       "overviewMissing": "Funding-Uebersicht ist nicht verfuegbar.",
       "walletMissing": "Verbinde deine Wallet, um fortzufahren.",
       "switchFailed": "Wechsel zu Arbitrum fehlgeschlagen.",
+      "relayFailed": "Relay meldet ein fehlgeschlagenes Settlement."
+    }
+  },
+  "relayWithdrawal": {
+    "title": "Zu Arbitrum auszahlen",
+    "subtitle": "Bridge ungenutztes HyperEVM-USDC zurueck an dieselbe Wallet-Adresse auf Arbitrum.",
+    "networkReady": "HyperEVM bereit",
+    "networkMismatch": "Falsches Netzwerk",
+    "amountPlaceholder": "USDC auszahlen",
+    "maxButton": "Max",
+    "switchNetwork": "Zu HyperEVM wechseln",
+    "txLink": "Transaktion ansehen",
+    "balances": {
+      "arbitrumUsdc": "Arbitrum-USDC",
+      "hyperEvmUsdc": "HyperEVM-USDC",
+      "hyperEvmHype": "HyperEVM-HYPE Gas"
+    },
+    "quote": {
+      "button": "Route pruefen",
+      "loading": "Relay-Quote wird geladen...",
+      "loadingShort": "Quote...",
+      "usdcOut": "USDC auf Arbitrum erhalten",
+      "hypeOut": "HYPE erhalten",
+      "relayFee": "Relay-Gebuehr",
+      "eta": "ETA",
+      "notIncluded": "Nicht enthalten"
+    },
+    "execute": {
+      "button": "Zu Arbitrum auszahlen",
+      "busy": "Auszahlung...",
+      "awaitingHype": "Bestaetige die Relay-Transaktionen in deiner Wallet.",
+      "awaitingUsdc": "Bestaetige die HyperEVM-USDC-Auszahlung in deiner Wallet.",
+      "pendingHype": "Auszahlung gesendet. Warte auf Relay-Settlement.",
+      "pendingUsdc": "Auszahlung gesendet. Warte auf Relay-Settlement.",
+      "confirmed": "Relay-Auszahlung gesendet, Balances werden abgeglichen."
+    },
+    "errors": {
+      "overviewMissing": "Funding-Uebersicht ist nicht verfuegbar.",
+      "walletMissing": "Verbinde deine Wallet, um fortzufahren.",
+      "switchFailed": "Wechsel zu HyperEVM fehlgeschlagen.",
       "relayFailed": "Relay meldet ein fehlgeschlagenes Settlement."
     }
   },

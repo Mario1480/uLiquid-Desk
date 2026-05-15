@@ -65,6 +65,7 @@
     "loading": "Loading",
     "actions": {
       "botvaultFunding": "Fund BotVault wallet",
+      "botvaultWithdrawal": "Withdraw to Arbitrum",
       "deposit": "Deposit",
       "withdraw": "Withdraw",
       "spotPerp": "Perps ↔ Spot",
@@ -72,8 +73,8 @@
     },
     "cards": {
       "relayTitle": "BotVault wallet",
-      "relaySubtitle": "Bridge USDC directly to HyperEVM and add HYPE gas if needed.",
-      "relayConnectHint": "Connect a wallet to bridge Arbitrum USDC directly to the BotVault wallet on HyperEVM.",
+      "relaySubtitle": "Bridge USDC to HyperEVM for BotVault starts or withdraw unused USDC back to Arbitrum.",
+      "relayConnectHint": "Connect a wallet to fund the BotVault wallet on HyperEVM or withdraw USDC back to Arbitrum.",
       "bridgeTitle": "Trading account funding",
       "bridgeSubtitle": "Arbitrum -> HyperCore route for Hyperliquid trading balances.",
       "arbitrumUsdc": "Arbitrum USDC",
@@ -174,6 +175,46 @@
       "overviewMissing": "Funding overview is unavailable.",
       "walletMissing": "Connect your wallet to continue.",
       "switchFailed": "Could not switch to Arbitrum.",
+      "relayFailed": "Relay reported a failed settlement."
+    }
+  },
+  "relayWithdrawal": {
+    "title": "Withdraw to Arbitrum",
+    "subtitle": "Bridge unused HyperEVM USDC back to the same wallet address on Arbitrum.",
+    "networkReady": "HyperEVM ready",
+    "networkMismatch": "Wrong network",
+    "amountPlaceholder": "USDC to withdraw",
+    "maxButton": "Max",
+    "switchNetwork": "Switch to HyperEVM",
+    "txLink": "View transaction",
+    "balances": {
+      "arbitrumUsdc": "Arbitrum USDC",
+      "hyperEvmUsdc": "HyperEVM USDC",
+      "hyperEvmHype": "HyperEVM HYPE gas"
+    },
+    "quote": {
+      "button": "Preview route",
+      "loading": "Fetching Relay quote...",
+      "loadingShort": "Quoting...",
+      "usdcOut": "USDC received on Arbitrum",
+      "hypeOut": "HYPE received",
+      "relayFee": "Relay fee",
+      "eta": "ETA",
+      "notIncluded": "Not included"
+    },
+    "execute": {
+      "button": "Withdraw to Arbitrum",
+      "busy": "Withdrawing...",
+      "awaitingHype": "Confirm the Relay transactions in your wallet.",
+      "awaitingUsdc": "Confirm the HyperEVM USDC withdrawal transactions in your wallet.",
+      "pendingHype": "Withdrawal submitted. Waiting for Relay settlement.",
+      "pendingUsdc": "Withdrawal submitted. Waiting for Relay settlement.",
+      "confirmed": "Relay withdrawal submitted and balances are reconciling."
+    },
+    "errors": {
+      "overviewMissing": "Funding overview is unavailable.",
+      "walletMissing": "Connect your wallet to continue.",
+      "switchFailed": "Could not switch to HyperEVM.",
       "relayFailed": "Relay reported a failed settlement."
     }
   },

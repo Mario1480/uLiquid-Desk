@@ -22,7 +22,8 @@ import {
   getRelayQuote,
   pollRelayStatus,
   shouldSuggestHypeTopup,
-  validateRelayFunding
+  validateRelayFunding,
+  validateRelayWithdrawal
 } from "../../lib/funding/relayClient";
 import {
   createFundingIntent,
@@ -34,6 +35,7 @@ import type {
   FundingFeatureConfig,
   RelayFundingQuote,
   RelayFundingQuoteLeg,
+  RelayFundingDirection,
   WalletFundingOverview
 } from "../../lib/funding/types";
 import { buildExplorerTxUrl, formatToken } from "../../lib/wallet/format";
@@ -97,18 +99,24 @@ function quoteEtaLabel(quote: RelayFundingQuote | null): string {
 
 export default function RelayBotVaultFundingSection({
   config,
-  presentation = "modal"
+  presentation = "modal",
+  direction = "arbitrum_to_hyperevm"
 }: {
   config: FundingFeatureConfig;
   presentation?: "card" | "modal";
+  direction?: RelayFundingDirection;
 }) {
-  const t = useTranslations("funding.relay");
+  const tFunding = useTranslations("funding.relay");
+  const tWithdrawal = useTranslations("funding.relayWithdrawal");
+  const t = direction === "hyperevm_to_arbitrum" ? tWithdrawal : tFunding;
   const tCommon = useTranslations("funding.common");
+  const isWithdrawal = direction === "hyperevm_to_arbitrum";
   const { address, chainId, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const queryClient = useQueryClient();
   const arbitrumPublicClient = usePublicClient({ chainId: config.arbitrum.chainId });
+  const hyperEvmPublicClient = usePublicClient({ chainId: config.hyperEvm.id });
   const [amount, setAmount] = useState("25");
   const [includeHypeTopup, setIncludeHypeTopup] = useState(false);
   const [hypeTopupAmount, setHypeTopupAmount] = useState(RELAY_DEFAULT_HYPE_TOPUP_USDC);
@@ -161,11 +169,12 @@ export default function RelayBotVaultFundingSection({
   }, [liveArbitrumEth, liveArbitrumUsdc, liveHyperEvmHype, overviewQuery.data]);
 
   useEffect(() => {
+    if (isWithdrawal) return;
     const raw = overview?.hyperEvm.hype.raw;
     if (raw !== undefined && shouldSuggestHypeTopup(raw)) {
       setIncludeHypeTopup(true);
     }
-  }, [overview?.hyperEvm.hype.raw]);
+  }, [isWithdrawal, overview?.hyperEvm.hype.raw]);
 
   function clearQuote() {
     setQuote(null);
@@ -184,6 +193,17 @@ export default function RelayBotVaultFundingSection({
 
   function validate() {
     if (!overview) throw new RelayFundingError("overview_missing", t("errors.overviewMissing"));
+    if (isWithdrawal) {
+      return validateRelayWithdrawal({
+        usdcAmount: amount,
+        hyperEvmUsdcRaw: overview.hyperEvm.usdc.raw,
+        hyperEvmUsdcAvailable: overview.hyperEvm.usdc.available,
+        hyperEvmHypeRaw: overview.hyperEvm.hype.raw,
+        hyperEvmHypeAvailable: overview.hyperEvm.hype.available,
+        connectedChainId: chainId,
+        expectedChainId: config.hyperEvm.id
+      });
+    }
     return validateRelayFunding({
       usdcAmount: amount,
       includeHypeTopup,
@@ -199,11 +219,15 @@ export default function RelayBotVaultFundingSection({
 
   async function loadQuote(): Promise<RelayFundingQuote> {
     const validated = validate();
+    const validatedTopupAmount = !isWithdrawal && "hypeTopupUsdcAmount" in validated
+      ? String(validated.hypeTopupUsdcAmount)
+      : "0";
     setState({ phase: "quoting", message: t("quote.loading") });
     const nextQuote = await getRelayQuote(connectedAddress!, {
+      direction,
       usdcAmount: validated.usdcAmount,
-      includeHypeTopup,
-      hypeTopupUsdcAmount: validated.hypeTopupUsdcAmount
+      includeHypeTopup: isWithdrawal ? false : includeHypeTopup,
+      hypeTopupUsdcAmount: validatedTopupAmount
     });
     setQuote(nextQuote);
     setState({ phase: "idle" });
@@ -212,7 +236,7 @@ export default function RelayBotVaultFundingSection({
 
   async function handleSwitchToArbitrum() {
     try {
-      await switchChainAsync({ chainId: config.arbitrum.chainId });
+      await switchChainAsync({ chainId: isWithdrawal ? config.hyperEvm.id : config.arbitrum.chainId });
       setState({ phase: "idle" });
     } catch (error) {
       setState({ phase: "error", code: "switch_failed", message: String((error as Error)?.message ?? t("errors.switchFailed")) });
@@ -220,23 +244,31 @@ export default function RelayBotVaultFundingSection({
   }
 
   async function executeLeg(leg: RelayFundingQuoteLeg, latestOverview: WalletFundingOverview) {
-    if (!walletClient || !arbitrumPublicClient || !connectedAddress) {
+    const publicClient = isWithdrawal ? hyperEvmPublicClient : arbitrumPublicClient;
+    if (!walletClient || !publicClient || !connectedAddress) {
       throw new RelayFundingError("wallet_missing", t("errors.walletMissing"));
     }
     const isHypeTopup = leg.legId === "hype_topup";
-    const beforeDestination = isHypeTopup ? latestOverview.hyperEvm.hype : latestOverview.hyperEvm.usdc;
+    const beforeSource = isWithdrawal ? latestOverview.hyperEvm.usdc : latestOverview.arbitrum.usdc;
+    const beforeDestination = isWithdrawal
+      ? latestOverview.arbitrum.usdc
+      : isHypeTopup ? latestOverview.hyperEvm.hype : latestOverview.hyperEvm.usdc;
     const intent = await createFundingIntent(connectedAddress, {
-      actionType: isHypeTopup ? "funding_relay_hype_topup" : "funding_relay_usdc_to_hyperevm",
+      actionType: isWithdrawal
+        ? "funding_relay_usdc_to_arbitrum"
+        : isHypeTopup ? "funding_relay_hype_topup" : "funding_relay_usdc_to_hyperevm",
       actionKey: `relay:${leg.legId}:${leg.requestId ?? Date.now()}`,
-      chainId: config.arbitrum.chainId,
+      chainId: isWithdrawal ? config.hyperEvm.id : config.arbitrum.chainId,
       toAddress: leg.steps.at(-1)?.items.at(-1)?.tx.to ?? null,
       asset: isHypeTopup ? "HYPE" : "USDC",
-      direction: isHypeTopup ? "arbitrum_to_hyperevm_hype" : "arbitrum_to_hyperevm_usdc",
+      direction: isWithdrawal
+        ? "hyperevm_to_arbitrum_usdc"
+        : isHypeTopup ? "arbitrum_to_hyperevm_hype" : "arbitrum_to_hyperevm_usdc",
       amountRaw: leg.sourceAmount.raw,
       amountFormatted: leg.sourceAmount.formatted,
-      sourceLocation: "arbitrum",
-      destinationLocation: "hyperEvm",
-      beforeSourceRaw: latestOverview.arbitrum.usdc.raw ?? "0",
+      sourceLocation: isWithdrawal ? "hyperEvm" : "arbitrum",
+      destinationLocation: isWithdrawal ? "arbitrum" : "hyperEvm",
+      beforeSourceRaw: beforeSource.raw ?? "0",
       beforeDestinationRaw: beforeDestination.raw ?? "0",
       targetDestinationRaw: destinationTargetRaw(beforeDestination, leg),
       reasonCode: "relay_funding_prepared",
@@ -248,7 +280,7 @@ export default function RelayBotVaultFundingSection({
       const result = await executeRelayLeg({
         leg,
         walletClient,
-        publicClient: arbitrumPublicClient,
+        publicClient,
         address: connectedAddress
       });
       await submitFundingIntent(intent.action.id, {
@@ -303,7 +335,7 @@ export default function RelayBotVaultFundingSection({
       if (!overview) throw new RelayFundingError("overview_missing", t("errors.overviewMissing"));
       const activeQuote = quote ?? await loadQuote();
       const legs = [
-        ...(includeHypeTopup && activeQuote.hypeTopup ? [activeQuote.hypeTopup] : []),
+        ...(!isWithdrawal && includeHypeTopup && activeQuote.hypeTopup ? [activeQuote.hypeTopup] : []),
         activeQuote.usdc
       ];
       let lastTxHash: `0x${string}` | null = null;
@@ -326,7 +358,9 @@ export default function RelayBotVaultFundingSection({
     }
   }
 
-  const isCorrectArbitrumChain = chainId === config.arbitrum.chainId;
+  const sourceChainId = isWithdrawal ? config.hyperEvm.id : config.arbitrum.chainId;
+  const sourceExplorerUrl = isWithdrawal ? config.hyperEvm.explorerUrl : config.arbitrum.explorerUrl;
+  const isCorrectSourceChain = chainId === sourceChainId;
   const busy = state.phase === "quoting" || state.phase === "awaiting_signature" || state.phase === "submitted" || state.phase === "pending";
   const usdcOut = quote?.usdc.destinationAmount.formatted ?? null;
   const hypeOut = quote?.hypeTopup?.destinationAmount.formatted ?? null;
@@ -348,23 +382,27 @@ export default function RelayBotVaultFundingSection({
     <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
       <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
         <div className="walletSectionIntro">
-          {presentation === "modal" ? <div className="fundingModalDirectionPill">{tCommon("locationArbitrum")} {"->"} {tCommon("locationHyperEvm")}</div> : null}
+          {presentation === "modal" ? (
+            <div className="fundingModalDirectionPill">
+              {isWithdrawal ? tCommon("locationHyperEvm") : tCommon("locationArbitrum")} {"->"} {isWithdrawal ? tCommon("locationArbitrum") : tCommon("locationHyperEvm")}
+            </div>
+          ) : null}
           <h3 className="walletSectionTitle">{t("title")}</h3>
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
-        <span className={`badge ${isCorrectArbitrumChain ? "badgeOk" : "badgeWarn"}`}>
-          {isCorrectArbitrumChain ? t("networkReady") : t("networkMismatch")}
+        <span className={`badge ${isCorrectSourceChain ? "badgeOk" : "badgeWarn"}`}>
+          {isCorrectSourceChain ? t("networkReady") : t("networkMismatch")}
         </span>
       </div>
 
       <div className="fundingBridgeGrid">
         <div className="walletInfoTile">
-          <strong>{t("balances.arbitrumUsdc")}</strong>
-          <div className="walletMutedText">{displayBalance(overview.arbitrum.usdc)}</div>
+          <strong>{isWithdrawal ? t("balances.hyperEvmUsdc") : t("balances.arbitrumUsdc")}</strong>
+          <div className="walletMutedText">{displayBalance(isWithdrawal ? overview.hyperEvm.usdc : overview.arbitrum.usdc)}</div>
         </div>
         <div className="walletInfoTile">
-          <strong>{t("balances.hyperEvmUsdc")}</strong>
-          <div className="walletMutedText">{displayBalance(overview.hyperEvm.usdc)}</div>
+          <strong>{isWithdrawal ? t("balances.arbitrumUsdc") : t("balances.hyperEvmUsdc")}</strong>
+          <div className="walletMutedText">{displayBalance(isWithdrawal ? overview.arbitrum.usdc : overview.hyperEvm.usdc)}</div>
         </div>
         <div className="walletInfoTile">
           <strong>{t("balances.hyperEvmHype")}</strong>
@@ -389,9 +427,9 @@ export default function RelayBotVaultFundingSection({
         <button
           type="button"
           className="btn"
-          disabled={busy || !overview.arbitrum.usdc.available}
+          disabled={busy || !(isWithdrawal ? overview.hyperEvm.usdc.available : overview.arbitrum.usdc.available)}
           onClick={() => {
-            setAmount(overview.arbitrum.usdc.formatted ?? amount);
+            setAmount((isWithdrawal ? overview.hyperEvm.usdc.formatted : overview.arbitrum.usdc.formatted) ?? amount);
             clearQuote();
           }}
         >
@@ -399,20 +437,22 @@ export default function RelayBotVaultFundingSection({
         </button>
       </div>
 
-      <label className="walletNotice" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-        <input
-          type="checkbox"
-          checked={includeHypeTopup}
-          onChange={(event) => {
-            setIncludeHypeTopup(event.target.checked);
-            clearQuote();
-          }}
-          disabled={busy}
-        />
-        <span>{t("topup.label")}</span>
-      </label>
+      {!isWithdrawal ? (
+        <label className="walletNotice" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+          <input
+            type="checkbox"
+            checked={includeHypeTopup}
+            onChange={(event) => {
+              setIncludeHypeTopup(event.target.checked);
+              clearQuote();
+            }}
+            disabled={busy}
+          />
+          <span>{t("topup.label")}</span>
+        </label>
+      ) : null}
 
-      {includeHypeTopup ? (
+      {!isWithdrawal && includeHypeTopup ? (
         <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`} style={{ marginTop: 10 }}>
           <input
             className="walletAmountInput"
@@ -436,10 +476,12 @@ export default function RelayBotVaultFundingSection({
           <strong>{t("quote.usdcOut")}</strong>
           <div className="walletMutedText">{usdcOut ? `${formatToken(usdcOut, 6)} USDC` : "-"}</div>
         </div>
-        <div className="walletInfoTile">
-          <strong>{t("quote.hypeOut")}</strong>
-          <div className="walletMutedText">{hypeOut ? `${formatToken(hypeOut, 6)} HYPE` : includeHypeTopup ? "-" : t("quote.notIncluded")}</div>
-        </div>
+        {!isWithdrawal ? (
+          <div className="walletInfoTile">
+            <strong>{t("quote.hypeOut")}</strong>
+            <div className="walletMutedText">{hypeOut ? `${formatToken(hypeOut, 6)} HYPE` : includeHypeTopup ? "-" : t("quote.notIncluded")}</div>
+          </div>
+        ) : null}
         <div className="walletInfoTile">
           <strong>{t("quote.relayFee")}</strong>
           <div className="walletMutedText">{quoteFeesLabel(quote)}</div>
@@ -450,7 +492,7 @@ export default function RelayBotVaultFundingSection({
         </div>
       </div>
 
-      {!isCorrectArbitrumChain ? (
+      {!isCorrectSourceChain ? (
         <div className="walletActionRow fundingModalPrimaryActionRow">
           <button type="button" className="btn btnPrimary" onClick={() => void handleSwitchToArbitrum()} disabled={busy}>
             {t("switchNetwork")}
@@ -461,7 +503,7 @@ export default function RelayBotVaultFundingSection({
           <button type="button" className="btn" onClick={() => void handleQuote()} disabled={busy}>
             {state.phase === "quoting" ? t("quote.loadingShort") : t("quote.button")}
           </button>
-          <button type="button" className="btn btnPrimary" onClick={() => void handleExecute()} disabled={busy || !walletClient || !arbitrumPublicClient}>
+          <button type="button" className="btn btnPrimary" onClick={() => void handleExecute()} disabled={busy || !walletClient || !(isWithdrawal ? hyperEvmPublicClient : arbitrumPublicClient)}>
             {busy && state.phase !== "quoting" ? t("execute.busy") : t("execute.button")}
           </button>
         </div>
@@ -471,7 +513,7 @@ export default function RelayBotVaultFundingSection({
         <div className={feedbackClass(state)} style={{ marginTop: 12 }}>
           <div>{state.message}</div>
           {state.txHash ? (
-            <a href={buildExplorerTxUrl(config.arbitrum.explorerUrl, state.txHash)} target="_blank" rel="noreferrer">
+            <a href={buildExplorerTxUrl(sourceExplorerUrl, state.txHash)} target="_blank" rel="noreferrer">
               {t("txLink")}
             </a>
           ) : null}

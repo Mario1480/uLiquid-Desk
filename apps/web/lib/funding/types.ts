@@ -20,6 +20,7 @@ export type FundingActionId =
   | "fund_arbitrum_eth"
   | "relay_botvault_usdc_funding"
   | "relay_botvault_hype_topup"
+  | "relay_botvault_usdc_withdrawal"
   | "deposit_usdc_to_hyperliquid"
   | "obtain_hype_bootstrap"
   | "transfer_usdc_core_to_evm"
@@ -190,6 +191,7 @@ export type FundingHistoryItem = {
   actionId:
     | FundingActionId
     | "funding_relay_usdc_to_hyperevm"
+    | "funding_relay_usdc_to_arbitrum"
     | "funding_relay_hype_topup"
     | "create_master_vault"
     | "withdraw_master_vault"
@@ -262,6 +264,8 @@ export type FundingLiveBalances = {
 
 export type RelayFundingAsset = "USDC" | "HYPE";
 
+export type RelayFundingDirection = "arbitrum_to_hyperevm" | "hyperevm_to_arbitrum";
+
 export type RelayFundingAmount = {
   raw: string;
   formatted: string;
@@ -288,7 +292,7 @@ export type RelayFundingStep = {
 };
 
 export type RelayFundingQuoteLeg = {
-  legId: "usdc" | "hype_topup";
+  legId: "usdc" | "hype_topup" | "usdc_withdrawal";
   asset: RelayFundingAsset;
   sourceAmount: RelayFundingAmount;
   destinationAmount: RelayFundingAmount;
@@ -301,6 +305,7 @@ export type RelayFundingQuoteLeg = {
 
 export type RelayFundingQuote = {
   provider: "relay";
+  direction: RelayFundingDirection;
   originChainId: number;
   destinationChainId: number;
   usdc: RelayFundingQuoteLeg;

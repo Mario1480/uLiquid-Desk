@@ -152,6 +152,7 @@ const fundingIntentActionTypeSchema = z.enum([
   "funding_bridge_deposit",
   "funding_bridge_withdraw",
   "funding_relay_usdc_to_hyperevm",
+  "funding_relay_usdc_to_arbitrum",
   "funding_relay_hype_topup",
   "funding_transfer_core_to_evm",
   "funding_transfer_evm_to_core",
@@ -184,6 +185,7 @@ const fundingIntentSubmitSchema = z.object({
 });
 
 const relayQuoteSchema = z.object({
+  direction: z.enum(["arbitrum_to_hyperevm", "hyperevm_to_arbitrum"]).optional(),
   usdcAmount: z.string().trim().min(1).max(80),
   includeHypeTopup: z.boolean().optional(),
   hypeTopupUsdcAmount: z.string().trim().min(1).max(80).optional()
@@ -269,6 +271,7 @@ function fundingIntentActionId(actionType: string, direction: string): string {
   if (actionType === "funding_bridge_deposit") return "deposit_usdc_to_hyperliquid";
   if (actionType === "funding_bridge_withdraw") return "withdraw_usdc_from_hyperliquid";
   if (actionType === "funding_relay_usdc_to_hyperevm") return "relay_botvault_usdc_funding";
+  if (actionType === "funding_relay_usdc_to_arbitrum") return "relay_botvault_usdc_withdrawal";
   if (actionType === "funding_relay_hype_topup") return "relay_botvault_hype_topup";
   if (actionType === "funding_transfer_core_to_evm") return "transfer_core_to_evm";
   if (actionType === "funding_transfer_evm_to_core") return "transfer_evm_to_core";
@@ -301,6 +304,10 @@ async function resolveFundingIntentObservedRaw(params: {
   if (actionType === "funding_relay_usdc_to_hyperevm") {
     const overview = await params.fundingReadService.getFundingOverview({ address: walletAddress });
     return fundingRawBalance(overview.hyperEvm.usdc);
+  }
+  if (actionType === "funding_relay_usdc_to_arbitrum") {
+    const overview = await params.fundingReadService.getFundingOverview({ address: walletAddress });
+    return fundingRawBalance(overview.arbitrum.usdc);
   }
   if (actionType === "funding_relay_hype_topup") {
     const overview = await params.fundingReadService.getFundingOverview({ address: walletAddress });
@@ -1442,6 +1449,7 @@ export function registerVaultRoutes(
     try {
       const quote = await relayFundingService.getQuote({
         user: userAddress,
+        direction: parsedBody.data.direction,
         usdcAmount: parsedBody.data.usdcAmount,
         includeHypeTopup: parsedBody.data.includeHypeTopup,
         hypeTopupUsdcAmount: parsedBody.data.hypeTopupUsdcAmount
@@ -1449,7 +1457,7 @@ export function registerVaultRoutes(
       return res.json(quote);
     } catch (error) {
       const reason = String(error);
-      const status = reason.includes("relay_invalid") || reason.includes("relay_token_config_missing") ? 400 : 502;
+      const status = reason.includes("relay_invalid") || reason.includes("relay_token_config_missing") || reason.includes("relay_hype_topup_not_supported") ? 400 : 502;
       return res.status(status).json({
         error: status === 400 ? "invalid_relay_quote_request" : "relay_quote_failed",
         reason

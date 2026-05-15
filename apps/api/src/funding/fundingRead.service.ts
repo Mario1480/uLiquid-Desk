@@ -286,6 +286,21 @@ function normalizeFundingIntentActionId(item: FundingHistorySourceItem): Funding
       updatedAt: item.updatedAt
     };
   }
+  if (item.actionType === "funding_relay_usdc_to_arbitrum") {
+    return {
+      id: item.id,
+      actionId: "relay_botvault_usdc_withdrawal",
+      title: "BotVault wallet withdrawal",
+      description: `Relay HyperEVM -> Arbitrum USDC withdrawal intent${suffix}.`,
+      locationFrom: "hyperEvm",
+      locationTo: "arbitrum",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
   if (item.actionType === "funding_relay_hype_topup") {
     return {
       id: item.id,
@@ -549,6 +564,20 @@ function createActionMap(params: {
       href: null,
       chainId: params.config.arbitrum.chainId,
       asset: "HYPE",
+      external: false
+    },
+    relay_botvault_usdc_withdrawal: {
+      id: "relay_botvault_usdc_withdrawal",
+      kind: "client_write",
+      label: "Withdraw BotVault wallet",
+      description: "Bridge HyperEVM USDC back to Arbitrum with Relay.",
+      locationFrom: "hyperEvm",
+      locationTo: "arbitrum",
+      enabled: Boolean(params.config.hyperEvm.usdcAddress && params.config.arbitrum.usdcAddress),
+      reason: params.config.hyperEvm.usdcAddress && params.config.arbitrum.usdcAddress ? null : "relay_token_config_missing",
+      href: null,
+      chainId: params.config.hyperEvm.chainId,
+      asset: "USDC",
       external: false
     },
     deposit_usdc_to_hyperliquid: {
