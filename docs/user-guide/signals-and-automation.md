@@ -1,74 +1,74 @@
 ---
-description: Prognosen, Strategien, Bots und Grid Bots sicher nutzen.
+description: Use predictions, strategies, bots, and grid bots safely.
 icon: bot
 ---
 
-# Signale und Automatisierung
+# Signals and Automation
 
-uLiquid Desk buendelt Prognosen, Strategien, normale Bots und Grid Bots. Der sichere Weg ist: Signal verstehen, Risiko pruefen, zuerst simulieren oder klein testen, dann erst automatisieren.
+uLiquid Desk brings together predictions, strategies, standard bots, and grid bots. The safe operating pattern is: understand the signal, check the risk, simulate or test small first, and automate only after that.
 
-## Prognosen
+## Predictions
 
-Prognosen analysieren Marktinformationen und erzeugen Setups. Sie koennen den Trading Desk vorfuellen, fuehren aber nicht automatisch eine Order aus.
+Predictions analyze market information and produce setups. They can prefill the Trading Desk, but they do not execute an order automatically.
 
-Empfohlener Ablauf:
+Recommended flow:
 
-1. Symbol und Zeitfenster waehlen.
-2. Strategie oder Signalquelle pruefen.
-3. Confidence, Tags und Begruendung lesen.
-4. Setup in den Trading Desk senden.
-5. Orderdetails manuell pruefen.
+1. Select symbol and timeframe.
+2. Check the strategy or signal source.
+3. Read confidence, tags, and rationale.
+4. Send the setup to the Trading Desk.
+5. Review order details manually.
 
-## Strategien
+## Strategies
 
-Strategien koennen AI-basiert, lokal deterministisch oder composite sein.
+Strategies can be AI-based, local deterministic, or composite.
 
-| Modus | Zweck |
+| Mode | Purpose |
 | --- | --- |
-| AI | Bewertung und Erklaerung komplexer Setups. |
-| Lokal | Deterministische Regeln fuer stabile, wiederholbare Ergebnisse. |
-| Composite | Verkettet lokale und AI-Schritte. Vor Aktivierung per Dry-Run pruefen. |
+| AI | Evaluation and explanation of complex setups. |
+| Local | Deterministic rules for stable, repeatable results. |
+| Composite | Chains local and AI steps. Test with dry-runs before activation. |
 
-## Normale Trading Bots
+## Standard Trading Bots
 
-Normale Bots fuehren Strategie-Logik automatisiert aus. Pruefe vor dem Start:
+Standard bots execute strategy logic automatically. Before starting one, check:
 
-- Exchange-Account und Symbol.
-- Berechtigungen.
-- Investitions- und Risiko-Limits.
-- Status des Runners.
-- Letzte Strategieauswertung.
-- Stop-/Pause-Verhalten.
+- Exchange account and symbol.
+- Permissions.
+- Investment and risk limits.
+- Runner status.
+- Last strategy evaluation.
+- Stop and pause behavior.
 
 ## Grid Bots
 
-Grid Bots platzieren Orders innerhalb einer Preisrange. Sie sind besonders sensibel fuer Kapital, Hebel, Range, Grid-Anzahl und Liquidationsabstand.
+Grid bots place orders inside a price range. They are especially sensitive to capital, leverage, range, grid count, and liquidation distance.
 
-Vor dem Start:
+Before launch:
 
-1. Template waehlen.
-2. Symbol, Range, Hebel und Grid Count pruefen.
-3. Preview berechnen.
-4. Mindestinvestment, Reserve und Liquidationsdistanz pruefen.
-5. Funding-Quelle waehlen.
-6. BotVault-/Funding-Status pruefen.
-7. Erst starten, wenn die Preview bereit ist.
+1. Select a template.
+2. Check symbol, range, leverage, and grid count.
+3. Calculate the preview.
+4. Review minimum investment, reserve, and liquidation distance.
+5. Choose a funding source.
+6. Check BotVault and funding status.
+7. Start only when the preview is ready.
 
-## Grid Bot Warnungen
+## Grid Bot Warnings
 
-| Warnung | Bedeutung |
+| Warning | Meaning |
 | --- | --- |
-| Budget zu niedrig | Das Kapital reicht fuer Venue-Minima oder Grid-Struktur nicht aus. |
-| Erhoehtes Liq-Risiko | Liquidationsabstand ist knapp. Range, Hebel oder Reserve anpassen. |
-| Zu viele Grids | Per-Grid-Kapital ist zu duenn. Grid Count reduzieren oder Budget erhoehen. |
-| Venue Constraints fehlen | Exchange-Metadaten sind unvollstaendig. Nicht live starten. |
+| Budget too low | Capital is not enough for venue minimums or the grid structure. |
+| Elevated liquidation risk | Liquidation distance is tight. Adjust range, leverage, or reserve. |
+| Too many grids | Capital per grid is too thin. Reduce grid count or increase budget. |
+| Venue constraints missing | Exchange metadata is incomplete. Do not start live. |
 
-## Wann stoppen?
+## When to Stop
 
-Stoppe oder pausiere Automatisierung, wenn:
+Pause or stop automation when:
 
-- Accountdaten degradiert sind,
-- Runner-Fehler auftreten,
-- offene Positionen nicht plausibel sind,
-- Funding oder BotVault nicht reconciled ist,
-- externe Marktbedingungen nicht mehr zur Strategie passen.
+- account data is degraded,
+- runner errors appear,
+- open positions do not look plausible,
+- funding or BotVault state is not reconciled,
+- external market conditions no longer match the strategy.

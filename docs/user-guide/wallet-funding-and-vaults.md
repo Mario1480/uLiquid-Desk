@@ -1,77 +1,77 @@
 ---
-description: Wallet verbinden, Assets bewegen, Funding Vaults und BotVaults nutzen.
+description: Connect wallets, move assets, and use Funding Vaults and BotVaults.
 icon: wallet
 ---
 
-# Wallet, Funding und Vaults
+# Wallet, Funding, and Vaults
 
-Wallet- und Funding-Flows verbinden uLiquid Desk mit HyperEVM, HyperCore, Arbitrum und BotVaults. Jede Signatur sollte bewusst geprueft werden.
+Wallet and funding flows connect uLiquid Desk with HyperEVM, HyperCore, Arbitrum, and BotVaults. Every signature should be reviewed deliberately.
 
-## Wallet verbinden
+## Connect a Wallet
 
-1. Oeffne **Wallet & Funding** oder den Wallet-Button in der Kopfzeile.
-2. Verbinde deine Wallet.
-3. Pruefe Adresse und Netzwerk.
-4. Wechsle bei Bedarf zu HyperEVM.
-5. Pruefe HYPE fuer Gas und USDC fuer Funding.
+1. Open **Wallet & Funding** or the wallet button in the header.
+2. Connect your wallet.
+3. Check the address and network.
+4. Switch to HyperEVM if needed.
+5. Check HYPE for gas and USDC for funding.
 
-## Balance-Bereiche
+## Balance Areas
 
-| Bereich | Zweck |
+| Area | Purpose |
 | --- | --- |
-| Arbitrum | Quelle oder Ziel fuer USDC Bridge-Flows. |
-| HyperCore | Hyperliquid Trading- und Core-Balances. |
-| HyperEVM | Onchain Aktionen, BotVault Funding und Gas. |
-| Funding Vault | USDC-Speicher fuer agent-signierte GridBot-Starts. |
-| BotVault | Kapitalbereich fuer Bot-/Grid-Ausfuehrung. |
+| Arbitrum | Source or destination for USDC bridge flows. |
+| HyperCore | Hyperliquid trading and core balances. |
+| HyperEVM | Onchain actions, BotVault funding, and gas. |
+| Funding Vault | USDC storage for agent-signed grid bot launches. |
+| BotVault | Capital area for bot and grid execution. |
 
 ## Funding Hub
 
-Im Funding Hub kannst du Assets verschieben:
+In the Funding Hub, you can move assets:
 
-- Arbitrum zu HyperCore.
-- HyperCore zu HyperEVM.
-- HyperEVM zu HyperCore.
-- Spot zu Perps und zurueck.
-- BotVault-Wallet funden.
-- Ungenutztes USDC zurueck nach Arbitrum auszahlen.
+- Arbitrum to HyperCore.
+- HyperCore to HyperEVM.
+- HyperEVM to HyperCore.
+- Spot to Perps and back.
+- Fund the BotVault wallet.
+- Withdraw unused USDC back to Arbitrum.
 
 {% hint style="info" %}
-Manche Transfers bestaetigen nicht sofort, sondern bleiben pending, bis die erwartete Zielbalance erreicht wurde.
+Some transfers do not confirm immediately. They remain pending until the expected destination balance is reached.
 {% endhint %}
 
 ## Funding Vault
 
-Der Funding Vault ist fuer mobile- und agent-faehige GridBot-Starts gedacht. Er haelt USDC bereit, damit ein GridBot-Launch nicht jedes Mal denselben manuellen Funding-Aufwand braucht.
+The Funding Vault is designed for mobile-friendly and agent-capable grid bot launches. It keeps USDC available so a grid bot launch does not require the same manual funding work every time.
 
-Pruefe:
+Check:
 
-- Vault erstellt.
-- Verfuegbares USDC.
-- Reserviertes USDC.
-- Agent-Wallet-Status.
-- HYPE-Gas fuer notwendige onchain Aktionen.
+- Vault exists.
+- Available USDC.
+- Reserved USDC.
+- Agent wallet status.
+- HYPE gas for required onchain actions.
 
 ## BotVault
 
-BotVaults kapseln Kapital fuer Bots und Grid Bots. Ein BotVault kann neu erstellt oder wiederverwendet werden, wenn er verfuegbar ist.
+BotVaults isolate capital for bots and grid bots. A BotVault can be newly created or reused when one is available.
 
-Beim GridBot-Start wird angezeigt:
+During a grid bot launch, uLiquid Desk shows:
 
-- geplantes Invest,
-- Reserve oder Extra Margin,
-- moegliche Vault-Erstellungsgebuehr,
-- Funding-Quelle,
-- Provisioning-Status.
+- planned investment,
+- reserve or extra margin,
+- possible vault creation fee,
+- funding source,
+- provisioning status.
 
 ## Funding History
 
-Die Funding-Historie zeigt In-App-Aktionen und deren Status. Nutze sie, um pending Transfers, bestaetigte Aktionen und Tx-Hashes nachzuvollziehen.
+Funding history shows in-app actions and their status. Use it to trace pending transfers, confirmed actions, and transaction hashes.
 
-## Fehler vermeiden
+## Avoid Funding Mistakes
 
-- Nie auf dem falschen Netzwerk signieren.
-- Vor Withdrawals Zieladresse und Betrag pruefen.
-- Bei pending Aktionen keinen gleichen Folgeflow erzwingen.
-- Bei Rate Limits einen Moment warten und erneut refreshen.
-- Bei unklarer Balance direkt die Zielumgebung pruefen.
+- Do not sign on the wrong network.
+- Check target address and amount before withdrawals.
+- Do not force the same follow-up flow while an action is pending.
+- Wait and refresh if rate limits appear.
+- If a balance is unclear, check the destination environment directly.

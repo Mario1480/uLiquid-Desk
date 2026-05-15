@@ -1,71 +1,71 @@
 ---
-description: Manuelles Trading, Ordertypen, Positionen, Guardrails und Risikoverhalten.
+description: Manual trading, order types, positions, guardrails, and risk behavior.
 icon: candlestick-chart
 ---
 
-# Trading Desk und Risiko
+# Trading Desk and Risk
 
-Der Trading Desk ist die manuelle Trading-Oberflaeche. Er kann Orders vorbereiten, ausfuehren, offene Orders anzeigen und Positionen schliessen, sofern Rolle und Feature-Freischaltung passen.
+The Trading Desk is the manual trading interface. It can prepare orders, execute orders, show open orders, and close positions when your role and feature permissions allow it.
 
 {% hint style="danger" %}
-Live-Orders koennen echtes Kapital bewegen. Pruefe Account, Symbol, Side, Ordertyp, Menge, Hebel, Stop Loss und Take Profit vor jeder Bestaetigung.
+Live orders can move real capital. Check the account, symbol, side, order type, size, leverage, stop loss, and take profit before every confirmation.
 {% endhint %}
 
-## Typischer Ablauf
+## Typical Flow
 
-1. Exchange-Account und Symbol waehlen.
-2. Live-Datenstatus pruefen.
-3. Ordertyp waehlen.
-4. Menge, Preis und Risikowerte eintragen.
-5. Warnungen lesen.
-6. Order absenden.
-7. Offene Orders und Positionen nach Refresh pruefen.
+1. Select an exchange account and symbol.
+2. Check the live data status.
+3. Choose the order type.
+4. Enter size, price, and risk values.
+5. Read warnings.
+6. Submit the order.
+7. Refresh and verify open orders and positions.
 
-## Ordertypen
+## Order Types
 
-| Typ | Nutzung |
+| Type | Use |
 | --- | --- |
-| Market | Schnelle Ausfuehrung zum aktuellen Marktpreis, mit Slippage-Risiko. |
-| Limit | Ausfuehrung nur zum Limit oder besser, kann offen bleiben. |
-| Cancel | Einzelne offene Order abbrechen. |
-| Cancel All | Alle offenen Orders im Scope abbrechen. |
-| Close Position | Bestehende Position reduzieren oder schliessen. |
+| Market | Fast execution at the current market price, with slippage risk. |
+| Limit | Executes only at the limit or better, and may stay open. |
+| Cancel | Cancels one open order. |
+| Cancel All | Cancels all open orders in scope. |
+| Close Position | Reduces or closes an existing position. |
 
-## Sicherheitsverhalten
+## Safety Behavior
 
-Der Desk blockiert oder warnt bei:
+The desk blocks or warns on:
 
-- unsicheren oder degradierten Marktdaten,
-- fehlenden Trading-Rechten,
-- laufender identischer Aktion,
-- fehlender Re-Auth,
-- unvollstaendiger Account- oder Symbolauswahl,
-- kritischen Close-/Cancel-All-Aktionen.
+- unsafe or degraded market data,
+- missing trading permissions,
+- an identical action already in progress,
+- missing re-authentication,
+- incomplete account or symbol selection,
+- critical close or cancel-all actions.
 
-## Idempotenz
+## Idempotency
 
-Riskante Live-Aktionen werden mit einem eindeutigen Key abgesichert. Dadurch sollen Browser-Retries oder Doppelklicks nicht versehentlich mehrere Live-Aktionen ausloesen.
+Risky live actions are protected with a unique key. This helps prevent browser retries or double-clicks from unintentionally triggering multiple live actions.
 
-## Position schliessen
+## Closing a Position
 
-Nach einem Close prueft der Server frische Live-Daten. Eine Position gilt intern erst als geschlossen, wenn kein Rest-Exposure mehr sichtbar ist. Falls noch Exposure existiert oder ein Read fehlschlaegt, bleibt der Status vorsichtig offen beziehungsweise pending.
+After a close action, the server reads fresh live data. A position is only considered internally closed when no remaining exposure is visible. If exposure remains or the read fails, the state stays conservative and may remain open or pending.
 
-## Risiko-Settings
+## Risk Settings
 
-Risk Controls koennen unter Einstellungen gepflegt werden. Typische Parameter:
+Risk controls can be managed in Settings. Common parameters include:
 
-- Tagesverlustgrenzen.
-- Margin-Schwellwerte.
-- erlaubte Ordertypen.
-- Rollen fuer Market- und Limit-Orders.
-- Workspace-Defaults fuer Trading und Bots.
+- Daily loss limits.
+- Margin thresholds.
+- Allowed order types.
+- Roles for market and limit orders.
+- Workspace defaults for trading and bots.
 
-## Notfallverhalten
+## Emergency Behavior
 
-Wenn Daten unsicher wirken:
+If data looks unsafe:
 
-1. Keine neuen Orders starten.
-2. Exchange UI direkt pruefen.
-3. Offene Orders und Positionen gegenpruefen.
-4. Account-Sync abwarten oder Operator informieren.
-5. Support-Paket mit Zeitstempel und Account-ID sammeln.
+1. Do not start new orders.
+2. Check the exchange UI directly.
+3. Cross-check open orders and positions.
+4. Wait for account sync or notify an operator.
+5. Collect a support package with timestamp and account ID.

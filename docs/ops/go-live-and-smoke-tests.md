@@ -1,69 +1,69 @@
 ---
-description: Kontrollierte Go-live Vorbereitung, Canary und Smoke-Test Checklisten.
+description: Controlled go-live preparation, canary rollout, and smoke-test checklists.
 icon: clipboard-check
 ---
 
-# Go-live und Smoke Tests
+# Go-live and Smoke Tests
 
-Go-live bedeutet bei uLiquid Desk nicht Big Bang. Nutze einen kontrollierten Canary mit kleinen Limits, klarer Beobachtung und einem Rollback-Pfad.
+For uLiquid Desk, go-live should not be a big-bang release. Use a controlled canary with small limits, clear observation, and a rollback path.
 
-## Vor Go-live
+## Before Go-live
 
-- Production-Secrets ausserhalb des Repos setzen.
-- Datenbankmigration auf Staging testen.
-- Fresh Install oder Docker-Build aus aktuellem Lockfile.
-- Caddy/API/Web Routing pruefen.
-- Admin- und User-Rollen testen.
-- Exchange-Accounts mit echten Read-Daten pruefen.
-- Wallet- und Funding-Flows mit kleinem Betrag testen.
-- Monitoring und Alertwege festlegen.
+- Set production secrets outside the repository.
+- Test database migration on staging.
+- Run a fresh install or Docker build from the current lockfile.
+- Check Caddy, API, and web routing.
+- Test admin and user roles.
+- Verify exchange accounts with real read data.
+- Test wallet and funding flows with small amounts.
+- Define monitoring and alert paths.
 
 ## Trading Smoke
 
-1. Accountdaten laden.
-2. Symbole laden.
-3. Market Data pruefen.
-4. Limit Order erstellen.
-5. Einzelne Order canceln.
-6. Cancel All testen.
-7. Kleine Position oeffnen.
-8. Position schliessen.
-9. Exchange UI gegen Desk UI abgleichen.
+1. Load account data.
+2. Load symbols.
+3. Check market data.
+4. Create a limit order.
+5. Cancel one order.
+6. Test cancel all.
+7. Open a small position.
+8. Close the position.
+9. Cross-check the exchange UI against the Trading Desk.
 
 ## Grid Bot Smoke
 
-1. Template Preview berechnen.
-2. Budget, Reserve und Liquidationsabstand pruefen.
-3. Funding-Quelle pruefen.
-4. BotVault Provisioning starten.
-5. Seed und Grid Placement beobachten.
-6. Runner-Status pruefen.
-7. Stop/Pause testen.
-8. Settlement- und Withdraw-Pfad separat pruefen.
+1. Calculate template preview.
+2. Check budget, reserve, and liquidation distance.
+3. Check funding source.
+4. Start BotVault provisioning.
+5. Observe seed and grid placement.
+6. Check runner status.
+7. Test stop or pause.
+8. Test settlement and withdrawal separately.
 
-## Wallet/Funding Smoke
+## Wallet and Funding Smoke
 
-- Wallet verbinden.
-- HyperEVM Netzwerk wechseln.
-- Arbitrum -> HyperCore Deposit.
-- HyperCore -> HyperEVM Transfer.
-- HyperEVM -> HyperCore Transfer.
-- Spot <-> Perps Umbuchung.
-- BotVault-Wallet funden.
-- Funding-Historie und Pending-Status pruefen.
+- Connect wallet.
+- Switch to HyperEVM.
+- Arbitrum -> HyperCore deposit.
+- HyperCore -> HyperEVM transfer.
+- HyperEVM -> HyperCore transfer.
+- Spot <-> Perps transfer.
+- Fund the BotVault wallet.
+- Check funding history and pending status.
 
 ## Admin Smoke
 
-- Login und E-Mail-Verifikation.
-- Passwort-Reset.
-- OTP/Re-Auth.
-- User-Rolle ohne Admin-Rechte.
-- Admin-Rolle mit erwarteten Rechten.
-- SMTP-Test.
-- Telegram-Test.
-- Audit-Eintrag nach kritischer Aktion.
+- Login and email verification.
+- Password reset.
+- OTP or re-authentication.
+- User role without admin rights.
+- Admin role with expected rights.
+- SMTP test.
+- Telegram test.
+- Audit entry after a critical action.
 
-## Verwandte interne Dokumente
+## Related Internal Documents
 
 - [Go-live Readiness Follow-ups](../go-live-readiness-followups.md)
 - [Trading Desk Go-live Status](../trading-desk-go-live-status.md)

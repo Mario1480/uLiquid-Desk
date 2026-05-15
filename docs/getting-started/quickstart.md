@@ -1,60 +1,60 @@
 ---
-description: Der schnellste Weg vom ersten Login bis zum kontrollierten Testlauf.
+description: The fastest path from first login to a controlled test run.
 icon: rocket
 ---
 
-# Schnellstart
+# Quickstart
 
-Dieser Ablauf ist fuer neue Nutzer und Operator gedacht, die uLiquid Desk sicher einrichten und zuerst kontrolliert testen moechten.
+This flow is for new users and operators who want to set up uLiquid Desk safely and test it in a controlled way before using live capital.
 
-## 1. Account und Workspace pruefen
+## 1. Check Your Account and Workspace
 
-Melde dich an und pruefe oben rechts deinen User. Falls du mehrere Workspaces nutzt, stelle sicher, dass du im richtigen Workspace arbeitest.
+Sign in and check your user menu in the top right. If you use multiple workspaces, make sure you are operating in the correct one.
 
 {% hint style="info" %}
-Viele Aktionen sind rollenbasiert. Wenn ein Menuepunkt fehlt oder ein Button deaktiviert ist, fehlen dir wahrscheinlich Berechtigungen fuer diesen Workspace.
+Many actions are role-based. If a menu item is missing or a button is disabled, you probably do not have the required permission in the current workspace.
 {% endhint %}
 
-## 2. Sicherheitssetup abschliessen
+## 2. Complete the Security Setup
 
-- Verifiziere deine E-Mail, falls erforderlich.
-- Richte OTP/Re-Auth ein, wenn sensible Aktionen dies verlangen.
-- Nutze fuer Admin- oder Trading-Rollen ein starkes Passwort.
-- Teile keine Session und keine Exchange-API-Keys.
+- Verify your email if required.
+- Set up OTP or re-authentication if sensitive actions require it.
+- Use a strong password for admin or trading roles.
+- Never share sessions or exchange API keys.
 
-## 3. Exchange-Account oder Wallet verbinden
+## 3. Connect an Exchange Account or Wallet
 
-Fuer manuelles Trading, Bots und Prognosen brauchst du in der Regel einen Exchange-Account. Fuer Funding, BotVaults und onchain Aktionen brauchst du eine Wallet.
+Manual trading, bots, and predictions usually need an exchange account. Funding, BotVaults, and onchain actions need a wallet.
 
-Empfohlene Reihenfolge:
+Recommended order:
 
-1. Exchange-Account in den Einstellungen anlegen.
-2. Account-Sync im Dashboard pruefen.
-3. Wallet verbinden, falls du Funding- oder Vault-Flows nutzt.
-4. HyperEVM-Netzwerkstatus pruefen.
+1. Create an exchange account in Settings.
+2. Confirm the account sync in the dashboard.
+3. Connect a wallet if you use funding or vault flows.
+4. Check the HyperEVM network status.
 
-## 4. Read-only Sicht pruefen
+## 4. Verify the Read-only View
 
-Oeffne das Dashboard und pruefe:
+Open the dashboard and check:
 
-- Exchange-Accounts sind verbunden.
-- Equity, Margin und PnL werden plausibel angezeigt.
-- Offene Positionen erscheinen korrekt.
-- Alerts sind leer oder nachvollziehbar.
-- Calendar, News und Prognosen laden ohne Fehler.
+- Exchange accounts are connected.
+- Equity, margin, and PnL look plausible.
+- Open positions are shown correctly.
+- Alerts are empty or understandable.
+- Calendar, news, and predictions load without errors.
 
-## 5. Erst Paper, dann Canary
+## 5. Paper First, Then Canary
 
-Bevor du Live-Kapital einsetzt:
+Before using live capital:
 
-- Starte einen Paper-/Demo-Flow.
-- Pruefe Order Submit, Cancel, Close und Refresh.
-- Nutze kleine Notional-Limits fuer den ersten Live-Canary.
-- Fuehre keine parallelen Browser-Tabs fuer kritische Trading-Aktionen im ersten Test.
+- Run a paper or demo flow.
+- Test order submit, cancel, close, and refresh.
+- Use small notional limits for the first live canary.
+- Avoid parallel browser tabs for critical trading actions during the first test.
 
-## 6. Naechste Seiten
+## 6. Next Pages
 
-- [Account, Login und Sicherheit](account-login-security.md)
-- [Dashboard und Exchange-Accounts](../user-guide/dashboard-and-accounts.md)
-- [Trading Desk und Risiko](../user-guide/trading-desk-and-risk.md)
-- [Wallet, Funding und Vaults](../user-guide/wallet-funding-and-vaults.md)
+- [Account, Login, and Security](account-login-security.md)
+- [Dashboard and Exchange Accounts](../user-guide/dashboard-and-accounts.md)
+- [Trading Desk and Risk](../user-guide/trading-desk-and-risk.md)
+- [Wallet, Funding, and Vaults](../user-guide/wallet-funding-and-vaults.md)

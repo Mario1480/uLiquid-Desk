@@ -1,58 +1,58 @@
 ---
-description: Admin-Konsole, Plattformbereiche und Workspace-Einstellungen.
+description: Admin console, platform areas, and workspace settings.
 icon: settings
 ---
 
-# Admin-Konsole und Einstellungen
+# Admin Console and Settings
 
-Die Admin-Konsole ist fuer Plattform- und Workspace-Verwaltung gedacht. Sichtbarkeit und Aktionen haengen von Rolle, Berechtigungen und Feature-Freischaltungen ab.
+The admin console is for platform and workspace management. Visibility and actions depend on role, permissions, and feature availability.
 
-## Zentrale Admin-Bereiche
+## Main Admin Areas
 
-- Users und Workspaces.
-- Rollen und Permissions.
-- Exchange- und API-Key-Verwaltung.
-- Bots, Grid Templates und Runner.
-- Prediction Defaults und AI Prompts.
-- SMTP, Telegram und Notifications.
-- Billing, Lizenzen und Feature Gates.
-- Audit, Alerts und Server-Info.
-- Vault Execution, Vault Operations und Vault Safety.
+- Users and workspaces.
+- Roles and permissions.
+- Exchange and API key management.
+- Bots, grid templates, and runners.
+- Prediction defaults and AI prompts.
+- SMTP, Telegram, and notifications.
+- Billing, licenses, and feature gates.
+- Audit, alerts, and server info.
+- Vault execution, vault operations, and vault safety.
 
-## Einstellungen
+## Settings
 
-In den Workspace-Einstellungen werden operative Defaults gepflegt:
+Workspace settings manage operational defaults:
 
-- Exchange-Accounts.
-- Risiko-Settings.
-- Globale Defaults.
+- Exchange accounts.
+- Risk settings.
+- Global defaults.
 - Notifications.
 - Affiliate.
 - Subscription.
 - Audit.
 - Setup.
 
-## Aenderungen sicher vornehmen
+## Make Changes Safely
 
-1. Aktuellen Zustand dokumentieren.
-2. Nur eine kritische Einstellung auf einmal aendern.
-3. Speichern und Rueckmeldung pruefen.
-4. Dashboard und betroffene Feature-Seite neu laden.
-5. Bei Trading-/Bot-Settings einen kleinen Smoke-Test ausfuehren.
+1. Record the current state.
+2. Change only one critical setting at a time.
+3. Save and check the response.
+4. Reload the dashboard and affected feature page.
+5. For trading or bot settings, run a small smoke test.
 
-## AI- und Prediction-Admin
+## AI and Prediction Admin
 
-AI-Prompts, Prediction Defaults, Refresh-Trigger und Trace Logs beeinflussen Signalqualitaet und Kosten. Aendere sie nur, wenn du die Auswirkungen auf bestehende Prognosen kennst.
+AI prompts, prediction defaults, refresh triggers, and trace logs affect signal quality and cost. Change them only when you understand the impact on existing predictions.
 
 ## Grid Templates
 
-Grid Templates bestimmen, welche Startparameter Nutzer im Grid-Katalog sehen. Vor dem Veröffentlichen:
+Grid templates control the launch parameters users see in the grid catalog. Before publishing:
 
-- Preview mit realistischem Budget pruefen.
-- Symbol und Venue Constraints pruefen.
-- Risiko- und Schwierigkeitslabel setzen.
-- Profitshare und Templatebeschreibung kontrollieren.
+- Test the preview with a realistic budget.
+- Check symbol and venue constraints.
+- Set risk and difficulty labels.
+- Review profitshare and template description.
 
-## Wartungsmodus
+## Maintenance Mode
 
-Wenn Wartung aktiv ist, bleiben Admin-Zugriffe moeglich, normale User koennen aber eingeschraenkt werden. Kommuniziere geplante Wartungen vorab.
+When maintenance mode is active, admin access can remain available while normal users may be restricted. Communicate planned maintenance ahead of time.

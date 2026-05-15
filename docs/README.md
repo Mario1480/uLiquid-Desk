@@ -1,69 +1,69 @@
 ---
-description: User-Dokumentation und Knowledge Base fuer uLiquid Desk.
+description: User documentation and knowledge base for uLiquid Desk.
 icon: book-open
 ---
 
 # uLiquid Desk Knowledge Base
 
-Willkommen in der uLiquid Desk Dokumentation. Diese Knowledge Base erklaert die wichtigsten Workflows fuer Dashboard, Exchange-Accounts, manuelles Trading, Prognosen, Bots, Grid Bots, Wallet, Funding, Vaults, Admin-Funktionen und Support.
+Welcome to the uLiquid Desk documentation. This knowledge base explains the core workflows for the dashboard, exchange accounts, manual trading, predictions, bots, grid bots, wallet, funding, vaults, admin operations, and support.
 
 {% hint style="warning" %}
-uLiquid Desk ist ein Trading- und Automatisierungswerkzeug. Pruefe jede Order, jedes Funding und jede Bot-Konfiguration selbst. Diese Dokumentation ist keine Finanzberatung.
+uLiquid Desk is a trading and automation tool. Always review every order, funding action, and bot configuration yourself. This documentation is not financial advice.
 {% endhint %}
 
-## Schnell starten
+## Quick Start
 
-1. Account erstellen oder einloggen.
-2. Workspace und Rolle pruefen.
-3. Exchange-Account oder Wallet verbinden.
-4. Erst im Paper-/Testmodus pruefen.
-5. Danach einzelne Live-Flows mit kleinen Limits testen.
+1. Create an account or sign in.
+2. Check your workspace and role.
+3. Connect an exchange account or wallet.
+4. Test first in paper or demo mode.
+5. Move to small live canaries only after the test flow is clear.
 
-## Bereiche
+## Main Areas
 
 <table data-view="cards">
   <thead>
     <tr>
-      <th>Bereich</th>
-      <th>Wofuer du ihn nutzt</th>
+      <th>Area</th>
+      <th>What it is for</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td><a href="getting-started/quickstart.md">Erste Schritte</a></td>
-      <td>Setup-Reihenfolge, Login, Rollen, Sicherheitsgrundlagen.</td>
+      <td><a href="getting-started/quickstart.md">Getting Started</a></td>
+      <td>Setup order, login, roles, and security basics.</td>
     </tr>
     <tr>
       <td><a href="user-guide/dashboard-and-accounts.md">Dashboard & Accounts</a></td>
-      <td>Kontostatus, offene Positionen, Alerts und Exchange-Accounts.</td>
+      <td>Account status, open positions, alerts, and exchange accounts.</td>
     </tr>
     <tr>
-      <td><a href="user-guide/trading-desk-and-risk.md">Trading Desk & Risiko</a></td>
-      <td>Manuelle Orders, Positionen, Guardrails und Notfallverhalten.</td>
+      <td><a href="user-guide/trading-desk-and-risk.md">Trading Desk & Risk</a></td>
+      <td>Manual orders, positions, guardrails, and emergency behavior.</td>
     </tr>
     <tr>
-      <td><a href="user-guide/signals-and-automation.md">Signale & Automatisierung</a></td>
-      <td>Prognosen, Strategien, normale Bots und Grid Bots.</td>
+      <td><a href="user-guide/signals-and-automation.md">Signals & Automation</a></td>
+      <td>Predictions, strategies, standard bots, and grid bots.</td>
     </tr>
     <tr>
       <td><a href="user-guide/wallet-funding-and-vaults.md">Wallet, Funding & Vaults</a></td>
-      <td>Wallet verbinden, Hyperliquid Transfers, Funding Vaults und BotVaults.</td>
+      <td>Connect wallets, move assets, fund vaults, and run BotVault flows.</td>
     </tr>
     <tr>
       <td><a href="support/troubleshooting-and-faq.md">Support & FAQ</a></td>
-      <td>Fehlerbilder, Diagnoseinfos und haeufige Fragen.</td>
+      <td>Common issues, diagnostics, and frequent questions.</td>
     </tr>
   </tbody>
 </table>
 
-## Gute Arbeitsweise
+## Good Operating Habits
 
-- Nutze fuer neue Setups zuerst Paper- oder Canary-Flows.
-- Aendere nur eine kritische Einstellung auf einmal.
-- Halte Screenshots, Uhrzeit, Workspace, Account und Bot-/Grid-ID fuer Supportfaelle bereit.
-- Starte Live-Bots nur, wenn Accountdaten, Margin, Funding und Berechtigungen sicher angezeigt werden.
-- Verwende fuer Exchange-API-Keys keine Withdrawal-Rechte.
+- Use paper or canary flows for every new setup.
+- Change only one critical setting at a time.
+- Keep screenshots, timestamps, workspace names, account labels, and bot or grid IDs for support cases.
+- Start live bots only when account data, margin, funding, and permissions are clearly shown as ready.
+- Do not grant withdrawal permissions to exchange API keys used by uLiquid Desk.
 
-## GitBook und GitHub
+## GitBook and GitHub
 
-Diese Doku ist fuer GitBook Git Sync vorbereitet. GitBook nutzt `docs/README.md` als Startseite, `docs/SUMMARY.md` als Navigation und `.gitbook.yaml` im Repo-Root als Sync-Konfiguration.
+This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.md` as the homepage, `docs/SUMMARY.md` as the navigation, and `.gitbook.yaml` in the repository root as the sync configuration.

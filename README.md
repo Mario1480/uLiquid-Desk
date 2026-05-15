@@ -24,12 +24,12 @@ Mehr Architektur-Kontext:
 - `docs/ts-python-grid-contract.md`
 - `docs/regression-matrix.md`
 
-User-Dokumentation / Knowledge Base:
+User documentation / Knowledge Base:
 
-- GitBook Einstieg: `docs/README.md`
+- GitBook entry point: `docs/README.md`
 - GitBook Navigation: `docs/SUMMARY.md`
-- GitBook Sync-Konfiguration: `.gitbook.yaml`
-- GitBook AI-Kontext fuer lokale Docs-Edits: `skill.md`
+- GitBook sync configuration: `.gitbook.yaml`
+- GitBook AI context for local docs edits: `skill.md`
 
 ## Package Manager
 

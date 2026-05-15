@@ -1,57 +1,57 @@
 ---
-description: Benutzer, Rollen und Berechtigungen im Workspace verwalten.
+description: Manage workspace users, roles, and permissions.
 icon: user-cog
 ---
 
-# Benutzer, Rollen und Berechtigungen
+# Users, Roles, and Permissions
 
-Rollen steuern, welche Bereiche ein User sehen und welche Aktionen er ausfuehren darf. Arbeite nach Least Privilege: Jeder User bekommt nur die Rechte, die er wirklich braucht.
+Roles control which areas a user can see and which actions they can run. Use least privilege: each user should receive only the permissions they actually need.
 
-## Rollen pflegen
+## Manage Roles
 
-1. Admin-Bereich oeffnen.
-2. Users oder Roles waehlen.
-3. User oder Rolle auswaehlen.
-4. Permissions pruefen.
-5. Aenderung speichern.
-6. Betroffenen User testen lassen.
+1. Open the admin area.
+2. Select Users or Roles.
+3. Choose the user or role.
+4. Review permissions.
+5. Save the change.
+6. Ask the affected user to verify access.
 
-## Kritische Permissions
+## Critical Permissions
 
-Besonders sensibel sind Rechte fuer:
+Be especially careful with permissions for:
 
-- manuelle Market-Orders,
-- manuelle Limit-Orders,
-- Exchange-Key-Verwaltung,
-- Rollen- und User-Administration,
-- Billing und Lizenzen,
-- Vault- und Funding-Operationen,
-- Admin API Keys,
-- AI Prompt- und Strategy-Konfiguration.
+- manual market orders,
+- manual limit orders,
+- exchange key management,
+- role and user administration,
+- billing and licenses,
+- vault and funding operations,
+- admin API keys,
+- AI prompt and strategy configuration.
 
-## Empfohlene Rollenverteilung
+## Recommended Role Split
 
-| Rolle | Empfehlung |
+| Role | Recommendation |
 | --- | --- |
-| Superadmin | Nur fuer Plattformbetreiber und Break-glass. |
-| Admin | Workspace-Verantwortliche, nicht fuer jeden Operator. |
-| Operator | Trading-/Bot-Betrieb ohne globale Admin-Rechte. |
-| Viewer | Monitoring, Reporting und Support ohne Mutationen. |
+| Superadmin | Only for platform owners and break-glass access. |
+| Admin | Workspace owners, not every operator. |
+| Operator | Trading and bot operation without global admin rights. |
+| Viewer | Monitoring, reporting, and support without mutations. |
 
-## Nach Teamwechseln
+## After Team Changes
 
-- User entfernen oder Rolle reduzieren.
-- Exchange-Keys rotieren, falls Zugriff bestand.
-- API-Keys und Webhooks pruefen.
-- Audit auf ungewoehnliche Aktionen pruefen.
+- Remove the user or reduce their role.
+- Rotate exchange keys if they had access.
+- Review API keys and webhooks.
+- Check audit logs for unusual actions.
 
-## Permission-Probleme erkennen
+## Recognize Permission Problems
 
-Typische Anzeichen:
+Common signs:
 
-- Button fehlt.
-- Button ist deaktiviert.
-- API liefert `403 permission_required`.
-- Feature erscheint nicht in der Navigation.
+- A button is missing.
+- A button is disabled.
+- The API returns `403 permission_required`.
+- A feature does not appear in navigation.
 
-Pruefe dann Workspace, Rolle, Feature Gate und Ownership.
+Check workspace, role, feature gate, and ownership.

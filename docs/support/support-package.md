@@ -1,69 +1,69 @@
 ---
-description: Welche Informationen Support oder Operatoren fuer eine schnelle Analyse brauchen.
+description: What support or operators need for a fast investigation.
 icon: package-check
 ---
 
-# Support-Paket sammeln
+# Collect a Support Package
 
-Ein gutes Support-Paket spart Zeit und verhindert Missverstaendnisse. Sammle bei jedem Vorfall moeglichst konkrete Informationen.
+A good support package saves time and prevents misunderstandings. For every incident, collect specific information whenever possible.
 
-## Mindestinformationen
+## Minimum Information
 
-- Workspace-Name oder Workspace-ID.
-- User-E-Mail oder User-ID.
-- Zeitpunkt mit Zeitzone.
-- Betroffene Seite.
-- Aktion, die ausgefuehrt wurde.
-- Erwartetes Ergebnis.
-- Tatsaechliches Ergebnis.
-- Screenshot oder Bildschirmaufnahme.
+- Workspace name or workspace ID.
+- User email or user ID.
+- Timestamp with timezone.
+- Affected page.
+- Action that was performed.
+- Expected result.
+- Actual result.
+- Screenshot or screen recording.
 
-## Trading-Faelle
+## Trading Cases
 
-Zusaetzlich:
+Also include:
 
 - Exchange.
-- Exchange-Account Label oder ID.
+- Exchange account label or ID.
 - Symbol.
-- Ordertyp.
+- Order type.
 - Side.
-- Menge, Preis, Leverage.
-- Order-ID oder Client-ID, falls vorhanden.
-- Position vor und nach der Aktion.
-- Screenshot aus Exchange UI, falls Live.
+- Size, price, and leverage.
+- Order ID or client ID, if available.
+- Position before and after the action.
+- Screenshot from the exchange UI if live capital was involved.
 
-## Bot- und Grid-Faelle
+## Bot and Grid Cases
 
-Zusaetzlich:
+Also include:
 
-- Bot-ID oder Grid-Instance-ID.
-- Template-ID.
-- Runner-Status.
-- letzter Fehlertext.
-- Preview-Status und Warning Codes.
-- Funding- oder BotVault-ID.
+- Bot ID or grid instance ID.
+- Template ID.
+- Runner status.
+- Last error text.
+- Preview status and warning codes.
+- Funding or BotVault ID.
 
-## Wallet- und Funding-Faelle
+## Wallet and Funding Cases
 
-Zusaetzlich:
+Also include:
 
-- Wallet-Adresse.
-- Netzwerk.
-- Tx-Hash.
-- Asset und Betrag.
-- Quelle und Ziel.
-- Pending- oder Confirmed-Status.
-- Balance vor und nach dem Flow.
+- Wallet address.
+- Network.
+- Transaction hash.
+- Asset and amount.
+- Source and destination.
+- Pending or confirmed status.
+- Balance before and after the flow.
 
-## Admin-/Security-Faelle
+## Admin and Security Cases
 
-Zusaetzlich:
+Also include:
 
-- Rolle des Users.
-- erwartete Permission.
-- Audit-Eintrag, falls vorhanden.
-- Fehlermeldung wie `403`, `429`, `invalid_or_expired_code`.
+- User role.
+- Expected permission.
+- Audit entry, if available.
+- Error message such as `403`, `429`, or `invalid_or_expired_code`.
 
 {% hint style="info" %}
-Teile niemals API-Secrets, Private Keys, Seed Phrases oder OTP-Codes im Support-Paket.
+Never share API secrets, private keys, seed phrases, or OTP codes in a support package.
 {% endhint %}

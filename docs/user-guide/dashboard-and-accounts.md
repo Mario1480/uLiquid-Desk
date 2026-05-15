@@ -1,52 +1,52 @@
 ---
-description: Dashboard, Account-Karten, Alerts und Exchange-Account Einrichtung.
+description: Dashboard, account cards, alerts, and exchange account setup.
 icon: gauge
 ---
 
-# Dashboard und Exchange-Accounts
+# Dashboard and Exchange Accounts
 
-Das Dashboard ist die operative Startseite. Es zeigt Kontostatus, Performance, offene Positionen, Alerts, Wallet-Snapshot, Bots, Grid Bots, Kalender und News.
+The dashboard is the operational home screen. It shows account status, performance, open positions, alerts, wallet snapshot, bots, grid bots, calendar, and news.
 
-## Dashboard lesen
+## Read the Dashboard
 
-Pruefe zuerst die Account-Karten:
+Start with the account cards:
 
-- Status: verbunden, eingeschraenkt oder getrennt.
-- Letzte Synchronisierung.
-- Equity, verfuegbare Margin und heutiges PnL.
-- Offene Positionen und Bot-/Prediction-Aktivitaet.
-- Alerts oder Fehlerhinweise.
+- Status: connected, degraded, or disconnected.
+- Last synchronization.
+- Equity, available margin, and today's PnL.
+- Open positions and bot or prediction activity.
+- Alerts or error hints.
 
-Wenn Daten eingeschraenkt sind, sollten riskante Aktionen nicht gestartet werden.
+If data is degraded, do not start risky actions until the cause is understood.
 
-## Exchange-Account anlegen
+## Create an Exchange Account
 
-1. Oeffne **Einstellungen**.
-2. Wechsle zu **Exchange-Accounts**.
-3. Lege einen neuen Account an.
-4. Waehle Exchange, Label und benoetigte Credentials.
-5. Speichere nach Re-Auth.
-6. Pruefe den Account im Dashboard.
+1. Open **Settings**.
+2. Go to **Exchange Accounts**.
+3. Create a new account.
+4. Select the exchange, label, and required credentials.
+5. Save after re-authentication.
+6. Check the account in the dashboard.
 
-## API-Key Mindestregeln
+## API Key Minimum Rules
 
-- Keine Withdrawal-Rechte aktivieren.
-- Nur benoetigte Trading- und Read-Rechte vergeben.
-- IP-Whitelist pflegen, falls genutzt.
-- Einen klaren Namen pro Workspace/Umgebung verwenden.
+- Do not enable withdrawal permissions.
+- Grant only the trading and read permissions that are required.
+- Maintain IP allowlists if used.
+- Use a clear name for each workspace or environment.
 
-## Typische Statusmeldungen
+## Common Status Messages
 
-| Status | Bedeutung | Naechster Schritt |
+| Status | Meaning | Next step |
 | --- | --- | --- |
-| Verbunden | Daten werden erfolgreich gelesen. | Normal weiterarbeiten. |
-| Eingeschraenkt | Mindestens eine Datenquelle ist unsicher oder teilweise ausgefallen. | Keine neuen Live-Aktionen starten, Ursache pruefen. |
-| Getrennt | Account kann nicht gelesen werden. | API-Key, Exchange, Netzwerk und Berechtigungen pruefen. |
+| Connected | Data is being read successfully. | Continue normally. |
+| Degraded | At least one data source is unsafe or partially unavailable. | Do not start new live actions; investigate the cause. |
+| Disconnected | The account cannot be read. | Check API key, exchange, network, and permissions. |
 
-## Offene Positionen
+## Open Positions
 
-Die Positionsuebersicht zeigt Side, Groesse, Entry, Stop Loss, Take Profit und PnL. Bei degradierter Market-Data-Lage bleiben letzte sichere Daten sichtbar und Trading-Aktionen koennen blockiert sein.
+The positions view shows side, size, entry, stop loss, take profit, and PnL. When market data is degraded, the last safe data can remain visible and trading actions may be blocked.
 
-## News und Kalender
+## News and Calendar
 
-Der Wirtschaftskalender und Markt-News helfen, Marktphasen einzuordnen. Sie ersetzen keine eigene Risikoentscheidung.
+The economic calendar and market news help you understand market context. They do not replace your own risk decision.

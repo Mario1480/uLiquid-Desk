@@ -1,83 +1,83 @@
 ---
-description: Haeufige Fehlerbilder, Diagnose und Antworten auf Standardfragen.
+description: Common issues, diagnostics, and answers to frequent questions.
 icon: life-buoy
 ---
 
-# Troubleshooting und FAQ
+# Troubleshooting and FAQ
 
-## Daten fehlen oder laden nicht
+## Data Is Missing or Not Loading
 
-Pruefe:
+Check:
 
-- API Health.
-- Internet- und Browser-Verbindung.
-- Exchange-Account Status.
-- Letzte Synchronisierung.
-- Runner-Status.
-- Websocket-Verbindung.
-- Rollen und Workspace.
+- API health.
+- Internet and browser connection.
+- Exchange account status.
+- Last synchronization.
+- Runner status.
+- Websocket connection.
+- Role and workspace.
 
-Wenn nur einzelne Bereiche betroffen sind, pruefe die jeweilige Feature-Seite und Alerts.
+If only one area is affected, check that feature page and its alerts.
 
-## Trading-Button ist deaktiviert
+## A Trading Button Is Disabled
 
-Moegliche Ursachen:
+Possible causes:
 
-- fehlende Permission,
-- Re-Auth erforderlich,
-- degradiertes Live-Data-Signal,
-- keine Exchange-Account-Auswahl,
-- Symbol fehlt,
-- laufende Aktion,
-- Wartungsmodus,
-- Feature nicht freigeschaltet.
+- missing permission,
+- re-authentication required,
+- degraded live-data signal,
+- no exchange account selected,
+- missing symbol,
+- action already in progress,
+- maintenance mode,
+- feature not enabled.
 
-## Order wurde abgelehnt
+## An Order Was Rejected
 
-Pruefe:
+Check:
 
-- Exchange-Key Rechte.
-- Symbol und Market Type.
-- Mindestnotional und Mindestmenge.
-- Margin und Hebel.
-- offene Gegenorders.
-- Exchange-spezifische Fehlermeldung.
-- Rate Limits.
+- Exchange key permissions.
+- Symbol and market type.
+- Minimum notional and minimum quantity.
+- Margin and leverage.
+- Open opposing orders.
+- Exchange-specific error message.
+- Rate limits.
 
-## Grid Bot startet nicht
+## A Grid Bot Will Not Start
 
-Pruefe:
+Check:
 
-- Template Preview ist bereit.
-- Budget reicht fuer Mindestinvestment.
-- Liquidationsabstand ist nicht blockiert.
-- Funding Vault oder Wallet hat genug USDC.
-- HYPE fuer Gas ist vorhanden.
-- BotVault Provisioning ist nicht pending.
-- Runner ist aktiv.
+- Template preview is ready.
+- Budget meets the minimum investment.
+- Liquidation distance is not blocked.
+- Funding Vault or wallet has enough USDC.
+- HYPE is available for gas.
+- BotVault provisioning is not pending.
+- Runner is active.
 
-## Wallet-Aktion bleibt pending
+## A Wallet Action Stays Pending
 
-Manche Funding-Flows bestaetigen erst, wenn die Zielbalance erreicht ist. Warte auf Indexer/Balance-Refresh und starte denselben Flow nicht mehrfach.
+Some funding flows confirm only when the destination balance is reached. Wait for indexer or balance refresh and do not start the same flow repeatedly.
 
 ## FAQ
 
-### Fuehrt eine Prognose automatisch Trades aus?
+### Does a prediction execute trades automatically?
 
-Nein. Prognosen koennen den Trading Desk vorfuellen. Die Order muss separat geprueft und bestaetigt werden.
+No. Predictions can prefill the Trading Desk. The order must still be reviewed and confirmed separately.
 
-### Braucht ein Exchange-Key Withdrawal-Rechte?
+### Does an exchange key need withdrawal permissions?
 
-Nein. Withdrawal-Rechte sollten nicht aktiviert werden.
+No. Withdrawal permissions should not be enabled.
 
-### Warum sehe ich einen Admin-Menuepunkt nicht?
+### Why can I not see an admin menu item?
 
-Entweder fehlt die Rolle, das Feature Gate ist aus, oder du bist im falschen Workspace.
+Either the role is missing, the feature gate is off, or you are in the wrong workspace.
 
-### Warum stimmen Exchange UI und uLiquid Desk kurzzeitig nicht ueberein?
+### Why do the exchange UI and uLiquid Desk briefly disagree?
 
-Exchange APIs, Websockets, Indexer und interne Reconciliation koennen leicht unterschiedliche Timings haben. Bei Abweichungen keine neuen Live-Aktionen starten und gegen die Exchange UI pruefen.
+Exchange APIs, websockets, indexers, and internal reconciliation can have slightly different timing. If values differ, do not start new live actions and check the exchange UI directly.
 
-### Was ist ein Canary?
+### What is a canary?
 
-Ein kleiner Live-Test mit begrenztem Kapital, klarem Scope und engem Monitoring.
+A small live test with limited capital, clear scope, and close monitoring.

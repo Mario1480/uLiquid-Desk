@@ -1,13 +1,13 @@
 ---
-description: Orientierung fuer bestehende technische und operative Dokumente im Repo.
+description: Orientation for existing technical and operational documents in the repository.
 icon: folder-tree
 ---
 
-# Interner Dokumentenindex
+# Internal Documentation Index
 
-Diese Seite verlinkt bestehende technische und operative Repo-Dokumente. Sie ergaenzt die User-KB und ist vor allem fuer Admins, Operatoren und Entwickler gedacht.
+This page links existing technical and operational repository documents. It complements the user knowledge base and is mainly intended for admins, operators, and developers.
 
-## Go-live und Readiness
+## Go-live and Readiness
 
 - [Go-live Master Plan](../go-live-master-plan.md)
 - [Go-live Readiness Follow-ups](../go-live-readiness-followups.md)
@@ -19,7 +19,7 @@ Diese Seite verlinkt bestehende technische und operative Repo-Dokumente. Sie erg
 - [Wallet & Funding Go-live Status](../wallet-funding-go-live-status.md)
 - [Dashboard, Calendar & News Go-live Status](../dashboard-calendar-news-go-live-status.md)
 
-## Trading, Bots und Grid
+## Trading, Bots, and Grid
 
 - [Manual Trading Desk](../manual-trading-desk.md)
 - [Grid Capital and Safety](../grid-capital-and-safety.md)
@@ -30,7 +30,7 @@ Diese Seite verlinkt bestehende technische und operative Repo-Dokumente. Sie erg
 - [Composite Strategy Execution](../composite-strategy-execution.md)
 - [Local Strategy Registry](../local-strategy-registry.md)
 
-## Vaults und Onchain
+## Vaults and Onchain
 
 - [Vault Architecture](../vault-architecture.md)
 - [Vault Lifecycle](../vault-lifecycle.md)
@@ -40,7 +40,7 @@ Diese Seite verlinkt bestehende technische und operative Repo-Dokumente. Sie erg
 - [BotVault Capital State Machine](../botvault-capital-state-machine.md)
 - [Onchain Deploy Security Checklist](../onchain-deploy-security-checklist.md)
 
-## AI und Predictions
+## AI and Predictions
 
 - [AI Evaluation Framework](../ai-evaluation-framework.md)
 - [AI Prompt](../ai-prompt.md)
@@ -48,7 +48,7 @@ Diese Seite verlinkt bestehende technische und operative Repo-Dokumente. Sie erg
 - [Prediction Evaluator](../prediction-evaluator.md)
 - [Prediction Refresh Scheduler](../prediction-refresh-scheduler.md)
 
-## Betrieb und Deployment
+## Operations and Deployment
 
 - [Production Deploy](../PRODUCTION_DEPLOY.md)
 - [Smoke Test](../SMOKE_TEST.md)
@@ -57,7 +57,7 @@ Diese Seite verlinkt bestehende technische und operative Repo-Dokumente. Sie erg
 - [Caddy Migration](../CADDY_MIGRATION.md)
 - [Regression Matrix](../regression-matrix.md)
 
-## Produkt und UX
+## Product and UX
 
 - [Frontend Information Architecture](../frontend-information-architecture.md)
 - [Demo Flows](../demo-flows.md)

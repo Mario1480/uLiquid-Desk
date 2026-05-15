@@ -1,15 +1,15 @@
 ---
-description: Runtime, lokale Entwicklung, Production und GitBook Sync.
+description: Runtime, local development, production, and GitBook Sync.
 icon: server
 ---
 
-# Runtime und Deployment
+# Runtime and Deployment
 
-Diese Seite ist eine kompakte Orientierung fuer Admins und Entwickler, die die User-Dokumentation mit Betriebskontext verbinden muessen.
+This page gives admins and developers a compact orientation for connecting the user documentation with operational context.
 
-## Lokale Entwicklung
+## Local Development
 
-Das Repo nutzt npm Workspaces. Fuer lokale Entwicklung:
+The repository uses npm Workspaces. For local development:
 
 ```bash
 npm install --workspaces --include-workspace-root --legacy-peer-deps
@@ -18,7 +18,7 @@ npm run dev:api
 npm run dev:web
 ```
 
-Standardziele:
+Default targets:
 
 - Web: `http://localhost:3000`
 - API: `http://localhost:4000`
@@ -26,7 +26,7 @@ Standardziele:
 
 ## Production
 
-Production nutzt Web, API, Runner, PostgreSQL, Redis und Caddy. Details stehen in:
+Production uses web, API, runner, PostgreSQL, Redis, and Caddy. Details are available in:
 
 - [Production Deploy](../PRODUCTION_DEPLOY.md)
 - [Configuration](../configuration.md)
@@ -34,29 +34,29 @@ Production nutzt Web, API, Runner, PostgreSQL, Redis und Caddy. Details stehen i
 
 ## Health Checks
 
-Vor operativen Tests pruefen:
+Before operational tests, check:
 
 - API `/health`.
-- Web erreichbar.
-- DB und Redis verbunden.
-- Runner aktiv.
-- Exchange APIs erreichbar.
-- Python Strategy Service erreichbar, falls Grid/Strategy Preview genutzt wird.
+- Web is reachable.
+- DB and Redis are connected.
+- Runner is active.
+- Exchange APIs are reachable.
+- Python Strategy Service is reachable if grid or strategy preview is used.
 
 ## GitBook Sync
 
-Dieses Repo ist fuer GitBook Git Sync vorbereitet:
+This repository is prepared for GitBook Git Sync:
 
-- `.gitbook.yaml` liegt im Repo-Root.
-- `root` zeigt auf `./docs/`.
-- `docs/README.md` ist die Startseite.
-- `docs/SUMMARY.md` ist die Sidebar.
-- `skill.md` liegt im Repo-Root als GitBook-AI-Kontext fuer lokale Docs-Bearbeitung.
+- `.gitbook.yaml` is in the repository root.
+- `root` points to `./docs/`.
+- `docs/README.md` is the homepage.
+- `docs/SUMMARY.md` is the sidebar.
+- `skill.md` is in the repository root as GitBook AI context for local documentation edits.
 
-Bei neuen Seiten:
+For new pages:
 
-1. Markdown-Datei unter `docs/` anlegen.
-2. Relative Links verwenden.
-3. Seite in `docs/SUMMARY.md` eintragen.
-4. Frontmatter mit `description` und optional `icon` setzen.
-5. Links lokal pruefen.
+1. Create the Markdown file under `docs/`.
+2. Use relative links.
+3. Add the page to `docs/SUMMARY.md`.
+4. Set frontmatter with `description` and optionally `icon`.
+5. Check links locally.
