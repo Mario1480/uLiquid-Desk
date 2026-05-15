@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl";
 import { AppIcon } from "../components/AppIcon";
 
-const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL?.trim() || "https://docs.uliquid.vip";
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL?.trim() || "https://uliquid-1.gitbook.io/uliquid-docs/";
 
 const HELP_SECTION_KEYS = [
   { id: "getting-started", key: "gettingStarted", lines: 2 },
