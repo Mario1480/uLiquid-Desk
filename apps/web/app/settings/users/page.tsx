@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 
 export default function UsersPage() {
   const t = useTranslations("settings.users");
@@ -200,10 +201,11 @@ export default function UsersPage() {
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
           </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button className="btn btnPrimary" onClick={savePassword} disabled={!currentPassword || !newPassword}>
-              {t("password.submit")}
-            </button>
+	          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+	            <button className="btn btnPrimary" onClick={savePassword} disabled={!currentPassword || !newPassword}>
+	              <AppIcon name="key" />
+	              {t("password.submit")}
+	            </button>
             <span style={{ fontSize: 12, opacity: 0.7 }}>{pwdStatus}</span>
           </div>
           {pwdError ? <div style={{ fontSize: 12, color: "#ff6b6b" }}>{pwdError}</div> : null}
@@ -251,13 +253,15 @@ export default function UsersPage() {
             </label>
           ) : null}
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn btnPrimary" onClick={saveSecuritySettings} disabled={securityLoading || securitySaving}>
-            {securitySaving ? tCommon("saving") : tCommon("saveSettings")}
-          </button>
-          <button className="btn" onClick={loadSecuritySettings} disabled={securityLoading || securitySaving}>
-            {securityLoading ? tCommon("loading") : tCommon("reload")}
-          </button>
+	        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+	          <button className="btn btnPrimary" onClick={saveSecuritySettings} disabled={securityLoading || securitySaving}>
+	            <AppIcon name="save" />
+	            {securitySaving ? tCommon("saving") : tCommon("saveSettings")}
+	          </button>
+	          <button className="btn" onClick={loadSecuritySettings} disabled={securityLoading || securitySaving}>
+	            <AppIcon name="refresh" />
+	            {securityLoading ? tCommon("loading") : tCommon("reload")}
+	          </button>
         </div>
         {securityMsg ? (
           <div style={{ marginTop: 10, color: "var(--muted)" }}>{securityMsg}</div>
@@ -282,10 +286,11 @@ export default function UsersPage() {
               placeholder={t("reset.emailPlaceholder")}
             />
           </label>
-          <div>
-            <button className="btn" onClick={() => void requestResetCode()} disabled={!resetEmail}>
-              {t("reset.sendCode")}
-            </button>
+	          <div>
+	            <button className="btn" onClick={() => void requestResetCode()} disabled={!resetEmail}>
+	              <AppIcon name="mail" />
+	              {t("reset.sendCode")}
+	            </button>
           </div>
           <label style={{ fontSize: 13 }}>
             {t("reset.code")}
@@ -320,11 +325,12 @@ export default function UsersPage() {
           <div>
             <button
               className="btn btnPrimary"
-              onClick={() => void confirmResetPassword()}
-              disabled={!resetEmail || resetCode.length !== 6 || resetNewPassword.length < 8}
-            >
-              {t("reset.submit")}
-            </button>
+	              onClick={() => void confirmResetPassword()}
+	              disabled={!resetEmail || resetCode.length !== 6 || resetNewPassword.length < 8}
+	            >
+	              <AppIcon name="key" />
+	              {t("reset.submit")}
+	            </button>
           </div>
           {resetStatus ? <div style={{ fontSize: 12, color: "var(--muted)" }}>{resetStatus}</div> : null}
           {resetDevCode ? (

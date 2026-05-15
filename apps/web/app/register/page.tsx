@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { ApiError, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../components/AppIcon";
 
 function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
   if (e instanceof ApiError) {
@@ -173,14 +174,17 @@ export default function RegisterPage() {
               type="submit"
               disabled={step === "register" ? (!email || password.length < 8) : (!email || code.length !== 6)}
             >
+              <AppIcon name={step === "register" ? "register" : "check"} />
               {step === "register" ? t("registerButton") : t("verifyEmailButton")}
             </button>
             {step === "verify" ? (
               <button className="btn" type="button" disabled={!email} onClick={() => void resendCode()}>
+                <AppIcon name="mail" />
                 {t("resendVerificationCode")}
               </button>
             ) : null}
             <Link href={withLocalePath("/login", locale)} className="btn">
+              <AppIcon name="back" />
               {t("backToLogin")}
             </Link>
             <span className="authStatus">{status}</span>

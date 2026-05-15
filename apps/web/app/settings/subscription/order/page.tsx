@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
+import { AppIcon } from "../../../components/AppIcon";
 import {
   buildOrderPageModel,
   centsToCurrency,
@@ -246,12 +247,13 @@ export default function SubscriptionOrderPage() {
             </div>
 
             <div className="subscriptionOrderSection">
-              <div className="subscriptionOrderSectionHead">
-                <div className="subscriptionOrderSectionTitle">{t("order.capacityAddonsTitle")}</div>
-                {selectedAddonUnits > 0 ? (
-                  <button type="button" className="btn" onClick={resetAddons}>
-                    {t("order.clearCapacityAddons")}
-                  </button>
+	              <div className="subscriptionOrderSectionHead">
+	                <div className="subscriptionOrderSectionTitle">{t("order.capacityAddonsTitle")}</div>
+	                {selectedAddonUnits > 0 ? (
+	                  <button type="button" className="btn" onClick={resetAddons}>
+	                    <AppIcon name="reset" />
+	                    {t("order.clearCapacityAddons")}
+	                  </button>
                 ) : null}
               </div>
               <div className="subscriptionPortalMuted">
@@ -282,20 +284,20 @@ export default function SubscriptionOrderPage() {
                           <button
                             type="button"
                             className="btn"
-                            onClick={() => setAddonQuantity(pkg.id, quantity - 1)}
-                            aria-label={`decrease ${pkg.name}`}
-                          >
-                            -
-                          </button>
+	                            onClick={() => setAddonQuantity(pkg.id, quantity - 1)}
+	                            aria-label={`decrease ${pkg.name}`}
+	                          >
+	                            <AppIcon name="remove" />
+	                          </button>
                           <span className="subscriptionAddonQuantityValue">{quantity}</span>
                           <button
                             type="button"
                             className="btn"
-                            onClick={() => setAddonQuantity(pkg.id, quantity + 1)}
-                            aria-label={`increase ${pkg.name}`}
-                          >
-                            +
-                          </button>
+	                            onClick={() => setAddonQuantity(pkg.id, quantity + 1)}
+	                            aria-label={`increase ${pkg.name}`}
+	                          >
+	                            <AppIcon name="add" />
+	                          </button>
                         </div>
                       </div>
                     );
@@ -340,11 +342,12 @@ export default function SubscriptionOrderPage() {
                   <button
                     type="button"
                     className="btn btnPrimary subscriptionOrderPayButton"
-                    onClick={() => void startCartCheckout()}
-                    disabled={checkoutLoading || cartItems.length === 0 || !payload?.billingEnabled}
-                  >
-                    {checkoutLoading ? t("order.redirecting") : t("order.payWithCrypto")}
-                  </button>
+	                    onClick={() => void startCartCheckout()}
+	                    disabled={checkoutLoading || cartItems.length === 0 || !payload?.billingEnabled}
+	                  >
+	                    <AppIcon name="billing" />
+	                    {checkoutLoading ? t("order.redirecting") : t("order.payWithCrypto")}
+	                  </button>
                 </>
               ) : (
                 <div className="subscriptionPortalMuted">{t("order.selectPackageFirst")}</div>

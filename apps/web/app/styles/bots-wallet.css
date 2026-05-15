@@ -3292,6 +3292,9 @@
   position: absolute;
   right: 14px;
   top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 0;
   background: transparent;
   color: var(--color-brand-secondary);

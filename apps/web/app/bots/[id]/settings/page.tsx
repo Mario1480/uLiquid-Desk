@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
 import SymbolSearchSelect from "../../../../components/SymbolSearchSelect";
+import { AppIcon } from "../../../components/AppIcon";
 
 type StrategyKey = "dummy" | "prediction_copier";
 type ExecutionModeValue = "simple" | "dca" | "grid" | "dip_reversion";
@@ -697,10 +698,11 @@ export default function BotSettingsPage() {
           <div className="botsSetupHeaderCopy">
             <h2 style={{ margin: 0 }}>{t("title")}</h2>
             <div className="botsSetupSubtitle">{t("description")}</div>
-          </div>
-          <Link className="btn" href={withLocalePath(`/bots/${id}`, locale)}>
-            {t("actions.back")}
-          </Link>
+	          </div>
+	          <Link className="btn" href={withLocalePath(`/bots/${id}`, locale)}>
+	            <AppIcon name="back" />
+	            {t("actions.back")}
+	          </Link>
         </div>
 
         <div className="card botsSetupSection">
@@ -1054,13 +1056,15 @@ export default function BotSettingsPage() {
             </label>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn" type="button" onClick={() => void onStartBacktest()} disabled={backtestSubmitting}>
-              {backtestSubmitting ? t("backtestStarting") : t("startBacktest")}
-            </button>
-            <button className="btn" type="button" onClick={() => void loadBacktestRuns()} disabled={backtestLoading || backtestSubmitting}>
-              {backtestLoading ? t("backtestLoading") : t("refreshBacktests")}
-            </button>
+	        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+	          <button className="btn" type="button" onClick={() => void onStartBacktest()} disabled={backtestSubmitting}>
+	            <AppIcon name="play" />
+	            {backtestSubmitting ? t("backtestStarting") : t("startBacktest")}
+	          </button>
+	          <button className="btn" type="button" onClick={() => void loadBacktestRuns()} disabled={backtestLoading || backtestSubmitting}>
+	            <AppIcon name="refresh" />
+	            {backtestLoading ? t("backtestLoading") : t("refreshBacktests")}
+	          </button>
           </div>
 
           {backtestError ? (
@@ -1088,12 +1092,13 @@ export default function BotSettingsPage() {
                       </div>
                     ) : null}
                     {row.error ? <div style={{ color: "#ef4444", fontSize: 12 }}>{row.error}</div> : null}
-                    {canCancel ? (
-                      <div>
-                        <button className="btn" type="button" onClick={() => void onCancelBacktest(row.runId)} disabled={backtestSubmitting}>
-                          {t("cancelBacktest")}
-                        </button>
-                      </div>
+	                    {canCancel ? (
+	                      <div>
+	                        <button className="btn" type="button" onClick={() => void onCancelBacktest(row.runId)} disabled={backtestSubmitting}>
+	                          <AppIcon name="cancel" />
+	                          {t("cancelBacktest")}
+	                        </button>
+	                      </div>
                     ) : null}
                   </div>
                 );
@@ -1102,13 +1107,15 @@ export default function BotSettingsPage() {
           </div>
         </div>
 
-        <div className="botsSetupActionRow">
-          <Link className="btn" href={withLocalePath(`/bots/${id}`, locale)}>
-            {t("actions.back")}
-          </Link>
-          <button className="btn btnPrimary" type="submit" disabled={saving}>
-            {saving ? t("saving") : t("save")}
-          </button>
+	        <div className="botsSetupActionRow">
+	          <Link className="btn" href={withLocalePath(`/bots/${id}`, locale)}>
+	            <AppIcon name="back" />
+	            {t("actions.back")}
+	          </Link>
+	          <button className="btn btnPrimary" type="submit" disabled={saving}>
+	            <AppIcon name="save" />
+	            {saving ? t("saving") : t("save")}
+	          </button>
         </div>
       </form>
     </div>

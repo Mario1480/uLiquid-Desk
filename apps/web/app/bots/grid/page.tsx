@@ -11,6 +11,7 @@ import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDet
 import { GridClaimDialog, GridMarginDialog } from "../../../components/grid/GridQuickActionDialogs";
 import type { GridFillsResponse, GridInstance } from "../../../components/grid/types";
 import { MetricTile, Notice, PageHeader, Section } from "../../components/ui";
+import { AppIcon } from "../../components/AppIcon";
 import {
   buildGridCycles,
   computeGridUnrealizedPnl,
@@ -295,6 +296,7 @@ function GridBotsDashboardPageContent() {
             {tCommon("licenseGate.body", { feature: "Grid bots" })}
           </div>
           <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
+            <AppIcon name="subscription" />
             {tCommon("licenseGate.cta")}
           </Link>
         </div>
@@ -364,7 +366,10 @@ function GridBotsDashboardPageContent() {
         title={tGrid("title")}
         description={tGrid("dashboardSubtitle")}
         actions={
-          <Link href={withLocalePath("/bots/catalog", locale)} className="btn btnPrimary">{tGrid("newInstance")}</Link>
+          <Link href={withLocalePath("/bots/catalog", locale)} className="btn btnPrimary">
+            <AppIcon name="create" />
+            {tGrid("newInstance")}
+          </Link>
         }
       />
 
@@ -532,12 +537,9 @@ function GridBotsDashboardPageContent() {
                                 label={tGrid("quickClaimOpen")}
                                 onClick={() => openClaimDialog(instance)}
                                 disabled={busyInstanceAction !== null}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                                  <path d="M3 11L11 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                                  <path d="M5 3H11V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                              </QuickActionIconButton>
+	                              >
+	                                <AppIcon name="withdraw" />
+	                              </QuickActionIconButton>
                             ) : null}
                           </div>
                           <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatAdaptiveNumber(gridProfit)} {stablecoinLabel}</strong>
@@ -577,12 +579,9 @@ function GridBotsDashboardPageContent() {
                                 label={tGrid("quickMarginOpen")}
                                 onClick={() => openMarginDialog(instance)}
                                 disabled={busyInstanceAction !== null || instance.state === "archived" || instance.state === "stopped"}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                                  <path d="M7 2V12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                                  <path d="M2 7H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                                </svg>
-                              </QuickActionIconButton>
+	                              >
+	                                <AppIcon name="add" />
+	                              </QuickActionIconButton>
                             ) : null}
                           </div>
                           <strong>{formatNumber(instance.extraMarginUsd, 2)} {stablecoinLabel}</strong>
@@ -603,25 +602,28 @@ function GridBotsDashboardPageContent() {
                         className="btn btnPause"
                         onClick={() => void runInstanceAction(instance, toggleAction)}
                         disabled={toggleDisabled}
-                      >
-                        {busyInstanceAction === `${instance.id}:${toggleAction}` ? tGrid("loadingInstances") : toggleLabel}
-                      </button>
+	                      >
+	                        <AppIcon name={toggleAction === "resume" ? "play" : "pause"} />
+	                        {busyInstanceAction === `${instance.id}:${toggleAction}` ? tGrid("loadingInstances") : toggleLabel}
+	                      </button>
                       <button
                         type="button"
                         className="btn"
                         onClick={() => void runInstanceAction(instance, "stop")}
                         disabled={stopDisabled}
-                      >
-                        {busyInstanceAction === `${instance.id}:stop` ? tGrid("loadingInstances") : tInstance("stop")}
-                      </button>
+	                      >
+	                        <AppIcon name="stop" />
+	                        {busyInstanceAction === `${instance.id}:stop` ? tGrid("loadingInstances") : tInstance("stop")}
+	                      </button>
                       <button
                         type="button"
                         className="btn btnStop"
                         onClick={() => void runInstanceAction(instance, "end")}
                         disabled={endDisabled}
-                      >
-                        {busyInstanceAction === `${instance.id}:end` ? tGrid("loadingInstances") : tInstance("end")}
-                      </button>
+	                      >
+	                        <AppIcon name="archive" />
+	                        {busyInstanceAction === `${instance.id}:end` ? tGrid("loadingInstances") : tInstance("end")}
+	                      </button>
                     </div>
                   </div>
                 );

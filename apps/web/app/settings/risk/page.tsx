@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 
 type RiskLimits = {
   dailyLossWarnPct: number;
@@ -246,12 +247,14 @@ export default function SettingsRiskPage() {
                     </label>
                   ))}
 
-                  <div className="settingsRiskActions" role="cell">
-                    <button className="btn btnPrimary" type="button" onClick={() => void saveRow(item.exchangeAccountId)} disabled={saving}>
-                      {saving ? tCommon("saving") : t("save")}
-                    </button>
-                    <button className="btn" type="button" onClick={() => resetRow(item.exchangeAccountId)} disabled={saving}>
-                      {t("reset")}
+	                  <div className="settingsRiskActions" role="cell">
+	                    <button className="btn btnPrimary" type="button" onClick={() => void saveRow(item.exchangeAccountId)} disabled={saving}>
+	                      <AppIcon name="save" />
+	                      {saving ? tCommon("saving") : t("save")}
+	                    </button>
+	                    <button className="btn" type="button" onClick={() => resetRow(item.exchangeAccountId)} disabled={saving}>
+	                      <AppIcon name="reset" />
+	                      {t("reset")}
                     </button>
                     {rowMessages[item.exchangeAccountId] ? (
                       <div className="settingsRiskRowMessage">{rowMessages[item.exchangeAccountId]}</div>

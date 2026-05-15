@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
+import { AppIcon } from "../../app/components/AppIcon";
 import { PageHeader, Section } from "../../app/components/ui";
 
 type AccountAsset = {
@@ -171,6 +172,7 @@ export default function AccountAssetsClient() {
             onClick={() => void query.refetch()}
             disabled={query.isFetching}
           >
+            <AppIcon name="refresh" />
             {query.isFetching ? t("actions.refreshing") : t("actions.refresh")}
           </button>
         )}

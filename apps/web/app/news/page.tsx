@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
+import { AppIcon } from "../components/AppIcon";
 import { PageHeader } from "../components/ui";
 
 type NewsMode = "all" | "crypto" | "general";
@@ -178,6 +179,7 @@ export default function NewsPage() {
             className="btn newsProTabRefresh"
             onClick={() => void load()}
           >
+            <AppIcon name="refresh" />
             {t("actions.refresh")}
           </button>
         </div>

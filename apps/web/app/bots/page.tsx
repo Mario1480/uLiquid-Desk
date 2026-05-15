@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { getBotStartStopUi } from "../../src/bots/controls";
+import { AppIcon } from "../components/AppIcon";
 import { MetricTile, Notice, PageHeader } from "../components/ui";
 
 type BotOverviewItem = {
@@ -182,7 +183,10 @@ function BotsPageContent() {
         title={`${t("title")}${titleSuffix}`}
         description={statusFilter ? t("statusFilter", { status: statusFilter }) : t("allStatuses")}
         actions={
-          <Link href="/bots/new" className="btn btnPrimary">{t("actions.newBot")}</Link>
+          <Link href="/bots/new" className="btn btnPrimary">
+            <AppIcon name="create" />
+            {t("actions.newBot")}
+          </Link>
         }
       />
 
@@ -209,7 +213,10 @@ function BotsPageContent() {
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
               {t("emptyHint")}
             </div>
-            <Link href="/bots/new" className="btn btnPrimary">{t("actions.createBot")}</Link>
+            <Link href="/bots/new" className="btn btnPrimary">
+              <AppIcon name="create" />
+              {t("actions.createBot")}
+            </Link>
           </div>
         ) : (
           bots.map((bot) => {
@@ -304,29 +311,35 @@ function BotsPageContent() {
                 </div>
               </div>
 
-              <div className="botCardActions">
-                <Link href={`/bots/${bot.id}`} className="btn">{t("actions.open")}</Link>
-                <button
-                  className={startStopUi.startClassName}
-                  onClick={() => void startBot(bot)}
-                  disabled={startStopUi.startDisabled}
-                >
-                  {startStopUi.startLabel}
-                </button>
+	              <div className="botCardActions">
+	                <Link href={`/bots/${bot.id}`} className="btn">
+	                  <AppIcon name="open" />
+	                  {t("actions.open")}
+	                </Link>
+	                <button
+	                  className={startStopUi.startClassName}
+	                  onClick={() => void startBot(bot)}
+	                  disabled={startStopUi.startDisabled}
+	                >
+	                  <AppIcon name="play" />
+	                  {startStopUi.startLabel}
+	                </button>
                 <button
                   className={startStopUi.stopClassName}
-                  onClick={() => void stopBot(bot)}
-                  disabled={startStopUi.stopDisabled}
-                >
-                  {startStopUi.stopLabel}
-                </button>
+	                  onClick={() => void stopBot(bot)}
+	                  disabled={startStopUi.stopDisabled}
+	                >
+	                  <AppIcon name="stop" />
+	                  {startStopUi.stopLabel}
+	                </button>
                 <button
                   className="btn btnStop"
-                  onClick={() => void removeBot(bot)}
-                  disabled={busy != null}
-                >
-                  {busy === "delete" ? t("actions.deleting") : t("actions.delete")}
-                </button>
+	                  onClick={() => void removeBot(bot)}
+	                  disabled={busy != null}
+	                >
+	                  <AppIcon name="delete" />
+	                  {busy === "delete" ? t("actions.deleting") : t("actions.delete")}
+	                </button>
               </div>
             </article>
           );

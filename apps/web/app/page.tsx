@@ -14,6 +14,7 @@ import { useLocale, useTranslations } from "next-intl";
 import ExchangeAccountOverviewCard, {
 type ExchangeAccountOverview
 } from "./components/ExchangeAccountOverviewCard";
+import { AppIcon } from "./components/AppIcon";
 import AlertsFeed, { type DashboardAlert } from "../components/dashboard/AlertsFeed";
 import DashboardWidgetFrame from "../components/dashboard/DashboardWidgetFrame";
 import type { GridInstance } from "../components/grid/types";
@@ -1218,6 +1219,7 @@ export default function Page() {
 
               <div className="dashboardLossAnalysisFooter">
                 <Link href={withLocalePath("/settings/risk", locale)} className="btn">
+                  <AppIcon name="risk" />
                   {t("lossAnalysis.openRiskSettings")}
                 </Link>
               </div>
@@ -1233,7 +1235,10 @@ export default function Page() {
         <div className="card dashboardInsightCard dashboardCalendarProCard dashboardWidgetCardFill">
           <div className="dashboardCalendarProHead">
             <div className="dashboardCalendarProTitle">{t("calendar.title")}</div>
-            <Link href={withLocalePath("/calendar", locale)} className="btn">{t("calendar.open")}</Link>
+            <Link href={withLocalePath("/calendar", locale)} className="btn">
+              <AppIcon name="calendar" />
+              {t("calendar.open")}
+            </Link>
           </div>
           <div className="dashboardWidgetScrollArea">
             {calendarLoadError ? (
@@ -1276,7 +1281,10 @@ export default function Page() {
         <div className="card dashboardInsightCard dashboardNewsProCard dashboardWidgetCardFill">
           <div className="dashboardNewsProHead">
             <div className="dashboardNewsProTitle">{t("news.title")}</div>
-            <Link href={withLocalePath("/news", locale)} className="btn">{t("news.open")}</Link>
+            <Link href={withLocalePath("/news", locale)} className="btn">
+              <AppIcon name="news" />
+              {t("news.open")}
+            </Link>
           </div>
           <div className="dashboardWidgetScrollArea">
             {newsLoadError ? (
@@ -1352,7 +1360,10 @@ export default function Page() {
               <p style={{ color: "var(--muted)", marginTop: 0 }}>
                 {t("empty.description")}
               </p>
-              <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">{t("empty.cta")}</Link>
+              <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
+                <AppIcon name="settings" />
+                {t("empty.cta")}
+              </Link>
             </div>
           ) : (
             <div className="exchangeOverviewGrid">
@@ -1379,6 +1390,7 @@ export default function Page() {
               <div className="dashboardBotOverviewSubtitle">{t("botsOverview.subtitle")}</div>
             </div>
             <Link href={withLocalePath("/bots", locale)} className="btn">
+              <AppIcon name="bots" />
               {t("botsOverview.open")}
             </Link>
           </div>
@@ -1493,6 +1505,7 @@ export default function Page() {
               <div className="dashboardBotOverviewSubtitle">{t("gridBotsOverview.subtitle")}</div>
             </div>
             <Link href={withLocalePath("/bots/grid", locale)} className="btn">
+              <AppIcon name="gridBots" />
               {t("gridBotsOverview.open")}
             </Link>
           </div>
@@ -1607,6 +1620,7 @@ export default function Page() {
               <div className="dashboardAffiliateProfitshareSubtitle">{t("affiliateProfitshare.subtitle")}</div>
             </div>
             <Link href={withLocalePath("/settings/affiliate", locale)} className="btn">
+              <AppIcon name="money" />
               {t("affiliateProfitshare.open")}
             </Link>
           </div>
@@ -2048,12 +2062,15 @@ export default function Page() {
             {isEditMode ? (
               <>
                 <button type="button" className="btn btnPrimary" onClick={() => void handleSaveLayout()} disabled={layoutSaving}>
+                  <AppIcon name="save" />
                   {layoutSaving ? builderT("saving") : builderT("save")}
                 </button>
                 <button type="button" className="btn" onClick={handleDiscardLayout} disabled={layoutSaving}>
+                  <AppIcon name="cancel" />
                   {builderT("discard")}
                 </button>
                 <button type="button" className="btn" onClick={handleRestoreDefaultLayout} disabled={layoutSaving}>
+                  <AppIcon name="restore" />
                   {builderT("restoreDefault")}
                 </button>
                 <div className="dashboardBuilderAddWidgetWrap">
@@ -2063,6 +2080,7 @@ export default function Page() {
                     onClick={() => setAddWidgetMenuOpen((current) => !current)}
                     disabled={layoutSaving}
                   >
+                    <AppIcon name="add" />
                     {builderT("addWidget")}
                   </button>
                   {addWidgetMenuOpen ? (
@@ -2087,6 +2105,7 @@ export default function Page() {
               </>
             ) : (
               <button type="button" className="btn" onClick={handleStartEdit} disabled={!canEditLayout || layoutLoading}>
+                <AppIcon name="edit" />
                 {canEditLayout ? builderT("edit") : builderT("editDisabledMobile")}
               </button>
             )}

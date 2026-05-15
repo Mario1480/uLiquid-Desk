@@ -11,6 +11,7 @@ import {
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
+import { AppIcon } from "../components/AppIcon";
 import Web3Providers from "../components/Web3Providers";
 
 type SubscriptionFeatureResponse = {
@@ -40,10 +41,11 @@ export default function VaultsPage() {
           <h2 style={{ marginTop: 0 }}>Vaults</h2>
           <div className="walletMutedText" style={{ marginBottom: 12 }}>
             {tCommon("licenseGate.body", { feature: "Vaults" })}
-          </div>
-          <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
-            {tCommon("licenseGate.cta")}
-          </Link>
+	          </div>
+	          <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
+	            <AppIcon name="subscription" />
+	            {tCommon("licenseGate.cta")}
+	          </Link>
         </div>
       </div>
     );

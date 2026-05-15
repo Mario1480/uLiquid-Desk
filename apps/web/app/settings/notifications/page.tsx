@@ -7,6 +7,7 @@ import {
   formatTelegramLinkExpiry,
   type TelegramLinkStatus
 } from "../../../src/telegram/linking";
+import { AppIcon } from "../../components/AppIcon";
 
 type CalendarImpact = "low" | "medium" | "high";
 type CalendarTimezoneMode = "device" | "manual";
@@ -307,9 +308,10 @@ export default function NotificationsPage() {
               href={linkStatus.connectUrl}
               target="_blank"
               rel="noreferrer"
-            >
-              {t("telegram.openBot")}
-            </a>
+	            >
+	              <AppIcon name="external" />
+	              {t("telegram.openBot")}
+	            </a>
           ) : null}
         </div>
         <div style={{ color: "var(--muted)", marginBottom: 10 }}>
@@ -346,22 +348,26 @@ export default function NotificationsPage() {
               {t("telegram.botHandle", { username: `@${botUsername}` })}
             </div>
           ) : null}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn btnPrimary" type="button" onClick={startTelegramLink} disabled={!tokenConfigured || linking}>
-              {linking ? tCommon("saving") : t("telegram.connect")}
-            </button>
-            {linkStatus.connectUrl ? (
-              <a className="btn" href={linkStatus.connectUrl} target="_blank" rel="noreferrer">
-                {t("telegram.openBot")}
-              </a>
-            ) : null}
-            <button className="btn" type="button" onClick={refreshTelegramLinkStatus} disabled={refreshingLink}>
-              {refreshingLink ? tCommon("loading") : t("telegram.refreshStatus")}
-            </button>
-            {linkStatus.status === "connected" ? (
-              <button className="btn" type="button" onClick={disconnectTelegram} disabled={unlinking}>
-                {unlinking ? tCommon("saving") : t("telegram.disconnect")}
-              </button>
+	          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+	            <button className="btn btnPrimary" type="button" onClick={startTelegramLink} disabled={!tokenConfigured || linking}>
+	              <AppIcon name="telegram" />
+	              {linking ? tCommon("saving") : t("telegram.connect")}
+	            </button>
+	            {linkStatus.connectUrl ? (
+	              <a className="btn" href={linkStatus.connectUrl} target="_blank" rel="noreferrer">
+	                <AppIcon name="external" />
+	                {t("telegram.openBot")}
+	              </a>
+	            ) : null}
+	            <button className="btn" type="button" onClick={refreshTelegramLinkStatus} disabled={refreshingLink}>
+	              <AppIcon name="refresh" />
+	              {refreshingLink ? tCommon("loading") : t("telegram.refreshStatus")}
+	            </button>
+	            {linkStatus.status === "connected" ? (
+	              <button className="btn" type="button" onClick={disconnectTelegram} disabled={unlinking}>
+	                <AppIcon name="unlink" />
+	                {unlinking ? tCommon("saving") : t("telegram.disconnect")}
+	              </button>
             ) : null}
           </div>
         </div>
@@ -490,13 +496,15 @@ export default function NotificationsPage() {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          <button className="btn btnPrimary" onClick={saveConfig} disabled={saving}>
-            {saving ? tCommon("saving") : tCommon("saveSettings")}
-          </button>
-          <button className="btn" onClick={sendTest} disabled={sending}>
-            {sending ? t("messages.sending") : t("messages.sendTest")}
-          </button>
+	        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+	          <button className="btn btnPrimary" onClick={saveConfig} disabled={saving}>
+	            <AppIcon name="save" />
+	            {saving ? tCommon("saving") : tCommon("saveSettings")}
+	          </button>
+	          <button className="btn" onClick={sendTest} disabled={sending}>
+	            <AppIcon name="send" />
+	            {sending ? t("messages.sending") : t("messages.sendTest")}
+	          </button>
         </div>
         {msg ? (
           <div style={{ marginTop: 10, color: "var(--muted)" }}>{msg}</div>

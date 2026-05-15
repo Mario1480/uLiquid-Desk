@@ -24,6 +24,7 @@ import {
 } from "./chartTypes";
 import { TradeChart } from "./TradeChart";
 import SymbolSearchSelect, { type SymbolSearchOption } from "../../components/SymbolSearchSelect";
+import { AppIcon } from "../components/AppIcon";
 import { Notice, PageHeader } from "../components/ui";
 
 type ExchangeAccountItem = {
@@ -1882,10 +1883,11 @@ function TradePageContent() {
               onClick={() => {
                 if (!selectedAccountId) return;
                 void loadDeskData(selectedAccountId, selectedSymbol);
-              }}
-            >
-              {t("actions.retry")}
-            </button>
+	              }}
+	            >
+	              <AppIcon name="refresh" />
+	              {t("actions.retry")}
+	            </button>
           </div>
         </Notice>
       ) : null}
@@ -1933,11 +1935,15 @@ function TradePageContent() {
               <button
                 className="btn"
                 type="button"
-                onClick={() => setPrefillContextExpanded((prev) => !prev)}
-              >
-                {prefillContextExpanded ? t("prefill.hideContext") : t("prefill.showContext")}
-              </button>
-              <button className="btn" onClick={clearPrefill} type="button">{t("prefill.clearPrefill")}</button>
+	                onClick={() => setPrefillContextExpanded((prev) => !prev)}
+	              >
+	                <AppIcon name="detail" />
+	                {prefillContextExpanded ? t("prefill.hideContext") : t("prefill.showContext")}
+	              </button>
+	              <button className="btn" onClick={clearPrefill} type="button">
+	                <AppIcon name="reset" />
+	                {t("prefill.clearPrefill")}
+	              </button>
             </div>
           </div>
           <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
@@ -2049,7 +2055,10 @@ function TradePageContent() {
           <div style={{ color: "var(--muted)", marginBottom: 12 }}>
             {t("noAccountsHint")}
           </div>
-          <Link href="/settings" className="btn btnPrimary">{t("actions.addExchangeAccount")}</Link>
+	          <Link href="/settings" className="btn btnPrimary">
+	            <AppIcon name="settings" />
+	            {t("actions.addExchangeAccount")}
+	          </Link>
         </div>
       ) : (
         <>
@@ -2435,10 +2444,11 @@ function TradePageContent() {
                       className="btn btnStart"
                       style={activePrefill?.side === "long" ? { boxShadow: "0 0 0 2px rgba(16,185,129,.45) inset" } : undefined}
                       disabled={isSubmitting || tradingDataBlocked}
-                      onClick={() => void submitOrder("long")}
-                      type="button"
-                    >
-                      {isSubmitting
+	                      onClick={() => void submitOrder("long")}
+	                      type="button"
+	                    >
+	                      <AppIcon name="play" />
+	                      {isSubmitting
                         ? t("actions.submitting")
                         : entryMode === "open"
                           ? t("actions.openLong")
@@ -2449,10 +2459,11 @@ function TradePageContent() {
                       className="btn btnStop"
                       style={activePrefill?.side === "short" ? { boxShadow: "0 0 0 2px rgba(239,68,68,.45) inset" } : undefined}
                       disabled={isSubmitting || tradingDataBlocked}
-                      onClick={() => void submitOrder("short")}
-                      type="button"
-                    >
-                      {isSubmitting
+	                      onClick={() => void submitOrder("short")}
+	                      type="button"
+	                    >
+	                      <AppIcon name="play" />
+	                      {isSubmitting
                         ? t("actions.submitting")
                         : entryMode === "open"
                           ? t("actions.openShort")
@@ -2465,10 +2476,11 @@ function TradePageContent() {
                     <button
                       className={`btn ${spotOrderSide === "buy" ? "btnStart" : "btnStop"}`}
                       disabled={tradingDataBlocked || isSubmitting || (spotOrderSide === "sell" && (!spotBaseAvailable || spotBaseAvailable <= 0))}
-                      onClick={() => void submitOrder(spotOrderSide)}
-                      type="button"
-                    >
-                      {isSubmitting
+	                      onClick={() => void submitOrder(spotOrderSide)}
+	                      type="button"
+	                    >
+	                      <AppIcon name={spotOrderSide === "buy" ? "deposit" : "withdraw"} />
+	                      {isSubmitting
                         ? t("actions.submitting")
                         : spotOrderSide === "buy"
                           ? t("actions.buy")
@@ -2495,11 +2507,12 @@ function TradePageContent() {
                 <button
                   className="btn"
                   disabled={tradingDataBlocked || isCancelAllPending}
-                  onClick={() => void cancelAll()}
-                  type="button"
-                >
-                  {isCancelAllPending ? t("actions.cancelling") : t("actions.cancelAll")} ({selectedSymbol})
-                </button>
+	                  onClick={() => void cancelAll()}
+	                  type="button"
+	                >
+	                  <AppIcon name="cancel" />
+	                  {isCancelAllPending ? t("actions.cancelling") : t("actions.cancelAll")} ({selectedSymbol})
+	                </button>
 
                 <div className="tradeOrderDivider" />
 
@@ -3279,11 +3292,11 @@ function TradePageContent() {
               <button
                 type="button"
                 className="tradeModalCloseBtn"
-                onClick={() => setIsQtyModeModalOpen(false)}
-                aria-label={t("actions.close")}
-              >
-                ×
-              </button>
+	                onClick={() => setIsQtyModeModalOpen(false)}
+	                aria-label={t("actions.close")}
+	              >
+	                <AppIcon name="close" />
+	              </button>
             </div>
 
             <div className="tradeModalOptions">

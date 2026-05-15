@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import ReauthDialog from "../../components/ReauthDialog";
 import { ApiError, apiGet, apiPost, apiPut, apiDel } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 
 const PERMISSIONS = [
   { key: "bots.view", labelKey: "botsView" },
@@ -273,13 +274,14 @@ export default function RolesPage() {
                         </option>
                       ))}
                     </select>
-                    <button
-                      className="btn btnStop"
-                      onClick={() => removeMember(m.id)}
-                      disabled={!canManageMembers || savingMemberId === m.id}
-                    >
-                      {t("members.remove")}
-                    </button>
+	                    <button
+	                      className="btn btnStop"
+	                      onClick={() => removeMember(m.id)}
+	                      disabled={!canManageMembers || savingMemberId === m.id}
+	                    >
+	                      <AppIcon name="delete" />
+	                      {t("members.remove")}
+	                    </button>
                   </>
                 )}
               </div>
@@ -315,10 +317,11 @@ export default function RolesPage() {
                 onChange={(e) => setInviteResetPassword(e.target.checked)}
               />
               {t("members.inviteResetPassword")}
-            </label>
-            <button className="btn btnPrimary" onClick={invite} disabled={!inviteEmail || !inviteRoleId}>
-              {t("members.invite")}
-            </button>
+	            </label>
+	            <button className="btn btnPrimary" onClick={invite} disabled={!inviteEmail || !inviteRoleId}>
+	              <AppIcon name="mail" />
+	              {t("members.invite")}
+	            </button>
           </div>
         ) : (
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
@@ -350,10 +353,11 @@ export default function RolesPage() {
               />
               {role.isSystem ? (
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("roles.systemRole")}</span>
-              ) : (
-                <button className="btn btnStop" disabled={!canManage} onClick={() => deleteRole(role.id)}>
-                  {t("roles.delete")}
-                </button>
+	              ) : (
+	                <button className="btn btnStop" disabled={!canManage} onClick={() => deleteRole(role.id)}>
+	                  <AppIcon name="delete" />
+	                  {t("roles.delete")}
+	                </button>
               )}
             </div>
             <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
@@ -381,10 +385,11 @@ export default function RolesPage() {
             value={newRoleName}
             onChange={(e) => setNewRoleName(e.target.value)}
             placeholder={t("roles.namePlaceholder")}
-          />
-          <button className="btn btnPrimary" style={{ marginTop: 8 }} onClick={createRole}>
-            {t("roles.create")}
-          </button>
+	          />
+	          <button className="btn btnPrimary" style={{ marginTop: 8 }} onClick={createRole}>
+	            <AppIcon name="create" />
+	            {t("roles.create")}
+	          </button>
           {status ? <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{status}</div> : null}
         </div>
       ) : null}

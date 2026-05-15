@@ -6,28 +6,12 @@ import { useAccount, useDisconnect } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { TARGET_CHAIN, TARGET_CHAIN_ID, TARGET_CHAIN_NAME, isWeb3ModalReady, wagmiConfig } from "../../lib/web3/config";
 import { getWeb3ModalInitState, openWeb3Modal } from "../../lib/web3/modal";
+import { AppIcon } from "./AppIcon";
 import Web3Providers from "./Web3Providers";
 
 function shortAddress(value: string | undefined): string {
   if (!value) return "";
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
-}
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M7 10l5 5 5-5" />
-    </svg>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <rect x="9" y="9" width="10" height="10" rx="2" />
-      <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
 }
 
 function WalletConnectionWidgetContent({
@@ -149,7 +133,7 @@ function WalletConnectionWidgetContent({
         aria-expanded={isConnected ? menuOpen : undefined}
       >
         <span className="appHeaderWalletTriggerLabel">{buttonLabel}</span>
-        {isConnected ? <span className="appHeaderChevron" aria-hidden="true"><ChevronIcon /></span> : null}
+        {isConnected ? <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span> : null}
       </button>
       {isConnected && menuOpen ? (
         <div className="appHeaderMenuPanel appHeaderWalletPanel" role="menu">
@@ -170,7 +154,7 @@ function WalletConnectionWidgetContent({
                 title={copied ? tWallet("copied") : tWallet("copyAddress")}
                 aria-label={copied ? tWallet("copied") : tWallet("copyAddress")}
               >
-                <CopyIcon />
+                <AppIcon name="copy" />
               </button>
             </div>
           </div>
@@ -186,6 +170,7 @@ function WalletConnectionWidgetContent({
               className="appHeaderMenuLink"
               onClick={() => setMenuOpen(false)}
             >
+              <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="external" /></span>
               <span>{tWallet("address")}</span>
               <span className="appHeaderWalletPanelLink">{tWallet("explorer")}</span>
             </a>
@@ -198,6 +183,7 @@ function WalletConnectionWidgetContent({
               disabled={isSwitchPending}
               role="menuitem"
             >
+              <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="switch" /></span>
               <span>{isSwitchPending ? tWallet("statusSwitching") : tWallet("switchToHyperEvm")}</span>
             </button>
           ) : null}
@@ -208,6 +194,7 @@ function WalletConnectionWidgetContent({
             disabled={isDisconnectPending || isSwitchPending}
             role="menuitem"
           >
+            <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="logout" /></span>
             <span>{isDisconnectPending ? tWallet("statusDisconnecting") : tWallet("disconnect")}</span>
           </button>
         </div>

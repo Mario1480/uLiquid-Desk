@@ -11,6 +11,7 @@ import { wagmiConfig } from "../../lib/web3/config";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
+import { AppIcon } from "../components/AppIcon";
 import Web3Providers from "../components/Web3Providers";
 
 function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
@@ -142,12 +143,15 @@ function LoginPageContent() {
           </label>
           <div className="authActions">
             <button className="btn btnPrimary" type="submit" disabled={!email || !password}>
+              <AppIcon name="login" />
               {t("signInButton")}
             </button>
             <Link href={withLocalePath("/register", locale)} className="btn">
+              <AppIcon name="register" />
               {t("createAccount")}
             </Link>
             <Link href={withLocalePath("/reset-password", locale)} className="btn">
+              <AppIcon name="key" />
               {t("forgotPassword")}
             </Link>
             <span className="authStatus">{status}</span>
@@ -155,6 +159,7 @@ function LoginPageContent() {
           {errorCode === "email_not_verified" ? (
             <div className="authActions">
               <Link href={verifyEmailHref} className="btn">
+                <AppIcon name="mail" />
                 {t("continueEmailVerification")}
               </Link>
             </div>
@@ -169,6 +174,7 @@ function LoginPageContent() {
             onClick={() => void submitSiwe()}
             disabled={siwePending}
           >
+            <AppIcon name="wallet" />
             {t("siwe.signInButton")}
           </button>
           {isConnected && address ? (

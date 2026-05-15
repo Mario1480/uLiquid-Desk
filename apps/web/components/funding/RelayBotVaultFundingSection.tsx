@@ -457,6 +457,7 @@ export default function RelayBotVaultFundingSection({
               clearQuote();
             }}
           >
+            <AppIcon name="max" />
             {t("maxButton")}
           </button>
         </div>
@@ -521,19 +522,22 @@ export default function RelayBotVaultFundingSection({
       </div>
 
       {!isCorrectSourceChain ? (
-        <div className="walletActionRow fundingModalPrimaryActionRow">
-          <button type="button" className="btn btnPrimary" onClick={() => void handleSwitchToArbitrum()} disabled={busy}>
-            {t("switchNetwork")}
-          </button>
-        </div>
+	        <div className="walletActionRow fundingModalPrimaryActionRow">
+	          <button type="button" className="btn btnPrimary" onClick={() => void handleSwitchToArbitrum()} disabled={busy}>
+	            <AppIcon name="switch" />
+	            {t("switchNetwork")}
+	          </button>
+	        </div>
       ) : (
-        <div className="walletActionRow fundingModalPrimaryActionRow">
-          <button type="button" className="btn" onClick={() => void handleQuote()} disabled={busy}>
-            {state.phase === "quoting" ? t("quote.loadingShort") : t("quote.button")}
-          </button>
-          <button type="button" className="btn btnPrimary" onClick={() => void handleExecute()} disabled={busy || !walletClient || !(isWithdrawal ? hyperEvmPublicClient : arbitrumPublicClient)}>
-            {busy && state.phase !== "quoting" ? t("execute.busy") : t("execute.button")}
-          </button>
+	        <div className="walletActionRow fundingModalPrimaryActionRow">
+	          <button type="button" className="btn" onClick={() => void handleQuote()} disabled={busy}>
+	            <AppIcon name="preview" />
+	            {state.phase === "quoting" ? t("quote.loadingShort") : t("quote.button")}
+	          </button>
+	          <button type="button" className="btn btnPrimary" onClick={() => void handleExecute()} disabled={busy || !walletClient || !(isWithdrawal ? hyperEvmPublicClient : arbitrumPublicClient)}>
+	            <AppIcon name={isWithdrawal ? "withdraw" : "deposit"} />
+	            {busy && state.phase !== "quoting" ? t("execute.busy") : t("execute.button")}
+	          </button>
         </div>
       )}
 

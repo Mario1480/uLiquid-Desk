@@ -35,6 +35,7 @@ import type {
   WalletTransferOverview
 } from "../../lib/transfers/types";
 import { formatToken } from "../../lib/wallet/format";
+import { AppIcon } from "../../app/components/AppIcon";
 
 function createLiveBalance(symbol: TransferAsset, decimals: number, value: bigint | undefined): TransferBalance | null {
   if (value === undefined) return null;
@@ -536,18 +537,20 @@ export default function FundingTransferSection({
           <div className="fundingDirectionRow fundingSegmentedRow">
             <button
               type="button"
-              className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
-              onClick={() => setDirection("core_to_evm")}
-            >
-              {t("moveToHyperEvm")}
-            </button>
+	              className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
+	              onClick={() => setDirection("core_to_evm")}
+	            >
+	              <AppIcon name="transfer" />
+	              {t("moveToHyperEvm")}
+	            </button>
             <button
               type="button"
-              className={`btn ${direction === "evm_to_core" ? "btnPrimary" : ""}`}
-              onClick={() => setDirection("evm_to_core")}
-            >
-              {t("moveToHyperCore")}
-            </button>
+	              className={`btn ${direction === "evm_to_core" ? "btnPrimary" : ""}`}
+	              onClick={() => setDirection("evm_to_core")}
+	            >
+	              <AppIcon name="transfer" />
+	              {t("moveToHyperCore")}
+	            </button>
           </div>
         ) : null}
 
@@ -643,11 +646,12 @@ export default function FundingTransferSection({
           />
           <button
             type="button"
-            className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"}
-            onClick={() => setAmount(sourceBalance?.formatted ?? "")}
-          >
-            {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", asset === "USDC" ? 2 : 4)}
-          </button>
+	            className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"}
+	            onClick={() => setAmount(sourceBalance?.formatted ?? "")}
+	          >
+	            <AppIcon name="max" />
+	            {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", asset === "USDC" ? 2 : 4)}
+	          </button>
         </div>
 
         {capability && !capability.supported ? (
@@ -686,10 +690,11 @@ export default function FundingTransferSection({
               }
               void handleTransfer();
             }}
-            disabled={Boolean(transferDisabledReason) && !((direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain))}
-          >
-            {(direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain)
-              ? direction === "core_to_evm" ? tErrors("switchToArbitrum") : t("switchNetworkButton")
+	            disabled={Boolean(transferDisabledReason) && !((direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain))}
+	          >
+	            <AppIcon name={(direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain) ? "switch" : "transfer"} />
+	            {(direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain)
+	              ? direction === "core_to_evm" ? tErrors("switchToArbitrum") : t("switchNetworkButton")
               : direction === "core_to_evm" ? t("submitToHyperEvm") : t("submitToHyperCore")}
           </button>
         </div>

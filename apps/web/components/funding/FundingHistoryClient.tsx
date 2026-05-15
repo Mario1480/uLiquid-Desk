@@ -12,6 +12,7 @@ import {
 } from "../../lib/wallet/format";
 import type { FundingFeatureConfig, FundingHistoryResponse } from "../../lib/funding/types";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../../app/components/AppIcon";
 
 type FundingCommonTranslator = (key: string, values?: Record<string, string | number>) => string;
 
@@ -64,6 +65,7 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
         </div>
         <div className="walletActionRow">
           <Link className="btn" href={withLocalePath("/wallet", locale)}>
+            <AppIcon name="back" />
             {t("backToWallet")}
           </Link>
         </div>
@@ -93,6 +95,7 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
               </div>
               {address ? (
                 <a className="btn" href={buildExplorerAddressUrl(config.hyperEvm.explorerUrl, address)} target="_blank" rel="noreferrer">
+                  <AppIcon name="external" />
                   {tCommon("hyperEvmExplorer")}
                 </a>
               ) : null}
@@ -134,6 +137,7 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
                     <div className="walletActionRow walletCardActions">
                       {txUrl ? (
                         <a className="btn" href={txUrl} target="_blank" rel="noreferrer">
+                          <AppIcon name="external" />
                           {tCommon("explorer")}
                         </a>
                       ) : null}

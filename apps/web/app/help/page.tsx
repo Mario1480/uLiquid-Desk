@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { AppIcon } from "../components/AppIcon";
 
 const HELP_SECTION_KEYS = [
   { id: "getting-started", key: "gettingStarted", lines: 2 },
@@ -39,6 +40,7 @@ export default function HelpPage() {
         <div className="helpQuickLinks">
           {sections.map((s) => (
             <a key={s.id} className="btn" href={`#${s.id}`}>
+              <AppIcon name="detail" />
               {s.title}
             </a>
           ))}
@@ -65,6 +67,7 @@ export default function HelpPage() {
         <div className="helpContactCopy">{t("contactBody")}</div>
         <div>
           <a className="btn btnPrimary" href="mailto:support@uliquid.vip">
+            <AppIcon name="mail" />
             support@uliquid.vip
           </a>
         </div>

@@ -3,6 +3,7 @@
 import type { DragEvent, PointerEvent, ReactNode } from "react";
 import type { DashboardLayoutItem } from "../../src/dashboard/layout";
 import { DASHBOARD_LAYOUT_ROW_HEIGHT } from "../../src/dashboard/layout";
+import { AppIcon } from "../../app/components/AppIcon";
 
 export default function DashboardWidgetFrame({
   item,
@@ -55,7 +56,7 @@ export default function DashboardWidgetFrame({
             aria-label={`${title} bewegen`}
             title={`${title} bewegen`}
           >
-            <span aria-hidden="true">⋮⋮</span>
+            <AppIcon name="drag" />
           </button>
           <div className="dashboardWidgetFrameTitle" title={title}>
             {title}
@@ -67,7 +68,7 @@ export default function DashboardWidgetFrame({
             aria-label={`${title} ausblenden`}
             title={`${title} ausblenden`}
           >
-            <span aria-hidden="true">✕</span>
+            <AppIcon name="close" />
           </button>
         </div>
       ) : null}
@@ -84,7 +85,7 @@ export default function DashboardWidgetFrame({
           aria-label={`${title} Größe ändern`}
           title={`${title} Größe ändern`}
         >
-          <span aria-hidden="true">◢</span>
+          <AppIcon name="resize" />
         </button>
       ) : null}
     </div>

@@ -16,6 +16,7 @@ import {
   formatTelegramLinkExpiry,
   type TelegramLinkStatus
 } from "../../src/telegram/linking";
+import { AppIcon } from "../components/AppIcon";
 import { Notice, PageHeader } from "../components/ui";
 import Web3Providers from "../components/Web3Providers";
 import { AffiliateOverview } from "./affiliate/AffiliateOverview";
@@ -990,10 +991,11 @@ function SettingsPageContent() {
             </div>
             <div className="settingsSectionMeta">
               {tMain("admin.description")}
-            </div>
-            <Link href="/admin" className="btn btnPrimary">
-              {tMain("admin.openBackend")}
-            </Link>
+	            </div>
+	            <Link href="/admin" className="btn btnPrimary">
+	              <AppIcon name="admin" />
+	              {tMain("admin.openBackend")}
+	            </Link>
           </section>
         ) : null}
 
@@ -1090,10 +1092,11 @@ function SettingsPageContent() {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                       />
                     </label>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <button className="btn btnPrimary" type="button" onClick={savePassword} disabled={!currentPassword || !newPassword}>
-                        {tMain("security.createPassword")}
-                      </button>
+	                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+	                      <button className="btn btnPrimary" type="button" onClick={savePassword} disabled={!currentPassword || !newPassword}>
+	                        <AppIcon name="key" />
+	                        {tMain("security.createPassword")}
+	                      </button>
                       {passwordStatus ? <span className="settingsMutedText">{passwordStatus}</span> : null}
                     </div>
                     {passwordError ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>{passwordError}</div> : null}
@@ -1133,13 +1136,15 @@ function SettingsPageContent() {
                       />
                       <span>{tMain("security.requireOtp")}</span>
                     </label>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button className="btn btnPrimary" type="button" onClick={saveSecuritySettings} disabled={securitySettingsLoading || securitySettingsSaving}>
-                        {securitySettingsSaving ? tCommon("saving") : tCommon("saveSettings")}
-                      </button>
-                      <button className="btn" type="button" onClick={loadSecuritySettings} disabled={securitySettingsLoading || securitySettingsSaving}>
-                        {securitySettingsLoading ? tCommon("loading") : tCommon("reload")}
-                      </button>
+	                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+	                      <button className="btn btnPrimary" type="button" onClick={saveSecuritySettings} disabled={securitySettingsLoading || securitySettingsSaving}>
+	                        <AppIcon name="save" />
+	                        {securitySettingsSaving ? tCommon("saving") : tCommon("saveSettings")}
+	                      </button>
+	                      <button className="btn" type="button" onClick={loadSecuritySettings} disabled={securitySettingsLoading || securitySettingsSaving}>
+	                        <AppIcon name="refresh" />
+	                        {securitySettingsLoading ? tCommon("loading") : tCommon("reload")}
+	                      </button>
                     </div>
                     {securitySettingsMsg ? <div className="settingsMutedText">{securitySettingsMsg}</div> : null}
                   </div>
@@ -1161,10 +1166,11 @@ function SettingsPageContent() {
                         placeholder={tMain("security.emailPlaceholder")}
                       />
                     </label>
-                    <div>
-                      <button className="btn" type="button" onClick={requestResetCode} disabled={!resetEmail}>
-                        {tMain("security.sendResetCode")}
-                      </button>
+	                    <div>
+	                      <button className="btn" type="button" onClick={requestResetCode} disabled={!resetEmail}>
+	                        <AppIcon name="mail" />
+	                        {tMain("security.sendResetCode")}
+	                      </button>
                     </div>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">{tMain("security.resetCode")}</span>
@@ -1200,11 +1206,12 @@ function SettingsPageContent() {
                       <button
                         className="btn btnPrimary"
                         type="button"
-                        onClick={confirmResetPassword}
-                        disabled={!resetEmail || resetCode.length !== 6 || resetNewPassword.length < 8}
-                      >
-                        {tMain("security.resetPassword")}
-                      </button>
+	                        onClick={confirmResetPassword}
+	                        disabled={!resetEmail || resetCode.length !== 6 || resetNewPassword.length < 8}
+	                      >
+	                        <AppIcon name="key" />
+	                        {tMain("security.resetPassword")}
+	                      </button>
                     </div>
                     {resetStatus ? <div className="settingsMutedText">{resetStatus}</div> : null}
                     {resetDevCode ? (
@@ -1282,32 +1289,36 @@ function SettingsPageContent() {
                       <button
                         className="btn btnPrimary"
                         type="button"
-                        onClick={startNotificationLink}
-                        disabled={!notificationTokenConfigured || notificationLinking}
-                      >
-                        {notificationLinking ? tCommon("saving") : tMain("notifications.connect")}
-                      </button>
-                      {notificationLinkStatus.connectUrl ? (
-                        <a className="btn" href={notificationLinkStatus.connectUrl} target="_blank" rel="noreferrer">
-                          {tMain("notifications.openBot")}
-                        </a>
-                      ) : null}
+	                        onClick={startNotificationLink}
+	                        disabled={!notificationTokenConfigured || notificationLinking}
+	                      >
+	                        <AppIcon name="telegram" />
+	                        {notificationLinking ? tCommon("saving") : tMain("notifications.connect")}
+	                      </button>
+	                      {notificationLinkStatus.connectUrl ? (
+	                        <a className="btn" href={notificationLinkStatus.connectUrl} target="_blank" rel="noreferrer">
+	                          <AppIcon name="external" />
+	                          {tMain("notifications.openBot")}
+	                        </a>
+	                      ) : null}
                       <button
                         className="btn"
                         type="button"
-                        onClick={refreshNotificationLinkStatus}
-                        disabled={notificationRefreshingLink}
-                      >
-                        {notificationRefreshingLink ? tCommon("loading") : tMain("notifications.refreshStatus")}
-                      </button>
+	                        onClick={refreshNotificationLinkStatus}
+	                        disabled={notificationRefreshingLink}
+	                      >
+	                        <AppIcon name="refresh" />
+	                        {notificationRefreshingLink ? tCommon("loading") : tMain("notifications.refreshStatus")}
+	                      </button>
                       {notificationLinkStatus.status === "connected" ? (
                         <button
                           className="btn"
                           type="button"
-                          onClick={disconnectNotificationTelegram}
-                          disabled={notificationUnlinking}
-                        >
-                          {notificationUnlinking ? tCommon("saving") : tMain("notifications.disconnect")}
+	                          onClick={disconnectNotificationTelegram}
+	                          disabled={notificationUnlinking}
+	                        >
+	                          <AppIcon name="unlink" />
+	                          {notificationUnlinking ? tCommon("saving") : tMain("notifications.disconnect")}
                         </button>
                       ) : null}
                     </div>
@@ -1433,13 +1444,15 @@ function SettingsPageContent() {
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button className="btn btnPrimary" type="button" onClick={saveNotificationConfig} disabled={notificationSaving}>
-                      {notificationSaving ? tCommon("saving") : tCommon("saveSettings")}
-                    </button>
-                    <button className="btn" type="button" onClick={sendNotificationTest} disabled={notificationSending}>
-                      {notificationSending ? tMain("notifications.sending") : tMain("notifications.sendTest")}
-                    </button>
+	                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+	                    <button className="btn btnPrimary" type="button" onClick={saveNotificationConfig} disabled={notificationSaving}>
+	                      <AppIcon name="save" />
+	                      {notificationSaving ? tCommon("saving") : tCommon("saveSettings")}
+	                    </button>
+	                    <button className="btn" type="button" onClick={sendNotificationTest} disabled={notificationSending}>
+	                      <AppIcon name="send" />
+	                      {notificationSending ? tMain("notifications.sending") : tMain("notifications.sendTest")}
+	                    </button>
                   </div>
                   {notificationMsg ? <div className="settingsMutedText" style={{ marginTop: 8 }}>{notificationMsg}</div> : null}
                 </div>
@@ -1465,14 +1478,16 @@ function SettingsPageContent() {
                     {tMain("license.onceEnabled")}
                   </div>
                   <div className="settingsMutedText">
-                    {licenseManagementEnabled ? (
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
-                          {tMain("license.openLicense")}
-                        </Link>
-                        <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn">
-                          {tMain("license.openOrder")}
-                        </Link>
+	                    {licenseManagementEnabled ? (
+	                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+	                        <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
+	                          <AppIcon name="subscription" />
+	                          {tMain("license.openLicense")}
+	                        </Link>
+	                        <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn">
+	                          <AppIcon name="billing" />
+	                          {tMain("license.openOrder")}
+	                        </Link>
                       </div>
                     ) : tMain("license.currentlyDisabled")}
                   </div>
@@ -1539,24 +1554,27 @@ function SettingsPageContent() {
                       <button
                         className="btn btnPrimary"
                         type="button"
-                        onClick={linkConnectedWalletAction}
-                        disabled={walletActionBusy}
-                      >
-                        {walletLinking ? tMain("web3.wallet.linking") : tMain("web3.wallet.linkButton")}
-                      </button>
+	                        onClick={linkConnectedWalletAction}
+	                        disabled={walletActionBusy}
+	                      >
+	                        <AppIcon name="link" />
+	                        {walletLinking ? tMain("web3.wallet.linking") : tMain("web3.wallet.linkButton")}
+	                      </button>
                       {linkedWalletAddress ? (
                         <button
                           className="btn"
                           type="button"
-                          onClick={unlinkLinkedWalletAction}
-                          disabled={walletActionBusy}
-                        >
-                          {walletUnlinking ? tMain("web3.wallet.unlinking") : tMain("web3.wallet.unlinkButton")}
-                        </button>
-                      ) : null}
-                      <Link href={withLocalePath("/wallet", locale)} className="btn">
-                        {tMain("web3.wallet.openWalletDashboard")}
-                      </Link>
+	                          onClick={unlinkLinkedWalletAction}
+	                          disabled={walletActionBusy}
+	                        >
+	                          <AppIcon name="unlink" />
+	                          {walletUnlinking ? tMain("web3.wallet.unlinking") : tMain("web3.wallet.unlinkButton")}
+	                        </button>
+	                      ) : null}
+	                      <Link href={withLocalePath("/wallet", locale)} className="btn">
+	                        <AppIcon name="wallet" />
+	                        {tMain("web3.wallet.openWalletDashboard")}
+	                      </Link>
                     </div>
                     <div className="settingsMutedText">
                       {walletLinkMissing
@@ -1610,10 +1628,11 @@ function SettingsPageContent() {
           <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{tMain("sections.cexTradingSettings")}</h3>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <div className="settingsSectionMeta">{tMain("sections.exchangeSettings")}</div>
-              <Link href={withLocalePath("/settings/risk", locale)} className="btn">
-                {tRisk("title")}
-              </Link>
+	              <div className="settingsSectionMeta">{tMain("sections.exchangeSettings")}</div>
+	              <Link href={withLocalePath("/settings/risk", locale)} className="btn">
+	                <AppIcon name="risk" />
+	                {tRisk("title")}
+	              </Link>
             </div>
           </div>
           <div className="settingsAccordion">
@@ -1762,10 +1781,11 @@ function SettingsPageContent() {
                         (paperMode
                           ? !marketDataExchangeAccountId
                           : (credentialsRequired && (!apiKey || !apiSecret || (passphraseRequired && !passphrase))))
-                      }
-                    >
-                      {saving ? tCommon("saving") : tMain("exchange.addAccount")}
-                    </button>
+	                      }
+	                    >
+	                      <AppIcon name="create" />
+	                      {saving ? tCommon("saving") : tMain("exchange.addAccount")}
+	                    </button>
                   </form>
 
                   <div className="settingsAccordionDivider" />
@@ -1914,28 +1934,33 @@ function SettingsPageContent() {
                                     !editLabel.trim() ||
                                     (account.exchange === "paper" && !editMarketDataExchangeAccountId)
                                   }
-                                >
-                                  {savingEditId === account.id ? tCommon("saving") : tMain("exchange.saveChanges")}
-                                </button>
-                                <button className="btn" onClick={cancelEditingAccount} disabled={savingEditId === account.id}>
-                                  {tMain("exchange.cancelEdit")}
-                                </button>
+	                                >
+	                                  <AppIcon name="save" />
+	                                  {savingEditId === account.id ? tCommon("saving") : tMain("exchange.saveChanges")}
+	                                </button>
+	                                <button className="btn" onClick={cancelEditingAccount} disabled={savingEditId === account.id}>
+	                                  <AppIcon name="cancel" />
+	                                  {tMain("exchange.cancelEdit")}
+	                                </button>
                               </>
-                            ) : (
-                              <button className="btn" onClick={() => startEditingAccount(account)}>
-                                {tMain("exchange.editAccount")}
-                              </button>
+	                            ) : (
+	                              <button className="btn" onClick={() => startEditingAccount(account)}>
+	                                <AppIcon name="edit" />
+	                                {tMain("exchange.editAccount")}
+	                              </button>
                             )}
                             <button
                               className="btn"
                               onClick={() => void syncAccount(account.id)}
-                              disabled={syncingId === account.id || editingAccountId === account.id}
-                            >
-                              {syncingId === account.id ? tMain("exchange.syncing") : tMain("exchange.syncNow")}
-                            </button>
-                            <button className="btn" onClick={() => void deleteAccount(account.id)} disabled={editingAccountId === account.id}>
-                              {tMain("actions.delete")}
-                            </button>
+	                              disabled={syncingId === account.id || editingAccountId === account.id}
+	                            >
+	                              <AppIcon name="refresh" />
+	                              {syncingId === account.id ? tMain("exchange.syncing") : tMain("exchange.syncNow")}
+	                            </button>
+	                            <button className="btn" onClick={() => void deleteAccount(account.id)} disabled={editingAccountId === account.id}>
+	                              <AppIcon name="delete" />
+	                              {tMain("actions.delete")}
+	                            </button>
                           </div>
                         </div>
                       ))}

@@ -1,3 +1,5 @@
+import { AppIcon } from "../../components/AppIcon";
+
 type AdminPaginationProps = {
   page: number;
   totalPages: number;
@@ -8,12 +10,14 @@ export default function AdminPagination({ page, totalPages, onPageChange }: Admi
   return (
     <div className="adminPagination">
       <button className="btn" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+        <AppIcon name="back" />
         Previous
       </button>
       <span className="settingsMutedText">
         Page {page} of {Math.max(1, totalPages)}
       </span>
       <button className="btn" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+        <AppIcon name="chevronRight" />
         Next
       </button>
     </div>

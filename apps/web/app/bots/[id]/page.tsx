@@ -16,6 +16,7 @@ import {
 } from "../../../src/bots/botVaultView";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
+import { AppIcon } from "../../components/AppIcon";
 import Web3Providers from "../../components/Web3Providers";
 
 type BotDetail = {
@@ -767,13 +768,15 @@ function BotDetailsPageContent() {
             <div className="botsSetupSubtitle">{bot.exchange} · {bot.symbol}</div>
             <h2 style={{ margin: 0 }}>{bot.name}</h2>
           </div>
-          <div className="botsDetailToolbar">
-            <Link className="btn" href={withLocalePath("/bots", locale)}>
-              {t("actions.back")}
-            </Link>
-            <Link className="btn" href={withLocalePath(`/bots/${id}/settings`, locale)}>
-              {t("actions.settings")}
-            </Link>
+	          <div className="botsDetailToolbar">
+	            <Link className="btn" href={withLocalePath("/bots", locale)}>
+	              <AppIcon name="back" />
+	              {t("actions.back")}
+	            </Link>
+	            <Link className="btn" href={withLocalePath(`/bots/${id}/settings`, locale)}>
+	              <AppIcon name="settings" />
+	              {t("actions.settings")}
+	            </Link>
           </div>
         </div>
 
@@ -804,20 +807,23 @@ function BotDetailsPageContent() {
           </div>
         </div>
 
-        <div className="botsDetailToolbar">
-          <button className={startStopUi.startClassName} onClick={startBot} disabled={startStopUi.startDisabled}>
-            {startStopUi.startLabel}
-          </button>
-          <button className={startStopUi.stopClassName} onClick={() => void stopBot(false)} disabled={startStopUi.stopDisabled}>
-            {startStopUi.stopLabel}
-          </button>
+	        <div className="botsDetailToolbar">
+	          <button className={startStopUi.startClassName} onClick={startBot} disabled={startStopUi.startDisabled}>
+	            <AppIcon name="play" />
+	            {startStopUi.startLabel}
+	          </button>
+	          <button className={startStopUi.stopClassName} onClick={() => void stopBot(false)} disabled={startStopUi.stopDisabled}>
+	            <AppIcon name="stop" />
+	            {startStopUi.stopLabel}
+	          </button>
           <button
             className={startStopUi.stopClassName}
             onClick={() => void stopBot(true)}
-            disabled={startStopUi.stopDisabled || !hasOpenPosition}
-          >
-            {busy === "stop" && stopAndCloseRequested ? t("actions.stoppingAndClosing") : t("actions.stopAndClose")}
-          </button>
+	            disabled={startStopUi.stopDisabled || !hasOpenPosition}
+	          >
+	            <AppIcon name="stop" />
+	            {busy === "stop" && stopAndCloseRequested ? t("actions.stoppingAndClosing") : t("actions.stopAndClose")}
+	          </button>
         </div>
       </div>
 
@@ -866,10 +872,11 @@ function BotDetailsPageContent() {
           <InfoRow label="Beneficiary" value={botVault?.beneficiaryAddress ?? "-"} />
           <InfoRow label="Controller" value={botVault?.controllerAddress ?? "-"} />
         </div>
-        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-          <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
-            Open Affiliate Dashboard
-          </Link>
+	        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
+	          <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
+	            <AppIcon name="money" />
+	            Open Affiliate Dashboard
+	          </Link>
           {botVault?.contractVersion === "v4" ? (
             <div className="botReasonText" style={{ fontSize: 12, alignSelf: "center" }}>
               V4 locks the fee configuration on vault deploy. Changes show up here and in the affiliate dashboard, not as a mutable per-bot setting.
@@ -881,18 +888,20 @@ function BotDetailsPageContent() {
             <div className="botReasonText" style={{ fontSize: 12, marginBottom: 12 }}>
               Live BotVault actions for Grid bots now run through the Grid detail page so the wallet-signature flow, indexer state and execution start stay in sync.
             </div>
-            <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-              <Link className="btn" href={withLocalePath(`/bots/grid?instanceId=${encodeURIComponent(bot.botVault.gridInstanceId)}`, locale)}>
-                Open Grid Vault Controls
-              </Link>
+	            <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
+	              <Link className="btn" href={withLocalePath(`/bots/grid?instanceId=${encodeURIComponent(bot.botVault.gridInstanceId)}`, locale)}>
+	                <AppIcon name="gridBots" />
+	                Open Grid Vault Controls
+	              </Link>
             </div>
           </>
         ) : (
           <>
-            <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-              <button className="btn" onClick={createVault} disabled={vaultBusy !== null || Boolean(botVault)}>
-                {vaultBusy === "create" ? "Creating..." : "Create Vault"}
-              </button>
+	            <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
+	              <button className="btn" onClick={createVault} disabled={vaultBusy !== null || Boolean(botVault)}>
+	                <AppIcon name="vault" />
+	                {vaultBusy === "create" ? "Creating..." : "Create Vault"}
+	              </button>
               <input
                 className="input"
                 value={vaultFundingUsd}
@@ -900,15 +909,18 @@ function BotDetailsPageContent() {
                 placeholder="Funding USDC"
                 style={{ minWidth: 120 }}
               />
-              <button className="btn" onClick={fundVault} disabled={vaultBusy !== null || !botVault}>
-                {vaultBusy === "fund" ? "Funding..." : "Fund + Move to HyperCore"}
-              </button>
-              <button className="btn" onClick={claimProfit} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClaim}>
-                {vaultBusy === "claim" ? "Claiming..." : "Claim Profit"}
-              </button>
-              <button className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClose}>
-                {vaultBusy === "end" ? "Ending..." : "End + Settle Vault"}
-              </button>
+	              <button className="btn" onClick={fundVault} disabled={vaultBusy !== null || !botVault}>
+	                <AppIcon name="deposit" />
+	                {vaultBusy === "fund" ? "Funding..." : "Fund + Move to HyperCore"}
+	              </button>
+	              <button className="btn" onClick={claimProfit} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClaim}>
+	                <AppIcon name="withdraw" />
+	                {vaultBusy === "claim" ? "Claiming..." : "Claim Profit"}
+	              </button>
+	              <button className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClose}>
+	                <AppIcon name="archive" />
+	                {vaultBusy === "end" ? "Ending..." : "End + Settle Vault"}
+	              </button>
             </div>
             <div className="botReasonText" style={{ fontSize: 12 }}>
               Flow: create a persistent vault once, fund it with USDC, move liquidity to HyperCore, then reuse the same vault for future starts. `Stop` only cancels orders. `End` settles the bot cycle and fees, but keeps the vault conceptually reusable.
@@ -928,24 +940,28 @@ function BotDetailsPageContent() {
         </div>
         <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
           <input className="input" value={agentWalletInput} onChange={(e) => setAgentWalletInput(e.target.value)} placeholder="Agent wallet address" />
-          <input className="input" value={agentSecretRefInput} onChange={(e) => setAgentSecretRefInput(e.target.value)} placeholder="Secret ref (optional)" />
-          <button className="btn" onClick={saveAgentWallet} disabled={vaultBusy !== null || (botVault ? !botVaultCapabilities.canSetAgentWallet : false)}>
-            {vaultBusy === "agent-set" ? "Saving..." : "Save Agent Wallet"}
-          </button>
+	          <input className="input" value={agentSecretRefInput} onChange={(e) => setAgentSecretRefInput(e.target.value)} placeholder="Secret ref (optional)" />
+	          <button className="btn" onClick={saveAgentWallet} disabled={vaultBusy !== null || (botVault ? !botVaultCapabilities.canSetAgentWallet : false)}>
+	            <AppIcon name="save" />
+	            {vaultBusy === "agent-set" ? "Saving..." : "Save Agent Wallet"}
+	          </button>
         </div>
         <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-          <input className="input" value={agentThresholdInput} onChange={(e) => setAgentThresholdInput(e.target.value)} placeholder="Low HYPE threshold" />
-          <button className="btn" onClick={saveAgentThreshold} disabled={vaultBusy !== null}>
-            {vaultBusy === "agent-threshold" ? "Saving..." : "Save Threshold"}
-          </button>
-          <input className="input" value={agentFundHypeInput} onChange={(e) => setAgentFundHypeInput(e.target.value)} placeholder="Fund HYPE" />
-          <button className="btn btnPrimary" onClick={fundAgentHype} disabled={vaultBusy !== null || isWalletPending || !agentWallet?.address}>
-            {vaultBusy === "agent-fund" || isWalletPending ? "Funding..." : "Fund HYPE"}
-          </button>
-          <input className="input" value={agentWithdrawHypeInput} onChange={(e) => setAgentWithdrawHypeInput(e.target.value)} placeholder="Withdraw HYPE (optional)" />
-          <button className="btn" onClick={withdrawAgentHype} disabled={vaultBusy !== null || !agentWallet?.address}>
-            {vaultBusy === "agent-withdraw" ? "Withdrawing..." : "Withdraw HYPE"}
-          </button>
+	          <input className="input" value={agentThresholdInput} onChange={(e) => setAgentThresholdInput(e.target.value)} placeholder="Low HYPE threshold" />
+	          <button className="btn" onClick={saveAgentThreshold} disabled={vaultBusy !== null}>
+	            <AppIcon name="save" />
+	            {vaultBusy === "agent-threshold" ? "Saving..." : "Save Threshold"}
+	          </button>
+	          <input className="input" value={agentFundHypeInput} onChange={(e) => setAgentFundHypeInput(e.target.value)} placeholder="Fund HYPE" />
+	          <button className="btn btnPrimary" onClick={fundAgentHype} disabled={vaultBusy !== null || isWalletPending || !agentWallet?.address}>
+	            <AppIcon name="deposit" />
+	            {vaultBusy === "agent-fund" || isWalletPending ? "Funding..." : "Fund HYPE"}
+	          </button>
+	          <input className="input" value={agentWithdrawHypeInput} onChange={(e) => setAgentWithdrawHypeInput(e.target.value)} placeholder="Withdraw HYPE (optional)" />
+	          <button className="btn" onClick={withdrawAgentHype} disabled={vaultBusy !== null || !agentWallet?.address}>
+	            <AppIcon name="withdraw" />
+	            {vaultBusy === "agent-withdraw" ? "Withdrawing..." : "Withdraw HYPE"}
+	          </button>
         </div>
         <div className="botReasonText" style={{ fontSize: 12 }}>
           The agent wallet is user-level and shared across this user&apos;s bots. Funding sends native HYPE on {TARGET_CHAIN_NAME} from your connected wallet to the saved agent wallet address. Withdraw sends HYPE back from the agent wallet to your linked user wallet.
@@ -1080,10 +1096,11 @@ function BotDetailsPageContent() {
               <option value="time_stop">{t("history.outcomes.time_stop")}</option>
               <option value="unknown">{t("history.outcomes.unknown")}</option>
             </select>
-          </div>
-          <button className="btn" onClick={() => void loadHistory()} disabled={historyLoading}>
-            {historyLoading ? t("history.loading") : t("history.actions.refresh")}
-          </button>
+	          </div>
+	          <button className="btn" onClick={() => void loadHistory()} disabled={historyLoading}>
+	            <AppIcon name="refresh" />
+	            {historyLoading ? t("history.loading") : t("history.actions.refresh")}
+	          </button>
         </div>
 
         <div className="botTradeHistorySummary">
@@ -1148,10 +1165,11 @@ function BotDetailsPageContent() {
             <button
               className="btn"
               onClick={() => void loadHistory({ cursor: history.nextCursor, append: true })}
-              disabled={historyLoading}
-            >
-              {historyLoading ? t("history.loading") : t("history.actions.loadMore")}
-            </button>
+	              disabled={historyLoading}
+	            >
+	              <AppIcon name="add" />
+	              {historyLoading ? t("history.loading") : t("history.actions.loadMore")}
+	            </button>
           </div>
         ) : null}
       </BotAccordionSection>

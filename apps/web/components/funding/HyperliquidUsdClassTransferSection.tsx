@@ -19,6 +19,7 @@ import {
 } from "../../lib/funding/intentClient";
 import type { FundingBalance, FundingFeatureConfig, WalletFundingOverview } from "../../lib/funding/types";
 import { formatToken, shortAddress } from "../../lib/wallet/format";
+import { AppIcon } from "../../app/components/AppIcon";
 
 type TransferDirection = "spot_to_perp" | "perp_to_spot";
 
@@ -310,6 +311,7 @@ export default function HyperliquidUsdClassTransferSection({
               className="btn"
               onClick={() => void switchChainAsync({ chainId: config.arbitrum.chainId })}
             >
+              <AppIcon name="switch" />
               {t("switchToArbitrumButton")}
             </button>
           </div>
@@ -323,6 +325,7 @@ export default function HyperliquidUsdClassTransferSection({
             className={`btn ${direction === "perp_to_spot" ? "btnPrimary" : ""}`}
             onClick={() => setDirection("perp_to_spot")}
           >
+            <AppIcon name="transfer" />
             {t("moveToSpot")}
           </button>
           <button
@@ -330,6 +333,7 @@ export default function HyperliquidUsdClassTransferSection({
             className={`btn ${direction === "spot_to_perp" ? "btnPrimary" : ""}`}
             onClick={() => setDirection("spot_to_perp")}
           >
+            <AppIcon name="transfer" />
             {t("moveToPerp")}
           </button>
         </div>
@@ -404,10 +408,12 @@ export default function HyperliquidUsdClassTransferSection({
             className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"}
             onClick={() => setAmount(sourceBalance?.formatted ?? "")}
           >
+            <AppIcon name="max" />
             {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", 2)}
           </button>
           {presentation === "card" && overview.bridge.links.officialAppUrl ? (
             <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
+              <AppIcon name="external" />
               {t("openOfficialApp")}
             </a>
           ) : null}
@@ -434,6 +440,7 @@ export default function HyperliquidUsdClassTransferSection({
             }}
             disabled={!walletClient}
           >
+            <AppIcon name={!isCorrectSignatureChain ? "switch" : "transfer"} />
             {!isCorrectSignatureChain ? t("switchToArbitrumButton") : directionIsToPerp ? t("submitToPerp") : t("submitToSpot")}
           </button>
         </div>

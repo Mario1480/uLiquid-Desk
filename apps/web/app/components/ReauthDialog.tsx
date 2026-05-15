@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
+import { AppIcon } from "./AppIcon";
 
 type Props = {
   open: boolean;
@@ -102,6 +103,7 @@ export default function ReauthDialog({ open, onClose, onVerified }: Props) {
           {otpEnabled ? (
             <>
               <button className="btn" onClick={sendCode} disabled={sending}>
+                <AppIcon name="mail" />
                 {sending ? "Sending..." : "Send code"}
               </button>
               <input
@@ -127,9 +129,11 @@ export default function ReauthDialog({ open, onClose, onVerified }: Props) {
             onClick={verify}
             disabled={verifying || (otpEnabled ? code.trim().length !== 6 : password.length < 6)}
           >
+            <AppIcon name="check" />
             {verifying ? "Verifying..." : "Verify"}
           </button>
           <button className="btn" onClick={onClose}>
+            <AppIcon name="cancel" />
             Cancel
           </button>
           {status ? <div style={{ fontSize: 12, opacity: 0.8 }}>{status}</div> : null}

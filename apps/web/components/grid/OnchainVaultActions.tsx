@@ -14,6 +14,7 @@ import { getPublicClient, switchChain, waitForTransactionReceipt } from "wagmi/a
 import { apiGet, apiPost } from "../../lib/api";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
 import { getWalletFeatureConfig } from "../../lib/wallet/config";
+import { AppIcon } from "../../app/components/AppIcon";
 import { buildBotVaultFundingBreakdown } from "./botVaultFunding";
 import type {
   BotVaultSnapshot,
@@ -518,10 +519,11 @@ function OnchainGuardrailNotice({
   if (chainMismatch) {
     return (
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <div className="settingsMutedText">{t("wrongNetwork", { chain: TARGET_CHAIN_NAME })}</div>
-        <button className="btn" type="button" onClick={() => void onSwitchNetwork()}>
-          {t("switchNetwork")}
-        </button>
+	        <div className="settingsMutedText">{t("wrongNetwork", { chain: TARGET_CHAIN_NAME })}</div>
+	        <button className="btn" type="button" onClick={() => void onSwitchNetwork()}>
+	          <AppIcon name="switch" />
+	          {t("switchNetwork")}
+	        </button>
       </div>
     );
   }
@@ -676,21 +678,23 @@ export function BotVaultOnchainActionsCard({
             <button
               className="btn btnPrimary"
               type="button"
-              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
-              onClick={() => void handleReserve()}
-            >
-              {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
-            </button>
+	              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+	              onClick={() => void handleReserve()}
+	            >
+	              <AppIcon name="deposit" />
+	              {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
+	            </button>
           ) : null}
           {waitingForHypercoreFundingSignature ? (
             <button
               className="btn btnPrimary"
               type="button"
-              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
-              onClick={() => void handleFundHypercore()}
-            >
-              {flow.busyKey === "fund-hypercore-bot-vault" ? t("buildingTx") : t("fundHypercoreAction")}
-            </button>
+	              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+	              onClick={() => void handleFundHypercore()}
+	            >
+	              <AppIcon name="deposit" />
+	              {flow.busyKey === "fund-hypercore-bot-vault" ? t("buildingTx") : t("fundHypercoreAction")}
+	            </button>
           ) : null}
         </div>
       ) : null}
@@ -715,11 +719,12 @@ export function BotVaultOnchainActionsCard({
           <button
             className="btn btnPrimary"
             type="button"
-            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
-            onClick={() => void handleReserve()}
-          >
-            {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
-          </button>
+	            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+	            onClick={() => void handleReserve()}
+	          >
+	            <AppIcon name="deposit" />
+	            {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
+	          </button>
         </div>
       ) : null}
 

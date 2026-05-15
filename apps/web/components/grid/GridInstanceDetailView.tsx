@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { apiGet, apiPost, apiPut } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../../app/components/AppIcon";
 import { BotVaultOnchainActionsCard } from "./OnchainVaultActions";
 import type {
   BotVaultPnlReport,
@@ -721,11 +722,18 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 onClick={() => void endBot()}
                 disabled={busyAction !== null}
               >
+                <AppIcon name="stop" />
                 {busyAction === "end" ? tGrid("loading") : tGrid("end")}
               </button>
             ) : null}
-            <Link href={withLocalePath("/bots/catalog", locale)} className="btn">{tGrid("backMarketplace")}</Link>
-            <Link href={withLocalePath("/bots", locale)} className="btn">{tGrid("backBots")}</Link>
+            <Link href={withLocalePath("/bots/catalog", locale)} className="btn">
+              <AppIcon name="back" />
+              {tGrid("backMarketplace")}
+            </Link>
+            <Link href={withLocalePath("/bots", locale)} className="btn">
+              <AppIcon name="back" />
+              {tGrid("backBots")}
+            </Link>
           </div>
         </div>
       ) : null}
@@ -931,15 +939,17 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 {" "}
                 Locked at: {formatDateTime(feeConfigSummary?.feeConfigLockedAt ?? null)}.
               </div>
-              <div className="botsDetailToolbar" style={{ marginTop: 10 }}>
-                <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
-                  Open Affiliate Dashboard
-                </Link>
-                {isAdminViewer ? (
-                  <Link className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
-                    Open Admin Vault Execution
-                  </Link>
-                ) : null}
+	              <div className="botsDetailToolbar" style={{ marginTop: 10 }}>
+	                <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
+	                  <AppIcon name="money" />
+	                  Open Affiliate Dashboard
+	                </Link>
+	                {isAdminViewer ? (
+	                  <Link className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
+	                    <AppIcon name="admin" />
+	                    Open Admin Vault Execution
+	                  </Link>
+	                ) : null}
               </div>
             </section>
 
@@ -1159,7 +1169,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               </select>
             </label>
             <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn btnPrimary" type="submit" disabled={busyAction !== null || detail?.state === "archived"}>{busyAction === "risk" ? tGrid("saving") : tGrid("saveRisk")}</button>
+	              <button className="btn btnPrimary" type="submit" disabled={busyAction !== null || detail?.state === "archived"}>
+	                <AppIcon name="save" />
+	                {busyAction === "risk" ? tGrid("saving") : tGrid("saveRisk")}
+	              </button>
             </div>
           </form>
         </section>

@@ -12,6 +12,7 @@ import type {
   WalletOverviewResponse
 } from "../../lib/wallet/types";
 import { TARGET_CHAIN_ID } from "../../lib/web3/config";
+import { AppIcon } from "../../app/components/AppIcon";
 import Web3Providers from "../../app/components/Web3Providers";
 
 type FundingVaultOverview = {
@@ -91,6 +92,7 @@ function DashboardWalletCardContent() {
         <div className="dashboardWalletFooter">
           <div className="dashboardWalletFooterMeta">{t("unavailableFooter")}</div>
           <Link href={walletHref} className="btn btnPrimary">
+            <AppIcon name="wallet" />
             {t("open")}
           </Link>
         </div>
@@ -116,6 +118,7 @@ function DashboardWalletCardContent() {
         <div className="dashboardWalletFooter">
           <div className="dashboardWalletFooterMeta">{t("unavailableFooter")}</div>
           <Link href={walletHref} className="btn btnPrimary">
+            <AppIcon name="wallet" />
             {t("open")}
           </Link>
         </div>
@@ -214,6 +217,7 @@ function DashboardWalletCardContent() {
           })}
         </div>
         <Link href={walletHref} className="btn btnPrimary">
+          <AppIcon name="wallet" />
           {t("open")}
         </Link>
       </div>

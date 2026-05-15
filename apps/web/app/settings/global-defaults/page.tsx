@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 
 type GlobalSetting = {
   key: string;
@@ -89,7 +90,10 @@ export default function GlobalDefaultsPage() {
                 onChange={(e) => setValue(e.target.value)}
               />
             </label>
-            <button className="btn btnPrimary" onClick={save}>{t("save")}</button>
+	            <button className="btn btnPrimary" onClick={save}>
+	              <AppIcon name="save" />
+	              {t("save")}
+	            </button>
             {status ? <div style={{ fontSize: 12, opacity: 0.7 }}>{status}</div> : null}
           </div>
         </div>

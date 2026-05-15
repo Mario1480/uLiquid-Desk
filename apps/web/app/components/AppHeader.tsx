@@ -21,6 +21,7 @@ import {
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
 import ClientErrorBoundary from "./ClientErrorBoundary";
+import { AppIcon } from "./AppIcon";
 
 const WalletConnectionWidget = dynamic(() => import("./WalletConnectionWidget"), {
   ssr: false
@@ -61,71 +62,6 @@ const LANGUAGE_OPTIONS: Array<{ locale: AppLocale; label: string }> = [
   { locale: "en", label: "EN" },
   { locale: "de", label: "DE" }
 ];
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="M16 16l4.5 4.5" />
-    </svg>
-  );
-}
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M7 10l5 5 5-5" />
-    </svg>
-  );
-}
-
-function GlobeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M3.5 12h17" />
-      <path d="M12 3.5c2.2 2.2 3.3 5 3.3 8.5s-1.1 6.3-3.3 8.5" />
-      <path d="M12 3.5c-2.2 2.2-3.3 5-3.3 8.5s1.1 6.3 3.3 8.5" />
-    </svg>
-  );
-}
-
-function BellIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M15 18H5.5a1.5 1.5 0 0 1-1.2-2.4l1.3-1.7V10a6.2 6.2 0 1 1 12.4 0v3.9l1.3 1.7a1.5 1.5 0 0 1-1.2 2.4H15" />
-      <path d="M9.5 18a2.5 2.5 0 0 0 5 0" />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="12" cy="8" r="3.2" />
-      <path d="M5 19a7 7 0 0 1 14 0" />
-    </svg>
-  );
-}
-
-function SettingsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-    </svg>
-  );
-}
-
-function LogoutIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M10 7V5.5A1.5 1.5 0 0 1 11.5 4h6A1.5 1.5 0 0 1 19 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 10 18.5V17" />
-      <path d="M14 12H4" />
-      <path d="M7 9l-3 3 3 3" />
-    </svg>
-  );
-}
 
 function buildLocalizedHref(href: string, locale: AppLocale): string {
   if (!href.startsWith("/")) return href;
@@ -489,7 +425,7 @@ export default function AppHeader({
         <form className="appHeaderSearch" onSubmit={handleSubmit}>
           <div className="appHeaderSearchWrap">
             <span className="appHeaderSearchIcon" aria-hidden="true">
-              <SearchIcon />
+              <AppIcon name="search" />
             </span>
             <input
               className="input appHeaderSearchInput"
@@ -521,7 +457,7 @@ export default function AppHeader({
               }
             />
             <button type="submit" className="appHeaderSearchSubmit" aria-label={tHeader("searchButton")}>
-              <SearchIcon />
+              <AppIcon name="search" />
             </button>
             {showSearchResults ? (
               <div id="appHeaderSearchResults" className="appHeaderSearchResults" role="listbox">
@@ -572,9 +508,9 @@ export default function AppHeader({
               aria-expanded={openMenu === "language"}
               aria-label={tHeader("languageMenu")}
             >
-              <span className="appHeaderLanguageIcon" aria-hidden="true"><GlobeIcon /></span>
+              <span className="appHeaderLanguageIcon" aria-hidden="true"><AppIcon name="exchange" /></span>
               <span className="appHeaderLanguageCode">{currentLanguage.label}</span>
-              <span className="appHeaderChevron" aria-hidden="true"><ChevronIcon /></span>
+              <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
             </button>
             {openMenu === "language" ? (
               <div className="appHeaderMenuPanel appHeaderMenuPanelCompact" role="menu">
@@ -618,7 +554,7 @@ export default function AppHeader({
               aria-expanded={openMenu === "alerts"}
               aria-label={tHeader("alertsMenu")}
             >
-              <BellIcon />
+              <AppIcon name="alerts" />
               {alertCount > 0 ? <span className="appHeaderBellBadge">{alertCount}</span> : null}
             </button>
             {openMenu === "alerts" ? (
@@ -678,7 +614,7 @@ export default function AppHeader({
               <span className="appHeaderUserTriggerMeta">
                 <span className="appHeaderUserTriggerName">{username}</span>
               </span>
-              <span className="appHeaderChevron" aria-hidden="true"><ChevronIcon /></span>
+              <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
             </button>
             {openMenu === "user" ? (
               <div className="appHeaderMenuPanel appHeaderUserPanel" role="menu">
@@ -695,7 +631,7 @@ export default function AppHeader({
                   onClick={() => setOpenMenu(null)}
                   role="menuitem"
                 >
-                  <span className="appHeaderMenuIcon" aria-hidden="true"><UserIcon /></span>
+                  <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="users" /></span>
                   <span>{tHeader("user.profile")}</span>
                 </Link>
                 <Link
@@ -704,7 +640,7 @@ export default function AppHeader({
                   onClick={() => setOpenMenu(null)}
                   role="menuitem"
                 >
-                  <span className="appHeaderMenuIcon" aria-hidden="true"><SettingsIcon /></span>
+                  <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="settings" /></span>
                   <span>{tHeader("user.settings")}</span>
                 </Link>
                 <button
@@ -714,7 +650,7 @@ export default function AppHeader({
                   disabled={logoutLoading}
                   role="menuitem"
                 >
-                  <span className="appHeaderMenuIcon" aria-hidden="true"><LogoutIcon /></span>
+                  <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="logout" /></span>
                   <span>{logoutLoading ? tNav("loggingOut") : tNav("logout")}</span>
                 </button>
               </div>

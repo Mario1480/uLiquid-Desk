@@ -21,6 +21,7 @@ import FundingActionCenter, {
   FundingVaultQuickCard
 } from "../funding/FundingActionCenter";
 import RelayBotVaultFundingSection from "../funding/RelayBotVaultFundingSection";
+import { AppIcon } from "../../app/components/AppIcon";
 import { PageHeader } from "../../app/components/ui";
 
 function errMsg(error: unknown): string {
@@ -229,6 +230,7 @@ export default function WalletDashboardClient({
             onClick={() => void createAgentWallet()}
             disabled={agentSetupBusy !== null || agentWalletQuery.isLoading}
           >
+            <AppIcon name="wallet" />
             {agentSetupBusy === "create" ? t("agentActions.creatingWallet") : t("agentActions.createWallet")}
           </button>
         </div>
@@ -247,6 +249,7 @@ export default function WalletDashboardClient({
           onClick={() => void saveAgentThreshold()}
           disabled={agentSetupBusy !== null || agentWalletQuery.isLoading}
         >
+          <AppIcon name="save" />
           {agentSetupBusy === "threshold" ? t("agentActions.savingThreshold") : t("agentActions.saveThreshold")}
         </button>
       </div>
@@ -258,6 +261,7 @@ export default function WalletDashboardClient({
           onClick={() => setActiveAgentModal("fund")}
           disabled={!isConnected || !masterAgentSummary?.address || agentActionBusy !== null || isWalletPending}
         >
+          <AppIcon name="deposit" />
           {agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund")}
         </button>
         <button
@@ -266,6 +270,7 @@ export default function WalletDashboardClient({
           onClick={() => setActiveAgentModal("withdraw")}
           disabled={!masterAgentSummary?.address || agentActionBusy !== null}
         >
+          <AppIcon name="withdraw" />
           {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
         </button>
       </div>
@@ -387,7 +392,7 @@ export default function WalletDashboardClient({
                 aria-label={tFundingAction("modal.close")}
                 onClick={() => setActiveBotVaultSystemModal(null)}
               >
-                ×
+                <AppIcon name="close" />
               </button>
             </div>
             <div className="fundingModalBody">
@@ -425,7 +430,7 @@ export default function WalletDashboardClient({
                 aria-label={t("agentActions.closeModal")}
                 onClick={() => setActiveAgentModal(null)}
               >
-                ×
+                <AppIcon name="close" />
               </button>
             </div>
             <div className="fundingModalBody">
@@ -461,17 +466,19 @@ export default function WalletDashboardClient({
                 </div>
                 <div className="walletMutedText">{t("agentActions.hint", { chain: TARGET_CHAIN_NAME })}</div>
                 <div className="walletActionRow fundingModalPrimaryActionRow">
-                  <button type="button" className="btn" onClick={() => setActiveAgentModal(null)}>
-                    {t("agentActions.cancel")}
-                  </button>
+	                  <button type="button" className="btn" onClick={() => setActiveAgentModal(null)}>
+	                    <AppIcon name="cancel" />
+	                    {t("agentActions.cancel")}
+	                  </button>
                   <button
                     type="button"
                     className="btn btnPrimary"
-                    onClick={() => void (activeAgentModal === "fund" ? fundAgentWallet() : withdrawAgentWallet())}
-                    disabled={!masterAgentSummary?.address || agentActionBusy !== null || (activeAgentModal === "fund" && isWalletPending)}
-                  >
-                    {activeAgentModal === "fund"
-                      ? (agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund"))
+	                    onClick={() => void (activeAgentModal === "fund" ? fundAgentWallet() : withdrawAgentWallet())}
+	                    disabled={!masterAgentSummary?.address || agentActionBusy !== null || (activeAgentModal === "fund" && isWalletPending)}
+	                  >
+	                    <AppIcon name={activeAgentModal === "fund" ? "deposit" : "withdraw"} />
+	                    {activeAgentModal === "fund"
+	                      ? (agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund"))
                       : (agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw"))}
                   </button>
                 </div>

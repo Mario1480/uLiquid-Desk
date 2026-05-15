@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { apiGet } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../components/AppIcon";
 import AdminEmptyState from "./_components/AdminEmptyState";
 import AdminPageHeader from "./_components/AdminPageHeader";
 import AdminStatsCard from "./_components/AdminStatsCard";
@@ -180,10 +181,11 @@ export default function AdminOverviewPage() {
 
             <article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
-                <h3 className="adminSectionTitle">Latest Critical Alerts</h3>
-                <Link className="btn" href={withLocalePath("/admin/alerts", locale)}>
-                  View all
-                </Link>
+	                <h3 className="adminSectionTitle">Latest Critical Alerts</h3>
+	                <Link className="btn" href={withLocalePath("/admin/alerts", locale)}>
+	                  <AppIcon name="alerts" />
+	                  View all
+	                </Link>
               </div>
               {data.latestCriticalAlerts.length > 0 ? (
                 <div className="adminListStack">
@@ -211,10 +213,11 @@ export default function AdminOverviewPage() {
 
             <article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
-                <h3 className="adminSectionTitle">Recent Audit Events</h3>
-                <Link className="btn" href={withLocalePath("/admin/audit", locale)}>
-                  View all
-                </Link>
+	                <h3 className="adminSectionTitle">Recent Audit Events</h3>
+	                <Link className="btn" href={withLocalePath("/admin/audit", locale)}>
+	                  <AppIcon name="audit" />
+	                  View all
+	                </Link>
               </div>
               {data.recentAuditEvents.length > 0 ? (
                 <div className="adminListStack">
@@ -239,10 +242,11 @@ export default function AdminOverviewPage() {
 
             <article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
-                <h3 className="adminSectionTitle">Bots With Errors</h3>
-                <Link className="btn" href={withLocalePath("/admin/bots", locale)}>
-                  Open bots
-                </Link>
+	                <h3 className="adminSectionTitle">Bots With Errors</h3>
+	                <Link className="btn" href={withLocalePath("/admin/bots", locale)}>
+	                  <AppIcon name="bots" />
+	                  Open bots
+	                </Link>
               </div>
               {data.botsWithErrors.length > 0 ? (
                 <div className="adminListStack">

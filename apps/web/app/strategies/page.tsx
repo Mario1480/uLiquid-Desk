@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../components/AppIcon";
 
 type StrategyIndicatorOption = {
   key: string;
@@ -583,6 +584,7 @@ export default function StrategiesPage() {
           </p>
         </div>
         <Link className="btn" href={withLocalePath("/predictions", locale)}>
+          <AppIcon name="back" />
           {tMain("strategy.backToPredictions")}
         </Link>
       </div>
@@ -631,6 +633,7 @@ export default function StrategiesPage() {
                           disabled={strategySaving || strategyGenerating || strategyDeletingId === item.id}
                           onClick={() => editStrategyPrompt(item)}
                         >
+                          <AppIcon name="edit" />
                           {strategyEditingId === item.id ? tMain("strategy.editing") : tMain("actions.edit")}
                         </button>
                         <button
@@ -639,6 +642,7 @@ export default function StrategiesPage() {
                           disabled={strategyDeletingId === item.id || strategySaving}
                           onClick={() => void deleteStrategyPrompt(item.id)}
                         >
+                          <AppIcon name="delete" />
                           {strategyDeletingId === item.id ? tCommon("deleting") : tMain("actions.delete")}
                         </button>
                       </div>
@@ -655,6 +659,7 @@ export default function StrategiesPage() {
               </div>
               {strategyEditingId ? (
                 <button className="btn" type="button" onClick={cancelStrategyPromptEdit} disabled={strategySaving}>
+                  <AppIcon name="cancel" />
                   {tMain("actions.cancel")}
                 </button>
               ) : null}
@@ -735,14 +740,17 @@ export default function StrategiesPage() {
                     disabled={strategyChatSending || !strategyChatInput.trim()}
                     onClick={() => void submitStrategyChatMessage()}
                   >
+                    <AppIcon name="send" />
                     {strategyChatSending ? tMain("strategy.chat.thinking") : tMain("strategy.chat.send")}
                   </button>
                 </div>
                 <div className="settingsPromptChatActions">
                   <button className="btn" type="button" onClick={syncStrategyDescriptionFromChat}>
+                    <AppIcon name="transfer" />
                     {tMain("strategy.chat.sync")}
                   </button>
                   <button className="btn" type="button" onClick={resetStrategyChat}>
+                    <AppIcon name="reset" />
                     {tMain("strategy.chat.reset")}
                   </button>
                 </div>
@@ -907,9 +915,11 @@ export default function StrategiesPage() {
                 type="button"
                 onClick={() => setStrategyIndicatorKeys(strategyIndicators.map((item) => item.key))}
               >
+                <AppIcon name="check" />
                 {tMain("strategy.selectAllIndicators")}
               </button>
               <button className="btn" type="button" onClick={() => setStrategyIndicatorKeys([])}>
+                <AppIcon name="remove" />
                 {tMain("strategy.clearIndicators")}
               </button>
             </div>
@@ -947,6 +957,7 @@ export default function StrategiesPage() {
                 disabled={strategyGenerating || strategySaving}
                 onClick={() => void generateStrategyPreview()}
               >
+                <AppIcon name="preview" />
                 {strategyGenerating ? tMain("strategy.previewGenerating") : tMain("strategy.generatePreview")}
               </button>
               {strategyEditingId ? (
@@ -957,6 +968,7 @@ export default function StrategiesPage() {
                     disabled={strategyGenerating || strategySaving}
                     onClick={() => void updateStrategyPromptFromEditor()}
                   >
+                    <AppIcon name="save" />
                     {strategySaving ? tMain("strategy.updateSaving") : tMain("strategy.updatePrompt")}
                   </button>
                   <button
@@ -965,6 +977,7 @@ export default function StrategiesPage() {
                     disabled={strategySaving}
                     onClick={cancelStrategyPromptEdit}
                   >
+                    <AppIcon name="cancel" />
                     {tMain("actions.cancel")}
                   </button>
                 </>
@@ -1034,6 +1047,7 @@ export default function StrategiesPage() {
                 disabled={strategySaving}
                 onClick={() => setStrategyPreviewOpen(false)}
               >
+                <AppIcon name="cancel" />
                 {tMain("strategy.previewCancel")}
               </button>
               <button
@@ -1042,6 +1056,7 @@ export default function StrategiesPage() {
                 disabled={strategySaving}
                 onClick={() => void saveStrategyFromPreview()}
               >
+                <AppIcon name="save" />
                 {strategySaving
                   ? tMain("strategy.previewSaving")
                   : (strategyEditingId ? tMain("strategy.updatePrompt") : tMain("strategy.previewSave"))}

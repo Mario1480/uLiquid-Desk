@@ -30,6 +30,7 @@ import {
 } from "../../../components/grid/utils";
 import { buildGridCatalogQuery, updateGridCatalogFavoriteState } from "../../../src/grid/catalog";
 import { deriveNeutralModePreviewHints } from "../../../src/grid/neutralModeHints";
+import { AppIcon } from "../../components/AppIcon";
 import Web3Providers from "../../components/Web3Providers";
 
 type GridPilotAccess = {
@@ -1036,12 +1037,21 @@ function GridBotCatalogPageContent() {
             {favoritesOnly ? <span className="badge badgeOk">{tGrid("catalogFavoritesOnly")}</span> : null}
             {ownOnly ? <span className="badge badgeOk">{tGrid("catalogOwnOnly")}</span> : null}
           </div>
-        </div>
-        <div className="gridCatalogHeroActions">
-          <Link href={withLocalePath("/bots/grid", locale)} className="btn">{tGrid("dashboard")}</Link>
-          <Link href={withLocalePath("/bots/catalog/new", locale)} className="btn btnPrimary">{tGrid("catalogCreateOwnTemplate")}</Link>
-          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn">{tGrid("catalogFallbackCta")}</Link>
-        </div>
+	        </div>
+	        <div className="gridCatalogHeroActions">
+	          <Link href={withLocalePath("/bots/grid", locale)} className="btn">
+	            <AppIcon name="dashboard" />
+	            {tGrid("dashboard")}
+	          </Link>
+	          <Link href={withLocalePath("/bots/catalog/new", locale)} className="btn btnPrimary">
+	            <AppIcon name="create" />
+	            {tGrid("catalogCreateOwnTemplate")}
+	          </Link>
+	          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn">
+	            <AppIcon name="gridBots" />
+	            {tGrid("catalogFallbackCta")}
+	          </Link>
+	        </div>
       </section>
 
       {error || flow.error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error ?? flow.error}</div> : null}
@@ -1095,23 +1105,26 @@ function GridBotCatalogPageContent() {
               <button
                 className={`btn gridCatalogViewButton ${catalogView === "grid" ? "gridCatalogViewButtonActive" : ""}`}
                 type="button"
-                onClick={() => setCatalogView("grid")}
-              >
-                {tGrid("catalogViewGrid")}
-              </button>
+	                onClick={() => setCatalogView("grid")}
+	              >
+	                <AppIcon name="grid" />
+	                {tGrid("catalogViewGrid")}
+	              </button>
               <button
                 className={`btn gridCatalogViewButton ${catalogView === "list" ? "gridCatalogViewButtonActive" : ""}`}
                 type="button"
-                onClick={() => setCatalogView("list")}
-              >
-                {tGrid("catalogViewList")}
-              </button>
+	                onClick={() => setCatalogView("list")}
+	              >
+	                <AppIcon name="list" />
+	                {tGrid("catalogViewList")}
+	              </button>
             </div>
-            {hasActiveFilters ? (
-              <button className="btn" type="button" onClick={resetFilters}>
-                {tGrid("catalogResetFilters")}
-              </button>
-            ) : null}
+	            {hasActiveFilters ? (
+	              <button className="btn" type="button" onClick={resetFilters}>
+	                <AppIcon name="reset" />
+	                {tGrid("catalogResetFilters")}
+	              </button>
+	            ) : null}
           </div>
         </div>
       </section>
@@ -1120,11 +1133,12 @@ function GridBotCatalogPageContent() {
         <div className="card gridCatalogState">{tGrid("catalogLoading")}</div>
       ) : templates.length === 0 ? (
         <div className="card gridCatalogState">
-          <div className="gridCatalogStateTitle">{tGrid("catalogEmptyTitle")}</div>
-          <div className="gridCatalogStateBody">{tGrid("catalogEmptyBody")}</div>
-          <button className="btn" type="button" onClick={resetFilters}>
-            {tGrid("catalogResetFilters")}
-          </button>
+	          <div className="gridCatalogStateTitle">{tGrid("catalogEmptyTitle")}</div>
+	          <div className="gridCatalogStateBody">{tGrid("catalogEmptyBody")}</div>
+	          <button className="btn" type="button" onClick={resetFilters}>
+	            <AppIcon name="reset" />
+	            {tGrid("catalogResetFilters")}
+	          </button>
         </div>
       ) : (
         <div className={`gridCatalogGrid ${catalogView === "list" ? "gridCatalogGridList" : ""}`}>
@@ -1169,11 +1183,12 @@ function GridBotCatalogPageContent() {
                       event.stopPropagation();
                       void toggleFavorite(template);
                     }}
-                    disabled={favoriteBusyId === template.id}
-                    aria-label={template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
-                  >
-                    {favoriteBusyId === template.id ? "..." : template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
-                  </button>
+	                    disabled={favoriteBusyId === template.id}
+	                    aria-label={template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
+	                  >
+	                    <AppIcon name="favorite" />
+	                    {favoriteBusyId === template.id ? "..." : template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
+	                  </button>
                 </div>
 
                 <div className="gridCatalogBadgeRow">
@@ -1217,7 +1232,10 @@ function GridBotCatalogPageContent() {
                   {selectedTemplate.catalogShortDescription || selectedTemplate.description || tGrid("catalogNoDescription")}
                 </div>
               </div>
-              <button className="btn" type="button" onClick={closeDrawer}>{tGrid("catalogClose")}</button>
+	              <button className="btn" type="button" onClick={closeDrawer}>
+	                <AppIcon name="close" />
+	                {tGrid("catalogClose")}
+	              </button>
             </div>
 
               <div className="gridCatalogDrawerIntro">
@@ -1412,7 +1430,10 @@ function GridBotCatalogPageContent() {
                   <div className="gridCatalogCalloutBody">
                     {tGrid("noExecutionAccountsHint", { exchanges: [...allowedGridExchanges].join(", ") })}
                   </div>
-                  <Link href={withLocalePath("/settings", locale)} className="btn">{tGrid("openExchangeSettings")}</Link>
+	                  <Link href={withLocalePath("/settings", locale)} className="btn">
+	                    <AppIcon name="settings" />
+	                    {tGrid("openExchangeSettings")}
+	                  </Link>
                 </div>
               ) : null}
 
@@ -1505,10 +1526,14 @@ function GridBotCatalogPageContent() {
                               : tGrid("previewWaiting")}
                   </div>
                 </div>
-                <button className="btn" type="button" onClick={closeDrawer}>{tGrid("catalogClose")}</button>
-                <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
-                  {creating ? tGrid("creating") : tGrid("catalogStart")}
-                </button>
+	                <button className="btn" type="button" onClick={closeDrawer}>
+	                  <AppIcon name="close" />
+	                  {tGrid("catalogClose")}
+	                </button>
+	                <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
+	                  <AppIcon name="launch" />
+	                  {creating ? tGrid("creating") : tGrid("catalogStart")}
+	                </button>
               </div>
             </form>
           </aside>
@@ -1607,10 +1632,11 @@ function GridBotCatalogPageContent() {
               <div className="gridCatalogActionRow">
                 <div className="gridCatalogActionMeta">
                   <div className="gridCatalogActionMetaHint">{tGrid("provisioningTrackerReadyToClose")}</div>
-                </div>
-                <button className="btn btnPrimary" type="button" onClick={closeProvisioningTracker}>
-                  {tGrid("catalogClose")}
-                </button>
+	                </div>
+	                <button className="btn btnPrimary" type="button" onClick={closeProvisioningTracker}>
+	                  <AppIcon name="check" />
+	                  {tGrid("catalogClose")}
+	                </button>
               </div>
             ) : null}
           </section>

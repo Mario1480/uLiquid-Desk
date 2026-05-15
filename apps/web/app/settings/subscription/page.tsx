@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 import {
   buildLicensePageModel,
   centsToCurrency,
@@ -214,19 +215,21 @@ export default function SubscriptionPage() {
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.serverIp")}</span>
                 <span>{model.instance.serverIpAddress ?? "-"}</span>
-              </div>
-              <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary subscriptionPortalCardAction">
-                {t("license.openOrderPage")}
-              </Link>
+	              </div>
+	              <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary subscriptionPortalCardAction">
+	                <AppIcon name="billing" />
+	                {t("license.openOrderPage")}
+	              </Link>
             </div>
           </div>
 
           <div className="card subscriptionPortalOrdersCard">
-            <div className="subscriptionCardHead">
-              <div className="subscriptionCardTitle">{t("orders.title")}</div>
-              <button className="btn" type="button" onClick={() => void load()}>
-                {t("orders.refresh")}
-              </button>
+	            <div className="subscriptionCardHead">
+	              <div className="subscriptionCardTitle">{t("orders.title")}</div>
+	              <button className="btn" type="button" onClick={() => void load()}>
+	                <AppIcon name="refresh" />
+	                {t("orders.refresh")}
+	              </button>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table className="table subscriptionOrdersTable">
@@ -271,10 +274,11 @@ export default function SubscriptionPage() {
             <div>
               <div className="subscriptionCardTitle">{t("license.upgradeTitle")}</div>
               <div className="subscriptionPortalMuted">{t("license.upgradeDescription")}</div>
-            </div>
-            <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary">
-              {t("license.openOrderPage")}
-            </Link>
+	            </div>
+	            <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary">
+	              <AppIcon name="billing" />
+	              {t("license.openOrderPage")}
+	            </Link>
           </div>
         </>
       ) : (

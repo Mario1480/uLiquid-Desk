@@ -7,6 +7,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import SymbolSearchSelect from "../../components/SymbolSearchSelect";
+import { AppIcon } from "../components/AppIcon";
 import { MetricTile, Notice, PageHeader, StatusBadge } from "../components/ui";
 import {
   buildTradeDeskPrefillPayload,
@@ -2172,6 +2173,7 @@ export default function PredictionsPage() {
                 type="button"
                 onClick={() => toggleEventLog(rowId)}
               >
+                <AppIcon name="detail" />
                 {eventsExpanded ? tPred("detail.hideLog") : tPred("detail.showLog")}
               </button>
             </div>
@@ -2264,6 +2266,7 @@ export default function PredictionsPage() {
           </div>
           <div className="predictionCreateHeaderActions">
             <Link className="btn btnPrimary predictionManageStrategiesButton" href={withLocalePath("/strategies", locale)}>
+              <AppIcon name="strategies" />
               {tPred("create.manageStrategies")}
             </Link>
             <div className="predictionCreateBadges">
@@ -2532,6 +2535,7 @@ export default function PredictionsPage() {
               disabled={creating || createBlockedByLimit || createBlockedByFeature}
               onClick={() => void createPrediction()}
             >
+              <AppIcon name="create" />
               {creating ? tPred("create.creating") : tPred("create.createPrediction")}
             </button>
           </div>
@@ -2570,6 +2574,7 @@ export default function PredictionsPage() {
                 }}
                 disabled={runningLoading}
               >
+                <AppIcon name="refresh" />
                 {runningLoading ? tPred("running.refreshing") : tPred("running.refresh")}
               </button>
             </div>
@@ -2646,6 +2651,7 @@ export default function PredictionsPage() {
                           disabled={runningActionId === row.id}
                           onClick={() => void togglePausePrediction(row)}
                         >
+                          <AppIcon name={row.paused ? "play" : "pause"} />
                           {row.paused ? tPred("running.resume") : tPred("running.pausePrediction")}
                         </button>
                         <button
@@ -2654,6 +2660,7 @@ export default function PredictionsPage() {
                           disabled={runningActionId === row.id}
                           onClick={() => void deleteRunningPrediction(row.id)}
                         >
+                          <AppIcon name="delete" />
                           {tPred("running.delete")}
                         </button>
                       </td>
@@ -2722,6 +2729,7 @@ export default function PredictionsPage() {
                       disabled={runningActionId === row.id}
                       onClick={() => void togglePausePrediction(row)}
                     >
+                      <AppIcon name={row.paused ? "play" : "pause"} />
                       {row.paused ? tPred("running.resume") : tPred("running.pausePrediction")}
                     </button>
                     <button
@@ -2730,6 +2738,7 @@ export default function PredictionsPage() {
                       disabled={runningActionId === row.id}
                       onClick={() => void deleteRunningPrediction(row.id)}
                     >
+                      <AppIcon name="delete" />
                       {tPred("running.delete")}
                     </button>
                   </div>
@@ -2779,6 +2788,7 @@ export default function PredictionsPage() {
               onClick={resetFilters}
               disabled={activeFiltersCount === 0}
             >
+              <AppIcon name="reset" />
               {tPred("feed.resetFilters")}
             </button>
             <button
@@ -2793,6 +2803,7 @@ export default function PredictionsPage() {
               }}
               disabled={loading}
             >
+              <AppIcon name="refresh" />
               {loading ? tPred("running.refreshing") : tPred("running.refresh")}
             </button>
           </div>
@@ -3008,6 +3019,7 @@ export default function PredictionsPage() {
                                 disabled={sendingId === row.id || !actionState.canSend}
                                 title={row.accountId ? "Prefill trade ticket" : "Create an exchange account first"}
                               >
+                                <AppIcon name="trading" />
                                 {sendingId === row.id ? tPred("feed.sending") : tPred("feed.sendToTradingDesk")}
                               </button>
                             ) : null}
@@ -3017,6 +3029,7 @@ export default function PredictionsPage() {
                               onClick={() => void togglePredictionDetail(row.id)}
                               disabled={loadingDetail && !expanded}
                             >
+                              <AppIcon name="detail" />
                               {expanded ? tPred("feed.hideDetails") : tPred("feed.details")}
                             </button>
                           </div>
@@ -3156,6 +3169,7 @@ export default function PredictionsPage() {
                         disabled={sendingId === row.id || !actionState.canSend}
                         title={row.accountId ? "Prefill trade ticket" : "Create an exchange account first"}
                       >
+                        <AppIcon name="trading" />
                         {sendingId === row.id ? tPred("feed.sending") : tPred("feed.sendToTradingDesk")}
                       </button>
                     ) : null}
@@ -3165,6 +3179,7 @@ export default function PredictionsPage() {
                       onClick={() => void togglePredictionDetail(row.id)}
                       disabled={loadingDetail && !expanded}
                     >
+                      <AppIcon name="detail" />
                       {expanded ? tPred("feed.hideDetails") : tPred("feed.details")}
                     </button>
                   </div>
@@ -3205,6 +3220,7 @@ export default function PredictionsPage() {
               onClick={() => void resetPerformanceStats()}
               disabled={resettingPerformance}
             >
+              <AppIcon name="reset" />
               {resettingPerformance ? tPred("running.refreshing") : tPred("performance.reset")}
             </button>
           </div>

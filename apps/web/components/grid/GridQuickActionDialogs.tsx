@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { isBotVaultRuntimeModelRow } from "@mm/core/dist/botVaultRuntimeModel.js";
 import { apiPost } from "../../lib/api";
 import { TARGET_CHAIN_NAME } from "../../lib/web3/config";
+import { AppIcon } from "../../app/components/AppIcon";
 import type { GridInstance } from "./types";
 import { useOnchainActionFlow } from "./OnchainVaultActions";
 import { createIdempotencyKey, errMsg, formatNumber } from "./utils";
@@ -85,7 +86,7 @@ function QuickActionDialogFrame({
         <div className="fundingModalHeader">
           <div className="fundingModalHeaderCompact" style={{ display: "flex" }}>
             <button type="button" className="fundingModalCloseButton" onClick={onClose} aria-label="Close">
-              ×
+              <AppIcon name="close" />
             </button>
           </div>
         </div>
@@ -221,10 +222,11 @@ export function GridClaimDialog({ instance, onClose, onUpdated }: SharedDialogPr
               type="button"
               className="btn"
               onClick={() => setAmount(formatAmountInput(preview?.maxClaimableUsd ?? 0))}
-              disabled={!preview}
-            >
-              {tGrid("quickActionMax")}
-            </button>
+            disabled={!preview}
+          >
+            <AppIcon name="max" />
+            {tGrid("quickActionMax")}
+          </button>
           </div>
         </label>
 
@@ -248,16 +250,20 @@ export function GridClaimDialog({ instance, onClose, onUpdated }: SharedDialogPr
           <div className="settingsMutedText">{tGrid("quickActionPreviewLoading")}</div>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" className="btn" onClick={onClose}>{tGrid("catalogClose")}</button>
-          <button
-            type="button"
-            className="btn btnPrimary"
-            onClick={() => void submitClaim()}
-            disabled={busy || loadingPreview || !preview || (preview.maxClaimableUsd ?? 0) <= 0}
-          >
-            {busy ? tGrid("saving") : tGrid("withdrawProfit")}
-          </button>
+	        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+	          <button type="button" className="btn" onClick={onClose}>
+	            <AppIcon name="close" />
+	            {tGrid("catalogClose")}
+	          </button>
+	          <button
+	            type="button"
+	            className="btn btnPrimary"
+	            onClick={() => void submitClaim()}
+	            disabled={busy || loadingPreview || !preview || (preview.maxClaimableUsd ?? 0) <= 0}
+	          >
+	            <AppIcon name="withdraw" />
+	            {busy ? tGrid("saving") : tGrid("withdrawProfit")}
+	          </button>
         </div>
       </div>
     </QuickActionDialogFrame>
@@ -377,17 +383,19 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
         <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
-            className={`btn ${mode === "add" ? "btnPrimary" : ""}`}
-            onClick={() => setMode("add")}
-          >
-            {tGrid("add")}
-          </button>
+	            className={`btn ${mode === "add" ? "btnPrimary" : ""}`}
+	            onClick={() => setMode("add")}
+	          >
+	            <AppIcon name="add" />
+	            {tGrid("add")}
+	          </button>
           <button
             type="button"
-            className={`btn ${mode === "remove" ? "btnPrimary" : ""}`}
-            onClick={() => setMode("remove")}
-          >
-            {tGrid("remove")}
+	            className={`btn ${mode === "remove" ? "btnPrimary" : ""}`}
+	            onClick={() => setMode("remove")}
+	          >
+	            <AppIcon name="remove" />
+	            {tGrid("remove")}
           </button>
         </div>
 
@@ -413,10 +421,11 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
               <div className="settingsMutedText">{tOnchain("walletMismatch", { wallet: flow.linkedWalletAddress })}</div>
             ) : flow.chainMismatch ? (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <div className="settingsMutedText">{tOnchain("wrongNetwork", { chain: TARGET_CHAIN_NAME })}</div>
-                <button type="button" className="btn" onClick={() => void flow.requestChainSwitch()}>
-                  {tOnchain("switchNetwork")}
-                </button>
+	                <div className="settingsMutedText">{tOnchain("wrongNetwork", { chain: TARGET_CHAIN_NAME })}</div>
+	                <button type="button" className="btn" onClick={() => void flow.requestChainSwitch()}>
+	                  <AppIcon name="switch" />
+	                  {tOnchain("switchNetwork")}
+	                </button>
               </div>
             ) : (
               <div className="settingsMutedText">{tGrid("quickMarginWalletReady")}</div>
@@ -465,15 +474,19 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
           </div>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" className="btn" onClick={onClose}>{tGrid("catalogClose")}</button>
-          <button
-            type="button"
-            className="btn btnPrimary"
-            onClick={() => void submitMarginAction()}
-            disabled={busy || loadingPreview || !preview?.adjustment || preview?.validation?.ready === false || !canSubmitAdd}
-          >
-            {busy ? tGrid("saving") : mode === "add" ? tGrid("add") : tGrid("remove")}
+	        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+	          <button type="button" className="btn" onClick={onClose}>
+	            <AppIcon name="close" />
+	            {tGrid("catalogClose")}
+	          </button>
+	          <button
+	            type="button"
+	            className="btn btnPrimary"
+	            onClick={() => void submitMarginAction()}
+	            disabled={busy || loadingPreview || !preview?.adjustment || preview?.validation?.ready === false || !canSubmitAdd}
+	          >
+	            <AppIcon name={mode === "add" ? "add" : "remove"} />
+	            {busy ? tGrid("saving") : mode === "add" ? tGrid("add") : tGrid("remove")}
           </button>
         </div>
       </div>

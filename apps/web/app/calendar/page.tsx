@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../lib/api";
+import { AppIcon } from "../components/AppIcon";
 import { PageHeader } from "../components/ui";
 
 type CalendarImpact = "low" | "medium" | "high";
@@ -346,11 +347,12 @@ export default function CalendarPage() {
           ))}
           <button
             type="button"
-            className="btn calendarProTabRefresh"
-            onClick={() => void load()}
-          >
-            {t("actions.refresh")}
-          </button>
+	            className="btn calendarProTabRefresh"
+	            onClick={() => void load()}
+	          >
+	            <AppIcon name="refresh" />
+	            {t("actions.refresh")}
+	          </button>
         </div>
 
         <div className="calendarFilterGrid calendarProFilterGrid">

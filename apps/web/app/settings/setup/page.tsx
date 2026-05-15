@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 
 type Bot = {
   id: string;
@@ -65,9 +66,11 @@ export default function Setup() {
       <h2>{t("title")}</h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <Link href={withLocalePath("/bots/new", locale)} className="btn btnPrimary">
+          <AppIcon name="create" />
           {t("newBot")}
         </Link>
         <button onClick={loadBots} className="btn">
+          <AppIcon name="refresh" />
           {t("refreshList")}
         </button>
       </div>
@@ -101,15 +104,17 @@ export default function Setup() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Link href={withLocalePath(`/bots/${bot.id}`, locale)} className="btn">
-                    {t("open")}
-                  </Link>
+	                  <Link href={withLocalePath(`/bots/${bot.id}`, locale)} className="btn">
+	                    <AppIcon name="open" />
+	                    {t("open")}
+	                  </Link>
                   <button
                     className="btn btnStop"
-                    onClick={() => removeBot(bot)}
-                    disabled={deletingId === bot.id}
-                  >
-                    {deletingId === bot.id ? t("deleting") : t("delete")}
+	                    onClick={() => removeBot(bot)}
+	                    disabled={deletingId === bot.id}
+	                  >
+	                    <AppIcon name="delete" />
+	                    {deletingId === bot.id ? t("deleting") : t("delete")}
                   </button>
                 </div>
               </div>

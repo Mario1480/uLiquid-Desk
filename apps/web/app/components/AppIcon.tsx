@@ -1,26 +1,58 @@
 "use client";
 
 import {
+  Archive,
+  ArrowDownToLine,
+  ArrowLeft,
+  ArrowUpFromLine,
+  BadgeDollarSign,
+  Ban,
   BrainCircuit,
   CalendarDays,
   ChartLine,
   ChartNoAxesCombined,
+  ChevronDown,
   ChevronRight,
+  Check,
   Circle,
   CircleHelp,
+  Coins,
+  Copy,
   Cpu,
   CreditCard,
+  Download,
+  ExternalLink,
+  Eye,
   FilePlus,
   FileText,
+  Filter,
   Gauge,
   Globe,
   Grid3X3,
+  GripVertical,
+  KeyRound,
   Landmark,
+  Link as LinkIcon,
+  List,
   ListChecks,
+  LogIn,
   LogOut,
+  Mail,
+  Maximize2,
+  Menu,
+  Minus,
   Newspaper,
+  Pause,
+  Pencil,
+  Play,
   Plus,
   ReceiptText,
+  RefreshCw,
+  Repeat2,
+  Rocket,
+  RotateCcw,
+  Save,
+  Search,
   Send,
   Server,
   Settings,
@@ -28,10 +60,18 @@ import {
   ShieldPlus,
   SlidersHorizontal,
   Sparkles,
+  Square,
+  Star,
+  Trash2,
   TriangleAlert,
+  Unlink,
+  Upload,
+  UserPlus,
   Users,
   Wallet,
   WalletCards,
+  Wrench,
+  X,
   type LucideIcon,
   type LucideProps
 } from "lucide-react";
@@ -73,7 +113,60 @@ export type AppIconName =
   | "strategies"
   | "exchange"
   | "template"
+  | "chevronDown"
   | "chevronRight"
+  | "create"
+  | "add"
+  | "remove"
+  | "save"
+  | "refresh"
+  | "reload"
+  | "reset"
+  | "restore"
+  | "delete"
+  | "trash"
+  | "close"
+  | "cancel"
+  | "menu"
+  | "back"
+  | "open"
+  | "external"
+  | "copy"
+  | "edit"
+  | "send"
+  | "link"
+  | "unlink"
+  | "start"
+  | "play"
+  | "launch"
+  | "pause"
+  | "stop"
+  | "archive"
+  | "disable"
+  | "deposit"
+  | "withdraw"
+  | "transfer"
+  | "switch"
+  | "manage"
+  | "drag"
+  | "resize"
+  | "max"
+  | "check"
+  | "confirm"
+  | "preview"
+  | "search"
+  | "filter"
+  | "list"
+  | "favorite"
+  | "mail"
+  | "login"
+  | "register"
+  | "key"
+  | "shield"
+  | "download"
+  | "upload"
+  | "money"
+  | "balance"
   | "generic";
 
 const APP_ICON_MAP: Record<AppIconName, LucideIcon> = {
@@ -113,7 +206,60 @@ const APP_ICON_MAP: Record<AppIconName, LucideIcon> = {
   strategies: BrainCircuit,
   exchange: Globe,
   template: FilePlus,
+  chevronDown: ChevronDown,
   chevronRight: ChevronRight,
+  create: Plus,
+  add: Plus,
+  remove: Minus,
+  save: Save,
+  refresh: RefreshCw,
+  reload: RefreshCw,
+  reset: RotateCcw,
+  restore: RotateCcw,
+  delete: Trash2,
+  trash: Trash2,
+  close: X,
+  cancel: X,
+  menu: Menu,
+  back: ArrowLeft,
+  open: ExternalLink,
+  external: ExternalLink,
+  copy: Copy,
+  edit: Pencil,
+  send: Send,
+  link: LinkIcon,
+  unlink: Unlink,
+  start: Play,
+  play: Play,
+  launch: Rocket,
+  pause: Pause,
+  stop: Square,
+  archive: Archive,
+  disable: Ban,
+  deposit: ArrowDownToLine,
+  withdraw: ArrowUpFromLine,
+  transfer: Repeat2,
+  switch: Repeat2,
+  manage: Wrench,
+  drag: GripVertical,
+  resize: Maximize2,
+  max: Maximize2,
+  check: Check,
+  confirm: Check,
+  preview: Eye,
+  search: Search,
+  filter: Filter,
+  list: List,
+  favorite: Star,
+  mail: Mail,
+  login: LogIn,
+  register: UserPlus,
+  key: KeyRound,
+  shield: ShieldCheck,
+  download: Download,
+  upload: Upload,
+  money: BadgeDollarSign,
+  balance: Coins,
   generic: Circle
 };
 

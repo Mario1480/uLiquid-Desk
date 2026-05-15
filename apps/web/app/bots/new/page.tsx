@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import SymbolSearchSelect from "../../../components/SymbolSearchSelect";
+import { AppIcon } from "../../components/AppIcon";
 
 type ExchangeAccount = {
   id: string;
@@ -487,10 +488,11 @@ export default function NewBotPage() {
           <div className="botsSetupHeaderCopy">
             <h2 style={{ margin: 0 }}>{t("title")}</h2>
             <div className="botsSetupSubtitle">{t("subtitle")}</div>
-          </div>
-          <Link href={withLocalePath("/bots", locale)} className="btn">
-            {t("actions.back")}
-          </Link>
+	          </div>
+	          <Link href={withLocalePath("/bots", locale)} className="btn">
+	            <AppIcon name="back" />
+	            {t("actions.back")}
+	          </Link>
         </div>
 
         {error ? <div className="botsSetupError">{error}</div> : null}
@@ -498,10 +500,11 @@ export default function NewBotPage() {
         {accounts.length === 0 ? (
           <div className="card botsSetupEmpty">
             <div className="botsSetupEmptyTitle">{t("noExchangeAccount")}</div>
-            <div className="botsSetupEmptyHint">{t("noExchangeAccountHint")}</div>
-            <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
-              {t("actions.addExchangeAccount")}
-            </Link>
+	            <div className="botsSetupEmptyHint">{t("noExchangeAccountHint")}</div>
+	            <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
+	              <AppIcon name="settings" />
+	              {t("actions.addExchangeAccount")}
+	            </Link>
           </div>
         ) : (
           <form onSubmit={onSubmit} className="botsSetupForm">
@@ -865,13 +868,15 @@ export default function NewBotPage() {
               </>
             ) : null}
 
-            <div className="botsSetupActionRow">
-              <Link href={withLocalePath("/bots", locale)} className="btn">
-                {t("actions.back")}
-              </Link>
-              <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
-                {saving ? t("actions.creating") : t("actions.createBot")}
-              </button>
+	            <div className="botsSetupActionRow">
+	              <Link href={withLocalePath("/bots", locale)} className="btn">
+	                <AppIcon name="back" />
+	                {t("actions.back")}
+	              </Link>
+	              <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
+	                <AppIcon name="create" />
+	                {saving ? t("actions.creating") : t("actions.createBot")}
+	              </button>
             </div>
           </form>
         )}

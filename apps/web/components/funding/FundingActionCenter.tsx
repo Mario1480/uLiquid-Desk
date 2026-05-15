@@ -10,6 +10,7 @@ import type { TransferFeatureConfig, WalletTransferOverview } from "../../lib/tr
 import { formatToken, shortAddress } from "../../lib/wallet/format";
 import { useOnchainActionFlow } from "../grid/OnchainVaultActions";
 import { createIdempotencyKey } from "../grid/utils";
+import { AppIcon } from "../../app/components/AppIcon";
 import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "./FundingTransferSection";
 import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
@@ -129,6 +130,7 @@ function FundingVaultAddressCopy({ vaultAddress }: { vaultAddress: string | null
       </div>
       {vaultAddress ? (
         <button type="button" className="btn" onClick={() => void copyAddress()}>
+          <AppIcon name="copy" />
           {copied ? t("fundingVault.copiedAddress") : t("fundingVault.copyAddress")}
         </button>
       ) : null}
@@ -171,6 +173,7 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
       {overviewQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(overviewQuery.error)}</div> : null}
       <div className="fundingQuickCardActions">
         <button type="button" className="btn btnPrimary" onClick={onManage}>
+          <AppIcon name="manage" />
           {t("fundingVault.manage")}
         </button>
       </div>
@@ -218,9 +221,11 @@ export function BotVaultWalletQuickCard({ onFund, onWithdraw }: { onFund: () => 
       {fundingQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(fundingQuery.error)}</div> : null}
       <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
         <button type="button" className="btn btnPrimary" onClick={onFund} disabled={!isConnected || loading}>
+          <AppIcon name="deposit" />
           {t("actions.botvaultFunding")}
         </button>
         <button type="button" className="btn" onClick={onWithdraw} disabled={!isConnected || loading}>
+          <AppIcon name="withdraw" />
           {t("actions.botvaultWithdrawal")}
         </button>
       </div>
@@ -351,6 +356,7 @@ export function FundingVaultManagementSection() {
             onClick={() => void executeWalletAction("create")}
             disabled={!canCreate || busy}
           >
+            <AppIcon name="create" />
             {flow.busyKey === "funding-vault-create" ? t("fundingVault.creating") : t("fundingVault.create")}
           </button>
         ) : null}
@@ -365,6 +371,7 @@ export function FundingVaultManagementSection() {
             placeholder={t("fundingVault.depositPlaceholder")}
           />
           <button type="button" className="btn" onClick={() => void executeWalletAction("deposit")} disabled={!ready || busy}>
+            <AppIcon name="deposit" />
             {t("fundingVault.deposit")}
           </button>
         </div>
@@ -379,9 +386,11 @@ export function FundingVaultManagementSection() {
             placeholder={t("fundingVault.withdrawPlaceholder")}
           />
           <button type="button" className="btn" onClick={() => void executeWalletAction("withdraw")} disabled={!ready || busy}>
+            <AppIcon name="withdraw" />
             {t("fundingVault.ownerWithdraw")}
           </button>
           <button type="button" className="btn btnPrimary" onClick={() => void executeAgentWithdraw()} disabled={!ready || busy}>
+            <AppIcon name="withdraw" />
             {t("fundingVault.agentWithdraw")}
           </button>
         </div>
@@ -436,7 +445,7 @@ export default function FundingActionCenter({
             aria-label={t("modal.close")}
             onClick={() => setActiveModal(null)}
           >
-            ×
+            <AppIcon name="close" />
           </button>
         </div>
         <div className="fundingModalBody">
@@ -517,9 +526,11 @@ export default function FundingActionCenter({
         </div>
         <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
           <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>
+            <AppIcon name="deposit" />
             {t("actions.deposit")}
           </button>
           <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>
+            <AppIcon name="withdraw" />
             {t("actions.withdraw")}
           </button>
         </div>
@@ -538,6 +549,7 @@ export default function FundingActionCenter({
         </div>
         <div className="fundingQuickCardActions">
           <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>
+            <AppIcon name="transfer" />
             {t("actions.spotPerp")}
           </button>
         </div>
@@ -557,6 +569,7 @@ export default function FundingActionCenter({
         </div>
         <div className="fundingQuickCardActions">
           <button type="button" className="btn" onClick={() => setActiveModal("core_evm")}>
+            <AppIcon name="transfer" />
             {t("actions.coreEvm")}
           </button>
         </div>

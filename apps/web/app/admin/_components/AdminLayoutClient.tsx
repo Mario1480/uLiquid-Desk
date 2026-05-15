@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useLocale } from "next-intl";
 import { useMemo, useState } from "react";
 import { extractLocaleFromPathname, withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 import { ADMIN_NAV_ITEMS } from "./admin-nav";
 
 function isActivePath(currentPath: string, href: string): boolean {
@@ -35,6 +36,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
         className="btn adminSidebarToggle"
         onClick={() => setSidebarOpen((open) => !open)}
       >
+        <AppIcon name={sidebarOpen ? "close" : "menu"} />
         {sidebarOpen ? "Close admin menu" : "Open admin menu"}
       </button>
 

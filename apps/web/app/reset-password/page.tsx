@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 import { ApiError, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../components/AppIcon";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -90,6 +91,7 @@ export default function ResetPasswordPage() {
           </label>
           <div className="authActions">
             <button className="btn" type="button" disabled={!email} onClick={() => void requestResetCode()}>
+              <AppIcon name="mail" />
               {t("requestResetCode")}
             </button>
           </div>
@@ -133,9 +135,11 @@ export default function ResetPasswordPage() {
               disabled={!email || code.length !== 6 || newPassword.length < 8}
               onClick={() => void confirmResetPassword()}
             >
+              <AppIcon name="key" />
               {t("setNewPassword")}
             </button>
             <Link href={withLocalePath("/login", locale)} className="btn">
+              <AppIcon name="back" />
               {t("backToLogin")}
             </Link>
           </div>

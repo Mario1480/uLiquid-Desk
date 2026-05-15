@@ -8,6 +8,7 @@ import { apiGet } from "../../lib/api";
 import { formatPct, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type { WalletFeatureConfig, WalletVaultsResponse } from "../../lib/wallet/types";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../../app/components/AppIcon";
 
 export default function VaultsIndexClient({ _config }: { _config: WalletFeatureConfig }) {
   const locale = useLocale() as AppLocale;
@@ -27,7 +28,10 @@ export default function VaultsIndexClient({ _config }: { _config: WalletFeatureC
           <h2 className="walletPageTitle">{t("title")}</h2>
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
-        <Link className="btn" href={withLocalePath("/wallet", locale)}>{tCommon("backToWallet")}</Link>
+        <Link className="btn" href={withLocalePath("/wallet", locale)}>
+          <AppIcon name="back" />
+          {tCommon("backToWallet")}
+        </Link>
       </div>
 
       {!isConnected ? (
@@ -76,6 +80,7 @@ export default function VaultsIndexClient({ _config }: { _config: WalletFeatureC
               </div>
               <div className="walletActionRow walletCardActions">
                 <Link className="btn btnPrimary" href={withLocalePath(`/vaults/${vault.vaultAddress}`, locale)}>
+                  <AppIcon name="vault" />
                   {t("openVault")}
                 </Link>
               </div>

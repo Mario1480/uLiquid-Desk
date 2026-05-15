@@ -9,6 +9,7 @@ import { switchChain } from "wagmi/actions";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
+import { AppIcon } from "../../components/AppIcon";
 
 type AffiliateOverviewResponse = {
   profile: {
@@ -365,22 +366,24 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           </div>
         </div>
         <div className="settingsActions" style={{ marginTop: 12 }}>
-          <button
-            className="btn btnPrimary"
-            type="button"
-            onClick={() => void saveProfitshareRate()}
-            disabled={actionBusy !== null || loading}
-          >
-            {actionBusy === "profitshare-rate" ? "Saving…" : "Save profitshare"}
-          </button>
+	          <button
+	            className="btn btnPrimary"
+	            type="button"
+	            onClick={() => void saveProfitshareRate()}
+	            disabled={actionBusy !== null || loading}
+	          >
+	            <AppIcon name="save" />
+	            {actionBusy === "profitshare-rate" ? "Saving…" : "Save profitshare"}
+	          </button>
           <button
             className="btn"
             type="button"
-            onClick={() => setProfitshareRateInput(String(data?.selfSelectedFeeRatePct ?? data?.effectiveFeeRatePct ?? 10))}
-            disabled={actionBusy !== null || loading}
-          >
-            Reset
-          </button>
+	            onClick={() => setProfitshareRateInput(String(data?.selfSelectedFeeRatePct ?? data?.effectiveFeeRatePct ?? 10))}
+	            disabled={actionBusy !== null || loading}
+	          >
+	            <AppIcon name="reset" />
+	            Reset
+	          </button>
         </div>
       </section>
 
@@ -396,10 +399,11 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           <span className="settingsFieldLabel">Link</span>
           <input className="input" readOnly value={referralLink} placeholder="Referral link will appear here" />
         </div>
-        <div className="settingsActions">
-          <button className="btn btnPrimary" type="button" onClick={() => void copyReferralLink()} disabled={!referralLink}>
-            Copy link
-          </button>
+	        <div className="settingsActions">
+	          <button className="btn btnPrimary" type="button" onClick={() => void copyReferralLink()} disabled={!referralLink}>
+	            <AppIcon name="copy" />
+	            Copy link
+	          </button>
         </div>
         {data?.referredBy ? (
           <div className="settingsMutedText">
@@ -419,11 +423,12 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           <span className="settingsFieldLabel">Address</span>
           <input className="input" readOnly value={data?.payoutWallet?.address ?? ""} placeholder="Create payout wallet to receive V4 affiliate payouts" />
         </div>
-        {data?.payoutWallet?.address ? (
-          <div className="settingsActions" style={{ marginTop: 12 }}>
-            <button className="btn" type="button" onClick={() => void copyPayoutWalletAddress()}>
-              Copy payout wallet address
-            </button>
+	        {data?.payoutWallet?.address ? (
+	          <div className="settingsActions" style={{ marginTop: 12 }}>
+	            <button className="btn" type="button" onClick={() => void copyPayoutWalletAddress()}>
+	              <AppIcon name="copy" />
+	              Copy payout wallet address
+	            </button>
           </div>
         ) : null}
         <div className="adminStatsGrid" style={{ marginTop: 12 }}>
@@ -449,37 +454,41 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
             <button
               className="btn btnPrimary"
               type="button"
-              onClick={() => void runWalletAction("create")}
-              disabled={actionBusy !== null}
-            >
-              {actionBusy === "create" ? "Creating…" : "Create payout wallet"}
-            </button>
+	              onClick={() => void runWalletAction("create")}
+	              disabled={actionBusy !== null}
+	            >
+	              <AppIcon name="wallet" />
+	              {actionBusy === "create" ? "Creating…" : "Create payout wallet"}
+	            </button>
           ) : null}
           {data?.payoutWallet?.address ? (
             <button
               className="btn btnPrimary"
               type="button"
-              onClick={() => openPayoutModal("deposit-hype")}
-              disabled={actionBusy !== null || isWalletPending}
-            >
-              {actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE"}
-            </button>
+	              onClick={() => openPayoutModal("deposit-hype")}
+	              disabled={actionBusy !== null || isWalletPending}
+	            >
+	              <AppIcon name="deposit" />
+	              {actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE"}
+	            </button>
           ) : null}
           <button
             className="btn"
             type="button"
-            onClick={() => openPayoutModal("withdraw-hype")}
-            disabled={!data?.payoutWallet?.address || actionBusy !== null}
-          >
-            {actionBusy === "withdraw-hype" ? "Withdrawing…" : "Withdraw HYPE to linked wallet"}
-          </button>
+	            onClick={() => openPayoutModal("withdraw-hype")}
+	            disabled={!data?.payoutWallet?.address || actionBusy !== null}
+	          >
+	            <AppIcon name="withdraw" />
+	            {actionBusy === "withdraw-hype" ? "Withdrawing…" : "Withdraw HYPE to linked wallet"}
+	          </button>
           <button
             className="btn"
             type="button"
-            onClick={() => openPayoutModal("withdraw-usdc")}
-            disabled={!data?.payoutWallet?.address || actionBusy !== null}
-          >
-            {actionBusy === "withdraw-usdc" ? "Withdrawing…" : "Withdraw USDC to linked wallet"}
+	            onClick={() => openPayoutModal("withdraw-usdc")}
+	            disabled={!data?.payoutWallet?.address || actionBusy !== null}
+	          >
+	            <AppIcon name="withdraw" />
+	            {actionBusy === "withdraw-usdc" ? "Withdrawing…" : "Withdraw USDC to linked wallet"}
           </button>
         </div>
         <div className="settingsMutedText" style={{ marginTop: 10 }}>
@@ -553,7 +562,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                 aria-label="Close modal"
                 onClick={() => setActivePayoutModal(null)}
               >
-                ×
+                <AppIcon name="close" />
               </button>
             </div>
             <div className="fundingModalBody">
@@ -616,10 +625,11 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                     {copyNotice}
                   </div>
                 ) : null}
-                <div className="walletActionRow fundingModalPrimaryActionRow">
-                  <button type="button" className="btn" onClick={() => setActivePayoutModal(null)}>
-                    Cancel
-                  </button>
+	                <div className="walletActionRow fundingModalPrimaryActionRow">
+	                  <button type="button" className="btn" onClick={() => setActivePayoutModal(null)}>
+	                    <AppIcon name="cancel" />
+	                    Cancel
+	                  </button>
                   <button
                     type="button"
                     className="btn btnPrimary"
@@ -630,9 +640,10 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                       !data?.payoutWallet?.address ||
                       actionBusy !== null ||
                       (activePayoutModal === "deposit-hype" && isWalletPending)
-                    }
-                  >
-                    {activePayoutModal === "deposit-hype"
+	                    }
+	                  >
+	                    <AppIcon name={activePayoutModal === "deposit-hype" ? "deposit" : "withdraw"} />
+	                    {activePayoutModal === "deposit-hype"
                       ? (actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE")
                       : activePayoutModal === "withdraw-hype"
                         ? (actionBusy === "withdraw-hype" ? "Withdrawing…" : "Withdraw HYPE")
@@ -655,12 +666,15 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
     <div className="settingsWrap" style={{ maxWidth: 1100 }}>
       <div className="card settingsSection">
         <div className="settingsSectionHeader">
-          <div>
-            <h2 style={{ margin: 0 }}>Affiliate</h2>
-            <div className="settingsSectionMeta">Referral code, accrued earnings and latest affiliate events.</div>
-          </div>
-          <Link href={withLocalePath("/settings", locale)} className="btn">Back to settings</Link>
-        </div>
+	          <div>
+	            <h2 style={{ margin: 0 }}>Affiliate</h2>
+	            <div className="settingsSectionMeta">Referral code, accrued earnings and latest affiliate events.</div>
+	          </div>
+	          <Link href={withLocalePath("/settings", locale)} className="btn">
+	            <AppIcon name="back" />
+	            Back to settings
+	          </Link>
+	        </div>
       </div>
       {content}
     </div>

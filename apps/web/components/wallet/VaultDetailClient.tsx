@@ -17,6 +17,7 @@ import { apiGet } from "../../lib/api";
 import { buildExplorerAddressUrl, formatDateTime, formatPct, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type { VaultDetailResponse, WalletFeatureConfig } from "../../lib/wallet/types";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { AppIcon } from "../../app/components/AppIcon";
 
 export default function VaultDetailClient({
   config,
@@ -57,9 +58,13 @@ export default function VaultDetailClient({
             target="_blank"
             rel="noreferrer"
           >
+            <AppIcon name="external" />
             {tCommon("explorer")}
           </a>
-          <Link className="btn" href={withLocalePath("/vaults", locale)}>{tCommon("backToVaults")}</Link>
+          <Link className="btn" href={withLocalePath("/vaults", locale)}>
+            <AppIcon name="back" />
+            {tCommon("backToVaults")}
+          </Link>
         </div>
       </div>
 
