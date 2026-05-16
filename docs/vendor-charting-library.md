@@ -14,13 +14,12 @@ The web app vendors TradingView Advanced Charts assets under:
 - Internal package id: `028f81fbf6fef55e9694e5df4bd5106cc04c188a`
 - Package timestamp: `2026-03-05T20:44:53.566Z`
 - Version source: `apps/web/public/static/charting_library/package.json`
-- Static bundle checksum: `4598c7aec0b1aea34913ba542fd9427ece86e409f5b4342ffd29813ff9529df5`
+- Static bundle checksum: `e763cfce0f8343f413494171a38783e69b90fe94cda92ae99fe1a9a9b0088d1c`
 
 Checksum command:
 
 ```bash
-find apps/web/public/static/charting_library apps/web/public/static/datafeeds -type f -print0 \
-  | sort -z \
+git ls-files -z -- apps/web/public/static/charting_library apps/web/public/static/datafeeds \
   | xargs -0 shasum -a 256 \
   | shasum -a 256
 ```

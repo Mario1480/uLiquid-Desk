@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const repoRoot = process.cwd();
@@ -18,29 +19,6 @@ function sha256Hex(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-function collectFiles(root) {
-  const absoluteRoot = path.join(repoRoot, root);
-  if (!existsSync(absoluteRoot)) {
-    throw new Error(`missing vendor asset directory: ${root}`);
-  }
-
-  const files = [];
-  const visit = (absoluteDir) => {
-    for (const entry of readdirSync(absoluteDir, { withFileTypes: true })) {
-      const absoluteEntry = path.join(absoluteDir, entry.name);
-      if (entry.isDirectory()) {
-        visit(absoluteEntry);
-        continue;
-      }
-      if (entry.isFile()) {
-        files.push(toPosix(path.relative(repoRoot, absoluteEntry)));
-      }
-    }
-  };
-  visit(absoluteRoot);
-  return files;
-}
-
 const doc = readFileSync(path.join(repoRoot, docPath), "utf8");
 const expected = doc.match(/Static bundle checksum:\s*`([a-f0-9]{64})`/i)?.[1]?.toLowerCase();
 
@@ -49,7 +27,21 @@ if (!expected) {
   process.exit(1);
 }
 
-const files = assetRoots.flatMap(collectFiles).sort();
+for (const root of assetRoots) {
+  if (!existsSync(path.join(repoRoot, root))) {
+    throw new Error(`missing vendor asset directory: ${root}`);
+  }
+}
+
+const files = execFileSync("git", ["ls-files", "-z", "--", ...assetRoots], {
+  cwd: repoRoot
+})
+  .toString("utf8")
+  .split("\0")
+  .filter(Boolean)
+  .map(toPosix)
+  .sort();
+
 if (files.length === 0) {
   console.error("[vendor-charting] no vendor charting assets found");
   process.exit(1);
