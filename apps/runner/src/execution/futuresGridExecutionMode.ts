@@ -1,26 +1,11 @@
 import type { TradeIntent } from "@mm/futures-core";
-import {
-  BOT_VAULT_RUNTIME_MODEL_V4,
-  deriveBotVaultLifecycleState,
-  botVaultRuntimeReasonCode,
-  getBotVaultGridReadiness,
-  isBotVaultRuntimeModelRow,
-  resolveBotVaultRuntimeModel,
-  type BotVaultGridReadinessResult
-} from "@mm/core";
+import type { BotVaultGridReadinessResult } from "@mm/core";
 import {
   buildSharedExecutionVenue,
-  resolveRequiredQtyForVenueMinimums,
   resolveVenueMinNotional,
   roundUpToStep
 } from "@mm/futures-engine";
 import {
-  buildHyperliquidReadKey,
-  buildOrderReferenceIdentity,
-  collectCanonicalOrderReferenceKeys,
-  collectOrderReferenceCandidates,
-  collectOrderReferenceSet,
-  executeHyperliquidRead,
   isConfirmedFuturesActionResult,
   isConfirmedFundsTransferResult,
   isConfirmedPlaceOrderResult,
@@ -41,14 +26,12 @@ import {
   findLatestBotOrderSince,
   findGridBotOrderMapByOrderRef,
   listGridBotFillEvents,
-  listPaperPositionsForRunner,
   listGridBotOpenOrders,
   loadBotTradeState,
   placePaperPositionForRunner,
   placePaperLimitOrderForRunner,
   setPaperPositionProtectionForRunner,
   loadGridBotInstanceByBotId,
-  type GridBotInstanceRuntime,
   seedGridBotVaultMatchingStateForGridInstance,
   simulatePaperGridLimitFillsForRunner,
   upsertBotTradeState,
@@ -104,6 +87,19 @@ import {
   shouldRetryInitialSeedSubmission
 } from "./gridInitialSeed.js";
 import {
+  extractHyperliquidLiveOrderRefs,
+  hasOpenPlannerPosition,
+  liveOrderMatchesLocalOpenOrder,
+  refreshTradeStateForVaultReconciliation,
+  resolvePlannerFillEventsForExecution,
+  resolvePlannerPositionForExecution,
+  syncGridTradeStateWithPlannerPosition,
+  toPlannerPosition,
+  toPlannerPositionFromAdapter,
+  toPlannerPositionFromPaper,
+  type PlannerPositionSnapshot
+} from "./gridFillSync.js";
+import {
   cancelGridOpenOrdersBestEffort,
   closeGridResidualPositionBestEffort,
   executeMappedIntentViaAdapter,
@@ -112,6 +108,39 @@ import {
   toOrderIntentFromPlanner,
   writeBotOrderDualWrite
 } from "./gridOrderExecution.js";
+import {
+  buildGridPlanRequest,
+  computeInitialSeedSide,
+  filterGridIntentsForRiskGate,
+  findBlockingPendingGridCancel,
+  normalizeGridOrderIntentForVenueConstraints,
+  parseGridClientOrderIdForRecovery,
+  stabilizeHyperliquidVaultGridIntents
+} from "./gridPlanning.js";
+import {
+  buildGridPlanLiveAccountState,
+  buildVaultBalanceExpectation,
+  buildVaultBalanceSnapshot,
+  hasAccountFundingAtLeast,
+  isInitialCoreSpotDepositConfirmed,
+  normalizeTransferResultText,
+  readVaultBalanceSnapshot,
+  resolveInitialCoreSpotDepositAmountUsd,
+  resolveInitialCoreSpotDepositStatus,
+  resolveInitialPerpFundingAmountUsd,
+  shouldBlockInitialPerpTransferSubmit,
+  shouldRetryCloseOnlySettlementTransfer
+} from "./gridVaultFunding.js";
+import {
+  evaluateBotVaultGridReadinessForRunner,
+  evaluateHyperliquidBotVaultExecutionReadiness,
+  isRunnerBotVaultRuntimeExecution,
+  readBotVaultOnchainContractVersion,
+  runnerBotVaultMonitorKey,
+  serializeBotVaultGridReadiness,
+  shouldAllowHyperliquidVaultBootstrap,
+  withGridHealthState
+} from "./gridVaultReadiness.js";
 import { executeRunnerSharedExecutionPipeline } from "./sharedExecution.js";
 import {
   categorizeExecutionRetry,
@@ -148,192 +177,43 @@ export {
   shouldMarkInitialSeedExecuted,
   shouldRetryInitialSeedSubmission
 } from "./gridInitialSeed.js";
+export {
+  extractHyperliquidLiveOrderRefs,
+  liveOrderMatchesLocalOpenOrder,
+  refreshTradeStateForVaultReconciliation,
+  resolvePlannerFillEventsForExecution,
+  resolvePlannerPositionForExecution
+} from "./gridFillSync.js";
 export { summarizeGridDelegatedResults } from "./gridOrderExecution.js";
-
-export type InitialCoreSpotDepositStatus =
-  | "deposit_confirmed"
-  | "deposit_pending_reconciliation"
-  | "deposit_pending_timeout"
-  | "deposit_submitted"
-  | "deposit_failed";
+export {
+  buildGridPlanRequest,
+  computeInitialSeedSide,
+  filterGridIntentsForRiskGate,
+  findBlockingPendingGridCancel,
+  normalizeGridOrderIntentForVenueConstraints,
+  stabilizeHyperliquidVaultGridIntents
+} from "./gridPlanning.js";
+export {
+  buildVaultBalanceSnapshot,
+  isInitialCoreSpotDepositConfirmed,
+  resolveInitialCoreSpotDepositAmountUsd,
+  resolveInitialCoreSpotDepositStatus,
+  resolveInitialPerpFundingAmountUsd,
+  shouldBlockInitialPerpTransferSubmit,
+  shouldRetryCloseOnlySettlementTransfer
+} from "./gridVaultFunding.js";
+export {
+  evaluateBotVaultGridReadinessForRunner,
+  evaluateHyperliquidBotVaultExecutionReadiness,
+  shouldAllowHyperliquidVaultBootstrap
+} from "./gridVaultReadiness.js";
+export type {
+  InitialCoreSpotDepositStatus,
+  VaultBalanceSnapshot
+} from "./gridVaultFunding.js";
 
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-}
-
-type PlannerFillEventInput = {
-  exchangeOrderId?: string | null;
-  clientOrderId?: string | null;
-  side?: "buy" | "sell" | null;
-  fillPrice?: number | null;
-  fillQty?: number | null;
-  fillTs?: Date | string | null;
-  gridIndex?: number | null;
-};
-
-export function resolvePlannerFillEventsForExecution(params: {
-  currentStateJson: Record<string, unknown>;
-  paperFillEvents: PlannerFillEventInput[];
-  liveFillEvents: PlannerFillEventInput[];
-}): {
-  plannerFillEvents: Array<{
-    exchangeOrderId?: string | null;
-    clientOrderId?: string | null;
-    side?: "buy" | "sell" | null;
-    fillPrice: number;
-    fillQty: number;
-    fillTs: string;
-    gridIndex?: number | null;
-  }>;
-  latestProcessedFillTs: string | null;
-} {
-  const plannerFillEvents: Array<{
-    exchangeOrderId?: string | null;
-    clientOrderId?: string | null;
-    side?: "buy" | "sell" | null;
-    fillPrice: number;
-    fillQty: number;
-    fillTs: string;
-    gridIndex?: number | null;
-  }> = [];
-  let latestProcessedFillTs = String(params.currentStateJson.lastProcessedGridFillTs ?? "").trim() || null;
-
-  for (const fill of [...params.paperFillEvents, ...params.liveFillEvents]) {
-    const fillPrice = Number(fill.fillPrice ?? NaN);
-    const fillQty = Number(fill.fillQty ?? NaN);
-    const fillDate = fill.fillTs instanceof Date ? fill.fillTs : new Date(String(fill.fillTs ?? ""));
-    if (!Number.isFinite(fillPrice) || fillPrice <= 0) continue;
-    if (!Number.isFinite(fillQty) || fillQty <= 0) continue;
-    if (Number.isNaN(fillDate.getTime())) continue;
-    const fillTs = fillDate.toISOString();
-    plannerFillEvents.push({
-      exchangeOrderId: fill.exchangeOrderId ?? null,
-      clientOrderId: fill.clientOrderId ?? null,
-      side: fill.side === "sell" ? "sell" : "buy",
-      fillPrice,
-      fillQty,
-      fillTs,
-      gridIndex: Number.isFinite(Number(fill.gridIndex)) ? Math.max(0, Math.trunc(Number(fill.gridIndex))) : null
-    });
-    if (!latestProcessedFillTs || fillTs > latestProcessedFillTs) {
-      latestProcessedFillTs = fillTs;
-    }
-  }
-
-  return {
-    plannerFillEvents,
-    latestProcessedFillTs
-  };
-}
-
-export async function refreshTradeStateForVaultReconciliation(params: {
-  executionExchange: string;
-  liveFillEvents: PlannerFillEventInput[];
-  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
-  resolvePlannerPosition: () => Promise<{
-    position: PlannerPositionSnapshot;
-    source: "paper" | "adapter" | "trade_state" | "trade_state_fallback" | "empty_hyperliquid_bootstrap_fallback";
-    degraded: boolean;
-    readError: string | null;
-  }>;
-  syncTradeState: (plannerPosition: PlannerPositionSnapshot) => Promise<Awaited<ReturnType<typeof loadBotTradeState>>>;
-}): Promise<{
-  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
-  plannerPositionResolution: {
-    position: PlannerPositionSnapshot;
-    source: "paper" | "adapter" | "trade_state" | "trade_state_fallback" | "empty_hyperliquid_bootstrap_fallback";
-    degraded: boolean;
-    readError: string | null;
-  } | null;
-}> {
-  if (params.executionExchange === "paper" || params.liveFillEvents.length === 0) {
-    return {
-      tradeState: params.tradeState,
-      plannerPositionResolution: null
-    };
-  }
-
-  const plannerPositionResolution = await params.resolvePlannerPosition();
-  return {
-    tradeState: await params.syncTradeState(plannerPositionResolution.position),
-    plannerPositionResolution
-  };
-}
-
-export function extractHyperliquidLiveOrderRefs(params: {
-  orderId?: string | null;
-  raw?: unknown;
-}): {
-  clientOrderId: string | null;
-  exchangeOrderRefs: string[];
-} {
-  const raw = params.raw && typeof params.raw === "object" && !Array.isArray(params.raw)
-    ? params.raw as Record<string, unknown>
-    : {};
-  const clientOrderId = String(
-    raw.clientOid
-    ?? raw.clientOrderId
-    ?? raw.clOrdId
-    ?? ""
-  ).trim() || null;
-  const canonicalIdentity = buildOrderReferenceIdentity({
-    clientOrderId,
-    exchangeOrderId: params.orderId,
-    cloid: String(raw.cloid ?? "").trim() || null
-  });
-  const exchangeOrderRefs = new Set<string>([
-    ...collectOrderReferenceSet([
-      params.orderId,
-      raw.oid,
-      raw.orderId,
-      raw.order_id,
-      raw.cloid
-    ]),
-    ...canonicalIdentity.keys,
-    ...collectCanonicalOrderReferenceKeys([
-      { value: params.orderId, hint: "exchange" },
-      { value: raw.oid, hint: "exchange" },
-      { value: raw.orderId, hint: "exchange" },
-      { value: raw.order_id, hint: "exchange" },
-      { value: raw.cloid, hint: "cloid" }
-    ])
-  ]);
-  return {
-    clientOrderId,
-    exchangeOrderRefs: [...exchangeOrderRefs]
-  };
-}
-
-export function liveOrderMatchesLocalOpenOrder(params: {
-  openOrders: Array<{
-    clientOrderId?: string | null;
-    exchangeOrderId?: string | null;
-  }>;
-  clientOrderId?: string | null;
-  exchangeOrderRefs?: string[];
-}): boolean {
-  const targetKeys = collectCanonicalOrderReferenceKeys([
-    { value: params.clientOrderId, hint: "client_or_cloid" },
-    ...((Array.isArray(params.exchangeOrderRefs) ? params.exchangeOrderRefs : []).map((value) => ({
-      value,
-      hint: "exchange" as const
-    }))),
-    ...((Array.isArray(params.exchangeOrderRefs) ? params.exchangeOrderRefs : []).map((value) => ({
-      value,
-      hint: "client_or_cloid" as const
-    })))
-  ]);
-  if (targetKeys.size === 0) return false;
-  return params.openOrders.some((row) => {
-    const localIdentity = buildOrderReferenceIdentity({
-      clientOrderId: row.clientOrderId,
-      exchangeOrderId: row.exchangeOrderId
-    });
-    for (const key of localIdentity.keys) {
-      if (targetKeys.has(key)) return true;
-    }
-    return false;
-  });
 }
 
 function toPositiveNumberOrNull(value: unknown): number | null {
@@ -372,90 +252,10 @@ function summarizeVaultReconciliation(result: ReconciliationResult) {
   };
 }
 
-function toNullableIso(value: unknown): string | null {
-  const text = String(value ?? "").trim();
-  return text ? text : null;
-}
-
 function toPositiveNumberOrNullLoose(value: unknown): number | null {
   const parsed = Number(value ?? NaN);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return parsed;
-}
-
-function buildVaultBalanceExpectation(params: {
-  currentStateJson: Record<string, unknown>;
-  openOrdersCount: number;
-  plannerPosition: {
-    side?: "long" | "short" | null;
-    qty?: number | null;
-  } | null;
-  pendingExecutions: ReturnType<typeof listPendingGridExecutions>;
-}) {
-  const isIdleRuntime =
-    params.openOrdersCount === 0
-    && !hasOpenPlannerPosition(params.plannerPosition)
-    && params.pendingExecutions.length === 0;
-  if (!isIdleRuntime) return null;
-
-  const closeOnlySpotToEvmDoneAt = toNullableIso(params.currentStateJson.closeOnlySpotToEvmDoneAt);
-  if (closeOnlySpotToEvmDoneAt) {
-    return {
-      phase: "close_only_spot_to_evm_pending" as const,
-      startedAt: closeOnlySpotToEvmDoneAt,
-      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.closeOnlySpotToEvmAmountUsd)
-    };
-  }
-
-  const closeOnlySpotToEvmPendingAt = toNullableIso(params.currentStateJson.closeOnlySpotToEvmPendingAt);
-  if (closeOnlySpotToEvmPendingAt) {
-    return {
-      phase: "close_only_spot_to_evm_pending" as const,
-      startedAt: closeOnlySpotToEvmPendingAt,
-      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.closeOnlySpotToEvmAmountUsd)
-    };
-  }
-
-  const closeOnlyPerpToSpotDoneAt = toNullableIso(params.currentStateJson.closeOnlyPerpToSpotDoneAt);
-  if (closeOnlyPerpToSpotDoneAt) {
-    return {
-      phase: "close_only_perp_to_spot_pending" as const,
-      startedAt: closeOnlyPerpToSpotDoneAt,
-      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.closeOnlyPerpToSpotAmountUsd)
-    };
-  }
-
-  const initialPerpTransferDoneAt = toNullableIso(params.currentStateJson.initialPerpTransferDoneAt);
-  if (initialPerpTransferDoneAt) {
-    return {
-      phase: "initial_perp_funding_pending" as const,
-      startedAt: initialPerpTransferDoneAt,
-      amountUsd: toPositiveNumberOrNullLoose(
-        params.currentStateJson.initialPerpTransferAmountUsd
-        ?? params.currentStateJson.initialPerpTransferRequestedAmountUsd
-      )
-    };
-  }
-
-  const initialCoreSpotTransferDoneAt = toNullableIso(params.currentStateJson.initialCoreSpotTransferDoneAt);
-  if (initialCoreSpotTransferDoneAt) {
-    return {
-      phase: "initial_core_spot_funding_pending" as const,
-      startedAt: initialCoreSpotTransferDoneAt,
-      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.initialCoreSpotTransferAmountUsd)
-    };
-  }
-
-  const initialCoreSpotDepositPendingAt = toNullableIso(params.currentStateJson.initialCoreSpotDepositPendingAt);
-  if (initialCoreSpotDepositPendingAt) {
-    return {
-      phase: "initial_core_spot_funding_pending" as const,
-      startedAt: initialCoreSpotDepositPendingAt,
-      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.initialCoreSpotDepositAmountUsd)
-    };
-  }
-
-  return null;
 }
 
 export function resolveVaultReconciliationBlockReason(result: Pick<ReconciliationResult, "drifts" | "status">): string | null {
@@ -473,381 +273,6 @@ export function resolveVaultReconciliationBlockReason(result: Pick<Reconciliatio
   return "grid_vault_reconciliation_required";
 }
 
-export function computeInitialSeedSide(params: {
-  mode: "long" | "short" | "neutral" | "cross";
-  markPrice: number;
-  lowerPrice: number;
-  upperPrice: number;
-  crossSideConfig?: GridBotInstanceRuntime["crossSideConfig"] | null;
-}): "buy" | "sell" {
-  if (params.mode === "long") return "buy";
-  if (params.mode === "short") return "sell";
-  if (params.mode === "cross" && params.crossSideConfig) {
-    const longMidpoint = (Number(params.crossSideConfig.long.lowerPrice) + Number(params.crossSideConfig.long.upperPrice)) / 2;
-    const shortMidpoint = (Number(params.crossSideConfig.short.lowerPrice) + Number(params.crossSideConfig.short.upperPrice)) / 2;
-    if (Number(params.markPrice) <= longMidpoint) return "buy";
-    if (Number(params.markPrice) >= shortMidpoint) return "sell";
-    return Math.abs(Number(params.markPrice) - longMidpoint) <= Math.abs(shortMidpoint - Number(params.markPrice))
-      ? "buy"
-      : "sell";
-  }
-  const midpoint = (Number(params.lowerPrice) + Number(params.upperPrice)) / 2;
-  return Number(params.markPrice) <= midpoint ? "buy" : "sell";
-}
-
-export function buildGridPlanRequest(params: {
-  instance: Pick<
-    GridBotInstanceRuntime,
-    | "id"
-    | "mode"
-    | "gridMode"
-    | "allocationMode"
-    | "budgetSplitPolicy"
-    | "longBudgetPct"
-    | "shortBudgetPct"
-    | "lowerPrice"
-    | "upperPrice"
-    | "gridCount"
-    | "crossSideConfig"
-    | "activeOrderWindowSize"
-    | "recenterDriftLevels"
-    | "investUsd"
-    | "leverage"
-    | "slippagePct"
-    | "triggerPrice"
-    | "tpPct"
-    | "slPrice"
-    | "extraMarginUsd"
-    | "initialSeedEnabled"
-    | "initialSeedPct"
-  >;
-  markPrice: number;
-  openOrders: GridPlanRequest["openOrders"];
-  position: GridPlanRequest["position"];
-  stateJson: Record<string, unknown>;
-  fillEvents: Array<Record<string, unknown>>;
-  venueConstraints: NonNullable<GridPlanRequest["venueConstraints"]>;
-  feeBufferPct: number;
-  mmrPct: number | undefined;
-  liqDistanceMinPct: number | undefined;
-  liveAccountState?: GridPlanRequest["liveAccountState"] | null;
-}): GridPlanRequest {
-  return {
-    instanceId: params.instance.id,
-    mode: params.instance.mode,
-    gridMode: params.instance.gridMode,
-    allocationMode: params.instance.allocationMode,
-    budgetSplitPolicy: params.instance.budgetSplitPolicy,
-    longBudgetPct: params.instance.longBudgetPct,
-    shortBudgetPct: params.instance.shortBudgetPct,
-    lowerPrice: params.instance.lowerPrice,
-    upperPrice: params.instance.upperPrice,
-    gridCount: params.instance.gridCount,
-    crossSideConfig: params.instance.crossSideConfig ?? undefined,
-    activeOrderWindowSize: params.instance.activeOrderWindowSize,
-    recenterDriftLevels: params.instance.recenterDriftLevels,
-    investUsd: params.instance.investUsd,
-    leverage: params.instance.leverage,
-    slippagePct: params.instance.slippagePct,
-    triggerPrice: params.instance.triggerPrice,
-    tpPct: params.instance.tpPct,
-    slPrice: params.instance.slPrice,
-    trailingEnabled: false,
-    markPrice: params.markPrice,
-    openOrders: params.openOrders,
-    position: params.position,
-    liveAccountState: params.liveAccountState ?? undefined,
-    stateJson: params.stateJson,
-    fillEvents: params.fillEvents,
-    venueConstraints: params.venueConstraints,
-    feeBufferPct: params.feeBufferPct,
-    mmrPct: params.mmrPct,
-    extraMarginUsd: params.instance.extraMarginUsd,
-    liqDistanceMinPct: params.liqDistanceMinPct,
-    initialSeedEnabled: params.instance.initialSeedEnabled,
-    initialSeedPct: params.instance.initialSeedPct
-  };
-}
-
-function hasOpenPlannerPosition(position: {
-  side?: "long" | "short" | null;
-  qty?: number | null;
-} | null | undefined): boolean {
-  return Boolean(position && Number.isFinite(Number(position.qty)) && Number(position.qty) > 0);
-}
-
-export function normalizeGridOrderIntentForVenueConstraints(params: {
-  plannerIntent: GridPlannerIntent;
-  minQty: number | null;
-  qtyStep: number | null;
-  minNotional: number | null;
-}): GridPlannerIntent | null {
-  if (params.plannerIntent.type !== "place_order" && params.plannerIntent.type !== "replace_order") {
-    return params.plannerIntent;
-  }
-  const qty = Number(params.plannerIntent.qty ?? NaN);
-  if (!Number.isFinite(qty) || qty <= 0) return null;
-
-  const price = Number(params.plannerIntent.price ?? NaN);
-  const minNotional = Number(params.minNotional ?? NaN);
-  const nextQty = resolveRequiredQtyForVenueMinimums({
-    qty,
-    price,
-    minQty: params.minQty,
-    qtyStep: params.qtyStep,
-    minNotional: params.plannerIntent.reduceOnly === true ? null : params.minNotional
-  });
-  if (!Number.isFinite(nextQty) || nextQty <= 0) return null;
-
-  if (
-    params.plannerIntent.reduceOnly !== true
-    && Number.isFinite(price)
-    && price > 0
-    && Number.isFinite(minNotional)
-    && minNotional > 0
-    && nextQty * price + 1e-9 < minNotional
-  ) {
-    return null;
-  }
-
-  return {
-    ...params.plannerIntent,
-    qty: nextQty
-  };
-}
-
-export function stabilizeHyperliquidVaultGridIntents(params: {
-  intents: GridPlannerIntent[];
-  isHyperliquidVault: boolean;
-  botVaultState: string;
-  hasFreshGridFills: boolean;
-  openOrders: Array<{
-    clientOrderId?: string | null;
-    exchangeOrderId?: string | null;
-  }>;
-}): GridPlannerIntent[] {
-  if (!params.isHyperliquidVault || params.botVaultState !== "active" || params.hasFreshGridFills) {
-    return params.intents;
-  }
-
-  const stableOpenClientOrderIds = new Set(
-    params.openOrders
-      .map((row) => String(row.clientOrderId ?? "").trim())
-      .filter(Boolean)
-  );
-  const stableOpenExchangeOrderIds = new Set(
-    params.openOrders
-      .map((row) => String(row.exchangeOrderId ?? "").trim())
-      .filter(Boolean)
-  );
-
-  return params.intents.filter((intent) => {
-    if (intent.type === "set_protection") return true;
-    if (intent.type === "cancel_order" || intent.type === "replace_order") return false;
-    if (intent.type !== "place_order") return true;
-    if (stableOpenClientOrderIds.size === 0 && stableOpenExchangeOrderIds.size === 0) return true;
-
-    const clientOrderId = String(intent.clientOrderId ?? "").trim();
-    const exchangeOrderId = String(intent.exchangeOrderId ?? "").trim();
-    if (clientOrderId && stableOpenClientOrderIds.has(clientOrderId)) return false;
-    if (exchangeOrderId && stableOpenExchangeOrderIds.has(exchangeOrderId)) return false;
-    return true;
-  });
-}
-
-export function findBlockingPendingGridCancel(params: {
-  plannerIntent: GridPlannerIntent;
-  pendingExecutions: Array<{
-    actionType?: string | null;
-    clientOrderId?: string | null;
-    exchangeOrderId?: string | null;
-  }>;
-}): {
-  clientOrderId: string | null;
-  exchangeOrderId: string | null;
-} | null {
-  const targetClientOrderId = String(params.plannerIntent.clientOrderId ?? "").trim();
-  const targetExchangeOrderId = String(params.plannerIntent.exchangeOrderId ?? "").trim();
-  for (const pending of params.pendingExecutions) {
-    if (String(pending.actionType ?? "").trim().toLowerCase() !== "cancel_order") continue;
-    const pendingClientOrderId = String(pending.clientOrderId ?? "").trim();
-    const pendingExchangeOrderId = String(pending.exchangeOrderId ?? "").trim();
-    if (
-      (targetClientOrderId && pendingClientOrderId === targetClientOrderId)
-      || (targetExchangeOrderId && pendingExchangeOrderId === targetExchangeOrderId)
-    ) {
-      return {
-        clientOrderId: pendingClientOrderId || null,
-        exchangeOrderId: pendingExchangeOrderId || null
-      };
-    }
-  }
-  return null;
-}
-
-function parseGridClientOrderIdForRecovery(instanceId: string, clientOrderId: string): {
-  gridLeg: "long" | "short";
-  gridIndex: number;
-} | null {
-  const match = new RegExp(`^grid-${instanceId}-(long|short)-(\\d+)$`).exec(String(clientOrderId ?? "").trim());
-  if (!match) return null;
-  const gridIndex = Number(match[2]);
-  if (!Number.isFinite(gridIndex) || gridIndex < 0) return null;
-  return {
-    gridLeg: match[1] === "short" ? "short" : "long",
-    gridIndex: Math.trunc(gridIndex)
-  };
-}
-
-function toPlannerPosition(tradeState: Awaited<ReturnType<typeof loadBotTradeState>>) {
-  if (!tradeState.openSide || !Number.isFinite(Number(tradeState.openQty)) || Number(tradeState.openQty) <= 0) {
-    return null;
-  }
-  return {
-    side: tradeState.openSide,
-    qty: Number(tradeState.openQty),
-    entryPrice: Number.isFinite(Number(tradeState.openEntryPrice)) ? Number(tradeState.openEntryPrice) : null
-  };
-}
-
-function shouldAllowGridMaintenanceEntriesUnderMinInvestmentGate(params: {
-  currentStateJson: Record<string, unknown>;
-  hasOpenPosition: boolean;
-  openOrdersCount: number;
-}): boolean {
-  if (!params.hasOpenPosition) return false;
-  if (params.openOrdersCount > 0) return true;
-  return params.currentStateJson.initialSeedExecuted === true;
-}
-
-export function filterGridIntentsForRiskGate(params: {
-  intents: GridPlannerIntent[];
-  currentStateJson: Record<string, unknown>;
-  openOrdersCount: number;
-  hasOpenPosition: boolean;
-  entryBlockedByLiq: boolean;
-  entryBlockedByMinInvestment: boolean;
-  autoMarginRiskBlocked: boolean;
-}): GridPlannerIntent[] {
-  const riskBlockingActive =
-    params.entryBlockedByLiq
-    || params.entryBlockedByMinInvestment
-    || params.autoMarginRiskBlocked;
-  if (!riskBlockingActive) return params.intents;
-
-  const allowMaintenanceEntries =
-    !params.entryBlockedByLiq
-    && !params.autoMarginRiskBlocked
-    && params.entryBlockedByMinInvestment
-    && shouldAllowGridMaintenanceEntriesUnderMinInvestmentGate({
-      currentStateJson: params.currentStateJson,
-      hasOpenPosition: params.hasOpenPosition,
-      openOrdersCount: params.openOrdersCount
-    });
-
-  return params.intents.filter((intent) => {
-    if (intent.type === "cancel_order" || intent.type === "set_protection") return true;
-    if (intent.reduceOnly === true && params.hasOpenPosition) return true;
-    if (!allowMaintenanceEntries) return false;
-    return intent.type === "place_order" || intent.type === "replace_order";
-  });
-}
-
-async function syncGridTradeStateWithPlannerPosition(params: {
-  botId: string;
-  symbol: string;
-  now: Date;
-  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
-  plannerPosition: PlannerPositionSnapshot;
-}): Promise<Awaited<ReturnType<typeof loadBotTradeState>>> {
-  const plannerPosition = params.plannerPosition;
-  const nextOpenSide =
-    plannerPosition && plannerPosition.side === "short"
-      ? "short"
-      : plannerPosition && plannerPosition.side === "long"
-        ? "long"
-        : null;
-  const nextOpenQty =
-    plannerPosition && Number.isFinite(Number(plannerPosition.qty)) && Number(plannerPosition.qty) > 0
-      ? Number(plannerPosition.qty)
-      : null;
-  const nextOpenEntryPrice =
-    plannerPosition && Number.isFinite(Number(plannerPosition.entryPrice))
-      ? Number(plannerPosition.entryPrice)
-      : null;
-  const currentOpenTs = params.tradeState.openTs ?? null;
-  const nextOpenTs = nextOpenSide ? (currentOpenTs ?? params.now) : null;
-  const unchanged =
-    params.tradeState.openSide === nextOpenSide
-    && (params.tradeState.openQty ?? null) === nextOpenQty
-    && (params.tradeState.openEntryPrice ?? null) === nextOpenEntryPrice
-    && (currentOpenTs?.toISOString() ?? null) === (nextOpenTs?.toISOString() ?? null);
-  if (unchanged) return params.tradeState;
-
-  await upsertBotTradeState({
-    botId: params.botId,
-    symbol: params.symbol,
-    dailyResetUtc: params.tradeState.dailyResetUtc,
-    dailyTradeCount: params.tradeState.dailyTradeCount,
-    openSide: nextOpenSide,
-    openQty: nextOpenQty,
-    openEntryPrice: nextOpenEntryPrice,
-    openTs: nextOpenTs
-  });
-  return {
-    ...params.tradeState,
-    openSide: nextOpenSide,
-    openQty: nextOpenQty,
-    openEntryPrice: nextOpenEntryPrice,
-    openTs: nextOpenTs
-  };
-}
-
-async function toPlannerPositionFromPaper(params: {
-  exchangeAccountId: string;
-  symbol: string;
-}): Promise<{
-  side?: "long" | "short" | null;
-  qty?: number | null;
-  entryPrice?: number | null;
-} | null> {
-  const rows = await listPaperPositionsForRunner({
-    exchangeAccountId: params.exchangeAccountId,
-    symbol: params.symbol
-  });
-  const row = rows[0];
-  if (!row) return null;
-  if (!Number.isFinite(Number(row.size)) || Number(row.size) <= 0) return null;
-  return {
-    side: row.side === "short" ? "short" : "long",
-    qty: Number(row.size),
-    entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null
-  };
-}
-
-async function toPlannerPositionFromAdapter(params: {
-  adapter: SupportedFuturesAdapter;
-  symbol: string;
-}): Promise<{
-  side?: "long" | "short" | null;
-  qty?: number | null;
-  entryPrice?: number | null;
-} | null> {
-  const positions = await params.adapter.getPositions();
-  const row = positions.find((entry: any) =>
-    normalizeComparableSymbol(String(entry?.symbol ?? "")) === normalizeComparableSymbol(params.symbol)
-    && Number(entry?.size ?? 0) > 0
-  );
-  if (!row) return null;
-  const qty = Number(row.size ?? NaN);
-  if (!Number.isFinite(qty) || qty <= 0) return null;
-  return {
-    side: String(row.side ?? "").trim().toLowerCase() === "short" ? "short" : "long",
-    qty,
-    entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null
-  };
-}
-
 async function resolveExchangeSymbolForDiagnostics(
   adapter: SupportedFuturesAdapter | null,
   symbol: string
@@ -859,66 +284,6 @@ async function resolveExchangeSymbolForDiagnostics(
     return await adapterAny.toExchangeSymbol(symbol);
   } catch {
     return null;
-  }
-}
-
-type PlannerPositionSnapshot = {
-  side?: "long" | "short" | null;
-  qty?: number | null;
-  entryPrice?: number | null;
-} | null;
-
-export async function resolvePlannerPositionForExecution(params: {
-  adapter: SupportedFuturesAdapter | null;
-  symbol: string;
-  executionExchange: string;
-  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
-  openOrdersCount: number;
-  currentStateJson: Record<string, unknown>;
-}): Promise<{
-  position: PlannerPositionSnapshot;
-  source: "paper" | "adapter" | "trade_state" | "trade_state_fallback" | "empty_hyperliquid_bootstrap_fallback";
-  degraded: boolean;
-  readError: string | null;
-}> {
-  const tradeStatePosition = toPlannerPosition(params.tradeState);
-  if (params.executionExchange === "paper") {
-    throw new Error("paper_planner_position_requires_exchange_account_context");
-  }
-  if (!params.adapter) {
-    return {
-      position: tradeStatePosition,
-      source: "trade_state",
-      degraded: false,
-      readError: null
-    };
-  }
-  try {
-    return {
-      position: await toPlannerPositionFromAdapter({
-        adapter: params.adapter,
-        symbol: params.symbol
-      }),
-      source: "adapter",
-      degraded: false,
-      readError: null
-    };
-  } catch (error) {
-    const isFreshHyperliquidBootstrap =
-      params.executionExchange === "hyperliquid"
-      && params.openOrdersCount === 0
-      && params.currentStateJson.initialSeedExecuted !== true
-      && params.currentStateJson.initialSeedNeedsReseed !== true
-      && !hasOpenPlannerPosition(tradeStatePosition);
-    if (!isFreshHyperliquidBootstrap) {
-      throw error;
-    }
-    return {
-      position: tradeStatePosition,
-      source: tradeStatePosition ? "trade_state_fallback" : "empty_hyperliquid_bootstrap_fallback",
-      degraded: true,
-      readError: String(error)
-    };
   }
 }
 
@@ -1040,33 +405,6 @@ function toFinitePositiveNumberOrNull(value: unknown): number | null {
   return parsed;
 }
 
-function normalizeTransferResultText(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-export function resolveInitialCoreSpotDepositStatus(
-  result: Pick<FundsTransferResult, "status" | "errorCode" | "errorMessage"> | null | undefined
-): InitialCoreSpotDepositStatus {
-  const status = normalizeTransferResultText(result?.status);
-  const errorCode = normalizeTransferResultText(result?.errorCode);
-  const errorMessage = normalizeTransferResultText(result?.errorMessage);
-  const combined = `${status}:${errorCode}:${errorMessage}`;
-
-  if (status === "confirmed" || combined.includes("deposit_confirmed")) return "deposit_confirmed";
-  if (status === "failed" || combined.includes("deposit_failed")) return "deposit_failed";
-  if (combined.includes("deposit_pending_reconciliation")) return "deposit_pending_reconciliation";
-  if (status === "pending_timeout" || combined.includes("pending_timeout") || combined.includes("timeout")) {
-    return "deposit_pending_timeout";
-  }
-  return "deposit_submitted";
-}
-
-export function isInitialCoreSpotDepositConfirmed(
-  result: Pick<FundsTransferResult, "status" | "errorCode" | "errorMessage"> | null | undefined
-): boolean {
-  return resolveInitialCoreSpotDepositStatus(result) === "deposit_confirmed";
-}
-
 export function buildExecutedGridInitialSeedMetrics(params: {
   seedSide: string | null | undefined;
   seedQty: number;
@@ -1110,129 +448,6 @@ export function buildExecutedGridInitialSeedMetrics(params: {
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
-}
-
-function buildReadyBotVaultGridReadiness(): BotVaultGridReadinessResult {
-  return {
-    ready: true,
-    reasonCode: null,
-    statusCategory: "execution_ready",
-    recoveryHint: null,
-    recoveryAction: null,
-    mismatchCategory: null,
-    detail: null,
-    blockers: []
-  };
-}
-
-function isRunnerBotVaultGridReadinessRequired(params: {
-  executionExchange: string;
-  botVaultExecution: unknown;
-}): boolean {
-  if (String(params.executionExchange ?? "").trim().toLowerCase() === "paper") return false;
-  const botVault = asRecord(params.botVaultExecution);
-  if (!botVault) return false;
-  return isBotVaultRuntimeModelRow(botVault);
-}
-
-function isRunnerBotVaultRuntimeExecution(botVaultExecution: unknown): boolean {
-  return isBotVaultRuntimeModelRow(botVaultExecution);
-}
-
-function runnerBotVaultMonitorKey(botVaultExecution: unknown, botVaultId: string): string {
-  const runtimeModel = resolveBotVaultRuntimeModel(botVaultExecution) ?? BOT_VAULT_RUNTIME_MODEL_V4;
-  return `${runtimeModel}:${botVaultId}`;
-}
-
-export function evaluateBotVaultGridReadinessForRunner(params: {
-  executionExchange: string;
-  botVaultExecution: unknown;
-  userId: string;
-  gridInstanceId: string;
-  botId: string;
-  minOrderQty?: number | null;
-  minOrderNotionalUsd?: number | null;
-  plannedOrderQty?: number | null;
-  plannedOrderNotionalUsd?: number | null;
-  requireOrderSize?: boolean;
-}): BotVaultGridReadinessResult {
-  if (!isRunnerBotVaultGridReadinessRequired({
-    executionExchange: params.executionExchange,
-    botVaultExecution: params.botVaultExecution
-  })) {
-    return buildReadyBotVaultGridReadiness();
-  }
-
-  const botVault = asRecord(params.botVaultExecution) ?? {};
-  return getBotVaultGridReadiness({
-    userId: params.userId,
-    gridInstanceId: params.gridInstanceId,
-    botId: params.botId,
-    botVault: {
-      ...botVault,
-      userId: botVault.userId ?? params.userId,
-      gridInstanceId: botVault.gridInstanceId ?? params.gridInstanceId,
-      botId: botVault.botId ?? params.botId
-    },
-    minOrderQty: params.minOrderQty,
-    minOrderNotionalUsd: params.minOrderNotionalUsd,
-    plannedOrderQty: params.plannedOrderQty,
-    plannedOrderNotionalUsd: params.plannedOrderNotionalUsd,
-    requireOnchainActive: true,
-    requireExecutionLifecycle: true,
-    requireFunding: true,
-    requirePerpFunding: true,
-    requireOrderSize: params.requireOrderSize !== false
-  });
-}
-
-function serializeBotVaultGridReadiness(readiness: BotVaultGridReadinessResult): Record<string, unknown> {
-  return {
-    ready: readiness.ready,
-    reasonCode: readiness.reasonCode,
-    statusCategory: readiness.statusCategory,
-    recoveryHint: readiness.recoveryHint,
-    recoveryAction: readiness.recoveryAction,
-    mismatchCategory: readiness.mismatchCategory,
-    detail: readiness.detail,
-    blockers: readiness.blockers.map((blocker) => ({
-      reasonCode: blocker.reasonCode,
-      statusCategory: blocker.statusCategory,
-      recoveryHint: blocker.recoveryHint,
-      recoveryAction: blocker.recoveryAction,
-      mismatchCategory: blocker.mismatchCategory,
-      detail: blocker.detail,
-      step: blocker.step
-    }))
-  };
-}
-
-function withGridHealthState(
-  stateJson: Record<string, unknown>,
-  health: {
-    code: string;
-    severity: "info" | "warning" | "error";
-    reason?: string | null;
-    details?: Record<string, unknown> | null;
-    now: Date;
-  } | null
-): Record<string, unknown> {
-  if (!health) {
-    if (!("gridHealth" in stateJson)) return stateJson;
-    const next = { ...stateJson };
-    delete next.gridHealth;
-    return next;
-  }
-  return {
-    ...stateJson,
-    gridHealth: {
-      code: health.code,
-      severity: health.severity,
-      reason: health.reason ?? null,
-      updatedAt: health.now.toISOString(),
-      details: health.details ?? null
-    }
-  };
 }
 
 function summarizeSeedPositions(
@@ -1456,236 +671,6 @@ function shouldRefreshInitialSeedConfirmationDiagnostics(
   return now.getTime() - previousMs >= minIntervalMs;
 }
 
-function hasAccountFundingAtLeast(accountState: {
-  equity?: number | null;
-  availableMargin?: number | null;
-} | null | undefined, requestedAmountUsd: number): boolean {
-  const requested = Number(requestedAmountUsd ?? NaN);
-  if (!Number.isFinite(requested) || requested <= 0) return false;
-  const equity = Number(accountState?.equity ?? NaN);
-  const availableMargin = Number(accountState?.availableMargin ?? NaN);
-  const observed = Math.max(
-    Number.isFinite(equity) ? equity : 0,
-    Number.isFinite(availableMargin) ? availableMargin : 0
-  );
-  return observed + INITIAL_FUNDING_EPSILON_USD >= requested;
-}
-
-export function shouldBlockInitialPerpTransferSubmit(params: {
-  currentStateJson: Record<string, unknown>;
-  requestedAmountUsd: number;
-  accountState?: {
-    equity?: number | null;
-    availableMargin?: number | null;
-  } | null;
-}): boolean {
-  if (String(params.currentStateJson.initialPerpTransferDoneAt ?? "").trim()) return false;
-  if (hasAccountFundingAtLeast(params.accountState, params.requestedAmountUsd)) return false;
-
-  const pendingAt = String(params.currentStateJson.initialPerpTransferPendingAt ?? "").trim();
-  if (!pendingAt) return false;
-
-  const status = normalizeTransferResultText(params.currentStateJson.initialPerpTransferLastStatus);
-  if (status === "transfer_failed_final") {
-    return false;
-  }
-  return true;
-}
-
-type VaultBalanceReadMeta = {
-  fromCache: boolean;
-  stale: boolean;
-  degraded: boolean;
-  cacheAgeMs: number | null;
-  reason: string | null;
-};
-
-export type VaultBalanceSnapshot = {
-  capturedAt: string;
-  equityUsd: number | null;
-  availableMarginUsd: number | null;
-  coreSpotBalanceUsd: number | null;
-  issues: string[];
-  usableForSizing: boolean;
-  usableForTransfers: boolean;
-  reads: {
-    account: VaultBalanceReadMeta | null;
-    spot: VaultBalanceReadMeta | null;
-  };
-};
-
-function normalizeVaultBalanceReadMeta(value: {
-  fromCache?: boolean;
-  stale?: boolean;
-  degraded?: boolean;
-  cacheAgeMs?: number | null;
-  reason?: string | null;
-} | null | undefined): VaultBalanceReadMeta | null {
-  if (!value) return null;
-  return {
-    fromCache: value.fromCache === true,
-    stale: value.stale === true,
-    degraded: value.degraded === true,
-    cacheAgeMs: Number.isFinite(Number(value.cacheAgeMs ?? NaN)) ? Number(value.cacheAgeMs) : null,
-    reason: String(value.reason ?? "").trim() || null
-  };
-}
-
-export function buildVaultBalanceSnapshot(params: {
-  now: Date;
-  accountState?: { equity?: number | null; availableMargin?: number | null } | null;
-  coreSpotBalance?: { amountUsd?: number | null } | null;
-  accountRead?: VaultBalanceReadMeta | null;
-  spotRead?: VaultBalanceReadMeta | null;
-  requireSpotBalance?: boolean;
-}): VaultBalanceSnapshot {
-  const equityUsd = Number.isFinite(Number(params.accountState?.equity ?? NaN))
-    ? Number(params.accountState?.equity)
-    : null;
-  const availableMarginUsd = Number.isFinite(Number(params.accountState?.availableMargin ?? NaN))
-    ? Number(params.accountState?.availableMargin)
-    : null;
-  const coreSpotBalanceUsd = Number.isFinite(Number(params.coreSpotBalance?.amountUsd ?? NaN))
-    ? Number(params.coreSpotBalance?.amountUsd)
-    : null;
-  const accountRead = normalizeVaultBalanceReadMeta(params.accountRead);
-  const spotRead = normalizeVaultBalanceReadMeta(params.spotRead);
-  const requireSpotBalance = params.requireSpotBalance === true;
-  const issues = new Set<string>();
-
-  if (equityUsd !== null && equityUsd < -1e-9) issues.add("negative_equity");
-  if (availableMarginUsd !== null && availableMarginUsd < -1e-9) issues.add("negative_available_margin");
-  if (coreSpotBalanceUsd !== null && coreSpotBalanceUsd < -1e-9) issues.add("negative_core_spot_balance");
-  if (
-    equityUsd !== null
-    && availableMarginUsd !== null
-    && availableMarginUsd > equityUsd + Math.max(0.01, Math.abs(equityUsd) * 0.02)
-  ) {
-    issues.add("available_margin_exceeds_equity");
-  }
-  if (accountRead?.stale || accountRead?.degraded) issues.add("account_state_not_fresh");
-  if (requireSpotBalance && (spotRead?.stale || spotRead?.degraded)) issues.add("spot_balance_not_fresh");
-  if (equityUsd === null && availableMarginUsd === null) issues.add("account_state_unavailable");
-  if (requireSpotBalance && coreSpotBalanceUsd === null) issues.add("spot_balance_unavailable");
-
-  return {
-    capturedAt: params.now.toISOString(),
-    equityUsd,
-    availableMarginUsd,
-    coreSpotBalanceUsd,
-    issues: [...issues],
-    usableForSizing: issues.size === 0,
-    usableForTransfers:
-      !issues.has("negative_equity")
-      && !issues.has("negative_available_margin")
-      && !issues.has("negative_core_spot_balance")
-      && !issues.has("available_margin_exceeds_equity")
-      && !issues.has("account_state_not_fresh")
-      && !issues.has("spot_balance_not_fresh")
-      && !issues.has("account_state_unavailable")
-      && (!requireSpotBalance || !issues.has("spot_balance_unavailable")),
-    reads: {
-      account: accountRead,
-      spot: spotRead
-    }
-  };
-}
-
-function buildGridPlanLiveAccountState(
-  snapshot: VaultBalanceSnapshot
-): NonNullable<GridPlanRequest["liveAccountState"]> {
-  const accountRead = snapshot.reads.account;
-  let source = "fresh";
-  if (!snapshot.usableForSizing) {
-    if (accountRead?.stale) source = "stale";
-    else if (accountRead?.degraded) source = "degraded";
-    else if (snapshot.equityUsd === null && snapshot.availableMarginUsd === null) source = "unavailable";
-    else source = "invalid";
-  }
-  return {
-    equityUsd: snapshot.equityUsd,
-    availableMarginUsd: snapshot.availableMarginUsd,
-    capturedAt: snapshot.capturedAt,
-    source
-  };
-}
-
-async function readVaultBalanceSnapshot(params: {
-  adapter: SupportedFuturesAdapter;
-  cacheIdentity: string;
-  symbol: string;
-  now: Date;
-  requireSpotBalance?: boolean;
-}): Promise<VaultBalanceSnapshot> {
-  const adapterAny = params.adapter as any;
-  const accountStateReader =
-    typeof adapterAny.getConfiguredAccountState === "function"
-      ? () => adapterAny.getConfiguredAccountState()
-      : () => params.adapter.getAccountState();
-  const accountRead = await executeHyperliquidRead({
-    key: buildHyperliquidReadKey({
-      scope: "runner-vault-balance",
-      identity: params.cacheIdentity,
-      endpoint: "configured-account",
-      symbol: params.symbol
-    }),
-    ttlMs: 2_500,
-    staleMs: 15_000,
-    cooldownMs: 10_000,
-    retryAttempts: 2,
-    retryBaseDelayMs: 150,
-    read: accountStateReader
-  }).catch((error) => ({
-    value: null,
-    fromCache: false,
-    stale: false,
-    degraded: true,
-    rateLimited: false,
-    cacheAgeMs: null,
-    category: null,
-    reason: String(error),
-    retryCount: 0
-  }));
-  const shouldReadSpotBalance =
-    params.requireSpotBalance === true
-    || typeof adapterAny.getCoreUsdcSpotBalance === "function";
-  const spotRead = shouldReadSpotBalance && typeof adapterAny.getCoreUsdcSpotBalance === "function"
-    ? await executeHyperliquidRead({
-        key: buildHyperliquidReadKey({
-          scope: "runner-vault-balance",
-          identity: params.cacheIdentity,
-          endpoint: "core-spot-usdc",
-          symbol: "USDC"
-        }),
-        ttlMs: 2_500,
-        staleMs: 15_000,
-        cooldownMs: 10_000,
-        retryAttempts: 2,
-        retryBaseDelayMs: 150,
-        read: () => adapterAny.getCoreUsdcSpotBalance()
-      }).catch((error) => ({
-        value: null,
-        fromCache: false,
-        stale: false,
-        degraded: true,
-        rateLimited: false,
-        cacheAgeMs: null,
-        category: null,
-        reason: String(error),
-        retryCount: 0
-      }))
-    : null;
-
-  return buildVaultBalanceSnapshot({
-    now: params.now,
-    accountState: accountRead.value as { equity?: number | null; availableMargin?: number | null } | null,
-    coreSpotBalance: spotRead?.value as { amountUsd?: number | null } | null,
-    accountRead,
-    spotRead,
-    requireSpotBalance: params.requireSpotBalance === true
-  });
-}
-
 function readInitialPerpTransferAmountUsd(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): number {
   const allocatedUsd = Number(bot.botVaultExecution?.allocatedUsd ?? NaN);
   if (Number.isFinite(allocatedUsd) && allocatedUsd > 0) return allocatedUsd;
@@ -1828,229 +813,6 @@ function computeMarginRatio(account: { equity?: number; availableMargin?: number
   const ratio = 1 - (available / equity);
   if (!Number.isFinite(ratio)) return null;
   return Math.max(0, Math.min(1, ratio));
-}
-
-export function resolveInitialPerpFundingAmountUsd(params: {
-  requestedAmountUsd: number;
-  coreSpotBalanceUsd?: number | null;
-}): number {
-  const requestedAmountUsd = Number(params.requestedAmountUsd ?? NaN);
-  if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) return 0;
-  const coreSpotBalanceUsd = Number(params.coreSpotBalanceUsd ?? NaN);
-  if (!Number.isFinite(coreSpotBalanceUsd) || coreSpotBalanceUsd <= 0) return requestedAmountUsd;
-  if (coreSpotBalanceUsd + INITIAL_FUNDING_EPSILON_USD < requestedAmountUsd) return 0;
-  return Number(requestedAmountUsd.toFixed(6));
-}
-
-export function resolveInitialCoreSpotDepositAmountUsd(params: {
-  requestedAmountUsd: number;
-  coreSpotBalanceUsd?: number | null;
-}): number {
-  const requestedAmountUsd = Number(params.requestedAmountUsd ?? NaN);
-  if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) return 0;
-  const coreSpotBalanceUsd = Number(params.coreSpotBalanceUsd ?? NaN);
-  if (!Number.isFinite(coreSpotBalanceUsd) || coreSpotBalanceUsd <= 0) return Number(requestedAmountUsd.toFixed(6));
-  const remainingUsd = requestedAmountUsd - coreSpotBalanceUsd;
-  if (remainingUsd <= INITIAL_FUNDING_EPSILON_USD) return 0;
-  return Number(remainingUsd.toFixed(6));
-}
-
-export function shouldRetryCloseOnlySettlementTransfer(params: {
-  recordedAt?: unknown;
-  sourceBalanceUsd: number;
-  now: Date;
-}): boolean {
-  const sourceBalanceUsd = Number(params.sourceBalanceUsd ?? NaN);
-  if (!Number.isFinite(sourceBalanceUsd) || sourceBalanceUsd <= 0.000001) return false;
-
-  const recordedAtRaw = String(params.recordedAt ?? "").trim();
-  if (!recordedAtRaw) return true;
-
-  const recordedAtMs = Date.parse(recordedAtRaw);
-  if (!Number.isFinite(recordedAtMs)) return true;
-  // A successful settlement transfer must not be auto-resubmitted just because
-  // HyperCore/EVM balance views lag behind the confirmed transaction.
-  return false;
-}
-
-export function shouldAllowHyperliquidVaultBootstrap(params: {
-  status?: unknown;
-  executionStatus?: unknown;
-  executionLastError?: unknown;
-  executionMetadata?: unknown;
-}): boolean {
-  const lifecycle = deriveBotVaultLifecycleState({
-    status: params.status,
-    executionStatus: params.executionStatus,
-    executionLastError: params.executionLastError,
-    executionMetadata: params.executionMetadata
-  });
-  return lifecycle.mode === "normal" && (lifecycle.state === "bot_activation" || lifecycle.state === "execution_active");
-}
-
-function readBotVaultExecutionMetadataRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
-}
-
-function readBotVaultOnchainContractVersion(value: unknown): "v3" | "v4" {
-  return String(readBotVaultExecutionMetadataRecord(value).onchainContractVersion ?? "").trim().toLowerCase() === "v4"
-    ? "v4"
-    : "v3";
-}
-
-function readBotVaultHypeReserveState(value: unknown): string {
-  const metadata = readBotVaultExecutionMetadataRecord(value);
-  const marginAddFinalization = readBotVaultExecutionMetadataRecord(metadata.marginAddFinalization);
-  return String(
-    marginAddFinalization.hypeReserveState
-    ?? metadata.hypeReserveState
-    ?? ""
-  ).trim().toLowerCase();
-}
-
-export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
-  vaultAddress?: unknown;
-  status?: unknown;
-  executionStatus?: unknown;
-  executionLastError?: unknown;
-  executionMetadata?: unknown;
-  fundingStatus?: unknown;
-  hypercoreFundingStatus?: unknown;
-}): {
-  ready: boolean;
-  reason: string;
-  detail: string | null;
-} {
-  const vaultAddress = String(params.vaultAddress ?? "").trim();
-  const status = String(params.status ?? "").trim().toUpperCase();
-  const executionStatus = String(params.executionStatus ?? "").trim().toLowerCase();
-  const fundingStatus = String(params.fundingStatus ?? "vault_empty").trim().toLowerCase();
-  const hypercoreFundingStatus = String(params.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
-  const executionMetadata =
-    params.executionMetadata && typeof params.executionMetadata === "object" && !Array.isArray(params.executionMetadata)
-      ? params.executionMetadata as Record<string, unknown>
-      : {};
-  const lifecycleOverrideState = String(executionMetadata.lifecycleOverrideState ?? "").trim().toLowerCase();
-  const marginAddFinalization =
-    executionMetadata.marginAddFinalization && typeof executionMetadata.marginAddFinalization === "object" && !Array.isArray(executionMetadata.marginAddFinalization)
-      ? executionMetadata.marginAddFinalization as Record<string, unknown>
-      : {};
-  const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
-  const verificationBlockingReason = String(marginAddFinalization.verificationBlockingReason ?? "").trim().toLowerCase();
-  const fundingVerified =
-    marginAddFinalization.fundingVerified === true
-    || marginAddFinalization.marginFundingVerified === true;
-  const transferObserved = marginAddFinalization.transferObserved === true;
-  const finalPerpStateReadable = marginAddFinalization.finalPerpStateReadable === true;
-  const finalStateResynced = marginAddFinalization.finalStateResynced === true;
-  const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
-  const runtimeModel = resolveBotVaultRuntimeModel({ executionMetadata, contractVersion }) ?? BOT_VAULT_RUNTIME_MODEL_V4;
-  const runtimeReason = (suffix: string) => botVaultRuntimeReasonCode({ runtimeModel, suffix });
-  const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
-
-  if (!vaultAddress) {
-    return { ready: false, reason: runtimeReason("onchain_vault_missing"), detail: null };
-  }
-
-  if (
-    status === "ERROR"
-    || status === "CLOSE_ONLY"
-    || status === "CLOSED"
-    || executionStatus === "error"
-    || executionStatus === "close_only"
-    || executionStatus === "closed"
-    || lifecycleOverrideState === "withdraw_pending"
-    || lifecycleOverrideState === "settling"
-    || lifecycleOverrideState === "close_only"
-    || lifecycleOverrideState === "closed"
-  ) {
-    return {
-      ready: false,
-      reason: runtimeReason("execution_blocked"),
-      detail: lifecycleOverrideState || executionStatus || status || String(params.executionLastError ?? "").trim() || null
-    };
-  }
-
-  if (fundingStatus === "hyper_evm_funding_requested") {
-    return { ready: false, reason: runtimeReason("funding_requested_not_confirmed"), detail: null };
-  }
-
-  if (hypercoreFundingStatus === "funded") {
-    if (contractVersion === "v4" && hypeReserveState !== "ready") {
-      return {
-        ready: false,
-        reason: runtimeReason("hype_reserve_not_ready"),
-        detail: verificationBlockingReason || hypeReserveState || null
-      };
-    }
-    if (
-      contractVersion === "v4"
-      && (
-        verificationState !== "funding_verified"
-        || !fundingVerified
-        || !transferObserved
-        || !finalPerpStateReadable
-        || !finalStateResynced
-      )
-    ) {
-      return {
-        ready: false,
-        reason: "bot_vault_v4_funding_verification_missing",
-        detail: verificationBlockingReason
-          || verificationState
-          || (!fundingVerified ? "funding_verified_metadata_missing" : null)
-          || (!transferObserved ? "transfer_not_observed" : null)
-          || (!finalPerpStateReadable ? "perp_state_read_unavailable" : null)
-          || (!finalStateResynced ? "final_state_resync_unavailable" : null)
-          || "funding_verification_incomplete"
-      };
-    }
-    if (verificationState && verificationState !== "funding_verified") {
-      return {
-        ready: false,
-        reason: verificationBlockingReason === "paused_restore_unconfirmed"
-          ? runtimeReason("hypercore_pause_restore_unverified")
-          : runtimeReason("hypercore_final_state_unverified"),
-        detail: verificationBlockingReason || verificationState || null
-      };
-    }
-    return { ready: true, reason: runtimeReason("ready"), detail: null };
-  }
-
-  if (hypercoreFundingStatus === "pending") {
-    if (contractVersion === "v4" && hypeReserveState !== "ready") {
-      return {
-        ready: false,
-        reason: runtimeReason("hype_reserve_not_ready"),
-        detail: verificationBlockingReason || hypeReserveState || null
-      };
-    }
-    if (verificationBlockingReason === "paused_restore_unconfirmed") {
-      return { ready: false, reason: runtimeReason("hypercore_pause_restore_unverified"), detail: verificationBlockingReason };
-    }
-    if (
-      verificationBlockingReason === "perp_state_read_unavailable"
-      || verificationBlockingReason === "final_state_resync_unavailable"
-      || verificationState === "transfer_observed"
-    ) {
-      return { ready: false, reason: runtimeReason("hypercore_final_state_unverified"), detail: verificationBlockingReason || verificationState || null };
-    }
-    if (verificationBlockingReason === "transfer_not_yet_observed" || verificationState === "transfer_submitted") {
-      return { ready: false, reason: runtimeReason("hypercore_transfer_not_observed"), detail: verificationBlockingReason || verificationState || null };
-    }
-    return { ready: false, reason: runtimeReason("hypercore_transfer_pending"), detail: verificationBlockingReason || verificationState || null };
-  }
-
-  if (
-    fundingStatus === "hyper_evm_confirmed_onchain"
-    || fundingStatus === "hyper_evm_funded"
-    || fundingStatus === "deployed"
-  ) {
-    return { ready: false, reason: runtimeReason("hypercore_funding_not_started"), detail: null };
-  }
-
-  return { ready: false, reason: runtimeReason("funding_requested_not_confirmed"), detail: null };
 }
 
 function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): SupportedFuturesAdapter | null {

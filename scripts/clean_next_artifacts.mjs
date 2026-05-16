@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const packageJsonPath = path.join(process.cwd(), "package.json");
 const packageJson = existsSync(packageJsonPath)
@@ -18,14 +19,33 @@ function isNumberedDuplicateArtifact(name) {
   return /\s+\d+(?:\.[^.]+)*$/.test(name);
 }
 
+function removeArtifact(fullPath, recursive) {
+  try {
+    rmSync(fullPath, {
+      recursive,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100
+    });
+  } catch (error) {
+    if (!recursive || (error?.code !== "ENOTEMPTY" && error?.code !== "EBUSY")) {
+      throw error;
+    }
+    const result = spawnSync("rm", ["-rf", fullPath], {
+      stdio: "ignore"
+    });
+    if (result.status !== 0) {
+      throw error;
+    }
+  }
+}
+
 function removeNumberedDuplicateArtifactsIn(directory) {
   if (!existsSync(directory)) return;
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const fullPath = path.join(directory, entry.name);
-    if (entry.isFile() && isNumberedDuplicateArtifact(entry.name)) {
-      rmSync(fullPath, {
-        force: true
-      });
+    if ((entry.isFile() || entry.isDirectory()) && isNumberedDuplicateArtifact(entry.name)) {
+      removeArtifact(fullPath, entry.isDirectory());
     }
   }
 }

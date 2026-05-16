@@ -135,7 +135,6 @@ import { registerAdminVaultOperationsRoutes } from "./admin/routes-vault-operati
 import { registerAdminIndicatorSettingsRoutes } from "./admin/routes-indicator-settings.js";
 import { registerAdminAffiliateRoutes } from "./admin/routes-affiliate.js";
 import { registerPlatformAdminRoutes } from "./admin/routes-platform.js";
-import { createGridVenueContextResolver } from "./grid/venueContext.js";
 import { recoverRunningBotJobs } from "./bot-run-recovery.js";
 import {
   AI_PROVIDER_OPTIONS,
@@ -368,8 +367,7 @@ import { createPlatformAlertCleanupJob } from "./jobs/platformAlertCleanupJob.js
 import { createHyperliquidApiExpiryReminderJob } from "./jobs/hyperliquidApiExpiryReminderJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
-import { registerGridRoutes } from "./routes/grid.js";
-import { registerVaultRoutes } from "./routes/vaults.js";
+import { registerGridVaultRouteGroup } from "./routes/gridVaultRouteGroup.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
 import {
   createIdempotencyMiddleware,
@@ -11707,24 +11705,21 @@ registerPredictionStateRoutes(app, {
   readPredictionStrategyRef
 });
 
-const resolveGridVenueContext = createGridVenueContextResolver({
-  db,
-  resolveMarketDataTradingAccount,
-  normalizeExchangeValue,
-  createPerpMarketDataClient: createManualPerpMarketDataClient,
-  readGridVenueConstraintCache,
-  upsertGridVenueConstraintCache,
-  logger
-});
-
 registerPredictionDetailRoute(app, db);
 registerEconomicCalendarRoutes(app, {
   db,
   requireSuperadmin,
   refreshJob: economicCalendarRefreshJob
 });
-registerGridRoutes(app, {
+registerGridVaultRouteGroup({
+  app,
   db,
+  resolveMarketDataTradingAccount,
+  normalizeExchangeValue,
+  createPerpMarketDataClient: createManualPerpMarketDataClient,
+  readGridVenueConstraintCache,
+  upsertGridVenueConstraintCache,
+  logger,
   requireSuperadmin,
   hasAdminBackendAccess,
   resolvePlanCapabilitiesForUserId,
@@ -11741,18 +11736,7 @@ registerGridRoutes(app, {
   botVaultV3Service,
   onchainActionService,
   fundingVaultService,
-  executionOrchestrator,
-  resolveVenueContext: async (params) => resolveGridVenueContext(params)
-});
-registerVaultRoutes(app, {
-  vaultService,
-  botVaultRuntimeService,
-  botVaultV3Service,
-  onchainActionService,
-  fundingVaultService,
-  resolvePlanCapabilitiesForUserId,
-  isCapabilityAllowed,
-  sendCapabilityDenied
+  executionOrchestrator
 });
 registerNewsRoutes(app, { db });
 registerMobilePushRoutes(app, { db });
