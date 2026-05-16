@@ -1,6 +1,6 @@
 # uLiquid Desk Release Agenda
 
-Last updated: 2026-05-15
+Last updated: 2026-05-16
 
 This agenda tracks the review findings against the live repository. It is intentionally release-focused: new feature work should stay behind these gates until the canary path is repeatable.
 
@@ -44,10 +44,10 @@ This agenda tracks the review findings against the live repository. It is intent
 ## P2 Refactor Tracks
 
 - [ ] Break `apps/api/src/index.ts` into route registration, middleware/bootstrap, jobs, and service wiring.
-  Started: base middleware/bootstrap is extracted into `apps/api/src/server/appMiddleware.ts`; API job/shutdown lifecycle is extracted into `apps/api/src/server/lifecycle.ts`; route/service extraction remains.
+  Started: base middleware/bootstrap is extracted into `apps/api/src/server/appMiddleware.ts`; API WebSocket upgrade/auth wiring is extracted into `apps/api/src/server/websocketUpgrade.ts`; API job/shutdown lifecycle is extracted into `apps/api/src/server/lifecycle.ts`; route/service extraction remains.
 - [ ] Split BotVault lifecycle/funding/reconciliation/fee/recovery logic into smaller service modules.
-  Started: funding display state mapping is extracted into `apps/api/src/vaults/botVaultFundingDisplay.ts`; V4 profit-share/atomic USD helpers are extracted into `apps/api/src/vaults/botVaultV4ProfitShare.ts`; lifecycle, reconciliation, broader fee-settlement, and recovery flows remain.
+  Started: funding display state mapping is extracted into `apps/api/src/vaults/botVaultFundingDisplay.ts`; V4 profit-share/atomic USD helpers are extracted into `apps/api/src/vaults/botVaultV4ProfitShare.ts`; settlement/post-processing state helpers are extracted into `apps/api/src/vaults/botVaultV3SettlementState.ts`; lifecycle, reconciliation, broader fee-settlement, and recovery flows remain.
 - [ ] Split runner grid execution into state machine, order placement, fill sync, recovery, and persistence modules.
-  Started: market-data/noop/resubmit/noise guard decisions are extracted into `apps/runner/src/execution/gridExecutionGuards.ts`; order placement, fill sync, recovery, and persistence flows remain.
+  Started: market-data/noop/resubmit/noise guard decisions are extracted into `apps/runner/src/execution/gridExecutionGuards.ts`; initial-seed/restart-recovery helpers are extracted into `apps/runner/src/execution/gridInitialSeed.ts`; order placement, fill sync, broader recovery, and persistence flows remain.
 - [x] Build a release evidence matrix for commit, build, tests, migrations, canary, rollback, and onchain ownership.
 - [x] Add contract fuzz/invariant coverage before broad production capital movement.

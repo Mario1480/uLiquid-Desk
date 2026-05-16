@@ -388,6 +388,7 @@ import { listNews } from "./services/news/index.js";
 import { getEconomicCalendarNextSummary } from "./services/economicCalendar/index.js";
 import { configureApiBaseMiddleware } from "./server/appMiddleware.js";
 import { createApiLifecycle } from "./server/lifecycle.js";
+import { registerApiWebSocketUpgrades, type WsAuthUser } from "./server/websocketUpgrade.js";
 import { registerSystemRoutes } from "./system/routes.js";
 import { createVaultService } from "./vaults/service.js";
 import { createBotVaultV4Service } from "./vaults/botVaultV4.service.js";
@@ -10783,75 +10784,12 @@ function stopPredictionPerformanceEvalScheduler() {
   predictionPerformanceEvalTimer = null;
 }
 
-type WsAuthUser = {
-  id: string;
-  email: string;
-};
-
 type MarketWsContext = {
   adapter: PerpExecutionAdapter;
   selectedAccount: Awaited<ReturnType<typeof resolveTradingAccount>>;
   marketDataAccount: Awaited<ReturnType<typeof resolveTradingAccount>>;
   stop: () => Promise<void>;
 };
-
-function readCookieValue(header: string | undefined, name: string): string | null {
-  if (!header) return null;
-  const entries = header.split(";");
-  for (const entry of entries) {
-    const [rawName, ...rest] = entry.trim().split("=");
-    if (rawName !== name) continue;
-    const value = rest.join("=");
-    if (!value) return null;
-    try {
-      return decodeURIComponent(value);
-    } catch {
-      return value;
-    }
-  }
-  return null;
-}
-
-function hashSessionToken(token: string): string {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
-
-async function authenticateWsUser(req: http.IncomingMessage): Promise<WsAuthUser | null> {
-  const token = readCookieValue(req.headers.cookie, "mm_session");
-  if (!token) return null;
-
-  const session = await db.session.findUnique({
-    where: {
-      tokenHash: hashSessionToken(token)
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          email: true
-        }
-      }
-    }
-  });
-
-  if (!session) return null;
-  if (session.expiresAt.getTime() < Date.now()) return null;
-
-  await db.session.update({
-    where: { id: session.id },
-    data: { lastActiveAt: new Date() }
-  });
-
-  return {
-    id: session.user.id,
-    email: session.user.email
-  };
-}
-
-function wsReject(socket: any, statusCode: number, reason: string) {
-  socket.write(`HTTP/1.1 ${statusCode} ${reason}\r\nConnection: close\r\n\r\n`);
-  socket.destroy();
-}
 
 async function createMarketWsContext(
   userId: string,
@@ -13181,35 +13119,13 @@ const port = Number(process.env.API_PORT ?? "4000");
 const listenHost = process.env.API_HOST?.trim() || "::";
 const server = http.createServer(app);
 
-server.on("upgrade", (req, socket, head) => {
-  const host = req.headers.host ?? "localhost";
-  const url = new URL(req.url ?? "/", `http://${host}`);
-
-  if (url.pathname !== "/ws/market" && url.pathname !== "/ws/user") {
-    wsReject(socket, 404, "Not Found");
-    return;
-  }
-
-  void (async () => {
-    const user = await authenticateWsUser(req);
-    if (!user) {
-      wsReject(socket, 401, "Unauthorized");
-      return;
-    }
-
-    if (url.pathname === "/ws/market") {
-      marketWss.handleUpgrade(req, socket, head, (ws) => {
-        void handleMarketWsConnection(ws, user, url);
-      });
-      return;
-    }
-
-    userWss.handleUpgrade(req, socket, head, (ws) => {
-      void handleUserWsConnection(ws, user, url);
-    });
-  })().catch(() => {
-    wsReject(socket, 500, "Internal Server Error");
-  });
+registerApiWebSocketUpgrades({
+  server,
+  db,
+  marketWss,
+  userWss,
+  handleMarketWsConnection,
+  handleUserWsConnection
 });
 
 const apiLifecycle = createApiLifecycle({
