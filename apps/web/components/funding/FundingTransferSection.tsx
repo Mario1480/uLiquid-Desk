@@ -34,7 +34,7 @@ import type {
   TransferFeatureConfig,
   WalletTransferOverview
 } from "../../lib/transfers/types";
-import { formatToken } from "../../lib/wallet/format";
+import { buildExplorerTxUrl, formatToken } from "../../lib/wallet/format";
 import { AppIcon } from "../../app/components/AppIcon";
 
 function createLiveBalance(symbol: TransferAsset, decimals: number, value: bigint | undefined): TransferBalance | null {
@@ -667,7 +667,7 @@ export default function FundingTransferSection({
             {presentation === "card" && executionState.txHash ? (
               <div>
                 <a
-                  href={`${overview.hyperEvm.network.explorerUrl.replace(/\/$/, "")}/tx/${executionState.txHash}`}
+                  href={buildExplorerTxUrl(overview.hyperEvm.network.explorerUrl, executionState.txHash)}
                   target="_blank"
                   rel="noreferrer"
                 >

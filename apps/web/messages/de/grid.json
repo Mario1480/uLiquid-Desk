@@ -602,6 +602,7 @@
     "recentActionsTitle": "Letzte Onchain-Aktionen",
     "actionMeta": "Chain {chainId} · erstellt {createdAt}",
     "txHashLabel": "Tx-Hash",
+    "viewTransaction": "Transaktion ansehen",
     "noRecentActions": "Noch keine Onchain-Aktionen vorhanden.",
     "buildingTx": "Transaktion wird vorbereitet...",
     "botMeta": "Onchain-Aktionsmodus {mode}",

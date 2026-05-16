@@ -7,6 +7,7 @@ import { useAccount } from "wagmi";
 import { apiGet } from "../../lib/api";
 import {
   buildExplorerAddressUrl,
+  buildExplorerTxUrl,
   formatDateTime,
   shortAddress
 } from "../../lib/wallet/format";
@@ -31,7 +32,7 @@ function resolveExplorerUrl(config: FundingFeatureConfig, chainId: number | null
       : chainId === config.hyperEvm.id
         ? config.hyperEvm.explorerUrl
         : null;
-  return base ? `${base.replace(/\/$/, "")}/tx/${txHash}` : null;
+  return base ? buildExplorerTxUrl(base, txHash) : null;
 }
 
 function translateLocation(

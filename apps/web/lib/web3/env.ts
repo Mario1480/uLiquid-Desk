@@ -1,6 +1,7 @@
+import { DEFAULT_HYPEREVM_EXPLORER_URL } from "../wallet/explorer";
+
 const DEFAULT_TARGET_CHAIN_ID = 999;
 const DEFAULT_HYPEREVM_RPC_URL = "https://rpc.hyperliquid.xyz/evm";
-const DEFAULT_HYPEREVM_EXPLORER_URL = "https://app.hyperliquid.xyz/explorer";
 const DEFAULT_ENABLE_ARBITRUM = true;
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -31,4 +32,3 @@ export const web3Env = {
   walletConnectProjectId: parseOptionalString(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID),
   enableArbitrum: parseBoolean(process.env.NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM, DEFAULT_ENABLE_ARBITRUM)
 };
-

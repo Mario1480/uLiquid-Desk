@@ -23,6 +23,7 @@ import FundingActionCenter, {
 import RelayBotVaultFundingSection from "../funding/RelayBotVaultFundingSection";
 import { AppIcon } from "../../app/components/AppIcon";
 import { PageHeader } from "../../app/components/ui";
+import { HyperEvmAddressLink } from "./ExplorerLinks";
 
 function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
@@ -273,6 +274,11 @@ export default function WalletDashboardClient({
           <AppIcon name="withdraw" />
           {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
         </button>
+        <HyperEvmAddressLink
+          address={masterAgentSummary?.address}
+          explorerUrl={transferConfig.hyperEvm.explorerUrl}
+          label="View agent"
+        />
       </div>
     </article>
   );

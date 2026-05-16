@@ -15,6 +15,7 @@ import { apiGet, apiPost } from "../../lib/api";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
 import { getWalletFeatureConfig } from "../../lib/wallet/config";
 import { AppIcon } from "../../app/components/AppIcon";
+import { HyperEvmTxLink } from "../wallet/ExplorerLinks";
 import { buildBotVaultFundingBreakdown } from "./botVaultFunding";
 import type {
   BotVaultSnapshot,
@@ -474,6 +475,11 @@ function OnchainActionTimeline({
             {item.txHash ? (
               <div className="settingsMutedText" style={{ marginTop: 4 }}>
                 {t("txHashLabel")}: {shortAddress(item.txHash)}
+              </div>
+            ) : null}
+            {item.txHash ? (
+              <div style={{ marginTop: 8 }}>
+                <HyperEvmTxLink txHash={item.txHash} label={t("viewTransaction")} />
               </div>
             ) : null}
           </div>

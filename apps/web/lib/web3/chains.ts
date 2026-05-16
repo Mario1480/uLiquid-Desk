@@ -1,6 +1,7 @@
 import { defineChain, type Chain } from "viem";
 import { arbitrum } from "viem/chains";
 import { web3Env } from "./env";
+import { DEFAULT_HYPEREVM_EXPLORER_URL } from "../wallet/explorer";
 
 const HYPEREVM_EXPLORER_NAME = "HyperEVM Explorer";
 const HYPEREVM_NAME = "HyperEVM";
@@ -23,7 +24,7 @@ export const hyperEvmChain: Chain = {
     blockExplorers: {
       default: {
         name: HYPEREVM_EXPLORER_NAME,
-        url: "https://app.hyperliquid.xyz/explorer"
+        url: DEFAULT_HYPEREVM_EXPLORER_URL
       }
     }
   }),

@@ -11,6 +11,7 @@ import { formatToken, shortAddress } from "../../lib/wallet/format";
 import { useOnchainActionFlow } from "../grid/OnchainVaultActions";
 import { createIdempotencyKey } from "../grid/utils";
 import { AppIcon } from "../../app/components/AppIcon";
+import { HyperEvmAddressLink } from "../wallet/ExplorerLinks";
 import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "./FundingTransferSection";
 import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
@@ -134,6 +135,7 @@ function FundingVaultAddressCopy({ vaultAddress }: { vaultAddress: string | null
           {copied ? t("fundingVault.copiedAddress") : t("fundingVault.copyAddress")}
         </button>
       ) : null}
+      <HyperEvmAddressLink address={vaultAddress} label="HyperEVMScan" />
     </div>
   );
 }
@@ -204,6 +206,8 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
           <AppIcon name="manage" />
           {t("fundingVault.manage")}
         </button>
+        <HyperEvmAddressLink address={vault?.onchainAddress} label="View vault" />
+        <HyperEvmAddressLink address={overview?.agentWalletAddress} label="View agent" />
       </div>
     </article>
   );

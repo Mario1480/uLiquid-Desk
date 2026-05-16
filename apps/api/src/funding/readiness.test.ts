@@ -68,7 +68,7 @@ function makeInput(params?: {
     chainId: 999,
     networkName: "HyperEVM",
     rpcUrl: "https://rpc.hyperliquid.xyz/evm",
-    explorerUrl: "https://app.hyperliquid.xyz/explorer",
+    explorerUrl: "https://hyperevmscan.io",
     address: arbitrum.address,
     usdc: params?.evmUsdc ?? available("USDC", "0", 6),
     hype: params?.evmHype ?? available("HYPE", "0", 18),

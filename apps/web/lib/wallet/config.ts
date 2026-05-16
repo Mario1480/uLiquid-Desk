@@ -1,9 +1,10 @@
 import { isAddress } from "viem";
 import type { WalletFeatureConfig } from "./types";
+import { DEFAULT_HYPEREVM_EXPLORER_URL } from "./explorer";
 
 const DEFAULT_CHAIN_ID = 999;
 const DEFAULT_RPC_URL = "https://rpc.hyperliquid.xyz/evm";
-const DEFAULT_EXPLORER_URL = "https://app.hyperliquid.xyz/explorer";
+const DEFAULT_EXPLORER_URL = DEFAULT_HYPEREVM_EXPLORER_URL;
 const DEFAULT_USDC_ADDRESS = "0xb88339CB7199b77E23DB6E890353E22632Ba630f";
 const DEFAULT_USDC_DECIMALS = 6;
 

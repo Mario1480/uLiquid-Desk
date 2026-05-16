@@ -17,6 +17,7 @@ type ExchangeAccountOverview
 import { AppIcon } from "./components/AppIcon";
 import AlertsFeed, { type DashboardAlert } from "../components/dashboard/AlertsFeed";
 import DashboardWidgetFrame from "../components/dashboard/DashboardWidgetFrame";
+import { HyperEvmAddressLink } from "../components/wallet/ExplorerLinks";
 import type { GridInstance } from "../components/grid/types";
 import {
   computeGridRuntimeMarkPrice,
@@ -1668,6 +1669,7 @@ export default function Page() {
                       ? t("affiliateProfitshare.walletReady")
                       : t("affiliateProfitshare.walletMissing")}
                   </span>
+                  <HyperEvmAddressLink address={affiliateOverview?.payoutWallet?.address} label="HyperEVMScan" />
                 </div>
               </>
             )}

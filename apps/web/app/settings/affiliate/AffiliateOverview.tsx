@@ -10,6 +10,7 @@ import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 import { AppIcon } from "../../components/AppIcon";
+import { HyperEvmAddressLink } from "../../../components/wallet/ExplorerLinks";
 
 type AffiliateOverviewResponse = {
   profile: {
@@ -429,6 +430,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	              <AppIcon name="copy" />
 	              Copy payout wallet address
 	            </button>
+              <HyperEvmAddressLink address={data.payoutWallet.address} />
           </div>
         ) : null}
         <div className="adminStatsGrid" style={{ marginTop: 12 }}>
@@ -524,6 +526,11 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                 <div className="settingsMutedText">
                   Vault {item.botVault?.gridInstanceId ?? item.botVault?.vaultAddress ?? "—"}
                 </div>
+                {item.botVault?.vaultAddress ? (
+                  <div className="settingsActions" style={{ marginTop: 8 }}>
+                    <HyperEvmAddressLink address={item.botVault.vaultAddress} label="View vault" />
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

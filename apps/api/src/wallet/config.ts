@@ -2,7 +2,7 @@ import { isAddress } from "viem";
 
 const DEFAULT_HYPEREVM_RPC_URL = "https://rpc.hyperliquid.xyz/evm";
 const DEFAULT_HYPERLIQUID_INFO_URL = "https://api.hyperliquid.xyz/info";
-const DEFAULT_HYPEREVM_EXPLORER_URL = "https://app.hyperliquid.xyz/explorer";
+const DEFAULT_HYPEREVM_EXPLORER_URL = "https://hyperevmscan.io";
 const DEFAULT_USDC_ADDRESS = "0xb88339CB7199b77E23DB6E890353E22632Ba630f";
 const DEFAULT_USDC_DECIMALS = 6;
 

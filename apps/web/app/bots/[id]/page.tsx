@@ -18,6 +18,7 @@ import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 import { AppIcon } from "../../components/AppIcon";
 import Web3Providers from "../../components/Web3Providers";
+import { HyperEvmAddressLink } from "../../../components/wallet/ExplorerLinks";
 
 type BotDetail = {
   id: string;
@@ -299,6 +300,30 @@ function formatPct(value: number | null | undefined): string {
 
 function formatYesNo(value: boolean): string {
   return value ? "yes" : "no";
+}
+
+function formatShortAddress(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "-";
+  if (normalized.length <= 14) return normalized;
+  return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
+}
+
+function ExplorerAddressValue({
+  address,
+  fallback = "-"
+}: {
+  address: string | null | undefined;
+  fallback?: string;
+}) {
+  const normalized = String(address ?? "").trim();
+  if (!normalized) return <>{fallback}</>;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span>{formatShortAddress(normalized)}</span>
+      <HyperEvmAddressLink address={normalized} className="btn" label="HyperEVMScan" />
+    </span>
+  );
 }
 
 function formatBotVaultFundingStatus(value: string | null | undefined): string {
@@ -866,11 +891,11 @@ function BotDetailsPageContent() {
           <InfoRow label="Platform fee %" value={formatNumber(botVault?.feeConfigSummary?.platformFeeRatePct ?? null, 2)} />
           <InfoRow label="Affiliate fee %" value={formatNumber(botVault?.feeConfigSummary?.affiliateFeeRatePct ?? null, 2)} />
           <InfoRow label="Affiliate linked" value={formatYesNo(Boolean(botVault?.feeConfigSummary?.affiliateUserId))} />
-          <InfoRow label="Affiliate recipient" value={botVault?.feeConfigSummary?.affiliateRecipientAddress ?? "-"} />
+          <InfoRow label="Affiliate recipient" value={<ExplorerAddressValue address={botVault?.feeConfigSummary?.affiliateRecipientAddress} />} />
           <InfoRow label="Fee config locked" value={formatDateTime(botVault?.feeConfigSummary?.feeConfigLockedAt ?? null)} />
-          <InfoRow label="Vault address" value={botVault?.onchainBotVaultAddress ?? botVault?.vaultAddress ?? "pending controller deployment"} />
-          <InfoRow label="Beneficiary" value={botVault?.beneficiaryAddress ?? "-"} />
-          <InfoRow label="Controller" value={botVault?.controllerAddress ?? "-"} />
+          <InfoRow label="Vault address" value={<ExplorerAddressValue address={botVault?.onchainBotVaultAddress ?? botVault?.vaultAddress} fallback="pending controller deployment" />} />
+          <InfoRow label="Beneficiary" value={<ExplorerAddressValue address={botVault?.beneficiaryAddress} />} />
+          <InfoRow label="Controller" value={<ExplorerAddressValue address={botVault?.controllerAddress} />} />
         </div>
 	        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
 	          <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
@@ -931,7 +956,7 @@ function BotDetailsPageContent() {
 
       <BotAccordionSection title="Agent Wallet">
         <div className="botDetailGrid" style={{ marginBottom: 12 }}>
-          <InfoRow label="Address" value={agentWallet?.address ?? "-"} />
+          <InfoRow label="Address" value={<ExplorerAddressValue address={agentWallet?.address} />} />
           <InfoRow label="HYPE balance" value={agentWallet?.hypeBalance ?? "-"} />
           <InfoRow label="Low-HYPE state" value={agentWallet?.lowHypeState ?? "unavailable"} />
           <InfoRow label="Threshold" value={agentWallet ? String(agentWallet.lowHypeThreshold) : "-"} />
@@ -975,8 +1000,8 @@ function BotDetailsPageContent() {
             <InfoRow label={t("fields.executionStatus")} value={bot.botVault.executionStatus ?? "-"} />
             <InfoRow label={t("fields.allocatedUsdc")} value={formatNumber(bot.botVault.allocatedUsd ?? null, 2)} />
             <InfoRow label={t("fields.availableUsdc")} value={formatNumber(bot.botVault.availableUsd ?? null, 2)} />
-            <InfoRow label={t("fields.vaultAddress")} value={bot.botVault.onchainBotVaultAddress ?? bot.botVault.vaultAddress ?? "-"} />
-            <InfoRow label={t("fields.agentWallet")} value={bot.botVault.agentWalletAddress ?? bot.botVault.agentWallet ?? "-"} />
+            <InfoRow label={t("fields.vaultAddress")} value={<ExplorerAddressValue address={bot.botVault.onchainBotVaultAddress ?? bot.botVault.vaultAddress} />} />
+            <InfoRow label={t("fields.agentWallet")} value={<ExplorerAddressValue address={bot.botVault.agentWalletAddress ?? bot.botVault.agentWallet} />} />
           </div>
         </BotAccordionSection>
       ) : null}
@@ -1230,11 +1255,11 @@ function BotAccordionSection({
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string | number }) {
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="card botsSetupMetricCard">
       <div className="botsSetupMetricLabel">{label}</div>
-      <div className="botsSetupMetricValue botsSetupMetricValueCompact">{String(value)}</div>
+      <div className="botsSetupMetricValue botsSetupMetricValueCompact">{value}</div>
     </div>
   );
 }

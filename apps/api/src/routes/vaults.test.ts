@@ -736,7 +736,7 @@ test("GET /wallet/:address/overview returns normalized wallet payload", async ()
             chainId: 999,
             name: "HyperEVM",
             rpcUrl: "https://rpc.hyperliquid.xyz/evm",
-            explorerUrl: "https://app.hyperliquid.xyz/explorer"
+            explorerUrl: "https://hyperevmscan.io"
           },
           balances: {
             hype: { symbol: "HYPE", raw: "1", formatted: "0.000000000000000001", decimals: 18 },
@@ -945,7 +945,7 @@ test("GET /funding/:address/overview returns aggregated funding payload", async 
             chainId: 999,
             networkName: "HyperEVM",
             rpcUrl: "https://rpc.hyperliquid.xyz/evm",
-            explorerUrl: "https://app.hyperliquid.xyz/explorer",
+            explorerUrl: "https://hyperevmscan.io",
             address: input.address,
             hype: { symbol: "HYPE", decimals: 18, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
             usdc: { symbol: "USDC", decimals: 6, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
@@ -1676,7 +1676,7 @@ test("GET /transfers/:address/overview returns aggregated transfer payload", asy
               expectedChainId: 999,
               networkName: "HyperEVM",
               rpcUrl: "https://rpc.hyperliquid.xyz/evm",
-              explorerUrl: "https://app.hyperliquid.xyz/explorer"
+              explorerUrl: "https://hyperevmscan.io"
             },
             usdc: { symbol: "USDC", decimals: 6, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
             hype: { symbol: "HYPE", decimals: 18, raw: "0", formatted: "0", state: "zero", available: true, reason: null },

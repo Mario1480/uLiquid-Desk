@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { apiGet, apiPost, apiPut } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { AppIcon } from "../../app/components/AppIcon";
+import { HyperEvmAddressLink } from "../wallet/ExplorerLinks";
 import { BotVaultOnchainActionsCard } from "./OnchainVaultActions";
 import type {
   BotVaultPnlReport,
@@ -213,6 +214,14 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const vaultWithdrawable = useMemo(() => Number(detail?.botVault?.withdrawableUsd ?? 0), [detail]);
   const providerSummary = useMemo(() => detail?.botVault?.providerMetadataSummary ?? null, [detail]);
   const providerRaw = useMemo(() => detail?.botVault?.providerMetadataRaw ?? null, [detail]);
+  const botVaultExplorerAddress = useMemo(
+    () => readNullableString(detail?.botVault?.onchainVaultAddress ?? providerSummary?.vaultAddress),
+    [detail?.botVault?.onchainVaultAddress, providerSummary?.vaultAddress]
+  );
+  const botVaultAgentExplorerAddress = useMemo(
+    () => readNullableString(providerSummary?.agentWallet),
+    [providerSummary?.agentWallet]
+  );
   const stablecoinLabel = useMemo(
     () => getStablecoinLabel({ executionProvider: detail?.botVault?.executionProvider }),
     [detail?.botVault?.executionProvider]
@@ -896,6 +905,12 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   {fundingDisplayMeta.detail}
                 </div>
               ) : null}
+              {botVaultExplorerAddress || botVaultAgentExplorerAddress ? (
+                <div className="botsDetailToolbar" style={{ marginTop: 10 }}>
+                  <HyperEvmAddressLink address={botVaultExplorerAddress} label="View BotVault" />
+                  <HyperEvmAddressLink address={botVaultAgentExplorerAddress} label="View Agent" />
+                </div>
+              ) : null}
             </section>
 
             <section className="gridOverviewAllocCard">
@@ -944,6 +959,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
 	                  <AppIcon name="money" />
 	                  Open Affiliate Dashboard
 	                </Link>
+                  <HyperEvmAddressLink address={feeConfigSummary?.affiliateRecipientAddress} label="View Affiliate" />
 	                {isAdminViewer ? (
 	                  <Link className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
 	                    <AppIcon name="admin" />
