@@ -539,6 +539,7 @@ const FUNDING_INTENT_ACTION_TYPES = new Set<string>([
 ]);
 
 const FUNDING_INTENT_UNRESOLVED_STATUSES = new Set(["prepared", "submitted", "pending_reconciliation"]);
+const FUNDING_INTENT_SIGNATURE_TIMEOUT_MS = 30 * 60 * 1000;
 
 function toMetadataRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -559,6 +560,22 @@ function sameFundingIntentScope(row: any, params: {
   return normalizeMetadataAddress(metadata.walletAddress) === normalizeMetadataAddress(params.walletAddress)
     && String(metadata.asset ?? "").trim().toUpperCase() === params.asset.trim().toUpperCase()
     && String(metadata.direction ?? "").trim().toLowerCase() === params.direction.trim().toLowerCase();
+}
+
+function isStaleUnsignedFundingIntent(row: any, now = new Date()): boolean {
+  if (String(row?.status ?? "").trim().toLowerCase() !== "prepared") return false;
+  if (String(row?.txHash ?? "").trim()) return false;
+  const metadata = toMetadataRecord(row?.metadata);
+  const recoveryHint = String(metadata.recoveryHint ?? "").trim().toLowerCase();
+  const reasonCode = String(metadata.reasonCode ?? "").trim().toLowerCase();
+  if (recoveryHint !== "await_wallet_signature" && reasonCode !== "funding_intent_prepared") return false;
+
+  const updatedAt = row?.updatedAt instanceof Date ? row.updatedAt : new Date(String(row?.updatedAt ?? ""));
+  const createdAt = row?.createdAt instanceof Date ? row.createdAt : new Date(String(row?.createdAt ?? ""));
+  const referenceTime = Number.isFinite(updatedAt.getTime()) ? updatedAt : createdAt;
+  if (!Number.isFinite(referenceTime.getTime())) return false;
+
+  return now.getTime() - referenceTime.getTime() >= FUNDING_INTENT_SIGNATURE_TIMEOUT_MS;
 }
 
 export function createOnchainActionService(db: any, deps?: CreateOnchainActionServiceDeps) {
@@ -2081,11 +2098,34 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         orderBy: [{ updatedAt: "desc" }],
         take: 50
       });
-      const existing = candidates.find((row: any) => sameFundingIntentScope(row, {
-        walletAddress: params.walletAddress,
-        asset: params.asset,
-        direction: params.direction
-      }));
+      const now = new Date();
+      const nowIso = now.toISOString();
+      let existing: any | null = null;
+      for (const row of candidates) {
+        if (!sameFundingIntentScope(row, {
+          walletAddress: params.walletAddress,
+          asset: params.asset,
+          direction: params.direction
+        })) continue;
+        if (isStaleUnsignedFundingIntent(row, now)) {
+          await tx.onchainAction.update({
+            where: { id: row.id },
+            data: {
+              status: "failed",
+              metadata: {
+                ...toMetadataRecord(row.metadata),
+                reasonCode: "wallet_signature_timeout",
+                recoveryHint: "retry_action",
+                failedAt: nowIso,
+                lastCheckedAt: nowIso
+              }
+            }
+          });
+          continue;
+        }
+        existing = row;
+        break;
+      }
       if (existing) {
         throw new Error(`funding_intent_pending_reconciliation:${existing.id}`);
       }

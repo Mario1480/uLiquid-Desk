@@ -4,10 +4,139 @@ import {
   assertCloseBotVaultPreflight,
   assertSetBotVaultCloseOnlyPreflight,
   computeSettlementPreview,
+  createOnchainActionService,
   deriveClaimFromBotVaultSettlement,
   deriveCloseBotVaultSettlement
 } from "./onchainAction.service.js";
 import { computeFeeSettlementMath } from "./feeSettlement.math.js";
+
+const FUNDING_WALLET = "0xa7a53774f9abdaff5f1c5d194a865c88fe1301ef";
+
+function fundingIntentParams(overrides: Record<string, unknown> = {}) {
+  return {
+    userId: "user_1",
+    walletAddress: FUNDING_WALLET,
+    actionType: "funding_usd_class_transfer",
+    actionKey: "new_funding_intent",
+    chainId: 42161,
+    toAddress: FUNDING_WALLET,
+    asset: "USDC",
+    direction: "perp_to_spot",
+    amountRaw: "100000000",
+    amountFormatted: "100",
+    sourceLocation: "hyperliquidPerp",
+    destinationLocation: "hyperCore",
+    beforeSourceRaw: "100000000",
+    beforeDestinationRaw: "0",
+    targetDestinationRaw: "100000000",
+    ...overrides
+  };
+}
+
+function fundingIntentRow(overrides: Record<string, unknown> = {}) {
+  const now = new Date();
+  return {
+    id: "intent_existing",
+    actionKey: "existing_funding_intent",
+    actionType: "funding_usd_class_transfer",
+    status: "prepared",
+    userId: "user_1",
+    masterVaultId: null,
+    fundingVaultId: null,
+    botVaultId: null,
+    chainId: 42161,
+    txHash: null,
+    toAddress: FUNDING_WALLET,
+    dataHex: "0x",
+    valueWei: "0",
+    metadata: {
+      walletAddress: FUNDING_WALLET,
+      asset: "USDC",
+      direction: "perp_to_spot",
+      amountRaw: "100000000",
+      amountFormatted: "100",
+      sourceLocation: "hyperliquidPerp",
+      destinationLocation: "hyperCore",
+      beforeSourceRaw: "100000000",
+      beforeDestinationRaw: "0",
+      targetDestinationRaw: "100000000",
+      reasonCode: "funding_intent_prepared",
+      recoveryHint: "await_wallet_signature"
+    },
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
+test("createFundingIntent expires stale unsigned wallet intents before creating a retry", async () => {
+  const staleIntent = fundingIntentRow({
+    updatedAt: new Date(Date.now() - 31 * 60 * 1000),
+    createdAt: new Date(Date.now() - 31 * 60 * 1000)
+  });
+  const createdIntent = fundingIntentRow({
+    id: "intent_retry",
+    actionKey: "new_funding_intent",
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  const updates: any[] = [];
+  const tx = {
+    onchainAction: {
+      findMany: async () => [staleIntent],
+      update: async (args: any) => {
+        updates.push(args);
+        return {
+          ...staleIntent,
+          status: args.data.status,
+          metadata: args.data.metadata,
+          updatedAt: new Date()
+        };
+      },
+      findUnique: async () => null,
+      create: async () => createdIntent
+    }
+  };
+  const service = createOnchainActionService({
+    $transaction: async (callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx)
+  });
+
+  const action = await service.createFundingIntent(fundingIntentParams() as any);
+
+  assert.equal(action.id, "intent_retry");
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].where.id, "intent_existing");
+  assert.equal(updates[0].data.status, "failed");
+  assert.equal(updates[0].data.metadata.reasonCode, "wallet_signature_timeout");
+  assert.equal(updates[0].data.metadata.recoveryHint, "retry_action");
+});
+
+test("createFundingIntent still blocks fresh unsigned wallet intents", async () => {
+  const freshIntent = fundingIntentRow({
+    updatedAt: new Date(Date.now() - 5 * 60 * 1000),
+    createdAt: new Date(Date.now() - 5 * 60 * 1000)
+  });
+  const tx = {
+    onchainAction: {
+      findMany: async () => [freshIntent],
+      update: async () => {
+        throw new Error("unexpected_update");
+      },
+      findUnique: async () => null,
+      create: async () => {
+        throw new Error("unexpected_create");
+      }
+    }
+  };
+  const service = createOnchainActionService({
+    $transaction: async (callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx)
+  });
+
+  await assert.rejects(
+    () => service.createFundingIntent(fundingIntentParams() as any),
+    /funding_intent_pending_reconciliation:intent_existing/
+  );
+});
 
 test("assertCloseBotVaultPreflight requires onchain close-only status", () => {
   assert.throws(
