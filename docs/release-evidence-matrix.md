@@ -21,10 +21,12 @@ Use this file as the per-release Go/No-Go evidence checklist. Keep completed cop
 | Node version | `node --version` must be Node 20.x |  |  |
 | Install | `npm ci` |  |  |
 | Prisma generate | `npx prisma generate` |  |  |
+| Prisma engine cache/offline policy | `docs/prisma-engine-cache-and-offline-builds.md` reviewed; cache hit/miss noted |  |  |
 | Root typecheck | `npm run typecheck` |  |  |
 | Root build | `npm run build` |  |  |
 | API release hardening tests | `npm -w apps/api run test:release-hardening` |  |  |
 | Any budget | `npm run quality:any-budget` |  |  |
+| Type-safety ratchet | `docs/type-safety-strictness-plan.md` reviewed; budget decreases recorded |  |  |
 | Vendored charting checksum | `npm run quality:vendor-charting` |  |  |
 | Futures core tests | `npm -w packages/futures-core run test` |  |  |
 | Futures exchange tests | `npm -w packages/futures-exchange run test` |  |  |

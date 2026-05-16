@@ -47,12 +47,12 @@ This agenda tracks the review findings against the live repository. It is intent
 - [x] Start an `any` budget for capital-moving API, runner, vault, funding, and exchange adapter paths.
 - [x] Document vendored TradingView/charting assets with version, source, license, and checksum.
 - [x] Automatically verify the documented vendored charting checksum in CI with `npm run quality:vendor-charting`.
-- [ ] Start reducing the `any` budgets instead of only preventing regressions.
-  Suggested first targets: vault settlement/funding DTOs, runner order/fill/reconciliation DTOs, exchange adapter responses, license/auth boundaries, and onchain integration payloads.
-- [ ] Plan staged strictness upgrades for API and Web.
-  API still carries `noImplicitAny: false`; Web still carries `strict: false`. Treat this as a gradual module-by-module track rather than a single flag flip.
-- [ ] Document Prisma engine handling for restricted/offline deployment environments.
-  CI now caches Prisma engines and local Node 20 gates passed, but fully air-gapped builds still need a documented cache/preinstall policy if they become a deployment requirement.
+- [x] Start reducing the `any` budgets instead of only preventing regressions.
+  First ratchet completed: `api-vaults` budget lowered from 325 to 323; `futures-exchange` lowered from 34 to 32 after replacing Bitget product-type `any` casts with a typed resolver.
+- [x] Plan staged strictness upgrades for API and Web.
+  Plan recorded in `docs/type-safety-strictness-plan.md`; API `noImplicitAny` and Web `strict` remain staged tracks rather than a risky whole-app flag flip.
+- [x] Document Prisma engine handling for restricted/offline deployment environments.
+  Policy recorded in `docs/prisma-engine-cache-and-offline-builds.md`; release evidence matrix now requires cache/offline handling notes.
 
 ## P2 Refactor Tracks
 

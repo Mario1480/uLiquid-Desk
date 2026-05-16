@@ -1,7 +1,7 @@
 {
   "api-vaults": {
     "paths": ["apps/api/src/vaults"],
-    "maxAny": 325,
+    "maxAny": 323,
     "maxSuppressions": 0
   },
   "api-grid": {
@@ -26,7 +26,7 @@
   },
   "futures-exchange": {
     "paths": ["packages/futures-exchange/src"],
-    "maxAny": 34,
+    "maxAny": 32,
     "maxSuppressions": 0
   },
   "exchange": {

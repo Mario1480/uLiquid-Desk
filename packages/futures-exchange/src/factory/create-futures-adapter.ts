@@ -1,4 +1,5 @@
 import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
+import { BITGET_PRODUCT_TYPES, type BitgetProductType } from "../bitget/bitget.constants.js";
 import { BinanceFuturesAdapter } from "../binance/binance.adapter.js";
 import { BingxFuturesAdapter } from "../bingx/bingx.adapter.js";
 import {
@@ -127,6 +128,11 @@ export class FuturesAdapterFactoryError extends Error {
     super(message ?? code);
     this.code = code;
   }
+}
+
+function resolveBitgetProductType(value: string | undefined): BitgetProductType | undefined {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return BITGET_PRODUCT_TYPES.find((productType) => productType === normalized);
 }
 
 export function resolveFuturesVenue(
@@ -267,7 +273,9 @@ export function resolveFuturesVenue(
         apiKey: account.apiKey,
         apiSecret: account.apiSecret,
         apiPassphrase: account.passphrase ?? undefined,
-        productType: (options.bitgetProductType as any) ?? (process.env.BITGET_PRODUCT_TYPE as any) ?? "USDT-FUTURES",
+        productType: resolveBitgetProductType(options.bitgetProductType)
+          ?? resolveBitgetProductType(process.env.BITGET_PRODUCT_TYPE)
+          ?? "USDT-FUTURES",
         marginCoin: options.bitgetMarginCoin ?? process.env.BITGET_MARGIN_COIN ?? "USDT"
       })
   };
