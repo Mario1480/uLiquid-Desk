@@ -34,8 +34,8 @@ This agenda tracks the review findings against the live repository. It is intent
 - [x] Install Foundry in CI and require `npm run contracts:build` plus `npm run contracts:test`.
 - [x] Run Python tests with explicit local tokens: `PY_STRATEGY_AUTH_TOKEN=test-token PY_GRID_AUTH_TOKEN=test-token PYTHONPATH=apps/py-strategy-service pytest -q apps/py-strategy-service`.
 - [x] Split or tune long futures-exchange tests so CI failures are assertion failures, not global timeouts.
-- [ ] Attach GitHub Actions release-gates evidence for commit `8b0951f6` or the final release tag.
-  Local evidence on 2026-05-16: `npm run typecheck`, `npm run build`, `npm run quality:any-budget`, `npm run quality:vendor-charting`, `npm -w packages/core run test`, `npm -w packages/futures-exchange run test`, `npm -w apps/api run test:release-hardening`, Python strategy tests, and `npm run contracts:test` were green.
+- [x] Attach GitHub Actions release-gates evidence for commit `af82d917` or the final release tag.
+  GitHub Actions evidence on 2026-05-16: Release Gates run #9 passed for `af82d917` with Node build/typecheck, Python strategy service tests, and Foundry contracts all green: https://github.com/Mario1480/uLiquid-Desk/actions/runs/25963572025. Local evidence also passed for `npm run typecheck`, `npm run build`, `npm run quality:any-budget`, `npm run quality:vendor-charting`, `npm -w packages/core run test`, `npm -w packages/futures-exchange run test`, `npm -w apps/api run test:release-hardening`, Python strategy tests, and `npm run contracts:test`.
 
 ## P1 Hardening
 
