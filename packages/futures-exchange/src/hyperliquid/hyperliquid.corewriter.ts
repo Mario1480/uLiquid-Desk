@@ -97,6 +97,8 @@ export type HyperliquidCoreWriterClientInput = {
   chainId: number;
   sendTransaction?: (input: { to: `0x${string}`; data: Hex; gas?: bigint; nonce?: number }) => Promise<`0x${string}`>;
   getTransactionCount?: (input?: { blockTag?: "latest" | "pending" }) => Promise<number>;
+  estimateGas?: (input: { to: `0x${string}`; data: Hex }) => Promise<bigint>;
+  gasLimit?: bigint;
   waitForTransactionReceipt?: (input: { hash: `0x${string}` }) => Promise<{ status?: "success" | "reverted" | string }>;
 };
 
@@ -294,16 +296,29 @@ export class HyperliquidCoreWriterClient {
           nonce: request.nonce,
           chain
         });
-    this.sendTransactionImpl = async (request) => {
-      const estimatedGas = request.gas ?? await retryOnRateLimit(
-        () => publicClient.estimateGas({
+    const estimateGas = typeof input.estimateGas === "function"
+      ? input.estimateGas
+      : (request: { to: `0x${string}`; data: Hex }) => publicClient.estimateGas({
           account,
           to: request.to,
           data: request.data
-        }),
-        3,
-        500
-      ).catch(() => 750_000n);
+        });
+    const shouldUseDeterministicInjectedGas =
+      typeof input.sendTransaction === "function"
+      && typeof input.estimateGas !== "function";
+    this.sendTransactionImpl = async (request) => {
+      const estimatedGas = request.gas
+        ?? input.gasLimit
+        ?? (shouldUseDeterministicInjectedGas
+          ? 750_000n
+          : await retryOnRateLimit(
+              () => estimateGas({
+                to: request.to,
+                data: request.data
+              }),
+              3,
+              500
+            ).catch(() => 750_000n));
       const gas = estimatedGas + (estimatedGas / 5n) + 50_000n;
       return withNonceLock(nonceKey, async (state) => {
         if (state.nextNonce === null) {

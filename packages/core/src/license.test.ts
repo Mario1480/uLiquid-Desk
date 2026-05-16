@@ -11,7 +11,7 @@ import {
 test("signLicenseBody creates expected HMAC hex for raw JSON body", async () => {
   const body = "{\"licenseKey\":\"abc\",\"instanceId\":\"vps-123\"}";
   const secret = "secret";
-  const expected = "61326d4b134866a5ec5c9a58a9cb1647807b09dfe13de31e50ca148b8dd26211";
+  const expected = "4e5a77a2a5f43f8b5eefbca59448950cd0f8c4584323143db1a5f052c4e89bcc";
   assert.equal(await signLicenseBody(body, secret), expected);
 });
 

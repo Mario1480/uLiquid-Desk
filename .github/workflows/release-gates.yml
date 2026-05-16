@@ -65,6 +65,9 @@ jobs:
       - name: Capital-moving type debt budget
         run: npm run quality:any-budget
 
+      - name: Core package tests
+        run: npm -w packages/core run test
+
       - name: Futures core tests
         run: npm -w packages/futures-core run test
 

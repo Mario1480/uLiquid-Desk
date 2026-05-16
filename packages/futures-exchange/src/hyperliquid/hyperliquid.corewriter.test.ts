@@ -138,7 +138,7 @@ test("corewriter client retries rate-limited nonce and send requests", async () 
 });
 
 test("corewriter client serializes nonces across concurrent clients sharing the same signer", async () => {
-  const attempts: Array<{ to: string; nonce: number }> = [];
+  const attempts: Array<{ to: string; nonce: number; gas: string | null }> = [];
   const txHashes = [
     `0x${"7".repeat(64)}`,
     `0x${"8".repeat(64)}`
@@ -166,7 +166,8 @@ test("corewriter client serializes nonces across concurrent clients sharing the 
     sendTransaction: async (input) => {
       attempts.push({
         to: input.to,
-        nonce: Number(input.nonce ?? -1)
+        nonce: Number(input.nonce ?? -1),
+        gas: input.gas?.toString() ?? null
       });
       sendCount += 1;
       if (sendCount === 1) {
@@ -204,8 +205,8 @@ test("corewriter client serializes nonces across concurrent clients sharing the 
   assert.equal(secondResult.status, "confirmed");
   assert.equal(nonceReads, 1);
   assert.deepEqual(attempts, [
-    { to: `0x${"2".repeat(40)}`, nonce: 4100 },
-    { to: `0x${"3".repeat(40)}`, nonce: 4101 }
+    { to: `0x${"2".repeat(40)}`, nonce: 4100, gas: "950000" },
+    { to: `0x${"3".repeat(40)}`, nonce: 4101, gas: "950000" }
   ]);
 });
 
