@@ -32,7 +32,7 @@ class RegistryTests(unittest.TestCase):
                 protocolVersion=main.STRATEGY_PROTOCOL_VERSION,
                 requestId="req_1",
                 payload=StrategyRunRequest(
-                    strategyType="regime_gate",
+                    strategyType="ta_trend_vol_gate_v2",
                     strategyVersion="9.9.9",
                     featureSnapshot={},
                     config={},

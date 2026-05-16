@@ -2,6 +2,7 @@ import express from "express";
 import { z } from "zod";
 import { getFuturesVenueCapabilities } from "@mm/futures-exchange";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { readRouteParam } from "../routeParams.js";
 
 const adminUserCreateSchema = z.object({
   email: z.string().trim().email(),
@@ -235,7 +236,7 @@ export function registerAdminOperationsRoutes(
   app.put("/admin/users/:id/password", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const actor = getUserFromLocals(res);
-    const id = req.params.id;
+    const id = readRouteParam(req, "id");
     const parsed = adminUserPasswordSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -272,7 +273,7 @@ export function registerAdminOperationsRoutes(
   app.put("/admin/users/:id/admin-access", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const actor = getUserFromLocals(res);
-    const id = req.params.id;
+    const id = readRouteParam(req, "id");
     const parsed = adminUserAdminAccessSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -321,7 +322,7 @@ export function registerAdminOperationsRoutes(
   app.delete("/admin/users/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const actor = getUserFromLocals(res);
-    const id = req.params.id;
+    const id = readRouteParam(req, "id");
 
     const user = await deps.db.user.findUnique({
       where: { id },

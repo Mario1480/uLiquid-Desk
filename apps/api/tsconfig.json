@@ -6,14 +6,6 @@
     "noImplicitAny": false,
     "types": ["node"]
   },
-  "include": [
-    "src/bootstrap.ts",
-    "src/env.ts",
-    "src/index.ts",
-    "src/auth.ts",
-    "src/license.ts",
-    "src/license.test.ts",
-    "src/secret-crypto.ts",
-    "src/orchestration.ts"
-  ]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

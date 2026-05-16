@@ -25,7 +25,6 @@ import { encryptSecret } from "../secret-crypto.js";
 import { normalizeOnchainContractVersion, resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
 import { sendSerializedControllerTransaction } from "./controllerTransaction.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi, botVaultV4Abi } from "./onchainAbi.js";
-import { computeProfitShareAccounting } from "./feeSettlement.math.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import {
   buildBotVaultV3FundingLifecycleTransitionPatch,
@@ -68,6 +67,28 @@ import {
   GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY,
   parseVaultSafetyControls
 } from "./safetyControls.js";
+import {
+  deriveBotVaultFundingDisplayState,
+  type BotVaultFundingDisplayState,
+  type BotVaultFundingDisplayStatus,
+  type BotVaultV3OperationState,
+  type BotVaultV3OperationStateValue,
+  type BotVaultV3OperationStep
+} from "./botVaultFundingDisplay.js";
+import {
+  computeV4ProfitShareRaw,
+  formatUsdAtomicToNumber,
+  toAtomicUsd
+} from "./botVaultV4ProfitShare.js";
+
+export { deriveBotVaultFundingDisplayState } from "./botVaultFundingDisplay.js";
+export type {
+  BotVaultFundingDisplayState,
+  BotVaultFundingDisplayStatus,
+  BotVaultV3OperationState,
+  BotVaultV3OperationStateValue,
+  BotVaultV3OperationStep
+} from "./botVaultFundingDisplay.js";
 
 export type AgentWalletSummary = {
   address: string | null;
@@ -91,50 +112,6 @@ export type AffiliatePayoutWalletSummary = {
   usdcBalanceAtomic: string | null;
   updatedAt: string | null;
   stale: boolean;
-};
-
-export type BotVaultV3OperationStep =
-  | "hyper_evm_deposit"
-  | "hypercore_funding"
-  | "hypercore_withdraw"
-  | "claim"
-  | "close"
-  | "recover";
-
-export type BotVaultV3OperationStateValue =
-  | "pending"
-  | "submitted"
-  | "confirmed"
-  | "pending_reconciliation"
-  | "failed_retryable"
-  | "failed_final";
-
-export type BotVaultV3OperationState = {
-  step: BotVaultV3OperationStep;
-  state: BotVaultV3OperationStateValue;
-  reasonCode: string;
-  detail: string | null;
-  nextRecommendedAction: "submit" | "wait" | "retry" | "retry_reconcile" | "recover" | "request_user_action" | "none";
-  canRetry: boolean;
-  amountUsd: number | null;
-  txHash: string | null;
-  updatedAt: string | null;
-};
-
-export type BotVaultFundingDisplayStatus =
-  | "deposit_pending_reconciliation"
-  | "withdraw_pending_reconciliation"
-  | "funding_confirmed"
-  | "funding_failed_retryable"
-  | "funding_failed_final"
-  | "funding_pending";
-
-export type BotVaultFundingDisplayState = {
-  status: BotVaultFundingDisplayStatus;
-  reasonCode: string;
-  detail: string | null;
-  recoveryHint: BotVaultV4RecoveryHint | null;
-  nextRecommendedAction: BotVaultV3OperationState["nextRecommendedAction"];
 };
 
 export type BotVaultV3Summary = {
@@ -1012,196 +989,6 @@ function toRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function normalizeFundingDisplayRecoveryHint(params: {
-  status: BotVaultFundingDisplayStatus;
-  operationState?: BotVaultV3OperationState | null;
-  fallback?: BotVaultV4RecoveryHint | null;
-}): BotVaultV4RecoveryHint | null {
-  if (params.operationState?.state === "pending_reconciliation") return "retry_reconcile";
-  if (params.operationState?.state === "failed_retryable") return "retry_reconcile";
-  if (params.operationState?.state === "failed_final") {
-    return params.operationState.nextRecommendedAction === "request_user_action"
-      ? "request_user_action"
-      : "run_recovery";
-  }
-  if (params.status === "funding_failed_retryable") return "retry_reconcile";
-  if (params.status === "funding_failed_final") return params.fallback ?? "run_recovery";
-  if (params.status === "funding_confirmed") return "none";
-  return params.fallback ?? "none";
-}
-
-function buildBotVaultFundingDisplayState(params: {
-  status: BotVaultFundingDisplayStatus;
-  reasonCode?: string | null;
-  detail?: string | null;
-  recoveryHint?: BotVaultV4RecoveryHint | null;
-  nextRecommendedAction?: BotVaultV3OperationState["nextRecommendedAction"] | null;
-  operationState?: BotVaultV3OperationState | null;
-}): BotVaultFundingDisplayState {
-  const recoveryHint = normalizeFundingDisplayRecoveryHint({
-    status: params.status,
-    operationState: params.operationState,
-    fallback: params.recoveryHint ?? null
-  });
-  return {
-    status: params.status,
-    reasonCode: toNullableString(params.reasonCode) ?? params.status,
-    detail: toNullableString(params.detail),
-    recoveryHint,
-    nextRecommendedAction: params.nextRecommendedAction
-      ?? params.operationState?.nextRecommendedAction
-      ?? (params.status === "funding_confirmed" ? "none" : params.status === "funding_pending" ? "submit" : "wait")
-  };
-}
-
-export function deriveBotVaultFundingDisplayState(params: {
-  row?: unknown;
-  operationState?: BotVaultV3OperationState | null;
-  lifecycleStage?: BotVaultV3FundingLifecycleStage | string | null;
-  fundingStatus?: string | null;
-  hypercoreFundingStatus?: string | null;
-  executionReady?: boolean | null;
-  statusCategory?: BotVaultV4StatusCategory | string | null;
-  statusReason?: string | null;
-  statusDetail?: string | null;
-  statusRecoveryHint?: BotVaultV4RecoveryHint | null;
-  executionMetadata?: unknown;
-}): BotVaultFundingDisplayState {
-  const row = toRecord(params.row);
-  const metadata = toRecord(params.executionMetadata ?? row.executionMetadata);
-  const lifecycleStage = String(
-    params.lifecycleStage ?? (Object.keys(row).length > 0 ? readBotVaultV3FundingLifecycleState(row).stage : "")
-  ).trim().toLowerCase();
-  const fundingStatus = String(params.fundingStatus ?? row.fundingStatus ?? "").trim().toLowerCase();
-  const hypercoreFundingStatus = String(params.hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "").trim().toLowerCase();
-  const statusCategory = String(params.statusCategory ?? "").trim().toLowerCase();
-  const operationState = params.operationState ?? null;
-
-  if (operationState) {
-    if (operationState.state === "failed_retryable") {
-      return buildBotVaultFundingDisplayState({
-        status: "funding_failed_retryable",
-        reasonCode: operationState.reasonCode,
-        detail: operationState.detail,
-        operationState
-      });
-    }
-    if (operationState.state === "failed_final") {
-      return buildBotVaultFundingDisplayState({
-        status: "funding_failed_final",
-        reasonCode: operationState.reasonCode,
-        detail: operationState.detail,
-        operationState
-      });
-    }
-    if (
-      (operationState.state === "pending"
-        || operationState.state === "submitted"
-        || operationState.state === "pending_reconciliation")
-      && new Set<BotVaultV3OperationStep>(["hypercore_withdraw", "claim", "close", "recover"]).has(operationState.step)
-    ) {
-      return buildBotVaultFundingDisplayState({
-        status: "withdraw_pending_reconciliation",
-        reasonCode: operationState.reasonCode,
-        detail: operationState.detail,
-        operationState
-      });
-    }
-  }
-
-  if (params.executionReady === true || lifecycleStage === "execution_ready") {
-    return buildBotVaultFundingDisplayState({
-      status: "funding_confirmed",
-      reasonCode: params.statusReason ?? "funding_confirmed",
-      detail: params.statusDetail,
-      recoveryHint: params.statusRecoveryHint ?? "none",
-      nextRecommendedAction: "none"
-    });
-  }
-
-  if (operationState) {
-    if (
-      operationState.state === "pending"
-      || operationState.state === "submitted"
-      || operationState.state === "pending_reconciliation"
-    ) {
-      return buildBotVaultFundingDisplayState({
-        status: "deposit_pending_reconciliation",
-        reasonCode: operationState.reasonCode,
-        detail: operationState.detail,
-        operationState
-      });
-    }
-  }
-
-  const lifecycleOverrideState = String(metadata.lifecycleOverrideState ?? "").trim().toLowerCase();
-  const settlementStage = String(metadata.settlementStage ?? "").trim().toLowerCase();
-  const contractBalanceReconciliation = toRecord(metadata.contractBalanceReconciliation);
-  const hasWithdrawPendingSignal =
-    lifecycleOverrideState === "withdraw_pending"
-    || lifecycleOverrideState === "settling"
-    || settlementStage === "perp_to_spot_pending"
-    || settlementStage === "spot_to_evm_pending"
-    || contractBalanceReconciliation.state === "pending_reconciliation";
-  if (hasWithdrawPendingSignal) {
-    return buildBotVaultFundingDisplayState({
-      status: "withdraw_pending_reconciliation",
-      reasonCode: params.statusReason ?? toNullableString(contractBalanceReconciliation.reasonCode) ?? settlementStage ?? lifecycleOverrideState,
-      detail: params.statusDetail ?? toNullableString(contractBalanceReconciliation.detail),
-      recoveryHint: params.statusRecoveryHint ?? "retry_reconcile",
-      nextRecommendedAction: "retry_reconcile"
-    });
-  }
-
-  if (statusCategory === "retryable" || lifecycleStage === "failed") {
-    return buildBotVaultFundingDisplayState({
-      status: "funding_failed_retryable",
-      reasonCode: params.statusReason ?? "funding_failed_retryable",
-      detail: params.statusDetail,
-      recoveryHint: params.statusRecoveryHint ?? "retry_reconcile",
-      nextRecommendedAction: "retry"
-    });
-  }
-
-  if (statusCategory === "recovery_required" || lifecycleStage === "recovery_required") {
-    return buildBotVaultFundingDisplayState({
-      status: "funding_failed_final",
-      reasonCode: params.statusReason ?? "funding_failed_final",
-      detail: params.statusDetail,
-      recoveryHint: params.statusRecoveryHint ?? "run_recovery",
-      nextRecommendedAction: "recover"
-    });
-  }
-
-  if (
-    lifecycleStage === "funding_requested"
-    || lifecycleStage === "hyper_evm_confirmed"
-    || lifecycleStage === "hypercore_funded"
-    || lifecycleStage === "perp_margin_transferred"
-    || lifecycleStage === "hype_reserve_ready"
-    || fundingStatus === "hyper_evm_funding_requested"
-    || fundingStatus === "hyper_evm_confirmed_onchain"
-    || fundingStatus === "hyper_evm_funded"
-    || hypercoreFundingStatus === "pending"
-  ) {
-    return buildBotVaultFundingDisplayState({
-      status: "deposit_pending_reconciliation",
-      reasonCode: params.statusReason ?? "deposit_pending_reconciliation",
-      detail: params.statusDetail,
-      recoveryHint: params.statusRecoveryHint ?? "retry_reconcile",
-      nextRecommendedAction: "retry_reconcile"
-    });
-  }
-
-  return buildBotVaultFundingDisplayState({
-    status: "funding_pending",
-    reasonCode: params.statusReason ?? "funding_pending",
-    detail: params.statusDetail,
-    recoveryHint: params.statusRecoveryHint ?? "none",
-    nextRecommendedAction: "submit"
-  });
-}
-
 function toNonNegativeNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
@@ -1262,65 +1049,8 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-function formatUsdAtomicToNumber(value: bigint): number {
-  return roundUsd(Number(formatUnits(value, 6)), 6);
-}
-
-function formatSignedUsdAtomicToNumber(value: bigint): number {
-  const sign = value < 0n ? -1 : 1;
-  const magnitude = value < 0n ? -value : value;
-  return roundUsd(sign * Number(formatUnits(magnitude, 6)), 6);
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function toAtomicUsd(value: number): bigint {
-  const rounded = roundUsd(toNonNegativeNumber(value), 6);
-  return parseUnits(rounded.toFixed(6), 6);
-}
-
-function toSignedAtomicUsd(value: number): bigint {
-  const parsed = Number.isFinite(Number(value)) ? Number(value) : 0;
-  const sign = parsed < 0 ? -1n : 1n;
-  return sign * toAtomicUsd(Math.abs(parsed));
-}
-
-function computeV4ProfitShareRaw(params: {
-  payoutProfitRaw: bigint;
-  feeRatePctRaw: bigint;
-  realizedClosedPnlUsd: number;
-  highWaterMarkBeforeUsd: number;
-}) {
-  const realizedClosedPnlRaw = toSignedAtomicUsd(params.realizedClosedPnlUsd);
-  const highWaterMarkBeforeRaw = toAtomicUsd(params.highWaterMarkBeforeUsd);
-  const positiveRealizedClosedPnlRaw = realizedClosedPnlRaw > 0n ? realizedClosedPnlRaw : 0n;
-  const feeableCapacityRaw = positiveRealizedClosedPnlRaw > highWaterMarkBeforeRaw
-    ? positiveRealizedClosedPnlRaw - highWaterMarkBeforeRaw
-    : 0n;
-  const feeBaseRaw = params.payoutProfitRaw < feeableCapacityRaw
-    ? params.payoutProfitRaw
-    : feeableCapacityRaw;
-  const feeAmountRaw = (feeBaseRaw * params.feeRatePctRaw) / 100n;
-  const highWaterMarkAfterRaw = highWaterMarkBeforeRaw + feeBaseRaw;
-  const accounting = computeProfitShareAccounting({
-    realizedClosedPnlUsd: formatSignedUsdAtomicToNumber(realizedClosedPnlRaw),
-    settledProfitUsd: formatUsdAtomicToNumber(highWaterMarkBeforeRaw),
-    payoutProfitUsd: formatUsdAtomicToNumber(params.payoutProfitRaw),
-    feeRatePct: Number(params.feeRatePctRaw)
-  });
-
-  return {
-    feeBaseRaw,
-    feeAmountRaw,
-    realizedClosedPnlRaw,
-    highWaterMarkBeforeRaw,
-    highWaterMarkAfterRaw,
-    realizedClosedPnlUsd: accounting.realizedClosedPnlUsd,
-    highWaterMarkBeforeUsd: accounting.settledProfitBeforeUsd,
-    highWaterMarkAfterUsd: formatUsdAtomicToNumber(highWaterMarkAfterRaw)
-  };
 }
 
 export function resolveFinalizedProfitSharePnlBasis(params: {
@@ -3594,6 +3324,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }
 
   async function assertFreshTradingReconciliationForSettlement(botVaultId: string): Promise<void> {
+    if (typeof db?.botVaultPnlAggregate?.findUnique !== "function") return;
     const aggregate = await db.botVaultPnlAggregate.findUnique({
       where: { botVaultId }
     });

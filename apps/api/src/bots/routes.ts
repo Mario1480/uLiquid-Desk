@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { readRouteParam } from "../routeParams.js";
 import {
   buildBotVaultActionFlags,
   buildBotVaultHealthSummary,
@@ -708,24 +709,26 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.get("/backtests/:runId", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const runId = readRouteParam(req, "runId");
     const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
-    const run = await deps.getBacktestRunRecord(req.params.runId);
+    const run = await deps.getBacktestRunRecord(runId);
     if (!run || run.userId !== user.id) return res.status(404).json({ error: "backtest_run_not_found" });
     return res.json(run);
   });
 
   app.get("/backtests/:runId/report", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const runId = readRouteParam(req, "runId");
     const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
-    const run = await deps.getBacktestRunRecord(req.params.runId);
+    const run = await deps.getBacktestRunRecord(runId);
     if (!run || run.userId !== user.id) return res.status(404).json({ error: "backtest_run_not_found" });
     const report = await deps.loadBacktestReport(run.runId, Number(run.reportChunkCount ?? 0));
     if (!report) return res.status(404).json({ error: "backtest_report_not_found" });
@@ -734,12 +737,13 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.post("/backtests/:runId/cancel", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const runId = readRouteParam(req, "runId");
     const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
-    const run = await deps.getBacktestRunRecord(req.params.runId);
+    const run = await deps.getBacktestRunRecord(runId);
     if (!run || run.userId !== user.id) return res.status(404).json({ error: "backtest_run_not_found" });
     await deps.markBacktestRunCancelRequested(run.runId);
     if (run.status === "queued") {
@@ -1015,10 +1019,11 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
     app.post("/bots/:id/vault/fund", requireAuth, async (req, res) => {
       const user = getUserFromLocals(res);
+      const id = readRouteParam(req, "id");
       const parsed = botVaultFundSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       const bot = await deps.db.bot.findFirst({
-        where: { id: req.params.id, userId: user.id },
+        where: { id, userId: user.id },
         select: { id: true, futuresConfig: { select: { strategyKey: true } } }
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
@@ -1028,7 +1033,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       try {
         const vault = await fundBotVaultForRuntime(botVaultRuntimeService, {
           userId: user.id,
-          botId: req.params.id,
+          botId: id,
           amountUsd: parsed.data.amountUsd,
           moveToHyperCore: parsed.data.moveToHyperCore ?? true
         });
@@ -1040,10 +1045,11 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
     app.post("/bots/:id/vault/claim-profit", requireAuth, async (req, res) => {
       const user = getUserFromLocals(res);
+      const id = readRouteParam(req, "id");
       const parsed = botVaultClaimProfitSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       const bot = await deps.db.bot.findFirst({
-        where: { id: req.params.id, userId: user.id },
+        where: { id, userId: user.id },
         select: { id: true, futuresConfig: { select: { strategyKey: true } } }
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
@@ -1053,7 +1059,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       try {
         const result = await claimBotVaultProfit(botVaultRuntimeService, {
           userId: user.id,
-          botId: req.params.id,
+          botId: id,
           amountUsd: parsed.data.amountUsd ?? null
         });
         return res.json({ ok: true, result });
@@ -1078,8 +1084,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
     app.post("/bots/:id/end", requireAuth, async (req, res) => {
       const user = getUserFromLocals(res);
+      const id = readRouteParam(req, "id");
       const bot = await deps.db.bot.findFirst({
-        where: { id: req.params.id, userId: user.id },
+        where: { id, userId: user.id },
         select: { id: true, futuresConfig: { select: { strategyKey: true } } }
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
@@ -1087,10 +1094,10 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         return sendBotVaultNotEnabled(res, bot.futuresConfig?.strategyKey);
       }
       try {
-        await deps.cancelBotRun(req.params.id).catch(() => undefined);
+        await deps.cancelBotRun(id).catch(() => undefined);
         const result = await botVaultRuntimeService.endBotVault({
           userId: user.id,
-          botId: req.params.id
+          botId: id
         });
         return res.json({ ok: true, result });
       } catch (error) {
@@ -1259,8 +1266,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.post("/bots/:id/delete", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
-      const out = await deleteBotForUser(user.id, req.params.id, deps);
+      const out = await deleteBotForUser(user.id, id, deps);
       return res.json({ ok: true, ...out });
     } catch (error) {
       return deps.sendManualTradingError(res, error);
@@ -1269,8 +1277,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.delete("/bots/:id", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
-      const out = await deleteBotForUser(user.id, req.params.id, deps);
+      const out = await deleteBotForUser(user.id, id, deps);
       return res.json({ ok: true, ...out });
     } catch (error) {
       return deps.sendManualTradingError(res, error);

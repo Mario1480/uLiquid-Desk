@@ -1,8 +1,6 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import express from "express";
-import cors from "cors";
-import cookieParser from "cookie-parser";
 import WebSocket, { WebSocketServer } from "ws";
 import { z } from "zod";
 import { prisma } from "@mm/db";
@@ -373,7 +371,6 @@ import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerGridRoutes } from "./routes/grid.js";
 import { registerVaultRoutes } from "./routes/vaults.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
-import { attachRequestContext } from "./requestContext.js";
 import {
   createIdempotencyMiddleware,
   createRateLimitMiddleware,
@@ -389,6 +386,8 @@ import {
 import { registerNewsRoutes } from "./routes/news.js";
 import { listNews } from "./services/news/index.js";
 import { getEconomicCalendarNextSummary } from "./services/economicCalendar/index.js";
+import { configureApiBaseMiddleware } from "./server/appMiddleware.js";
+import { createApiLifecycle } from "./server/lifecycle.js";
 import { registerSystemRoutes } from "./system/routes.js";
 import { createVaultService } from "./vaults/service.js";
 import { createBotVaultV4Service } from "./vaults/botVaultV4.service.js";
@@ -608,65 +607,7 @@ const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db
 });
 
 const app = express();
-app.set("trust proxy", 1);
-
-const origins = (process.env.CORS_ORIGINS ?? "http://localhost:3000,http://127.0.0.1:3000")
-  .split(",")
-  .map((value) => value.trim())
-  .filter(Boolean);
-
-if (origins.includes("http://localhost:3000") && !origins.includes("http://127.0.0.1:3000")) {
-  origins.push("http://127.0.0.1:3000");
-}
-if (origins.includes("http://127.0.0.1:3000") && !origins.includes("http://localhost:3000")) {
-  origins.push("http://localhost:3000");
-}
-
-function isPrivateIpv4Host(hostname: string): boolean {
-  const match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!match) return false;
-  const octets = match.slice(1).map((part) => Number(part));
-  if (octets.some((part) => !Number.isFinite(part) || part < 0 || part > 255)) return false;
-  if (octets[0] === 10) return true;
-  if (octets[0] === 192 && octets[1] === 168) return true;
-  if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return true;
-  return false;
-}
-
-function isDevLocalOrigin(origin: string): boolean {
-  try {
-    const parsed = new URL(origin);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    if (parsed.port && parsed.port !== "3000") return false;
-    const host = parsed.hostname.trim().toLowerCase();
-    if (!host) return false;
-    if (host === "localhost" || host === "127.0.0.1") return true;
-    if (host.endsWith(".local")) return true;
-    if (!host.includes(".")) return true;
-    return isPrivateIpv4Host(host);
-  } catch {
-    return false;
-  }
-}
-
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (origins.includes("*") || origins.includes(origin)) return callback(null, true);
-      if (process.env.NODE_ENV !== "production" && isDevLocalOrigin(origin)) return callback(null, true);
-      return callback(new Error("not_allowed_by_cors"));
-    },
-    credentials: true
-  })
-);
-app.use(cookieParser());
-app.use(express.json({
-  verify: (req, _res, buf) => {
-    (req as any).rawBody = buf.toString("utf8");
-  }
-}));
-app.use(attachRequestContext);
+configureApiBaseMiddleware(app);
 
 function buildRouteFingerprint(req: express.Request, userId?: string | null): string {
   const method = String(req.method ?? "GET").toUpperCase();
@@ -11093,7 +11034,8 @@ registerSystemRoutes(app, {
   botVaultRiskJob,
   botVaultTradingReconciliationJob,
   vaultOnchainIndexerJob,
-  vaultOnchainReconciliationJob
+  vaultOnchainReconciliationJob,
+  requireSuperadmin
 });
 
 registerAuthRoutes(app, {
@@ -13270,6 +13212,34 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
+const apiLifecycle = createApiLifecycle({
+  tasks: [
+    { name: "exchange-auto-sync", start: startExchangeAutoSyncScheduler, stop: stopExchangeAutoSyncScheduler },
+    { name: "feature-threshold-calibration", start: startFeatureThresholdCalibrationScheduler, stop: stopFeatureThresholdCalibrationScheduler },
+    { name: "prediction-auto", start: startPredictionAutoScheduler, stop: stopPredictionAutoScheduler },
+    { name: "prediction-outcome-eval", start: startPredictionOutcomeEvalScheduler, stop: stopPredictionOutcomeEvalScheduler },
+    { name: "prediction-performance-eval", start: startPredictionPerformanceEvalScheduler, stop: stopPredictionPerformanceEvalScheduler },
+    { name: "bot-queue-recovery", start: startBotQueueRecoveryScheduler, stop: stopBotQueueRecoveryScheduler },
+    { name: "billing-downgrade", start: startBillingDowngradeScheduler, stop: stopBillingDowngradeScheduler },
+    { name: "economic-calendar-refresh", start: () => economicCalendarRefreshJob.start(), stop: () => economicCalendarRefreshJob.stop() },
+    { name: "economic-calendar-daily-telegram", start: () => economicCalendarDailyTelegramJob.start(), stop: () => economicCalendarDailyTelegramJob.stop() },
+    { name: "system-health-telegram", start: () => systemHealthTelegramJob.start(), stop: () => systemHealthTelegramJob.stop() },
+    { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },
+    { name: "hyperliquid-api-expiry-reminder", start: () => hyperliquidApiExpiryReminderJob.start(), stop: () => hyperliquidApiExpiryReminderJob.stop() },
+    { name: "vault-accounting", start: () => vaultAccountingJob.start(), stop: () => vaultAccountingJob.stop() },
+    { name: "bot-vault-risk", start: () => botVaultRiskJob.start(), stop: () => botVaultRiskJob.stop() },
+    { name: "bot-vault-trading-reconciliation", start: () => botVaultTradingReconciliationJob.start(), stop: () => botVaultTradingReconciliationJob.stop() },
+    { name: "vault-onchain-indexer", start: () => vaultOnchainIndexerJob.start(), stop: () => vaultOnchainIndexerJob.stop() },
+    { name: "vault-onchain-reconciliation", start: () => vaultOnchainReconciliationJob.start(), stop: () => vaultOnchainReconciliationJob.stop() }
+  ],
+  closers: [
+    { name: "market-ws", close: () => marketWss.close() },
+    { name: "user-ws", close: () => userWss.close() },
+    { name: "http-server", close: () => server.close() },
+    { name: "orchestration", close: () => { void closeOrchestration(); } }
+  ]
+});
+
 async function startApiServer() {
   try {
     await ensureAdminUserSeed();
@@ -13292,75 +13262,14 @@ async function startApiServer() {
       ipv6Only: false
     },
     () => {
-    // eslint-disable-next-line no-console
+      // eslint-disable-next-line no-console
       console.log(`[api] listening on ${listenHost}:${port}`);
-    startExchangeAutoSyncScheduler();
-    startFeatureThresholdCalibrationScheduler();
-    startPredictionAutoScheduler();
-    startPredictionOutcomeEvalScheduler();
-    startPredictionPerformanceEvalScheduler();
-    startBotQueueRecoveryScheduler();
-    startBillingDowngradeScheduler();
-    economicCalendarRefreshJob.start();
-    economicCalendarDailyTelegramJob.start();
-    systemHealthTelegramJob.start();
-    platformAlertCleanupJob.start();
-    hyperliquidApiExpiryReminderJob.start();
-    vaultAccountingJob.start();
-    botVaultRiskJob.start();
-    botVaultTradingReconciliationJob.start();
-    vaultOnchainIndexerJob.start();
-    vaultOnchainReconciliationJob.start();
+      apiLifecycle.start();
     }
   );
 }
 
 void startApiServer();
 
-process.on("SIGTERM", () => {
-  stopExchangeAutoSyncScheduler();
-  stopFeatureThresholdCalibrationScheduler();
-  stopPredictionAutoScheduler();
-  stopPredictionOutcomeEvalScheduler();
-  stopPredictionPerformanceEvalScheduler();
-  stopBotQueueRecoveryScheduler();
-  stopBillingDowngradeScheduler();
-  economicCalendarRefreshJob.stop();
-  economicCalendarDailyTelegramJob.stop();
-  systemHealthTelegramJob.stop();
-  platformAlertCleanupJob.stop();
-  hyperliquidApiExpiryReminderJob.stop();
-  vaultAccountingJob.stop();
-  botVaultRiskJob.stop();
-  botVaultTradingReconciliationJob.stop();
-  vaultOnchainIndexerJob.stop();
-  vaultOnchainReconciliationJob.stop();
-  marketWss.close();
-  userWss.close();
-  server.close();
-  void closeOrchestration();
-});
-
-process.on("SIGINT", () => {
-  stopExchangeAutoSyncScheduler();
-  stopFeatureThresholdCalibrationScheduler();
-  stopPredictionAutoScheduler();
-  stopPredictionOutcomeEvalScheduler();
-  stopPredictionPerformanceEvalScheduler();
-  stopBotQueueRecoveryScheduler();
-  stopBillingDowngradeScheduler();
-  economicCalendarRefreshJob.stop();
-  economicCalendarDailyTelegramJob.stop();
-  systemHealthTelegramJob.stop();
-  platformAlertCleanupJob.stop();
-  hyperliquidApiExpiryReminderJob.stop();
-  vaultAccountingJob.stop();
-  botVaultRiskJob.stop();
-  botVaultTradingReconciliationJob.stop();
-  vaultOnchainIndexerJob.stop();
-  vaultOnchainReconciliationJob.stop();
-  marketWss.close();
-  userWss.close();
-  server.close();
-  void closeOrchestration();
-});
+process.on("SIGTERM", apiLifecycle.shutdown);
+process.on("SIGINT", apiLifecycle.shutdown);

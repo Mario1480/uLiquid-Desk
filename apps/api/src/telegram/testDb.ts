@@ -145,9 +145,11 @@ export function createTelegramTestDb(input: CreateTelegramTestDbInput = {}) {
     }
   };
 
+  type TestDbTransaction = typeof tx;
+
   return {
     ...tx,
-    $transaction<T>(fn: (tx: typeof tx) => Promise<T>): Promise<T> {
+    $transaction<T>(fn: (tx: TestDbTransaction) => Promise<T>): Promise<T> {
       return fn(tx);
     },
     state

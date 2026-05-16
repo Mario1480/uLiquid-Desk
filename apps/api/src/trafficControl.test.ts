@@ -5,7 +5,8 @@ import {
   createRateLimitMiddleware,
   readIdempotencyKey,
   rateLimitByBodyEmailOrIp,
-  rateLimitByIp
+  rateLimitByIp,
+  rateLimitBySessionOrIp
 } from "./trafficControl.js";
 
 function createReqRes(params?: {
@@ -63,6 +64,18 @@ test("readIdempotencyKey prefers header and falls back to body", () => {
   assert.equal(readIdempotencyKey(fromBody.req as any), "idem-body");
 });
 
+test("readIdempotencyKey rejects unsafe key shapes", () => {
+  const overlong = createReqRes({
+    headers: { "x-idempotency-key": "a".repeat(129) }
+  });
+  assert.equal(readIdempotencyKey(overlong.req as any), null);
+
+  const whitespace = createReqRes({
+    body: { idempotencyKey: "unsafe key" }
+  });
+  assert.equal(readIdempotencyKey(whitespace.req as any), null);
+});
+
 test("createRateLimitMiddleware returns 429 after threshold", async () => {
   const middleware = createRateLimitMiddleware({
     name: `test_rate_limit_${Date.now()}`,
@@ -96,6 +109,15 @@ test("rateLimitByBodyEmailOrIp normalizes account keys and falls back to IP", ()
   assert.equal(rateLimitByBodyEmailOrIp(byIp.req as any), "10.0.0.2");
 });
 
+test("rateLimitBySessionOrIp hashes session tokens before scoping", () => {
+  const req = createReqRes({ ip: "10.0.0.1", cookies: { mm_session: "raw-session-token" } });
+  const scope = rateLimitBySessionOrIp(req.req as any, req.res as any);
+
+  assert.equal(typeof scope, "string");
+  assert.match(scope ?? "", /^session:[a-f0-9]{64}$/);
+  assert.equal(scope?.includes("raw-session-token"), false);
+});
+
 test("createIdempotencyMiddleware replays successful responses", async () => {
   const middleware = createIdempotencyMiddleware({
     name: `test_idempotency_${Date.now()}`,
@@ -124,6 +146,24 @@ test("createIdempotencyMiddleware replays successful responses", async () => {
   assert.equal(secondNextCalled, false);
   assert.equal(second.res.statusCode, 200);
   assert.deepEqual(second.res.body, { ok: true, call: 1 });
+});
+
+test("createIdempotencyMiddleware rejects invalid keys", async () => {
+  const middleware = createIdempotencyMiddleware({
+    name: `test_idempotency_invalid_${Date.now()}`,
+    required: true,
+    ttlMs: 60_000
+  });
+
+  const invalid = createReqRes({ body: { idempotencyKey: "unsafe key" } });
+  let nextCalled = false;
+  await middleware(invalid.req as any, invalid.res as any, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, false);
+  assert.equal(invalid.res.statusCode, 400);
+  assert.deepEqual(invalid.res.body, { error: "idempotency_key_invalid" });
 });
 
 test("createIdempotencyMiddleware requires a key and rejects concurrent reuse", async () => {

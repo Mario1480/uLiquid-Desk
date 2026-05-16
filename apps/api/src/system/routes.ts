@@ -22,43 +22,57 @@ export type RegisterSystemRoutesDeps = {
   botVaultTradingReconciliationJob: { getStatus(): unknown };
   vaultOnchainIndexerJob: { getStatus(): unknown };
   vaultOnchainReconciliationJob: { getStatus(): unknown };
+  requireSuperadmin(res: express.Response): Promise<boolean>;
 };
+
+async function buildHealthDetails(deps: RegisterSystemRoutesDeps) {
+  const [vaultExecutionMode, vaultSafety] = await Promise.all([
+    deps.getVaultExecutionModeSettings(deps.db).catch(() => ({
+      mode: "offchain_shadow"
+    })),
+    deps.getVaultSafetyControlsSettings().catch(() => deps.parseVaultSafetyControls(null))
+  ]);
+  return {
+    ok: true,
+    service: "api",
+    vaultExecutionMode: vaultExecutionMode.mode,
+    vaultSafety,
+    jobs: {
+      vaultAccounting: deps.vaultAccountingJob.getStatus(),
+      botVaultRisk: deps.botVaultRiskJob.getStatus(),
+      botVaultTradingReconciliation: deps.botVaultTradingReconciliationJob.getStatus(),
+      vaultOnchainIndexer: deps.vaultOnchainIndexerJob.getStatus(),
+      vaultOnchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus()
+    }
+  };
+}
 
 export function registerSystemRoutes(
   app: express.Express,
   deps: RegisterSystemRoutesDeps
 ) {
-  app.get("/health", async (_req, res) => {
-    const [vaultExecutionMode, vaultSafety] = await Promise.all([
-      deps.getVaultExecutionModeSettings(deps.db).catch(() => ({
-        mode: "offchain_shadow"
-      })),
-      deps.getVaultSafetyControlsSettings().catch(() => deps.parseVaultSafetyControls(null))
-    ]);
-    res.json({
-      ok: true,
-      service: "api",
-      vaultExecutionMode: vaultExecutionMode.mode,
-      vaultSafety,
-      jobs: {
-        vaultAccounting: deps.vaultAccountingJob.getStatus(),
-        botVaultRisk: deps.botVaultRiskJob.getStatus(),
-        botVaultTradingReconciliation: deps.botVaultTradingReconciliationJob.getStatus(),
-        vaultOnchainIndexer: deps.vaultOnchainIndexerJob.getStatus(),
-        vaultOnchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus()
-      }
-    });
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  app.get("/healthz", (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  app.get("/admin/health/details", requireAuth, async (_req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
+    res.json(await buildHealthDetails(deps));
   });
 
   app.get("/system/settings", (_req, res) => {
     res.json({
       tradingEnabled: true,
-      readOnlyMode: false,
-      orchestrationMode: deps.getRuntimeOrchestrationMode()
+      readOnlyMode: false
     });
   });
 
-  app.get("/license/state", async (_req, res) => {
+  app.get("/license/state", requireAuth, async (_req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
     const billingEnabled = await deps.isBillingEnabled();
     res.json({
       enforcement: deps.isLicenseEnforcementEnabled() ? "on" : "off",

@@ -191,7 +191,7 @@ function redirectToLocalizedPath(req: NextRequest, locale: AppLocale, pathname: 
   return resp;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const {
     locale: localeFromPath,

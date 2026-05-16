@@ -11,6 +11,7 @@
     "test:composite-strategies": "node ../../node_modules/tsx/dist/cli.mjs --test src/composite-strategies/graph.test.ts src/composite-strategies/runner.test.ts",
     "test:auth": "node ../../node_modules/tsx/dist/cli.mjs --test src/auth/siwe.service.test.ts src/auth/permissions.test.ts src/auth/routes.test.ts src/routes/auth-siwe.test.ts src/trafficControl.test.ts",
     "test:notifications": "node ../../node_modules/tsx/dist/cli.mjs --test src/plugins/notificationSettings.test.ts src/plugins/notificationHost.test.ts src/plugins/notifications/webhookNotificationPlugin.test.ts",
+    "test:release-hardening": "node ../../node_modules/tsx/dist/cli.mjs --test src/env.test.ts src/trafficControl.test.ts src/system/routes.test.ts",
     "test:local-strategies": "node ../../node_modules/tsx/dist/cli.mjs --test src/local-strategies/registry.test.ts src/local-strategies/pythonClient.test.ts src/local-strategies/pythonRunner.test.ts",
     "test:predictions-detail": "node ../../node_modules/tsx/dist/cli.mjs --test src/dto/predictions.dto.test.ts src/controllers/predictionsController.test.ts",
     "test:predictions-refresh": "node ../../node_modules/tsx/dist/cli.mjs --test src/predictions/refreshTriggers.test.ts src/predictions/refreshService.test.ts src/predictions/refreshHealth.test.ts",
@@ -44,6 +45,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "helmet": "^8.1.0",
     "hyperliquid": "^1.7.7",
     "ioredis": "^5.10.0",
     "nodemailer": "^8.0.7",
@@ -54,6 +56,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/express": "^4.17.25",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }

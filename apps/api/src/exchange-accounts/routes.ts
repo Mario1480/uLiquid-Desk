@@ -20,6 +20,7 @@ import {
   deriveHyperliquidCredentialExpiryState,
   isHyperliquidExchange
 } from "./hyperliquidCredentialExpiry.js";
+import { readRouteParam } from "../routeParams.js";
 
 type ExchangeAccountSecretsLike = {
   id: string;
@@ -716,7 +717,7 @@ export function registerExchangeAccountRoutes(
 
   app.put("/exchange-accounts/:id", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
-    const id = req.params.id;
+    const id = readRouteParam(req, "id");
     const parsed = exchangeUpdateSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -845,7 +846,7 @@ export function registerExchangeAccountRoutes(
 
   app.delete("/exchange-accounts/:id", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
-    const id = req.params.id;
+    const id = readRouteParam(req, "id");
     const account = await deps.db.exchangeAccount.findFirst({ where: { id, userId: user.id } });
     if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
 
@@ -874,7 +875,7 @@ export function registerExchangeAccountRoutes(
 
   app.post("/exchange-accounts/:id/test-connection", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
-    const id = req.params.id;
+    const id = readRouteParam(req, "id");
     const account: ExchangeAccountSecretsLike | null = await deps.db.exchangeAccount.findFirst({
       where: { id, userId: user.id },
       select: {

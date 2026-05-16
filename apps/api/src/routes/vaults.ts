@@ -4,6 +4,7 @@ import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { isAddress } from "viem";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { createFundingReadService } from "../funding/fundingRead.service.js";
+import { readRouteParam } from "../routeParams.js";
 import type { FundingReadService } from "../funding/types.js";
 import { createRelayFundingService, type RelayFundingService } from "../funding/relayFunding.service.js";
 import { createTransferReadService } from "../transfers/transferRead.service.js";
@@ -457,10 +458,11 @@ export function registerVaultRoutes(
 
     app.post("/vaults/bot-vaults/:id/controller-close", requireAuth, requireVaultProductAccess, async (req, res) => {
       const user = getUserFromLocals(res);
+      const id = readRouteParam(req, "id");
       try {
         const result = await closeBotVaultOnchain(botVaultRuntimeService, {
           userId: user.id,
-          botVaultId: req.params.id
+          botVaultId: id
         });
         return res.json({ ok: true, result });
       } catch (error) {
@@ -476,10 +478,11 @@ export function registerVaultRoutes(
 
     app.post("/vaults/bot-vaults/:id/controller-recover-closed", requireAuth, requireVaultProductAccess, async (req, res) => {
       const user = getUserFromLocals(res);
+      const id = readRouteParam(req, "id");
       try {
         const result = await recoverBotVaultClosedFunds(botVaultRuntimeService, {
           userId: user.id,
-          botVaultId: req.params.id
+          botVaultId: id
         });
         return res.json({ ok: true, result });
       } catch (error) {
@@ -662,10 +665,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const items = await deps.vaultService.listBotVaultLedger({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         limit: parsed.data.limit
       });
       return res.json({ items });
@@ -686,10 +690,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const items = await deps.vaultService.listFeeEvents({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         limit: parsed.data.limit
       });
       return res.json({ items });
@@ -710,10 +715,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const items = await deps.vaultService.listBotExecutionEvents({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         limit: parsed.data.limit
       });
       return res.json({ items });
@@ -734,10 +740,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const report = await deps.vaultService.getBotVaultPnlReport({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         fillsLimit: parsed.data.fillsLimit
       });
       return res.json(report);
@@ -772,10 +779,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const report = await deps.vaultService.getBotVaultAudit({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         limit: parsed.data.limit,
         cursor: parsed.data.cursor
       });
@@ -802,10 +810,11 @@ export function registerVaultRoutes(
     }
 
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const botVault = await deps.vaultService.setBotVaultCloseOnly({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         reason: parsed.data.reason
       });
       if (!botVault) {
@@ -1003,10 +1012,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildCreateBotVault({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         allocationUsd: parsed.data.allocationUsd,
         actionKey: parsed.data.actionKey
       });
@@ -1029,10 +1039,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildReserveForBotVault({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         amountUsd: parsed.data.amountUsd,
         actionKey: parsed.data.actionKey
       });
@@ -1055,10 +1066,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildFundBotVaultOnHyperCore({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         amountUsd: parsed.data.amountUsd,
         actionKey: parsed.data.actionKey
       });
@@ -1081,10 +1093,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildSetBotVaultCloseOnly({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         actionKey: parsed.data.actionKey
       });
       return res.json({ ok: true, ...result });
@@ -1106,10 +1119,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildClaimFromBotVault({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         releasedReservedUsd: parsed.data.releasedReservedUsd,
         returnedToFreeUsd: parsed.data.returnedToFreeUsd,
         grossReturnedUsd: parsed.data.grossReturnedUsd,
@@ -1134,10 +1148,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildCloseBotVault({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         releasedReservedUsd: parsed.data.releasedReservedUsd,
         returnedToFreeUsd: parsed.data.returnedToFreeUsd,
         grossReturnedUsd: parsed.data.grossReturnedUsd,
@@ -1162,10 +1177,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildSetBotVaultAgentWallet({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         agentWallet: parsed.data.agentWallet,
         actionKey: parsed.data.actionKey
       });
@@ -1188,10 +1204,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const result = await onchainActionService.buildRecoverClosedBotVault({
         userId: user.id,
-        botVaultId: req.params.id,
+        botVaultId: id,
         releasedReservedUsd: parsed.data.releasedReservedUsd,
         returnedToFreeUsd: parsed.data.returnedToFreeUsd,
         grossReturnedUsd: parsed.data.grossReturnedUsd,
@@ -1216,10 +1233,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const action = await onchainActionService.submitActionTxHash({
         userId: user.id,
-        actionId: req.params.id,
+        actionId: id,
         txHash: parsed.data.txHash
       });
       return res.json({
@@ -1244,10 +1262,11 @@ export function registerVaultRoutes(
       });
     }
     const user = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
     try {
       const action = await onchainActionService.markActionFailed({
         userId: user.id,
-        actionId: req.params.id,
+        actionId: id,
         txHash: parsed.data.txHash
       });
       return res.json({

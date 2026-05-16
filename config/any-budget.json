@@ -1,0 +1,37 @@
+{
+  "api-vaults": {
+    "paths": ["apps/api/src/vaults"],
+    "maxAny": 325,
+    "maxSuppressions": 0
+  },
+  "api-grid": {
+    "paths": ["apps/api/src/grid", "apps/api/src/routes/grid.ts", "apps/api/src/routes/vaults.ts"],
+    "maxAny": 188,
+    "maxSuppressions": 0
+  },
+  "api-manual-trading": {
+    "paths": ["apps/api/src/manual-trading"],
+    "maxAny": 8,
+    "maxSuppressions": 0
+  },
+  "runner": {
+    "paths": ["apps/runner/src"],
+    "maxAny": 88,
+    "maxSuppressions": 0
+  },
+  "futures-core": {
+    "paths": ["packages/futures-core/src"],
+    "maxAny": 0,
+    "maxSuppressions": 0
+  },
+  "futures-exchange": {
+    "paths": ["packages/futures-exchange/src"],
+    "maxAny": 34,
+    "maxSuppressions": 0
+  },
+  "exchange": {
+    "paths": ["packages/exchange/src"],
+    "maxAny": 72,
+    "maxSuppressions": 0
+  }
+}

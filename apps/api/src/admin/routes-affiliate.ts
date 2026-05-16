@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { readRouteParam } from "../routeParams.js";
 import {
   assignAffiliateReferral,
   clearAffiliateReferral,
@@ -122,13 +123,15 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
 
   app.get("/admin/users/:id/affiliate", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
-    const detail = await getAdminAffiliateUserDetail(deps.db, req.params.id);
+    const id = readRouteParam(req, "id");
+    const detail = await getAdminAffiliateUserDetail(deps.db, id);
     if (!detail) return res.status(404).json({ error: "not_found" });
     return res.json(detail);
   });
 
   app.put("/admin/users/:id/affiliate", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const id = readRouteParam(req, "id");
     const parsed = affiliateOverrideSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -147,7 +150,7 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
       const actor = getUserFromLocals(res);
       const detail = await withAuditTransaction(deps.db, async (tx) => {
         await setAffiliateRateOverride(tx, {
-          affiliateUserId: req.params.id,
+          affiliateUserId: id,
           feeRatePct,
           reason: parsed.data.reason ?? null
         });
@@ -156,13 +159,13 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
           actorUserId: actor.id,
           action: feeRatePct == null ? "affiliate_override_cleared" : "affiliate_override_updated",
           targetType: "user",
-          targetId: req.params.id,
+          targetId: id,
           metadata: {
             feeRatePct,
             reason: parsed.data.reason ?? null
           }
         });
-        return getAdminAffiliateUserDetail(tx, req.params.id);
+        return getAdminAffiliateUserDetail(tx, id);
       });
       return res.json(detail);
     } catch (error) {
@@ -173,6 +176,7 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
 
   app.post("/admin/users/:id/referral", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const id = readRouteParam(req, "id");
     const parsed = affiliateReferralMutationSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -181,20 +185,20 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
       const actor = getUserFromLocals(res);
       if (parsed.data.clear) {
         const detail = await withAuditTransaction(deps.db, async (tx) => {
-          await clearAffiliateReferral(tx, req.params.id);
+          await clearAffiliateReferral(tx, id);
           await deps.recordAdminAuditEvent({
             tx,
             actorUserId: actor.id,
             action: "affiliate_referral_cleared",
             targetType: "user",
-            targetId: req.params.id,
+            targetId: id,
             metadata: {
               affiliateUserId: parsed.data.affiliateUserId ?? null,
               referralCode: parsed.data.referralCode ? normalizeAffiliateCode(parsed.data.referralCode) : null,
               source: parsed.data.source ?? null
             }
           });
-          return getAdminAffiliateUserDetail(tx, req.params.id);
+          return getAdminAffiliateUserDetail(tx, id);
         });
         return res.json(detail);
       } else {
@@ -209,7 +213,7 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
         }
         const detail = await withAuditTransaction(deps.db, async (tx) => {
           await assignAffiliateReferral(tx, {
-            referredUserId: req.params.id,
+            referredUserId: id,
             affiliateUserId,
             source: parsed.data.source ?? "admin_manual",
             metadata: parsed.data.referralCode ? { referralCode: normalizeAffiliateCode(parsed.data.referralCode) } : null
@@ -219,14 +223,14 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
             actorUserId: actor.id,
             action: "affiliate_referral_assigned",
             targetType: "user",
-            targetId: req.params.id,
+            targetId: id,
             metadata: {
               affiliateUserId: parsed.data.affiliateUserId ?? null,
               referralCode: parsed.data.referralCode ? normalizeAffiliateCode(parsed.data.referralCode) : null,
               source: parsed.data.source ?? null
             }
           });
-          return getAdminAffiliateUserDetail(tx, req.params.id);
+          return getAdminAffiliateUserDetail(tx, id);
         });
         return res.json(detail);
       }

@@ -3,7 +3,6 @@ import {
   isProductionEnv,
   readEnvValue,
   validateDomainList,
-  validateHttpUrl,
   validatePositiveInteger,
   validateSecretKeyMaterial,
   validateServiceEnv,
@@ -49,6 +48,18 @@ function validateNonPlaceholderToken(value: string): string | null {
   return null;
 }
 
+function validateRedisUrl(value: string): string | null {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "redis:" || parsed.protocol === "rediss:") {
+      return null;
+    }
+    return "must use redis or rediss";
+  } catch {
+    return "must be a valid URL";
+  }
+}
+
 function validateCorsOriginList(value: string): string | null {
   const entries = value
     .split(",")
@@ -76,7 +87,8 @@ function validateCorsOriginList(value: string): string | null {
 }
 
 export function assertApiEnv(env: EnvMap = process.env): void {
-  if (validated) return;
+  const cacheValidation = env === process.env;
+  if (cacheValidation && validated) return;
 
   const production = isProductionEnv(env);
   const orchestrationMode = String(env.ORCHESTRATION_MODE ?? "poll").trim().toLowerCase();
@@ -131,7 +143,13 @@ export function assertApiEnv(env: EnvMap = process.env): void {
       names: ["REDIS_URL"],
       required: orchestrationMode === "queue",
       message: "REDIS_URL is required when ORCHESTRATION_MODE=queue.",
-      validate: (value) => validateHttpUrl(value.replace(/^redis:/, "http:"))
+      validate: (value) => validateRedisUrl(value)
+    },
+    {
+      names: ["API_RATE_LIMIT_REDIS_URL", "REDIS_URL"],
+      required: production,
+      message: "API_RATE_LIMIT_REDIS_URL or REDIS_URL is required in production for rate limits and idempotency.",
+      validate: (value) => validateRedisUrl(value)
     },
     {
       names: ["PY_STRATEGY_AUTH_TOKEN", "PY_GRID_AUTH_TOKEN"],
@@ -153,5 +171,5 @@ export function assertApiEnv(env: EnvMap = process.env): void {
     }
   }
 
-  validated = true;
+  if (cacheValidation) validated = true;
 }

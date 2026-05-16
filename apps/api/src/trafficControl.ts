@@ -1,10 +1,21 @@
+import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { logger } from "./logger.js";
 import { getCorrelationId } from "./requestContext.js";
 
 const RATE_LIMIT_MEMORY = new Map<string, { count: number; resetAt: number }>();
 const IDEMPOTENCY_MEMORY = new Map<string, { status: number; body: unknown; expiresAt: number }>();
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._~:-]{1,128}$/;
 let redisInitPromise: Promise<any | null> | null = null;
+
+function readMaxEntriesEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name] ?? "");
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(100, Math.floor(parsed));
+}
+
+const RATE_LIMIT_MEMORY_MAX_ENTRIES = readMaxEntriesEnv("RATE_LIMIT_MEMORY_MAX_ENTRIES", 10000);
+const IDEMPOTENCY_MEMORY_MAX_ENTRIES = readMaxEntriesEnv("IDEMPOTENCY_MEMORY_MAX_ENTRIES", 10000);
 
 async function getRedis(): Promise<any | null> {
   if (redisInitPromise) return redisInitPromise;
@@ -32,17 +43,57 @@ function buildScopeKey(prefix: string, key: string): string {
   return `${prefix}:${key}`;
 }
 
-export function readIdempotencyKey(req: Request): string | null {
+function hashScopeValue(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function normalizeIdempotencyKey(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized || !IDEMPOTENCY_KEY_PATTERN.test(normalized)) return null;
+  return normalized;
+}
+
+function readRawIdempotencyKey(req: Request): string {
   const header = String(req.get("x-idempotency-key") ?? "").trim();
   if (header) return header;
   const body = req.body && typeof req.body === "object" && !Array.isArray(req.body)
     ? req.body as Record<string, unknown>
     : null;
-  const bodyKey = body && typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
+  const bodyKey = typeof body?.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
   if (bodyKey) return bodyKey;
-  const actionKey = body && typeof body.actionKey === "string" ? body.actionKey.trim() : "";
-  return actionKey || null;
+  return typeof body?.actionKey === "string" ? body.actionKey.trim() : "";
 }
+
+export function readIdempotencyKey(req: Request): string | null {
+  return normalizeIdempotencyKey(readRawIdempotencyKey(req));
+}
+
+function sweepMemoryMap<T extends { expiresAt?: number; resetAt?: number }>(
+  map: Map<string, T>,
+  maxEntries: number
+): void {
+  const now = nowMs();
+  for (const [key, value] of map) {
+    const expiresAt = value.expiresAt ?? value.resetAt ?? 0;
+    if (expiresAt && expiresAt <= now) {
+      map.delete(key);
+    }
+  }
+  while (map.size > maxEntries) {
+    const oldest = map.keys().next().value as string | undefined;
+    if (!oldest) break;
+    map.delete(oldest);
+  }
+}
+
+function sweepMemoryStores(): void {
+  sweepMemoryMap(RATE_LIMIT_MEMORY, RATE_LIMIT_MEMORY_MAX_ENTRIES);
+  sweepMemoryMap(IDEMPOTENCY_MEMORY, IDEMPOTENCY_MEMORY_MAX_ENTRIES);
+}
+
+const sweepInterval = setInterval(sweepMemoryStores, 60_000);
+sweepInterval.unref?.();
 
 async function incrementRateLimit(key: string, windowMs: number): Promise<{ count: number; resetAt: number; redis: boolean }> {
   const redis = await getRedis();
@@ -58,6 +109,7 @@ async function incrementRateLimit(key: string, windowMs: number): Promise<{ coun
   }
 
   const now = nowMs();
+  sweepMemoryMap(RATE_LIMIT_MEMORY, RATE_LIMIT_MEMORY_MAX_ENTRIES);
   const existing = RATE_LIMIT_MEMORY.get(key);
   if (!existing || existing.resetAt <= now) {
     const next = { count: 1, resetAt: now + windowMs };
@@ -82,6 +134,7 @@ async function readIdempotentResponse(key: string): Promise<{ status: number; bo
     }
   }
 
+  sweepMemoryMap(IDEMPOTENCY_MEMORY, IDEMPOTENCY_MEMORY_MAX_ENTRIES);
   const row = IDEMPOTENCY_MEMORY.get(key);
   if (!row || row.expiresAt <= nowMs()) {
     if (row) IDEMPOTENCY_MEMORY.delete(key);
@@ -101,6 +154,7 @@ async function claimIdempotencyLock(key: string, ttlMs: number): Promise<"claime
     return completed ? "replay" : "in_progress";
   }
 
+  sweepMemoryMap(IDEMPOTENCY_MEMORY, IDEMPOTENCY_MEMORY_MAX_ENTRIES);
   const existing = IDEMPOTENCY_MEMORY.get(key);
   if (existing && existing.expiresAt > nowMs()) return "replay";
   const lockKey = `${key}:lock`;
@@ -128,6 +182,7 @@ async function storeIdempotentResponse(key: string, ttlMs: number, payload: { st
     await redis.del(`${key}:lock`);
     return;
   }
+  sweepMemoryMap(IDEMPOTENCY_MEMORY, IDEMPOTENCY_MEMORY_MAX_ENTRIES);
   IDEMPOTENCY_MEMORY.set(key, { status: payload.status, body: payload.body, expiresAt: nowMs() + ttlMs });
   IDEMPOTENCY_MEMORY.delete(`${key}:lock`);
 }
@@ -167,8 +222,12 @@ export function createIdempotencyMiddleware(options: {
 }) {
   const ttlMs = Math.max(60_000, options.ttlMs ?? 10 * 60_000);
   return async function idempotencyMiddleware(req: Request, res: Response, next: NextFunction) {
-    const resolvedKey = options.resolveKey ? options.resolveKey(req, res) : readIdempotencyKey(req);
+    const rawKey = options.resolveKey ? options.resolveKey(req, res) : readRawIdempotencyKey(req);
+    const resolvedKey = normalizeIdempotencyKey(rawKey);
     if (!resolvedKey) {
+      if (rawKey) {
+        return res.status(400).json({ error: "idempotency_key_invalid" });
+      }
       if (!options.required) return next();
       return res.status(400).json({ error: "idempotency_key_required" });
     }
@@ -228,6 +287,6 @@ export function rateLimitByUser(_req: Request, res: Response): string | null {
 
 export function rateLimitBySessionOrIp(req: Request, res: Response): string | null {
   const session = String(req.cookies?.mm_session ?? "").trim();
-  if (session) return `session:${session}`;
+  if (session) return `session:${hashScopeValue(session)}`;
   return rateLimitByIp(req) ?? rateLimitByUser(req, res);
 }
