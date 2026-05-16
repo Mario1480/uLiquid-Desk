@@ -104,6 +104,7 @@ export type WalletActivityItem = {
   status: "prepared" | "submitted" | "pending_reconciliation" | "confirmed" | "failed" | null;
   timestamp: number;
   txHash: string | null;
+  chainId: number | null;
 };
 
 export type WalletActivitySourceItem = {
@@ -294,7 +295,8 @@ function normalizeActivity(raw: unknown, limit: number): WalletActivityItem[] {
         feeUsd: pickNumber(entry, ["fee", "feeUsd"]),
         status: null,
         timestamp,
-        txHash: pickString(entry, ["hash", "txHash"])
+        txHash: pickString(entry, ["hash", "txHash"]),
+        chainId: null
       };
     })
     .filter((entry): entry is WalletActivityItem => Boolean(entry))
@@ -342,7 +344,8 @@ function normalizeFundingActionActivity(item: WalletActivitySourceItem, timestam
     feeUsd: null,
     status: normalizeActivityStatus(String(item.status ?? "").trim().toLowerCase()),
     timestamp,
-    txHash: item.txHash
+    txHash: item.txHash,
+    chainId: Number.isFinite(Number(item.chainId)) ? Number(item.chainId) : null
   };
 
   if (item.actionType === "funding_bridge_deposit") {
@@ -426,7 +429,8 @@ function normalizeActionActivity(items: WalletActivitySourceItem[] | null | unde
           feeUsd: null,
           status: normalizeActivityStatus(item.status),
           timestamp,
-          txHash: item.txHash
+          txHash: item.txHash,
+          chainId: Number.isFinite(Number(item.chainId)) ? Number(item.chainId) : null
         });
         continue;
       }
@@ -444,7 +448,8 @@ function normalizeActionActivity(items: WalletActivitySourceItem[] | null | unde
           feeUsd: null,
           status: normalizeActivityStatus(item.status),
           timestamp,
-          txHash: item.txHash
+          txHash: item.txHash,
+          chainId: Number.isFinite(Number(item.chainId)) ? Number(item.chainId) : null
         });
         continue;
       }
@@ -462,7 +467,8 @@ function normalizeActionActivity(items: WalletActivitySourceItem[] | null | unde
           feeUsd: null,
           status: normalizeActivityStatus(item.status),
           timestamp,
-          txHash: item.txHash
+          txHash: item.txHash,
+          chainId: Number.isFinite(Number(item.chainId)) ? Number(item.chainId) : null
         });
       }
     }
@@ -494,7 +500,8 @@ function normalizeLedgerActivity(raw: unknown, limit: number): WalletActivityIte
         feeUsd: pickNumber(delta, ["fee", "commission", "nativeTokenFee"]),
         status: "confirmed" as const,
         timestamp,
-        txHash
+        txHash,
+        chainId: null
       };
 
       switch (type) {

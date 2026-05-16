@@ -197,7 +197,6 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
         <span>{t("fundingVault.available")}: <strong>{formatFundingVaultUsd(vault?.availableBalance)}</strong></span>
         <span>{t("fundingVault.reserved")}: <strong>{formatFundingVaultUsd(vault?.reservedBalance)}</strong></span>
         <span>{t("fundingVault.vault")}: <FundingVaultInlineAddressCopy vaultAddress={vault?.onchainAddress} /></span>
-        <span>{t("fundingVault.agent")}: <strong>{overview?.agentWalletAddress ? shortAddress(overview.agentWalletAddress) : "-"}</strong></span>
       </div>
       {overviewQuery.isLoading ? <div className="walletMutedText">{t("fundingVault.loading")}</div> : null}
       {overviewQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(overviewQuery.error)}</div> : null}
@@ -207,7 +206,6 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
           {t("fundingVault.manage")}
         </button>
         <HyperEvmAddressLink address={vault?.onchainAddress} label="View vault" />
-        <HyperEvmAddressLink address={overview?.agentWalletAddress} label="View agent" />
       </div>
     </article>
   );

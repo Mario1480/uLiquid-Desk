@@ -97,6 +97,7 @@ export type WalletActivityItem = {
   status: "prepared" | "submitted" | "pending_reconciliation" | "confirmed" | "failed" | null;
   timestamp: number;
   txHash: string | null;
+  chainId: number | null;
 };
 
 export type WalletActivityResponse = {

@@ -83,6 +83,7 @@
     "recentActivitySubtitle": "Die letzten erkannten Trades und Bewegungen dieser Wallet.",
     "expandRecentActivity": "Öffnen",
     "collapseRecentActivity": "Schließen",
+    "transactionLink": "Transaktion",
     "noRecentActivity": "Für diese Wallet wurden noch keine letzten Fills gefunden.",
     "botVaultSystemTitle": "BotVault Funding-System",
     "botVaultSystemSubtitle": "Finanziere die BotVault-Wallet, verwalte den Funding Vault und halte die Agent-Wallet fuer BotVault-Starts bereit.",

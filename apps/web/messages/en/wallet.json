@@ -83,6 +83,7 @@
     "recentActivitySubtitle": "Latest detected trades and wallet activity.",
     "expandRecentActivity": "Expand",
     "collapseRecentActivity": "Collapse",
+    "transactionLink": "Transaction",
     "noRecentActivity": "No recent fills returned for this wallet yet.",
     "botVaultSystemTitle": "BotVault funding system",
     "botVaultSystemSubtitle": "Fund the BotVault wallet, manage the Funding Vault, and keep the Agent wallet ready for BotVault starts.",

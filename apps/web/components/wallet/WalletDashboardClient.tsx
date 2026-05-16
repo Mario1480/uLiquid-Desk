@@ -8,7 +8,7 @@ import { useAccount, useConnection, useSendTransaction } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import type { FundingFeatureConfig } from "../../lib/funding/types";
-import { formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
+import { buildExplorerTxUrl, formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type {
   AgentWalletSummaryResponse,
   WalletActivityResponse
@@ -29,6 +29,17 @@ function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
   if (error && typeof error === "object" && "message" in error) return String((error as any).message);
   return String(error);
+}
+
+function resolveActivityTxUrl(config: FundingFeatureConfig, chainId: number | null | undefined, txHash: string | null | undefined): string | null {
+  if (!txHash) return null;
+  if (chainId === config.arbitrum.chainId) {
+    return buildExplorerTxUrl(config.arbitrum.explorerUrl, txHash);
+  }
+  if (chainId === config.hyperEvm.id) {
+    return buildExplorerTxUrl(config.hyperEvm.explorerUrl, txHash);
+  }
+  return null;
 }
 
 export default function WalletDashboardClient({
@@ -350,22 +361,31 @@ export default function WalletDashboardClient({
                   </>
                 ) : activityQuery.data?.items?.length ? (
                   <div className="walletList">
-                    {activityQuery.data.items.map((item) => (
-                      <div key={item.id} className="walletActivityItem">
-                        <div className="walletActivityPrimary">
-                          <strong>{item.type === "action" ? (item.title ?? t("usdc")) : (item.symbol ?? t("usdc"))}</strong>
-                          <div className="walletMutedText">
-                            {item.type === "action"
-                              ? (item.description ?? item.status ?? "Activity")
-                              : `${item.side ?? "Trade"} · ${formatToken(item.size, 3)} @ ${formatToken(item.price, 4)}`}
+                    {activityQuery.data.items.map((item) => {
+                      const txUrl = resolveActivityTxUrl(fundingConfig, item.chainId, item.txHash);
+                      return (
+                        <div key={item.id} className="walletActivityItem">
+                          <div className="walletActivityPrimary">
+                            <strong>{item.type === "action" ? (item.title ?? t("usdc")) : (item.symbol ?? t("usdc"))}</strong>
+                            <div className="walletMutedText">
+                              {item.type === "action"
+                                ? (item.description ?? item.status ?? "Activity")
+                                : `${item.side ?? "Trade"} · ${formatToken(item.size, 3)} @ ${formatToken(item.price, 4)}`}
+                            </div>
+                          </div>
+                          <div className="walletActivitySecondary">
+                            <strong>{item.type === "action" ? (item.status ?? "—") : (item.closedPnlUsd === null ? "—" : formatUsd(item.closedPnlUsd))}</strong>
+                            <div className="walletMutedText">{formatDateTime(item.timestamp)}</div>
+                            {txUrl ? (
+                              <a className="walletActivityTxLink" href={txUrl} target="_blank" rel="noreferrer">
+                                <AppIcon name="external" />
+                                {t("transactionLink")}
+                              </a>
+                            ) : null}
                           </div>
                         </div>
-                        <div className="walletActivitySecondary">
-                          <strong>{item.type === "action" ? (item.status ?? "—") : (item.closedPnlUsd === null ? "—" : formatUsd(item.closedPnlUsd))}</strong>
-                          <div className="walletMutedText">{formatDateTime(item.timestamp)}</div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="walletMutedText">{t("noRecentActivity")}</div>

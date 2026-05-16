@@ -2577,6 +2577,29 @@
   text-align: right;
 }
 
+.walletActivityTxLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-top: 4px;
+  color: var(--color-brand-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.walletActivityTxLink:hover,
+.walletActivityTxLink:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.walletActivityTxLink svg {
+  width: 13px;
+  height: 13px;
+}
+
 .walletActivityItem:first-child {
   border-top: 0;
 }
