@@ -53,11 +53,11 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Typecheck
-        run: npm run typecheck
-
       - name: Build
         run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: API release hardening tests
         run: npm -w apps/api run test:release-hardening

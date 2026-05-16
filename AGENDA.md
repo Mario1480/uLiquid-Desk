@@ -17,6 +17,10 @@ This agenda tracks the review findings against the live repository. It is intent
 - [x] Add bounded in-memory cleanup for rate-limit and idempotency fallback stores.
 - [x] Enforce production token quality in the Python strategy service.
 - [x] Rename Next 16 `middleware.ts` convention to `proxy.ts`.
+- [x] Fix v18 Core license HMAC test vector and require `packages/core` tests in release gates.
+- [x] Make Hyperliquid CoreWriter unit tests deterministic by avoiding real RPC gas estimation when transaction sending is injected.
+- [x] Clean duplicate/confusing Python token placeholders in `.env.prod.example`.
+- [x] Add a CI-validatable vendored charting checksum gate and release-evidence entry.
 
 ## P0 Release Gates
 
@@ -30,6 +34,8 @@ This agenda tracks the review findings against the live repository. It is intent
 - [x] Install Foundry in CI and require `npm run contracts:build` plus `npm run contracts:test`.
 - [x] Run Python tests with explicit local tokens: `PY_STRATEGY_AUTH_TOKEN=test-token PY_GRID_AUTH_TOKEN=test-token PYTHONPATH=apps/py-strategy-service pytest -q apps/py-strategy-service`.
 - [x] Split or tune long futures-exchange tests so CI failures are assertion failures, not global timeouts.
+- [ ] Attach GitHub Actions release-gates evidence for commit `8b0951f6` or the final release tag.
+  Local evidence on 2026-05-16: `npm run typecheck`, `npm run build`, `npm run quality:any-budget`, `npm run quality:vendor-charting`, `npm -w packages/core run test`, `npm -w packages/futures-exchange run test`, `npm -w apps/api run test:release-hardening`, Python strategy tests, and `npm run contracts:test` were green.
 
 ## P1 Hardening
 
@@ -40,6 +46,13 @@ This agenda tracks the review findings against the live repository. It is intent
   Current gate: all production `apps/api/src/**/*.ts` files are included, with `src/**/*.test.ts` excluded from build output.
 - [x] Start an `any` budget for capital-moving API, runner, vault, funding, and exchange adapter paths.
 - [x] Document vendored TradingView/charting assets with version, source, license, and checksum.
+- [x] Automatically verify the documented vendored charting checksum in CI with `npm run quality:vendor-charting`.
+- [ ] Start reducing the `any` budgets instead of only preventing regressions.
+  Suggested first targets: vault settlement/funding DTOs, runner order/fill/reconciliation DTOs, exchange adapter responses, license/auth boundaries, and onchain integration payloads.
+- [ ] Plan staged strictness upgrades for API and Web.
+  API still carries `noImplicitAny: false`; Web still carries `strict: false`. Treat this as a gradual module-by-module track rather than a single flag flip.
+- [ ] Document Prisma engine handling for restricted/offline deployment environments.
+  CI now caches Prisma engines and local Node 20 gates passed, but fully air-gapped builds still need a documented cache/preinstall policy if they become a deployment requirement.
 
 ## P2 Refactor Tracks
 
@@ -51,3 +64,11 @@ This agenda tracks the review findings against the live repository. It is intent
   Live-critical split completed: market-data/noop/resubmit/noise guard decisions are extracted into `apps/runner/src/execution/gridExecutionGuards.ts`; initial-seed/restart-recovery helpers are extracted into `apps/runner/src/execution/gridInitialSeed.ts`; planner request/intent/risk-gate helpers are extracted into `apps/runner/src/execution/gridPlanning.ts`; order placement and order-persistence helpers are extracted into `apps/runner/src/execution/gridOrderExecution.ts`; planner fill/position sync helpers are extracted into `apps/runner/src/execution/gridFillSync.ts`; BotVault/vault readiness is extracted into `apps/runner/src/execution/gridVaultReadiness.ts`; vault funding/balance-transfer state is extracted into `apps/runner/src/execution/gridVaultFunding.ts`; pending-execution recovery remains in `apps/runner/src/execution/recovery.ts`. The remaining `futuresGridExecutionMode.ts` code is the runner orchestration loop around those modules.
 - [x] Build a release evidence matrix for commit, build, tests, migrations, canary, rollback, and onchain ownership.
 - [x] Add contract fuzz/invariant coverage before broad production capital movement.
+
+## Production Evidence Still Needed
+
+- [ ] Fill a release-specific copy of `docs/release-evidence-matrix.md` for the next tag/deploy.
+- [ ] Record Docker production build evidence for API/Web/Runner images.
+- [ ] Record staging migration evidence, including backup and restore confidence.
+- [ ] Record canary limits and rollback rehearsal evidence before broader capital movement.
+- [ ] Record onchain addresses, ownership, explorer verification, and pause/kill-switch evidence for the release.
