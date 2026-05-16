@@ -179,7 +179,7 @@ const fundingIntentCreateSchema = z.object({
 });
 
 const fundingIntentSubmitSchema = z.object({
-  txHash: z.string().trim().min(66).max(66).optional(),
+  txHash: z.string().trim().min(66).max(66).nullable().optional(),
   status: z.enum(["submitted", "failed"]).default("submitted"),
   reasonCode: z.string().trim().min(1).max(120).optional(),
   recoveryHint: z.string().trim().min(1).max(240).optional()

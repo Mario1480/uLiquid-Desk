@@ -57,12 +57,13 @@ export function validateTransferRequest(input: {
   capability: TransferCapability;
   sourceBalanceRaw: string | null;
   sourceBalanceDecimals: number | null | undefined;
+  destinationBalanceDecimals?: number | null | undefined;
   sourceBalanceAvailable: boolean;
   gasBalanceRaw: string | null;
   gasAvailable: boolean;
   connectedChainId: number | null | undefined;
   expectedChainId: number;
-}): { normalizedAmount: string; amountRaw: bigint } {
+}): { normalizedAmount: string; amountRaw: bigint; destinationAmountRaw: bigint } {
   const normalizedAmount = assertPositiveAmount(input.amount);
   if (!input.capability.supported) {
     throw new TransferClientError(
@@ -74,6 +75,10 @@ export function validateTransferRequest(input: {
   const amountRaw = parseUnits(
     normalizedAmount,
     input.sourceBalanceDecimals ?? (input.capability.asset === "USDC" ? 6 : 18)
+  );
+  const destinationAmountRaw = parseUnits(
+    normalizedAmount,
+    input.destinationBalanceDecimals ?? input.sourceBalanceDecimals ?? (input.capability.asset === "USDC" ? 6 : 18)
   );
   if (!input.sourceBalanceAvailable) {
     throw new TransferClientError("source_balance_unavailable", "Source balance is unavailable.");
@@ -93,7 +98,8 @@ export function validateTransferRequest(input: {
 
   return {
     normalizedAmount,
-    amountRaw
+    amountRaw,
+    destinationAmountRaw
   };
 }
 

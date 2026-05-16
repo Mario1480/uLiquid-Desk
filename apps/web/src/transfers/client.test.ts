@@ -151,6 +151,24 @@ test("validateTransferRequest uses source balance decimals for HyperCore HYPE", 
   );
 });
 
+test("validateTransferRequest returns destination raw amount using destination decimals", () => {
+  const result = validateTransferRequest({
+    amount: "100",
+    capability: createCapability(),
+    sourceBalanceRaw: "10537849700",
+    sourceBalanceDecimals: 8,
+    destinationBalanceDecimals: 6,
+    sourceBalanceAvailable: true,
+    gasBalanceRaw: "29980000",
+    gasAvailable: true,
+    connectedChainId: 42161,
+    expectedChainId: 42161
+  });
+
+  assert.equal(result.amountRaw, BigInt("10000000000"));
+  assert.equal(result.destinationAmountRaw, BigInt("100000000"));
+});
+
 test("submitTransfer returns queued state for Core -> EVM", async () => {
   const calls: string[] = [];
   const client = createTransferClient({

@@ -259,6 +259,7 @@ export default function FundingTransferSection({
         capability,
         sourceBalanceRaw: sourceBalance?.raw ?? null,
         sourceBalanceDecimals: sourceBalance?.decimals,
+        destinationBalanceDecimals: destinationBalance?.decimals,
         sourceBalanceAvailable: Boolean(sourceBalance?.available),
         gasBalanceRaw: gasBalance?.raw ?? null,
         gasAvailable: Boolean(gasBalance?.available),
@@ -288,7 +289,7 @@ export default function FundingTransferSection({
         destinationLocation: direction === "core_to_evm" ? "hyperEvm" : "hyperCore",
         beforeSourceRaw: sourceBalance?.raw ?? "0",
         beforeDestinationRaw: beforeDestinationRaw.toString(),
-        targetDestinationRaw: (beforeDestinationRaw + validated.amountRaw).toString(),
+        targetDestinationRaw: (beforeDestinationRaw + validated.destinationAmountRaw).toString(),
         reasonCode: "funding_intent_prepared",
         recoveryHint: "await_wallet_signature"
       });
@@ -339,7 +340,7 @@ export default function FundingTransferSection({
       });
       submitted = true;
       await submitFundingIntent(intentId, {
-        txHash: result.txHash,
+        txHash: result.txHash ?? undefined,
         status: "submitted",
         reasonCode: "funding_transfer_submitted",
         recoveryHint: "wait_for_destination_balance"
