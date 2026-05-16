@@ -25,6 +25,7 @@ Use this file as the per-release Go/No-Go evidence checklist. Keep completed cop
 | Root build | `npm run build` |  |  |
 | API release hardening tests | `npm -w apps/api run test:release-hardening` |  |  |
 | Any budget | `npm run quality:any-budget` |  |  |
+| Vendored charting checksum | `npm run quality:vendor-charting` |  |  |
 | Futures core tests | `npm -w packages/futures-core run test` |  |  |
 | Futures exchange tests | `npm -w packages/futures-exchange run test` |  |  |
 | Python strategy tests | `PY_STRATEGY_AUTH_TOKEN=... PY_GRID_AUTH_TOKEN=... pytest -q apps/py-strategy-service` |  |  |

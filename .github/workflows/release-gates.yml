@@ -65,6 +65,9 @@ jobs:
       - name: Capital-moving type debt budget
         run: npm run quality:any-budget
 
+      - name: Vendored charting checksum
+        run: npm run quality:vendor-charting
+
       - name: Core package tests
         run: npm -w packages/core run test
 

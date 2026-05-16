@@ -15,6 +15,7 @@
     "build:all": "npm run build:node && npm run contracts:build",
     "typecheck:all": "npm run typecheck:node && npm -w packages/contracts run typecheck",
     "quality:any-budget": "node ./scripts/check_any_budget.mjs",
+    "quality:vendor-charting": "node ./scripts/check_vendor_charting_checksum.mjs",
     "docker:dev:up": "docker compose -f docker-compose.dev.yml up -d --build",
     "docker:dev:down": "docker compose -f docker-compose.dev.yml down",
     "docker:dev:logs": "docker compose -f docker-compose.dev.yml logs -f --tail=200 api web runner postgres redis",
