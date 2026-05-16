@@ -58,6 +58,18 @@ else
   echo "==> Skipping git pull (--no-pull)"
 fi
 
+if [[ -z "${NEXT_PUBLIC_APP_RELEASE_TAG:-}" ]]; then
+  APP_RELEASE_TAG="$(git describe --tags --exact-match 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null || true)"
+  if [[ -n "${APP_RELEASE_TAG}" ]]; then
+    export NEXT_PUBLIC_APP_RELEASE_TAG="${APP_RELEASE_TAG}"
+    echo "==> Web release tag: ${NEXT_PUBLIC_APP_RELEASE_TAG}"
+  else
+    echo "==> Web release tag: not set (using app fallback)"
+  fi
+else
+  echo "==> Web release tag: ${NEXT_PUBLIC_APP_RELEASE_TAG} (from environment)"
+fi
+
 if [[ "${ENSURE_CADDY}" == "1" ]]; then
   if [[ "${EUID}" -eq 0 ]]; then
     echo "==> Ensuring Caddy runtime (auto-migrate Snap if present)"

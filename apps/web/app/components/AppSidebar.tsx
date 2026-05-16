@@ -18,6 +18,7 @@ import {
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
+import { getAppReleaseVersion } from "../../src/appRelease";
 import { AppIcon, type AppIconName } from "./AppIcon";
 
 type SidebarItem = {
@@ -95,6 +96,7 @@ export default function AppSidebar({
   const snapshotPollInFlightRef = useRef(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
+  const appReleaseVersion = getAppReleaseVersion();
 
   function hrefFor(path: string): string {
     return withLocalePath(path, locale);
@@ -348,7 +350,7 @@ export default function AppSidebar({
         <div className="appSidebarTop">
           <Link href={hrefFor("/")} className="appSidebarLogo" aria-label="uLiquid Desk" onClick={onClose}>
             <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appSidebarLogoMark" />
-            <span className="appSidebarLogoText">{tCommon("betaLabel")}</span>
+            <span className="appSidebarLogoText">{tCommon("betaLabel", { version: appReleaseVersion })}</span>
           </Link>
           <button
             type="button"
