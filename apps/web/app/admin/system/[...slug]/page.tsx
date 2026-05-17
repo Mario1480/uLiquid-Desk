@@ -33,7 +33,7 @@ async function resolveSystemComponent(slug: string[]) {
     case "ai/prediction-refresh":
       return (await import("../../prediction-refresh/page")).default;
     case "ai/strategies":
-      return (await import("../../strategies/page")).default;
+      return (await import("../../strategies/local/page")).default;
     case "ai/strategies/ai":
       return (await import("../../strategies/ai/page")).default;
     case "ai/strategies/ai-generator":
@@ -42,6 +42,15 @@ async function resolveSystemComponent(slug: string[]) {
       return (await import("../../strategies/builder/page")).default;
     case "ai/strategies/local":
       return (await import("../../strategies/local/page")).default;
+    case "bots/strategies":
+    case "bots/strategies/local":
+      return (await import("../../strategies/local/page")).default;
+    case "bots/strategies/ai":
+      return (await import("../../strategies/ai/page")).default;
+    case "bots/strategies/ai-generator":
+      return (await import("../../strategies/ai-generator/page")).default;
+    case "bots/strategies/builder":
+      return (await import("../../strategies/builder/page")).default;
     case "vaults/execution":
       return (await import("../../vault-execution/page")).default;
     case "vaults/operations":

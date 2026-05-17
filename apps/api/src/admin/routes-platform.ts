@@ -1,4 +1,5 @@
 import express from "express";
+import os from "node:os";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { getConfiguredSuperadminEmails } from "../auth/superadmin.js";
@@ -110,6 +111,48 @@ type PaginationResult = {
   total: number;
   totalPages: number;
 };
+
+function roundMetric(value: number, decimals = 2): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function readRuntimeSystemStatus() {
+  const cpuCores = os.cpus().length;
+  const [loadAverage1m, loadAverage5m, loadAverage15m] = os.loadavg();
+  const totalMemoryBytes = os.totalmem();
+  const freeMemoryBytes = os.freemem();
+  const usedMemoryBytes = Math.max(0, totalMemoryBytes - freeMemoryBytes);
+  const processMemory = process.memoryUsage();
+
+  return {
+    sampledAt: new Date().toISOString(),
+    hostname: os.hostname(),
+    platform: os.platform(),
+    arch: os.arch(),
+    nodeVersion: process.version,
+    hostUptimeSeconds: Math.round(os.uptime()),
+    cpu: {
+      cores: cpuCores,
+      loadAverage1m: roundMetric(loadAverage1m),
+      loadAverage5m: roundMetric(loadAverage5m),
+      loadAverage15m: roundMetric(loadAverage15m),
+      loadPercent1m: cpuCores > 0 ? roundMetric((loadAverage1m / cpuCores) * 100, 1) : null
+    },
+    memory: {
+      totalBytes: totalMemoryBytes,
+      freeBytes: freeMemoryBytes,
+      usedBytes: usedMemoryBytes,
+      usedPercent: totalMemoryBytes > 0 ? roundMetric((usedMemoryBytes / totalMemoryBytes) * 100, 1) : null
+    },
+    process: {
+      uptimeSeconds: Math.round(process.uptime()),
+      rssBytes: processMemory.rss,
+      heapUsedBytes: processMemory.heapUsed,
+      heapTotalBytes: processMemory.heapTotal
+    }
+  };
+}
 
 function pagination(page: number, pageSize: number, total: number): PaginationResult {
   return {
@@ -2054,6 +2097,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
             source: billingFlags.source ?? "none"
           }
         : null,
+      vpsStatus: readRuntimeSystemStatus(),
       legacyLinks: [
         "/admin/legacy/access-section",
         "/admin/legacy/api-keys",

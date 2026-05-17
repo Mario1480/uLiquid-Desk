@@ -787,7 +787,7 @@ export default function AdminGridTemplateDetailPage() {
         title={tDetail("title")}
         description={template ? `${template.name} · ${template.symbol} · ${labelFromMode(template.mode, tCreate)} · ${labelFromGridMode(template.gridMode, tCreate)}` : undefined}
         actions={[
-          { href: withLocalePath("/admin/system/ai/grid-templates", locale), label: tCommon("backToAdmin"), icon: "back", variant: "secondary" }
+          { href: withLocalePath("/admin/system/bots/grid-templates", locale), label: tCommon("backToAdmin"), icon: "back", variant: "secondary" }
         ]}
       />
 

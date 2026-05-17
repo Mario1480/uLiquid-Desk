@@ -41,7 +41,8 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
       "/admin/system/access",
       "/admin/system/notifications",
       "/admin/system/integrations",
-      "/admin/system/ai"
+      "/admin/system/ai",
+      "/admin/system/bots"
     ]
   }
 ];

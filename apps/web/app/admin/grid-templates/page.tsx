@@ -1930,7 +1930,7 @@ export default function AdminGridTemplatesPage() {
                     </div>
                   </div>
                   <div className="adminInlineActions">
-                    <Link href={withLocalePath(`/admin/system/ai/grid-templates/${template.id}`, locale)} className="btn">
+                    <Link href={withLocalePath(`/admin/system/bots/grid-templates/${template.id}`, locale)} className="btn">
                       <AppIcon name="open" />
                       {tCreate("list.actions.open")}
                     </Link>

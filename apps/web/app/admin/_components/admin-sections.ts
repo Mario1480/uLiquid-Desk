@@ -12,6 +12,7 @@ export const SYSTEM_SECTION_NAV: AdminSectionNavItem[] = [
   { href: "/admin/system/notifications/smtp", label: "Notifications", icon: "mail" },
   { href: "/admin/system/integrations/api-keys", label: "Integrations", icon: "key" },
   { href: "/admin/system/ai/prompts", label: "AI Controls", icon: "ai" },
+  { href: "/admin/system/bots/grid-templates", label: "Bots & Strategies", icon: "bots" },
   { href: "/admin/system/vaults/execution", label: "Vault Controls", icon: "vaults" }
 ];
 

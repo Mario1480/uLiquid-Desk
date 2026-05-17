@@ -494,7 +494,6 @@ export default function AppBreadcrumbs() {
         items: [
           { label: root.settings.label, path: "/settings", icon: root.settings.icon },
           { label: root.admin.label, path: "/admin", icon: root.admin.icon },
-          { label: root.strategies.label, path: "/admin/strategies", icon: root.strategies.icon },
           { label: root.localStrategies.label, path: null, icon: root.localStrategies.icon }
         ]
       },
@@ -503,7 +502,6 @@ export default function AppBreadcrumbs() {
         items: [
           { label: root.settings.label, path: "/settings", icon: root.settings.icon },
           { label: root.admin.label, path: "/admin", icon: root.admin.icon },
-          { label: root.strategies.label, path: "/admin/strategies", icon: root.strategies.icon },
           { label: root.strategyBuilder.label, path: null, icon: root.strategyBuilder.icon }
         ]
       },
@@ -512,7 +510,6 @@ export default function AppBreadcrumbs() {
         items: [
           { label: root.settings.label, path: "/settings", icon: root.settings.icon },
           { label: root.admin.label, path: "/admin", icon: root.admin.icon },
-          { label: root.strategies.label, path: "/admin/strategies", icon: root.strategies.icon },
           { label: root.aiStrategies.label, path: null, icon: root.aiStrategies.icon }
         ]
       },
@@ -521,7 +518,6 @@ export default function AppBreadcrumbs() {
         items: [
           { label: root.settings.label, path: "/settings", icon: root.settings.icon },
           { label: root.admin.label, path: "/admin", icon: root.admin.icon },
-          { label: root.strategies.label, path: "/admin/strategies", icon: root.strategies.icon },
           { label: root.aiGenerator.label, path: null, icon: root.aiGenerator.icon }
         ]
       },

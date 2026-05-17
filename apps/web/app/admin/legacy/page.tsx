@@ -8,7 +8,7 @@ import AdminPageHeader from "../_components/AdminPageHeader";
 const LEGACY_LINKS = [
   "/admin/system",
   "/admin/licenses/packages",
-  "/admin/system/ai/grid-templates"
+  "/admin/system/bots/grid-templates"
 ];
 
 export default function AdminLegacyIndexPage() {

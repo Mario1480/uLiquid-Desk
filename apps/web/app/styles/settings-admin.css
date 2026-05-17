@@ -1793,6 +1793,33 @@
   border: 1px solid rgba(123, 145, 170, 0.16);
   background: rgba(255, 255, 255, 0.025);
 }
+.adminSystemSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.adminSystemSummaryTile {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(123, 145, 170, 0.14);
+  background: rgba(255, 255, 255, 0.025);
+}
+.adminSystemSummaryTile span,
+.adminSystemSummaryTile small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.adminSystemSummaryTile strong {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 .adminFilterBar {
   padding: 18px;
   border-color: rgba(123, 145, 170, 0.18);
@@ -2057,6 +2084,10 @@
   }
 }
 @media (max-width: 960px) {
+  .adminSystemSummaryGrid {
+    grid-template-columns: 1fr;
+  }
+
   .adminShell {
     grid-template-columns: 1fr;
   }
