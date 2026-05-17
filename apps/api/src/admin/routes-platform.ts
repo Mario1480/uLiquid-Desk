@@ -782,6 +782,15 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
               }
             }
           },
+          legalAcknowledgements: {
+            select: {
+              version: true,
+              textHash: true,
+              acceptedAt: true
+            },
+            orderBy: [{ acceptedAt: "desc" }],
+            take: 1
+          },
           _count: {
             select: {
               workspaces: true,
@@ -821,6 +830,13 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         lastLoginAt,
         lastActiveAt,
         createdAt: isoOrNull(row.createdAt),
+        legalAcknowledgement: row.legalAcknowledgements?.[0]
+          ? {
+              version: row.legalAcknowledgements[0].version,
+              textHash: row.legalAcknowledgements[0].textHash,
+              acceptedAt: isoOrNull(row.legalAcknowledgements[0].acceptedAt)
+            }
+          : null,
         isSuperadmin,
         hasAdminBackendAccess: isSuperadmin || adminAccessIds.has(row.id)
       };
@@ -847,6 +863,19 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
           email: true,
           createdAt: true,
           updatedAt: true,
+          legalAcknowledgements: {
+            select: {
+              id: true,
+              version: true,
+              textHash: true,
+              acceptedAt: true,
+              ipAddress: true,
+              userAgent: true,
+              createdAt: true
+            },
+            orderBy: [{ acceptedAt: "desc" }],
+            take: 5
+          },
           sessions: {
             select: { createdAt: true, lastActiveAt: true, expiresAt: true },
             orderBy: [{ lastActiveAt: "desc" }],
@@ -988,6 +1017,15 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       updatedAt: isoOrNull(user.updatedAt),
       lastLoginAt,
       lastActiveAt,
+      legalAcknowledgements: (user.legalAcknowledgements ?? []).map((acknowledgement: any) => ({
+        id: acknowledgement.id,
+        version: acknowledgement.version,
+        textHash: acknowledgement.textHash,
+        acceptedAt: isoOrNull(acknowledgement.acceptedAt),
+        ipAddress: acknowledgement.ipAddress ?? null,
+        userAgent: acknowledgement.userAgent ?? null,
+        createdAt: isoOrNull(acknowledgement.createdAt)
+      })),
       memberships: (user.workspaces ?? []).map((membership: any) => ({
         id: membership.id,
         status: membership.status,

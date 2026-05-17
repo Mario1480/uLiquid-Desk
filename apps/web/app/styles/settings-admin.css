@@ -1666,6 +1666,11 @@
   gap: 12px;
   align-items: center;
 }
+.adminKeyValueValue {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
 .adminKeyValueRowWrap {
   align-items: flex-start;
 }

@@ -1805,6 +1805,162 @@
   gap: 14px;
 }
 
+.authLegalNotice {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.26);
+  border-radius: var(--ui-radius-card);
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(255, 255, 255, 0.018));
+}
+
+.authLegalNoticeCompact {
+  padding: 12px;
+}
+
+.authLegalNoticeHeader {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.authLegalNoticeTitleRow {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: #fde68a;
+}
+
+.authLegalNoticeTitleRow h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.authLegalNoticeVersion {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.authLegalNoticeList {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.48;
+}
+
+.authLegalNoticeList li + li {
+  margin-top: 6px;
+}
+
+.authLegalLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.authLegalLinks a,
+.authLegalCheckbox a,
+.legalPage a {
+  color: #bfdbfe;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.authLegalLinks a:hover,
+.authLegalCheckbox a:hover,
+.legalPage a:hover {
+  text-decoration: underline;
+}
+
+.authLegalCheckbox {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.authLegalCheckbox label {
+  min-width: 0;
+}
+
+.authLegalCheckbox input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--color-brand-primary);
+}
+
+.legalPage {
+  width: min(960px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.legalPageHeader {
+  display: grid;
+  gap: 8px;
+}
+
+.legalPageHeader h1 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.legalPageMeta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.legalPageSection {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.legalPageSection h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.legalPageSection p,
+.legalPageSection li {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.58;
+}
+
+.legalPageSection p,
+.legalPageSection ul {
+  margin: 0;
+}
+
+.legalPageSection ul {
+  padding-left: 18px;
+}
+
 .authLabel {
   display: grid;
   gap: 6px;

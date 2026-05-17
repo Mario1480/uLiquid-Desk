@@ -12,6 +12,7 @@ import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
 import { AppIcon } from "../components/AppIcon";
+import LegalRiskNotice from "../components/LegalRiskNotice";
 import Web3Providers from "../components/Web3Providers";
 
 function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
@@ -118,6 +119,7 @@ function LoginPageContent() {
     <div className="container authPage">
       <h1 className="authHeading">{t("signIn")}</h1>
       <div className="card authCard">
+        <LegalRiskNotice compact />
         <form onSubmit={submit} className="authForm">
           <label className="authLabel">
             {t("email")}

@@ -24,6 +24,11 @@ type UsersResponse = {
     lastLoginAt: string | null;
     lastActiveAt: string | null;
     createdAt: string | null;
+    legalAcknowledgement: {
+      version: string;
+      textHash: string;
+      acceptedAt: string | null;
+    } | null;
     isSuperadmin: boolean;
     hasAdminBackendAccess: boolean;
   }>;
@@ -57,6 +62,13 @@ function normalizeUsersResponse(input: any): UsersResponse {
       lastLoginAt: typeof item?.lastLoginAt === "string" ? item.lastLoginAt : null,
       lastActiveAt: typeof item?.lastActiveAt === "string" ? item.lastActiveAt : null,
       createdAt: typeof item?.createdAt === "string" ? item.createdAt : null,
+      legalAcknowledgement: item?.legalAcknowledgement
+        ? {
+            version: String(item.legalAcknowledgement.version ?? ""),
+            textHash: String(item.legalAcknowledgement.textHash ?? ""),
+            acceptedAt: typeof item.legalAcknowledgement.acceptedAt === "string" ? item.legalAcknowledgement.acceptedAt : null
+          }
+        : null,
       isSuperadmin: Boolean(item?.isSuperadmin),
       hasAdminBackendAccess: Boolean(item?.hasAdminBackendAccess)
     })),
@@ -211,7 +223,7 @@ export default function AdminUsersPage() {
       {data && data.items.length > 0 ? (
         <>
           <AdminTable
-            columns={["Email", "Name", "Status", "Role", "Workspaces", "Bots", "License", "Last Login", "Last Active", "Created"]}
+            columns={["Email", "Name", "Status", "Role", "Legal", "Workspaces", "Bots", "License", "Last Login", "Last Active", "Created"]}
           >
             {data.items.map((user) => (
               <tr
@@ -229,6 +241,12 @@ export default function AdminUsersPage() {
                 <td>{user.name}</td>
                 <td><AdminStatusBadge value={user.status} /></td>
                 <td>{user.role}</td>
+                <td>
+                  <AdminStatusBadge value={user.legalAcknowledgement?.acceptedAt ? "accepted" : "missing"} />
+                  {user.legalAcknowledgement?.version ? (
+                    <div className="settingsMutedText">v{user.legalAcknowledgement.version}</div>
+                  ) : null}
+                </td>
                 <td>{user.workspaceCount}</td>
                 <td>{user.botCount}</td>
                 <td><AdminStatusBadge value={user.licenseStatus} /></td>

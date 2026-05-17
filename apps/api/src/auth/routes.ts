@@ -2,6 +2,11 @@ import express from "express";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { clearSiweNonceCookie } from "./siwe.service.js";
 import { assignAffiliateReferral, resolveAffiliateUserIdByCode } from "../affiliate/program.js";
+import {
+  LEGAL_ACKNOWLEDGEMENT_TEXT_HASH,
+  LEGAL_ACKNOWLEDGEMENT_VERSION,
+  readLegalAcknowledgementRequestMeta
+} from "../legalAcknowledgement.js";
 
 const OTP_MAX_ATTEMPTS = Math.max(1, Number(process.env.AUTH_OTP_MAX_ATTEMPTS ?? "5"));
 
@@ -92,10 +97,66 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     });
   }
 
+  function validateLegalAcknowledgementInput(input: {
+    legalAcknowledgementAccepted?: boolean;
+    legalAcknowledgementVersion?: string;
+  }): string | null {
+    if (input.legalAcknowledgementAccepted !== true) return "legal_acknowledgement_required";
+    if (input.legalAcknowledgementVersion !== LEGAL_ACKNOWLEDGEMENT_VERSION) {
+      return "legal_acknowledgement_version_mismatch";
+    }
+    return null;
+  }
+
+  async function recordLegalAcknowledgement(userId: string, req: express.Request, client = deps.db) {
+    const existing = await client.userLegalAcknowledgement.findFirst({
+      where: { userId, version: LEGAL_ACKNOWLEDGEMENT_VERSION },
+      select: { id: true }
+    });
+    if (existing) return existing;
+
+    const meta = readLegalAcknowledgementRequestMeta(req);
+    return client.userLegalAcknowledgement.create({
+      data: {
+        userId,
+        version: LEGAL_ACKNOWLEDGEMENT_VERSION,
+        textHash: LEGAL_ACKNOWLEDGEMENT_TEXT_HASH,
+        acceptedAt: new Date(),
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent
+      },
+      select: { id: true }
+    });
+  }
+
+  async function createRegisteredUserWithLegalAcknowledgement(input: {
+    email: string;
+    passwordHash: string;
+    req: express.Request;
+  }) {
+    const createWithClient = async (client: any) => {
+      const user = await client.user.create({
+        data: { email: input.email, passwordHash: input.passwordHash, emailVerifiedAt: null },
+        select: { id: true, email: true }
+      });
+      await recordLegalAcknowledgement(user.id, input.req, client);
+      return user;
+    };
+
+    if (typeof deps.db.$transaction === "function") {
+      return deps.db.$transaction(createWithClient);
+    }
+    return createWithClient(deps.db);
+  }
+
   app.post("/auth/register", async (req, res) => {
     const parsed = deps.registerSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const legalAcknowledgementError = validateLegalAcknowledgementInput(parsed.data);
+    if (legalAcknowledgementError) {
+      return res.status(400).json({ error: legalAcknowledgementError });
     }
 
     const email = parsed.data.email.toLowerCase();
@@ -106,6 +167,7 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     if (existing) {
       const pendingOtp = !existing.emailVerifiedAt ? await findPendingEmailVerification(existing.id) : null;
       if (!existing.emailVerifiedAt && pendingOtp) {
+        await recordLegalAcknowledgement(existing.id, req);
         const issued = await issueEmailVerificationCode(existing);
         return res.json({
           ok: true,
@@ -126,10 +188,7 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     if (referralCode && !affiliateUserId) {
       return res.status(400).json({ error: "invalid_referral_code" });
     }
-    const user = await deps.db.user.create({
-      data: { email, passwordHash, emailVerifiedAt: null },
-      select: { id: true, email: true }
-    });
+    const user = await createRegisteredUserWithLegalAcknowledgement({ email, passwordHash, req });
 
     if (affiliateUserId) {
       await assignAffiliateReferral(deps.db, {

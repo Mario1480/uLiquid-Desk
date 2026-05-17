@@ -3,6 +3,7 @@ import AppShell from "./components/AppShell";
 import QueryProviders from "./components/QueryProviders";
 import { resolveRequestLocale } from "../i18n/request";
 import { getMessages } from "../i18n/messages";
+import { withLocalePath } from "../i18n/config";
 import { assertWebEnv } from "../lib/startup-env";
 import "./globals.css";
 import "./styles/shell.css";
@@ -32,11 +33,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="appFooterCopy">© 2026 uLiquid</div>
               <div className="appFooterLinks">
                 <a href="https://desk.uliquid.vip" aria-label="uLiquid Desk Website">desk.uliquid.vip</a>
-                <a href="https://desk.uliquid.vip/privacy" aria-label={messages.common.footer.privacy}>
+                <a href={withLocalePath("/privacy", locale)} aria-label={messages.common.footer.privacy}>
                   {messages.common.footer.privacy}
                 </a>
-                <a href="https://desk.uliquid.vip/terms" aria-label={messages.common.footer.terms}>
+                <a href={withLocalePath("/terms", locale)} aria-label={messages.common.footer.terms}>
                   {messages.common.footer.terms}
+                </a>
+                <a href={withLocalePath("/risk-disclosure", locale)} aria-label="Crypto Risk Disclosure">
+                  Risk Disclosure
                 </a>
                 <a href="mailto:support@uliquid.vip" aria-label="Support email">support@uliquid.vip</a>
               </div>

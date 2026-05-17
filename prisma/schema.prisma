@@ -673,9 +673,28 @@ model User {
   affiliateAccrualsEarned              AffiliateAccrual[]                    @relation("AffiliateAccrualAffiliateUser")
   affiliateAccrualsAttributed          AffiliateAccrual[]                    @relation("AffiliateAccrualReferredUser")
   siweNonces                           SiweNonce[]
+  legalAcknowledgements                UserLegalAcknowledgement[]
   onchainActions                       OnchainAction[]
   mobilePushTokens                      MobilePushToken[]
   mobileWatchlistItems                  MobileWatchlistItem[]
+}
+
+model UserLegalAcknowledgement {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  version    String
+  textHash   String   @map("text_hash")
+  acceptedAt DateTime @default(now()) @map("accepted_at")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, version], map: "user_legal_acknowledgements_user_version_key")
+  @@index([userId, acceptedAt(sort: Desc)], map: "user_legal_acknowledgements_user_accepted_idx")
+  @@index([version, acceptedAt(sort: Desc)], map: "user_legal_acknowledgements_version_accepted_idx")
+  @@map("user_legal_acknowledgements")
 }
 
 model TelegramLinkSession {

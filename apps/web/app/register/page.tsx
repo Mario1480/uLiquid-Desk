@@ -8,6 +8,7 @@ import type { FormEvent } from "react";
 import { ApiError, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { AppIcon } from "../components/AppIcon";
+import LegalRiskNotice, { LEGAL_ACKNOWLEDGEMENT_VERSION } from "../components/LegalRiskNotice";
 
 function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
   if (e instanceof ApiError) {
@@ -40,6 +41,7 @@ export default function RegisterPage() {
   const [devCode, setDevCode] = useState<string | null>(null);
   const [step, setStep] = useState<"register" | "verify">("register");
   const [referralCode, setReferralCode] = useState("");
+  const [legalAcknowledged, setLegalAcknowledged] = useState(false);
 
   const registerPath = useMemo(() => withLocalePath("/register", locale), [locale]);
 
@@ -56,13 +58,19 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
     if (step === "register") {
+      if (!legalAcknowledged) {
+        setError(t("legal.requiredError"));
+        return;
+      }
       setStatus(t("creatingAccount"));
       setDevCode(null);
       try {
         const payload = await apiPost<RegisterResponse>("/auth/register", {
           email,
           password,
-          referralCode: referralCode.trim() || undefined
+          referralCode: referralCode.trim() || undefined,
+          legalAcknowledgementAccepted: legalAcknowledged,
+          legalAcknowledgementVersion: LEGAL_ACKNOWLEDGEMENT_VERSION
         });
         const nextEmail = String(payload?.email ?? email).trim();
         const validWindow = payload?.expiresInMinutes
@@ -114,6 +122,7 @@ export default function RegisterPage() {
     <div className="container authPage">
       <h1 className="authHeading">{t("createAccountTitle")}</h1>
       <div className="card authCard">
+        <LegalRiskNotice />
         <form onSubmit={submit} className="authForm">
           <label className="authLabel">
             {t("email")}
@@ -139,18 +148,36 @@ export default function RegisterPage() {
             />
           </label>
           {step === "register" ? (
-            <label className="authLabel">
-              {t("password")}
-              <input
-                className="input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={t("placeholders.passwordMin")}
-                minLength={8}
-                required
-              />
-            </label>
+            <>
+              <label className="authLabel">
+                {t("password")}
+                <input
+                  className="input"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t("placeholders.passwordMin")}
+                  minLength={8}
+                  required
+                />
+              </label>
+              <div className="authLegalCheckbox">
+                <input
+                  id="legalAcknowledgement"
+                  type="checkbox"
+                  checked={legalAcknowledged}
+                  onChange={(event) => setLegalAcknowledged(event.target.checked)}
+                  required
+                />
+                <label htmlFor="legalAcknowledgement">
+                  {t("legal.checkboxPrefix", { version: LEGAL_ACKNOWLEDGEMENT_VERSION })}{" "}
+                  <Link href={withLocalePath("/terms", locale)}>{t("legal.documents.terms")}</Link>,{" "}
+                  <Link href={withLocalePath("/privacy", locale)}>{t("legal.documents.privacy")}</Link>,{" "}
+                  {t("legal.checkboxAnd")}{" "}
+                  <Link href={withLocalePath("/risk-disclosure", locale)}>{t("legal.documents.risk")}</Link>.
+                </label>
+              </div>
+            </>
           ) : (
             <>
               <div className="authMessage">{t("verificationHint")}</div>
@@ -172,7 +199,7 @@ export default function RegisterPage() {
             <button
               className="btn btnPrimary"
               type="submit"
-              disabled={step === "register" ? (!email || password.length < 8) : (!email || code.length !== 6)}
+              disabled={step === "register" ? (!email || password.length < 8 || !legalAcknowledged) : (!email || code.length !== 6)}
             >
               <AppIcon name={step === "register" ? "register" : "check"} />
               {step === "register" ? t("registerButton") : t("verifyEmailButton")}

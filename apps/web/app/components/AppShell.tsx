@@ -10,7 +10,15 @@ import AppHeader from "./AppHeader";
 import AppSidebar from "./AppSidebar";
 import SystemBanner from "./SystemBanner";
 
-const CHROMELESS_ROUTES = new Set(["/login", "/register", "/reset-password", "/maintenance"]);
+const CHROMELESS_ROUTES = new Set([
+  "/login",
+  "/register",
+  "/reset-password",
+  "/maintenance",
+  "/terms",
+  "/privacy",
+  "/risk-disclosure"
+]);
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

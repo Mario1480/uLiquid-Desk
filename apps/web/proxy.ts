@@ -11,7 +11,16 @@ import { assertWebEnv } from "./lib/startup-env";
 
 assertWebEnv();
 
-const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/maintenance", "/favicon.ico"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/register",
+  "/reset-password",
+  "/maintenance",
+  "/terms",
+  "/privacy",
+  "/risk-disclosure",
+  "/favicon.ico"
+];
 const PUBLIC_ASSET_EXTENSION_PATTERN = /\.(css|js|map|json|txt|xml|png|jpg|jpeg|svg|gif|ico|webp|avif|woff|woff2|ttf|eot|wasm)$/i;
 
 type SessionState = {

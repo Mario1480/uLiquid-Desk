@@ -23,6 +23,15 @@ type UserDetailResponse = {
   updatedAt: string | null;
   lastLoginAt: string | null;
   lastActiveAt: string | null;
+  legalAcknowledgements: Array<{
+    id: string;
+    version: string;
+    textHash: string;
+    acceptedAt: string | null;
+    ipAddress: string | null;
+    userAgent: string | null;
+    createdAt: string | null;
+  }>;
   memberships: Array<{
     id: string;
     status: string;
@@ -304,6 +313,8 @@ export default function AdminUserDetailPage() {
     }
   }
 
+  const latestLegalAcknowledgement = data?.legalAcknowledgements?.[0] ?? null;
+
   return (
     <div className="adminPageStack">
       <AdminPageHeader
@@ -345,6 +356,32 @@ export default function AdminUserDetailPage() {
           </section>
 
           <div className="adminDetailGrid">
+            <AdminDetailSection title="Legal Acknowledgement" description="Versioned Risk & Non-Custody Notice acceptance captured during registration.">
+              <div className="adminKeyValueList">
+                <div className="adminKeyValueRow">
+                  <span>Status</span>
+                  <AdminStatusBadge value={latestLegalAcknowledgement ? "accepted" : "missing"} />
+                </div>
+                {latestLegalAcknowledgement ? (
+                  <>
+                    <div className="adminKeyValueRow"><span>Version</span><strong>{latestLegalAcknowledgement.version}</strong></div>
+                    <div className="adminKeyValueRow"><span>Accepted At</span><strong>{formatDateTime(latestLegalAcknowledgement.acceptedAt)}</strong></div>
+                    <div className="adminKeyValueRow"><span>IP Address</span><strong>{latestLegalAcknowledgement.ipAddress ?? "—"}</strong></div>
+                    <div className="adminKeyValueRow adminKeyValueRowWrap">
+                      <span>Text Hash</span>
+                      <strong className="adminKeyValueValue">{latestLegalAcknowledgement.textHash}</strong>
+                    </div>
+                    <div className="adminKeyValueRow adminKeyValueRowWrap">
+                      <span>User Agent</span>
+                      <strong className="adminKeyValueValue">{latestLegalAcknowledgement.userAgent ?? "—"}</strong>
+                    </div>
+                  </>
+                ) : (
+                  <div className="settingsMutedText">No legal acknowledgement has been recorded for this account yet.</div>
+                )}
+              </div>
+            </AdminDetailSection>
+
             <AdminDetailSection title="Affiliate" description="Referral identity, effective rate and optional override for new referral-based vaults.">
               {affiliate ? (
                 <div className="adminListStack">

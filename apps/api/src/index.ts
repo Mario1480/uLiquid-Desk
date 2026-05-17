@@ -16,6 +16,7 @@ import {
 import { getPrimarySuperadminEmail, isSuperadminEmail } from "./auth/superadmin.js";
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
+import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "./legalAcknowledgement.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
 import { sendEmailVerificationOtpEmail, sendReauthOtpEmail, sendSmtpTestEmail, sendSmtpTextEmail } from "./email.js";
 import { decryptSecret, encryptSecret } from "./secret-crypto.js";
@@ -796,7 +797,9 @@ app.use("/admin/users/:id/vaults/close-only-all",
 const registerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8),
-  referralCode: z.string().trim().min(4).max(64).optional()
+  referralCode: z.string().trim().min(4).max(64).optional(),
+  legalAcknowledgementAccepted: z.boolean().optional(),
+  legalAcknowledgementVersion: z.string().trim().max(64).optional().default(LEGAL_ACKNOWLEDGEMENT_VERSION)
 });
 
 const registerVerifySchema = z.object({
