@@ -1,10 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminConfirmDialog from "../_components/AdminConfirmDialog";
+import AdminNotice from "../_components/AdminNotice";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -88,6 +90,7 @@ type ApiKeysSettingsResponse = {
 
 type AiProvider = "openai" | "ollama" | "vllm" | "disabled";
 type AiProfileProvider = Exclude<AiProvider, "disabled">;
+type ConfirmAction = "clearAi" | "clearFmp" | "clearCcpayAppId" | "clearCcpayAppSecret" | "stopSalad";
 type AiProviderProfileState = {
   aiBaseUrl: string;
   aiModel: string;
@@ -164,7 +167,6 @@ const DEFAULT_SALAD_API_BASE_URL = "https://api.salad.com/api/public";
 export default function AdminApiKeysPage() {
   const t = useTranslations("admin.apiKeys");
   const tCommon = useTranslations("admin.common");
-  const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -265,6 +267,7 @@ export default function AdminApiKeysPage() {
   const [saladActionLoading, setSaladActionLoading] = useState<
     "none" | "save" | "status" | "start" | "stop"
   >("none");
+  const [pendingConfirm, setPendingConfirm] = useState<ConfirmAction | null>(null);
 
   function applyApiKeysSettings(res: ApiKeysSettingsResponse) {
     const profiles = {
@@ -491,8 +494,6 @@ export default function AdminApiKeysPage() {
   }
 
   async function clearAiKey() {
-    const confirmed = window.confirm(t("messages.confirmClearAi"));
-    if (!confirmed) return;
     setError(null);
     setNotice(null);
     try {
@@ -588,8 +589,6 @@ export default function AdminApiKeysPage() {
   }
 
   async function clearFmpKey() {
-    const confirmed = window.confirm(t("messages.confirmClearFmp"));
-    if (!confirmed) return;
     setError(null);
     setNotice(null);
     try {
@@ -636,8 +635,6 @@ export default function AdminApiKeysPage() {
   }
 
   async function clearCcpayAppIdValue() {
-    const confirmed = window.confirm(t("messages.confirmClearCcpayAppId"));
-    if (!confirmed) return;
     setError(null);
     setNotice(null);
     try {
@@ -654,8 +651,6 @@ export default function AdminApiKeysPage() {
   }
 
   async function clearCcpayAppSecretValue() {
-    const confirmed = window.confirm(t("messages.confirmClearCcpayAppSecret"));
-    if (!confirmed) return;
     setError(null);
     setNotice(null);
     try {
@@ -716,8 +711,6 @@ export default function AdminApiKeysPage() {
   }
 
   async function stopSaladRuntime() {
-    const confirmed = window.confirm(t("messages.confirmStopSaladRuntime"));
-    if (!confirmed) return;
     setError(null);
     setNotice(null);
     setSaladActionLoading("stop");
@@ -753,18 +746,60 @@ export default function AdminApiKeysPage() {
         ? "badge"
           : "badgeDanger";
   const saladActionBusy = saladActionLoading !== "none";
+  const confirmDetails = pendingConfirm
+    ? {
+        clearAi: {
+          title: t("removeStoredKey"),
+          description: t("messages.confirmClearAi"),
+          confirmLabel: t("removeStoredKey")
+        },
+        clearFmp: {
+          title: t("removeStoredKey"),
+          description: t("messages.confirmClearFmp"),
+          confirmLabel: t("removeStoredKey")
+        },
+        clearCcpayAppId: {
+          title: t("ccpay.clearAppId"),
+          description: t("messages.confirmClearCcpayAppId"),
+          confirmLabel: t("ccpay.clearAppId")
+        },
+        clearCcpayAppSecret: {
+          title: t("ccpay.clearAppSecret"),
+          description: t("messages.confirmClearCcpayAppSecret"),
+          confirmLabel: t("ccpay.clearAppSecret")
+        },
+        stopSalad: {
+          title: t("ai.saladRuntime.stop"),
+          description: t("messages.confirmStopSaladRuntime"),
+          confirmLabel: t("ai.saladRuntime.stop")
+        }
+      }[pendingConfirm]
+    : null;
+
+  async function runConfirmedAction() {
+    const action = pendingConfirm;
+    setPendingConfirm(null);
+    if (action === "clearAi") await clearAiKey();
+    if (action === "clearFmp") await clearFmpKey();
+    if (action === "clearCcpayAppId") await clearCcpayAppIdValue();
+    if (action === "clearCcpayAppSecret") await clearCcpayAppSecretValue();
+    if (action === "stopSalad") await stopSaladRuntime();
+  }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">{t("subtitle")}</div>
+    <div className="adminPageStack">
+      <AdminPageHeader
+        eyebrow="Integrations"
+        title={t("title")}
+        description={t("subtitle")}
+      />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <AdminNotice tone="danger">{error}</AdminNotice>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <AdminNotice tone="success">{notice}</AdminNotice>
       ) : null}
 
       {isSuperadmin ? (
@@ -805,9 +840,9 @@ export default function AdminApiKeysPage() {
                 {typeof health?.latencyMs === "number" ? ` · ${health.latencyMs}ms` : ""}
                 {health?.checkedAt ? ` · ${t("checked")} ${new Date(health.checkedAt).toLocaleString()}` : ""}
               </span>
-              <button className="btn" type="button" onClick={() => void loadHealthStatus()} disabled={healthLoading}>
+              <AdminActionButton icon="refresh" type="button" onClick={() => void loadHealthStatus()} loading={healthLoading}>
                 {healthLoading ? t("checkingButton") : t("refreshStatus")}
-              </button>
+              </AdminActionButton>
             </div>
             {health?.message ? (
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{health.message}</div>
@@ -878,9 +913,9 @@ export default function AdminApiKeysPage() {
             </label>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-              <button className="btn btnPrimary" onClick={() => void saveAiProviderAndBaseUrl()}>
+              <AdminActionButton icon="save" variant="primary" onClick={() => void saveAiProviderAndBaseUrl()}>
                 {t("ai.providerSave")}
-              </button>
+              </AdminActionButton>
             </div>
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
@@ -900,12 +935,12 @@ export default function AdminApiKeysPage() {
 
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{t("ai.modelOptionsHint")}</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-              <button className="btn btnPrimary" onClick={() => void saveAiModel()}>
+              <AdminActionButton icon="save" variant="primary" onClick={() => void saveAiModel()}>
                 {t("ai.modelSave")}
-              </button>
-              <button className="btn" onClick={() => void resetAiModel()}>
+              </AdminActionButton>
+              <AdminActionButton icon="reset" onClick={() => void resetAiModel()}>
                 {t("ai.modelReset")}
-              </button>
+              </AdminActionButton>
             </div>
 
             {envOverride ? (
@@ -923,12 +958,12 @@ export default function AdminApiKeysPage() {
               />
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" onClick={() => void saveAiKey()}>
+              <AdminActionButton icon="key" variant="primary" onClick={() => void saveAiKey()}>
                 {t("ai.save")}
-              </button>
-              <button className="btn btnStop" onClick={() => void clearAiKey()} disabled={!hasAiApiKey}>
+              </AdminActionButton>
+              <AdminActionButton icon="delete" variant="danger" onClick={() => setPendingConfirm("clearAi")} disabled={!hasAiApiKey}>
                 {t("removeStoredKey")}
-              </button>
+              </AdminActionButton>
             </div>
 
             {showSaladRuntimeSection ? (
@@ -1032,17 +1067,18 @@ export default function AdminApiKeysPage() {
                 </label>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    className="btn btnPrimary"
+                  <AdminActionButton
+                    icon="save"
+                    variant="primary"
                     onClick={() => void saveSaladRuntimeConfig()}
                     disabled={saladActionBusy}
                   >
                     {saladActionLoading === "save"
                       ? t("checkingButton")
                       : t("ai.saladRuntime.saveConfig")}
-                  </button>
-                  <button
-                    className="btn"
+                  </AdminActionButton>
+                  <AdminActionButton
+                    icon="refresh"
                     type="button"
                     onClick={() => void loadSaladRuntimeStatus()}
                     disabled={saladActionBusy}
@@ -1050,9 +1086,9 @@ export default function AdminApiKeysPage() {
                     {saladActionLoading === "status"
                       ? t("checkingButton")
                       : t("ai.saladRuntime.refreshStatus")}
-                  </button>
-                  <button
-                    className="btn"
+                  </AdminActionButton>
+                  <AdminActionButton
+                    icon="start"
                     type="button"
                     onClick={() => void startSaladRuntime()}
                     disabled={saladActionBusy}
@@ -1060,17 +1096,18 @@ export default function AdminApiKeysPage() {
                     {saladActionLoading === "start"
                       ? t("checkingButton")
                       : t("ai.saladRuntime.start")}
-                  </button>
-                  <button
-                    className="btn btnStop"
+                  </AdminActionButton>
+                  <AdminActionButton
+                    icon="stop"
+                    variant="danger"
                     type="button"
-                    onClick={() => void stopSaladRuntime()}
+                    onClick={() => setPendingConfirm("stopSalad")}
                     disabled={saladActionBusy}
                   >
                     {saladActionLoading === "stop"
                       ? t("checkingButton")
                       : t("ai.saladRuntime.stop")}
-                  </button>
+                  </AdminActionButton>
                 </div>
               </section>
             ) : null}
@@ -1112,9 +1149,9 @@ export default function AdminApiKeysPage() {
                 {typeof fmpHealth?.latencyMs === "number" ? ` · ${fmpHealth.latencyMs}ms` : ""}
                 {fmpHealth?.checkedAt ? ` · ${t("checked")} ${new Date(fmpHealth.checkedAt).toLocaleString()}` : ""}
               </span>
-              <button className="btn" type="button" onClick={() => void loadFmpHealthStatus()} disabled={fmpHealthLoading}>
+              <AdminActionButton icon="refresh" type="button" onClick={() => void loadFmpHealthStatus()} loading={fmpHealthLoading}>
                 {fmpHealthLoading ? t("checkingButton") : t("refreshStatus")}
-              </button>
+              </AdminActionButton>
             </div>
             {fmpHealth?.message ? (
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{fmpHealth.message}</div>
@@ -1133,12 +1170,12 @@ export default function AdminApiKeysPage() {
               />
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" onClick={() => void saveFmpKey()}>
+              <AdminActionButton icon="key" variant="primary" onClick={() => void saveFmpKey()}>
                 {t("fmp.save")}
-              </button>
-              <button className="btn btnStop" onClick={() => void clearFmpKey()} disabled={!hasFmpApiKey}>
+              </AdminActionButton>
+              <AdminActionButton icon="delete" variant="danger" onClick={() => setPendingConfirm("clearFmp")} disabled={!hasFmpApiKey}>
                 {t("removeStoredKey")}
-              </button>
+              </AdminActionButton>
             </div>
           </section>
 
@@ -1181,9 +1218,9 @@ export default function AdminApiKeysPage() {
                 {t("source")}: {ccpayHealth?.source ?? "default"}
                 {ccpayHealth?.checkedAt ? ` · ${t("checked")} ${new Date(ccpayHealth.checkedAt).toLocaleString()}` : ""}
               </span>
-              <button className="btn" type="button" onClick={() => void loadCcpayHealthStatus()} disabled={ccpayHealthLoading}>
+              <AdminActionButton icon="refresh" type="button" onClick={() => void loadCcpayHealthStatus()} loading={ccpayHealthLoading}>
                 {ccpayHealthLoading ? t("checkingButton") : t("refreshStatus")}
-              </button>
+              </AdminActionButton>
             </div>
             {ccpayHealth?.message ? (
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{ccpayHealth.message}</div>
@@ -1248,19 +1285,28 @@ export default function AdminApiKeysPage() {
               />
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" onClick={() => void saveCcpaySettings()}>
+              <AdminActionButton icon="save" variant="primary" onClick={() => void saveCcpaySettings()}>
                 {t("ccpay.save")}
-              </button>
-              <button className="btn btnStop" onClick={() => void clearCcpayAppIdValue()} disabled={!hasCcpayAppId}>
+              </AdminActionButton>
+              <AdminActionButton icon="delete" variant="danger" onClick={() => setPendingConfirm("clearCcpayAppId")} disabled={!hasCcpayAppId}>
                 {t("ccpay.clearAppId")}
-              </button>
-              <button className="btn btnStop" onClick={() => void clearCcpayAppSecretValue()} disabled={!hasCcpayAppSecret}>
+              </AdminActionButton>
+              <AdminActionButton icon="delete" variant="danger" onClick={() => setPendingConfirm("clearCcpayAppSecret")} disabled={!hasCcpayAppSecret}>
                 {t("ccpay.clearAppSecret")}
-              </button>
+              </AdminActionButton>
             </div>
           </section>
         </>
       ) : null}
+      <AdminConfirmDialog
+        open={Boolean(confirmDetails)}
+        title={confirmDetails?.title ?? ""}
+        description={confirmDetails?.description ?? ""}
+        confirmLabel={confirmDetails?.confirmLabel ?? ""}
+        loading={saladActionLoading === "stop"}
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => void runConfirmedAction()}
+      />
     </div>
   );
 }

@@ -6,7 +6,13 @@ function normalizeTone(value: string): string {
   return "neutral";
 }
 
-export default function AdminStatusBadge({ value }: { value: string | null | undefined }) {
+export default function AdminStatusBadge({
+  value,
+  label
+}: {
+  value: string | null | undefined;
+  label?: string;
+}) {
   const safeValue = String(value ?? "unknown").replace(/_/g, " ");
-  return <span className={`tag adminStatusBadge adminStatusBadge${normalizeTone(safeValue)}`}>{safeValue}</span>;
+  return <span className={`tag adminStatusBadge adminStatusBadge${normalizeTone(safeValue)}`}>{label ?? safeValue}</span>;
 }

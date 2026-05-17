@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminConfirmDialog from "../_components/AdminConfirmDialog";
 
 type ScopeType = "global" | "account" | "symbol" | "symbol_tf";
 type Timeframe = "5m" | "15m" | "1h" | "4h" | "1d";
@@ -784,6 +786,7 @@ export default function AdminIndicatorSettingsPage() {
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [items, setItems] = useState<IndicatorSettingRow[]>([]);
   const [resolved, setResolved] = useState<ResolvedResponse | null>(null);
@@ -1107,7 +1110,7 @@ export default function AdminIndicatorSettingsPage() {
   }
 
   async function removeRow(id: string) {
-    if (!confirm(t("messages.confirmDelete"))) return;
+    setPendingDeleteId(null);
     setError(null);
     setNotice(null);
     try {
@@ -1729,9 +1732,9 @@ export default function AdminIndicatorSettingsPage() {
                         <td>{new Date(row.updatedAt).toLocaleString()}</td>
                         <td>
                           <div className="adminInlineActions">
-                            <button className="btn" type="button" onClick={() => applyRow(row)}>{t("actions.edit")}</button>
-                            <button className="btn" type="button" onClick={() => applyRow(row, true)}>{t("actions.clone")}</button>
-                            <button className="btn" type="button" onClick={() => void removeRow(row.id)}>{t("actions.delete")}</button>
+                            <AdminActionButton icon="edit" type="button" onClick={() => applyRow(row)}>{t("actions.edit")}</AdminActionButton>
+                            <AdminActionButton icon="copy" type="button" onClick={() => applyRow(row, true)}>{t("actions.clone")}</AdminActionButton>
+                            <AdminActionButton icon="delete" variant="danger" type="button" onClick={() => setPendingDeleteId(row.id)}>{t("actions.delete")}</AdminActionButton>
                           </div>
                         </td>
                       </tr>
@@ -1754,6 +1757,16 @@ export default function AdminIndicatorSettingsPage() {
           </section>
         </>
       ) : null}
+      <AdminConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title={t("actions.delete")}
+        description={t("messages.confirmDelete")}
+        confirmLabel={t("actions.delete")}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          if (pendingDeleteId) void removeRow(pendingDeleteId);
+        }}
+      />
     </div>
   );
 }

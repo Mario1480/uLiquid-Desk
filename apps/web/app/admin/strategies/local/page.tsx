@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
+import AdminActionButton from "../../_components/AdminActionButton";
+import AdminConfirmDialog from "../../_components/AdminConfirmDialog";
 
 type RegistryItem = {
   type: string;
@@ -129,6 +131,7 @@ export default function AdminLocalStrategiesPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [items, setItems] = useState<LocalStrategyItem[]>([]);
   const [registry, setRegistry] = useState<RegistryItem[]>([]);
@@ -352,7 +355,7 @@ export default function AdminLocalStrategiesPage() {
   }
 
   async function removeItem(id: string) {
-    if (!confirm(t("messages.confirmDelete"))) return;
+    setPendingDeleteId(null);
     setError(null);
     setNotice(null);
     try {
@@ -640,8 +643,8 @@ export default function AdminLocalStrategiesPage() {
                         <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-"}</td>
                         <td>
                           <div className="adminInlineActions">
-                            <button className="btn" type="button" onClick={() => applyItem(item)}>Edit</button>
-                            <button className="btn" type="button" onClick={() => void removeItem(item.id)}>Delete</button>
+                            <AdminActionButton icon="edit" type="button" onClick={() => applyItem(item)}>Edit</AdminActionButton>
+                            <AdminActionButton icon="delete" variant="danger" type="button" onClick={() => setPendingDeleteId(item.id)}>Delete</AdminActionButton>
                           </div>
                         </td>
                       </tr>
@@ -686,6 +689,16 @@ export default function AdminLocalStrategiesPage() {
           </section>
         </>
       ) : null}
+      <AdminConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title="Delete strategy"
+        description={t("messages.confirmDelete")}
+        confirmLabel="Delete"
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          if (pendingDeleteId) void removeItem(pendingDeleteId);
+        }}
+      />
     </div>
   );
 }

@@ -6,10 +6,11 @@ type AdminPageHeaderProps = {
   eyebrow?: string;
   title: string;
   description?: string;
-  actions?: Array<{ href: string; label: string }>;
+  actions?: Array<{ href: string; label: string; icon?: AppIconName; variant?: "primary" | "secondary" | "danger" }>;
 };
 
-function iconForAdminAction(action: { href: string; label: string }, index: number): AppIconName {
+function iconForAdminAction(action: { href: string; label: string; icon?: AppIconName }, index: number): AppIconName {
+  if (action.icon) return action.icon;
   const text = `${action.href} ${action.label}`.toLowerCase();
   if (text.includes("alert")) return "alerts";
   if (text.includes("audit")) return "audit";
@@ -25,7 +26,11 @@ export default function AdminPageHeader({ eyebrow, title, description, actions =
   const actionNodes = actions.length > 0 ? (
     <>
       {actions.map((action, index) => (
-        <Link key={action.href} href={action.href} className={`btn ${index === 0 ? "btnPrimary" : ""}`.trim()}>
+        <Link
+          key={action.href}
+          href={action.href}
+          className={`btn ${action.variant === "danger" ? "btnStop" : action.variant === "primary" || index === 0 ? "btnPrimary" : ""}`.trim()}
+        >
           <AppIcon name={iconForAdminAction(action, index)} />
           {action.label}
         </Link>

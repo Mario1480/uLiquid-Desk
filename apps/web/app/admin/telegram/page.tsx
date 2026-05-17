@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminConfirmDialog from "../_components/AdminConfirmDialog";
+import AdminNotice from "../_components/AdminNotice";
 import AdminPageHeader from "../_components/AdminPageHeader";
 
 function errMsg(e: unknown): string {
@@ -22,6 +25,7 @@ export default function AdminTelegramPage() {
   const [telegramChatId, setTelegramChatId] = useState("");
   const [telegramConfigured, setTelegramConfigured] = useState(false);
   const [telegramMasked, setTelegramMasked] = useState<string | null>(null);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -75,7 +79,7 @@ export default function AdminTelegramPage() {
   async function clearTelegramConfig() {
     setError(null);
     setNotice(null);
-    if (!window.confirm(t("messages.confirmClear"))) return;
+    setConfirmClearOpen(false);
     try {
       const res = await apiPut<any>("/admin/settings/telegram", {
         clearConfig: true
@@ -107,14 +111,10 @@ export default function AdminTelegramPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">
-          {error}
-        </div>
+        <AdminNotice tone="danger">{error}</AdminNotice>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">
-          {notice}
-        </div>
+        <AdminNotice tone="success">{notice}</AdminNotice>
       ) : null}
 
       {isSuperadmin ? (
@@ -164,19 +164,27 @@ export default function AdminTelegramPage() {
             </label>
           </div>
           <div className="adminInlineActions" style={{ marginTop: 14 }}>
-            <button className="btn btnPrimary" onClick={() => void saveTelegram()}>
+            <AdminActionButton icon="save" variant="primary" onClick={() => void saveTelegram()}>
               {t("saveTelegram")}
-            </button>
-            <button className="btn" onClick={() => void clearTelegramConfig()}>
+            </AdminActionButton>
+            <AdminActionButton icon="delete" variant="danger" onClick={() => setConfirmClearOpen(true)}>
               {t("clearTelegram")}
-            </button>
-            <button className="btn" onClick={() => void testTelegram()}>
+            </AdminActionButton>
+            <AdminActionButton icon="send" onClick={() => void testTelegram()}>
               {t("sendTest")}
-            </button>
+            </AdminActionButton>
           </div>
         </section>
         </>
       ) : null}
+      <AdminConfirmDialog
+        open={confirmClearOpen}
+        title={t("clearTelegram")}
+        description={t("messages.confirmClear")}
+        confirmLabel={t("clearTelegram")}
+        onCancel={() => setConfirmClearOpen(false)}
+        onConfirm={() => void clearTelegramConfig()}
+      />
     </div>
   );
 }

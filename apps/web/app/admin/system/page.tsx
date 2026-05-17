@@ -5,9 +5,25 @@ import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { apiGet } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon, type AppIconName } from "../../components/AppIcon";
 import AdminDetailSection from "../_components/AdminDetailSection";
+import AdminNotice from "../_components/AdminNotice";
 import AdminPageHeader from "../_components/AdminPageHeader";
 import { adminErrMsg, formatDateTime } from "../_components/admin-client";
+
+function iconForSystemLink(href: string): AppIconName {
+  if (href.includes("api-keys")) return "key";
+  if (href.includes("exchanges")) return "exchange";
+  if (href.includes("server-info")) return "server";
+  if (href.includes("telegram")) return "telegram";
+  if (href.includes("smtp")) return "mail";
+  if (href.includes("grid-template")) return "grid";
+  if (href.includes("strategies")) return "strategies";
+  if (href.includes("vaults")) return "vaults";
+  if (href.includes("ai")) return "ai";
+  if (href.includes("access")) return "shield";
+  return "open";
+}
 
 export default function AdminSystemPage() {
   const locale = useLocale() as AppLocale;
@@ -92,7 +108,7 @@ export default function AdminSystemPage() {
         description="Platform configuration, integrations, AI controls, and vault operations are now grouped here under the strict superadmin admin shell."
       />
       {loading ? <div className="settingsMutedText">Loading system state…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
       {data ? (
         <div className="adminDetailGrid">
           <AdminDetailSection title="Current Summary">
@@ -115,6 +131,7 @@ export default function AdminSystemPage() {
                   <div className="adminInlineActions">
                     {group.links.map((item) => (
                       <Link key={item.href} href={withLocalePath(item.href, locale)} className="btn">
+                        <AppIcon name={iconForSystemLink(item.href)} />
                         {item.label}
                       </Link>
                     ))}

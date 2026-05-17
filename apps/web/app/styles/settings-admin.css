@@ -1460,9 +1460,27 @@
   background: rgba(255, 255, 255, 0.03);
   transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
+.adminSidebarLinkLabel {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.adminSidebarLinkLabel svg {
+  flex: 0 0 auto;
+}
+.adminSidebarLinkChevron {
+  opacity: 0.42;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
 .adminSidebarLink:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(130, 187, 233, 0.24);
+  transform: translateX(2px);
+}
+.adminSidebarLink:hover .adminSidebarLinkChevron,
+.adminSidebarLinkActive .adminSidebarLinkChevron {
+  opacity: 0.86;
   transform: translateX(2px);
 }
 .adminSidebarLinkActive {
@@ -1528,6 +1546,7 @@
 .adminSectionNavLink {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   min-height: 38px;
   padding: 8px 14px;
   border-radius: 999px;
@@ -1778,10 +1797,159 @@
   padding: 18px;
   border-color: rgba(123, 145, 170, 0.18);
 }
+.adminToolbarRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.adminToolbarActions,
+.adminInlineActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .adminFilterGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+}
+.adminFormField {
+  display: grid;
+  gap: 4px;
+}
+.adminFormFieldLabel {
+  font-size: 12px;
+  font-weight: 700;
+}
+.adminFormFieldHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.adminFormGridCompact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+.adminCheckboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: rgba(226, 238, 247, 0.88);
+}
+.adminSubsectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.adminSectionDescription {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.adminNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--ui-radius-card);
+  border: 1px solid rgba(123, 145, 170, 0.18);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(226, 238, 247, 0.9);
+  font-size: 13px;
+}
+.adminNotice svg {
+  margin-top: 2px;
+}
+.adminNoticeinfo {
+  border-color: rgba(96, 165, 250, 0.26);
+  background: rgba(96, 165, 250, 0.08);
+}
+.adminNoticesuccess {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.1);
+  color: #bbf7d0;
+}
+.adminNoticewarning {
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fde68a;
+}
+.adminNoticedanger {
+  border-color: rgba(239, 68, 68, 0.34);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fecaca;
+}
+.adminConfirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(14px);
+}
+.adminConfirmDialog {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: var(--ui-radius-panel);
+  border: 1px solid var(--ui-border-strong);
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 34%),
+    var(--ui-surface-panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+.adminConfirmIcon {
+  width: 40px;
+  height: 40px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(123, 145, 170, 0.18);
+}
+.adminConfirmIcondanger {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.12);
+}
+.adminConfirmIconprimary {
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(96, 165, 250, 0.12);
+}
+.adminConfirmBody {
+  display: grid;
+  gap: 6px;
+}
+.adminConfirmBody h3,
+.adminConfirmBody p {
+  margin: 0;
+}
+.adminConfirmBody p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.adminConfirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.adminSpinIcon {
+  animation: adminSpin 0.9s linear infinite;
+}
+@keyframes adminSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .adminTableWrap {
   overflow: hidden;
@@ -1871,6 +2039,11 @@
   color: inherit;
   border: 1px solid rgba(123, 145, 170, 0.16);
   background: rgba(255, 255, 255, 0.02);
+}
+.btnDanger {
+  border-color: rgba(239, 68, 68, 0.8);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.96), rgba(244, 63, 94, 0.88));
+  color: #fff1f2;
 }
 @media (max-width: 1100px) {
   .adminOverviewTopGrid,

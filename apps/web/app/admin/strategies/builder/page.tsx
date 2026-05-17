@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
+import AdminActionButton from "../../_components/AdminActionButton";
+import AdminConfirmDialog from "../../_components/AdminConfirmDialog";
 
 type LocalRegistryItem = {
   type: string;
@@ -206,6 +208,7 @@ export default function AdminStrategiesBuilderPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [localStrategies, setLocalStrategies] = useState<LocalStrategyItem[]>([]);
   const [localRegistry, setLocalRegistry] = useState<LocalRegistryItem[]>([]);
@@ -449,7 +452,7 @@ export default function AdminStrategiesBuilderPage() {
   }
 
   async function removeComposite(id: string) {
-    if (!confirm(t("messages.confirmDelete"))) return;
+    setPendingDeleteId(null);
     setError(null);
     setNotice(null);
     try {
@@ -840,8 +843,8 @@ export default function AdminStrategiesBuilderPage() {
                         <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-"}</td>
                         <td>
                           <div className="adminInlineActions">
-                            <button className="btn" type="button" onClick={() => loadComposite(item)}>Edit</button>
-                            <button className="btn" type="button" onClick={() => void removeComposite(item.id)}>Delete</button>
+                            <AdminActionButton icon="edit" type="button" onClick={() => loadComposite(item)}>Edit</AdminActionButton>
+                            <AdminActionButton icon="delete" variant="danger" type="button" onClick={() => setPendingDeleteId(item.id)}>Delete</AdminActionButton>
                           </div>
                         </td>
                       </tr>
@@ -854,6 +857,16 @@ export default function AdminStrategiesBuilderPage() {
           </section>
         </>
       ) : null}
+      <AdminConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title="Delete composite strategy"
+        description={t("messages.confirmDelete")}
+        confirmLabel="Delete"
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          if (pendingDeleteId) void removeComposite(pendingDeleteId);
+        }}
+      />
     </div>
   );
 }

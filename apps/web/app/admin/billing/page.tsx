@@ -3,6 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminConfirmDialog from "../_components/AdminConfirmDialog";
+import AdminNotice from "../_components/AdminNotice";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 type BillingAddonType =
   | "running_bots"
@@ -202,6 +206,7 @@ export default function AdminBillingPage() {
   const [billingEnabled, setBillingEnabled] = useState(false);
   const [billingWebhookEnabled, setBillingWebhookEnabled] = useState(true);
   const [aiTokenBillingEnabled, setAiTokenBillingEnabled] = useState(true);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const canAdjustTokens = Boolean(
     adjustUserLookup.trim()
       && INTEGER_DELTA_PATTERN.test(adjustDelta.trim())
@@ -269,7 +274,7 @@ export default function AdminBillingPage() {
   }
 
   async function deletePackage(id: string) {
-    if (!confirm(t("confirmDelete"))) return;
+    setPendingDeleteId(null);
     setSavingId(id);
     setMsg(null);
     try {
@@ -330,60 +335,75 @@ export default function AdminBillingPage() {
   }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("description")}</div>
+    <div className="adminPageStack">
+      <AdminPageHeader
+        eyebrow="Billing"
+        title={t("title")}
+        description={t("description")}
+      />
 
-      {msg ? <div className="settingsMutedText" style={{ marginBottom: 10 }}>{msg}</div> : null}
+      {msg ? <AdminNotice tone="info">{msg}</AdminNotice> : null}
 
-      <section className="card settingsSection" style={{ marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>{t("featureFlags.title")}</div>
-        <div className="settingsMutedText" style={{ marginBottom: 8 }}>{t("featureFlags.description")}</div>
-        <div className="settingsMutedText" style={{ marginBottom: 8, fontSize: 12 }}>
+      <section className="card settingsSection adminInlineForm">
+        <div className="settingsSectionHeader">
+          <div>
+            <h3 className="adminSubsectionTitle">{t("featureFlags.title")}</h3>
+            <div className="adminSectionDescription">{t("featureFlags.description")}</div>
+          </div>
+        </div>
+        <div className="settingsMutedText">
           {t("featureFlags.source")}: {featureFlags?.source ?? "default"} · {t("featureFlags.updatedAt")}:{" "}
           {featureFlags?.updatedAt ? new Date(featureFlags.updatedAt).toLocaleString() : t("featureFlags.never")}
         </div>
-        <div style={{ display: "grid", gap: 8, maxWidth: 620, marginBottom: 10 }}>
+        <div className="adminChoiceGrid">
           <FormField label={t("featureFlags.billingEnabled.label")} hint={t("featureFlags.billingEnabled.hint")}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <label className="adminCheckboxLabel">
               <input type="checkbox" checked={billingEnabled} onChange={(e) => setBillingEnabled(e.target.checked)} />
               {t("featureFlags.enabledValue")}
             </label>
           </FormField>
           <FormField label={t("featureFlags.billingWebhookEnabled.label")} hint={t("featureFlags.billingWebhookEnabled.hint")}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <label className="adminCheckboxLabel">
               <input type="checkbox" checked={billingWebhookEnabled} onChange={(e) => setBillingWebhookEnabled(e.target.checked)} />
               {t("featureFlags.enabledValue")}
             </label>
           </FormField>
           <FormField label={t("featureFlags.aiTokenBillingEnabled.label")} hint={t("featureFlags.aiTokenBillingEnabled.hint")}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <label className="adminCheckboxLabel">
               <input type="checkbox" checked={aiTokenBillingEnabled} onChange={(e) => setAiTokenBillingEnabled(e.target.checked)} />
               {t("featureFlags.enabledValue")}
             </label>
           </FormField>
         </div>
-        <button className="btn btnPrimary" onClick={saveFeatureFlags} disabled={savingId === "flags"}>
-          {savingId === "flags" ? tCommon("saving") : t("featureFlags.save")}
-        </button>
+        <AdminActionButton icon="save" variant="primary" onClick={saveFeatureFlags} loading={savingId === "flags"} loadingLabel={tCommon("saving")}>
+          {t("featureFlags.save")}
+        </AdminActionButton>
       </section>
 
-      <section className="card settingsSection" style={{ marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>{t("createTitle")}</div>
-        <div className="settingsMutedText" style={{ marginBottom: 8 }}>{t("createHelp")}</div>
-        <div className="settingsMutedText" style={{ marginBottom: 8, fontSize: 12 }}>
+      <section className="card settingsSection adminInlineForm">
+        <div className="settingsSectionHeader">
+          <div>
+            <h3 className="adminSubsectionTitle">{t("createTitle")}</h3>
+            <div className="adminSectionDescription">{t("createHelp")}</div>
+          </div>
+        </div>
+        <div className="settingsMutedText">
           USD is fixed for all new plans and add-ons.
         </div>
         <PackageForm draft={createDraft} setDraft={setCreateDraft} />
-        <button className="btn btnPrimary" onClick={createPackage} disabled={savingId === "new"}>
-          {savingId === "new" ? tCommon("saving") : t("create")}
-        </button>
+        <AdminActionButton icon="create" variant="primary" onClick={createPackage} loading={savingId === "new"} loadingLabel={tCommon("saving")}>
+          {t("create")}
+        </AdminActionButton>
       </section>
 
-      <section className="card settingsSection" style={{ marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>{t("tokenAdjustTitle")}</div>
-        <div className="settingsMutedText" style={{ marginBottom: 8 }}>{t("tokenAdjustHelp")}</div>
-        <div style={{ display: "grid", gap: 8, maxWidth: 520 }}>
+      <section className="card settingsSection adminInlineForm">
+        <div className="settingsSectionHeader">
+          <div>
+            <h3 className="adminSubsectionTitle">{t("tokenAdjustTitle")}</h3>
+            <div className="adminSectionDescription">{t("tokenAdjustHelp")}</div>
+          </div>
+        </div>
+        <div className="adminChoiceGrid">
           <FormField label={t("userId")} hint={t("userIdHint")}>
             <input
               className="input"
@@ -408,42 +428,55 @@ export default function AdminBillingPage() {
               onChange={(e) => setAdjustNote(e.target.value)}
             />
           </FormField>
-          <button className="btn btnPrimary" onClick={adjustTokens} disabled={savingId === "adjust" || !canAdjustTokens}>
-            {savingId === "adjust" ? tCommon("saving") : t("adjust")}
-          </button>
+          <AdminActionButton icon="balance" variant="primary" onClick={adjustTokens} disabled={!canAdjustTokens} loading={savingId === "adjust"} loadingLabel={tCommon("saving")}>
+            {t("adjust")}
+          </AdminActionButton>
         </div>
       </section>
 
       <section className="card settingsSection">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontWeight: 700 }}>{t("listTitle")}</div>
-          <button className="btn" onClick={load} disabled={loading}>{t("refresh")}</button>
+        <div className="settingsSectionHeader">
+          <h3 className="adminSubsectionTitle">{t("listTitle")}</h3>
+          <AdminActionButton icon="refresh" onClick={load} loading={loading}>
+            {t("refresh")}
+          </AdminActionButton>
         </div>
 
         {loading ? (
           <div className="settingsMutedText">{tCommon("loading")}</div>
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
+          <div className="adminListStack">
             {items.map((item) => (
-              <div className="settingsPanel" key={item.id} style={{ padding: 12 }}>
-                <div style={{ marginBottom: 8, fontWeight: 700 }}>{item.name} ({item.code})</div>
+              <div className="settingsPanel adminInlineForm" key={item.id}>
+                <div className="adminSubsectionTitle">{item.name} ({item.code})</div>
                 <PackageForm
                   draft={drafts[item.id]}
                   setDraft={(next) => setDrafts((prev) => ({ ...prev, [item.id]: next }))}
                 />
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <button className="btn btnPrimary" onClick={() => savePackage(item.id)} disabled={savingId === item.id}>
-                    {savingId === item.id ? tCommon("saving") : t("save")}
-                  </button>
-                  <button className="btn btnStop" onClick={() => deletePackage(item.id)} disabled={savingId === item.id}>
+                <div className="adminInlineActions">
+                  <AdminActionButton icon="save" variant="primary" onClick={() => savePackage(item.id)} loading={savingId === item.id} loadingLabel={tCommon("saving")}>
+                    {t("save")}
+                  </AdminActionButton>
+                  <AdminActionButton icon="delete" variant="danger" onClick={() => setPendingDeleteId(item.id)} disabled={savingId === item.id}>
                     {t("delete")}
-                  </button>
+                  </AdminActionButton>
                 </div>
               </div>
             ))}
           </div>
         )}
       </section>
+      <AdminConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title={t("delete")}
+        description={t("confirmDelete")}
+        confirmLabel={t("delete")}
+        loading={Boolean(pendingDeleteId && savingId === pendingDeleteId)}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          if (pendingDeleteId) void deletePackage(pendingDeleteId);
+        }}
+      />
     </div>
   );
 }
@@ -458,10 +491,10 @@ function FormField({
   children: ReactNode;
 }) {
   return (
-    <div style={{ display: "grid", gap: 4 }}>
-      <div style={{ fontSize: 12, fontWeight: 700 }}>{label}</div>
+    <div className="adminFormField">
+      <div className="adminFormFieldLabel">{label}</div>
       {children}
-      {hint ? <div className="settingsMutedText" style={{ fontSize: 12 }}>{hint}</div> : null}
+      {hint ? <div className="adminFormFieldHint">{hint}</div> : null}
     </div>
   );
 }
@@ -495,7 +528,7 @@ function PackageForm({
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8, marginBottom: 8 }}>
+    <div className="adminFormGridCompact">
       <FormField label={t("fields.code.label")} hint={t("fields.code.hint")}>
         <input className="input" value={draft.code} placeholder="pro_monthly" onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
       </FormField>
@@ -588,7 +621,7 @@ function PackageForm({
       ) : null}
 
       <FormField label={t("fields.isActive.label")} hint={t("fields.isActive.hint")}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+        <label className="adminCheckboxLabel">
           <input type="checkbox" checked={draft.isActive} onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })} />
           {t("fields.isActive.value")}
         </label>

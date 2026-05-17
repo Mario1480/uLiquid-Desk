@@ -1,10 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminNotice from "../_components/AdminNotice";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 type VaultSafetyResponse = {
   haltNewOrders: boolean;
@@ -176,30 +178,31 @@ export default function AdminVaultSafetyPage() {
   }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">{t("subtitle")}</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Link className="btn" href={withLocalePath("/admin", locale)}>
-          {tCommon("backToAdmin")}
-        </Link>
-      </div>
+    <div className="adminPageStack">
+      <AdminPageHeader
+        eyebrow="Vault Controls"
+        title={t("title")}
+        description={t("subtitle")}
+        actions={[
+          { href: withLocalePath("/admin", locale), label: tCommon("backToAdmin"), icon: "back", variant: "secondary" }
+        ]}
+      />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
+      {notice ? <AdminNotice tone="success">{notice}</AdminNotice> : null}
 
       {isAdmin ? (
         <>
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("sectionTitle")}</h3>
             </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+            <div className="settingsMutedText">
               {t("sourceLabel")}: {settings?.source ?? "default"} · {t("lastUpdatedLabel")}: {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
             </div>
 
-              <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+              <label className="adminCheckboxLabel">
                 <input
                   type="checkbox"
                   checked={haltNewOrders}
@@ -208,8 +211,8 @@ export default function AdminVaultSafetyPage() {
                 <span>{t("haltNewOrdersLabel")}</span>
               </label>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div className="adminFilterGrid">
+                <label className="adminCheckboxLabel">
                   <input
                     type="checkbox"
                     checked={depositsDisabled}
@@ -217,7 +220,7 @@ export default function AdminVaultSafetyPage() {
                   />
                   <span>Deposits disabled</span>
                 </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label className="adminCheckboxLabel">
                   <input
                     type="checkbox"
                     checked={withdrawsDisabled}
@@ -225,7 +228,7 @@ export default function AdminVaultSafetyPage() {
                   />
                   <span>Withdraws disabled</span>
                 </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label className="adminCheckboxLabel">
                   <input
                     type="checkbox"
                     checked={gridStartsDisabled}
@@ -233,7 +236,7 @@ export default function AdminVaultSafetyPage() {
                   />
                   <span>Grid starts disabled</span>
                 </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label className="adminCheckboxLabel">
                   <input
                     type="checkbox"
                     checked={profitClaimsDisabled}
@@ -241,7 +244,7 @@ export default function AdminVaultSafetyPage() {
                   />
                   <span>Profit claims disabled</span>
                 </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label className="adminCheckboxLabel">
                   <input
                     type="checkbox"
                     checked={fundingVaultLaunchesDisabled}
@@ -249,7 +252,7 @@ export default function AdminVaultSafetyPage() {
                   />
                   <span>Funding Vault launches disabled</span>
                 </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label className="adminCheckboxLabel">
                   <input
                     type="checkbox"
                     checked={fundingVaultWithdrawsDisabled}
@@ -282,18 +285,18 @@ export default function AdminVaultSafetyPage() {
               </label>
             </div>
 
-            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
-                {saving ? tCommon("saving") : t("save")}
-              </button>
+            <div className="adminInlineActions">
+              <AdminActionButton icon="save" variant="primary" type="button" onClick={() => void save()} loading={saving} loadingLabel={tCommon("saving")}>
+                {t("save")}
+              </AdminActionButton>
             </div>
           </section>
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("closeOnlyAllTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("closeOnlyAllTitle")}</h3>
             </div>
-            <div className="settingsMutedText" style={{ marginBottom: 12 }}>
+            <div className="settingsMutedText">
               {t("closeOnlyAllHint")}
             </div>
 
@@ -309,10 +312,10 @@ export default function AdminVaultSafetyPage() {
               </label>
             </div>
 
-            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn" type="button" onClick={() => void triggerCloseOnlyAll()} disabled={saving}>
-                {saving ? tCommon("saving") : t("triggerCloseOnlyAll")}
-              </button>
+            <div className="adminInlineActions">
+              <AdminActionButton icon="stop" type="button" onClick={() => void triggerCloseOnlyAll()} loading={saving} loadingLabel={tCommon("saving")}>
+                {t("triggerCloseOnlyAll")}
+              </AdminActionButton>
             </div>
 
             {lastCloseOnlyResult ? (

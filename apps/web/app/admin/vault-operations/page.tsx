@@ -1,10 +1,14 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminNotice from "../_components/AdminNotice";
+import AdminPageHeader from "../_components/AdminPageHeader";
+import AdminStatsCard from "../_components/AdminStatsCard";
+import AdminStatusBadge from "../_components/AdminStatusBadge";
 
 type VaultOpsStatusResponse = {
   updatedAt: string;
@@ -184,39 +188,8 @@ function short(value: string | null | undefined): string {
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
-function toneForStatus(value: string): CSSProperties {
-  const normalized = String(value).trim().toLowerCase();
-  if (normalized === "clean" || normalized === "execution_active" || normalized === "running") {
-    return { color: "#166534", background: "rgba(34, 197, 94, 0.14)", borderColor: "rgba(34, 197, 94, 0.28)" };
-  }
-  if (normalized === "warning" || normalized === "paused" || normalized === "settling" || normalized === "withdraw_pending") {
-    return { color: "#92400e", background: "rgba(245, 158, 11, 0.14)", borderColor: "rgba(245, 158, 11, 0.28)" };
-  }
-  if (normalized === "blocked" || normalized === "drift_detected" || normalized === "error") {
-    return { color: "#991b1b", background: "rgba(239, 68, 68, 0.14)", borderColor: "rgba(239, 68, 68, 0.28)" };
-  }
-  return { color: "var(--muted)", background: "rgba(148, 163, 184, 0.12)", borderColor: "rgba(148, 163, 184, 0.22)" };
-}
-
 function StatusPill({ label, value }: { label: string; value: string }) {
-  return (
-    <span
-      title={label}
-      style={{
-        ...toneForStatus(value),
-        borderWidth: 1,
-        borderStyle: "solid",
-        borderRadius: 999,
-        padding: "4px 8px",
-        fontSize: 12,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.05em"
-      }}
-    >
-      {label}
-    </span>
-  );
+  return <AdminStatusBadge value={value} label={label} />;
 }
 
 export default function AdminVaultOperationsPage() {
@@ -271,50 +244,58 @@ export default function AdminVaultOperationsPage() {
     : [];
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">{t("subtitle")}</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Link className="btn" href={withLocalePath("/admin", locale)}>
-          {tCommon("backToAdmin")}
-        </Link>
-        <Link className="btn" href={withLocalePath("/admin/exchanges", locale)}>
-          {t("openVenueHealth")}
-        </Link>
-        <button className="btn" type="button" onClick={() => void load()} disabled={loading}>
-          {loading ? t("loading") : t("refresh")}
-        </button>
+    <div className="adminPageStack">
+      <AdminPageHeader
+        eyebrow="Vault Operations"
+        title={t("title")}
+        description={t("subtitle")}
+        actions={[
+          { href: withLocalePath("/admin", locale), label: tCommon("backToAdmin"), icon: "back", variant: "secondary" },
+          { href: withLocalePath("/admin/system/integrations/exchanges", locale), label: t("openVenueHealth"), icon: "exchange", variant: "primary" }
+        ]}
+      />
+      <div className="adminToolbarRow">
+        <div className="settingsMutedText">
+          {payload ? t("summaryMeta", {
+            updatedAt: fmtDate(payload.updatedAt),
+            mode: payload.mode,
+            provider: payload.provider
+          }) : t("loading")}
+        </div>
+        <AdminActionButton icon="refresh" type="button" onClick={() => void load()} loading={loading}>
+          {t("refresh")}
+        </AdminActionButton>
       </div>
 
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
 
       {payload ? (
         <>
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("summaryTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("summaryTitle")}</h3>
             </div>
-            <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+            <div className="settingsMutedText">
               {t("summaryMeta", {
                 updatedAt: fmtDate(payload.updatedAt),
                 mode: payload.mode,
                 provider: payload.provider
               })}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-              <div className="card" style={{ padding: 10 }}><strong>{t("cards.totalVaults")}</strong><div>{payload.counts.totalBotVaults}</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{t("cards.openVaults")}</strong><div>{payload.counts.openBotVaults}</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{t("cards.runningExecutions")}</strong><div>{payload.counts.runningExecutions}</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{t("cards.executionErrors")}</strong><div>{payload.counts.executionErrorCount}</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{t("cards.pendingOnchainActions")}</strong><div>{payload.counts.pendingOnchainActions}</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{t("cards.laggingVaults")}</strong><div>{payload.counts.laggingReconciliationCount}</div></div>
+            <div className="adminStatsGrid">
+              <AdminStatsCard label={t("cards.totalVaults")} value={payload.counts.totalBotVaults} />
+              <AdminStatsCard label={t("cards.openVaults")} value={payload.counts.openBotVaults} />
+              <AdminStatsCard label={t("cards.runningExecutions")} value={payload.counts.runningExecutions} />
+              <AdminStatsCard label={t("cards.executionErrors")} value={payload.counts.executionErrorCount} />
+              <AdminStatsCard label={t("cards.pendingOnchainActions")} value={payload.counts.pendingOnchainActions} />
+              <AdminStatsCard label={t("cards.laggingVaults")} value={payload.counts.laggingReconciliationCount} />
             </div>
           </section>
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("lifecycleTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("lifecycleTitle")}</h3>
             </div>
             <div className="settingsMutedText" style={{ marginBottom: 10 }}>
               {t("lifecycleHint")}
@@ -335,7 +316,7 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("queueTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("queueTitle")}</h3>
             </div>
             {queueMetrics ? (
               <>
@@ -377,7 +358,7 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("reconciliationTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("reconciliationTitle")}</h3>
             </div>
             {reconciliation ? (
               <>
@@ -444,7 +425,7 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("safetyTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("safetyTitle")}</h3>
             </div>
             <div className="settingsMutedText">
 	              {t("safetyMeta", {
@@ -463,7 +444,7 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("jobsTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("jobsTitle")}</h3>
             </div>
             <div style={{ display: "grid", gap: 8 }}>
               {Object.entries(payload.health).map(([key, value]) => (
@@ -494,7 +475,7 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("issuesTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("issuesTitle")}</h3>
             </div>
             <div className="tableWrap">
               <table className="tableCompact">
@@ -530,7 +511,7 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("laggingTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("laggingTitle")}</h3>
             </div>
             <div className="settingsMutedText" style={{ marginBottom: 8 }}>
               {t("laggingHint", { seconds: String(payload.thresholds.reconciliationLagAlertSeconds) })}
@@ -569,7 +550,7 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("actionsTitle")}</h3>
+              <h3 className="adminSubsectionTitle">{t("actionsTitle")}</h3>
             </div>
             <div className="tableWrap">
               <table className="tableCompact">

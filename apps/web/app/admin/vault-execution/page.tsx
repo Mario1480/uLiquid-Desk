@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import type { Hex } from "viem";
@@ -9,6 +8,8 @@ import { switchChain } from "wagmi/actions";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminNotice from "../_components/AdminNotice";
 import AdminPageHeader from "../_components/AdminPageHeader";
 import Web3Providers from "../../components/Web3Providers";
 
@@ -309,19 +310,20 @@ function AdminVaultExecutionPageContent() {
   return (
     <div className="adminPageStack">
       <AdminPageHeader
+        eyebrow="Vault Controls"
         title={t("title")}
         description={t("subtitle")}
-        actions={[{ href: withLocalePath("/admin/grid-hyperliquid-pilot", locale), label: t("pilot.openOverview") }]}
+        actions={[{ href: withLocalePath("/admin/system/vaults/grid-hyperliquid-pilot", locale), label: t("pilot.openOverview"), icon: "grid", variant: "primary" }]}
       />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
 
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <AdminNotice tone="danger">{error}</AdminNotice>
       ) : null}
 
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <AdminNotice tone="success">{notice}</AdminNotice>
       ) : null}
 
       {isSuperadmin ? (
@@ -438,10 +440,10 @@ function AdminVaultExecutionPageContent() {
           </div>
 
           <div className="adminInlineActions" style={{ marginTop: 12 }}>
-            <button className="btn" type="button" onClick={loadDefault}>{t("loadDefault")}</button>
-            <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
-              {saving ? tCommon("saving") : t("save")}
-            </button>
+            <AdminActionButton icon="restore" type="button" onClick={loadDefault}>{t("loadDefault")}</AdminActionButton>
+            <AdminActionButton icon="save" variant="primary" type="button" onClick={() => void save()} loading={saving} loadingLabel={tCommon("saving")}>
+              {t("save")}
+            </AdminActionButton>
           </div>
         </section>
 
@@ -518,25 +520,26 @@ function AdminVaultExecutionPageContent() {
           </div>
 
           <div className="adminInlineActions" style={{ marginTop: 12 }}>
-            <button className="btn" type="button" onClick={() => void saveTreasury()} disabled={treasurySaving}>
-              {treasurySaving ? tCommon("saving") : t("treasury.save")}
-            </button>
-            <button
-              className="btn btnPrimary"
+            <AdminActionButton icon="save" type="button" onClick={() => void saveTreasury()} loading={treasurySaving} loadingLabel={tCommon("saving")}>
+              {t("treasury.save")}
+            </AdminActionButton>
+            <AdminActionButton
+              icon="send"
+              variant="primary"
               type="button"
               onClick={() => void sendTreasuryConfigTx("recipient")}
               disabled={!treasurySettings?.walletAddress || !treasuryEnabled || treasuryTxBusy || isWalletPending}
             >
               {treasuryTxBusy || isWalletPending ? t("treasury.sendingTx") : t("treasury.sendRecipientTx")}
-            </button>
-            <button
-              className="btn"
+            </AdminActionButton>
+            <AdminActionButton
+              icon="send"
               type="button"
               onClick={() => void sendTreasuryConfigTx("fee_rate")}
               disabled={!treasuryEnabled || treasuryTxBusy || isWalletPending}
             >
               {treasuryTxBusy || isWalletPending ? t("treasury.sendingTx") : t("treasury.sendFeeRateTx")}
-            </button>
+            </AdminActionButton>
           </div>
 
           <div className="adminMetricGrid" style={{ marginTop: 16 }}>

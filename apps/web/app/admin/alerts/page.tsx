@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut } from "../../../lib/api";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminConfirmDialog from "../_components/AdminConfirmDialog";
 import AdminEmptyState from "../_components/AdminEmptyState";
 import AdminFilterBar from "../_components/AdminFilterBar";
+import AdminNotice from "../_components/AdminNotice";
 import AdminPageHeader from "../_components/AdminPageHeader";
 import AdminPagination from "../_components/AdminPagination";
 import AdminStatusBadge from "../_components/AdminStatusBadge";
@@ -21,6 +24,7 @@ export default function AdminAlertsPage() {
   const [status, setStatus] = useState("");
   const [savingRetention, setSavingRetention] = useState(false);
   const [actionLoading, setActionLoading] = useState<"" | "delete-all" | "delete-old">("");
+  const [pendingDeleteScope, setPendingDeleteScope] = useState<"all" | "older_than_30_days" | null>(null);
 
   async function loadCurrent(nextPage = page) {
     setLoading(true);
@@ -70,11 +74,7 @@ export default function AdminAlertsPage() {
   }
 
   async function deleteAlerts(scope: "all" | "older_than_30_days") {
-    const confirmMessage = scope === "all"
-      ? "Delete all platform alerts? This cannot be undone."
-      : "Delete all platform alerts older than 30 days?";
-    if (typeof window !== "undefined" && !window.confirm(confirmMessage)) return;
-
+    setPendingDeleteScope(null);
     setActionLoading(scope === "all" ? "delete-all" : "delete-old");
     setError(null);
     setNotice(null);
@@ -101,11 +101,11 @@ export default function AdminAlertsPage() {
       <section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
-            <h3 style={{ margin: 0 }}>Retention & Cleanup</h3>
+            <h3 className="adminSubsectionTitle">Retention & Cleanup</h3>
             <div className="settingsSectionMeta">Manage platform alert retention and bulk cleanup.</div>
           </div>
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <label className="adminCheckboxLabel">
           <input
             type="checkbox"
             checked={Boolean(data?.retention?.autoDeleteOlderThan30Days)}
@@ -114,16 +114,16 @@ export default function AdminAlertsPage() {
           />
           <span>Automatically delete alerts older than 30 days.</span>
         </label>
-        <div className="settingsMutedText" style={{ marginBottom: 12 }}>
+        <div className="settingsMutedText">
           Older resolved and historical alerts can otherwise grow indefinitely. Last updated: {formatDateTime(data?.retention?.updatedAt)}
         </div>
         <div className="adminInlineActions">
-          <button className="btn" disabled={actionLoading !== ""} onClick={() => void deleteAlerts("older_than_30_days")}>
+          <AdminActionButton icon="delete" disabled={actionLoading !== ""} onClick={() => setPendingDeleteScope("older_than_30_days")}>
             {actionLoading === "delete-old" ? "Deleting…" : "Delete older than 30 days"}
-          </button>
-          <button className="btn btnDanger" disabled={actionLoading !== ""} onClick={() => void deleteAlerts("all")}>
+          </AdminActionButton>
+          <AdminActionButton icon="delete" variant="danger" disabled={actionLoading !== ""} onClick={() => setPendingDeleteScope("all")}>
             {actionLoading === "delete-all" ? "Deleting…" : "Delete all alerts"}
-          </button>
+          </AdminActionButton>
         </div>
       </section>
       <AdminFilterBar>
@@ -134,8 +134,8 @@ export default function AdminAlertsPage() {
         </div>
       </AdminFilterBar>
       {loading ? <div className="settingsMutedText">Loading alerts…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
+      {notice ? <AdminNotice tone="success">{notice}</AdminNotice> : null}
       {data?.items?.length > 0 ? (
         <>
           <AdminTable columns={["Severity", "Status", "Type", "Source", "User", "Workspace", "Bot", "Runner", "Message", "Created", "Actions"]}>
@@ -153,8 +153,8 @@ export default function AdminAlertsPage() {
                 <td>{formatDateTime(item.createdAt)}</td>
                 <td>
                   <div className="adminInlineActions">
-                    {item.status === "open" ? <button className="btn" onClick={() => void updateStatus(item.id, "acknowledged")}>Acknowledge</button> : null}
-                    {item.status !== "resolved" ? <button className="btn" onClick={() => void updateStatus(item.id, "resolved")}>Resolve</button> : null}
+                    {item.status === "open" ? <AdminActionButton icon="check" onClick={() => void updateStatus(item.id, "acknowledged")}>Acknowledge</AdminActionButton> : null}
+                    {item.status !== "resolved" ? <AdminActionButton icon="confirm" onClick={() => void updateStatus(item.id, "resolved")}>Resolve</AdminActionButton> : null}
                   </div>
                 </td>
               </tr>
@@ -164,6 +164,17 @@ export default function AdminAlertsPage() {
         </>
       ) : null}
       {!loading && data?.items?.length === 0 ? <AdminEmptyState title="No alerts found" /> : null}
+      <AdminConfirmDialog
+        open={Boolean(pendingDeleteScope)}
+        title={pendingDeleteScope === "all" ? "Delete all alerts" : "Delete old alerts"}
+        description={pendingDeleteScope === "all" ? "Delete all platform alerts? This cannot be undone." : "Delete all platform alerts older than 30 days?"}
+        confirmLabel={pendingDeleteScope === "all" ? "Delete all alerts" : "Delete old alerts"}
+        loading={actionLoading !== ""}
+        onCancel={() => setPendingDeleteScope(null)}
+        onConfirm={() => {
+          if (pendingDeleteScope) void deleteAlerts(pendingDeleteScope);
+        }}
+      />
     </div>
   );
 }

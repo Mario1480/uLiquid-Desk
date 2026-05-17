@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLocale } from "next-intl";
 import { extractLocaleFromPathname, withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon } from "../../components/AppIcon";
 import type { AdminSectionNavItem } from "./admin-sections";
 
 function isActivePath(currentPath: string, href: string): boolean {
@@ -33,6 +34,7 @@ export default function AdminSectionNav({
           href={withLocalePath(item.href, locale)}
           className={`adminSectionNavLink ${isActivePath(currentPath, item.href) ? "adminSectionNavLinkActive" : ""}`}
         >
+          {item.icon ? <AppIcon name={item.icon} /> : null}
           {item.label}
         </Link>
       ))}

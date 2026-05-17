@@ -1,10 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminActionButton from "../_components/AdminActionButton";
+import AdminConfirmDialog from "../_components/AdminConfirmDialog";
+import AdminNotice from "../_components/AdminNotice";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 type AiTraceSettingsResponse = {
   enabled: boolean;
@@ -124,8 +126,6 @@ function fmtBytes(value: number | null | undefined): string {
 
 export default function AdminAiTracePage() {
   const t = useTranslations("admin.aiTrace");
-  const tCommon = useTranslations("admin.common");
-  const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -133,6 +133,7 @@ export default function AdminAiTracePage() {
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmDeleteAllOpen, setConfirmDeleteAllOpen] = useState(false);
 
   const [settings, setSettings] = useState<AiTraceSettingsResponse | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -261,7 +262,7 @@ export default function AdminAiTracePage() {
   }
 
   async function cleanupAllLogs() {
-    if (!confirm(t("messages.confirmDeleteAll"))) return;
+    setConfirmDeleteAllOpen(false);
     setCleanupLoading(true);
     setError(null);
     setNotice(null);
@@ -279,19 +280,15 @@ export default function AdminAiTracePage() {
   }
 
   return (
-    <div className="settingsWrap">
-
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">
-        {t("subtitle")}
-      </div>
+    <div className="adminPageStack">
+      <AdminPageHeader eyebrow="AI Controls" title={t("title")} description={t("subtitle")} />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <AdminNotice tone="danger">{error}</AdminNotice>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <AdminNotice tone="success">{notice}</AdminNotice>
       ) : null}
 
       {isSuperadmin ? (
@@ -432,13 +429,13 @@ export default function AdminAiTracePage() {
               </label>
             </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-              <button className="btn btnPrimary" type="button" disabled={saving} onClick={() => void saveSettings()}>
-                {saving ? t("saving") : t("saveSettings")}
-              </button>
-              <button className="btn" type="button" onClick={() => void loadAll()}>
+            <div className="adminInlineActions">
+              <AdminActionButton icon="save" variant="primary" type="button" loading={saving} loadingLabel={t("saving")} onClick={() => void saveSettings()}>
+                {t("saveSettings")}
+              </AdminActionButton>
+              <AdminActionButton icon="refresh" type="button" onClick={() => void loadAll()}>
                 {t("reload")}
-              </button>
+              </AdminActionButton>
             </div>
           </section>
 
@@ -494,16 +491,16 @@ export default function AdminAiTracePage() {
               </label>
             </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-              <button className="btn" type="button" disabled={loadingLogs} onClick={() => void loadLogs(Number(logLimit), logUserFilter)}>
-                {loadingLogs ? t("loading") : t("refreshLogs")}
-              </button>
-              <button className="btn" type="button" disabled={cleanupLoading} onClick={() => void cleanupOldLogs()}>
+            <div className="adminInlineActions">
+              <AdminActionButton icon="refresh" type="button" loading={loadingLogs} loadingLabel={t("loading")} onClick={() => void loadLogs(Number(logLimit), logUserFilter)}>
+                {t("refreshLogs")}
+              </AdminActionButton>
+              <AdminActionButton icon="delete" type="button" disabled={cleanupLoading} onClick={() => void cleanupOldLogs()}>
                 {t("deleteOldLogs")}
-              </button>
-              <button className="btn" type="button" disabled={cleanupLoading} onClick={() => void cleanupAllLogs()}>
+              </AdminActionButton>
+              <AdminActionButton icon="delete" variant="danger" type="button" disabled={cleanupLoading} onClick={() => setConfirmDeleteAllOpen(true)}>
                 {t("deleteAllLogs")}
-              </button>
+              </AdminActionButton>
             </div>
 
             {logs.length === 0 ? (
@@ -600,6 +597,15 @@ export default function AdminAiTracePage() {
           </section>
         </>
       ) : null}
+      <AdminConfirmDialog
+        open={confirmDeleteAllOpen}
+        title={t("deleteAllLogs")}
+        description={t("messages.confirmDeleteAll")}
+        confirmLabel={t("deleteAllLogs")}
+        loading={cleanupLoading}
+        onCancel={() => setConfirmDeleteAllOpen(false)}
+        onConfirm={() => void cleanupAllLogs()}
+      />
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { apiDelete, apiGet, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
+import AdminActionButton from "../../_components/AdminActionButton";
+import AdminConfirmDialog from "../../_components/AdminConfirmDialog";
 import AdminDetailSection from "../../_components/AdminDetailSection";
 import AdminEmptyState from "../../_components/AdminEmptyState";
 import AdminPageHeader from "../../_components/AdminPageHeader";
@@ -153,6 +155,7 @@ export default function AdminUserDetailPage() {
   const [submittingPassword, setSubmittingPassword] = useState(false);
   const [submittingAccess, setSubmittingAccess] = useState(false);
   const [submittingDelete, setSubmittingDelete] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [nextPassword, setNextPassword] = useState("");
   const [affiliate, setAffiliate] = useState<UserAffiliateDetailResponse | null>(null);
   const [affiliateDraftFeeRatePct, setAffiliateDraftFeeRatePct] = useState("");
@@ -258,7 +261,7 @@ export default function AdminUserDetailPage() {
 
   async function handleDeleteUser() {
     if (!data || data.isSuperadmin) return;
-    if (typeof window !== "undefined" && !window.confirm(`Delete ${data.email}? This cannot be undone.`)) return;
+    setConfirmDeleteOpen(false);
     setSubmittingDelete(true);
     setError(null);
     setNotice(null);
@@ -488,23 +491,23 @@ export default function AdminUserDetailPage() {
                     <input className="input" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} placeholder="Enter a new temporary password" />
                   </label>
                   <div className="adminInlineActions">
-                    <button type="button" className="btn" onClick={generateTemporaryPassword}>
+                    <AdminActionButton icon="key" type="button" onClick={generateTemporaryPassword}>
                       Generate temp password
-                    </button>
-                    <button type="submit" className="btn btnPrimary" disabled={submittingPassword || nextPassword.trim().length < 8}>
-                      {submittingPassword ? "Updating…" : "Reset password"}
-                    </button>
+                    </AdminActionButton>
+                    <AdminActionButton icon="reset" variant="primary" type="submit" disabled={nextPassword.trim().length < 8} loading={submittingPassword} loadingLabel="Updating...">
+                      Reset password
+                    </AdminActionButton>
                   </div>
                 </form>
 
                 {!data.isSuperadmin ? (
                   <div className="adminInlineActions">
-                    <button type="button" className="btn" onClick={handleAdminAccessToggle} disabled={submittingAccess}>
-                      {submittingAccess ? "Saving…" : data.hasAdminBackendAccess ? "Revoke backend admin access" : "Grant backend admin access"}
-                    </button>
-                    <button type="button" className="btn" onClick={handleDeleteUser} disabled={submittingDelete}>
-                      {submittingDelete ? "Deleting…" : "Delete user"}
-                    </button>
+                    <AdminActionButton icon={data.hasAdminBackendAccess ? "disable" : "shield"} type="button" onClick={handleAdminAccessToggle} loading={submittingAccess} loadingLabel="Saving...">
+                      {data.hasAdminBackendAccess ? "Revoke backend admin access" : "Grant backend admin access"}
+                    </AdminActionButton>
+                    <AdminActionButton icon="delete" variant="danger" type="button" onClick={() => setConfirmDeleteOpen(true)} loading={submittingDelete} loadingLabel="Deleting...">
+                      Delete user
+                    </AdminActionButton>
                   </div>
                 ) : (
                   <div className="settingsMutedText">Superadmin accounts cannot be deleted or have backend admin access toggled here.</div>
@@ -604,6 +607,15 @@ export default function AdminUserDetailPage() {
           </div>
         </>
       ) : null}
+      <AdminConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete user"
+        description={data ? `Delete ${data.email}? This cannot be undone.` : ""}
+        confirmLabel="Delete user"
+        loading={submittingDelete}
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => void handleDeleteUser()}
+      />
     </div>
   );
 }

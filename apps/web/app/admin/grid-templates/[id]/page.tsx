@@ -1,11 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
+import AdminActionButton from "../../_components/AdminActionButton";
+import AdminConfirmDialog from "../../_components/AdminConfirmDialog";
+import AdminNotice from "../../_components/AdminNotice";
+import AdminPageHeader from "../../_components/AdminPageHeader";
 import {
   labelFromAllocationMode,
   labelFromAutoReservePolicy,
@@ -431,6 +434,7 @@ export default function AdminGridTemplateDetailPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
   const [symbolSourceAccountId, setSymbolSourceAccountId] = useState<string>("");
   const [symbolOptions, setSymbolOptions] = useState<PerpSymbolOption[]>([]);
@@ -756,8 +760,7 @@ export default function AdminGridTemplateDetailPage() {
 
   async function deleteTemplate() {
     if (!template || saving) return;
-    const confirmed = window.confirm(tDetail("messages.confirmDelete", { name: template.name }));
-    if (!confirmed) return;
+    setConfirmDeleteOpen(false);
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -778,28 +781,30 @@ export default function AdminGridTemplateDetailPage() {
   }
 
   return (
-    <div className="settingsWrap" style={{ maxWidth: 1400 }}>
-      <h2 style={{ marginTop: 0 }}>{tDetail("title")}</h2>
-      {template ? (
-        <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-          {template.name} · {template.symbol} · {labelFromMode(template.mode, tCreate)} · {labelFromGridMode(template.gridMode, tCreate)}
-        </div>
-      ) : null}
+    <div className="adminPageStack">
+      <AdminPageHeader
+        eyebrow="Grid Template"
+        title={tDetail("title")}
+        description={template ? `${template.name} · ${template.symbol} · ${labelFromMode(template.mode, tCreate)} · ${labelFromGridMode(template.gridMode, tCreate)}` : undefined}
+        actions={[
+          { href: withLocalePath("/admin/system/ai/grid-templates", locale), label: tCommon("backToAdmin"), icon: "back", variant: "secondary" }
+        ]}
+      />
 
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
+      {notice ? <AdminNotice tone="success">{notice}</AdminNotice> : null}
 
-      <div className="gridTemplateCreateLayout" style={{ marginTop: 12 }}>
+      <div className="gridTemplateCreateLayout">
       <section className="card settingsSection">
         <div className="settingsSectionHeader">
-          <h3 style={{ margin: 0 }}>{tDetail("sections.settings")}</h3>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className={template?.isPublished ? "btn btnDanger" : "btn btnPrimary"} disabled={disabled} onClick={() => void togglePublish()}>
+          <h3 className="adminSubsectionTitle">{tDetail("sections.settings")}</h3>
+          <div className="adminInlineActions">
+            <AdminActionButton icon={template?.isPublished ? "archive" : "upload"} variant={template?.isPublished ? "danger" : "primary"} disabled={disabled} onClick={() => void togglePublish()}>
               {template?.isPublished ? tDetail("actions.archive") : tDetail("actions.publish")}
-            </button>
-            <button className="btn btnDanger" disabled={disabled} onClick={() => void deleteTemplate()}>
+            </AdminActionButton>
+            <AdminActionButton icon="delete" variant="danger" disabled={disabled} onClick={() => setConfirmDeleteOpen(true)}>
               {tDetail("actions.delete")}
-            </button>
+            </AdminActionButton>
           </div>
         </div>
 
@@ -1100,7 +1105,7 @@ export default function AdminGridTemplateDetailPage() {
               <span>{tDetail("fields.allowProfitWithdraw")}</span>
             </label>
             <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button className="btn btnPrimary" type="submit" disabled={disabled}>{saving ? tDetail("states.saving") : tDetail("actions.saveTemplate")}</button>
+            <AdminActionButton icon="save" variant="primary" type="submit" disabled={disabled} loading={saving} loadingLabel={tDetail("states.saving")}>{tDetail("actions.saveTemplate")}</AdminActionButton>
             </div>
           </form>
         )}
@@ -1108,10 +1113,10 @@ export default function AdminGridTemplateDetailPage() {
 
       <section className="card settingsSection">
         <div className="settingsSectionHeader">
-          <h3 style={{ margin: 0 }}>{tDetail("sections.preview")}</h3>
-          <button className="btn" onClick={() => void runPreview()} disabled={!template || !previewInput || previewLoading}>
-            {previewLoading ? tDetail("states.previewing") : tDetail("actions.runPreview")}
-          </button>
+          <h3 className="adminSubsectionTitle">{tDetail("sections.preview")}</h3>
+          <AdminActionButton icon="preview" onClick={() => void runPreview()} disabled={!template || !previewInput} loading={previewLoading} loadingLabel={tDetail("states.previewing")}>
+            {tDetail("actions.runPreview")}
+          </AdminActionButton>
         </div>
 
         {!previewInput ? (
@@ -1263,6 +1268,15 @@ export default function AdminGridTemplateDetailPage() {
         ) : null}
       </section>
       </div>
+      <AdminConfirmDialog
+        open={confirmDeleteOpen}
+        title={tDetail("actions.delete")}
+        description={template ? tDetail("messages.confirmDelete", { name: template.name }) : ""}
+        confirmLabel={tDetail("actions.delete")}
+        loading={saving}
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => void deleteTemplate()}
+      />
     </div>
   );
 }

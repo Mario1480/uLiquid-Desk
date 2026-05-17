@@ -6,11 +6,17 @@ import { useLocale } from "next-intl";
 import { useMemo, useState } from "react";
 import { extractLocaleFromPathname, withLocalePath, type AppLocale } from "../../../i18n/config";
 import { AppIcon } from "../../components/AppIcon";
-import { ADMIN_NAV_ITEMS } from "./admin-nav";
+import { ADMIN_NAV_ITEMS, type AdminNavItem } from "./admin-nav";
 
-function isActivePath(currentPath: string, href: string): boolean {
-  if (href === "/admin") return currentPath === "/admin";
-  return currentPath === href || currentPath.startsWith(`${href}/`);
+function isActivePath(currentPath: string, item: AdminNavItem): boolean {
+  const hasCustomRules = Boolean(item.activeExact?.length || item.activePrefixes?.length);
+  if (item.activeExact?.includes(currentPath)) return true;
+  if (item.activePrefixes?.some((prefix) => currentPath === prefix || currentPath.startsWith(`${prefix}/`))) {
+    return true;
+  }
+  if (hasCustomRules) return false;
+  if (item.href === "/admin") return currentPath === "/admin";
+  return currentPath === item.href || currentPath.startsWith(`${item.href}/`);
 }
 
 export default function AdminLayoutClient({ children }: { children: React.ReactNode }) {
@@ -24,7 +30,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
       ADMIN_NAV_ITEMS.map((item) => ({
         ...item,
         localizedHref: withLocalePath(item.href, locale),
-        active: isActivePath(currentPath, item.href)
+        active: isActivePath(currentPath, item)
       })),
     [currentPath, locale]
   );
@@ -56,7 +62,11 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
                 className={`adminSidebarLink ${item.active ? "adminSidebarLinkActive" : ""}`}
                 onClick={() => setSidebarOpen(false)}
               >
-                {item.shortLabel ?? item.label}
+                <span className="adminSidebarLinkLabel">
+                  <AppIcon name={item.icon} />
+                  {item.shortLabel ?? item.label}
+                </span>
+                <AppIcon name="chevronRight" className="adminSidebarLinkChevron" />
               </Link>
             ))}
           </nav>
