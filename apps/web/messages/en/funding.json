@@ -8,6 +8,7 @@
     "locationHyperCore": "HyperCore",
     "locationHyperEvm": "HyperEVM",
     "locationMasterVault": "BotVault",
+    "locationFundingVault": "Funding Vault",
     "locationUnknown": "Unknown",
     "ready": "Ready"
   },
@@ -64,7 +65,7 @@
     "attention": "Attention",
     "loading": "Loading",
     "actions": {
-      "botvaultFunding": "Fund BotVault wallet",
+      "botvaultFunding": "Fund user wallet",
       "botvaultWithdrawal": "Withdraw to Arbitrum",
       "deposit": "Deposit",
       "withdraw": "Withdraw",
@@ -72,9 +73,9 @@
       "coreEvm": "EVM ↔ Core"
     },
     "cards": {
-      "relayTitle": "BotVault wallet",
-      "relaySubtitle": "Bridge USDC to HyperEVM for BotVault starts or withdraw unused USDC back to Arbitrum.",
-      "relayConnectHint": "Connect a wallet to fund the BotVault wallet on HyperEVM or withdraw USDC back to Arbitrum.",
+      "relayTitle": "User wallet",
+      "relaySubtitle": "Bridge USDC to HyperEVM for your connected wallet or withdraw unused USDC back to Arbitrum.",
+      "relayConnectHint": "Connect a wallet to fund your HyperEVM user wallet or withdraw USDC back to Arbitrum.",
       "bridgeTitle": "Trading account funding",
       "bridgeSubtitle": "Arbitrum -> HyperCore route for Hyperliquid trading balances.",
       "arbitrumUsdc": "Arbitrum USDC",
@@ -111,10 +112,10 @@
       "create": "Create Funding Vault",
       "creating": "Creating...",
       "deposit": "Deposit",
-      "ownerWithdraw": "Wallet withdraw",
+      "ownerWithdraw": "Withdraw to user wallet",
       "agentWithdraw": "Agent withdraw",
       "depositPlaceholder": "USDC to deposit",
-      "withdrawPlaceholder": "USDC to withdraw",
+      "withdrawPlaceholder": "USDC to withdraw to user wallet",
       "positiveAmount": "Enter a positive USDC amount.",
       "modeDisabled": "Onchain mode is disabled.",
       "connectWallet": "Connect your linked wallet first.",
@@ -134,7 +135,7 @@
     }
   },
   "relay": {
-    "title": "Fund BotVault wallet",
+    "title": "Fund user wallet",
     "subtitle": "Bridge Arbitrum USDC directly to HyperEVM and optionally add HYPE for gas.",
     "networkReady": "Arbitrum ready",
     "networkMismatch": "Wrong network",
@@ -163,7 +164,7 @@
       "notIncluded": "Not included"
     },
     "execute": {
-      "button": "Fund BotVault wallet",
+      "button": "Fund user wallet",
       "busy": "Funding...",
       "awaitingHype": "Confirm the HYPE gas top-up transactions in your wallet.",
       "awaitingUsdc": "Confirm the USDC bridge transactions in your wallet.",

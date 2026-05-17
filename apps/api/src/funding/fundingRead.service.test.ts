@@ -89,6 +89,44 @@ test("getFundingHistory merges Hyperliquid ledger events and keeps tracked inten
           },
           createdAt: "2026-05-09T10:00:00.000Z",
           updatedAt: "2026-05-09T10:01:00.000Z"
+        },
+        {
+          id: "act_2",
+          actionType: "funding_relay_usdc_to_hyperevm",
+          status: "confirmed",
+          txHash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          chainId: 42161,
+          metadata: {
+            amountFormatted: "10",
+            asset: "USDC",
+            direction: "arbitrum_to_hyperevm_usdc"
+          },
+          createdAt: "2026-05-09T11:00:00.000Z",
+          updatedAt: "2026-05-09T11:01:00.000Z"
+        },
+        {
+          id: "act_3",
+          actionType: "deposit_funding_vault",
+          status: "confirmed",
+          txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          chainId: 999,
+          metadata: {
+            amountUsd: 25
+          },
+          createdAt: "2026-05-09T12:00:00.000Z",
+          updatedAt: "2026-05-09T12:01:00.000Z"
+        },
+        {
+          id: "act_4",
+          actionType: "withdraw_funding_vault",
+          status: "confirmed",
+          txHash: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          chainId: 999,
+          metadata: {
+            amountUsd: 5
+          },
+          createdAt: "2026-05-09T12:10:00.000Z",
+          updatedAt: "2026-05-09T12:11:00.000Z"
         }
       ]
     });
@@ -99,6 +137,24 @@ test("getFundingHistory merges Hyperliquid ledger events and keeps tracked inten
     assert.equal(duplicateTxItems.length, 1);
     assert.equal(duplicateTxItems[0]?.id, "act_1");
     assert.equal(duplicateTxItems[0]?.status, "submitted");
+
+    const relayFunding = payload.items.find((item) => item.id === "act_2");
+    assert.equal(relayFunding?.title, "User wallet funding");
+    assert.equal(relayFunding?.status, "confirmed");
+
+    const vaultDeposit = payload.items.find((item) => item.id === "act_3");
+    assert.equal(vaultDeposit?.actionId, "deposit_funding_vault");
+    assert.equal(vaultDeposit?.title, "Funding Vault deposit");
+    assert.equal(vaultDeposit?.description, "User wallet -> Funding Vault deposit (25 USDC).");
+    assert.equal(vaultDeposit?.locationFrom, "hyperEvm");
+    assert.equal(vaultDeposit?.locationTo, "fundingVault");
+
+    const vaultWithdrawal = payload.items.find((item) => item.id === "act_4");
+    assert.equal(vaultWithdrawal?.actionId, "withdraw_funding_vault");
+    assert.equal(vaultWithdrawal?.title, "Funding Vault withdrawal");
+    assert.equal(vaultWithdrawal?.description, "Funding Vault -> User wallet withdrawal (5 USDC).");
+    assert.equal(vaultWithdrawal?.locationFrom, "fundingVault");
+    assert.equal(vaultWithdrawal?.locationTo, "hyperEvm");
 
     const accountClassTransfer = payload.items.find(
       (item) => item.txHash === "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

@@ -148,6 +148,41 @@ test("POST /agent-wallet/withdraw-hype delegates to user agent wallet flow", asy
   assert.equal(res.body?.txHash, "0xagent");
 });
 
+test("POST /agent-wallet/fund-hype records user agent wallet funding", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    botVaultV3Service: {
+      async recordUserAgentWalletHypeFunding(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.amountHype, 0.02);
+        assert.equal(input.fromAddress, "0x1111111111111111111111111111111111111111");
+        assert.equal(input.txHash, "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        return {
+          actionId: "act_1",
+          txHash: input.txHash,
+          agentWalletSummary: {
+            address: "0x3333333333333333333333333333333333333333"
+          }
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/agent-wallet/fund-hype");
+  const res = createMockRes("user_1");
+  await handler({
+    body: {
+      amountHype: 0.02,
+      fromAddress: "0x1111111111111111111111111111111111111111",
+      txHash: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.actionId, "act_1");
+});
+
 test("legacy POST /vaults/master/withdraw returns 410", async () => {
   const app = createFakeApp();
   registerVaultRoutes(app as any, { vaultService: {} as any });

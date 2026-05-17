@@ -56,6 +56,9 @@ export type AgentWalletSummaryResponse = {
   address: string | null;
   version: number;
   secretRef?: string | null;
+  managed?: boolean;
+  canWithdraw?: boolean;
+  secretStatus?: "available" | "missing";
   hypeBalance: string | null;
   hypeBalanceWei: string | null;
   lowHypeThreshold: number;

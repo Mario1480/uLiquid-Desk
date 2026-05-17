@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { ApiError, apiGet, apiPost } from "../../lib/api";
+import { ApiError, apiGet } from "../../lib/api";
 import type { FundingFeatureConfig, WalletFundingOverview } from "../../lib/funding/types";
 import type { TransferFeatureConfig, WalletTransferOverview } from "../../lib/transfers/types";
 import { formatToken, shortAddress } from "../../lib/wallet/format";
@@ -268,7 +268,6 @@ export function FundingVaultManagementSection() {
   const tCommon = useTranslations("funding.common");
   const [depositAmount, setDepositAmount] = useState("25");
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [agentBusy, setAgentBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localNotice, setLocalNotice] = useState<string | null>(null);
 
@@ -287,7 +286,7 @@ export function FundingVaultManagementSection() {
   const vault = overview?.fundingVault ?? null;
   const ready = Boolean(vault?.onchainAddress && overview?.agentWalletAddress);
   const canCreate = Boolean(overview?.setup?.canCreate);
-  const busy = Boolean(flow.busyKey) || agentBusy;
+  const busy = Boolean(flow.busyKey);
   const actionError = localError ?? flow.error ?? (overviewQuery.error ? errMsg(overviewQuery.error) : null);
   const actionNotice = localNotice ?? flow.notice ?? null;
 
@@ -326,33 +325,6 @@ export function FundingVaultManagementSection() {
       }
     } catch (error) {
       setLocalError(errMsg(error));
-    }
-  }
-
-  async function executeAgentWithdraw() {
-    const amount = parsePositiveUsd(withdrawAmount);
-    if (!amount) {
-      setLocalError(t("fundingVault.positiveAmount"));
-      return;
-    }
-    setAgentBusy(true);
-    setLocalError(null);
-    setLocalNotice(null);
-    try {
-      await apiPost("/vaults/funding-vault/agent-withdraw", {
-        amountUsd: amount,
-        actionKey: createIdempotencyKey("funding-vault-agent-withdraw")
-      });
-      setWithdrawAmount("");
-      setLocalNotice(t("fundingVault.agentWithdrawSubmitted"));
-      await Promise.all([
-        overviewQuery.refetch(),
-        flow.load().catch(() => undefined)
-      ]);
-    } catch (error) {
-      setLocalError(errMsg(error));
-    } finally {
-      setAgentBusy(false);
     }
   }
 
@@ -418,10 +390,6 @@ export function FundingVaultManagementSection() {
           <button type="button" className="btn" onClick={() => void executeWalletAction("withdraw")} disabled={!ready || busy}>
             <AppIcon name="withdraw" />
             {t("fundingVault.ownerWithdraw")}
-          </button>
-          <button type="button" className="btn btnPrimary" onClick={() => void executeAgentWithdraw()} disabled={!ready || busy}>
-            <AppIcon name="withdraw" />
-            {t("fundingVault.agentWithdraw")}
           </button>
         </div>
       </div>

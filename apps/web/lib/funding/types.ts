@@ -1,6 +1,6 @@
 import type { WalletFeatureConfig } from "../wallet/types";
 
-export type FundingLocation = "arbitrum" | "hyperCore" | "hyperEvm" | "masterVault";
+export type FundingLocation = "arbitrum" | "hyperCore" | "hyperEvm" | "masterVault" | "fundingVault";
 
 export type FundingBalanceState = "available" | "zero" | "unavailable";
 
@@ -196,6 +196,10 @@ export type FundingHistoryItem = {
     | "create_master_vault"
     | "withdraw_master_vault"
     | "master_vault_deposit"
+    | "create_funding_vault"
+    | "deposit_funding_vault"
+    | "withdraw_funding_vault"
+    | "agent_withdraw_funding_vault"
     | "withdraw_usdc_from_hyperliquid"
     | "transfer_core_to_evm"
     | "transfer_evm_to_core"

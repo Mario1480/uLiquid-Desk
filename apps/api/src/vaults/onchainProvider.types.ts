@@ -33,6 +33,8 @@ export type OnchainActionType =
   | "funding_transfer_core_to_evm"
   | "funding_transfer_evm_to_core"
   | "funding_usd_class_transfer"
+  | "fund_user_agent_wallet_hype"
+  | "withdraw_user_agent_wallet_hype"
   | "set_treasury_recipient"
   | "set_profit_share_fee_rate"
   | "create_funding_vault"

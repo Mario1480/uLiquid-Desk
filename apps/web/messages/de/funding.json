@@ -8,6 +8,7 @@
     "locationHyperCore": "HyperCore",
     "locationHyperEvm": "HyperEVM",
     "locationMasterVault": "BotVault",
+    "locationFundingVault": "Funding Vault",
     "locationUnknown": "Unbekannt",
     "ready": "Bereit"
   },
@@ -64,7 +65,7 @@
     "attention": "Achtung",
     "loading": "Lädt",
     "actions": {
-      "botvaultFunding": "BotVault-Wallet funden",
+      "botvaultFunding": "User-Wallet funden",
       "botvaultWithdrawal": "Zu Arbitrum auszahlen",
       "deposit": "Einzahlen",
       "withdraw": "Auszahlen",
@@ -72,9 +73,9 @@
       "coreEvm": "EVM ↔ Core"
     },
     "cards": {
-      "relayTitle": "BotVault-Wallet",
-      "relaySubtitle": "Bridge USDC zu HyperEVM fuer BotVault-Starts oder hole ungenutztes USDC zurueck nach Arbitrum.",
-      "relayConnectHint": "Verbinde eine Wallet, um die BotVault-Wallet auf HyperEVM zu funden oder USDC nach Arbitrum auszuzahlen.",
+      "relayTitle": "User-Wallet",
+      "relaySubtitle": "Bridge USDC zu HyperEVM fuer deine verbundene Wallet oder hole ungenutztes USDC zurueck nach Arbitrum.",
+      "relayConnectHint": "Verbinde eine Wallet, um deine HyperEVM-User-Wallet zu funden oder USDC nach Arbitrum auszuzahlen.",
       "bridgeTitle": "Trading-Account Funding",
       "bridgeSubtitle": "Arbitrum -> HyperCore Route fuer Hyperliquid-Trading-Balances.",
       "arbitrumUsdc": "Arbitrum-USDC",
@@ -111,10 +112,10 @@
       "create": "Funding Vault erstellen",
       "creating": "Erstelle...",
       "deposit": "Einzahlen",
-      "ownerWithdraw": "Wallet-Withdraw",
+      "ownerWithdraw": "Zur User-Wallet auszahlen",
       "agentWithdraw": "Agent-Withdraw",
       "depositPlaceholder": "USDC einzahlen",
-      "withdrawPlaceholder": "USDC auszahlen",
+      "withdrawPlaceholder": "USDC zur User-Wallet auszahlen",
       "positiveAmount": "Bitte einen positiven USDC-Betrag eingeben.",
       "modeDisabled": "Onchain-Modus ist deaktiviert.",
       "connectWallet": "Verbinde zuerst deine verknuepfte Wallet.",
@@ -134,7 +135,7 @@
     }
   },
   "relay": {
-    "title": "BotVault-Wallet funden",
+    "title": "User-Wallet funden",
     "subtitle": "Bridge Arbitrum-USDC direkt zu HyperEVM und fuege optional HYPE fuer Gas hinzu.",
     "networkReady": "Arbitrum bereit",
     "networkMismatch": "Falsches Netzwerk",
@@ -163,7 +164,7 @@
       "notIncluded": "Nicht enthalten"
     },
     "execute": {
-      "button": "BotVault-Wallet funden",
+      "button": "User-Wallet funden",
       "busy": "Funding...",
       "awaitingHype": "Bestaetige die HYPE-Gas-Top-up-Transaktionen in deiner Wallet.",
       "awaitingUsdc": "Bestaetige die USDC-Bridge-Transaktionen in deiner Wallet.",

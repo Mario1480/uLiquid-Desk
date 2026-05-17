@@ -145,6 +145,12 @@ const masterVaultWithdrawHypeSchema = z.object({
   reserveHype: z.number().min(0).max(1000).optional()
 });
 
+const agentWalletFundHypeSchema = z.object({
+  txHash: z.string().trim().regex(/^0x[a-fA-F0-9]{64}$/),
+  amountHype: z.number().positive(),
+  fromAddress: z.string().trim().min(1).optional()
+});
+
 const walletAddressParamSchema = z.object({
   address: z.string().trim().min(1)
 });
@@ -437,6 +443,23 @@ export function registerVaultRoutes(
         return res.json({ ok: true, agentWalletSummary: summary });
       } catch (error) {
         return res.status(400).json({ error: "agent_wallet_threshold_set_failed", message: String(error) });
+      }
+    });
+
+    app.post("/agent-wallet/fund-hype", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const parsed = agentWalletFundHypeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const result = await botVaultRuntimeService.recordUserAgentWalletHypeFunding({
+          userId: user.id,
+          txHash: parsed.data.txHash,
+          amountHype: parsed.data.amountHype,
+          fromAddress: parsed.data.fromAddress ?? null
+        });
+        return res.json({ ok: true, ...result });
+      } catch (error) {
+        return res.status(400).json({ error: "agent_wallet_fund_hype_track_failed", message: String(error) });
       }
     });
 

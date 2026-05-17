@@ -324,7 +324,7 @@ function metadataRecord(value: unknown): Record<string, unknown> {
 }
 
 function fundingAmountSuffix(metadata: Record<string, unknown>): string {
-  const amount = String(metadata.amountFormatted ?? "").trim();
+  const amount = String(metadata.amountFormatted ?? metadata.amountUsd ?? "").trim();
   const asset = String(metadata.asset ?? "USDC").trim() || "USDC";
   return amount ? ` (${amount} ${asset})` : "";
 }
@@ -338,7 +338,7 @@ function normalizeFundingActionActivity(item: WalletActivitySourceItem, timestam
     type: "action" as const,
     symbol: String(metadata.asset ?? "USDC").trim() || "USDC",
     side: null,
-    size: asNumber(metadata.amountFormatted),
+    size: asNumber(metadata.amountFormatted ?? metadata.amountUsd),
     price: null,
     closedPnlUsd: null,
     feeUsd: null,
@@ -358,14 +358,14 @@ function normalizeFundingActionActivity(item: WalletActivitySourceItem, timestam
   if (item.actionType === "funding_relay_usdc_to_hyperevm") {
     return {
       ...base,
-      title: "BotVault wallet funding",
+      title: "User wallet funding",
       description: `Relay Arbitrum -> HyperEVM USDC funding intent${suffix}.`
     };
   }
   if (item.actionType === "funding_relay_usdc_to_arbitrum") {
     return {
       ...base,
-      title: "BotVault wallet withdrawal",
+      title: "User wallet withdrawal",
       description: `Relay HyperEVM -> Arbitrum USDC withdrawal intent${suffix}.`
     };
   }
@@ -397,6 +397,53 @@ function normalizeFundingActionActivity(item: WalletActivitySourceItem, timestam
       ...base,
       title: spotToPerp ? "Spot -> Perp USDC transfer" : "Perp -> Spot USDC transfer",
       description: `Hyperliquid USD class transfer intent${suffix}.`
+    };
+  }
+  if (item.actionType === "create_funding_vault") {
+    return {
+      ...base,
+      symbol: null,
+      size: null,
+      title: "Funding Vault created",
+      description: "User wallet created the Funding Vault."
+    };
+  }
+  if (item.actionType === "deposit_funding_vault") {
+    return {
+      ...base,
+      title: "Funding Vault deposit",
+      description: `User wallet -> Funding Vault deposit${suffix}.`
+    };
+  }
+  if (item.actionType === "withdraw_funding_vault") {
+    return {
+      ...base,
+      title: "Funding Vault withdrawal",
+      description: `Funding Vault -> User wallet withdrawal${suffix}.`
+    };
+  }
+  if (item.actionType === "agent_withdraw_funding_vault") {
+    if (!item.txHash) return null;
+    return {
+      ...base,
+      title: "Agent Funding Vault withdrawal",
+      description: `Agent-signed Funding Vault -> User wallet withdrawal${suffix}.`
+    };
+  }
+  if (item.actionType === "fund_user_agent_wallet_hype") {
+    return {
+      ...base,
+      symbol: "HYPE",
+      title: "Agent wallet funding",
+      description: `User wallet -> Agent wallet HYPE funding${suffix}.`
+    };
+  }
+  if (item.actionType === "withdraw_user_agent_wallet_hype") {
+    return {
+      ...base,
+      symbol: "HYPE",
+      title: "Agent wallet withdrawal",
+      description: `Agent wallet -> User wallet HYPE withdrawal${suffix}.`
     };
   }
   return null;

@@ -144,6 +144,9 @@ export type AgentWalletSummary = {
   address: string | null;
   version: number;
   secretRef: string | null;
+  managed: boolean;
+  canWithdraw: boolean;
+  secretStatus: "available" | "missing";
   hypeBalance: string | null;
   hypeBalanceWei: string | null;
   lowHypeThreshold: number;
@@ -569,6 +572,13 @@ type WithdrawUserAgentHypeParams = {
   reserveHype?: number | null;
 };
 
+type RecordUserAgentHypeFundingParams = {
+  userId: string;
+  txHash: string;
+  amountHype: number;
+  fromAddress?: string | null;
+};
+
 type CreateUserAgentWalletParams = {
   userId: string;
 };
@@ -591,6 +601,12 @@ type WithdrawAffiliatePayoutUsdcParams = {
 function toNullableString(value: unknown): string | null {
   const raw = String(value ?? "").trim();
   return raw ? raw : null;
+}
+
+function normalizeTxHash(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!/^0x[a-fA-F0-9]{64}$/.test(raw)) throw new Error("invalid_tx_hash");
+  return raw.toLowerCase();
 }
 
 function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
@@ -1430,6 +1446,7 @@ function mapAgentWalletSummary(user: any): AgentWalletSummary {
   const address = toNullableString(user?.agentWallet);
   const version = Math.max(1, Math.trunc(Number(user?.agentWalletVersion ?? 1) || 1));
   const secretRef = toNullableString(user?.agentSecretRef);
+  const hasManagedSecret = Boolean(secretRef);
   const hypeBalance = toNullableString(user?.agentLastBalanceFormatted);
   const hypeBalanceWei = toNullableString(user?.agentLastBalanceWei);
   const lowHypeThreshold = toNonNegativeNumber(user?.agentHypeWarnThreshold, 0.05);
@@ -1441,6 +1458,9 @@ function mapAgentWalletSummary(user: any): AgentWalletSummary {
     address,
     version,
     secretRef,
+    managed: hasManagedSecret,
+    canWithdraw: hasManagedSecret,
+    secretStatus: hasManagedSecret ? "available" : "missing",
     hypeBalance,
     hypeBalanceWei,
     lowHypeThreshold,
@@ -4989,7 +5009,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const activeSecret = await db.agentWalletSecret.findFirst({
       where: {
         userId: params.userId,
-        status: "active"
+        status: "active",
+        secretRef: {
+          startsWith: `agent_wallet:${params.userId}:`
+        }
       },
       select: {
         address: true,
@@ -5112,6 +5135,94 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return refreshUserAgentWalletSummary({ user: updated, persist: false });
   }
 
+  async function createUserAgentWalletHypeAction(params: {
+    userId: string;
+    actionType: "fund_user_agent_wallet_hype" | "withdraw_user_agent_wallet_hype";
+    txHash: string;
+    amountWei: bigint;
+    fromAddress: string | null;
+    toAddress: string;
+    agentWalletAddress: string;
+    walletAddress: string | null;
+    status?: "submitted" | "confirmed";
+  }) {
+    const txHash = normalizeTxHash(params.txHash);
+    const existing = typeof db?.onchainAction?.findFirst === "function"
+      ? await db.onchainAction.findFirst({
+          where: { txHash }
+        }).catch(() => null)
+      : null;
+    if (existing) return existing;
+    const amountFormatted = formatUnits(params.amountWei, 18);
+    if (typeof db?.onchainAction?.create !== "function") throw new Error("onchain_action_store_unavailable");
+    return db.onchainAction.create({
+      data: {
+        actionKey: `user_agent_wallet:${params.actionType}:${txHash}`,
+        actionType: params.actionType,
+        status: params.status ?? "submitted",
+        userId: params.userId,
+        chainId: resolveWalletReadConfig().hyperEvmChainId,
+        toAddress: params.toAddress,
+        dataHex: "0x",
+        valueWei: params.amountWei.toString(),
+        txHash,
+        metadata: {
+          asset: "HYPE",
+          amountRaw: params.amountWei.toString(),
+          amountFormatted,
+          sourceLocation: params.actionType === "fund_user_agent_wallet_hype" ? "userWallet" : "agentWallet",
+          destinationLocation: params.actionType === "fund_user_agent_wallet_hype" ? "agentWallet" : "userWallet",
+          fromAddress: params.fromAddress,
+          toAddress: params.toAddress,
+          agentWalletAddress: params.agentWalletAddress,
+          walletAddress: params.walletAddress
+        }
+      }
+    });
+  }
+
+  async function recordUserAgentWalletHypeFunding(params: RecordUserAgentHypeFundingParams) {
+    const user = await db.user.findUnique({
+      where: { id: params.userId },
+      select: {
+        id: true,
+        walletAddress: true,
+        agentWallet: true,
+        agentWalletVersion: true,
+        agentSecretRef: true,
+        agentHypeWarnThreshold: true,
+        agentLastBalanceAt: true,
+        agentLastBalanceWei: true,
+        agentLastBalanceFormatted: true
+      }
+    });
+    if (!user) throw new Error("user_not_found");
+    const agentWallet = toNullableString(user.agentWallet);
+    if (!agentWallet || !isAddress(agentWallet)) throw new Error("agent_wallet_missing");
+    const amountHype = toNonNegativeNumber(params.amountHype, 0);
+    if (!Number.isFinite(amountHype) || amountHype <= 0) throw new Error("invalid_amount_hype");
+    const fromAddress = toNullableString(params.fromAddress);
+    if (fromAddress && !isAddress(fromAddress)) throw new Error("invalid_from_address");
+    const amountWei = parseEther(String(amountHype));
+    const action = await createUserAgentWalletHypeAction({
+      userId: params.userId,
+      actionType: "fund_user_agent_wallet_hype",
+      txHash: params.txHash,
+      amountWei,
+      fromAddress,
+      toAddress: agentWallet,
+      agentWalletAddress: agentWallet,
+      walletAddress: toNullableString(user.walletAddress),
+      status: "submitted"
+    });
+    const summary = await refreshUserAgentWalletSummary({ user }).catch(() => mapAgentWalletSummary(user));
+    return {
+      actionId: String(action.id),
+      txHash: normalizeTxHash(params.txHash),
+      agentWalletSummary: summary
+    };
+  }
+
   async function withdrawHypeFromUserAgentWallet(params: WithdrawUserAgentHypeParams) {
     const user = await db.user.findUnique({
       where: { id: params.userId },
@@ -5163,6 +5274,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       chain,
       to: targetAddress as `0x${string}`,
       value: amountWei
+    });
+    await createUserAgentWalletHypeAction({
+      userId: params.userId,
+      actionType: "withdraw_user_agent_wallet_hype",
+      txHash,
+      amountWei,
+      fromAddress: agentWallet,
+      toAddress: targetAddress,
+      agentWalletAddress: agentWallet,
+      walletAddress: targetAddress,
+      status: "submitted"
+    }).catch((error) => {
+      logger.warn("bot_vault_v3_user_agent_withdraw_action_record_failed", {
+        userId: params.userId,
+        txHash,
+        error: String(error)
+      });
     });
     const nextBalanceWei = rawBalance - amountWei;
     await db.user.update({
@@ -9329,6 +9457,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     createUserAgentWallet,
     setUserAgentWallet,
     setUserAgentThreshold,
+    recordUserAgentWalletHypeFunding,
     withdrawHypeFromUserAgentWallet,
     getAffiliatePayoutWalletSummary,
     createAffiliatePayoutWallet,

@@ -169,6 +169,46 @@ test("Relay funding service builds HyperEVM to Arbitrum USDC quotes", async () =
   assert.equal(quote.hypeTopup, null);
 });
 
+test("Relay funding service extracts request ids from step-level relay status data", async () => {
+  const service = createRelayFundingService({
+    config: CONFIG,
+    fetch: (async () => jsonResponse({
+      ...quotePayload(
+        "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        CONFIG.hyperEvm.usdcAddress,
+        "USDC"
+      ),
+      steps: [
+        {
+          id: "deposit",
+          kind: "transaction",
+          requestId: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          items: [
+            {
+              status: "incomplete",
+              data: {
+                chainId: 42161,
+                to: "0x4cd00e387622c35bddb9b4c962c136462338bc31",
+                value: "0",
+                data: "0xabcdef"
+              }
+            }
+          ]
+        }
+      ]
+    })) as typeof fetch
+  });
+
+  const quote = await service.getQuote({
+    user: "0x1234567890123456789012345678901234567890",
+    usdcAmount: "10",
+    includeHypeTopup: false
+  });
+
+  assert.equal(quote.usdc.requestId, "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+  assert.equal(quote.usdc.steps[0]?.requestId, "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+});
+
 test("Relay funding service rejects HYPE top-up for HyperEVM to Arbitrum quotes", async () => {
   const service = createRelayFundingService({
     config: CONFIG,

@@ -25,6 +25,10 @@ import { AppIcon } from "../../app/components/AppIcon";
 import { PageHeader } from "../../app/components/ui";
 import { HyperEvmAddressLink } from "./ExplorerLinks";
 
+const RECENT_ACTIVITY_INITIAL_LIMIT = 10;
+const RECENT_ACTIVITY_PAGE_SIZE = 10;
+const RECENT_ACTIVITY_MAX_LIMIT = 50;
+
 function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
   if (error && typeof error === "object" && "message" in error) return String((error as any).message);
@@ -55,6 +59,7 @@ export default function WalletDashboardClient({
   const connection = useConnection();
   const { sendTransactionAsync, isPending: isWalletPending } = useSendTransaction();
   const [activityOpen, setActivityOpen] = useState(false);
+  const [activityLimit, setActivityLimit] = useState(RECENT_ACTIVITY_INITIAL_LIMIT);
   const [agentFundHypeInput, setAgentFundHypeInput] = useState("0.01");
   const [agentWithdrawHypeInput, setAgentWithdrawHypeInput] = useState("");
   const [agentThresholdInput, setAgentThresholdInput] = useState("0.05");
@@ -65,10 +70,17 @@ export default function WalletDashboardClient({
   const [agentActionError, setAgentActionError] = useState<string | null>(null);
   const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
   const activityQuery = useQuery({
-    queryKey: ["wallet-activity", address],
+    queryKey: ["wallet-activity", address, activityLimit],
     enabled: Boolean(address),
-    queryFn: () => apiGet<WalletActivityResponse>(`/wallet/${address}/activity?limit=6`)
+    queryFn: () => apiGet<WalletActivityResponse>(`/wallet/${address}/activity?limit=${activityLimit}`)
   });
+  useEffect(() => {
+    setActivityLimit(RECENT_ACTIVITY_INITIAL_LIMIT);
+  }, [address]);
+  useEffect(() => {
+    if (!activityOpen || !address) return;
+    activityQuery.refetch();
+  }, [activityOpen, address]);
   const agentWalletQuery = useQuery({
     queryKey: ["wallet-agent-wallet"],
     queryFn: () => apiGet<AgentWalletSummaryResponse>("/agent-wallet")
@@ -167,10 +179,20 @@ export default function WalletDashboardClient({
         value: parseEther(String(amountHype)),
         chainId: TARGET_CHAIN_ID
       });
+      await apiPost("/agent-wallet/fund-hype", {
+        txHash,
+        amountHype,
+        fromAddress: address
+      }).catch((error) => {
+        setAgentActionError(`${t("agentActions.trackingWarning")} ${errMsg(error)}`);
+      });
       setAgentFundHypeInput("");
       setActiveAgentModal(null);
       setAgentActionNotice(t("agentActions.fundSubmitted", { txHash: `${String(txHash).slice(0, 10)}...` }));
-      await agentWalletQuery.refetch();
+      await Promise.all([
+        agentWalletQuery.refetch(),
+        activityQuery.refetch().catch(() => undefined)
+      ]);
     } catch (error) {
       setAgentActionError(errMsg(error));
     } finally {
@@ -189,7 +211,10 @@ export default function WalletDashboardClient({
       setAgentWithdrawHypeInput("");
       setActiveAgentModal(null);
       setAgentActionNotice(t("agentActions.withdrawSubmitted"));
-      await agentWalletQuery.refetch();
+      await Promise.all([
+        agentWalletQuery.refetch(),
+        activityQuery.refetch().catch(() => undefined)
+      ]);
     } catch (error) {
       setAgentActionError(errMsg(error));
     } finally {
@@ -231,6 +256,9 @@ export default function WalletDashboardClient({
         ) : null}
         {agentActionNotice ? (
           <div className="walletNotice walletNoticeCompact">{agentActionNotice}</div>
+        ) : null}
+        {masterAgentSummary?.address && masterAgentSummary.canWithdraw === false ? (
+          <div className="walletNotice walletNoticeCompact walletNoticeError">{t("agentActions.withdrawUnavailable")}</div>
         ) : null}
       </div>
 
@@ -280,7 +308,7 @@ export default function WalletDashboardClient({
           type="button"
           className="btn"
           onClick={() => setActiveAgentModal("withdraw")}
-          disabled={!masterAgentSummary?.address || agentActionBusy !== null}
+          disabled={!masterAgentSummary?.address || masterAgentSummary.canWithdraw === false || agentActionBusy !== null}
         >
           <AppIcon name="withdraw" />
           {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
@@ -386,6 +414,18 @@ export default function WalletDashboardClient({
                         </div>
                       );
                     })}
+                    {activityQuery.data.items.length >= activityLimit && activityLimit < RECENT_ACTIVITY_MAX_LIMIT ? (
+                      <div className="walletActionRow walletCardActions">
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => setActivityLimit((limit) => Math.min(limit + RECENT_ACTIVITY_PAGE_SIZE, RECENT_ACTIVITY_MAX_LIMIT))}
+                          disabled={activityQuery.isFetching}
+                        >
+                          {activityQuery.isFetching ? t("loadingMoreRecentActivity") : t("showMoreRecentActivity")}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="walletMutedText">{t("noRecentActivity")}</div>

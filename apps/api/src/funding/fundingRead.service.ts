@@ -254,7 +254,7 @@ function normalizeFundingIntentActionId(item: FundingHistorySourceItem): Funding
     ? (item as any).metadata as Record<string, unknown>
     : {};
   const direction = String(metadata.direction ?? "").trim().toLowerCase();
-  const amount = String(metadata.amountFormatted ?? "").trim();
+  const amount = String(metadata.amountFormatted ?? metadata.amountUsd ?? "").trim();
   const suffix = amount ? ` (${amount} ${String(metadata.asset ?? "USDC").trim() || "USDC"})` : "";
   if (item.actionType === "funding_bridge_deposit") {
     return {
@@ -275,7 +275,7 @@ function normalizeFundingIntentActionId(item: FundingHistorySourceItem): Funding
     return {
       id: item.id,
       actionId: "relay_botvault_usdc_funding",
-      title: "BotVault wallet funding",
+      title: "User wallet funding",
       description: `Relay Arbitrum -> HyperEVM USDC funding intent${suffix}.`,
       locationFrom: "arbitrum",
       locationTo: "hyperEvm",
@@ -290,7 +290,7 @@ function normalizeFundingIntentActionId(item: FundingHistorySourceItem): Funding
     return {
       id: item.id,
       actionId: "relay_botvault_usdc_withdrawal",
-      title: "BotVault wallet withdrawal",
+      title: "User wallet withdrawal",
       description: `Relay HyperEVM -> Arbitrum USDC withdrawal intent${suffix}.`,
       locationFrom: "hyperEvm",
       locationTo: "arbitrum",
@@ -354,6 +354,67 @@ function normalizeFundingIntentActionId(item: FundingHistorySourceItem): Funding
       description: `Hyperliquid USD class transfer intent${suffix}.`,
       locationFrom: direction === "spot_to_perp" ? "hyperCore" : "hyperCore",
       locationTo: direction === "spot_to_perp" ? "hyperCore" : "hyperCore",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "create_funding_vault") {
+    return {
+      id: item.id,
+      actionId: "create_funding_vault",
+      title: "Funding Vault created",
+      description: "User wallet created the Funding Vault.",
+      locationFrom: "hyperEvm",
+      locationTo: "fundingVault",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "deposit_funding_vault") {
+    return {
+      id: item.id,
+      actionId: "deposit_funding_vault",
+      title: "Funding Vault deposit",
+      description: `User wallet -> Funding Vault deposit${suffix}.`,
+      locationFrom: "hyperEvm",
+      locationTo: "fundingVault",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "withdraw_funding_vault") {
+    return {
+      id: item.id,
+      actionId: "withdraw_funding_vault",
+      title: "Funding Vault withdrawal",
+      description: `Funding Vault -> User wallet withdrawal${suffix}.`,
+      locationFrom: "fundingVault",
+      locationTo: "hyperEvm",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "agent_withdraw_funding_vault") {
+    if (!item.txHash) return null;
+    return {
+      id: item.id,
+      actionId: "agent_withdraw_funding_vault",
+      title: "Agent Funding Vault withdrawal",
+      description: `Agent-signed Funding Vault -> User wallet withdrawal${suffix}.`,
+      locationFrom: "fundingVault",
+      locationTo: "hyperEvm",
       status: normalizeHistoryStatus(item.status),
       txHash: item.txHash,
       chainId: item.chainId,
@@ -541,7 +602,7 @@ function createActionMap(params: {
     relay_botvault_usdc_funding: {
       id: "relay_botvault_usdc_funding",
       kind: "client_write",
-      label: "Fund BotVault wallet",
+      label: "Fund user wallet",
       description: "Bridge Arbitrum USDC directly to HyperEVM with Relay.",
       locationFrom: "arbitrum",
       locationTo: "hyperEvm",
@@ -569,7 +630,7 @@ function createActionMap(params: {
     relay_botvault_usdc_withdrawal: {
       id: "relay_botvault_usdc_withdrawal",
       kind: "client_write",
-      label: "Withdraw BotVault wallet",
+      label: "Withdraw user wallet",
       description: "Bridge HyperEVM USDC back to Arbitrum with Relay.",
       locationFrom: "hyperEvm",
       locationTo: "arbitrum",

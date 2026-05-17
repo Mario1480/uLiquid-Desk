@@ -185,10 +185,10 @@ export default function RelayBotVaultFundingSection({
   async function refreshQueries() {
     if (!address) return;
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["funding-overview", address] }),
-      queryClient.invalidateQueries({ queryKey: ["transfer-overview", address] }),
-      queryClient.invalidateQueries({ queryKey: ["funding-history", address] }),
-      queryClient.invalidateQueries({ queryKey: ["wallet-activity", address] })
+      queryClient.invalidateQueries({ queryKey: ["funding-overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["transfer-overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["funding-history"] }),
+      queryClient.invalidateQueries({ queryKey: ["wallet-activity"] })
     ]);
   }
 

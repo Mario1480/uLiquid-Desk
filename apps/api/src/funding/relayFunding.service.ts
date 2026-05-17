@@ -59,14 +59,20 @@ function decimalAmount(value: string, decimals: number, max: number): { formatte
   };
 }
 
+function isRelayRequestId(value: string): boolean {
+  return /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
 function requestIdFromCheck(value: unknown): string | null {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
+  if (isRelayRequestId(raw)) return raw;
   try {
     const url = raw.startsWith("http")
       ? new URL(raw)
       : new URL(raw, DEFAULT_RELAY_API_URL);
-    return url.searchParams.get("requestId");
+    const requestId = url.searchParams.get("requestId");
+    return requestId && isRelayRequestId(requestId) ? requestId : null;
   } catch {
     return null;
   }
@@ -74,8 +80,26 @@ function requestIdFromCheck(value: unknown): string | null {
 
 function validateRequestId(value: unknown): string {
   const raw = String(value ?? "").trim();
-  if (!/^0x[0-9a-fA-F]{64}$/.test(raw)) throw new Error("relay_invalid_request_id");
+  if (!isRelayRequestId(raw)) throw new Error("relay_invalid_request_id");
   return raw;
+}
+
+function requestIdFromRelayPayload(value: unknown, depth = 0): string | null {
+  const direct = requestIdFromCheck(value);
+  if (direct) return direct;
+  if (depth > 3 || !value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["requestId", "check", "statusUrl", "statusURL", "statusPath", "href", "url"]) {
+    const requestId = requestIdFromCheck(record[key]);
+    if (requestId) return requestId;
+  }
+
+  for (const nested of Object.values(record)) {
+    const requestId = requestIdFromRelayPayload(nested, depth + 1);
+    if (requestId) return requestId;
+  }
+  return null;
 }
 
 function normalizeAmount(input: {
@@ -129,10 +153,11 @@ function normalizeSteps(rawSteps: unknown): RelayFundingStep[] {
         })
         .filter((item): item is { status: string; tx: RelayFundingTransactionRequest } => Boolean(item));
       if (items.length === 0) return null;
+      const stepRequestId = requestIdFromRelayPayload(step);
       return {
         id: String(step.id ?? "transaction"),
         kind: String(step.kind ?? "transaction"),
-        requestId: requestIdFromCheck(itemsRaw.find((item: any) => item?.check)?.check),
+        requestId: stepRequestId ?? itemsRaw.map((item) => requestIdFromRelayPayload(item)).find(Boolean) ?? null,
         items
       };
     })

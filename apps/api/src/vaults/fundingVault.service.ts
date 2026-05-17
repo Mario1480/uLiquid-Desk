@@ -508,9 +508,9 @@ export function createFundingVaultService(db: any, deps?: FundingVaultServiceDep
     if (action.txHash && String(action.status) === "submitted") {
       return { ok: true, mode: config.mode, action: mapActionRow(action), txHash: String(action.txHash) };
     }
-    const context = await requireAgentExecutionContext({ userId: params.userId, fundingVault: params.fundingVault, config });
     let submittedTxHash: string | null = null;
     try {
+      const context = await requireAgentExecutionContext({ userId: params.userId, fundingVault: params.fundingVault, config });
       const txHash = await context.walletClient.sendTransaction({
         account: context.account,
         chain: context.chain,

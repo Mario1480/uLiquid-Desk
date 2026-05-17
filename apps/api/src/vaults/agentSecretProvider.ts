@@ -203,6 +203,9 @@ async function findDbAgentSecret(input: {
 }): Promise<EncryptedAgentSecretRow | null> {
   const userId = String(input.userId ?? "").trim();
   if (!userId) return null;
+  const expectedRef = String(input.agentSecretRef ?? "").trim();
+  const expectedAddress = normalizeAddress(input.agentWalletAddress);
+  const requestedVersion = normalizeVersion(input.agentWalletVersion);
   const rows: EncryptedAgentSecretRow[] = await db.agentWalletSecret.findMany({
     where: {
       userId,
@@ -216,6 +219,18 @@ async function findDbAgentSecret(input: {
     },
     orderBy: { version: "desc" }
   }).catch(() => [] as EncryptedAgentSecretRow[]);
+  if (expectedRef) {
+    return resolveMatch(rows, input);
+  }
+  if (expectedAddress) {
+    const matches = rows.filter((row) => normalizeAddress(row.address) === expectedAddress);
+    if (matches.length === 0) return null;
+    return resolveMatch(matches, input);
+  }
+  const agentWalletRows = rows.filter((row) => String(row.secretRef ?? "").startsWith(`agent_wallet:${userId}:`));
+  if (agentWalletRows.length > 0) {
+    return agentWalletRows.find((row) => row.version === requestedVersion) ?? agentWalletRows[0] ?? null;
+  }
   return resolveMatch(rows, input);
 }
 

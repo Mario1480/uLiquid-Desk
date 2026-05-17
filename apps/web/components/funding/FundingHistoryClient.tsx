@@ -43,6 +43,7 @@ function translateLocation(
   if (value === "hyperCore") return tCommon("locationHyperCore");
   if (value === "hyperEvm") return tCommon("locationHyperEvm");
   if (value === "masterVault") return tCommon("locationMasterVault");
+  if (value === "fundingVault") return tCommon("locationFundingVault");
   return "—";
 }
 
