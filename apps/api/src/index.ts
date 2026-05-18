@@ -12132,7 +12132,6 @@ registerAdminOperationsRoutes(app, {
   db,
   requireSuperadmin: requirePlatformSuperadmin,
   recordAdminAuditEvent,
-  getAdminBackendAccessUserIdSet,
   isSuperadminEmail,
   hashPassword,
   generateTempPassword,

@@ -8,10 +8,17 @@ import {
   resolvePermissionRequirementForRequest
 } from "./auth/permissions.js";
 import { isSuperadminEmail } from "./auth/superadmin.js";
+import {
+  CSRF_COOKIE,
+  SESSION_COOKIE,
+  clearAuthCookieOptions,
+  createCsrfToken,
+  csrfCookieOptions,
+  sessionCookieOptions
+} from "./auth/cookies.js";
 
 const db = prisma as any;
 
-const SESSION_COOKIE = "mm_session";
 const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? "30");
 
 function hashToken(token: string): string {
@@ -33,24 +40,6 @@ async function resolvePermissionsForSessionUser(user: { id: string; email: strin
   return parsePermissions(member?.role?.permissions);
 }
 
-function cookieOptions(maxAgeMs: number) {
-  const secureEnv = (process.env.COOKIE_SECURE ?? "").toLowerCase();
-  const secure =
-    secureEnv === "1" ||
-    secureEnv === "true" ||
-    (secureEnv === "" && process.env.NODE_ENV === "production");
-  const domain = process.env.COOKIE_DOMAIN?.trim();
-
-  return {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure,
-    maxAge: maxAgeMs,
-    path: "/",
-    ...(domain ? { domain } : {})
-  };
-}
-
 export async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, {
     type: argon2.argon2id,
@@ -67,7 +56,8 @@ export async function verifyPassword(password: string, passwordHash: string): Pr
 export async function createSession(res: Response, userId: string) {
   const token = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const maxAgeMs = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Date.now() + maxAgeMs);
   const now = new Date();
 
   await db.session.create({
@@ -79,7 +69,8 @@ export async function createSession(res: Response, userId: string) {
     }
   });
 
-  res.cookie(SESSION_COOKIE, token, cookieOptions(SESSION_TTL_DAYS * 24 * 60 * 60 * 1000));
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions(maxAgeMs));
+  res.cookie(CSRF_COOKIE, createCsrfToken(), csrfCookieOptions(maxAgeMs));
 }
 
 export async function destroySession(res: Response, token?: string | null) {
@@ -89,9 +80,9 @@ export async function destroySession(res: Response, token?: string | null) {
     });
   }
 
-  const domain = process.env.COOKIE_DOMAIN?.trim();
-  const opts = domain ? { path: "/", domain } : { path: "/" };
+  const opts = clearAuthCookieOptions();
   res.clearCookie(SESSION_COOKIE, opts);
+  res.clearCookie(CSRF_COOKIE, opts);
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {

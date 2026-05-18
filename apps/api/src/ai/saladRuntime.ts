@@ -1,4 +1,8 @@
+import { validateSafeOutboundUrl } from "@mm/core";
+
 export const DEFAULT_SALAD_API_BASE_URL = "https://api.salad.com/api/public";
+const SALAD_RUNTIME_SAFE_URL_TIMEOUT_MS = 5_000;
+const DEFAULT_SALAD_RUNTIME_API_HOSTS = new Set(["api.salad.com"]);
 
 export type SaladRuntimeState =
   | "running"
@@ -66,6 +70,52 @@ function normalizeApiBaseUrl(value: unknown): string {
   const raw = toTrimmedString(value, 500);
   if (!raw) return DEFAULT_SALAD_API_BASE_URL;
   return stripTrailingSlash(raw);
+}
+
+function configuredSaladRuntimeApiHosts(): Set<string> {
+  const hosts = new Set(DEFAULT_SALAD_RUNTIME_API_HOSTS);
+  for (const rawHost of String(process.env.SALAD_RUNTIME_ALLOWED_API_HOSTS ?? "").split(",")) {
+    const host = rawHost.trim().toLowerCase();
+    if (host) hosts.add(host);
+  }
+  return hosts;
+}
+
+export async function validateSaladRuntimeApiBaseUrl(
+  value: string,
+  options: {
+    production?: boolean;
+    allowPrivateNetworks?: boolean;
+  } = {}
+): Promise<{ ok: true; baseUrl: string; timeoutMs: number } | { ok: false; reason: string }> {
+  const production = options.production ?? process.env.NODE_ENV === "production";
+  const allowPrivateNetworks =
+    options.allowPrivateNetworks === true ||
+    process.env.SALAD_RUNTIME_ALLOW_PRIVATE_API_BASE_URL === "1" ||
+    (!production && options.allowPrivateNetworks !== false);
+  const safeUrl = await validateSafeOutboundUrl(value, {
+    production,
+    requireHttps: production,
+    allowPrivateNetworks,
+    timeoutMs: SALAD_RUNTIME_SAFE_URL_TIMEOUT_MS
+  });
+  if (!safeUrl.ok) return safeUrl;
+  let parsed: URL;
+  try {
+    parsed = new URL(safeUrl.url);
+  } catch {
+    return { ok: false, reason: "invalid_url" };
+  }
+  if (parsed.search) return { ok: false, reason: "base_url_query_not_allowed" };
+  if (parsed.hash) return { ok: false, reason: "base_url_fragment_not_allowed" };
+  if (production && !configuredSaladRuntimeApiHosts().has(parsed.hostname.toLowerCase())) {
+    return { ok: false, reason: "salad_api_host_not_allowed" };
+  }
+  return {
+    ok: true,
+    baseUrl: stripTrailingSlash(safeUrl.url),
+    timeoutMs: safeUrl.timeoutMs
+  };
 }
 
 function parseStatusValue(payload: unknown): string | null {
@@ -212,7 +262,19 @@ async function callSalad(params: {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1_000, params.timeoutMs ?? 15_000));
   try {
-    const url = `${stripTrailingSlash(params.config.apiBaseUrl)}${params.path}`;
+    const safeBaseUrl = await validateSaladRuntimeApiBaseUrl(params.config.apiBaseUrl);
+    if (!safeBaseUrl.ok) {
+      return {
+        ok: false,
+        action: params.action,
+        state: "unknown",
+        checkedAt,
+        latencyMs: Date.now() - startedAt,
+        errorCode: "request_failed",
+        message: `unsafe_salad_api_base_url:${safeBaseUrl.reason}`
+      };
+    }
+    const url = `${safeBaseUrl.baseUrl}${params.path}`;
     const response = await fetch(url, {
       method: params.method,
       headers: {

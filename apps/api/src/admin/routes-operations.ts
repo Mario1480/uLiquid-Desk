@@ -54,7 +54,6 @@ export type RegisterAdminOperationsRoutesDeps = {
     metadata?: Record<string, unknown> | null;
     ip?: string | null;
   }): Promise<void>;
-  getAdminBackendAccessUserIdSet(): Promise<Set<string>>;
   isSuperadminEmail(email: string): boolean;
   hashPassword(password: string): Promise<string>;
   generateTempPassword(): string;
@@ -132,54 +131,6 @@ export function registerAdminOperationsRoutes(
   app: express.Express,
   deps: RegisterAdminOperationsRoutesDeps
 ) {
-  app.get("/admin/users", requireAuth, async (_req, res) => {
-    if (!(await deps.requireSuperadmin(res))) return;
-    const adminAccessIds = await deps.getAdminBackendAccessUserIdSet();
-
-    const users = await deps.db.user.findMany({
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        email: true,
-        createdAt: true,
-        updatedAt: true,
-        workspaces: {
-          select: {
-            workspaceId: true
-          }
-        },
-        _count: {
-          select: {
-            sessions: true,
-            exchangeAccounts: true,
-            bots: true,
-            workspaces: true
-          }
-        }
-      }
-    });
-
-    const rows = users.map((row: any) => ({
-      id: row.id,
-      email: row.email,
-      isSuperadmin: deps.isSuperadminEmail(row.email),
-      hasAdminBackendAccess: deps.isSuperadminEmail(row.email) || adminAccessIds.has(row.id),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      sessions: row._count?.sessions ?? 0,
-      exchangeAccounts: row._count?.exchangeAccounts ?? 0,
-      bots: row._count?.bots ?? 0,
-      workspaceMemberships: row._count?.workspaces ?? 0,
-      workspaceIds: Array.isArray(row.workspaces)
-        ? row.workspaces
-            .map((membership: any) => String(membership?.workspaceId ?? "").trim())
-            .filter(Boolean)
-        : []
-    }));
-
-    return res.json({ items: rows });
-  });
-
   app.post("/admin/users", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const actor = getUserFromLocals(res);
