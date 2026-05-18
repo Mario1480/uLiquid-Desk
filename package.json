@@ -53,9 +53,7 @@
   },
   "overrides": {
     "axios": "1.15.2",
-    "next": {
-      "postcss": "8.5.10"
-    }
+    "postcss": "8.5.10"
   },
   "packageManager": "npm@10.8.2"
 }
