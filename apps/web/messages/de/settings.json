@@ -11,7 +11,7 @@
   "hub": {
     "eyebrow": "User Settings",
     "title": "Einstellungen",
-    "description": "Verwalte Account-Sicherheit, Wallet/Onchain-Zugriff, Trading-Defaults, Benachrichtigungen, Billing, Affiliate und Workspace-Kontrollen in einem kompakten Hub.",
+    "description": "Verwalte Account-Sicherheit, Wallet/Onchain-Zugriff, Trading-Defaults, Benachrichtigungen, Billing und Affiliate-Kontrollen in einem kompakten Hub.",
     "actions": {
       "admin": "Admin öffnen",
       "open": "Öffnen",

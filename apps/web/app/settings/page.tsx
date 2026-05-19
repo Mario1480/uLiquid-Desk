@@ -409,6 +409,15 @@ function SettingsHubContent() {
     }
   }
 
+  const accountTone = isSuperadmin ? "warning" : "info";
+  const exchangeTone = exchangeHealthIssues > 0 ? "danger" : "success";
+  const walletTone = walletLinkMismatch ? "danger" : linkedWalletAddress ? "success" : "warning";
+  const walletStatusText = walletLinkMismatch
+    ? t("summary.walletMismatch")
+    : fundingVaultAddress
+      ? t("summary.fundingVaultReady")
+      : t("summary.walletStatus");
+
   return (
     <div className="settingsWrap settingsHubWrap">
       <PageHeader
@@ -435,20 +444,36 @@ function SettingsHubContent() {
       {notice ? <Notice tone="success" className="card settingsAlert settingsAlertSuccess">{notice}</Notice> : null}
 
       <div className="settingsHubSummary">
-        <div className="uiMetricTile">
-          <span>{t("summary.account")}</span>
-          <strong>{loading ? tCommon("loading") : me?.email ?? "-"}</strong>
-          <small>{isSuperadmin ? t("summary.superadmin") : t("summary.user")}</small>
+        <div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${accountTone}`}>
+          <div className="settingsSummaryTop">
+            <span className="settingsSummaryLabel">{t("summary.account")}</span>
+            <span className={`settingsSummaryBadge settingsSummaryBadge-${accountTone}`}>
+              {isSuperadmin ? t("summary.superadmin") : t("summary.user")}
+            </span>
+          </div>
+          <strong className="settingsSummaryValue">{loading ? tCommon("loading") : me?.email ?? "-"}</strong>
         </div>
-        <div className="uiMetricTile">
-          <span>{t("summary.exchanges")}</span>
-          <strong>{accounts?.length ?? 0}</strong>
-          <small>{exchangeHealthIssues > 0 ? t("summary.exchangeIssues", { count: exchangeHealthIssues }) : t("summary.exchangeHealthy")}</small>
+        <div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${exchangeTone}`}>
+          <div className="settingsSummaryTop">
+            <span className="settingsSummaryLabel">{t("summary.exchanges")}</span>
+            <span className={`settingsSummaryBadge settingsSummaryBadge-${exchangeTone}`}>
+              {exchangeHealthIssues > 0 ? t("badges.actionRequired") : t("badges.ok")}
+            </span>
+          </div>
+          <strong className="settingsSummaryValue">{accounts?.length ?? 0}</strong>
+          <small className="settingsSummaryMeta">
+            {exchangeHealthIssues > 0 ? t("summary.exchangeIssues", { count: exchangeHealthIssues }) : t("summary.exchangeHealthy")}
+          </small>
         </div>
-        <div className="uiMetricTile">
-          <span>{t("summary.wallet")}</span>
-          <strong>{linkedWalletAddress ? shortenWalletAddress(linkedWalletAddress) : t("summary.notLinked")}</strong>
-          <small>{walletLinkMismatch ? t("summary.walletMismatch") : fundingVaultAddress ? t("summary.fundingVaultReady") : t("summary.walletStatus")}</small>
+        <div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${walletTone}`}>
+          <div className="settingsSummaryTop">
+            <span className="settingsSummaryLabel">{t("summary.wallet")}</span>
+            <span className={`settingsSummaryBadge settingsSummaryBadge-${walletTone}`}>
+              {linkedWalletAddress ? t("cards.wallet.ready") : t("cards.wallet.setup")}
+            </span>
+          </div>
+          <strong className="settingsSummaryValue">{linkedWalletAddress ? shortenWalletAddress(linkedWalletAddress) : t("summary.notLinked")}</strong>
+          <small className="settingsSummaryMeta">{walletStatusText}</small>
         </div>
       </div>
 
@@ -649,33 +674,6 @@ function SettingsHubContent() {
           />
         </HubGroup>
 
-        <HubGroup title={t("groups.workspace.title")} description={t("groups.workspace.description")}>
-          <HubCard
-            icon="users"
-            title={t("cards.members.title")}
-            description={t("cards.members.description")}
-            meta={t("cards.members.meta")}
-            href={withLocalePath("/settings/roles", locale)}
-            actionLabel={t("actions.manage")}
-          />
-          <HubCard
-            icon="audit"
-            title={t("cards.audit.title")}
-            description={t("cards.audit.description")}
-            meta={t("cards.audit.meta")}
-            href={withLocalePath("/settings/audit", locale)}
-            actionLabel={t("actions.open")}
-          />
-          <HubCard
-            icon="delete"
-            title={t("cards.privacy.title")}
-            description={t("cards.privacy.description")}
-            meta={t("cards.privacy.meta")}
-            badge={t("badges.active")}
-            href={withLocalePath("/settings/privacy", locale)}
-            actionLabel={t("actions.manage")}
-          />
-        </HubGroup>
       </div>
 
       <AdminConfirmDialog
