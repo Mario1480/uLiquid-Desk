@@ -1035,6 +1035,130 @@ a.settingsHubCard:focus-visible {
   align-self: end;
   pointer-events: none;
 }
+.settingsBotVaultPage {
+  max-width: 1180px;
+}
+.settingsBotVaultSummary {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.settingsBotVaultList {
+  overflow: hidden;
+}
+.settingsBotVaultTable {
+  display: grid;
+  gap: 0;
+  overflow-x: auto;
+}
+.settingsBotVaultRow {
+  min-width: 980px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) minmax(140px, 0.72fr) minmax(170px, 0.82fr) minmax(220px, 1.1fr) minmax(190px, 0.92fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--app-shell-line);
+}
+.settingsBotVaultRow:last-child {
+  border-bottom: 0;
+}
+.settingsBotVaultRowHead {
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+.settingsBotVaultIdentity,
+.settingsBotVaultStatusCell,
+.settingsBotVaultMoneyCell,
+.settingsBotVaultFlowCell,
+.settingsBotVaultActions {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+.settingsBotVaultIdentity strong,
+.settingsBotVaultMoneyCell strong,
+.settingsBotVaultFlowCell strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settingsBotVaultIdentity span,
+.settingsBotVaultMoneyCell span,
+.settingsBotVaultFlowCell span,
+.settingsBotVaultActionHint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settingsBotVaultBadge {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+.settingsBotVaultBadge-success {
+  border-color: rgba(34, 197, 94, 0.32);
+  color: #bbf7d0;
+}
+.settingsBotVaultBadge-info {
+  border-color: rgba(96, 165, 250, 0.34);
+  color: #bfdbfe;
+}
+.settingsBotVaultBadge-warning {
+  border-color: rgba(245, 158, 11, 0.38);
+  color: #fde68a;
+}
+.settingsBotVaultBadge-danger {
+  border-color: rgba(239, 68, 68, 0.42);
+  color: #fecaca;
+}
+.settingsBotVaultActions {
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  align-items: center;
+  gap: 8px;
+}
+.settingsBotVaultActions .btn {
+  min-width: 0;
+  justify-content: center;
+  white-space: nowrap;
+}
+.settingsBotVaultActionHint {
+  grid-column: 1 / -1;
+}
+.settingsBotVaultErrorText {
+  color: #fecaca !important;
+}
+@media (max-width: 1180px) {
+  .settingsBotVaultSummary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .settingsBotVaultSummary {
+    grid-template-columns: 1fr;
+  }
+}
 .adminTopActions {
   margin-bottom: 10px;
   display: flex;

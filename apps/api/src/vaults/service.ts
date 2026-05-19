@@ -43,6 +43,22 @@ import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import { createBotVaultFundingLifecycleMetadata } from "./botVaultRuntime.lifecycle.js";
+import {
+  deriveBotVaultFundingDisplayState,
+  type BotVaultFundingDisplayStatus,
+  type BotVaultV3OperationState
+} from "./botVaultFundingDisplay.js";
+import { deriveBotVaultV3OperationState } from "./botVaultV3OperationState.js";
+import {
+  buildBotVaultV3ActionFlags,
+  buildBotVaultV3HealthSummary
+} from "./botVaultV3Readiness.js";
+import type {
+  BotVaultV4MismatchCategory,
+  BotVaultV4MismatchRecoveryAction,
+  BotVaultV4RecoveryHint,
+  BotVaultV4StatusCategory
+} from "./botVaultV3.lifecycle.js";
 import { readLockedAffiliateFeeConfig, resolveLockedAffiliateFeeConfig, type LockedAffiliateFeeConfig } from "../affiliate/program.js";
 import { logger as defaultLogger } from "../logger.js";
 
@@ -217,6 +233,24 @@ export type BotVaultSnapshot = {
   providerMetadataSummary?: BotVaultProviderMetadataSummary | null;
   feeConfigSummary?: LockedAffiliateFeeConfig | null;
   providerMetadataRaw?: Record<string, unknown> | null;
+  operationState?: BotVaultV3OperationState | null;
+  fundingDisplayStatus?: BotVaultFundingDisplayStatus;
+  fundingDisplayReasonCode?: string;
+  fundingDisplayDetail?: string | null;
+  fundingDisplayRecoveryHint?: BotVaultV4RecoveryHint | null;
+  fundingDisplayNextRecommendedAction?: BotVaultV3OperationState["nextRecommendedAction"];
+  statusCategory?: BotVaultV4StatusCategory;
+  statusReason?: string;
+  statusDetail?: string | null;
+  statusMismatchCategory?: BotVaultV4MismatchCategory | null;
+  statusRecoveryAction?: BotVaultV4MismatchRecoveryAction | null;
+  statusRecoveryHint?: BotVaultV4RecoveryHint | null;
+  hasOnchainVault?: boolean;
+  fundingConfirmedOnchain?: boolean;
+  canClaim?: boolean;
+  canClose?: boolean;
+  canRecover?: boolean;
+  canSetAgentWallet?: boolean;
   status: string;
   lastAccountingAt: string | null;
   updatedAt: string;
@@ -675,6 +709,16 @@ export function mapBotVaultSnapshot(
           }
         : null;
   const reuseResolution = deriveBotVaultReuseResolution(row);
+  const operationState = deriveBotVaultV3OperationState(row);
+  const fundingDisplay = deriveBotVaultFundingDisplayState({
+    row,
+    operationState,
+    fundingStatus: toNullableString(row?.fundingStatus),
+    hypercoreFundingStatus: toNullableString(row?.hypercoreFundingStatus),
+    executionMetadata: row?.executionMetadata
+  });
+  const actionFlags = buildBotVaultV3ActionFlags(row);
+  const healthSummary = buildBotVaultV3HealthSummary(row);
   return {
     id: String(row.id),
     userId: String(row.userId),
@@ -715,6 +759,19 @@ export function mapBotVaultSnapshot(
     providerMetadataSummary,
     feeConfigSummary,
     providerMetadataRaw: options?.includeProviderMetadataRaw ? providerMetadataRaw : null,
+    operationState,
+    fundingDisplayStatus: fundingDisplay.status,
+    fundingDisplayReasonCode: fundingDisplay.reasonCode,
+    fundingDisplayDetail: fundingDisplay.detail,
+    fundingDisplayRecoveryHint: fundingDisplay.recoveryHint,
+    fundingDisplayNextRecommendedAction: fundingDisplay.nextRecommendedAction,
+    statusCategory: healthSummary.statusCategory,
+    statusReason: healthSummary.statusReason,
+    statusDetail: healthSummary.statusDetail,
+    statusMismatchCategory: healthSummary.statusMismatchCategory,
+    statusRecoveryAction: healthSummary.statusRecoveryAction,
+    statusRecoveryHint: healthSummary.statusRecoveryHint,
+    ...actionFlags,
     status: String(row.status ?? "active"),
     lastAccountingAt: row.lastAccountingAt instanceof Date ? row.lastAccountingAt.toISOString() : null,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : new Date().toISOString()

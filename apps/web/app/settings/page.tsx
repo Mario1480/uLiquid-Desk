@@ -79,6 +79,20 @@ type FundingVaultOverview = {
   } | null;
 };
 
+type BotVaultSettingsOverview = {
+  counts?: {
+    total?: number;
+    in_use?: number;
+    unused?: number;
+    error?: number;
+    manualEmptyAvailable?: number;
+  };
+  totals?: {
+    capitalUsd?: number;
+    residualCapitalUsd?: number;
+  };
+};
+
 type AffiliateSummaryResponse = {
   profile?: { status?: string | null };
   program?: { enabled?: boolean; platformFeeRatePct?: number; defaultAffiliateFeeRatePct?: number };
@@ -214,6 +228,7 @@ function SettingsHubContent() {
   const [sessions, setSessions] = useState<SessionsResponse["items"]>([]);
   const [legal, setLegal] = useState<LegalAcknowledgementsResponse | null>(null);
   const [fundingVault, setFundingVault] = useState<FundingVaultOverview | null>(null);
+  const [botVaultOverview, setBotVaultOverview] = useState<BotVaultSettingsOverview | null>(null);
   const [affiliate, setAffiliate] = useState<AffiliateSummaryResponse | null>(null);
   const [subscription, setSubscription] = useState<any | null>(null);
   const [walletLinkStatus, setWalletLinkStatus] = useState<string | null>(null);
@@ -270,6 +285,7 @@ function SettingsHubContent() {
         sessionsRes,
         legalRes,
         fundingRes,
+        botVaultRes,
         affiliateRes,
         subscriptionRes
       ] = await Promise.all([
@@ -280,6 +296,7 @@ function SettingsHubContent() {
         apiGet<SessionsResponse>("/settings/sessions").catch(() => null),
         apiGet<LegalAcknowledgementsResponse>("/settings/legal-acknowledgements").catch(() => null),
         apiGet<FundingVaultOverview>("/vaults/funding-vault").catch(() => null),
+        apiGet<BotVaultSettingsOverview>("/vaults/bot-vaults/overview").catch(() => null),
         apiGet<AffiliateSummaryResponse>("/settings/affiliate").catch(() => null),
         apiGet<any>("/settings/subscription").catch(() => null)
       ]);
@@ -293,6 +310,7 @@ function SettingsHubContent() {
       setSessions(sessionsRes?.items ?? []);
       setLegal(legalRes);
       setFundingVault(fundingRes);
+      setBotVaultOverview(botVaultRes);
       setAffiliate(affiliateRes);
       setSubscription(subscriptionRes);
     } catch (loadError) {
@@ -585,6 +603,21 @@ function SettingsHubContent() {
             badge={fundingVault?.ready ? t("cards.fundingVault.ready") : t("cards.fundingVault.needsSetup")}
             href={withLocalePath("/funding", locale)}
             actionLabel={t("actions.open")}
+          />
+          <HubCard
+            icon="vaults"
+            title={t("cards.botVaults.title")}
+            description={t("cards.botVaults.description")}
+            meta={botVaultOverview
+              ? t("cards.botVaults.meta", {
+                  total: botVaultOverview.counts?.total ?? 0,
+                  capital: formatMoney(numberOrNull(botVaultOverview.totals?.capitalUsd), "USDC"),
+                  actions: botVaultOverview.counts?.manualEmptyAvailable ?? 0
+                })
+              : t("cards.botVaults.loading")}
+            badge={botVaultOverview?.counts?.error ? t("badges.actionRequired") : t("badges.ok")}
+            href={withLocalePath("/settings/bot-vaults", locale)}
+            actionLabel={t("actions.manage")}
           />
           <HubCard
             icon="wallet"

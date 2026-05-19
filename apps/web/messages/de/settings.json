@@ -113,6 +113,12 @@
         "ready": "Bereit",
         "needsSetup": "Setup"
       },
+      "botVaults": {
+        "title": "BotVaults",
+        "description": "BotVault V4 Nutzung, Kapitalstatus und Recovery-Aktionen prüfen.",
+        "meta": "{total} Vault(s); Kapital {capital}; manuelle Leerungen {actions}",
+        "loading": "BotVault-Status wird geladen..."
+      },
       "walletFunding": {
         "title": "Wallet & Funding",
         "description": "Balances, Bridge-Flows und letzte Funding-Aktionen.",
@@ -664,6 +670,70 @@
         "funded_bot_vaults": "{count} BotVault(s) halten oder referenzieren noch Kapital",
         "funded_funding_vaults": "{count} Funding Vault(s) halten noch verfügbares oder reserviertes USDC"
       }
+    }
+  },
+  "botVaults": {
+    "eyebrow": "Wallet & Onchain",
+    "title": "BotVaults",
+    "description": "Status, Kapital und Recovery-Kontrollen für deine BotVault V4 Contracts.",
+    "summary": {
+      "title": "BotVault Übersicht",
+      "total": "Gesamt",
+      "vaults": "Vaults",
+      "inUse": "In Benutzung",
+      "unused": "Unbenutzt",
+      "errors": "Fehler",
+      "capital": "Kapital",
+      "tracked": "Erfasst",
+      "residual": "Rest {amount}",
+      "manualEmpty": "Manuell leeren",
+      "available": "Verfügbar",
+      "claimable": "Claimable {amount}"
+    },
+    "usage": {
+      "in_use": "In Benutzung",
+      "unused": "Unbenutzt",
+      "pending": "Pending",
+      "error": "Fehler",
+      "settled": "Settled"
+    },
+    "list": {
+      "title": "BotVault Übersicht",
+      "description": "Aktueller BotVault V4 Status für diesen Account.",
+      "updated": "Aktualisiert {date}",
+      "empty": "Keine BotVaults gefunden."
+    },
+    "columns": {
+      "vault": "Vault",
+      "status": "Status",
+      "capital": "Kapital",
+      "flow": "Flow",
+      "actions": "Aktionen"
+    },
+    "money": {
+      "available": "Verfügbar {amount}",
+      "residual": "Rest {amount}"
+    },
+    "actions": {
+      "reconcile": "Reconcile",
+      "empty": "Leeren",
+      "closeAndEmpty": "Schließen & leeren",
+      "recoverClosed": "Rest leeren",
+      "cancel": "Abbrechen"
+    },
+    "manualReasons": {
+      "vault_in_use": "Vault ist in Benutzung",
+      "pending_flow": "Flow ist pending",
+      "vault_not_deployed": "Kein Onchain-Vault",
+      "already_empty": "Bereits leer",
+      "not_available": "Nicht verfügbar"
+    },
+    "confirm": {
+      "description": "Controller-Recovery für BotVault {id} ausführen. Erfasstes Restkapital: {amount}."
+    },
+    "messages": {
+      "reconciled": "BotVault {id} wurde reconciled.",
+      "manualEmptyDone": "BotVault {id} Leerungs-Flow abgeschlossen."
     }
   }
 }

@@ -284,6 +284,73 @@ test("GET /vaults/bot-vaults forwards reusableOnly filter", async () => {
   assert.equal(calls[0]?.reusableOnly, true);
 });
 
+test("GET /vaults/bot-vaults/overview returns usage counts and manual empty actions", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async listBotVaults(input: any) {
+        assert.equal(input.userId, "user_1");
+        return [
+          {
+            id: "bv_running",
+            allocatedUsd: 100,
+            availableUsd: 0,
+            executionStatus: "running",
+            ownerSummary: { gridState: "running", botStatus: "running" },
+            reusable: false
+          },
+          {
+            id: "bv_unused",
+            allocatedUsd: 0,
+            availableUsd: 0,
+            executionStatus: "stopped",
+            statusCategory: "execution_ready",
+            reusable: true
+          },
+          {
+            id: "bv_error",
+            allocatedUsd: 50,
+            availableUsd: 3,
+            statusCategory: "recovery_required",
+            statusReason: "bot_vault_v4_hype_reserve_unknown_failure",
+            reusable: false
+          },
+          {
+            id: "bv_recover",
+            allocatedUsd: 20,
+            availableUsd: 7,
+            principalAllocated: 20,
+            principalReturned: 13,
+            status: "CLOSED",
+            executionStatus: "closed",
+            statusCategory: "settled",
+            canRecover: true,
+            hasOnchainVault: true,
+            reusable: false
+          }
+        ];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/vaults/bot-vaults/overview");
+  const res = createMockRes("user_1");
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.counts?.total, 4);
+  assert.equal(res.body?.counts?.in_use, 1);
+  assert.equal(res.body?.counts?.unused, 1);
+  assert.equal(res.body?.counts?.error, 1);
+  assert.equal(res.body?.counts?.settled, 1);
+  assert.equal(res.body?.counts?.manualEmptyAvailable, 1);
+  assert.equal(res.body?.items?.find((item: any) => item.id === "bv_recover")?.manualEmptyAction?.type, "recover_closed");
+  assert.equal(res.body?.items?.find((item: any) => item.id === "bv_running")?.manualEmptyAction?.reason, "vault_in_use");
+  assert.equal(res.body?.totals?.availableUsd, 10);
+});
+
 test("GET /vaults/master returns 410", async () => {
   const app = createFakeApp();
   registerVaultRoutes(app as any, { vaultService: {} as any });
@@ -393,6 +460,37 @@ test("POST /vaults/bot-vaults/:id/controller-close maps insufficient contract ba
   assert.equal(res.body?.error, "onchain_pending_reconciliation");
   assert.equal(res.body?.code, "insufficient_contract_balance");
   assert.equal(res.body?.recoveryHint, "retry_reconcile");
+});
+
+test("POST /vaults/bot-vaults/:id/reconcile delegates to runtime reconciliation", async () => {
+  const app = createFakeApp();
+  const calls: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    botVaultV3Service: {
+      async reconcileBotVaultV3ById(input: any) {
+        calls.push(input);
+        return { id: input.botVaultId, statusCategory: "execution_ready" };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/bot-vaults/:id/reconcile");
+  const req = { params: { id: "bv_1" } };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.botVault?.id, "bv_1");
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], {
+    userId: "user_1",
+    botVaultId: "bv_1",
+    persist: true
+  });
 });
 
 test("POST /vaults/bot-vaults/:id/close-only succeeds and returns bot vault", async () => {

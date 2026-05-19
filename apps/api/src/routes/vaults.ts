@@ -14,6 +14,7 @@ import type { OnchainActionService } from "../vaults/onchainAction.service.js";
 import type { FundingVaultService } from "../vaults/fundingVault.service.js";
 import {
   closeBotVaultOnchain,
+  reconcileBotVaultById,
   recoverBotVaultClosedFunds,
   type BotVaultRuntimeService,
   type BotVaultV3Service
@@ -213,6 +214,185 @@ const vaultAddressParamSchema = z.object({
 const vaultDetailQuerySchema = z.object({
   user: z.string().trim().min(1).optional()
 });
+
+type BotVaultOverviewUsageState = "in_use" | "unused" | "pending" | "error" | "settled";
+type BotVaultOverviewManualEmptyActionType = "close" | "recover_closed" | null;
+
+const OVERVIEW_USD_EPSILON = 0.000001;
+const IN_USE_GRID_STATES = new Set(["running", "funding_pending", "starting", "stopping"]);
+const IN_USE_BOT_STATUSES = new Set(["running", "starting", "stopping"]);
+const PENDING_ACTION_STATUSES = new Set(["prepared", "submitted", "pending"]);
+const PENDING_STATUS_CATEGORIES = new Set(["pending", "retryable"]);
+const ERROR_STATUS_CATEGORIES = new Set(["blocked", "recovery_required", "user_action_required"]);
+
+function overviewNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundOverviewUsd(value: number): number {
+  return Math.round((Number.isFinite(value) ? value : 0) * 1_000_000) / 1_000_000;
+}
+
+function normalizedOverviewText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function botVaultPrincipalOutstandingUsd(item: any): number {
+  return Math.max(
+    0,
+    overviewNumber(item?.principalAllocated ?? item?.allocatedUsd) - overviewNumber(item?.principalReturned)
+  );
+}
+
+function botVaultCapitalUsd(item: any): number {
+  return roundOverviewUsd(Math.max(
+    0,
+    overviewNumber(item?.allocatedUsd),
+    overviewNumber(item?.availableUsd),
+    overviewNumber(item?.withdrawableUsd),
+    botVaultPrincipalOutstandingUsd(item)
+  ));
+}
+
+function botVaultResidualCapitalUsd(item: any): number {
+  return roundOverviewUsd(Math.max(
+    0,
+    overviewNumber(item?.availableUsd),
+    overviewNumber(item?.withdrawableUsd),
+    botVaultPrincipalOutstandingUsd(item)
+  ));
+}
+
+function botVaultHasPendingFlow(item: any): boolean {
+  const operationState = normalizedOverviewText(item?.operationState?.state);
+  const displayStatus = normalizedOverviewText(item?.fundingDisplayStatus);
+  const lifecycleState = normalizedOverviewText(item?.lifecycle?.state);
+  const pendingActionStatus = normalizedOverviewText(item?.lifecycle?.pendingActionStatus);
+  return (
+    PENDING_STATUS_CATEGORIES.has(normalizedOverviewText(item?.statusCategory))
+    || (operationState.length > 0 && operationState !== "confirmed")
+    || displayStatus.includes("pending")
+    || displayStatus.includes("retryable")
+    || lifecycleState.includes("pending")
+    || PENDING_ACTION_STATUSES.has(pendingActionStatus)
+  );
+}
+
+function botVaultHasErrorState(item: any): boolean {
+  return (
+    ERROR_STATUS_CATEGORIES.has(normalizedOverviewText(item?.statusCategory))
+    || normalizedOverviewText(item?.status) === "error"
+    || normalizedOverviewText(item?.executionStatus) === "error"
+    || Boolean(String(item?.executionLastError ?? "").trim())
+  );
+}
+
+function botVaultIsSettled(item: any, residualCapitalUsd: number): boolean {
+  const status = normalizedOverviewText(item?.status);
+  const executionStatus = normalizedOverviewText(item?.executionStatus);
+  return (
+    normalizedOverviewText(item?.statusCategory) === "settled"
+    || (
+      residualCapitalUsd <= OVERVIEW_USD_EPSILON
+      && (status === "closed" || executionStatus === "closed" || normalizedOverviewText(item?.fundingDisplayStatus) === "funding_confirmed")
+      && normalizedOverviewText(item?.lifecycle?.state) !== "pending"
+    )
+  );
+}
+
+function botVaultIsInUse(item: any): boolean {
+  const gridState = normalizedOverviewText(item?.ownerSummary?.gridState);
+  const botStatus = normalizedOverviewText(item?.ownerSummary?.botStatus);
+  const executionStatus = normalizedOverviewText(item?.executionStatus);
+  if (IN_USE_GRID_STATES.has(gridState) || IN_USE_BOT_STATUSES.has(botStatus) || executionStatus === "running") {
+    return true;
+  }
+  return Boolean((item?.gridInstanceId || item?.botId) && item?.reusable === false);
+}
+
+function deriveBotVaultOverviewUsageState(item: any, residualCapitalUsd: number): BotVaultOverviewUsageState {
+  if (botVaultIsInUse(item)) return "in_use";
+  if (botVaultHasErrorState(item)) return "error";
+  if (botVaultHasPendingFlow(item)) return "pending";
+  if (botVaultIsSettled(item, residualCapitalUsd)) return "settled";
+  return "unused";
+}
+
+function deriveBotVaultManualEmptyAction(item: any, usageState: BotVaultOverviewUsageState): {
+  type: BotVaultOverviewManualEmptyActionType;
+  enabled: boolean;
+  reason: string | null;
+} {
+  if (usageState === "in_use") {
+    return { type: null, enabled: false, reason: "vault_in_use" };
+  }
+  if (item?.canRecover === true) {
+    return { type: "recover_closed", enabled: true, reason: null };
+  }
+  if (item?.canClose === true) {
+    return { type: "close", enabled: true, reason: null };
+  }
+  if (botVaultHasPendingFlow(item)) {
+    return { type: null, enabled: false, reason: "pending_flow" };
+  }
+  if (!(item?.hasOnchainVault === true || String(item?.onchainVaultAddress ?? "").trim())) {
+    return { type: null, enabled: false, reason: "vault_not_deployed" };
+  }
+  if (usageState === "settled" || botVaultResidualCapitalUsd(item) <= OVERVIEW_USD_EPSILON) {
+    return { type: null, enabled: false, reason: "already_empty" };
+  }
+  return { type: null, enabled: false, reason: "not_available" };
+}
+
+function mapBotVaultOverviewItem(item: any) {
+  const capitalUsd = botVaultCapitalUsd(item);
+  const residualCapitalUsd = botVaultResidualCapitalUsd(item);
+  const usageState = deriveBotVaultOverviewUsageState(item, residualCapitalUsd);
+  const manualEmptyAction = deriveBotVaultManualEmptyAction(item, usageState);
+  return {
+    id: String(item?.id ?? ""),
+    botId: item?.botId ? String(item.botId) : null,
+    gridInstanceId: item?.gridInstanceId ? String(item.gridInstanceId) : null,
+    vaultModel: item?.vaultModel ? String(item.vaultModel) : null,
+    contractVersion: item?.contractVersion ? String(item.contractVersion) : null,
+    onchainVaultAddress: item?.onchainVaultAddress ? String(item.onchainVaultAddress) : null,
+    agentWallet: item?.providerMetadataSummary?.agentWallet ? String(item.providerMetadataSummary.agentWallet) : null,
+    usageState,
+    manualEmptyAction,
+    capitalUsd,
+    residualCapitalUsd,
+    availableUsd: roundOverviewUsd(overviewNumber(item?.availableUsd)),
+    allocatedUsd: roundOverviewUsd(overviewNumber(item?.allocatedUsd)),
+    principalOutstandingUsd: roundOverviewUsd(botVaultPrincipalOutstandingUsd(item)),
+    withdrawnUsd: roundOverviewUsd(overviewNumber(item?.withdrawnUsd)),
+    claimableProfitUsd: roundOverviewUsd(overviewNumber(item?.claimableProfitUsd)),
+    profitShareAccruedUsd: roundOverviewUsd(overviewNumber(item?.profitShareAccruedUsd)),
+    feePaidTotal: roundOverviewUsd(overviewNumber(item?.feePaidTotal)),
+    status: item?.status ? String(item.status) : null,
+    executionStatus: item?.executionStatus ? String(item.executionStatus) : null,
+    executionLastError: item?.executionLastError ? String(item.executionLastError) : null,
+    executionLastErrorAt: item?.executionLastErrorAt ?? null,
+    statusCategory: item?.statusCategory ? String(item.statusCategory) : null,
+    statusReason: item?.statusReason ? String(item.statusReason) : null,
+    statusDetail: item?.statusDetail ?? null,
+    statusRecoveryHint: item?.statusRecoveryHint ?? item?.fundingDisplayRecoveryHint ?? null,
+    fundingDisplayStatus: item?.fundingDisplayStatus ?? null,
+    fundingDisplayReasonCode: item?.fundingDisplayReasonCode ?? null,
+    fundingDisplayDetail: item?.fundingDisplayDetail ?? null,
+    fundingDisplayNextRecommendedAction: item?.fundingDisplayNextRecommendedAction ?? null,
+    operationState: item?.operationState ?? null,
+    lifecycle: item?.lifecycle ?? null,
+    ownerSummary: item?.ownerSummary ?? null,
+    reusable: item?.reusable === true,
+    reuseBlockedReason: item?.reuseBlockedReason ?? null,
+    canClaim: item?.canClaim === true,
+    canClose: item?.canClose === true,
+    canRecover: item?.canRecover === true,
+    hasOnchainVault: item?.hasOnchainVault === true,
+    updatedAt: item?.updatedAt ?? null
+  };
+}
 
 function extractRiskErrorCode(error: unknown): string | null {
   if (error && typeof error === "object") {
@@ -518,6 +698,30 @@ export function registerVaultRoutes(
         });
       }
     });
+
+    app.post("/vaults/bot-vaults/:id/reconcile", requireAuth, requireVaultProductAccess, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const id = readRouteParam(req, "id");
+      try {
+        const summary = await reconcileBotVaultById(botVaultRuntimeService, {
+          userId: user.id,
+          botVaultId: id,
+          persist: true
+        });
+        if (!summary) {
+          return res.status(404).json({ error: "bot_vault_not_found" });
+        }
+        return res.json({ ok: true, botVault: summary });
+      } catch (error) {
+        const mapped = mapOnchainError(error);
+        return res.status(mapped.status).json({
+          error: mapped.error,
+          reason: mapped.reason,
+          code: mapped.code,
+          recoveryHint: mapped.recoveryHint
+        });
+      }
+    });
   }
 
   function mapOnchainError(error: unknown): {
@@ -674,6 +878,53 @@ export function registerVaultRoutes(
     } catch (error) {
       return res.status(500).json({
         error: "vault_bot_list_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/bot-vaults/overview", requireAuth, requireVaultProductAccess, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    try {
+      const rawItems = await deps.vaultService.listBotVaults({
+        userId: user.id
+      });
+      const items = (rawItems ?? []).map((item: any) => mapBotVaultOverviewItem(item));
+      const counts = items.reduce((acc: Record<string, number>, item: any) => {
+        acc.total += 1;
+        acc[item.usageState] = (acc[item.usageState] ?? 0) + 1;
+        if (item.manualEmptyAction?.enabled) acc.manualEmptyAvailable += 1;
+        return acc;
+      }, {
+        total: 0,
+        in_use: 0,
+        unused: 0,
+        pending: 0,
+        error: 0,
+        settled: 0,
+        manualEmptyAvailable: 0
+      });
+      const totals = items.reduce((acc: Record<string, number>, item: any) => {
+        acc.capitalUsd = roundOverviewUsd(acc.capitalUsd + overviewNumber(item.capitalUsd));
+        acc.residualCapitalUsd = roundOverviewUsd(acc.residualCapitalUsd + overviewNumber(item.residualCapitalUsd));
+        acc.availableUsd = roundOverviewUsd(acc.availableUsd + overviewNumber(item.availableUsd));
+        acc.claimableProfitUsd = roundOverviewUsd(acc.claimableProfitUsd + overviewNumber(item.claimableProfitUsd));
+        return acc;
+      }, {
+        capitalUsd: 0,
+        residualCapitalUsd: 0,
+        availableUsd: 0,
+        claimableProfitUsd: 0
+      });
+      return res.json({
+        updatedAt: new Date().toISOString(),
+        counts,
+        totals,
+        items
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_bot_vault_overview_failed",
         reason: String(error)
       });
     }

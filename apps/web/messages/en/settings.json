@@ -113,6 +113,12 @@
         "ready": "Ready",
         "needsSetup": "Setup"
       },
+      "botVaults": {
+        "title": "BotVaults",
+        "description": "Review BotVault V4 usage, capital state and recovery actions.",
+        "meta": "{total} vault(s); capital {capital}; manual empty actions {actions}",
+        "loading": "Loading BotVault state..."
+      },
       "walletFunding": {
         "title": "Wallet & Funding",
         "description": "Balances, bridge flows and recent funding actions.",
@@ -664,6 +670,70 @@
         "funded_bot_vaults": "{count} BotVault(s) still hold or reference capital",
         "funded_funding_vaults": "{count} Funding Vault(s) still hold available or reserved USDC"
       }
+    }
+  },
+  "botVaults": {
+    "eyebrow": "Wallet & Onchain",
+    "title": "BotVaults",
+    "description": "Status, capital and recovery controls for your BotVault V4 contracts.",
+    "summary": {
+      "title": "BotVault summary",
+      "total": "Total",
+      "vaults": "Vaults",
+      "inUse": "In use",
+      "unused": "Unused",
+      "errors": "Errors",
+      "capital": "Capital",
+      "tracked": "Tracked",
+      "residual": "Residual {amount}",
+      "manualEmpty": "Manual empty",
+      "available": "Available",
+      "claimable": "Claimable {amount}"
+    },
+    "usage": {
+      "in_use": "In use",
+      "unused": "Unused",
+      "pending": "Pending",
+      "error": "Error",
+      "settled": "Settled"
+    },
+    "list": {
+      "title": "BotVault overview",
+      "description": "Latest BotVault V4 status for this account.",
+      "updated": "Updated {date}",
+      "empty": "No BotVaults found."
+    },
+    "columns": {
+      "vault": "Vault",
+      "status": "Status",
+      "capital": "Capital",
+      "flow": "Flow",
+      "actions": "Actions"
+    },
+    "money": {
+      "available": "Available {amount}",
+      "residual": "Residual {amount}"
+    },
+    "actions": {
+      "reconcile": "Reconcile",
+      "empty": "Empty",
+      "closeAndEmpty": "Close & empty",
+      "recoverClosed": "Empty residual",
+      "cancel": "Cancel"
+    },
+    "manualReasons": {
+      "vault_in_use": "Vault is in use",
+      "pending_flow": "Flow is pending",
+      "vault_not_deployed": "No onchain vault",
+      "already_empty": "Already empty",
+      "not_available": "Not available"
+    },
+    "confirm": {
+      "description": "Run the controller recovery flow for BotVault {id}. Tracked residual capital: {amount}."
+    },
+    "messages": {
+      "reconciled": "BotVault {id} reconciled.",
+      "manualEmptyDone": "BotVault {id} empty flow completed."
     }
   }
 }
