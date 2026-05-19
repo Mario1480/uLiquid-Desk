@@ -150,6 +150,9 @@ export type TradingSettings = {
   timeframe: string | null;
   marketType: "perp" | "spot";
   marginMode: "isolated" | "cross" | null;
+  leverage: number | null;
+  quoteCurrency: string | null;
+  timezone: string | null;
   chartEngine: "advanced" | "lightweight";
   chartPreferences: TradingChartPreferences;
 };
@@ -993,6 +996,32 @@ function normalizeChartEngine(value: unknown): TradingSettings["chartEngine"] {
   return value === "lightweight" ? "lightweight" : DEFAULT_TRADING_CHART_ENGINE;
 }
 
+function normalizeTradingLeverage(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const next = Number(value);
+  if (!Number.isFinite(next)) return null;
+  return Math.max(1, Math.min(125, Math.round(next)));
+}
+
+function normalizeTradingQuoteCurrency(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const next = value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{2,16}$/.test(next)) return null;
+  return next;
+}
+
+function normalizeTradingTimezone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const next = value.trim();
+  if (!next) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: next }).format(new Date());
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 export async function getTradingSettings(userId: string): Promise<TradingSettings> {
   const setting = await db.globalSetting.findUnique({
     where: {
@@ -1016,6 +1045,9 @@ export async function getTradingSettings(userId: string): Promise<TradingSetting
     payload.marginMode === "isolated" || payload.marginMode === "cross"
       ? payload.marginMode
       : null;
+  const leverage = normalizeTradingLeverage(payload.leverage);
+  const quoteCurrency = normalizeTradingQuoteCurrency(payload.quoteCurrency);
+  const timezone = normalizeTradingTimezone(payload.timezone);
   const chartEngine = normalizeChartEngine(payload.chartEngine);
   const chartPreferences = normalizeChartPreferences(payload.chartPreferences);
 
@@ -1025,6 +1057,9 @@ export async function getTradingSettings(userId: string): Promise<TradingSetting
     timeframe,
     marketType,
     marginMode,
+    leverage,
+    quoteCurrency,
+    timezone,
     chartEngine,
     chartPreferences
   };
@@ -1079,6 +1114,18 @@ export async function saveTradingSettings(
         : input.marginMode === "isolated" || input.marginMode === "cross"
           ? input.marginMode
           : null,
+    leverage:
+      input.leverage === undefined
+        ? current.leverage
+        : normalizeTradingLeverage(input.leverage),
+    quoteCurrency:
+      input.quoteCurrency === undefined
+        ? current.quoteCurrency
+        : normalizeTradingQuoteCurrency(input.quoteCurrency),
+    timezone:
+      input.timezone === undefined
+        ? current.timezone
+        : normalizeTradingTimezone(input.timezone),
     chartEngine:
       input.chartEngine === undefined
         ? current.chartEngine

@@ -531,6 +531,30 @@
   display: grid;
   gap: 10px;
 }
+.settingsTradingDefaultsGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.settingsTradingDefaultsSummary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.miniMetric {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.42);
+}
+.miniMetric span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.miniMetric b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
 .settingsWalletLinkCard {
   display: grid;
   gap: 12px;
@@ -774,12 +798,18 @@
 @media (max-width: 900px) {
   .gridTemplateFormCompact,
   .gridTemplatePreviewInputGrid,
-  .gridTemplatePreviewStatsGrid {
+  .gridTemplatePreviewStatsGrid,
+  .settingsTradingDefaultsGrid,
+  .settingsTradingDefaultsSummary {
     grid-template-columns: 1fr;
   }
 
   .gridTemplatePreviewHeader {
     align-items: flex-start;
+  }
+  .settingsHubGrid,
+  .settingsHubSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 .settingsField {
@@ -804,6 +834,114 @@
 .settingsAccountActions {
   display: flex;
   gap: 8px;
+}
+.settingsHubWrap {
+  max-width: 1120px;
+}
+.settingsHubSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.settingsTradingDefaultsSummary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.settingsHubGroups {
+  display: grid;
+  gap: 18px;
+}
+.settingsHubGroup {
+  display: grid;
+  gap: 10px;
+}
+.settingsHubGroupHeader {
+  display: grid;
+  gap: 4px;
+}
+.settingsHubGroupHeader h2,
+.settingsHubGroupHeader p,
+.settingsHubCard h3,
+.settingsHubCard p {
+  margin: 0;
+}
+.settingsHubGroupHeader h2 {
+  font-size: 17px;
+  line-height: 1.2;
+}
+.settingsHubGroupHeader p {
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.settingsHubGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.settingsHubCard {
+  min-width: 0;
+  min-height: 184px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+a.settingsHubCard:hover,
+a.settingsHubCard:focus-visible {
+  border-color: var(--ui-border-strong);
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.08), rgba(15, 23, 42, 0.34));
+  transform: translateY(-1px);
+}
+.settingsHubCardDisabled {
+  border-style: dashed;
+  opacity: 0.78;
+}
+.settingsHubCardTop,
+.settingsHubInlineActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settingsHubCardTop {
+  justify-content: space-between;
+}
+.settingsHubIcon {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(96, 165, 250, 0.1);
+  color: #bfdbfe;
+}
+.settingsHubCardBody {
+  display: grid;
+  gap: 6px;
+}
+.settingsHubCardBody h3 {
+  font-size: 15px;
+  line-height: 1.2;
+}
+.settingsHubCardBody p {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.42;
+}
+.settingsHubCardExtra {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.settingsHubCardAction {
+  width: fit-content;
+  align-self: end;
+  pointer-events: none;
 }
 .adminTopActions {
   margin-bottom: 10px;
@@ -1287,6 +1425,10 @@
     gap: 7px;
   }
   .settingsTwoColGrid {
+    grid-template-columns: 1fr;
+  }
+  .settingsHubGrid,
+  .settingsHubSummary {
     grid-template-columns: 1fr;
   }
   .settingsPromptChatBubble {

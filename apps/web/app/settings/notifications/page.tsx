@@ -7,10 +7,32 @@ import {
   formatTelegramLinkExpiry,
   type TelegramLinkStatus
 } from "../../../src/telegram/linking";
+import AdminConfirmDialog from "../../admin/_components/AdminConfirmDialog";
 import { AppIcon } from "../../components/AppIcon";
 
 type CalendarImpact = "low" | "medium" | "high";
 type CalendarTimezoneMode = "device" | "manual";
+
+type MobilePushToken = {
+  id: string;
+  platform: string;
+  environment: string;
+  bundleId: string;
+  deviceId: string | null;
+  appVersion: string | null;
+  enabled: boolean;
+  lastSeenAt: string | null;
+  revokedAt: string | null;
+  createdAt: string | null;
+};
+
+type MobilePushStatus = {
+  enabled: boolean;
+  apnsConfigured: boolean;
+  environment: "sandbox" | "production";
+  bundleId: string | null;
+  tokens: MobilePushToken[];
+};
 
 const IMPACT_ORDER: CalendarImpact[] = ["high", "medium", "low"];
 const CALENDAR_CURRENCIES = [
@@ -98,6 +120,9 @@ export default function NotificationsPage() {
   const [dailySendTimeLocal, setDailySendTimeLocal] = useState("08:00");
   const [dailyTimezoneMode, setDailyTimezoneMode] = useState<CalendarTimezoneMode>("device");
   const [dailyTimezoneInput, setDailyTimezoneInput] = useState("UTC");
+  const [mobilePush, setMobilePush] = useState<MobilePushStatus | null>(null);
+  const [revokingPushId, setRevokingPushId] = useState<string | null>(null);
+  const [confirmPushRevokeId, setConfirmPushRevokeId] = useState<string | null>(null);
 
   const effectiveDailyTimezone = dailyTimezoneMode === "manual"
     ? (dailyTimezoneInput.trim() || browserTimezone)
@@ -127,7 +152,8 @@ export default function NotificationsPage() {
 
   async function loadConfig() {
     try {
-      const data = await apiGet<{
+      const [data, pushStatus] = await Promise.all([
+        apiGet<{
         telegramChatId?: string | null;
         telegramBotConfigured?: boolean;
         telegramBotUsername?: string | null;
@@ -139,11 +165,11 @@ export default function NotificationsPage() {
           impacts?: CalendarImpact[];
           sendTimeLocal?: string;
           timezoneMode?: CalendarTimezoneMode;
-          timezone?: string;
-        };
-      }>(
-        "/settings/alerts"
-      );
+            timezone?: string;
+          };
+        }>("/settings/alerts"),
+        apiGet<MobilePushStatus>("/settings/mobile-push").catch(() => null)
+      ]);
       const resolvedBrowserTimezone = resolveBrowserTimezone();
       setChatId(data.telegramChatId ?? "");
       setTokenConfigured(Boolean(data.telegramBotConfigured));
@@ -174,6 +200,7 @@ export default function NotificationsPage() {
       setDailyTimezoneMode(loadedTimezoneMode);
       setDailyTimezoneInput(loadedTimezone || resolvedBrowserTimezone);
       setBrowserTimezone(resolvedBrowserTimezone);
+      setMobilePush(pushStatus);
 
       if (loadedTimezoneMode === "device" && loadedTimezone !== resolvedBrowserTimezone) {
         void apiPut("/settings/alerts", {
@@ -268,6 +295,21 @@ export default function NotificationsPage() {
       setMsg(errMsg(e));
     } finally {
       setUnlinking(false);
+    }
+  }
+
+  async function revokeMobilePushToken(tokenId: string) {
+    setRevokingPushId(tokenId);
+    setMsg(null);
+    try {
+      await apiDelete(`/settings/mobile-push/${encodeURIComponent(tokenId)}`);
+      setConfirmPushRevokeId(null);
+      setMsg(t("mobilePush.messages.revoked"));
+      await loadConfig();
+    } catch (e) {
+      setMsg(errMsg(e));
+    } finally {
+      setRevokingPushId(null);
     }
   }
 
@@ -496,6 +538,70 @@ export default function NotificationsPage() {
             </div>
           </div>
         </div>
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "grid", gap: 10, marginBottom: 10 }}>
+          <div className="settingsSectionHeader">
+            <div>
+              <div style={{ fontWeight: 700 }}>{t("mobilePush.title")}</div>
+              <div className="settingsMutedText">{t("mobilePush.description")}</div>
+            </div>
+            <span className="badge">
+              <AppIcon name="mobile" />
+              {mobilePush?.enabled ? t("mobilePush.enabled") : t("mobilePush.disabled")}
+            </span>
+          </div>
+          <div className="settingsHubSummary settingsTradingDefaultsSummary">
+            <div className="miniMetric">
+              <span>{t("mobilePush.apns")}</span>
+              <b>{mobilePush?.apnsConfigured ? t("mobilePush.configured") : t("mobilePush.missing")}</b>
+            </div>
+            <div className="miniMetric">
+              <span>{t("mobilePush.environment")}</span>
+              <b>{mobilePush?.environment ?? "-"}</b>
+            </div>
+            <div className="miniMetric">
+              <span>{t("mobilePush.bundle")}</span>
+              <b>{mobilePush?.bundleId ?? "-"}</b>
+            </div>
+            <div className="miniMetric">
+              <span>{t("mobilePush.devices")}</span>
+              <b>{mobilePush?.tokens.filter((token) => token.enabled && !token.revokedAt).length ?? 0}</b>
+            </div>
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {(mobilePush?.tokens ?? []).length > 0 ? (
+              mobilePush?.tokens.map((token) => (
+                <div key={token.id} className="settingsWalletLinkCard">
+                  <div className="settingsWalletLinkHeader">
+                    <div>
+                      <div className="settingsInlineTitle">
+                        {token.deviceId || t("mobilePush.unknownDevice")}
+                      </div>
+                      <div className="settingsMutedText">
+                        {token.platform.toUpperCase()} · {token.environment} · {token.appVersion ?? "-"} · {t("mobilePush.lastSeen", { value: token.lastSeenAt ? new Date(token.lastSeenAt).toLocaleString() : "-" })}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span className="badge">{token.enabled && !token.revokedAt ? t("mobilePush.active") : t("mobilePush.revoked")}</span>
+                      {token.enabled && !token.revokedAt ? (
+                        <button
+                          className="btn btnStop"
+                          type="button"
+                          onClick={() => setConfirmPushRevokeId(token.id)}
+                          disabled={revokingPushId === token.id}
+                        >
+                          <AppIcon name="delete" />
+                          {revokingPushId === token.id ? tCommon("deleting") : t("mobilePush.revoke")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="settingsMutedText">{t("mobilePush.empty")}</div>
+            )}
+          </div>
+        </div>
 	        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
 	          <button className="btn btnPrimary" onClick={saveConfig} disabled={saving}>
 	            <AppIcon name="save" />
@@ -510,6 +616,19 @@ export default function NotificationsPage() {
           <div style={{ marginTop: 10, color: "var(--muted)" }}>{msg}</div>
         ) : null}
       </div>
+      <AdminConfirmDialog
+        open={Boolean(confirmPushRevokeId)}
+        title={t("mobilePush.confirmTitle")}
+        description={t("mobilePush.confirmDescription")}
+        confirmLabel={t("mobilePush.confirmAction")}
+        cancelLabel={t("mobilePush.confirmCancel")}
+        tone="danger"
+        loading={Boolean(revokingPushId)}
+        onCancel={() => setConfirmPushRevokeId(null)}
+        onConfirm={() => {
+          if (confirmPushRevokeId) void revokeMobilePushToken(confirmPushRevokeId);
+        }}
+      />
     </div>
   );
 }

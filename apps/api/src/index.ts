@@ -1213,6 +1213,16 @@ const tradingSettingsSchema = z.object({
   timeframe: z.string().trim().min(1).nullable().optional(),
   marketType: z.enum(["spot", "perp"]).nullable().optional(),
   marginMode: z.enum(["isolated", "cross"]).nullable().optional(),
+  leverage: z.coerce.number().int().min(1).max(125).nullable().optional(),
+  quoteCurrency: z.string().trim().min(2).max(16).regex(/^[A-Za-z0-9]+$/).nullable().optional(),
+  timezone: z.string().trim().min(1).max(128).refine((value) => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
+      return true;
+    } catch {
+      return false;
+    }
+  }, "invalid_timezone").nullable().optional(),
   chartEngine: z.enum(["advanced", "lightweight"]).optional(),
   chartPreferences: z.object({
     indicatorToggles: z.object({

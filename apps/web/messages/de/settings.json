@@ -8,6 +8,254 @@
     "reload": "Neu laden",
     "saveSettings": "Einstellungen speichern"
   },
+  "hub": {
+    "eyebrow": "User Settings",
+    "title": "Einstellungen",
+    "description": "Verwalte Account-Sicherheit, Wallet/Onchain-Zugriff, Trading-Defaults, Benachrichtigungen, Billing, Affiliate und Workspace-Kontrollen in einem kompakten Hub.",
+    "actions": {
+      "admin": "Admin öffnen",
+      "open": "Öffnen",
+      "manage": "Verwalten",
+      "switch": "Wechseln",
+      "planned": "Geplant"
+    },
+    "badges": {
+      "actionRequired": "Aktion nötig",
+      "ok": "OK",
+      "comingNext": "Demnächst",
+      "disabled": "Deaktiviert",
+      "active": "Aktiv",
+      "needsBackend": "Backend nötig"
+    },
+    "summary": {
+      "account": "Account",
+      "superadmin": "Superadmin",
+      "user": "User",
+      "exchanges": "Exchange-Accounts",
+      "exchangeIssues": "{count} Problem(e)",
+      "exchangeHealthy": "Keine Sync-Probleme",
+      "wallet": "Wallet",
+      "notLinked": "Nicht verknüpft",
+      "walletMismatch": "Verbundene Wallet weicht ab",
+      "fundingVaultReady": "Funding Vault verfügbar",
+      "walletStatus": "Wallet-Status"
+    },
+    "groups": {
+      "account": {
+        "title": "Account & Sicherheit",
+        "description": "Identität, Sprache, Sessions und Legal-Acknowledgement-Status."
+      },
+      "wallet": {
+        "title": "Wallet & Onchain",
+        "description": "Verknüpfte Wallet, Funding Vault und Wallet/Funding-Shortcuts."
+      },
+      "trading": {
+        "title": "Trading & Exchanges",
+        "description": "Exchange-Credentials, Risk Profiles und künftige Trading-Defaults."
+      },
+      "notifications": {
+        "title": "Benachrichtigungen",
+        "description": "Telegram-Zustellung und tägliche Kalender-Alerts."
+      },
+      "billing": {
+        "title": "Abo & Abrechnung",
+        "description": "Lizenz, Plan, Feature-Zugriff und Order-Flow."
+      },
+      "affiliate": {
+        "title": "Affiliate & Profitshare",
+        "description": "Referral-Status, Profitshare-Raten und Payout-Wallet."
+      },
+      "workspace": {
+        "title": "Workspace & Team",
+        "description": "Team-Rollen, Berechtigungen, Audit-Log und künftige Privacy-Aktionen."
+      }
+    },
+    "cards": {
+      "security": {
+        "title": "Sicherheit",
+        "description": "Passwort, Auto-Logout, OTP und aktive Sessions.",
+        "meta": "Auto-Logout: {minutes}; OTP: {otp}; Sessions: {sessions}",
+        "disabled": "deaktiviert",
+        "otpOn": "an",
+        "otpOff": "aus",
+        "currentSession": "Aktuelle Session"
+      },
+      "language": {
+        "title": "Sprache",
+        "description": "App-Sprache für diesen Browser wechseln.",
+        "meta": "Aktuell: {locale}"
+      },
+      "legal": {
+        "title": "Legal & Privacy",
+        "description": "Terms, Privacy Policy und Crypto Risk Disclosure.",
+        "meta": "Akzeptiert v{version} am {date}",
+        "missing": "Kein Legal-Acknowledgement gefunden.",
+        "accepted": "Akzeptiert",
+        "needsReview": "Prüfen",
+        "terms": "Terms",
+        "privacy": "Privacy",
+        "risk": "Risk"
+      },
+      "wallet": {
+        "title": "Verknüpfte Wallet",
+        "description": "Wallet für SIWE, Onchain-Ownership und Withdrawal-Routing.",
+        "linked": "Verknüpft: {wallet}",
+        "notLinked": "Keine Wallet verknüpft.",
+        "mismatch": "Mismatch",
+        "ready": "Verknüpft",
+        "setup": "Setup"
+      },
+      "fundingVault": {
+        "title": "Funding Vault",
+        "description": "Mobile-fähige USDC-Quelle für Grid-Bot-Starts.",
+        "meta": "{wallet}; verfügbar {balance}",
+        "setup": "Erstelle oder funde einen Funding Vault, bevor Vault-Launches genutzt werden.",
+        "ready": "Bereit",
+        "needsSetup": "Setup"
+      },
+      "walletFunding": {
+        "title": "Wallet & Funding",
+        "description": "Balances, Bridge-Flows und letzte Funding-Aktionen.",
+        "meta": "Öffnet die vollständige Wallet- und Funding-Fläche."
+      },
+      "exchanges": {
+        "title": "Exchange-Accounts",
+        "description": "API-Keys, Paper-Links, Hyperliquid-Credentials und Sync-Checks.",
+        "meta": "{count} Account(s) konfiguriert",
+        "issues": "{count} Account-Problem(e)"
+      },
+      "risk": {
+        "title": "Risk Profiles",
+        "description": "Margin-, Drawdown- und Account-Risk-Guardrails.",
+        "meta": "Trading-Guardrails pro Account."
+      },
+      "tradingDefaults": {
+        "title": "Trading Defaults",
+        "description": "Default-Exchange, Market-Type, Margin-Mode und Leverage.",
+        "meta": "Gespeichert für Trading Desk und künftige Launch-Flows."
+      },
+      "notifications": {
+        "title": "Benachrichtigungen",
+        "description": "Telegram und täglicher Wirtschaftskalender.",
+        "meta": "Telegram: {telegram}; Kalender: {calendar}",
+        "unknown": "unbekannt",
+        "calendarOn": "an",
+        "calendarOff": "aus"
+      },
+      "subscription": {
+        "title": "Abo",
+        "description": "Plan, Limits, Feature-Gates und Billing-Status.",
+        "meta": "Plan: {plan}; Status: {status}"
+      },
+      "order": {
+        "title": "Order & Upgrade",
+        "description": "Pläne und Add-on-Kapazität kaufen oder verlängern.",
+        "meta": "Checkout und Order-Historie."
+      },
+      "affiliate": {
+        "title": "Affiliate & Profitshare",
+        "description": "Referral-Link, Ratenwahl, Accruals und Payout-Wallet.",
+        "meta": "Status: {status}; Rate: {rate}%; offen: {unpaid}"
+      },
+      "members": {
+        "title": "Mitglieder & Rollen",
+        "description": "Workspace-Mitglieder, Custom Roles und Berechtigungen.",
+        "meta": "Zugriff im Workspace verwalten."
+      },
+      "audit": {
+        "title": "Audit-Log",
+        "description": "Letzte Workspace- und Settings-Events prüfen.",
+        "meta": "Security- und Compliance-Trail."
+      },
+      "privacy": {
+        "title": "Datenexport & Account löschen",
+        "description": "Privacy-Aktionen mit Backend-Safety-Workflow vorbereiten.",
+        "meta": "Als Backend-Arbeit dokumentiert; keine destruktive Frontend-only-Aktion."
+      }
+    },
+    "wallet": {
+      "linkedWallet": "Verknüpfte Wallet",
+      "connectedWallet": "Verbundene Wallet",
+      "link": "Wallet verknüpfen",
+      "relink": "Verbundene Wallet verknüpfen",
+      "unlink": "Wallet trennen",
+      "linking": "Verknüpfe...",
+      "unlinking": "Trenne...",
+      "statusLinking": "Warte auf Wallet-Signatur...",
+      "statusLinked": "Wallet verknüpft: {wallet}",
+      "statusUnlinking": "Wallet wird getrennt...",
+      "statusUnlinked": "Wallet getrennt.",
+      "connectFirst": "Verbinde zuerst eine Wallet im Header.",
+      "alreadyLinked": "Diese Wallet ist bereits verknüpft.",
+      "statement": "Diese Wallet mit deinem uLiquid Account verknüpfen.",
+      "confirmUnlinkTitle": "Wallet trennen?",
+      "confirmUnlinkDescription": "Damit wird die Wallet-Verknüpfung vom Account entfernt. Funding-Vault-Withdrawals und Wallet-geroutete Aktionen können danach eine neue verknüpfte Wallet benötigen.",
+      "errors": {
+        "walletAlreadyLinked": "Diese Wallet ist bereits mit einem anderen Account verknüpft.",
+        "siweAddressMismatch": "Die signierte SIWE-Adresse passt nicht zur verbundenen Wallet.",
+        "siweNonceExpired": "Die SIWE-Nonce ist abgelaufen. Bitte erneut versuchen."
+      }
+    }
+  },
+  "exchangeAccounts": {
+    "eyebrow": "Trading & Exchanges",
+    "title": "Exchange-Accounts",
+    "description": "Execution- und Market-Data-Accounts außerhalb des kompakten Settings-Hubs verwalten.",
+    "serverIp": "Server-IP: {ip}",
+    "fields": {
+      "exchange": "Exchange",
+      "label": "Label",
+      "labelPlaceholder": "Main Bitget Account",
+      "apiKey": "API-Key",
+      "apiSecret": "API-Secret",
+      "passphraseRequired": "Passphrase",
+      "passphraseOptional": "Passphrase / Read-Adresse (optional)",
+      "walletAddress": "Wallet-Adresse",
+      "privateKey": "Private Key",
+      "marketDataAccount": "Market-Data-Account",
+      "noMarketDataAccounts": "Erstelle zuerst einen echten Exchange-Account.",
+      "keepCurrent": "Leer lassen, um den aktuellen Wert zu behalten",
+      "clearPassphrase": "Gespeicherte Passphrase/Read-Adresse löschen"
+    },
+    "create": {
+      "title": "Exchange-Account hinzufügen",
+      "description": "Credentials werden verschlüsselt gespeichert. Paper-Accounts brauchen eine Market-Data-Quelle.",
+      "submit": "Account hinzufügen",
+      "riskLink": "Risk Profiles"
+    },
+    "list": {
+      "title": "Konfigurierte Accounts",
+      "description": "Verbindungen testen, Credentials rotieren und Sync-Health prüfen.",
+      "count": "{count} Account(s)",
+      "empty": "Noch keine Exchange-Accounts vorhanden.",
+      "lastUsed": "Zuletzt genutzt",
+      "equity": "Equity",
+      "available": "Verfügbar",
+      "lastSyncError": "Letzter Sync-Fehler"
+    },
+    "credential": {
+      "healthy": "Gesund",
+      "warning": "Rotation fällig",
+      "expired": "Abgelaufen"
+    },
+    "actions": {
+      "test": "Testen",
+      "testing": "Teste...",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "cancel": "Abbrechen"
+    },
+    "confirm": {
+      "deleteTitle": "Exchange-Account löschen?",
+      "deleteDescription": "Dadurch werden die gespeicherten Credentials aus uLiquid entfernt. Laufende Bots oder Desks mit diesem Account können stoppen, bis ein anderer Account gewählt ist."
+    },
+    "messages": {
+      "created": "Exchange-Account erstellt.",
+      "updated": "Exchange-Account aktualisiert.",
+      "deleted": "Exchange-Account gelöscht.",
+      "syncSuccessful": "Sync erfolgreich"
+    }
+  },
   "globalDefaults": {
     "title": "Globale Standardwerte",
     "superadminOnly": "Nur für Superadmin.",
@@ -16,6 +264,46 @@
     "save": "Speichern",
     "saving": "speichere...",
     "saved": "gespeichert"
+  },
+  "tradingDefaults": {
+    "eyebrow": "Trading & Exchanges",
+    "title": "Trading Defaults",
+    "description": "Lege fest, welche Defaults Trading Desk und künftige Launch-Flows zuerst verwenden sollen.",
+    "form": {
+      "title": "Default-Ticket",
+      "description": "Diese Werte werden pro User gespeichert und können im Trading Desk weiterhin überschrieben werden."
+    },
+    "fields": {
+      "exchangeAccount": "Default-Exchange-Account",
+      "noDefault": "Kein Default",
+      "marketType": "Market-Type",
+      "marginMode": "Margin-Mode",
+      "leverage": "Leverage",
+      "quoteCurrency": "Quote Currency",
+      "symbol": "Symbol",
+      "timeframe": "Timeframe",
+      "timezone": "Zeitzone"
+    },
+    "marketTypes": {
+      "perp": "Perpetual",
+      "spot": "Spot"
+    },
+    "marginModes": {
+      "cross": "Cross",
+      "isolated": "Isolated"
+    },
+    "preview": {
+      "title": "Aktuelle Default-Vorschau",
+      "account": "{label} auf {exchange}",
+      "noAccount": "Kein Default-Account ausgewählt.",
+      "symbol": "Symbol",
+      "margin": "Margin",
+      "leverage": "Leverage",
+      "quote": "Quote"
+    },
+    "messages": {
+      "saved": "Trading Defaults gespeichert."
+    }
   },
   "notifications": {
     "title": "Benachrichtigungen",
@@ -58,6 +346,31 @@
         "low": "Niedrig"
       }
     },
+    "mobilePush": {
+      "title": "Mobile Push",
+      "description": "Registrierte iOS-Geräte können künftig Push-Alerts erhalten. Geräte registrieren sich aus der iOS-App.",
+      "enabled": "Aktiv",
+      "disabled": "Inaktiv",
+      "apns": "APNS",
+      "configured": "Konfiguriert",
+      "missing": "Fehlt",
+      "environment": "Umgebung",
+      "bundle": "Bundle",
+      "devices": "Geräte",
+      "unknownDevice": "Unbekanntes Gerät",
+      "lastSeen": "Zuletzt gesehen: {value}",
+      "active": "Aktiv",
+      "revoked": "Widerrufen",
+      "revoke": "Widerrufen",
+      "empty": "Noch kein mobiles Gerät für Push-Benachrichtigungen registriert.",
+      "confirmTitle": "Mobiles Push-Gerät widerrufen?",
+      "confirmDescription": "Damit wird Push-Zustellung für dieses Gerät deaktiviert. Die iOS-App kann es später erneut registrieren.",
+      "confirmAction": "Gerät widerrufen",
+      "confirmCancel": "Abbrechen",
+      "messages": {
+        "revoked": "Mobiles Push-Gerät widerrufen."
+      }
+    },
     "messages": {
       "saved": "Gespeichert.",
       "testSent": "Test-Benachrichtigung wurde an Telegram gesendet.",
@@ -77,6 +390,7 @@
     "open": "Öffnen",
     "delete": "Löschen",
     "deleting": "Löschen...",
+    "confirmDeleteTitle": "Bot löschen?",
     "confirmDelete": "Bot \"{name}\" ({symbol}) löschen? Das kann nicht rückgängig gemacht werden.",
     "deleted": "{name} gelöscht"
   },
@@ -210,6 +524,24 @@
       "autoLogout": "Auto-Logout aktivieren",
       "idleMinutes": "Inaktive Minuten",
       "otp": "OTP-Re-Auth für sensible Aktionen erzwingen"
+    },
+    "sessions": {
+      "title": "Aktive Sessions",
+      "description": "Prüfe angemeldete Browser-Sessions und widerrufe Geräte, die du nicht mehr nutzt.",
+      "current": "Aktuelle Session",
+      "other": "Andere Session",
+      "expired": "Abgelaufen",
+      "lastActive": "Zuletzt aktiv",
+      "created": "Erstellt",
+      "expires": "Läuft ab",
+      "empty": "Keine aktiven Sessions gefunden.",
+      "revoke": "Widerrufen",
+      "revokeOthers": "Andere widerrufen",
+      "currentHint": "Nutze Logout, um die aktuelle Session zu beenden.",
+      "confirmRevokeTitle": "Diese Session widerrufen?",
+      "confirmRevokeDescription": "Dadurch wird dieser Browser oder dieses Gerät sofort abgemeldet. Deine aktuelle Session bleibt aktiv.",
+      "confirmRevokeOthersTitle": "Alle anderen Sessions widerrufen?",
+      "confirmRevokeOthersDescription": "Dadurch werden alle anderen Browser und Geräte abgemeldet, während deine aktuelle Session aktiv bleibt."
     },
     "reset": {
       "title": "Zurücksetzen per E-Mail-Code",

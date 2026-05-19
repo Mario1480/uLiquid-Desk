@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminConfirmDialog from "../../admin/_components/AdminConfirmDialog";
 import { AppIcon } from "../../components/AppIcon";
 
 type Bot = {
@@ -24,6 +25,7 @@ export default function Setup() {
   const [bots, setBots] = useState<Bot[]>([]);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [botToDelete, setBotToDelete] = useState<Bot | null>(null);
 
   function errMsg(e: any): string {
     if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -43,12 +45,11 @@ export default function Setup() {
   }
 
   async function removeBot(bot: Bot) {
-    const ok = window.confirm(t("confirmDelete", { name: bot.name, symbol: bot.symbol }));
-    if (!ok) return;
     setDeletingId(bot.id);
     try {
       await apiPost(`/bots/${bot.id}/delete`);
       setMsg(t("deleted", { name: bot.name }));
+      setBotToDelete(null);
       await loadBots();
     } catch (e: any) {
       setMsg(errMsg(e));
@@ -110,7 +111,7 @@ export default function Setup() {
 	                  </Link>
                   <button
                     className="btn btnStop"
-	                    onClick={() => removeBot(bot)}
+	                    onClick={() => setBotToDelete(bot)}
 	                    disabled={deletingId === bot.id}
 	                  >
 	                    <AppIcon name="delete" />
@@ -122,6 +123,17 @@ export default function Setup() {
           </div>
         )}
       </div>
+      <AdminConfirmDialog
+        open={Boolean(botToDelete)}
+        title={t("confirmDeleteTitle")}
+        description={botToDelete ? t("confirmDelete", { name: botToDelete.name, symbol: botToDelete.symbol }) : ""}
+        confirmLabel={t("delete")}
+        loading={Boolean(botToDelete && deletingId === botToDelete.id)}
+        onCancel={() => setBotToDelete(null)}
+        onConfirm={() => {
+          if (botToDelete) void removeBot(botToDelete);
+        }}
+      />
     </div>
   );
 }

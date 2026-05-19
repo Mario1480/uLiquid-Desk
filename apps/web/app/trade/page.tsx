@@ -47,6 +47,9 @@ type TradingSettings = {
   timeframe: string | null;
   marketType: "spot" | "perp";
   marginMode: MarginModeValue | null;
+  leverage: number | null;
+  quoteCurrency: string | null;
+  timezone: string | null;
   chartEngine: ChartEngine;
   chartPreferences: TradingChartPreferences;
 };
@@ -1019,6 +1022,9 @@ function TradePageContent() {
         setMarginMode(settings.marginMode);
       } else {
         setMarginMode("isolated");
+      }
+      if (typeof settings.leverage === "number" && Number.isFinite(settings.leverage)) {
+        setLeverage(String(Math.max(1, Math.min(125, Math.round(settings.leverage)))));
       }
       setChartEngine(settings.chartEngine === "lightweight" ? "lightweight" : "advanced");
       setChartPreferences({
@@ -2234,6 +2240,12 @@ function TradePageContent() {
                             step={1}
                             value={leverage}
                             onChange={(event) => setLeverage(event.target.value)}
+                            onBlur={() => {
+                              const parsed = Number(leverage);
+                              if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 125) {
+                                void persistSettings({ leverage: Math.trunc(parsed) });
+                              }
+                            }}
                           />
                           <button
                             className="tradeOrderApplyBtn"

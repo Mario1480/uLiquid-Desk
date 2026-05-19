@@ -8,6 +8,254 @@
     "reload": "Reload",
     "saveSettings": "Save settings"
   },
+  "hub": {
+    "eyebrow": "User settings",
+    "title": "Settings",
+    "description": "Manage account security, wallet/onchain access, trading defaults, notifications, billing, affiliate and workspace controls from one compact hub.",
+    "actions": {
+      "admin": "Open admin",
+      "open": "Open",
+      "manage": "Manage",
+      "switch": "Switch",
+      "planned": "Planned"
+    },
+    "badges": {
+      "actionRequired": "Action required",
+      "ok": "OK",
+      "comingNext": "Coming next",
+      "disabled": "Disabled",
+      "active": "Active",
+      "needsBackend": "Needs backend"
+    },
+    "summary": {
+      "account": "Account",
+      "superadmin": "Superadmin",
+      "user": "User",
+      "exchanges": "Exchange accounts",
+      "exchangeIssues": "{count} issue(s)",
+      "exchangeHealthy": "No sync issues",
+      "wallet": "Wallet",
+      "notLinked": "Not linked",
+      "walletMismatch": "Connected wallet differs",
+      "fundingVaultReady": "Funding Vault available",
+      "walletStatus": "Wallet status"
+    },
+    "groups": {
+      "account": {
+        "title": "Account & Security",
+        "description": "Identity, language, sessions and legal acknowledgement status."
+      },
+      "wallet": {
+        "title": "Wallet & Onchain",
+        "description": "Linked wallet, Funding Vault and wallet/funding shortcuts."
+      },
+      "trading": {
+        "title": "Trading & Exchanges",
+        "description": "Exchange credentials, risk profiles and future trading defaults."
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Telegram delivery and daily calendar alert settings."
+      },
+      "billing": {
+        "title": "Subscription & Billing",
+        "description": "License, plan, feature access and order flow."
+      },
+      "affiliate": {
+        "title": "Affiliate & Profitshare",
+        "description": "Referral status, profitshare rates and payout wallet."
+      },
+      "workspace": {
+        "title": "Workspace & Team",
+        "description": "Team roles, permissions, audit log and future privacy operations."
+      }
+    },
+    "cards": {
+      "security": {
+        "title": "Security",
+        "description": "Password, auto-logout, OTP and active sessions.",
+        "meta": "Auto-logout: {minutes}; OTP: {otp}; sessions: {sessions}",
+        "disabled": "disabled",
+        "otpOn": "on",
+        "otpOff": "off",
+        "currentSession": "Current session"
+      },
+      "language": {
+        "title": "Language",
+        "description": "Switch the app language for this browser.",
+        "meta": "Current: {locale}"
+      },
+      "legal": {
+        "title": "Legal & Privacy",
+        "description": "Terms, privacy policy and crypto risk disclosure.",
+        "meta": "Accepted v{version} on {date}",
+        "missing": "No legal acknowledgement found.",
+        "accepted": "Accepted",
+        "needsReview": "Review",
+        "terms": "Terms",
+        "privacy": "Privacy",
+        "risk": "Risk"
+      },
+      "wallet": {
+        "title": "Linked wallet",
+        "description": "Wallet used for SIWE, onchain ownership and withdrawal routing.",
+        "linked": "Linked: {wallet}",
+        "notLinked": "No wallet linked.",
+        "mismatch": "Mismatch",
+        "ready": "Linked",
+        "setup": "Setup"
+      },
+      "fundingVault": {
+        "title": "Funding Vault",
+        "description": "Mobile-friendly USDC source for Grid Bot launches.",
+        "meta": "{wallet}; available {balance}",
+        "setup": "Create or fund a Funding Vault before using vault-based launches.",
+        "ready": "Ready",
+        "needsSetup": "Setup"
+      },
+      "walletFunding": {
+        "title": "Wallet & Funding",
+        "description": "Balances, bridge flows and recent funding actions.",
+        "meta": "Open the full wallet and funding surface."
+      },
+      "exchanges": {
+        "title": "Exchange accounts",
+        "description": "API keys, Paper links, Hyperliquid credentials and sync checks.",
+        "meta": "{count} account(s) configured",
+        "issues": "{count} account issue(s)"
+      },
+      "risk": {
+        "title": "Risk profiles",
+        "description": "Margin, drawdown and account risk guardrails.",
+        "meta": "Per-account trading guardrails."
+      },
+      "tradingDefaults": {
+        "title": "Trading defaults",
+        "description": "Default exchange, market type, margin mode and leverage.",
+        "meta": "Saved for the Trading Desk and future launch flows."
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Telegram and Daily Economic Calendar delivery.",
+        "meta": "Telegram: {telegram}; calendar: {calendar}",
+        "unknown": "unknown",
+        "calendarOn": "on",
+        "calendarOff": "off"
+      },
+      "subscription": {
+        "title": "Subscription",
+        "description": "Plan, limits, feature gates and billing status.",
+        "meta": "Plan: {plan}; status: {status}"
+      },
+      "order": {
+        "title": "Order & upgrade",
+        "description": "Buy or renew plans and add-on capacity.",
+        "meta": "Checkout and order history."
+      },
+      "affiliate": {
+        "title": "Affiliate & profitshare",
+        "description": "Referral link, rate selection, accruals and payout wallet.",
+        "meta": "Status: {status}; rate: {rate}%; unpaid: {unpaid}"
+      },
+      "members": {
+        "title": "Members & roles",
+        "description": "Workspace members, custom roles and permissions.",
+        "meta": "Manage access for your workspace."
+      },
+      "audit": {
+        "title": "Audit log",
+        "description": "Review recent workspace and settings events.",
+        "meta": "Security and compliance trail."
+      },
+      "privacy": {
+        "title": "Data export & account deletion",
+        "description": "Prepare privacy operations with a backend safety workflow.",
+        "meta": "Documented as backend work; no frontend-only destructive action."
+      }
+    },
+    "wallet": {
+      "linkedWallet": "Linked wallet",
+      "connectedWallet": "Connected wallet",
+      "link": "Link wallet",
+      "relink": "Link connected wallet",
+      "unlink": "Unlink wallet",
+      "linking": "Linking...",
+      "unlinking": "Unlinking...",
+      "statusLinking": "Waiting for wallet signature...",
+      "statusLinked": "Wallet linked: {wallet}",
+      "statusUnlinking": "Unlinking wallet...",
+      "statusUnlinked": "Wallet unlinked.",
+      "connectFirst": "Connect a wallet in the header first.",
+      "alreadyLinked": "This wallet is already linked.",
+      "statement": "Link this wallet to your uLiquid account.",
+      "confirmUnlinkTitle": "Unlink wallet?",
+      "confirmUnlinkDescription": "This removes the wallet link from your account. Funding Vault withdrawals and wallet-routed actions may require a new linked wallet.",
+      "errors": {
+        "walletAlreadyLinked": "This wallet is already linked to another account.",
+        "siweAddressMismatch": "The signed SIWE address does not match the connected wallet.",
+        "siweNonceExpired": "The SIWE nonce expired. Please try again."
+      }
+    }
+  },
+  "exchangeAccounts": {
+    "eyebrow": "Trading & Exchanges",
+    "title": "Exchange accounts",
+    "description": "Manage execution and market-data accounts outside the compact settings hub.",
+    "serverIp": "Server IP: {ip}",
+    "fields": {
+      "exchange": "Exchange",
+      "label": "Label",
+      "labelPlaceholder": "Main Bitget account",
+      "apiKey": "API key",
+      "apiSecret": "API secret",
+      "passphraseRequired": "Passphrase",
+      "passphraseOptional": "Passphrase / read address (optional)",
+      "walletAddress": "Wallet address",
+      "privateKey": "Private key",
+      "marketDataAccount": "Market data account",
+      "noMarketDataAccounts": "Create a real exchange account first.",
+      "keepCurrent": "Leave empty to keep current value",
+      "clearPassphrase": "Clear stored passphrase/read address"
+    },
+    "create": {
+      "title": "Add exchange account",
+      "description": "Credentials are stored encrypted. Paper accounts need a market-data source.",
+      "submit": "Add account",
+      "riskLink": "Risk profiles"
+    },
+    "list": {
+      "title": "Configured accounts",
+      "description": "Test connections, rotate credentials and review sync health.",
+      "count": "{count} account(s)",
+      "empty": "No exchange accounts yet.",
+      "lastUsed": "Last used",
+      "equity": "Equity",
+      "available": "Available",
+      "lastSyncError": "Last sync error"
+    },
+    "credential": {
+      "healthy": "Healthy",
+      "warning": "Rotation due",
+      "expired": "Expired"
+    },
+    "actions": {
+      "test": "Test",
+      "testing": "Testing...",
+      "edit": "Edit",
+      "delete": "Delete",
+      "cancel": "Cancel"
+    },
+    "confirm": {
+      "deleteTitle": "Delete exchange account?",
+      "deleteDescription": "This removes the stored credentials from uLiquid. Running bots or desks using this account may stop working until another account is selected."
+    },
+    "messages": {
+      "created": "Exchange account created.",
+      "updated": "Exchange account updated.",
+      "deleted": "Exchange account deleted.",
+      "syncSuccessful": "Sync successful"
+    }
+  },
   "globalDefaults": {
     "title": "Global Defaults",
     "superadminOnly": "Superadmin only.",
@@ -16,6 +264,46 @@
     "save": "Save",
     "saving": "saving...",
     "saved": "saved"
+  },
+  "tradingDefaults": {
+    "eyebrow": "Trading & Exchanges",
+    "title": "Trading defaults",
+    "description": "Set the defaults the Trading Desk and future launch flows should use first.",
+    "form": {
+      "title": "Default ticket",
+      "description": "These values are persisted per user and can still be overridden inside the Trading Desk."
+    },
+    "fields": {
+      "exchangeAccount": "Default exchange account",
+      "noDefault": "No default",
+      "marketType": "Market type",
+      "marginMode": "Margin mode",
+      "leverage": "Leverage",
+      "quoteCurrency": "Quote currency",
+      "symbol": "Symbol",
+      "timeframe": "Timeframe",
+      "timezone": "Timezone"
+    },
+    "marketTypes": {
+      "perp": "Perpetual",
+      "spot": "Spot"
+    },
+    "marginModes": {
+      "cross": "Cross",
+      "isolated": "Isolated"
+    },
+    "preview": {
+      "title": "Current default preview",
+      "account": "{label} on {exchange}",
+      "noAccount": "No default account selected.",
+      "symbol": "Symbol",
+      "margin": "Margin",
+      "leverage": "Leverage",
+      "quote": "Quote"
+    },
+    "messages": {
+      "saved": "Trading defaults saved."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -58,6 +346,31 @@
         "low": "Low"
       }
     },
+    "mobilePush": {
+      "title": "Mobile push",
+      "description": "Registered iOS devices can receive future push alerts. Devices register from the iOS app.",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "apns": "APNS",
+      "configured": "Configured",
+      "missing": "Missing",
+      "environment": "Environment",
+      "bundle": "Bundle",
+      "devices": "Devices",
+      "unknownDevice": "Unknown device",
+      "lastSeen": "Last seen: {value}",
+      "active": "Active",
+      "revoked": "Revoked",
+      "revoke": "Revoke",
+      "empty": "No mobile device has registered for push notifications yet.",
+      "confirmTitle": "Revoke mobile push device?",
+      "confirmDescription": "This disables push delivery for the selected device. The iOS app can register it again later.",
+      "confirmAction": "Revoke device",
+      "confirmCancel": "Cancel",
+      "messages": {
+        "revoked": "Mobile push device revoked."
+      }
+    },
     "messages": {
       "saved": "Saved.",
       "testSent": "Test alert sent to Telegram.",
@@ -77,6 +390,7 @@
     "open": "Open",
     "delete": "Delete",
     "deleting": "Deleting...",
+    "confirmDeleteTitle": "Delete bot?",
     "confirmDelete": "Delete bot \"{name}\" ({symbol})? This cannot be undone.",
     "deleted": "deleted {name}"
   },
@@ -210,6 +524,24 @@
       "autoLogout": "Enable auto-logout",
       "idleMinutes": "Idle minutes",
       "otp": "Require OTP re-auth for sensitive actions"
+    },
+    "sessions": {
+      "title": "Active sessions",
+      "description": "Review signed-in browser sessions and revoke devices you no longer use.",
+      "current": "Current session",
+      "other": "Other session",
+      "expired": "Expired",
+      "lastActive": "Last active",
+      "created": "Created",
+      "expires": "Expires",
+      "empty": "No active sessions found.",
+      "revoke": "Revoke",
+      "revokeOthers": "Revoke others",
+      "currentHint": "Use logout to end the current session.",
+      "confirmRevokeTitle": "Revoke this session?",
+      "confirmRevokeDescription": "This signs out that browser or device immediately. Your current session stays active.",
+      "confirmRevokeOthersTitle": "Revoke all other sessions?",
+      "confirmRevokeOthersDescription": "This signs out every other browser and device while keeping your current session active."
     },
     "reset": {
       "title": "Reset via Email Code",

@@ -59,6 +59,7 @@ import {
   ShieldCheck,
   ShieldPlus,
   SlidersHorizontal,
+  Smartphone,
   Sparkles,
   Square,
   Star,
@@ -167,6 +168,7 @@ export type AppIconName =
   | "upload"
   | "money"
   | "balance"
+  | "mobile"
   | "generic";
 
 const APP_ICON_MAP: Record<AppIconName, LucideIcon> = {
@@ -260,6 +262,7 @@ const APP_ICON_MAP: Record<AppIconName, LucideIcon> = {
   upload: Upload,
   money: BadgeDollarSign,
   balance: Coins,
+  mobile: Smartphone,
   generic: Circle
 };
 

@@ -1,6 +1,9 @@
+import crypto from "node:crypto";
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { SESSION_COOKIE } from "../auth/cookies.js";
+import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "../legalAcknowledgement.js";
 import {
   findTelegramChatIdConflict as findTelegramChatIdConflictFromDeps,
   isPrismaUniqueConstraintError,
@@ -15,6 +18,7 @@ import {
   resolveTelegramLinkTtlMinutes
 } from "../telegram/linking.js";
 import { resolveTelegramConfig, sendTelegramMessage } from "../telegram/notifications.js";
+import { isApnsConfigured as defaultIsApnsConfigured } from "../plugins/notifications/apnsNotificationPlugin.js";
 
 const alertsSettingsSchema = z.object({
   telegramBotToken: z.string().trim().nullable().optional(),
@@ -86,6 +90,35 @@ function buildTelegramChatIdConflictResponse(res: express.Response): express.Res
   return res.status(409).json(TELEGRAM_CHAT_ID_IN_USE_ERROR);
 }
 
+function hashSessionToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function isoOrNull(value: unknown): string | null {
+  return value instanceof Date && Number.isFinite(value.getTime()) ? value.toISOString() : null;
+}
+
+function normalizePushEnvironment(value: unknown): "sandbox" | "production" {
+  return String(value ?? process.env.APNS_ENV ?? "").trim().toLowerCase() === "sandbox"
+    ? "sandbox"
+    : "production";
+}
+
+function toMobilePushTokenDto(row: any) {
+  return {
+    id: String(row.id),
+    platform: String(row.platform ?? "ios"),
+    environment: String(row.environment ?? "production"),
+    bundleId: String(row.bundleId ?? ""),
+    deviceId: row.deviceId ?? null,
+    appVersion: row.appVersion ?? null,
+    enabled: Boolean(row.enabled),
+    lastSeenAt: isoOrNull(row.lastSeenAt),
+    revokedAt: isoOrNull(row.revokedAt),
+    createdAt: isoOrNull(row.createdAt)
+  };
+}
+
 export type RegisterSettingsCoreRoutesDeps = {
   db: any;
   isSuperadminEmail(email: string): boolean;
@@ -128,6 +161,7 @@ export type RegisterSettingsCoreRoutesDeps = {
   computeRemaining(limit: number | null, usage: number): number | null;
   resolveTelegramConfig?: typeof resolveTelegramConfig;
   sendTelegramMessage?: typeof sendTelegramMessage;
+  isApnsConfigured?: typeof defaultIsApnsConfigured;
 };
 
 export function registerSettingsCoreRoutes(
@@ -136,6 +170,7 @@ export function registerSettingsCoreRoutes(
 ) {
   const resolveTelegramConfigFn = deps.resolveTelegramConfig ?? resolveTelegramConfig;
   const sendTelegramMessageFn = deps.sendTelegramMessage ?? sendTelegramMessage;
+  const isApnsConfiguredFn = deps.isApnsConfigured ?? defaultIsApnsConfigured;
   const buildAlertsResponse = async (params: {
     userId: string;
     isSuperadmin: boolean;
@@ -255,6 +290,172 @@ export function registerSettingsCoreRoutes(
       reauthOtpEnabled: nextReauthEnabled,
       isSuperadmin: ctx.isSuperadmin
     });
+  });
+
+  app.get("/settings/sessions", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const currentToken = typeof req.cookies?.[SESSION_COOKIE] === "string"
+      ? req.cookies[SESSION_COOKIE]
+      : "";
+    const currentTokenHash = currentToken ? hashSessionToken(currentToken) : null;
+    const rows = await deps.db.session.findMany({
+      where: { userId: user.id },
+      orderBy: [
+        { lastActiveAt: "desc" },
+        { createdAt: "desc" }
+      ],
+      take: 50,
+      select: {
+        id: true,
+        createdAt: true,
+        lastActiveAt: true,
+        expiresAt: true,
+        tokenHash: true
+      }
+    });
+    const now = Date.now();
+
+    return res.json({
+      items: rows.map((row: any) => ({
+        id: String(row.id),
+        createdAt: isoOrNull(row.createdAt),
+        lastActiveAt: isoOrNull(row.lastActiveAt),
+        expiresAt: isoOrNull(row.expiresAt),
+        isCurrent: Boolean(currentTokenHash && row.tokenHash === currentTokenHash),
+        expired: row.expiresAt instanceof Date ? row.expiresAt.getTime() < now : false
+      }))
+    });
+  });
+
+  app.delete("/settings/sessions", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const scope = typeof req.query?.scope === "string" ? req.query.scope.trim().toLowerCase() : "";
+    if (scope !== "others") {
+      return res.status(400).json({ error: "invalid_scope" });
+    }
+    const currentToken = typeof req.cookies?.[SESSION_COOKIE] === "string"
+      ? req.cookies[SESSION_COOKIE]
+      : "";
+    const currentTokenHash = currentToken ? hashSessionToken(currentToken) : null;
+    if (!currentTokenHash) {
+      return res.status(400).json({ error: "current_session_missing" });
+    }
+
+    const result = await deps.db.session.deleteMany({
+      where: {
+        userId: user.id,
+        tokenHash: { not: currentTokenHash }
+      }
+    });
+    return res.json({ ok: true, deletedCount: result?.count ?? 0 });
+  });
+
+  app.delete("/settings/sessions/:id", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const sessionId = String(req.params?.id ?? "").trim();
+    if (!sessionId) return res.status(400).json({ error: "invalid_session_id" });
+    const row = await deps.db.session.findFirst({
+      where: { id: sessionId, userId: user.id },
+      select: { id: true, tokenHash: true }
+    });
+    if (!row) return res.status(404).json({ error: "session_not_found" });
+
+    const currentToken = typeof req.cookies?.[SESSION_COOKIE] === "string"
+      ? req.cookies[SESSION_COOKIE]
+      : "";
+    const currentTokenHash = currentToken ? hashSessionToken(currentToken) : null;
+    if (currentTokenHash && row.tokenHash === currentTokenHash) {
+      return res.status(400).json({ error: "current_session_cannot_be_revoked_here" });
+    }
+
+    await deps.db.session.deleteMany({
+      where: { id: row.id, userId: user.id }
+    });
+    return res.json({ ok: true });
+  });
+
+  app.get("/settings/legal-acknowledgements", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const rows = await deps.db.userLegalAcknowledgement.findMany({
+      where: { userId: user.id },
+      orderBy: [{ acceptedAt: "desc" }],
+      take: 5,
+      select: {
+        id: true,
+        version: true,
+        textHash: true,
+        acceptedAt: true,
+        createdAt: true
+      }
+    });
+    const items = rows.map((row: any) => ({
+      id: String(row.id),
+      version: String(row.version ?? ""),
+      textHash: String(row.textHash ?? ""),
+      acceptedAt: isoOrNull(row.acceptedAt),
+      createdAt: isoOrNull(row.createdAt)
+    }));
+
+    return res.json({
+      currentVersion: LEGAL_ACKNOWLEDGEMENT_VERSION,
+      latest: items[0] ?? null,
+      items
+    });
+  });
+
+  app.get("/settings/mobile-push", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const rows = await deps.db.mobilePushToken.findMany({
+      where: { userId: user.id },
+      orderBy: [
+        { lastSeenAt: "desc" },
+        { createdAt: "desc" }
+      ],
+      take: 20,
+      select: {
+        id: true,
+        platform: true,
+        environment: true,
+        bundleId: true,
+        deviceId: true,
+        appVersion: true,
+        enabled: true,
+        lastSeenAt: true,
+        revokedAt: true,
+        createdAt: true
+      }
+    });
+    const tokens = rows.map(toMobilePushTokenDto);
+
+    return res.json({
+      enabled: tokens.some((token) => token.enabled && !token.revokedAt),
+      apnsConfigured: isApnsConfiguredFn(),
+      environment: normalizePushEnvironment(null),
+      bundleId: process.env.APNS_BUNDLE_ID ?? null,
+      tokens
+    });
+  });
+
+  app.delete("/settings/mobile-push/:id", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const tokenId = String(req.params?.id ?? "").trim();
+    if (!tokenId) return res.status(400).json({ error: "invalid_token_id" });
+
+    const result = await deps.db.mobilePushToken.updateMany({
+      where: {
+        id: tokenId,
+        userId: user.id,
+        revokedAt: null
+      },
+      data: {
+        enabled: false,
+        revokedAt: new Date()
+      }
+    });
+    if ((result?.count ?? 0) < 1) {
+      return res.status(404).json({ error: "push_token_not_found" });
+    }
+    return res.json({ ok: true });
   });
 
   app.get("/settings/exchange-options", requireAuth, async (_req, res) => {

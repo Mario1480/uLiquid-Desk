@@ -3,9 +3,19 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
+import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminConfirmDialog from "../../admin/_components/AdminConfirmDialog";
 import { AppIcon } from "../../components/AppIcon";
+
+type SettingsSession = {
+  id: string;
+  createdAt: string | null;
+  lastActiveAt: string | null;
+  expiresAt: string | null;
+  isCurrent: boolean;
+  expired?: boolean;
+};
 
 export default function UsersPage() {
   const t = useTranslations("settings.users");
@@ -31,10 +41,23 @@ export default function UsersPage() {
   const [autoLogoutMinutes, setAutoLogoutMinutes] = useState(60);
   const [otpEnabled, setOtpEnabled] = useState(true);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
+  const [sessions, setSessions] = useState<SettingsSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState("");
+  const [sessionActionBusy, setSessionActionBusy] = useState<string | null>(null);
+  const [confirmSessionId, setConfirmSessionId] = useState<string | null>(null);
+  const [confirmRevokeOthers, setConfirmRevokeOthers] = useState(false);
 
   function errMsg(e: any): string {
     if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
     return e?.message ? String(e.message) : String(e);
+  }
+
+  function formatDateTime(value: string | null | undefined): string {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
   }
 
   async function loadSecuritySettings() {
@@ -59,6 +82,19 @@ export default function UsersPage() {
       setSecurityMsg(errMsg(e));
     } finally {
       setSecurityLoading(false);
+    }
+  }
+
+  async function loadSessions() {
+    setSessionsLoading(true);
+    setSessionsError("");
+    try {
+      const payload = await apiGet<{ items?: SettingsSession[] }>("/settings/sessions");
+      setSessions(payload.items ?? []);
+    } catch (e) {
+      setSessionsError(errMsg(e));
+    } finally {
+      setSessionsLoading(false);
     }
   }
 
@@ -89,7 +125,36 @@ export default function UsersPage() {
 
   useEffect(() => {
     loadSecuritySettings();
+    loadSessions();
   }, []);
+
+  async function revokeSession(sessionId: string) {
+    setSessionActionBusy(sessionId);
+    setSessionsError("");
+    try {
+      await apiDelete<{ ok: boolean }>(`/settings/sessions/${encodeURIComponent(sessionId)}`);
+      setConfirmSessionId(null);
+      await loadSessions();
+    } catch (e) {
+      setSessionsError(errMsg(e));
+    } finally {
+      setSessionActionBusy(null);
+    }
+  }
+
+  async function revokeOtherSessions() {
+    setSessionActionBusy("others");
+    setSessionsError("");
+    try {
+      await apiDelete<{ ok: boolean; deletedCount: number }>("/settings/sessions?scope=others");
+      setConfirmRevokeOthers(false);
+      await loadSessions();
+    } catch (e) {
+      setSessionsError(errMsg(e));
+    } finally {
+      setSessionActionBusy(null);
+    }
+  }
 
   async function savePassword() {
     setPwdStatus(tCommon("saving"));
@@ -270,6 +335,67 @@ export default function UsersPage() {
 
       <div className="card settingsSection" style={{ marginTop: 14 }}>
         <div className="settingsSectionHeader">
+          <div>
+            <div style={{ fontWeight: 700 }}>{t("sessions.title")}</div>
+            <div className="settingsMutedText">{t("sessions.description")}</div>
+          </div>
+          <div className="settingsWalletLinkActions">
+            <button className="btn" type="button" onClick={() => void loadSessions()} disabled={sessionsLoading || Boolean(sessionActionBusy)}>
+              <AppIcon name="refresh" />
+              {sessionsLoading ? tCommon("loading") : tCommon("reload")}
+            </button>
+            <button
+              className="btn btnStop"
+              type="button"
+              onClick={() => setConfirmRevokeOthers(true)}
+              disabled={sessionsLoading || sessions.filter((session) => !session.isCurrent).length === 0 || Boolean(sessionActionBusy)}
+            >
+              <AppIcon name="unlink" />
+              {t("sessions.revokeOthers")}
+            </button>
+          </div>
+        </div>
+        {sessionsError ? <div className="settingsAlert settingsAlertError">{sessionsError}</div> : null}
+        {sessionsLoading ? (
+          <div className="settingsMutedText">{tCommon("loading")}</div>
+        ) : sessions.length === 0 ? (
+          <div className="settingsMutedText">{t("sessions.empty")}</div>
+        ) : (
+          <div className="settingsAccountList">
+            {sessions.map((session) => (
+              <div className="card settingsAccountCard" key={session.id}>
+                <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <strong>{session.isCurrent ? t("sessions.current") : t("sessions.other")}</strong>
+                    {session.expired ? <span className="badge">{t("sessions.expired")}</span> : null}
+                  </div>
+                  <div className="settingsMutedText">
+                    {t("sessions.lastActive")}: {formatDateTime(session.lastActiveAt)}
+                  </div>
+                  <div className="settingsMutedText">
+                    {t("sessions.created")}: {formatDateTime(session.createdAt)} · {t("sessions.expires")}: {formatDateTime(session.expiresAt)}
+                  </div>
+                </div>
+                <div className="settingsAccountActions">
+                  <button
+                    className="btn btnStop"
+                    type="button"
+                    onClick={() => setConfirmSessionId(session.id)}
+                    disabled={session.isCurrent || sessionActionBusy === session.id}
+                    title={session.isCurrent ? t("sessions.currentHint") : undefined}
+                  >
+                    <AppIcon name="delete" />
+                    {sessionActionBusy === session.id ? tCommon("deleting") : t("sessions.revoke")}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card settingsSection" style={{ marginTop: 14 }}>
+        <div className="settingsSectionHeader">
           <div style={{ fontWeight: 700 }}>{t("reset.title")}</div>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
@@ -343,6 +469,26 @@ export default function UsersPage() {
       </div>
 
       {error ? <div style={{ fontSize: 12, color: "#ff6b6b", marginTop: 8 }}>{error}</div> : null}
+      <AdminConfirmDialog
+        open={Boolean(confirmSessionId)}
+        title={t("sessions.confirmRevokeTitle")}
+        description={t("sessions.confirmRevokeDescription")}
+        confirmLabel={t("sessions.revoke")}
+        loading={Boolean(confirmSessionId && sessionActionBusy === confirmSessionId)}
+        onCancel={() => setConfirmSessionId(null)}
+        onConfirm={() => {
+          if (confirmSessionId) void revokeSession(confirmSessionId);
+        }}
+      />
+      <AdminConfirmDialog
+        open={confirmRevokeOthers}
+        title={t("sessions.confirmRevokeOthersTitle")}
+        description={t("sessions.confirmRevokeOthersDescription")}
+        confirmLabel={t("sessions.revokeOthers")}
+        loading={sessionActionBusy === "others"}
+        onCancel={() => setConfirmRevokeOthers(false)}
+        onConfirm={() => void revokeOtherSessions()}
+      />
     </div>
   );
 }
