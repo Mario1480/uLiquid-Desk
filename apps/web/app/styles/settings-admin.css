@@ -575,6 +575,17 @@
   border-color: rgba(52, 211, 153, 0.34);
   background: rgba(16, 185, 129, 0.05);
 }
+.settingsDangerSection {
+  border-color: rgba(239, 68, 68, 0.36);
+}
+.settingsBlockerList {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+.settingsBlockerList li + li {
+  margin-top: 4px;
+}
 .settingsWalletLinkHeader {
   display: flex;
   align-items: flex-start;

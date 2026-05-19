@@ -169,8 +169,8 @@
       },
       "privacy": {
         "title": "Datenexport & Account löschen",
-        "description": "Privacy-Aktionen mit Backend-Safety-Workflow vorbereiten.",
-        "meta": "Als Backend-Arbeit dokumentiert; keine destruktive Frontend-only-Aktion."
+        "description": "Privacy-Aktionen prüfen und den Account löschen, sobald es sicher ist.",
+        "meta": "Account-Löschung ist mit Kapital- und Bot-Safety-Checks verfügbar."
       }
     },
     "wallet": {
@@ -628,5 +628,42 @@
     "title": "Audit-Log",
     "noPermission": "Du hast keine Berechtigung, Audit-Logs einzusehen.",
     "empty": "Noch keine Audit-Events vorhanden."
+  },
+  "privacy": {
+    "eyebrow": "Privacy & Account",
+    "title": "Privacy Controls",
+    "description": "Prüfe den Datenexport-Status und entferne den Account-Zugriff dauerhaft, wenn alle Trading- und Vault-Flächen sicher sind.",
+    "export": {
+      "title": "Datenexport",
+      "description": "Ein Download-Export läuft aktuell noch über Support.",
+      "status": "Manuell",
+      "meta": "Damit bleibt der destruktive Lösch-Flow sauber von einem künftigen verifizierten Export-Paket getrennt."
+    },
+    "delete": {
+      "title": "Account löschen",
+      "description": "Entfernt den Login-Zugriff durch Anonymisierung der Account-Identität und löscht Sessions, Wallet-Links, Mobile-Push-Tokens und Notification-Links.",
+      "superadminBlocked": "Superadmin-Accounts können nicht über Self-Service-Settings gelöscht werden.",
+      "blockedTitle": "Löschung ist blockiert",
+      "blockedDescription": "Löse diese Punkte, bevor der Account gelöscht wird.",
+      "readyNotice": "Keine aktiven Bot- oder funded Vault-Blocker gefunden. Bestätige die Account-E-Mail und tippe DELETE ein.",
+      "confirmEmail": "Account-E-Mail bestätigen",
+      "confirmText": "DELETE eintippen",
+      "action": "Account löschen",
+      "deleting": "Lösche...",
+      "confirmDialogTitle": "Account dauerhaft löschen?",
+      "confirmDialogDescription": "Das entfernt Login-Zugriff, Wallet-Links, Sessions, Push-Tokens und persönliche Settings. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "confirmDialogAction": "Account löschen",
+      "confirmDialogCancel": "Abbrechen",
+      "messages": {
+        "deleted": "Account gelöscht. Weiterleitung zum Login..."
+      },
+      "blockers": {
+        "running_bots": "{count} laufende(r) Bot(s)",
+        "active_grid_bots": "{count} aktive Grid-Bot-Instanz(en)",
+        "active_bot_vaults": "{count} aktive BotVault(s)",
+        "funded_bot_vaults": "{count} BotVault(s) halten oder referenzieren noch Kapital",
+        "funded_funding_vaults": "{count} Funding Vault(s) halten noch verfügbares oder reserviertes USDC"
+      }
+    }
   }
 }

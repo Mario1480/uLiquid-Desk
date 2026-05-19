@@ -57,6 +57,11 @@ const securitySettingsSchema = z.object({
   reauthOtpEnabled: z.boolean().optional()
 });
 
+const accountDeletionSchema = z.object({
+  confirmEmail: z.string().trim().email().max(320),
+  confirmText: z.string().trim().max(64)
+});
+
 const accessSectionVisibilitySchema = z.object({
   tradingDesk: z.boolean().default(true),
   bots: z.boolean().default(true),
@@ -117,6 +122,19 @@ function toMobilePushTokenDto(row: any) {
     revokedAt: isoOrNull(row.revokedAt),
     createdAt: isoOrNull(row.createdAt)
   };
+}
+
+function normalizeEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function accountDeletionGlobalSettingFilters(userId: string) {
+  return [
+    { key: `trade_settings:${userId}` },
+    { key: { startsWith: `settings.alerts.dailyEconomicCalendar.v1:${userId}` } },
+    { key: { startsWith: `settings.notifications.plugins.v1:${userId}` } },
+    { key: { startsWith: `settings.notifications.destinations.v1:${userId}` } }
+  ];
 }
 
 export type RegisterSettingsCoreRoutesDeps = {
@@ -456,6 +474,171 @@ export function registerSettingsCoreRoutes(
       return res.status(404).json({ error: "push_token_not_found" });
     }
     return res.json({ ok: true });
+  });
+
+  async function buildAccountDeletionSummary(userId: string) {
+    const [
+      runningBots,
+      activeGridBots,
+      activeBotVaults,
+      fundedBotVaults,
+      fundedFundingVaults
+    ] = await Promise.all([
+      deps.db.bot.count({
+        where: {
+          userId,
+          status: "running"
+        }
+      }).catch(() => 0),
+      deps.db.gridBotInstance.count({
+        where: {
+          userId,
+          state: { in: ["created", "running", "funding_pending", "paused", "error"] }
+        }
+      }).catch(() => 0),
+      deps.db.botVault.count({
+        where: {
+          userId,
+          status: { in: ["ACTIVE", "PAUSED", "CLOSE_ONLY", "ERROR"] }
+        }
+      }).catch(() => 0),
+      deps.db.botVault.count({
+        where: {
+          userId,
+          OR: [
+            { availableUsd: { gt: 0.000001 } },
+            { allocatedUsd: { gt: 0.000001 } },
+            { principalAllocated: { gt: 0.000001 } },
+            { profitShareAccruedUsd: { gt: 0.000001 } }
+          ]
+        }
+      }).catch(() => 0),
+      deps.db.fundingVault.count({
+        where: {
+          userId,
+          OR: [
+            { freeBalance: { gt: 0.000001 } },
+            { reservedBalance: { gt: 0.000001 } }
+          ]
+        }
+      }).catch(() => 0)
+    ]);
+    const blockers = [
+      runningBots > 0 ? { code: "running_bots", count: runningBots } : null,
+      activeGridBots > 0 ? { code: "active_grid_bots", count: activeGridBots } : null,
+      activeBotVaults > 0 ? { code: "active_bot_vaults", count: activeBotVaults } : null,
+      fundedBotVaults > 0 ? { code: "funded_bot_vaults", count: fundedBotVaults } : null,
+      fundedFundingVaults > 0 ? { code: "funded_funding_vaults", count: fundedFundingVaults } : null
+    ].filter(Boolean);
+
+    return {
+      canDelete: blockers.length === 0,
+      blockers
+    };
+  }
+
+  app.get("/settings/account-deletion", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const ctx = await deps.resolveUserContext(user);
+    const summary = await buildAccountDeletionSummary(user.id);
+
+    return res.json({
+      ...summary,
+      superadminBlocked: ctx.isSuperadmin
+    });
+  });
+
+  app.post("/settings/account/delete", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const parsed = accountDeletionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    if (parsed.data.confirmText !== "DELETE") {
+      return res.status(400).json({ error: "invalid_confirmation_text" });
+    }
+    if (normalizeEmail(parsed.data.confirmEmail) !== normalizeEmail(user.email)) {
+      return res.status(400).json({ error: "email_confirmation_mismatch" });
+    }
+
+    const ctx = await deps.resolveUserContext(user);
+    if (ctx.isSuperadmin) {
+      return res.status(403).json({ error: "superadmin_account_deletion_blocked" });
+    }
+
+    const summary = await buildAccountDeletionSummary(user.id);
+    if (!summary.canDelete) {
+      return res.status(409).json({ error: "account_deletion_blocked", blockers: summary.blockers });
+    }
+
+    const deletedAt = new Date();
+    const deletedEmail = `deleted-${user.id}-${deletedAt.getTime()}@deleted.local`;
+    await deps.db.$transaction(async (tx: any) => {
+      await Promise.all([
+        tx.session.deleteMany({ where: { userId: user.id } }),
+        tx.reauthSession.deleteMany({ where: { userId: user.id } }),
+        tx.reauthOtp.deleteMany({ where: { userId: user.id } }),
+        tx.mobilePushToken.deleteMany({ where: { userId: user.id } }),
+        tx.telegramLinkSession.deleteMany({ where: { userId: user.id } }),
+        tx.userAiPromptTemplate.deleteMany({ where: { userId: user.id } }).catch(() => ({ count: 0 })),
+        tx.mobileWatchlistItem.deleteMany({ where: { userId: user.id } }).catch(() => ({ count: 0 })),
+        tx.gridTemplateFavorite.deleteMany({ where: { userId: user.id } }).catch(() => ({ count: 0 })),
+        tx.globalSetting.deleteMany({
+          where: {
+            OR: accountDeletionGlobalSettingFilters(user.id)
+          }
+        }).catch(() => ({ count: 0 })),
+        tx.siweNonce.updateMany({
+          where: { issuedForUserId: user.id },
+          data: { issuedForUserId: null }
+        }).catch(() => ({ count: 0 })),
+        tx.userSubscription.updateMany({
+          where: { userId: user.id },
+          data: {
+            effectivePlan: "FREE",
+            status: "INACTIVE",
+            maxRunningBots: 0,
+            maxRunningPredictionsAi: 0,
+            maxRunningPredictionsComposite: 0,
+            aiTokenBalance: 0
+          }
+        }).catch(() => ({ count: 0 })),
+        tx.affiliateProfile.updateMany({
+          where: { userId: user.id },
+          data: { status: "DISABLED" }
+        }).catch(() => ({ count: 0 }))
+      ]);
+
+      await tx.exchangeAccount.updateMany({
+        where: { userId: user.id },
+        data: {
+          label: "Deleted account",
+          apiKeyEnc: "deleted",
+          apiSecretEnc: "deleted",
+          passphraseEnc: null
+        }
+      }).catch(() => ({ count: 0 }));
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          email: deletedEmail,
+          walletAddress: null,
+          passwordHash: null,
+          telegramChatId: null,
+          emailVerifiedAt: null,
+          allowManualTrading: false,
+          agentWallet: null,
+          agentSecretRef: null,
+          agentLastBalanceAt: null,
+          agentLastBalanceWei: null,
+          agentLastBalanceFormatted: null
+        }
+      });
+    });
+
+    res.clearCookie(SESSION_COOKIE, { path: "/" });
+    return res.json({ ok: true, deletedAt: deletedAt.toISOString() });
   });
 
   app.get("/settings/exchange-options", requireAuth, async (_req, res) => {

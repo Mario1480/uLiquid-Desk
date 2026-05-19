@@ -11,13 +11,14 @@ function hashToken(token: string): string {
 
 function createFakeApp() {
   const getRoutes: RouteMap = new Map();
+  const postRoutes: RouteMap = new Map();
   const deleteRoutes: RouteMap = new Map();
   return {
     get(path: string, ...handlers: Array<(...args: any[]) => any>) {
       getRoutes.set(path, handlers);
     },
-    post() {
-      // not needed for this suite
+    post(path: string, ...handlers: Array<(...args: any[]) => any>) {
+      postRoutes.set(path, handlers);
     },
     put() {
       // not needed for this suite
@@ -27,6 +28,7 @@ function createFakeApp() {
     },
     routes: {
       get: getRoutes,
+      post: postRoutes,
       delete: deleteRoutes
     }
   };
@@ -49,11 +51,14 @@ function createMockRes(userId = "user_1") {
     json(payload: any) {
       this.body = payload;
       return this;
+    },
+    clearCookie() {
+      return this;
     }
   };
 }
 
-function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "get" | "delete", path: string) {
+function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "get" | "post" | "delete", path: string) {
   const handlers = app.routes[method].get(path);
   if (!handlers?.length) throw new Error(`route_not_found:${method}:${path}`);
   return handlers[handlers.length - 1];
@@ -61,6 +66,29 @@ function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "get" | 
 
 function createSessionDb(rows: any[]) {
   const state = {
+    users: [
+      {
+        id: "user_1",
+        email: "user_1@example.com",
+        walletAddress: "0xUser",
+        passwordHash: "hash",
+        telegramChatId: "123",
+        emailVerifiedAt: new Date("2026-05-18T08:00:00.000Z"),
+        allowManualTrading: true,
+        agentWallet: "0xAgent",
+        agentSecretRef: "secret",
+        agentLastBalanceAt: new Date("2026-05-18T08:00:00.000Z"),
+        agentLastBalanceWei: "100",
+        agentLastBalanceFormatted: "0.1"
+      }
+    ],
+    blockers: {
+      runningBots: 0,
+      activeGridBots: 0,
+      activeBotVaults: 0,
+      fundedBotVaults: 0,
+      fundedFundingVaults: 0
+    },
     sessions: [...rows],
     legalAcknowledgements: [
       {
@@ -102,7 +130,19 @@ function createSessionDb(rows: any[]) {
     ]
   };
 
-  return {
+  const deleteManyByUserId = (key: "sessions" | "mobilePushTokens") => async ({ where }: any) => {
+    const before = state[key].length;
+    state[key] = state[key].filter((row: any) => {
+      if (where.id && row.id !== where.id) return true;
+      if (where.userId && row.userId !== where.userId) return true;
+      if (where.tokenHash?.not && row.tokenHash === where.tokenHash.not) return true;
+      return false;
+    }) as any;
+    return { count: before - state[key].length };
+  };
+  const noOpDeleteMany = async () => ({ count: 0 });
+  const noOpUpdateMany = async () => ({ count: 0 });
+  const db: any = {
     state,
     session: {
       findMany: async ({ where }: any) =>
@@ -111,15 +151,14 @@ function createSessionDb(rows: any[]) {
           .sort((a, b) => b.lastActiveAt.getTime() - a.lastActiveAt.getTime()),
       findFirst: async ({ where }: any) =>
         state.sessions.find((row) => row.id === where.id && row.userId === where.userId) ?? null,
-      deleteMany: async ({ where }: any) => {
-        const before = state.sessions.length;
-        state.sessions = state.sessions.filter((row) => {
-          if (where.id && row.id !== where.id) return true;
-          if (where.userId && row.userId !== where.userId) return true;
-          if (where.tokenHash?.not && row.tokenHash === where.tokenHash.not) return true;
-          return false;
-        });
-        return { count: before - state.sessions.length };
+      deleteMany: deleteManyByUserId("sessions")
+    },
+    user: {
+      update: async ({ where, data }: any) => {
+        const row = state.users.find((entry) => entry.id === where.id);
+        if (!row) throw new Error("user_not_found");
+        Object.assign(row, data);
+        return row;
       }
     },
     userLegalAcknowledgement: {
@@ -133,6 +172,7 @@ function createSessionDb(rows: any[]) {
         state.mobilePushTokens
           .filter((row) => row.userId === where.userId)
           .sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime()),
+      deleteMany: deleteManyByUserId("mobilePushTokens"),
       updateMany: async ({ where, data }: any) => {
         let count = 0;
         state.mobilePushTokens = state.mobilePushTokens.map((row) => {
@@ -144,8 +184,28 @@ function createSessionDb(rows: any[]) {
         });
         return { count };
       }
-    }
+    },
+    bot: { count: async () => state.blockers.runningBots },
+    gridBotInstance: { count: async () => state.blockers.activeGridBots },
+    botVault: {
+      count: async ({ where }: any) =>
+        where?.OR ? state.blockers.fundedBotVaults : state.blockers.activeBotVaults
+    },
+    fundingVault: { count: async () => state.blockers.fundedFundingVaults },
+    reauthSession: { deleteMany: noOpDeleteMany },
+    reauthOtp: { deleteMany: noOpDeleteMany },
+    telegramLinkSession: { deleteMany: noOpDeleteMany },
+    userAiPromptTemplate: { deleteMany: noOpDeleteMany },
+    mobileWatchlistItem: { deleteMany: noOpDeleteMany },
+    gridTemplateFavorite: { deleteMany: noOpDeleteMany },
+    globalSetting: { deleteMany: noOpDeleteMany },
+    siweNonce: { updateMany: noOpUpdateMany },
+    userSubscription: { updateMany: noOpUpdateMany },
+    affiliateProfile: { updateMany: noOpUpdateMany },
+    exchangeAccount: { updateMany: noOpUpdateMany },
+    $transaction: async (fn: any) => fn(db)
   };
+  return db;
 }
 
 function createDeps(db: any) {
@@ -332,4 +392,51 @@ test("settings mobile push hides foreign token ids behind not found", async () =
 
   assert.equal(res.statusCode, 404);
   assert.equal(res.body.error, "push_token_not_found");
+});
+
+test("settings account deletion summary reports blockers", async () => {
+  const { app, db } = createAppWithSessions();
+  db.state.blockers.runningBots = 1;
+  db.state.blockers.fundedFundingVaults = 1;
+  const handler = getFinalHandler(app, "get", "/settings/account-deletion");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.canDelete, false);
+  assert.deepEqual(
+    res.body.blockers.map((blocker: any) => blocker.code),
+    ["running_bots", "funded_funding_vaults"]
+  );
+});
+
+test("settings account deletion blocks until running capital surfaces are resolved", async () => {
+  const { app, db } = createAppWithSessions();
+  db.state.blockers.activeBotVaults = 1;
+  const handler = getFinalHandler(app, "post", "/settings/account/delete");
+  const res = createMockRes();
+
+  await handler({ body: { confirmEmail: "user_1@example.com", confirmText: "DELETE" } }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.error, "account_deletion_blocked");
+  assert.equal(db.state.users[0].email, "user_1@example.com");
+});
+
+test("settings account deletion anonymizes account and revokes sessions", async () => {
+  const { app, db } = createAppWithSessions();
+  const handler = getFinalHandler(app, "post", "/settings/account/delete");
+  const res = createMockRes();
+
+  await handler({ body: { confirmEmail: "user_1@example.com", confirmText: "DELETE" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.match(db.state.users[0].email, /^deleted-user_1-\d+@deleted\.local$/);
+  assert.equal(db.state.users[0].walletAddress, null);
+  assert.equal(db.state.users[0].passwordHash, null);
+  assert.equal(db.state.users[0].telegramChatId, null);
+  assert.equal(db.state.sessions.some((row: any) => row.userId === "user_1"), false);
+  assert.equal(db.state.mobilePushTokens.some((row: any) => row.userId === "user_1"), false);
 });

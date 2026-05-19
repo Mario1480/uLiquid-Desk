@@ -667,13 +667,13 @@ function SettingsHubContent() {
             actionLabel={t("actions.open")}
           />
           <HubCard
-            icon="download"
+            icon="delete"
             title={t("cards.privacy.title")}
             description={t("cards.privacy.description")}
             meta={t("cards.privacy.meta")}
-            badge={t("badges.needsBackend")}
-            actionLabel={t("actions.planned")}
-            disabled
+            badge={t("badges.active")}
+            href={withLocalePath("/settings/privacy", locale)}
+            actionLabel={t("actions.manage")}
           />
         </HubGroup>
       </div>

@@ -169,8 +169,8 @@
       },
       "privacy": {
         "title": "Data export & account deletion",
-        "description": "Prepare privacy operations with a backend safety workflow.",
-        "meta": "Documented as backend work; no frontend-only destructive action."
+        "description": "Review privacy operations and delete your account when it is safe.",
+        "meta": "Account deletion is available with capital and bot safety checks."
       }
     },
     "wallet": {
@@ -628,5 +628,42 @@
     "title": "Audit Log",
     "noPermission": "You don’t have permission to view audit logs.",
     "empty": "No audit events yet."
+  },
+  "privacy": {
+    "eyebrow": "Privacy & account",
+    "title": "Privacy controls",
+    "description": "Review data export status and permanently remove account access when all trading and vault surfaces are safe.",
+    "export": {
+      "title": "Data export",
+      "description": "A downloadable export is still handled by support for now.",
+      "status": "Manual",
+      "meta": "This keeps the destructive delete flow separate from a future verified export package."
+    },
+    "delete": {
+      "title": "Delete account",
+      "description": "Deletes login access by anonymizing account identity, removing sessions, wallet links, mobile push tokens and notification links.",
+      "superadminBlocked": "Superadmin accounts cannot be deleted from self-service settings.",
+      "blockedTitle": "Deletion is blocked",
+      "blockedDescription": "Resolve these items before deleting the account.",
+      "readyNotice": "No active bot or funded vault blockers were found. Confirm the account email and type DELETE to continue.",
+      "confirmEmail": "Confirm account email",
+      "confirmText": "Type DELETE",
+      "action": "Delete account",
+      "deleting": "Deleting...",
+      "confirmDialogTitle": "Permanently delete account?",
+      "confirmDialogDescription": "This removes login access, wallet links, sessions, push tokens and personal settings. This action cannot be undone.",
+      "confirmDialogAction": "Delete account",
+      "confirmDialogCancel": "Cancel",
+      "messages": {
+        "deleted": "Account deleted. Redirecting to login..."
+      },
+      "blockers": {
+        "running_bots": "{count} running bot(s)",
+        "active_grid_bots": "{count} active Grid Bot instance(s)",
+        "active_bot_vaults": "{count} active BotVault(s)",
+        "funded_bot_vaults": "{count} BotVault(s) still hold or reference capital",
+        "funded_funding_vaults": "{count} Funding Vault(s) still hold available or reserved USDC"
+      }
+    }
   }
 }
