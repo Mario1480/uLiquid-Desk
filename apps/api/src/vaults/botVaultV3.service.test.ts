@@ -7049,7 +7049,7 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
     limitPx: number;
     sz: number;
     reduceOnly: boolean;
-    encodedTif: 1 | 2 | 3;
+    encodedTif: 1 | 2;
     clientOrderId: string;
   }> = [];
   const adapterAccounts: any[] = [];
@@ -7192,6 +7192,7 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
         coreSpotUsdcBalance = Number((coreSpotUsdcBalance - input.sz * 10).toFixed(6));
         coreSpotHypeBalance = Number((coreSpotHypeBalance + input.sz).toFixed(6));
         return {
+          status: "confirmed",
           orderId: "cloid:10007:1",
           txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
           clientOrderId: input.clientOrderId
@@ -7256,11 +7257,11 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
   assert.equal(coreWriterBuyCalls[0]?.asset, 10007);
   assert.equal(coreWriterBuyCalls[0]?.isBuy, true);
   assert.equal(coreWriterBuyCalls[0]?.reduceOnly, false);
-  assert.equal(coreWriterBuyCalls[0]?.encodedTif, 3);
-  assert.equal(coreWriterBuyCalls[0]?.sz, 0.05);
+  assert.equal(coreWriterBuyCalls[0]?.encodedTif, 2);
+  assert.equal(coreWriterBuyCalls[0]?.sz, 0.01);
   assert.equal(coreWriterBuyCalls[0]?.limitPx, 10.005);
   assert.match(String(coreWriterBuyCalls[0]?.clientOrderId), /^bot-vault-exit-gas-/);
-  assert.deepEqual(spotTransfers, [{ amountUsd: 4.5, expectedEvmBalanceAfterUsd: null }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 4.9, expectedEvmBalanceAfterUsd: null }]);
   assert.ok(dbUpdates.length >= 1);
 });
 
@@ -7619,6 +7620,255 @@ test("controllerCloseBotVault persists settled accounting when the contract rema
   assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycle?.overrideState, null);
   assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycle?.executionStatus, "closed");
   assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycle?.isTerminal, true);
+});
+
+test("controllerCloseBotVault closes v4 zero-profit vault without finalized pnl aggregate", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const dbUpdates: any[] = [];
+  const sentTransactions: `0x${string}`[] = [];
+  let pnlAggregateLookups = 0;
+  let stage: "before_close" | "after_close" = "before_close";
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_v4_zero_profit_close",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v4",
+          vaultAddress,
+          controllerAddress,
+          realizedPnlNet: 0,
+          executionMetadata: {
+            onchainContractVersion: "v4"
+          },
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: "api-key",
+              apiSecretEnc: "0x5555555555555555555555555555555555555555555555555555555555555555",
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    },
+    botVaultPnlAggregate: {
+      async findUnique() {
+        pnlAggregateLookups += 1;
+        return null;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 4n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
+            case "highWaterMarkProfit":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 0n : 6_000_000n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(input: { data?: `0x${string}` }) {
+          if (input.data) sentTransactions.push(input.data);
+          stage = "after_close";
+          return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotAssetBalance: async () => "0",
+    readHyperliquidSpotUsdcBalance: async () => "0",
+    decryptSecret: (value) => value
+  });
+
+  const result = await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_v4_zero_profit_close"
+  });
+
+  assert.equal(result.closeOnlyTxHash, null);
+  assert.equal(result.feeAmountAtomic, "0");
+  assert.equal(pnlAggregateLookups, 0);
+  assert.equal(sentTransactions.length, 1);
+  const decoded = decodeFunctionData({
+    abi: parseAbi([
+      "function closeVault(uint256 principalAmount, uint256 grossAmount, uint256 feeAmount, int256 realizedClosedPnl)"
+    ]),
+    data: sentTransactions[0]!
+  });
+  assert.deepEqual(decoded.args, [6_000_000n, 6_000_000n, 0n, 0n]);
+  const settlementUpdate = dbUpdates.find((entry) => entry?.data?.withdrawnUsd?.increment === 6);
+  assert.ok(settlementUpdate);
+});
+
+test("controllerCloseBotVault uses legacy 3-argument close selector for v4 vault bytecode without v4 settlement actions", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const dbUpdates: any[] = [];
+  const sentTransactions: `0x${string}`[] = [];
+  let stage: "before_close" | "after_close" = "before_close";
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_v4_legacy_settlement_close",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v4",
+          vaultAddress,
+          controllerAddress,
+          realizedPnlNet: 0,
+          executionMetadata: {
+            onchainContractVersion: "v4"
+          },
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: "api-key",
+              apiSecretEnc: "0x5555555555555555555555555555555555555555555555555555555555555555",
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    },
+    botVaultPnlAggregate: {
+      async findUnique() {
+        return null;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async getBytecode() {
+          return "0x60000b9c0f786000";
+        },
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 4n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 5_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
+            case "highWaterMarkProfit":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 0n : 5_000_000n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(input: { data?: `0x${string}` }) {
+          if (input.data) sentTransactions.push(input.data);
+          stage = "after_close";
+          return "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotAssetBalance: async () => "0",
+    readHyperliquidSpotUsdcBalance: async () => "0",
+    decryptSecret: (value) => value
+  });
+
+  const result = await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_v4_legacy_settlement_close"
+  });
+
+  assert.equal(result.closeOnlyTxHash, null);
+  assert.equal(result.principalToReturnAtomic, "5000000");
+  assert.equal(result.grossAmountAtomic, "5000000");
+  assert.equal(result.feeAmountAtomic, "0");
+  assert.equal(sentTransactions.length, 1);
+  const decoded = decodeFunctionData({
+    abi: parseAbi([
+      "function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount)"
+    ]),
+    data: sentTransactions[0]!
+  });
+  assert.equal(decoded.functionName, "closeVault");
+  assert.deepEqual(decoded.args, [5_000_000n, 5_000_000n, 0n]);
+  const settlementUpdate = dbUpdates.find((entry) => entry?.data?.withdrawnUsd?.increment === 5);
+  assert.ok(settlementUpdate);
 });
 
 test("controllerCloseBotVault fails closed before sending close tx when prepared settlement persistence fails", async () => {
@@ -10040,12 +10290,12 @@ test("controllerCloseBotVault stops before spot exit when a close-only vault lac
       userId: "user_1",
       botVaultId: "bv_close"
     }),
-    /settlementStep=ensure_hypercore_exit_gas:.*settlementError=bot_vault_v3_hypercore_exit_gas_missing_in_close_only/
+    /settlementStep=ensure_hypercore_exit_gas:.*settlementError=.*bot_vault_v3_hypercore_exit_gas_external_top_up_required/
   );
   assert.equal(transferAttempts, 0);
 });
 
-test("controllerCloseBotVault does not enter close-only when active HyperCore exit still lacks gas", async () => {
+test("controllerCloseBotVault enters close-only before reporting active HyperCore exit gas blockers", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const factoryAddress = "0x3333333333333333333333333333333333333333";
@@ -10053,6 +10303,7 @@ test("controllerCloseBotVault does not enter close-only when active HyperCore ex
   const agentAddress = privateKeyToAccount(agentPrivateKey).address;
   const systemAddress = "0x2000000000000000000000000000000000000000";
   let sendTransactionCount = 0;
+  let onchainStatus: 2n | 4n = 2n;
 
   const service = createBotVaultV3Service({
     botVault: {
@@ -10102,7 +10353,7 @@ test("controllerCloseBotVault does not enter close-only when active HyperCore ex
         async readContract(args: any) {
           switch (args.functionName) {
             case "status":
-              return 2n;
+              return onchainStatus;
             case "principalDeposited":
               return 6_000_000n;
             case "principalReturned":
@@ -10126,6 +10377,7 @@ test("controllerCloseBotVault does not enter close-only when active HyperCore ex
       walletClient: {
         async sendTransaction() {
           sendTransactionCount += 1;
+          onchainStatus = 4n;
           return "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         }
       }
@@ -10194,7 +10446,7 @@ test("controllerCloseBotVault does not enter close-only when active HyperCore ex
       userId: "user_1",
       botVaultId: "bv_close_active"
     }),
-    /settlementStep=ensure_hypercore_exit_gas:.*settlementError=Error%3A%20bot_vault_v3_hypercore_exit_gas_confirmation_pending/
+    /settlementStep=ensure_hypercore_exit_gas:.*settlementError=Error%3A%20bot_vault_v3_hypercore_exit_gas_external_top_up_required/
   );
-  assert.equal(sendTransactionCount, 0);
+  assert.equal(sendTransactionCount, 1);
 });

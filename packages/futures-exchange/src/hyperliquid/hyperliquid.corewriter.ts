@@ -443,7 +443,7 @@ export class HyperliquidCoreWriterClient {
     limitPx: number;
     sz: number;
     reduceOnly: boolean;
-    encodedTif: 1 | 2 | 3;
+    encodedTif: 1 | 2;
     clientOrderId: string;
   }): Promise<HyperliquidCoreWriterPlaceOrderResult> {
     const cloid = encodeCloidFromClientOrderId(input.clientOrderId);

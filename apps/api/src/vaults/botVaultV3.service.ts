@@ -340,6 +340,7 @@ type ClaimProfitQuote = {
   vaultAddress: string;
   onchainBotVaultAddress: string;
   contractVersion: "v3" | "v4";
+  settlementActionVersion: "v3" | "v4";
   status: string;
   claimableProfitRaw: bigint;
   requestedAmountRaw: bigint;
@@ -538,7 +539,7 @@ type BotVaultV3ExitCoreWriter = {
     limitPx: number;
     sz: number;
     reduceOnly: boolean;
-    encodedTif: 1 | 2 | 3;
+    encodedTif: 1 | 2;
     clientOrderId: string;
   }): Promise<{
     status: "confirmed" | "failed" | "pending_timeout";
@@ -627,6 +628,22 @@ function readBotVaultOnchainContractVersion(value: unknown): "v3" | "v4" {
   return resolveBotVaultControllerContractVersion(metadata.onchainContractVersion);
 }
 
+async function resolveBotVaultSettlementActionVersion(params: {
+  publicClient: { getBytecode?: (input: { address: `0x${string}` }) => Promise<`0x${string}` | undefined> };
+  vaultAddress: `0x${string}`;
+  preferred: "v3" | "v4";
+}): Promise<"v3" | "v4"> {
+  if (params.preferred !== "v4" || typeof params.publicClient.getBytecode !== "function") {
+    return params.preferred;
+  }
+  const bytecode = await params.publicClient.getBytecode({ address: params.vaultAddress }).catch(() => null);
+  if (!bytecode) return params.preferred;
+  const normalized = String(bytecode).toLowerCase();
+  // Some production V4-era vaults expose V4 accounting fields but still use the
+  // legacy three-argument settlement action selectors.
+  return normalized.includes("3cdfb88b") ? "v4" : "v3";
+}
+
 const BOT_VAULT_RUNTIME_MODEL_WHERE = { in: [...BOT_VAULT_RUNTIME_MODELS] };
 const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"] as const;
 
@@ -652,10 +669,10 @@ function readBotVaultHypeReserveTarget(contractVersion: "v3" | "v4"): number {
   if (contractVersion === "v4") {
     return envNumber(
       "BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET",
-      envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05)
+      envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.005)
     );
   }
-  return envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05);
+  return envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.005);
 }
 
 function readBotVaultHypeReserveBudgetUsd(contractVersion: "v3" | "v4"): number {
@@ -787,6 +804,9 @@ function buildBotVaultHypeReserveStatus(params: {
 
   if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_usdc_missing")) {
     return classify("user_action_required", "bot_vault_v4_hype_reserve_core_spot_usdc_missing");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_external_top_up_required")) {
+    return classify("user_action_required", "bot_vault_v4_hype_reserve_external_top_up_required");
   }
   if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_budget_too_low")) {
     return classify("user_action_required", "bot_vault_v4_hype_reserve_budget_too_low");
@@ -1758,12 +1778,25 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
   }
 
-  async function assertFreshTradingReconciliationForSettlement(botVaultId: string): Promise<void> {
-    if (typeof db?.botVaultPnlAggregate?.findUnique !== "function") return;
+  async function resolveV4SettlementRealizedClosedPnlUsd(params: {
+    botVaultId: string;
+    contractVersion: "v3" | "v4";
+    profitComponentRaw: bigint;
+    fallbackRealizedPnlNet: unknown;
+  }): Promise<number> {
+    if (params.contractVersion !== "v4") {
+      return roundUsd(Number(params.fallbackRealizedPnlNet ?? 0), 6);
+    }
+    if (params.profitComponentRaw <= 0n) {
+      return 0;
+    }
+    if (typeof db?.botVaultPnlAggregate?.findUnique !== "function") {
+      return roundUsd(Number(params.fallbackRealizedPnlNet ?? 0), 6);
+    }
     const aggregate = await db.botVaultPnlAggregate.findUnique({
-      where: { botVaultId }
+      where: { botVaultId: params.botVaultId }
     });
-    resolveFinalizedProfitSharePnlBasis({ aggregate });
+    return resolveFinalizedProfitSharePnlBasis({ aggregate });
   }
 
   function formatContractBalancePendingReason(params: {
@@ -4128,15 +4161,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     onchainStatus: string;
     contractVersion?: "v3" | "v4";
   }): Promise<BotVaultHypeReserveResult> {
-    const coreWriter = createVaultCoreWriterImpl(params.account);
-    const spotClient = createVaultSpotClientImpl(params.account);
-    if (!spotClient) {
-      throw new Error("bot_vault_v3_hypercore_exit_gas_market_client_missing");
-    }
-    if (!coreWriter) {
-      throw new Error("bot_vault_v3_hypercore_exit_corewriter_missing");
-    }
-
     const contractVersion = params.contractVersion ?? "v3";
     const targetHype = readBotVaultHypeReserveTarget(contractVersion);
     const maxUsdcSpend = readBotVaultHypeReserveBudgetUsd(contractVersion);
@@ -4167,8 +4191,26 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         txHash: null
       };
     }
+    if (params.onchainStatus === "CLOSE_ONLY") {
+      throw new Error(
+        [
+          "bot_vault_v3_hypercore_exit_gas_external_top_up_required",
+          `hype=${hypeBefore}`,
+          `target=${targetHype}`
+        ].join(":")
+      );
+    }
     if (params.onchainStatus !== "ACTIVE") {
       throw new Error(`bot_vault_v3_hypercore_exit_gas_order_not_allowed:${params.onchainStatus}`);
+    }
+
+    const coreWriter = createVaultCoreWriterImpl(params.account);
+    const spotClient = createVaultSpotClientImpl(params.account);
+    if (!spotClient) {
+      throw new Error("bot_vault_v3_hypercore_exit_gas_market_client_missing");
+    }
+    if (!coreWriter) {
+      throw new Error("bot_vault_v3_hypercore_exit_corewriter_missing");
     }
 
     const spotUsdcBefore = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(params.vaultAddress, "USDC"));
@@ -4215,7 +4257,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       limitPx,
       sz: normalizedQty,
       reduceOnly: false,
-      encodedTif: 3,
+      encodedTif: 2,
       clientOrderId: `bot-vault-exit-gas-${crypto.randomUUID()}`
     });
     if (gasOrderResult.status !== "confirmed") {
@@ -4474,6 +4516,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         await sleepImpl(750);
       }
 
+      let exitGasReady = true;
       await retryHyperliquidTransient(
         "ensure_hypercore_exit_gas",
         () => ensureHypercoreExitGas({
@@ -4483,8 +4526,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           contractVersion: context.onchainContractVersion
         })
       ).catch((error) => {
+        exitGasReady = false;
         logSettlementStepFailure("ensure_hypercore_exit_gas", error);
       });
+      const needsExitGasAfterTopUp = await readRequiresHypercoreExitGasTopUp(
+        context.executionVaultAddress as `0x${string}`,
+        context.onchainContractVersion
+      ).catch((error) => {
+        exitGasReady = false;
+        logSettlementStepFailure("verify_hypercore_exit_gas", error);
+        return true;
+      });
+      if (!exitGasReady || needsExitGasAfterTopUp) {
+        return { failure: lastFailure, transferredToEvmUsd };
+      }
 
       const spotBalance: { amountUsd?: unknown } | null = typeof adapterAny.getCoreUsdcSpotBalance === "function"
         ? await retryHyperliquidTransient(
@@ -4575,7 +4630,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       vaultAddress: params.vaultAddress,
       usdcAddress: params.usdcAddress
     });
-    const lifecycleTargetStage: BotVaultV3FundingLifecycleStage = (
+    const observedLifecycleTargetStage: BotVaultV3FundingLifecycleStage = (
       snapshot.status === "CLOSED"
       || (snapshot.status === "CLOSE_ONLY" && snapshot.availableUsd <= 0 && snapshot.principalReturned > 0)
     )
@@ -4583,6 +4638,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       : (snapshot.principalAllocated > 0 || snapshot.availableUsd > 0)
         ? "hyper_evm_confirmed"
         : readBotVaultV3FundingLifecycleState(current).stage;
+    const currentLifecycleStage = readBotVaultV3FundingLifecycleState(current).stage;
+    const lifecycleTargetStage = observedLifecycleTargetStage === "settled"
+      || compareBotVaultV3FundingLifecycleStage(observedLifecycleTargetStage, currentLifecycleStage) >= 0
+      ? observedLifecycleTargetStage
+      : currentLifecycleStage;
     await db.botVault.update({
       where: { id: params.botVaultId },
       data: {
@@ -5671,6 +5731,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const controllerClient = buildControllerWalletClient(expectedControllerAddress);
     const { publicClient } = controllerClient;
+    const settlementActionVersion = await resolveBotVaultSettlementActionVersion({
+      publicClient,
+      vaultAddress: vaultAddress as `0x${string}`,
+      preferred: contractVersion
+    });
 
     const [statusRaw, principalDepositedRaw, principalReturnedRaw, highWaterMarkProfitRaw, factoryAddress, evmUsdcBalanceRaw, excludedPrincipalUsd, hypercoreState, hypercoreSpotUsdcRaw] = await Promise.all([
       publicClient.readContract({
@@ -5780,6 +5845,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           highWaterMarkBeforeUsd: formatUsdAtomicToNumber(highWaterMarkProfitRaw),
           highWaterMarkAfterUsd: formatUsdAtomicToNumber(highWaterMarkProfitRaw),
           contractVersion,
+          settlementActionVersion,
           treasuryRecipientRaw: null,
           excludedPrincipalUsd,
           usdcAddress,
@@ -5834,6 +5900,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       vaultAddress,
       onchainBotVaultAddress: vaultAddress,
       contractVersion,
+      settlementActionVersion,
       status,
       claimableProfitRaw,
       requestedAmountRaw,
@@ -6073,9 +6140,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
-        abi: quote.contractVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
+        abi: quote.settlementActionVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
         functionName: "claimProfit",
-        args: quote.contractVersion === "v4"
+        args: quote.settlementActionVersion === "v4"
           ? [requestedAmountRaw, feeAmountRaw, 0n, quote.realizedClosedPnlRaw]
           : [requestedAmountRaw, feeAmountRaw, 0n]
       })
@@ -7285,8 +7352,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         botVaultId: String(botVault.id),
         phase: "margin_add_before_transfer"
       });
+      const hypeReserveAlreadyReady = requiresHypeReserve
+        ? !(await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`, contractVersion))
+        : false;
+      const requiredHypeReserveBudgetUsd = requiresHypeReserve && !hypeReserveAlreadyReady
+        ? hypeReserveBudgetUsd
+        : 0;
       const totalRequiredCoreSpotUsd = roundUsd(
-        requestedAmountUsd + (requiresHypeReserve ? hypeReserveBudgetUsd : 0),
+        requestedAmountUsd + requiredHypeReserveBudgetUsd,
         6
       );
       const missingHypercoreFundingUsd = roundUsd(
@@ -8561,14 +8634,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
     const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
     await assertVaultSafetyActionAllowed("withdraw");
-    if (contractVersion === "v4") {
-      await assertFreshTradingReconciliationForSettlement(String(botVault.id));
-    }
 
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
+    const settlementActionVersion = await resolveBotVaultSettlementActionVersion({
+      publicClient,
+      vaultAddress: vaultAddress as `0x${string}`,
+      preferred: contractVersion
+    });
     const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, feePaidTotalBeforeRaw, highWaterMarkProfitRaw, factoryAddress, usdcBalanceBeforeRaw, excludedPrincipalUsd] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
@@ -8765,25 +8840,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
     }
 
-    if (
-      hypercoreExitCheck.requiresExit
-      && currentStatus === "ACTIVE"
-      && statusBefore !== "CLOSE_ONLY"
-    ) {
-      const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`, contractVersion);
-      if (needsExitGasTopUp) {
-        throw formatHypercoreExitRequiredError(
-          hypercoreExitCheck,
-          lastHypercoreSettlementFailure
-            ?? {
-                step: "ensure_hypercore_exit_gas",
-                error: "bot_vault_v3_hypercore_exit_gas_missing"
-              },
-          botVault
-        );
-      }
-    }
-
     if (currentStatus === "ACTIVE" || currentStatus === "PAUSED" || currentStatus === "FUNDED") {
       closeOnlyTxHash = await sendSerializedControllerTransaction({
         account,
@@ -8826,19 +8882,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
 
     if (hypercoreExitCheck.requiresExit) {
-      if (statusAfterCloseOnly === "CLOSE_ONLY") {
-        const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`, contractVersion);
-        if (needsExitGasTopUp) {
-          throw formatHypercoreExitRequiredError(
-            hypercoreExitCheck,
-            {
-              step: "ensure_hypercore_exit_gas",
-              error: "bot_vault_v3_hypercore_exit_gas_missing_in_close_only"
-            },
-            botVault
-          );
-        }
-      }
       const balanceBeforeSettlementRaw = usdcBalanceRaw;
       const settlementResult = await bestEffortSettleHypercoreExit({
         userId: params.userId,
@@ -8889,7 +8932,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const profitComponentRaw = usdcBalanceRaw > principalToReturnRaw
       ? usdcBalanceRaw - principalToReturnRaw
       : 0n;
-    const realizedClosedPnlUsd = roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
+    const realizedClosedPnlUsd = await resolveV4SettlementRealizedClosedPnlUsd({
+      botVaultId: String(botVault.id),
+      contractVersion,
+      profitComponentRaw,
+      fallbackRealizedPnlNet: botVault.realizedPnlNet
+    });
     const highWaterMarkBeforeUsd = contractVersion === "v4"
       ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
       : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
@@ -8967,9 +9015,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
-        abi: contractVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
+        abi: settlementActionVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
         functionName: "closeVault",
-        args: contractVersion === "v4"
+        args: settlementActionVersion === "v4"
           ? [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw, profitShare.realizedClosedPnlRaw]
           : [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
       })
@@ -9105,14 +9153,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
     const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
     await assertVaultSafetyActionAllowed("withdraw");
-    if (contractVersion === "v4") {
-      await assertFreshTradingReconciliationForSettlement(String(botVault.id));
-    }
 
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
+    const settlementActionVersion = await resolveBotVaultSettlementActionVersion({
+      publicClient,
+      vaultAddress: vaultAddress as `0x${string}`,
+      preferred: contractVersion
+    });
     const [
       statusRaw,
       principalDepositedRaw,
@@ -9265,7 +9315,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       factoryAddress,
       vaultAddress: vaultAddress as `0x${string}`
     });
-    const realizedClosedPnlUsd = roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
+    const realizedClosedPnlUsd = await resolveV4SettlementRealizedClosedPnlUsd({
+      botVaultId: String(botVault.id),
+      contractVersion,
+      profitComponentRaw,
+      fallbackRealizedPnlNet: botVault.realizedPnlNet
+    });
     const highWaterMarkBeforeUsd = contractVersion === "v4"
       ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
       : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
@@ -9343,9 +9398,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
-        abi: contractVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
+        abi: settlementActionVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
         functionName: "recoverClosedFunds",
-        args: contractVersion === "v4"
+        args: settlementActionVersion === "v4"
           ? [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw, profitShare.realizedClosedPnlRaw]
           : [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
       })

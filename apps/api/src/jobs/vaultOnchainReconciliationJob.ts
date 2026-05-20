@@ -57,6 +57,17 @@ const MONEY_FLOW_ALERT_TYPES = [
   "botvault_reconcile_job_degraded"
 ] as const;
 
+function isGridExecutionActive(row: any): boolean {
+  const state = String(row?.state ?? "").trim().toLowerCase();
+  const stateJson = row?.stateJson && typeof row.stateJson === "object" && !Array.isArray(row.stateJson)
+    ? row.stateJson as Record<string, unknown>
+    : {};
+  const provisioning = stateJson.provisioning && typeof stateJson.provisioning === "object" && !Array.isArray(stateJson.provisioning)
+    ? stateJson.provisioning as Record<string, unknown>
+    : {};
+  return state === "running" || String(provisioning.phase ?? "").trim().toLowerCase() === "execution_active";
+}
+
 type VaultOnchainReconciliationIssueClass = "okay_to_swallow" | "recoverable_track" | "must_fail";
 
 type BotVaultRuntimeReconcileService = {
@@ -935,24 +946,29 @@ async function autoAdvanceBotVaultV3HypercoreFunding(params: {
   let depositTxHash: `0x${string}` | null = null;
   const statusBefore = await readStatus();
   if (statusBefore === 1) {
-    activateTxHash = await sendSerializedControllerTransaction({
-      account,
-      chain,
-      publicClient,
-      walletClient
-    }, {
-      to: params.botVaultAddress,
-      data: encodeFunctionData({
-        abi: botVaultV3Abi,
-        functionName: "activate",
-        args: []
-      })
-    });
-    const activateReceipt = await publicClient.waitForTransactionReceipt({
-      hash: activateTxHash,
-      confirmations: 1
-    });
-    if (activateReceipt.status !== "success") throw new Error("bot_vault_v3_activate_tx_failed");
+    try {
+      activateTxHash = await sendSerializedControllerTransaction({
+        account,
+        chain,
+        publicClient,
+        walletClient
+      }, {
+        to: params.botVaultAddress,
+        data: encodeFunctionData({
+          abi: botVaultV3Abi,
+          functionName: "activate",
+          args: []
+        })
+      });
+      const activateReceipt = await publicClient.waitForTransactionReceipt({
+        hash: activateTxHash,
+        confirmations: 1
+      });
+      if (activateReceipt.status !== "success") throw new Error("bot_vault_v3_activate_tx_failed");
+    } catch (error) {
+      if (!String(error ?? "").toLowerCase().includes("invalid_transition")) throw error;
+      activateTxHash = null;
+    }
   }
 
   const balanceBeforeDeposit = await readUsdcBalance();
@@ -1051,7 +1067,7 @@ async function markGridProvisioningExecutionActive(params: {
   if (!params.gridInstanceId) return;
   const instance = await params.db.gridBotInstance.findUnique({
     where: { id: String(params.gridInstanceId) },
-    select: { id: true, botId: true, stateJson: true }
+    select: { id: true, botId: true, state: true, stateJson: true }
   }).catch((error: unknown) => {
     logger.warn("vault_onchain_reconciliation_grid_execution_active_instance_read_failed", jobIssueMetadata({
       issueClass: "recoverable_track",
@@ -1065,6 +1081,7 @@ async function markGridProvisioningExecutionActive(params: {
     return null;
   });
   if (!instance) return;
+  if (isGridExecutionActive(instance)) return;
   const stateJson = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
     : {};

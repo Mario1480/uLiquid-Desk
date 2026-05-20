@@ -140,6 +140,55 @@ test("placeOrder uses corewriter path when configured", async () => {
   assert.equal(result.clientOrderId, "grid-btc-1");
 });
 
+test("placeOrder maps corewriter market orders to deployed-vault compatible GTC tif", async () => {
+  const coreWriterCalls: any[] = [];
+  const coreWriter = {
+    async placeLimitOrder(input: any) {
+      coreWriterCalls.push(input);
+      return {
+        status: "confirmed",
+        submitted: true,
+        confirmationSource: "receipt",
+        receiptStatus: "success",
+        orderId: `cloid:${input.asset}:123`,
+        clientOrderId: input.clientOrderId,
+        txHash: `0x${"a".repeat(64)}`
+      };
+    }
+  } as unknown as HyperliquidCoreWriterClient;
+  const api = new HyperliquidTradeApi(
+    {
+      exchange: {
+        async placeOrder() {
+          throw new Error("legacy exchange path should not be used");
+        }
+      }
+    } as any,
+    "0x1111111111111111111111111111111111111111",
+    true,
+    {
+      async getTicker() {
+        return { markPrice: "66600" };
+      }
+    } as any,
+    coreWriter
+  );
+
+  await api.placeOrder({
+    symbol: "BTC-PERP",
+    assetIndex: 7,
+    side: "buy",
+    orderType: "market",
+    size: "0.001",
+    szDecimals: 3,
+    clientOid: "grid-btc-market-1",
+    reduceOnly: "NO"
+  });
+
+  assert.equal(coreWriterCalls.length, 1);
+  assert.equal(coreWriterCalls[0]?.encodedTif, 2);
+});
+
 test("placeOrder returns the generated effective clientOid on the corewriter path when caller omits one", async () => {
   const coreWriterCalls: any[] = [];
   const api = new HyperliquidTradeApi(

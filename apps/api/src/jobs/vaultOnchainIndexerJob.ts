@@ -89,6 +89,17 @@ const ACTION_POLL_LIMIT = Math.max(
   Number(process.env.VAULT_ONCHAIN_INDEXER_ACTION_POLL_LIMIT ?? "100")
 );
 
+function isGridExecutionActive(row: any): boolean {
+  const state = String(row?.state ?? "").trim().toLowerCase();
+  const stateJson = row?.stateJson && typeof row.stateJson === "object" && !Array.isArray(row.stateJson)
+    ? row.stateJson as Record<string, unknown>
+    : {};
+  const provisioning = stateJson.provisioning && typeof stateJson.provisioning === "object" && !Array.isArray(stateJson.provisioning)
+    ? stateJson.provisioning as Record<string, unknown>
+    : {};
+  return state === "running" || String(provisioning.phase ?? "").trim().toLowerCase() === "execution_active";
+}
+
 export type VaultOnchainIndexerJobStatus = {
   enabled: boolean;
   mode: string;
@@ -221,11 +232,13 @@ async function markGridProvisioningPendingReserve(params: {
     where: { id: String(params.gridInstanceId) },
     select: {
       id: true,
+      state: true,
       stateJson: true,
       botId: true
     }
   });
   if (!instance) return;
+  if (isGridExecutionActive(instance)) return;
   const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
     : {};
@@ -298,11 +311,13 @@ async function markGridProvisioningPendingHypercoreFunding(params: {
     where: { id: String(params.gridInstanceId) },
     select: {
       id: true,
+      state: true,
       stateJson: true,
       botId: true
     }
   });
   if (!instance) return;
+  if (isGridExecutionActive(instance)) return;
   const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
     : {};
@@ -380,11 +395,13 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
     where: { id: String(params.gridInstanceId) },
     select: {
       id: true,
+      state: true,
       stateJson: true,
       botId: true
     }
   });
   if (!instance) return;
+  if (isGridExecutionActive(instance)) return;
   const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
     : {};
@@ -594,24 +611,29 @@ function createDefaultAutoAdvanceBotVaultV3HypercoreFunding(): AutoAdvanceBotVau
 
     const statusBefore = await readStatus();
     if (statusBefore === 1) {
-      activateTxHash = await sendSerializedControllerTransaction({
-        account,
-        chain,
-        publicClient,
-        walletClient
-      }, {
-        to: params.botVaultAddress,
-        data: encodeFunctionData({
-          abi: botVaultV3Abi,
-          functionName: "activate",
-          args: []
-        })
-      });
-      const activateReceipt = await publicClient.waitForTransactionReceipt({
-        hash: activateTxHash as `0x${string}`,
-        confirmations: 1
-      });
-      if (activateReceipt.status !== "success") throw new Error("bot_vault_v3_activate_tx_failed");
+      try {
+        activateTxHash = await sendSerializedControllerTransaction({
+          account,
+          chain,
+          publicClient,
+          walletClient
+        }, {
+          to: params.botVaultAddress,
+          data: encodeFunctionData({
+            abi: botVaultV3Abi,
+            functionName: "activate",
+            args: []
+          })
+        });
+        const activateReceipt = await publicClient.waitForTransactionReceipt({
+          hash: activateTxHash as `0x${string}`,
+          confirmations: 1
+        });
+        if (activateReceipt.status !== "success") throw new Error("bot_vault_v3_activate_tx_failed");
+      } catch (error) {
+        if (!String(error ?? "").toLowerCase().includes("invalid_transition")) throw error;
+        activateTxHash = null;
+      }
     }
 
     const balanceBeforeDeposit = await readUsdcBalance();

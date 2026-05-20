@@ -114,6 +114,10 @@ function resolveSyncedExecutionStatus(fromStatus: unknown, providerStatus: unkno
   return mapped;
 }
 
+function isCloseRequiresFlatAccountReason(value: unknown): boolean {
+  return String(value ?? "").includes("hyperliquid_execution_close_requires_flat_account");
+}
+
 function buildProviderNotConfiguredResult<T>(): ExecutionSafeResult<T> {
   return {
     ok: false,
@@ -906,16 +910,23 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       });
 
       const fromStatus = String(botVault.executionStatus ?? "created");
-      const toStatus = providerResult.ok ? "closed" : "error";
+      const closeRequiresFlatAccount = !providerResult.ok && isCloseRequiresFlatAccountReason(providerResult.reason);
+      const toStatus = providerResult.ok ? "closed" : closeRequiresFlatAccount ? fromStatus : "error";
 
       const updated = await updateBotVaultExecutionState({
         tx,
         botVaultId: String(botVault.id),
         providerKey: providerResult.providerKey,
         executionStatus: toStatus,
-        errorReason: providerResult.ok ? null : providerResult.reason,
+        errorReason: providerResult.ok || closeRequiresFlatAccount ? null : providerResult.reason,
         metadataPatch: appendProviderContextMetadata(providerResult, {
           lastClosedAt: nowIso(),
+          ...(closeRequiresFlatAccount
+            ? {
+                lastCloseRejectedAt: nowIso(),
+                lastCloseRejectedReason: providerResult.reason ?? "hyperliquid_execution_close_requires_flat_account"
+              }
+            : {}),
           sourceType: "execution_lifecycle_close"
         })
       });

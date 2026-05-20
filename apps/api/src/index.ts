@@ -617,7 +617,9 @@ function buildRouteFingerprint(req: express.Request, userId?: string | null): st
     : {};
   const payloadHash = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
   const actor = String(userId ?? "").trim() || String(req.ip ?? "anon");
-  return `${method}:${path}:${actor}:${payloadHash}`;
+  const pathHash = crypto.createHash("sha256").update(path).digest("hex").slice(0, 16);
+  const actorHash = crypto.createHash("sha256").update(actor).digest("hex").slice(0, 16);
+  return `${method}:path-${pathHash}:actor-${actorHash}:body-${payloadHash}`;
 }
 
 const siweNonceRateLimit = createRateLimitMiddleware({

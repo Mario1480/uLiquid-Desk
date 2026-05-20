@@ -219,6 +219,7 @@ function deriveBotVaultV4MismatchCategory(params: {
     haystack.includes("user_action")
     || haystack.includes("manual")
     || haystack.includes("hypercore_exit_gas_usdc_missing")
+    || haystack.includes("hypercore_exit_gas_external_top_up_required")
     || haystack.includes("hypercore_exit_gas_budget_too_low")
     || haystack.includes("hypercore_exit_gas_order_not_allowed")
     || haystack.includes("hypercore_exit_corewriter_missing")
@@ -282,6 +283,7 @@ function deriveBotVaultV4MismatchRecoveryAction(params: {
   if (params.category === "manual_intervention_required") {
     return haystack.includes("user_action")
       || haystack.includes("hypercore_exit_gas_usdc_missing")
+      || haystack.includes("hypercore_exit_gas_external_top_up_required")
       || haystack.includes("hypercore_exit_gas_budget_too_low")
       || haystack.includes("core_spot_usdc_missing")
       || haystack.includes("budget_too_low")

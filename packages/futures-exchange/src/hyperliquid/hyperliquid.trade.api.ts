@@ -339,7 +339,9 @@ export class HyperliquidTradeApi {
         throw new Error("hyperliquid_invalid_size");
       }
       const tif = toTif(payload.force, isMarket);
-      const encodedTif: 1 | 2 | 3 = tif === "Alo" ? 1 : tif === "Gtc" ? 2 : 3;
+      // Deployed BotVault V4 contracts reject the official CoreWriter IOC value (3).
+      // Use aggressive GTC for CoreWriter market/IOC orders until V4 vault bytecode is replaced.
+      const encodedTif: 1 | 2 = tif === "Alo" ? 1 : 2;
       const effectiveClientOid = String(payload.clientOid ?? "").trim() || createFallbackClientOid();
       const response = await this.coreWriter.placeLimitOrder({
         asset: Math.trunc(Number(payload.assetIndex)),

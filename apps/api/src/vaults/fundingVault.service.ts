@@ -97,6 +97,17 @@ function normalizeTxHash(value: unknown): string {
   return raw.toLowerCase();
 }
 
+function isGridExecutionActive(row: any): boolean {
+  const state = String(row?.state ?? "").trim().toLowerCase();
+  const stateJson = row?.stateJson && typeof row.stateJson === "object" && !Array.isArray(row.stateJson)
+    ? row.stateJson as Record<string, unknown>
+    : {};
+  const provisioning = stateJson.provisioning && typeof stateJson.provisioning === "object" && !Array.isArray(stateJson.provisioning)
+    ? stateJson.provisioning as Record<string, unknown>
+    : {};
+  return state === "running" || String(provisioning.phase ?? "").trim().toLowerCase() === "execution_active";
+}
+
 function mapActionRow(row: any) {
   return {
     id: String(row.id),
@@ -671,25 +682,31 @@ export function createFundingVaultService(db: any, deps?: FundingVaultServiceDep
             }
           });
           if (params.gridInstanceId) {
-            await tx.gridBotInstance.update({
+            const gridInstance = await tx.gridBotInstance.findUnique({
               where: { id: params.gridInstanceId },
-              data: {
-                state: "funding_pending",
-                stateJson: {
-                  provisioning: {
-                    phase: "submitted_waiting_indexer",
-                    reason: "agent_signed_funding_vault_launch",
-                    idempotencyKey: actionKey,
-                    pendingActionId: String(action.id),
-                    pendingActionStatus: "submitted",
-                    walletSignatureRequired: false,
-                    txHash,
-                    startedAt: now
-                  }
-                },
-                lastPlanError: null
-              }
+              select: { id: true, state: true, stateJson: true }
             });
+            if (!isGridExecutionActive(gridInstance)) {
+              await tx.gridBotInstance.update({
+                where: { id: params.gridInstanceId },
+                data: {
+                  state: "funding_pending",
+                  stateJson: {
+                    provisioning: {
+                      phase: "submitted_waiting_indexer",
+                      reason: "agent_signed_funding_vault_launch",
+                      idempotencyKey: actionKey,
+                      pendingActionId: String(action.id),
+                      pendingActionStatus: "submitted",
+                      walletSignatureRequired: false,
+                      txHash,
+                      startedAt: now
+                    }
+                  },
+                  lastPlanError: null
+                }
+              });
+            }
           }
           await tx.fundingVault.update({
             where: { id: String(fundingVault.id) },
@@ -755,6 +772,11 @@ export function createFundingVaultService(db: any, deps?: FundingVaultServiceDep
       afterSubmitted: async ({ action, txHash }) => {
         await db.$transaction(async (tx: any) => {
           if (params.gridInstanceId) {
+            const gridInstance = await tx.gridBotInstance.findUnique({
+              where: { id: params.gridInstanceId },
+              select: { id: true, state: true, stateJson: true }
+            }).catch(() => undefined);
+            if (!isGridExecutionActive(gridInstance)) {
             await tx.gridBotInstance.update({
               where: { id: params.gridInstanceId },
               data: {
@@ -773,6 +795,7 @@ export function createFundingVaultService(db: any, deps?: FundingVaultServiceDep
                 }
               }
             }).catch(() => undefined);
+            }
           }
           await tx.fundingVault.update({
             where: { id: String(fundingVault.id) },

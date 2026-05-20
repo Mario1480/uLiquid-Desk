@@ -431,8 +431,13 @@ test("pause/close stop process and keep bot vaults isolated", async () => {
   assert.equal(cancelled.includes("bot_2"), false);
 });
 
-test("closeExecution surfaces provider failure and keeps execution out of closed state", async () => {
+test("closeExecution surfaces flat-account guard without poisoning resumable execution state", async () => {
   const ctx = createInMemoryDb();
+  const initial = ctx.state.botVaults.find((entry) => entry.id === "bv_1");
+  if (!initial) throw new Error("missing_bot_vault");
+  initial.executionStatus = "paused";
+  initial.executionLastError = "previous_error";
+  initial.executionLastErrorAt = new Date("2026-03-09T12:00:00.000Z");
   const lifecycle = createExecutionLifecycleService(ctx.db, {
     executionOrchestrator: {
       safeClose: async () => ({ ok: false, providerKey: "hyperliquid", reason: "hyperliquid_execution_close_requires_flat_account" })
@@ -449,11 +454,12 @@ test("closeExecution surfaces provider failure and keeps execution out of closed
   );
 
   const row = ctx.state.botVaults.find((entry) => entry.id === "bv_1");
-  assert.equal(row?.executionStatus, "error");
-  assert.equal(row?.executionLastError, "hyperliquid_execution_close_requires_flat_account");
+  assert.equal(row?.executionStatus, "paused");
+  assert.equal(row?.executionLastError, null);
+  assert.equal(row?.executionMetadata?.lastCloseRejectedReason, "hyperliquid_execution_close_requires_flat_account");
   assert.equal(ctx.state.executionEvents.at(-1)?.action, "close");
   assert.equal(ctx.state.executionEvents.at(-1)?.result, "failed");
-  assert.equal(ctx.state.executionEvents.at(-1)?.toStatus, "error");
+  assert.equal(ctx.state.executionEvents.at(-1)?.toStatus, "paused");
 });
 
 test("syncExecutionState does not downgrade non-created status to created on ambiguous provider state", async () => {

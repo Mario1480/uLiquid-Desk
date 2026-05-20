@@ -2228,6 +2228,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 
       if (
         isHyperliquidOnchainVaultBootstrap
+        && !isHyperliquidV3Vault
         && allowHyperliquidVaultBootstrap
         && adapter
         && !hasOpenPlannerPosition(plannerPosition)
