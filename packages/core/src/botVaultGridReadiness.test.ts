@@ -42,6 +42,34 @@ test("getBotVaultGridReadiness returns ready for active funded assigned vault", 
   assert.equal(readiness.reasonCode, null);
 });
 
+test("getBotVaultGridReadiness trusts execution-ready v4 vaults when margin metadata is not projected", () => {
+  const readiness = getBotVaultGridReadiness({
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    botId: "bot_1",
+    botVault: readyVault({
+      vaultModel: "bot_vault_v4",
+      contractVersion: "v4",
+      executionMetadata: {
+        onchainContractVersion: "v4"
+      }
+    }),
+    executionReadiness: {
+      ready: true,
+      reason: "bot_vault_v4_ready",
+      statusCategory: "execution_ready"
+    },
+    minOrderQty: 0.001,
+    minOrderNotionalUsd: 10,
+    plannedOrderQty: 0.002,
+    plannedOrderNotionalUsd: 20
+  });
+
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.reasonCode, null);
+  assert.deepEqual(readiness.blockers, []);
+});
+
 test("getBotVaultGridReadiness blocks at least five production readiness failures", () => {
   const cases: Array<{
     name: string;

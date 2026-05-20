@@ -359,11 +359,13 @@ function readPerpFundingBlocker(params: {
   const marginAddFinalization = readNestedRecord(params.executionMetadata, "marginAddFinalization");
   const verificationState = normalizeStringLower(marginAddFinalization.verificationState);
   const hasMarginMetadata = Object.keys(marginAddFinalization).length > 0;
+  const executionReady = params.executionReadiness.ready === true;
   const verified = marginAddFinalization.fundingVerified === true
     || marginAddFinalization.marginFundingVerified === true
     || verificationState === "funding_verified";
 
   if (verified) return null;
+  if (!hasMarginMetadata && executionReady) return null;
   if (!hasMarginMetadata && contractVersion !== "v4") return null;
 
   const failureClass = normalizeStringLower(marginAddFinalization.hypeReserveFailureClass);
@@ -379,7 +381,7 @@ function readPerpFundingBlocker(params: {
   return buildBlocker({
     reasonCode: readText(marginAddFinalization.verificationBlockingReason)
       ?? readText(marginAddFinalization.hypeReserveReasonCode)
-      ?? readText(params.executionReadiness.reason)
+      ?? (params.executionReadiness.ready === false ? readText(params.executionReadiness.reason) : null)
       ?? "bot_vault_grid_perp_funding_not_confirmed",
     statusCategory,
     recoveryHint: statusCategory === "recovery_required"
