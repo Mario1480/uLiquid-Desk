@@ -2060,7 +2060,8 @@ export function createVaultOnchainReconciliationJob(
           && hasFundingReadyForExecution({
             vaultModel: row.vaultModel,
             fundingStatus: effectiveFundingStatus,
-            hypercoreFundingStatus: effectiveHypercoreFundingStatus
+            hypercoreFundingStatus: effectiveHypercoreFundingStatus,
+            executionMetadata: row.executionMetadata
           })
           && ["", "created", "funded"].includes(effectiveExecutionStatus);
         if (shouldAutoStart) {

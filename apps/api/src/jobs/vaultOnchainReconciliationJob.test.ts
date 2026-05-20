@@ -223,6 +223,87 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
   }
 });
 
+test("vaultOnchainReconciliationJob auto-starts bot_vault_v4 rows when funding lifecycle is execution_ready", async () => {
+  const started: any[] = [];
+  const restoreEnv = installOnchainEnv();
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_v4",
+              userId: "user_1",
+              vaultModel: "bot_vault_v4",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              principalAllocated: 5,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "created",
+              fundingStatus: "hyper_evm_confirmed_onchain",
+              hypercoreFundingStatus: "funded",
+              executionMetadata: {
+                fundingLifecycle: {
+                  stage: "execution_ready"
+                }
+              }
+            }
+          ];
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return null;
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      executionLifecycleService: {
+        async startExecution(input: any) {
+          started.push(input);
+          return { executionStatus: "running" };
+        }
+      } as any,
+      readBotVaultV3State: async () => ({
+        principalAllocated: 5,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 2
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const { result } = await captureJsonLogs(() => job.runCycle("manual"));
+
+    assert.equal(result.enabled, true);
+    assert.equal(started.length, 1);
+    assert.equal(started[0]?.botVaultId, "bv_v4");
+    assert.equal(started[0]?.reason, "bot_vault_onchain_reconciliation_autostart");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("vaultOnchainReconciliationJob does not auto-start unfunded bot_vault_v3 instances", async () => {
   const started: any[] = [];
   const previousEnv = {

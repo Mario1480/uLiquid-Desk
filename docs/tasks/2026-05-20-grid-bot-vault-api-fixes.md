@@ -171,3 +171,42 @@ DB status:
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres psql -U mm -d marketmaker -c "select id, funding_status, hypercore_funding_status, execution_status, status, execution_metadata->'fundingLifecycle'->>'stage' as stage, execution_metadata->>'lastAction' as last_action, execution_metadata->'marginAddFinalization'->>'verificationState' as verification_state, execution_metadata->'marginAddFinalization'->>'verificationBlockingReason' as blocking_reason, execution_metadata->'marginAddFinalization'->>'hypeReserveTxHash' as hype_tx from bot_vaults where id='cmpdy5eaf0260nz1x3euq34qe';"
 ```
+
+## Reconciliation autostart fix
+
+Follow-up issue observed after the HYPE reserve was fixed:
+
+- BotVault `cmpdy5eaf0260nz1x3euq34qe` reached `fundingLifecycle.stage=execution_ready`.
+- Grid instance `cmpdy5e8z025ynz1x9z5qhy8i` still showed `state=created` with old provisioning phase `submitted_waiting_hypercore_funding_indexer`.
+- Bot `25a06720-11cc-49db-844f-c3cf62e6c2de` was still `stopped`.
+
+Root cause:
+
+- `vaultOnchainReconciliationJob` called `hasFundingReadyForExecution(...)` without passing `executionMetadata`.
+- For BotVault v4, funding readiness is derived from `executionMetadata.fundingLifecycle.stage`.
+- Without that metadata, the job treated the v4 vault as not funding-ready and skipped `startExecution`, even though the DB had `execution_ready`.
+
+Fix:
+
+- Pass `row.executionMetadata` into the autostart funding-readiness check.
+- Added a regression test for v4 rows with `executionStatus=created`, `hypercoreFundingStatus=funded`, and `fundingLifecycle.stage=execution_ready`.
+
+Validation:
+
+- Focused reconciliation tests passed:
+  - `vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck in created execution state`
+  - `vaultOnchainReconciliationJob auto-starts bot_vault_v4 rows when funding lifecycle is execution_ready`
+  - `vaultOnchainReconciliationJob does not auto-start unfunded bot_vault_v3 instances`
+- `npm -w apps/api run typecheck` passed.
+- `npm -w apps/api run build` passed.
+- API redeployed with `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build api`.
+
+Live result after deploy and manual reconciliation cycle:
+
+- Bot `25a06720-11cc-49db-844f-c3cf62e6c2de`: `status=running`.
+- Grid instance `cmpdy5e8z025ynz1x9z5qhy8i`: `state=running`, provisioning phase `execution_active`.
+- BotVault `cmpdy5eaf0260nz1x3euq34qe`: `execution_status=running`, `hypercore_funding_status=funded`, funding lifecycle stage `execution_ready`.
+- Runner submitted the initial seed order:
+  - tx hash `0xf20211a196865c73bf47854642f66cd2b9faffb4a33cab963f4482526d68a184`
+  - client order id `grid-cmpdy5e8z025ynz1x9z5qhy8i-seed-buy-1`
+  - seed notional `30.21408`
