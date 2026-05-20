@@ -1231,3 +1231,98 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
     }
   });
 });
+
+test("endGridInstance halts runtime grid locally before controller close", async () => {
+  const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
+  const transactions: any[][] = [];
+  const calls: string[] = [];
+  const runtimeVault = {
+    id: "bv_runtime",
+    vaultModel: "bot_vault_v4",
+    contractVersion: "v4",
+    vaultAddress: `0x${"6".repeat(40)}`,
+    status: "ACTIVE",
+    executionStatus: "running",
+    executionMetadata: {
+      runtimeModel: "bot_vault_v4",
+      onchainContractVersion: "v4"
+    }
+  };
+  const service = createGridLifecycleService({
+    db: {
+      gridBotInstance: {
+        update(args: any) {
+          updates.push({ target: "grid", data: args.data });
+          return args;
+        }
+      },
+      bot: {
+        update(args: any) {
+          updates.push({ target: "bot", data: args.data });
+          return args;
+        }
+      },
+      async $transaction(ops: any[]) {
+        transactions.push(ops);
+        return ops;
+      }
+    },
+    vaultService: {
+      async getBotVaultByGridInstance() {
+        calls.push("get_vault");
+        return runtimeVault;
+      },
+      async stopBotVaultForGridInstance() {
+        throw new Error("should_not_stop_runtime_vault_before_close");
+      }
+    } as any,
+    botVaultRuntimeService: {
+      async closeBotVaultOnchain(input: any) {
+        calls.push(`close:${input.botVaultId}`);
+        return {};
+      }
+    } as any,
+    resolveVenueContext: async () => ({
+      markPrice: 65000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: 0.0001,
+        qtyStep: 0.0001,
+        priceTick: 1,
+        minNotional: 10,
+        feeRate: 0.0005
+      },
+      feeBufferPct: 0.1,
+      mmrPct: 0.005,
+      liqDistanceMinPct: 1,
+      warnings: []
+    }),
+    allowedGridExchanges: new Set(["hyperliquid"])
+  });
+
+  const result = await service.endGridInstance({
+    row: buildGridRow({
+      state: "running",
+      botVault: runtimeVault
+    }),
+    userId: "user_1",
+    reason: "manual_end",
+    closeSourceType: "grid_instance_end_final"
+  });
+
+  assert.deepEqual(result, {
+    id: "grid_1",
+    state: "archived",
+    botId: "bot_1",
+    alreadyArchived: false
+  });
+  assert.deepEqual(calls, ["get_vault", "get_vault", "close:bv_runtime"]);
+  assert.equal(transactions.length, 2);
+  assert.deepEqual(updates[0], { target: "grid", data: { state: "stopped" } });
+  assert.deepEqual(updates[1], { target: "bot", data: { status: "stopped" } });
+  assert.equal(updates[2]?.target, "grid");
+  assert.equal(updates[2]?.data?.state, "archived");
+  assert.equal(updates[2]?.data?.archivedReason, "manual_end");
+  assert.deepEqual(updates[3], { target: "bot", data: { status: "stopped" } });
+});

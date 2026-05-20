@@ -775,10 +775,20 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       const skipStopBeforeClose = isBotVaultRuntimeModel && (botVaultStatus === "CLOSE_ONLY" || botVaultStatus === "CLOSED");
 
       if (!skipStopBeforeClose) {
-        await stopGridInstance({
-          row,
-          userId: params.userId
-        });
+        if (isBotVaultRuntimeModel) {
+          await deps.db.$transaction([
+            deps.db.gridBotInstance.update({
+              where: { id: row.id },
+              data: { state: "stopped" }
+            }),
+            deps.db.bot.update({ where: { id: row.botId }, data: { status: "stopped" } })
+          ]);
+        } else {
+          await stopGridInstance({
+            row,
+            userId: params.userId
+          });
+        }
         botVault = await deps.vaultService.getBotVaultByGridInstance({
           userId: params.userId,
           gridInstanceId: String(row.id)
