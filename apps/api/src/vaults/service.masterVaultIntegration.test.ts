@@ -281,6 +281,8 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV4", async () => 
     fundingStatus: "settled",
     hypercoreFundingStatus: "withdrawn",
     availableUsd: 0,
+    principalAllocated: 6,
+    principalReturned: 5.226045,
     executionStatus: "closed",
     executionLastError: null,
     executionLastErrorAt: null,

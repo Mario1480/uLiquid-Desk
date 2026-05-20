@@ -372,6 +372,7 @@ function deriveBotVaultReuseResolution(row: any): BotVaultReuseResolution {
   if (
     Number.isFinite(principalAllocated)
     && Number.isFinite(principalReturned)
+    && !isReusableSettledCloseOnlyBotVault(row)
     && principalAllocated - principalReturned > BOT_VAULT_REUSE_USD_EPSILON
   ) {
     return { reusable: false, reason: "principal_outstanding" };
