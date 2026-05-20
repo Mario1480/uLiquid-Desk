@@ -1529,11 +1529,19 @@ function createBotVaultV3ReconcileHarness(
       perpAvailableMarginUsd: number;
       perpEquityUsd: number;
     };
+    spotBalances?: Record<string, string | string[]>;
+    enableHypeReserveBootstrap?: boolean;
+    coreWriterOrders?: any[];
+    spotLastPrice?: number;
+    spotBaseDecimals?: number;
+    agentHypeBalance?: number;
+    agentSpotTransfers?: any[];
   }
 ) {
+  let executionAddress: string | null = null;
   if (options.execution) {
     const executionPrivateKey = `0x${"1".repeat(64)}`;
-    const executionAddress = privateKeyToAccount(executionPrivateKey as `0x${string}`).address;
+    executionAddress = privateKeyToAccount(executionPrivateKey as `0x${string}`).address;
     botVaultRow.bot = {
       symbol: "BTCUSDT",
       exchangeAccount: {
@@ -1589,6 +1597,70 @@ function createBotVaultV3ReconcileHarness(
         }
       }
     }),
+    readHyperliquidSpotAssetBalance: async (address: `0x${string}`, asset: string) => {
+      const key = asset.toUpperCase();
+      if (
+        key === "HYPE"
+        && executionAddress
+        && address.toLowerCase() === executionAddress.toLowerCase()
+        && options.agentHypeBalance !== undefined
+      ) {
+        return String(options.agentHypeBalance);
+      }
+      const value = options.spotBalances?.[key];
+      if (Array.isArray(value)) {
+        return value.length > 1 ? value.shift() ?? "0" : value[0] ?? "0";
+      }
+      return value ?? "0";
+    },
+    sendAgentHyperliquidSpotTransfer: options.agentHypeBalance === undefined
+      ? undefined
+      : async (input) => {
+          options.agentSpotTransfers?.push(input);
+          const amount = Number(input.amount);
+          options.agentHypeBalance = Math.max(0, Number(options.agentHypeBalance ?? 0) - amount);
+          const current = Number(Array.isArray(options.spotBalances?.HYPE)
+            ? options.spotBalances?.HYPE[0] ?? "0"
+            : options.spotBalances?.HYPE ?? "0");
+          if (!options.spotBalances) options.spotBalances = {};
+          options.spotBalances.HYPE = String(current + amount);
+          return { status: "ok" };
+        },
+    createVaultCoreWriter: options.enableHypeReserveBootstrap
+      ? () => ({
+          async placeLimitOrder(input: any) {
+            options.coreWriterOrders?.push(input);
+            return {
+              status: "confirmed" as const,
+              submitted: true,
+              confirmationSource: "receipt" as const,
+              receiptStatus: "success" as const,
+              txHash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            };
+          }
+        })
+      : undefined,
+    createVaultSpotClient: options.enableHypeReserveBootstrap
+      ? () => ({
+          async listSymbols() {
+            const baseDecimals = options.spotBaseDecimals ?? 4;
+            const stepSize = Number(`1e-${baseDecimals}`);
+            return [{
+              symbol: "HYPE/USDC",
+              assetIndex: 150,
+              baseAsset: "HYPE",
+              quoteAsset: "USDC",
+              tradable: true,
+              stepSize,
+              minQty: stepSize,
+              baseDecimals
+            }];
+          },
+          async getLastPrice() {
+            return options.spotLastPrice ?? 100;
+          }
+        })
+      : undefined,
     createPerpExecutionAdapter: () => ({
       async getCoreUsdcSpotBalance() {
         return { amountUsd: options.execution?.coreSpotUsd ?? 0 };
@@ -1734,6 +1806,279 @@ test("getBotVaultForBot reconcile resyncs stale onchain fields and promotes Hype
   assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "hypercore_funding_status_out_of_sync"));
   assert.equal(result?.reconciliation?.executionSnapshot.state, "ok");
   assert.equal(result?.reconciliation?.executionSnapshot.totalVisibleUsd, 20);
+});
+
+test("reconcileBotVaultV3ById verifies v4 margin from live balances when finalization metadata is missing", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_v4_margin_verified",
+    botId: "bot_reconcile_v4_margin_verified",
+    userId: "user_1",
+    vaultModel: "bot_vault_v4",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 6,
+    availableUsd: 0,
+    principalAllocated: 6,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionStatus: "created",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "perp_margin_transferred",
+        updatedAt: "2026-05-20T10:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      autoHypercoreFundingStatus: "confirmed",
+      autoHypercoreFundingAmountAtomic: "0"
+    },
+    status: "ACTIVE",
+    bot: null,
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-05-20T10:00:00.000Z"),
+    updatedAt: new Date("2026-05-20T10:00:00.000Z")
+  };
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 2n,
+      principalAllocatedUsd: 6,
+      availableUsd: 0
+    },
+    execution: {
+      coreSpotUsd: 5,
+      perpAvailableMarginUsd: 5,
+      perpEquityUsd: 5
+    },
+    spotBalances: {
+      HYPE: "0.006",
+      USDC: "5"
+    },
+    enableHypeReserveBootstrap: true
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_v4_margin_verified"
+  });
+
+  assert.equal(result?.fundingLifecycleStage, "execution_ready");
+  assert.equal(result?.hypercoreFundingStatus, "funded");
+  assert.equal(result?.executionReadiness.ready, true);
+  assert.equal(result?.executionReadiness.reason, "bot_vault_v4_ready");
+  assert.equal(result?.reconciliation?.issues.some((issue) => issue.code === "margin_add_verified_from_reconciliation"), true);
+  const metadata = botVaultRow.executionMetadata;
+  assert.equal(metadata?.fundingLifecycle?.stage, "execution_ready");
+  assert.equal(metadata?.marginAddFinalization?.verificationState, "funding_verified");
+  assert.equal(metadata?.marginAddFinalization?.fundingVerified, true);
+  assert.equal(metadata?.marginAddFinalization?.marginFundingVerified, true);
+  assert.equal(metadata?.marginAddFinalization?.transferObserved, true);
+  assert.equal(metadata?.marginAddFinalization?.finalPerpStateReadable, true);
+  assert.equal(metadata?.marginAddFinalization?.finalStateResynced, true);
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "ready");
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveReady, true);
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveTxHash, null);
+  assert.equal(metadata?.marginAddFinalization?.perpAvailableMarginAfterUsd, 5);
+  assert.equal(metadata?.marginAddFinalization?.perpEquityAfterUsd, 5);
+});
+
+test("reconcileBotVaultV3ById classifies v4 HYPE reserve min-notional rejects before retrying", async () => {
+  const previousSource = process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE;
+  process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE = "bot_spot_buy";
+  const botVaultRow: any = {
+    id: "bv_reconcile_v4_hype_pending",
+    botId: "bot_reconcile_v4_hype_pending",
+    userId: "user_1",
+    vaultModel: "bot_vault_v4",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 6,
+    availableUsd: 0,
+    principalAllocated: 6,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionStatus: "created",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "perp_margin_transferred",
+        updatedAt: "2026-05-20T10:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      autoHypercoreFundingStatus: "confirmed",
+      autoHypercoreFundingAmountAtomic: "0"
+    },
+    status: "ACTIVE",
+    bot: null,
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-05-20T10:00:00.000Z"),
+    updatedAt: new Date("2026-05-20T10:00:00.000Z")
+  };
+  const coreWriterOrders: any[] = [];
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 2n,
+      principalAllocatedUsd: 6,
+      availableUsd: 0
+    },
+    execution: {
+      coreSpotUsd: 5,
+      perpAvailableMarginUsd: 5,
+      perpEquityUsd: 5
+    },
+    spotBalances: {
+      HYPE: ["0", "0", "0"],
+      USDC: "5"
+    },
+    enableHypeReserveBootstrap: true,
+    coreWriterOrders,
+    spotLastPrice: 49.8115,
+    spotBaseDecimals: 2
+  });
+
+  try {
+    const result = await service.reconcileBotVaultV3ById({
+      userId: "user_1",
+      botVaultId: "bv_reconcile_v4_hype_pending"
+    });
+
+    assert.equal(result?.fundingLifecycleStage, "recovery_required");
+    assert.equal(result?.hypercoreFundingStatus, "pending");
+    assert.equal(result?.executionReadiness.ready, false);
+    assert.equal(result?.executionReadiness.statusCategory, "recovery_required");
+    assert.equal(
+      result?.reconciliation?.issues.some((issue) => issue.code === "hype_reserve_pending_from_reconciliation"),
+      true
+    );
+    const metadata = botVaultRow.executionMetadata;
+    assert.equal(metadata?.fundingLifecycle?.stage, "recovery_required");
+    assert.equal(metadata?.lastAction, "bot_vault_v4_hype_reserve_user_action_required");
+    assert.equal(metadata?.hypeReserveState, "user_action_required");
+    assert.equal(metadata?.hypeReserveReasonCode, "bot_vault_v4_hype_reserve_min_trade_notional");
+    assert.equal(metadata?.marginAddFinalization?.verificationState, "hype_reserve_user_action_required");
+    assert.equal(
+      metadata?.marginAddFinalization?.verificationBlockingReason,
+      "bot_vault_v4_hype_reserve_min_trade_notional"
+    );
+    assert.equal(metadata?.marginAddFinalization?.fundingVerified, false);
+    assert.equal(metadata?.marginAddFinalization?.marginFundingVerified, true);
+    assert.equal(metadata?.marginAddFinalization?.transferObserved, true);
+    assert.equal(metadata?.marginAddFinalization?.hypeReserveReady, false);
+    assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "user_action_required");
+    assert.equal(metadata?.marginAddFinalization?.hypeReserveTxHash, null);
+    assert.equal(metadata?.marginAddFinalization?.perpAvailableMarginAfterUsd, 5);
+    assert.equal(metadata?.marginAddFinalization?.perpEquityAfterUsd, 5);
+    assert.equal(coreWriterOrders.length, 0);
+  } finally {
+    if (previousSource == null) delete process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE;
+    else process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE = previousSource;
+  }
+});
+
+test("reconcileBotVaultV3ById tops up missing v4 HYPE reserve from the agent wallet", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_v4_agent_hype",
+    botId: "bot_reconcile_v4_agent_hype",
+    userId: "user_1",
+    vaultModel: "bot_vault_v4",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 6,
+    availableUsd: 0,
+    principalAllocated: 6,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionStatus: "created",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "perp_margin_transferred",
+        updatedAt: "2026-05-20T10:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      autoHypercoreFundingStatus: "confirmed",
+      autoHypercoreFundingAmountAtomic: "0"
+    },
+    status: "ACTIVE",
+    bot: null,
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-05-20T10:00:00.000Z"),
+    updatedAt: new Date("2026-05-20T10:00:00.000Z")
+  };
+  const agentSpotTransfers: any[] = [];
+  const coreWriterOrders: any[] = [];
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 2n,
+      principalAllocatedUsd: 6,
+      availableUsd: 0
+    },
+    execution: {
+      coreSpotUsd: 5,
+      perpAvailableMarginUsd: 5,
+      perpEquityUsd: 5
+    },
+    spotBalances: {
+      HYPE: "0",
+      USDC: "5"
+    },
+    enableHypeReserveBootstrap: true,
+    coreWriterOrders,
+    agentHypeBalance: 0.02,
+    agentSpotTransfers
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_v4_agent_hype"
+  });
+
+  assert.equal(agentSpotTransfers.length, 1);
+  assert.equal(agentSpotTransfers[0]?.destination, "0x1111111111111111111111111111111111111111");
+  assert.equal(agentSpotTransfers[0]?.amount, "0.005");
+  assert.equal(coreWriterOrders.length, 0);
+  assert.equal(result?.fundingLifecycleStage, "execution_ready");
+  assert.equal(result?.hypercoreFundingStatus, "funded");
+  assert.equal(result?.executionReadiness.ready, true);
+  const metadata = botVaultRow.executionMetadata;
+  assert.equal(metadata?.marginAddFinalization?.verificationState, "funding_verified");
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "ready");
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.005);
 });
 
 test("reconcileBotVaultV3ById moves locally over-advanced lifecycle to recovery when funding is not observable", async () => {
@@ -4461,6 +4806,8 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
   const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   let spotBalanceUsd = 0.25;
   let hypeBalance = 0;
+  let agentHypeBalance = 0.5;
+  const agentHypeTransfers: any[] = [];
 
   const service = createBotVaultV3Service({
     botVault: {
@@ -4526,10 +4873,20 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
         loggerWarnings.push({ msg, meta });
       }
     },
-    readHyperliquidSpotAssetBalance: async (_vaultAddress: string, asset: string) => {
+    readHyperliquidSpotAssetBalance: async (address: string, asset: string) => {
+      if (asset === "HYPE" && address.toLowerCase() === agentAddress.toLowerCase()) return agentHypeBalance;
       if (asset === "HYPE") return hypeBalance;
       if (asset === "USDC") return spotBalanceUsd;
       return 0;
+    },
+    sendAgentHyperliquidSpotTransfer: async (input) => {
+      agentHypeTransfers.push(input);
+      assert.equal(input.destination, vaultAddress);
+      assert.equal(input.token, "HYPE:0x0d01dc56dcaaca66ad901c959b4011ec");
+      assert.equal(input.amount, "0.25");
+      agentHypeBalance -= 0.25;
+      hypeBalance = 0.25;
+      return { status: "ok" };
     },
     createVaultSpotClient: () => ({
       async listSymbols() {
@@ -4591,7 +4948,7 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
           });
           sentCalls.push(String(decoded.functionName));
           assert.equal(decoded.functionName, "depositUsdcToHyperCore");
-          assert.equal(decoded.args?.[0], 16_750_000n);
+          assert.equal(decoded.args?.[0], 14_750_000n);
           return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         }
       }
@@ -4602,7 +4959,7 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
       },
       async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
         assert.deepEqual(input, { amountUsd: 15, toPerp: true });
-        spotBalanceUsd = 2;
+        spotBalanceUsd = 0;
         return {
           status: "confirmed",
           submitted: true,
@@ -4631,7 +4988,8 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
     });
 
     assert.deepEqual(sentCalls, ["depositUsdcToHyperCore"]);
-    assert.equal(result.depositedAmountUsd, 16.75);
+    assert.equal(agentHypeTransfers.length, 1);
+    assert.equal(result.depositedAmountUsd, 14.75);
     assert.equal(result.transferToPerpAmountUsd, 15);
     assert.equal(result.hypeReserveState, "ready");
     assert.equal(result.hypeReserveTarget, 0.25);
@@ -4641,7 +4999,7 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
     assert.equal(result.hypeReserveStatusCategory, "execution_ready");
     assert.equal(result.hypeReserveCanRetry, false);
     assert.equal(result.hypeReserveNeedsUserAction, false);
-    assert.equal(result.hypeBalanceAfter, 0.3);
+    assert.equal(result.hypeBalanceAfter, 0.25);
     const finalUpdate = dbUpdates[dbUpdates.length - 1]?.data;
     const metadata = finalUpdate?.executionMetadata;
     assert.equal(finalUpdate?.hypercoreFundingStatus, "funded");
@@ -4683,8 +5041,10 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
 async function runV4HypeReserveFailureScenario(mode: "pending" | "retryable" | "user_action_required" | "recovery_required") {
   const previousTarget = process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET;
   const previousBudget = process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND;
+  const previousSource = process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE;
   process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET = "0.25";
   process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND = "2";
+  process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE = "bot_spot_buy";
 
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
@@ -4887,6 +5247,8 @@ async function runV4HypeReserveFailureScenario(mode: "pending" | "retryable" | "
     else process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET = previousTarget;
     if (previousBudget == null) delete process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND;
     else process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND = previousBudget;
+    if (previousSource == null) delete process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE;
+    else process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE = previousSource;
   }
 }
 

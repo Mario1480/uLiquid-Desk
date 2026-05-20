@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import {
+  formatHyperliquidPrice,
+  formatHyperliquidSize,
   type FundsTransferResult,
+  hyperliquidPriceTickForValue,
   HyperliquidCoreWriterClient,
   isConfirmedFundsTransferResult,
   isPendingFundsTransferResult
@@ -300,6 +303,7 @@ type CreateBotVaultV3ServiceDeps = {
   readHyperliquidClearinghouseState?: ((address: `0x${string}`) => Promise<HyperliquidClearinghouseState>) | null;
   readHyperliquidSpotAssetBalance?: ((address: `0x${string}`, asset: string) => Promise<string>) | null;
   readHyperliquidSpotUsdcBalance?: ((address: `0x${string}`) => Promise<string>) | null;
+  sendAgentHyperliquidSpotTransfer?: ((input: BotVaultV3AgentSpotTransferInput) => Promise<BotVaultV3AgentSpotTransferResult>) | null;
   createPerpExecutionAdapter?: ((account: TradingAccount) => any) | null;
   createVaultCoreWriter?: ((account: TradingAccount) => BotVaultV3ExitCoreWriter | null) | null;
   createVaultSpotClient?: ((account: TradingAccount) => BotVaultV3ExitSpotClient | null) | null;
@@ -525,6 +529,7 @@ type BotVaultV3ExitSpotSymbol = {
   maxQty?: number | null;
   quoteAsset?: string | null;
   baseAsset?: string | null;
+  baseDecimals?: number | null;
 };
 
 type BotVaultV3ExitSpotClient = {
@@ -553,6 +558,19 @@ type BotVaultV3ExitCoreWriter = {
     errorCode?: string;
     errorMessage?: string;
   }>;
+};
+
+type BotVaultV3AgentSpotTransferInput = {
+  account: TradingAccount;
+  destination: `0x${string}`;
+  token: string;
+  amount: string;
+};
+
+type BotVaultV3AgentSpotTransferResult = {
+  status: string;
+  txHash?: string | null;
+  response?: unknown;
 };
 
 type SetUserAgentWalletParams = {
@@ -685,6 +703,19 @@ function readBotVaultHypeReserveBudgetUsd(contractVersion: "v3" | "v4"): number 
   return envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_MAX_USDC_SPEND", 1);
 }
 
+function readBotVaultHypeReserveUsesAgentSpotTransfer(contractVersion: "v3" | "v4"): boolean {
+  if (contractVersion !== "v4") return false;
+  const raw = String(process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE ?? "agent_spot_transfer").trim().toLowerCase();
+  return !["bot_spot_buy", "spot_buy", "buy", "corewriter_buy"].includes(raw);
+}
+
+function readBotVaultHypeReserveTokenIdentifier(): string {
+  return String(
+    process.env.BOT_VAULT_V4_HYPE_RESERVE_HYPERCORE_TOKEN
+    ?? "HYPE:0x0d01dc56dcaaca66ad901c959b4011ec"
+  ).trim() || "HYPE";
+}
+
 function isBotVaultHypeReserveReady(state: unknown): boolean {
   const normalized = String(state ?? "").trim().toLowerCase();
   return normalized === "ready" || normalized === "not_required";
@@ -811,6 +842,25 @@ function buildBotVaultHypeReserveStatus(params: {
   if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_budget_too_low")) {
     return classify("user_action_required", "bot_vault_v4_hype_reserve_budget_too_low");
   }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_min_trade_notional")) {
+    return classify("user_action_required", "bot_vault_v4_hype_reserve_min_trade_notional");
+  }
+  if (
+    normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_agent_hype_missing")
+    || normalizedDetail.includes("bot_vault_v4_hype_reserve_agent_hype_missing")
+  ) {
+    return classify("user_action_required", "bot_vault_v4_hype_reserve_agent_hype_missing");
+  }
+  if (
+    normalizedDetail.includes("bot_vault_v4_hype_reserve_agent_secret_missing")
+    || normalizedDetail.includes("bot_vault_v4_hype_reserve_agent_secret_mismatch")
+    || normalizedDetail.includes("bot_vault_v4_hype_reserve_agent_exchange_unsupported")
+  ) {
+    return classify("recovery_required", "bot_vault_v4_hype_reserve_agent_transfer_unavailable");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_agent_transfer_failed")) {
+    return classify("retryable", "bot_vault_v4_hype_reserve_agent_transfer_failed");
+  }
   if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_order_not_allowed")) {
     return classify("recovery_required", "bot_vault_v4_hype_reserve_order_not_allowed");
   }
@@ -850,6 +900,10 @@ type BotVaultHypeReserveResult = {
   spotUsdcBudget: number;
   state: "not_required" | "ready" | "pending";
   txHash: string | null;
+  source?: "not_required" | "existing_balance" | "agent_spot_transfer" | "bot_spot_buy";
+  agentWallet?: string | null;
+  agentHypeBefore?: number | null;
+  agentTransferAmount?: number | null;
 };
 
 type BotVaultHypeReserveFailureClass = "retryable" | "user_action_required" | "recovery_required";
@@ -1189,6 +1243,14 @@ function roundStep(value: number, step: number | null | undefined, mode: "up" | 
   return Number((steps * step).toFixed(12));
 }
 
+function formatTokenAmount(value: number, decimals = 8): string {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  return value
+    .toFixed(Math.max(0, Math.min(12, Math.trunc(decimals))))
+    .replace(/(\.\d*?[1-9])0+$/, "$1")
+    .replace(/\.0+$/, "");
+}
+
 function statusIndexToLabel(statusIndex: bigint | number): string {
   const normalized = typeof statusIndex === "bigint" ? Number(statusIndex) : statusIndex;
   if (normalized === 0) return "DEPLOYED";
@@ -1257,6 +1319,51 @@ function createDefaultVaultCoreWriter(account: TradingAccount): BotVaultV3ExitCo
     rpcUrl: resolveHyperEvmWriteRpcUrl(walletConfig.hyperEvmRpcUrl),
     chainId: walletConfig.hyperEvmChainId
   });
+}
+
+async function sendDefaultAgentHyperliquidSpotTransfer(
+  input: BotVaultV3AgentSpotTransferInput
+): Promise<BotVaultV3AgentSpotTransferResult> {
+  if (String(input.account.exchange ?? "").trim().toLowerCase() !== "hyperliquid") {
+    throw new Error("bot_vault_v4_hype_reserve_agent_exchange_unsupported");
+  }
+  const privateKey = normalizePrivateKey(input.account.apiSecret);
+  if (!privateKey) throw new Error("bot_vault_v4_hype_reserve_agent_secret_missing");
+  const agentAccount = privateKeyToAccount(privateKey);
+  const configuredAddress = toNullableString(input.account.apiKey);
+  if (configuredAddress && isAddress(configuredAddress) && !sameAddress(configuredAddress, agentAccount.address)) {
+    throw new Error("bot_vault_v4_hype_reserve_agent_secret_mismatch");
+  }
+  const [{ HttpTransport }, { spotSend }] = await Promise.all([
+    import("@nktkas/hyperliquid") as Promise<any>,
+    import("@nktkas/hyperliquid/api/exchange") as Promise<any>
+  ]);
+  const apiUrl = String(
+    process.env.HYPERLIQUID_SPOT_REST_BASE_URL
+    ?? process.env.HYPERLIQUID_REST_BASE_URL
+    ?? "https://api.hyperliquid.xyz"
+  ).replace(/\/+$/, "");
+  const response = await spotSend(
+    {
+      transport: new HttpTransport({
+        apiUrl,
+        fetchOptions: {
+          cache: "no-store"
+        }
+      }),
+      wallet: agentAccount
+    },
+    {
+      destination: input.destination,
+      token: input.token,
+      amount: input.amount
+    }
+  );
+  return {
+    status: String(response?.status ?? "ok"),
+    txHash: toNullableString(response?.hash ?? response?.txHash),
+    response
+  };
 }
 
 function computeClaimableProfitUsd(row: {
@@ -1745,6 +1852,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const readHyperliquidClearinghouseStateLive = deps?.readHyperliquidClearinghouseState ?? readHyperliquidClearinghouseState;
   const readHyperliquidSpotAssetBalanceLive = deps?.readHyperliquidSpotAssetBalance ?? readHyperliquidSpotAssetBalance;
   const readHyperliquidSpotUsdcBalanceLive = deps?.readHyperliquidSpotUsdcBalance ?? readHyperliquidSpotUsdcBalance;
+  const sendAgentHyperliquidSpotTransferImpl = deps?.sendAgentHyperliquidSpotTransfer ?? sendDefaultAgentHyperliquidSpotTransfer;
   const createPerpExecutionAdapterImpl = deps?.createPerpExecutionAdapter ?? createPerpExecutionAdapter;
   const createVaultCoreWriterImpl = deps?.createVaultCoreWriter ?? createDefaultVaultCoreWriter;
   const createVaultSpotClientImpl = deps?.createVaultSpotClient ?? createDefaultVaultSpotClient;
@@ -3597,14 +3705,258 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const contractVersion = readBotVaultOnchainContractVersion(lifecycleExecutionMetadata);
     const executionTotalUsd = toNonNegativeNumber(executionSnapshot.totalVisibleUsd);
     const executionPerpUsd = toNonNegativeNumber(executionSnapshot.perpEquityUsd);
+    const executionPerpAvailableUsd = toNonNegativeNumber(executionSnapshot.perpAvailableMarginUsd);
     const executionSpotUsd = toNonNegativeNumber(executionSnapshot.coreSpotUsd);
     const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
-    const hypeReserveState = readBotVaultHypeReserveState(lifecycleExecutionMetadata);
-    const hypeReserveReady = isBotVaultHypeReserveReady(hypeReserveState);
+    let hypeReserveState = readBotVaultHypeReserveState(lifecycleExecutionMetadata);
+    let hypeReserveReady = isBotVaultHypeReserveReady(hypeReserveState);
     const fundingIntentStatus = String(lifecycleFundingIntent.actionStatus ?? "").trim().toLowerCase();
     const onchainStatus = String(onchainSnapshot?.status ?? row.status ?? "DEPLOYED");
     const economicallyClosed = onchainStatus === "CLOSED"
       || (onchainStatus === "CLOSE_ONLY" && toNonNegativeNumber(onchainSnapshot?.availableUsd) <= USD_VERIFICATION_EPSILON && toNonNegativeNumber(onchainSnapshot?.principalReturned) > USD_VERIFICATION_EPSILON);
+    let observedV4FundingVerificationMetadataPatch: Record<string, unknown> | null = null;
+    let observedV4FundingVerificationTargetStage: BotVaultV3FundingLifecycleStage | null = null;
+    let observedV4FundingVerificationReason = "perp_margin_verified_from_reconciliation";
+    let observedV4FundingVerificationDetail = "live_execution_balances";
+
+    if (
+      contractVersion === "v4"
+      && executionSnapshot.state === "ok"
+      && onchainSnapshot
+      && executionPerpUsd > USD_VERIFICATION_EPSILON
+      && executionPerpAvailableUsd > USD_VERIFICATION_EPSILON
+      && (verificationState !== "funding_verified" || !hypeReserveReady)
+      && vaultAddress
+      && isAddress(vaultAddress)
+    ) {
+      const hypeReserveTarget = readBotVaultHypeReserveTarget(contractVersion);
+      const hypeReserveBudgetUsd = readBotVaultHypeReserveBudgetUsd(contractVersion);
+      const requiresHypeReserve = hypeReserveTarget > 0 && (contractVersion === "v4" || hypeReserveBudgetUsd > 0);
+      let hypeBalanceAfter: number | null = null;
+      let hypeReserveTxHash: string | null = null;
+      let hypeReserveResult: BotVaultHypeReserveResult | null = null;
+      let observedHypeReserveReady = !requiresHypeReserve;
+      let hypeReserveReadError: string | null = null;
+
+      if (requiresHypeReserve) {
+        try {
+          hypeBalanceAfter = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(vaultAddress as `0x${string}`, "HYPE"));
+          observedHypeReserveReady = hypeBalanceAfter + 0.0000001 >= hypeReserveTarget;
+        } catch (error) {
+          hypeReserveReadError = String(error);
+          observedHypeReserveReady = false;
+        }
+
+        if (
+          !observedHypeReserveReady
+          && params.persist !== false
+          && onchainStatus === "ACTIVE"
+          && executionSpotUsd > USD_VERIFICATION_EPSILON
+        ) {
+          try {
+            const context = await loadExecutionCloseoutContext({
+              userId: params.userId,
+              botVaultId: String(row.id)
+            });
+            if (!context) throw new Error("bot_vault_not_found");
+            const account = await resolveExecutionCloseoutAccount(context);
+            hypeReserveResult = await retryHyperliquidTransient(
+              "reconcile_bot_vault_v4_hype_reserve",
+              () => ensureHypercoreExitGas({
+                account,
+                vaultAddress: vaultAddress as `0x${string}`,
+                onchainStatus,
+                contractVersion
+              })
+            );
+            hypeBalanceAfter = hypeReserveResult.hypeBalanceAfter;
+            hypeReserveTxHash = toNullableString(hypeReserveResult.txHash);
+            observedHypeReserveReady = isBotVaultHypeReserveReady(hypeReserveResult.state);
+          } catch (error) {
+            hypeReserveReadError = String(error);
+            observedHypeReserveReady = false;
+          }
+        }
+      }
+
+      if (observedHypeReserveReady) {
+        const verifiedAt = checkedAt;
+        hypeReserveState = "ready";
+        hypeReserveReady = true;
+        observedV4FundingVerificationTargetStage = "execution_ready";
+        observedV4FundingVerificationReason = "perp_margin_verified_from_reconciliation";
+        observedV4FundingVerificationDetail = "live_execution_balances";
+        observedV4FundingVerificationMetadataPatch = {
+          lastAction: "bot_vault_v4_margin_add_verified_from_reconciliation",
+          hypeReserveState: "ready",
+          hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+          hypeReserveObservedBalance: hypeBalanceAfter,
+          hypeReserveFailureClass: null,
+          hypeReserveReasonCode: null,
+          hypeReserveStatusCategory: "execution_ready",
+          hypeReserveMismatchCategory: null,
+          hypeReserveRecoveryAction: null,
+          hypeReserveCanRetry: false,
+          hypeReserveNeedsUserAction: false,
+          hypeReserveRequiresRecovery: false,
+          hypeReserveUpdatedAt: verifiedAt,
+          marginAddFinalization: {
+            ...marginAddFinalization,
+            contractVersion,
+            transferObserved: true,
+            fundingVerified: true,
+            marginFundingVerified: true,
+            verificationState: "funding_verified",
+            verificationBlockingReason: null,
+            finalPerpStateReadable: true,
+            finalStateResynced: true,
+            pauseStateSafe: true,
+            hypeReserveState: "ready",
+            hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+            hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
+            hypeReserveReady: true,
+            hypeReserveObservedBalance: hypeBalanceAfter,
+            hypeReserveTxHash: hypeReserveTxHash ?? toNullableString(marginAddFinalization.hypeReserveTxHash),
+            hypeReserveError: null,
+            hypeReserveFailureClass: null,
+            hypeReserveReasonCode: null,
+            hypeReserveStatusCategory: "execution_ready",
+            hypeReserveMismatchCategory: null,
+            hypeReserveRecoveryAction: null,
+            hypeReserveCanRetry: false,
+            hypeReserveNeedsUserAction: false,
+            hypeReserveRequiresRecovery: false,
+            coreSpotBalanceAfterUsd: executionSnapshot.coreSpotUsd,
+            perpAvailableMarginAfterUsd: executionSnapshot.perpAvailableMarginUsd,
+            perpEquityAfterUsd: executionSnapshot.perpEquityUsd,
+            observedAt: verifiedAt,
+            verifiedAt,
+            updatedAt: verifiedAt
+          }
+        };
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "margin_add_verified_from_reconciliation",
+          severity: "warning",
+          field: "executionBalances",
+          sourceOfTruth: "execution",
+          detail: "v4 perp margin and HYPE reserve were verified from live reconciliation state",
+          autoRecoverable: true,
+          autoRecovered: params.persist !== false,
+          observedValue: executionPerpUsd,
+          expectedValue: "funding_verified"
+        }));
+      } else if (requiresHypeReserve) {
+        const checkedAtIso = checkedAt;
+        const hypeReserveStatus = buildBotVaultHypeReserveStatus({
+          requiresHypeReserve,
+          result: hypeReserveResult,
+          error: hypeReserveReadError,
+          fallbackState: hypeReserveState || "pending"
+        });
+        const effectiveHypeReserveState = hypeReserveStatus.state;
+        const effectiveHypeReserveError = hypeReserveStatus.detail;
+        const effectiveHypeBalanceAfter = hypeReserveResult?.hypeBalanceAfter ?? hypeBalanceAfter;
+        const effectiveHypeReserveTxHash = hypeReserveResult?.txHash
+          ?? hypeReserveTxHash
+          ?? toNullableString(marginAddFinalization.hypeReserveTxHash);
+        const verificationStateFromReserve =
+          hypeReserveStatus.failureClass === "user_action_required"
+            ? "hype_reserve_user_action_required"
+            : hypeReserveStatus.failureClass === "recovery_required"
+              ? "hype_reserve_recovery_required"
+              : hypeReserveStatus.failureClass === "retryable"
+                ? "hype_reserve_retryable"
+                : "hype_reserve_pending";
+
+        hypeReserveState = effectiveHypeReserveState;
+        hypeReserveReady = false;
+        observedV4FundingVerificationTargetStage = hypeReserveStatus.requiresRecovery
+          ? "recovery_required"
+          : "perp_margin_transferred";
+        observedV4FundingVerificationReason = hypeReserveStatus.reasonCode
+          ?? "bot_vault_v4_hype_reserve_pending";
+        observedV4FundingVerificationDetail = effectiveHypeReserveError
+          ?? effectiveHypeReserveState
+          ?? "bot_vault_v4_hype_reserve_pending";
+        observedV4FundingVerificationMetadataPatch = {
+          lastAction: hypeReserveStatus.failureClass === "user_action_required"
+            ? "bot_vault_v4_hype_reserve_user_action_required"
+            : hypeReserveStatus.failureClass === "recovery_required"
+              ? "bot_vault_v4_hype_reserve_recovery_required"
+              : hypeReserveStatus.failureClass === "retryable"
+                ? "bot_vault_v4_hype_reserve_retryable"
+                : "bot_vault_v4_hype_reserve_pending",
+          hypeReserveState: effectiveHypeReserveState,
+          hypeReserveTarget,
+          hypeReserveObservedBalance: effectiveHypeBalanceAfter,
+          hypeReserveFailureClass: hypeReserveStatus.failureClass,
+          hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+          hypeReserveStatusCategory: hypeReserveStatus.statusCategory,
+          hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+          hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
+          hypeReserveCanRetry: hypeReserveStatus.canRetry,
+          hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
+          hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
+          hypeReserveUpdatedAt: checkedAtIso,
+          marginAddFinalization: {
+            ...marginAddFinalization,
+            contractVersion,
+            transferObserved: true,
+            fundingVerified: false,
+            marginFundingVerified: true,
+            verificationState: verificationStateFromReserve,
+            verificationBlockingReason: hypeReserveStatus.reasonCode
+              ?? "bot_vault_v4_hype_reserve_pending",
+            finalPerpStateReadable: true,
+            finalStateResynced: true,
+            pauseStateSafe: true,
+            hypeReserveState: effectiveHypeReserveState,
+            hypeReserveTarget,
+            hypeReserveBudgetUsd,
+            hypeReserveReady: false,
+            hypeReserveObservedBalance: effectiveHypeBalanceAfter,
+            hypeReserveTxHash: effectiveHypeReserveTxHash,
+            hypeReserveError: effectiveHypeReserveError,
+            hypeReserveFailureClass: hypeReserveStatus.failureClass,
+            hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            hypeReserveStatusCategory: hypeReserveStatus.statusCategory,
+            hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+            hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
+            hypeReserveCanRetry: hypeReserveStatus.canRetry,
+            hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
+            hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
+            coreSpotBalanceAfterUsd: executionSnapshot.coreSpotUsd,
+            perpAvailableMarginAfterUsd: executionSnapshot.perpAvailableMarginUsd,
+            perpEquityAfterUsd: executionSnapshot.perpEquityUsd,
+            observedAt: checkedAtIso,
+            verifiedAt: null,
+            updatedAt: checkedAtIso
+          }
+        };
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "hype_reserve_pending_from_reconciliation",
+          severity: hypeReserveStatus.requiresRecovery ? "blocking" : "warning",
+          statusCategory: hypeReserveStatus.statusCategory,
+          mismatch: hypeReserveStatus.mismatch,
+          field: "executionBalances",
+          sourceOfTruth: "execution",
+          detail: effectiveHypeReserveError
+            ?? "v4 perp margin is visible, but the HYPE reserve is not ready yet",
+          autoRecoverable: hypeReserveStatus.canRetry,
+          autoRecovered: hypeReserveStatus.canRetry && params.persist !== false,
+          observedValue: effectiveHypeBalanceAfter,
+          expectedValue: hypeReserveTarget
+        }));
+        if (hypeReserveReadError) {
+          logger.warn("bot_vault_v4_reconciliation_hype_reserve_read_failed", {
+            userId: params.userId,
+            botVaultId: String(row.id),
+            vaultAddress,
+            error: hypeReserveReadError
+          });
+        }
+      }
+    }
 
     let desiredLifecycleStage: BotVaultV3FundingLifecycleStage = currentLifecycle.stage;
     if (economicallyClosed) {
@@ -3623,6 +3975,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         desiredLifecycleStage = "recovery_required";
       } else if (fundingIntentStatus === "failed" && !hasOnchainFundingEvidence) {
         desiredLifecycleStage = "failed";
+      } else if (observedV4FundingVerificationTargetStage) {
+        desiredLifecycleStage = observedV4FundingVerificationTargetStage;
       } else if (
         verificationState === "funding_verified"
         || ["running", "paused", "close_only"].includes(String(row.executionStatus ?? "").trim().toLowerCase())
@@ -3745,7 +4099,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           targetStage: lifecycleTransition.targetStage,
           source: "reconcile_bot_vault_v3",
           reason: lifecycleTransition.reason,
-          detail: lifecycleTransition.detail
+          detail: lifecycleTransition.detail,
+          metadataPatch: observedV4FundingVerificationMetadataPatch
+        })
+      );
+    } else if (observedV4FundingVerificationMetadataPatch) {
+      Object.assign(
+        patchData,
+        buildBotVaultV3FundingLifecycleTransitionPatch({
+          row,
+          targetStage: observedV4FundingVerificationTargetStage ?? "execution_ready",
+          source: "reconcile_bot_vault_v3",
+          reason: observedV4FundingVerificationReason,
+          detail: observedV4FundingVerificationDetail,
+          metadataPatch: observedV4FundingVerificationMetadataPatch
         })
       );
     }
@@ -4175,7 +4542,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         spotUsdcBefore: 0,
         spotUsdcBudget: 0,
         state: "not_required",
-        txHash: null
+        txHash: null,
+        source: "not_required"
       };
     }
     if (hypeBefore >= targetHype - 0.0000001) {
@@ -4188,7 +4556,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         spotUsdcBefore: 0,
         spotUsdcBudget: 0,
         state: "ready",
-        txHash: null
+        txHash: null,
+        source: "existing_balance"
       };
     }
     if (params.onchainStatus === "CLOSE_ONLY") {
@@ -4202,6 +4571,57 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
     if (params.onchainStatus !== "ACTIVE") {
       throw new Error(`bot_vault_v3_hypercore_exit_gas_order_not_allowed:${params.onchainStatus}`);
+    }
+
+    if (readBotVaultHypeReserveUsesAgentSpotTransfer(contractVersion)) {
+      const agentAddress = toNullableString(params.account.apiKey);
+      if (!agentAddress || !isAddress(agentAddress) || sameAddress(agentAddress, params.vaultAddress)) {
+        throw new Error("bot_vault_v4_hype_reserve_agent_transfer_unavailable");
+      }
+      const transferAmount = roundStep(targetHype - hypeBefore, 0.00000001, "up");
+      const agentHypeBefore = toNonNegativeFinite(
+        await readHyperliquidSpotAssetBalanceLive(agentAddress as `0x${string}`, "HYPE")
+      );
+      if (agentHypeBefore + 0.00000001 < transferAmount) {
+        throw new Error(
+          [
+            "bot_vault_v3_hypercore_exit_gas_agent_hype_missing",
+            `required=${transferAmount}`,
+            `available=${agentHypeBefore}`,
+            `target=${targetHype}`,
+            `hype=${hypeBefore}`
+          ].join(":")
+        );
+      }
+      const transferResult = await sendAgentHyperliquidSpotTransferImpl({
+        account: params.account,
+        destination: params.vaultAddress,
+        token: readBotVaultHypeReserveTokenIdentifier(),
+        amount: formatTokenAmount(transferAmount, 8)
+      }).catch((error) => {
+        throw new Error(`bot_vault_v3_hypercore_exit_gas_agent_transfer_failed:${String(error)}`);
+      });
+      const transferStatus = String(transferResult?.status ?? "").trim().toLowerCase();
+      if (transferStatus && !["ok", "confirmed", "success"].includes(transferStatus)) {
+        throw new Error(`bot_vault_v3_hypercore_exit_gas_agent_transfer_failed:${transferStatus}`);
+      }
+      await sleepImpl(750);
+      const hypeAfter = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(params.vaultAddress, "HYPE"));
+      return {
+        contractVersion,
+        targetHype,
+        maxUsdcSpend,
+        hypeBalanceBefore: hypeBefore,
+        hypeBalanceAfter: hypeAfter,
+        spotUsdcBefore: 0,
+        spotUsdcBudget: 0,
+        state: hypeAfter + 0.0000001 >= targetHype ? "ready" : "pending",
+        txHash: toNullableString(transferResult?.txHash),
+        source: "agent_spot_transfer",
+        agentWallet: agentAddress,
+        agentHypeBefore,
+        agentTransferAmount: transferAmount
+      };
     }
 
     const coreWriter = createVaultCoreWriterImpl(params.account);
@@ -4235,8 +4655,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       toNonNegativeFinite(hypeUsdcMarket.minQty),
       stepSize
     );
+    const minTradeNotionalUsd = envNumber("HYPERLIQUID_SPOT_MIN_TRADE_NOTIONAL_USD", 10);
+    const minTradeNotionalQty = minTradeNotionalUsd > 0
+      ? roundStep(minTradeNotionalUsd / referencePrice, stepSize || null, "up")
+      : 0;
     const desiredQty = roundStep(
-      Math.max(targetHype - hypeBefore, minQty || targetHype),
+      Math.max(targetHype - hypeBefore, minQty || targetHype, minTradeNotionalQty),
       stepSize || null,
       "up"
     );
@@ -4247,10 +4671,33 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (buyQty <= 0.000000001 || (minQty > 0 && buyQty + 0.000000001 < minQty)) {
       throw new Error("bot_vault_v3_hypercore_exit_gas_budget_too_low");
     }
+    const estimatedNotionalUsd = buyQty * referencePrice;
+    if (minTradeNotionalUsd > 0 && estimatedNotionalUsd + 0.000001 < minTradeNotionalUsd) {
+      throw new Error(
+        [
+          "bot_vault_v3_hypercore_exit_gas_min_trade_notional",
+          `requiredUsd=${minTradeNotionalUsd}`,
+          `availableUsd=${spendBudgetUsd}`,
+          `budgetUsd=${maxUsdcSpend}`,
+          `buyQty=${buyQty}`,
+          `referencePrice=${referencePrice}`
+        ].join(":")
+      );
+    }
 
     const marketSlippage = envNumber("HYPERLIQUID_SPOT_MARKET_SLIPPAGE_PCT", 0.05) / 100;
-    const limitPx = Number((referencePrice * (1 + marketSlippage)).toFixed(8));
-    const normalizedQty = Number(buyQty.toFixed(8));
+    const baseDecimals = Number.isFinite(Number(hypeUsdcMarket.baseDecimals))
+      ? Math.max(0, Math.trunc(Number(hypeUsdcMarket.baseDecimals)))
+      : stepSize > 0
+        ? Math.max(0, Math.round(Math.log10(1 / stepSize)))
+        : 8;
+    const rawLimitPx = referencePrice * (1 + marketSlippage);
+    const priceTick = hyperliquidPriceTickForValue(rawLimitPx, baseDecimals, "spot");
+    const roundedLimitPx = priceTick && priceTick > 0
+      ? Number((Math.ceil(rawLimitPx / priceTick) * priceTick).toFixed(12))
+      : rawLimitPx;
+    const limitPx = Number(formatHyperliquidPrice(roundedLimitPx, baseDecimals, "spot"));
+    const normalizedQty = Number(formatHyperliquidSize(buyQty, baseDecimals));
     const gasOrderResult = await coreWriter.placeLimitOrder({
       asset: 10_000 + Math.trunc(marketAssetIndex),
       isBuy: true,
@@ -4278,7 +4725,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       spotUsdcBefore,
       spotUsdcBudget: spendBudgetUsd,
       state: hypeAfter + 0.0000001 >= targetHype ? "ready" : "pending",
-      txHash: toNullableString(gasOrderResult.txHash)
+      txHash: toNullableString(gasOrderResult.txHash),
+      source: "bot_spot_buy"
     };
   }
 
@@ -6895,7 +7343,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
     const hypeReserveTarget = readBotVaultHypeReserveTarget(contractVersion);
     const hypeReserveBudgetUsd = readBotVaultHypeReserveBudgetUsd(contractVersion);
-    const requiresHypeReserve = contractVersion === "v4" && hypeReserveTarget > 0 && hypeReserveBudgetUsd > 0;
+    const requiresHypeReserve = contractVersion === "v4" && hypeReserveTarget > 0;
 
     let activateTxHash: string | null = null;
     let depositTxHash: string | null = null;
@@ -7355,7 +7803,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       const hypeReserveAlreadyReady = requiresHypeReserve
         ? !(await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`, contractVersion))
         : false;
-      const requiredHypeReserveBudgetUsd = requiresHypeReserve && !hypeReserveAlreadyReady
+      const requiredHypeReserveBudgetUsd = requiresHypeReserve
+        && !readBotVaultHypeReserveUsesAgentSpotTransfer(contractVersion)
+        && !hypeReserveAlreadyReady
         ? hypeReserveBudgetUsd
         : 0;
       const totalRequiredCoreSpotUsd = roundUsd(

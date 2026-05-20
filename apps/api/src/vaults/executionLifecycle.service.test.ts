@@ -492,6 +492,45 @@ test("syncExecutionState does not downgrade non-created status to created on amb
   assert.equal(ctx.state.executionEvents.length, 0);
 });
 
+test("syncExecutionState keeps provider reads outside the write transaction", async () => {
+  const ctx = createInMemoryDb();
+  let providerSawTransactionClient = false;
+  let transactionCalls = 0;
+  const originalTransaction = ctx.db.$transaction;
+  ctx.db.$transaction = async (run: (tx: any) => Promise<any>) => {
+    transactionCalls += 1;
+    return originalTransaction(run);
+  };
+
+  const lifecycle = createExecutionLifecycleService(ctx.db, {
+    executionOrchestrator: {
+      safeGetState: async (input: any) => {
+        providerSawTransactionClient = Boolean(input.tx);
+        return {
+          ok: true,
+          providerKey: "mock",
+          data: {
+            status: "running",
+            observedAt: new Date().toISOString(),
+            providerMetadata: {}
+          }
+        };
+      }
+    } as any
+  });
+
+  await lifecycle.syncExecutionState({
+    userId: "user_1",
+    botVaultId: "bv_1",
+    sourceKey: "exec:bv_1:sync:no_tx_provider_read"
+  });
+
+  assert.equal(providerSawTransactionClient, false);
+  assert.equal(transactionCalls, 1);
+  assert.equal(ctx.state.botVaults.find((entry) => entry.id === "bv_1")?.executionStatus, "running");
+  assert.equal(ctx.state.executionEvents.at(-1)?.action, "sync_state");
+});
+
 test("listExecutionEvents enforces ownership", async () => {
   const ctx = createInMemoryDb();
   const lifecycle = createExecutionLifecycleService(ctx.db, {

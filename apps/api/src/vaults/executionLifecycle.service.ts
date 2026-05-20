@@ -961,31 +961,14 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
 
   async function syncExecutionState(params: SyncStateParams): Promise<BotExecutionState | null> {
     const sourceKey = normalizeSourceKey(params.sourceKey);
-    return withTx(params.tx, async (tx) => {
-      const botVault = await findBotVaultForUser(tx, params.userId, params.botVaultId);
-      if (!botVault) throw new Error("bot_vault_not_found");
 
-      const existingEvent = await findExecutionEventBySourceKey(tx, sourceKey);
-      if (existingEvent) {
-        if (!executionOrchestrator) return null;
-        const state = await executionOrchestrator.safeGetState({
-          userId: params.userId,
-          botVaultId: String(botVault.id),
-          gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
-          tx
-        });
-        return state.ok ? state.data : null;
-      }
-
-      const gridContext = await findBotVaultOwnerContext(tx, botVault);
-      const result = executionOrchestrator
-        ? await executionOrchestrator.safeGetState({
-            userId: params.userId,
-            botVaultId: String(botVault.id),
-            gridInstanceId: gridContext?.gridInstanceId ?? null,
-            tx
-          })
-        : buildProviderNotConfiguredResult<BotExecutionState>();
+    async function persistSyncResult(input: {
+      tx: any;
+      botVault: any;
+      gridContext: BotVaultOwnerContext | null;
+      result: ExecutionSafeResult<BotExecutionState>;
+    }): Promise<BotExecutionState | null> {
+      const { tx, botVault, gridContext, result } = input;
       const previousSyncError = String(botVault.executionLastError ?? "").trim();
 
       if (!result.ok) {
@@ -1077,7 +1060,83 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       }
 
       return result.data;
-    });
+    }
+
+    async function runProviderRead(input: {
+      botVault: any;
+      gridContext: BotVaultOwnerContext | null;
+      tx?: any;
+    }): Promise<ExecutionSafeResult<BotExecutionState>> {
+      return executionOrchestrator
+        ? await executionOrchestrator.safeGetState({
+            userId: params.userId,
+            botVaultId: String(input.botVault.id),
+            gridInstanceId: input.gridContext?.gridInstanceId
+              ?? (input.botVault.gridInstanceId ? String(input.botVault.gridInstanceId) : null),
+            ...(input.tx ? { tx: input.tx } : {})
+          })
+        : buildProviderNotConfiguredResult<BotExecutionState>();
+    }
+
+    if (params.tx) {
+      return withTx(params.tx, async (tx) => {
+        const botVault = await findBotVaultForUser(tx, params.userId, params.botVaultId);
+        if (!botVault) throw new Error("bot_vault_not_found");
+
+        const existingEvent = await findExecutionEventBySourceKey(tx, sourceKey);
+        if (existingEvent) {
+          if (!executionOrchestrator) return null;
+          const state = await executionOrchestrator.safeGetState({
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+            tx
+          });
+          return state.ok ? state.data : null;
+        }
+
+        const gridContext = await findBotVaultOwnerContext(tx, botVault);
+        const result = await runProviderRead({ botVault, gridContext, tx });
+        return persistSyncResult({ tx, botVault, gridContext, result });
+      });
+    }
+
+    const botVault = await findBotVaultForUser(db, params.userId, params.botVaultId);
+    if (!botVault) throw new Error("bot_vault_not_found");
+
+    const existingEvent = await findExecutionEventBySourceKey(db, sourceKey);
+    if (existingEvent) {
+      if (!executionOrchestrator) return null;
+      const state = await executionOrchestrator.safeGetState({
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null
+      });
+      return state.ok ? state.data : null;
+    }
+
+    const gridContext = await findBotVaultOwnerContext(db, botVault);
+    const result = await runProviderRead({ botVault, gridContext });
+
+    return db.$transaction(
+      async (tx: any) => {
+        const currentBotVault = await findBotVaultForUser(tx, params.userId, params.botVaultId);
+        if (!currentBotVault) throw new Error("bot_vault_not_found");
+        const duplicateEvent = await findExecutionEventBySourceKey(tx, sourceKey);
+        if (duplicateEvent) return result.ok ? result.data : null;
+        const currentGridContext = await findBotVaultOwnerContext(tx, currentBotVault);
+        return persistSyncResult({
+          tx,
+          botVault: currentBotVault,
+          gridContext: currentGridContext,
+          result
+        });
+      },
+      {
+        maxWait: 5_000,
+        timeout: EXECUTION_LIFECYCLE_TX_TIMEOUT_MS
+      }
+    );
   }
 
   async function listExecutionEvents(params: { userId: string; botVaultId: string; limit?: number }) {
