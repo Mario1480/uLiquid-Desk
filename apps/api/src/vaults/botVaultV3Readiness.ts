@@ -248,6 +248,7 @@ export function buildBotVaultV3HealthSummary(row: unknown): BotVaultV3HealthSumm
   else if (status === "PAUSED" && lifecycle.stage === "execution_ready") lifecycleStatus = "paused";
   else if (status === "CLOSE_ONLY") lifecycleStatus = "close_only";
   else if (status === "CLOSED" || lifecycle.stage === "settled") lifecycleStatus = "closed";
+  const isSettledOrClosed = lifecycle.stage === "settled" || executionStatus === "closed" || lifecycleStatus === "closed";
 
   let fundingHealth = "empty";
   if (lifecycle.stage === "funding_requested") fundingHealth = "requested";
@@ -279,9 +280,9 @@ export function buildBotVaultV3HealthSummary(row: unknown): BotVaultV3HealthSumm
 
   const statusDescriptor = classifyBotVaultV4Status({
     lifecycleStage: lifecycle.stage,
-    reason: hypeReserveReasonCode ?? actionState ?? fundingHealth,
-    detail: hypeReserveDetail ?? lifecycle.recoveryReason ?? lifecycle.failureReason ?? lifecycleStatus,
-    mismatch: hypeReserveFailureClass
+    reason: isSettledOrClosed ? "closed" : hypeReserveReasonCode ?? actionState ?? fundingHealth,
+    detail: isSettledOrClosed ? "closed" : hypeReserveDetail ?? lifecycle.recoveryReason ?? lifecycle.failureReason ?? lifecycleStatus,
+    mismatch: !isSettledOrClosed && hypeReserveFailureClass
       ? classifyBotVaultV4Mismatch({
         reason: hypeReserveReasonCode ?? "bot_vault_v4_hype_reserve_incomplete",
         detail: hypeReserveDetail,

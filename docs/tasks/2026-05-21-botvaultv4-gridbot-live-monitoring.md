@@ -105,6 +105,123 @@ Validation:
 - `node ../../node_modules/tsx/dist/cli.mjs --test src/grid/routes-instances.test.ts` passed.
 - `npm -w apps/api run build` passed.
 - API redeployed with `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build api`.
+
+## Fourth Close Recovery
+
+Close recovery was handled on 2026-05-21 around 17:58-18:15 UTC for:
+
+- BotVault: `cmpfpjm0300xro71ypznq0i7f`
+- Grid instance: `cmpfpjlyk00xpo71y60h9qtbi`
+- BotVault address: `0x0b5298098668e265F4C39af0Db60616B9aF32CDd`
+- Agent wallet: `0xf9Ac451068c7AD47F4e22a8138697797E8eFaD27`
+
+Observed blocker:
+
+- User close failed with `HyperCore still holds funds or positions for this BotVault`.
+- Live Hyperliquid state had no open orders and no perp positions.
+- Perp was empty; the remaining blocker was HyperCore Spot dust:
+  - `0.00009999 USDC`
+  - `0.00079632 HYPE`
+- The practical funds had already reached HyperEVM before close (`3.9999 USDC`).
+
+Manual settlement notes:
+
+- A dust/init transfer from the vault to the agent (`0.00000001 USDC`) unexpectedly incurred a normal HyperCore Spot transfer fee of `1.0 USDC`.
+  - tx: `0xfe66efe0f810d956852a0f2b263052c47c63404df7d478f23c72b11fc03c6a9f`
+  - This was not profit share; it was a venue transfer fee.
+- Agent-to-vault HYPE reserve transfer:
+  - `0.01 HYPE`, ledger hash `0x037975f15ab3389204f3043beb31c902050e00d6f5b65764a742214419b7127c`
+- Spot-to-HyperEVM settlement transfers that moved the recoverable USDC:
+  - `2.9 USDC`, tx `0xda3269849516c0d64381f7638780c055b26772e3f66b5d1c4a8927ff720d46d8`
+  - `0.09 USDC`, tx `0x53a176dbab15c29705c84a1a143cb1e64ebe96b43f749b73379c91461729f7a3`
+  - `1.0009 USDC`, tx `0x51c794e2c6bf5238ff46d9bb26291ce213672a5a3c0e093c6e63015b4abc5a59`
+  - Tiny `0.00009990 USDC` tx `0x80b17b00e096d11a5c58a4f498432a083ca2e3ac38a532fad7a714f3be1a2cfd` had an EVM receipt but did not clear HyperCore dust.
+
+Patch deployed:
+
+- V4 HYPE reserve target default changed to `0.01 HYPE`, matching the practical transfer size.
+- Close settlement now treats HyperCore USDC dust up to `BOT_VAULT_V4_HYPERCORE_EXIT_DUST_USD` (default `0.001`) as non-blocking.
+- Reconciliation now uses the same dust threshold for economically closed vaults, so `0.0001 USDC` no longer leaves a blocking health issue.
+- Closed/settled summary mapping no longer lets stale funding-operation errors override the settled funding display.
+
+Validation:
+
+- `npm -w packages/futures-exchange run build` passed.
+- Direct `transferUsdcSpotToEvm` adapter regression passed.
+- `npm -w apps/api run test:botvault-v4-transitions` passed.
+- Targeted display/health tests passed.
+- `npm -w apps/api run typecheck` passed.
+- API redeployed and ended healthy with restart count `0`.
+
+Final close result:
+
+- Close tx: `0x694fbaa81c5c3e751475856ff5e40d4615f295fdcdbd9136d6572a257af5d655`
+- BotVault status: `CLOSE_ONLY`
+- Funding status: `settled`
+- HyperCore funding status: `withdrawn`
+- Execution status: `closed`
+- Close amount / withdrawn: `3.9999 USDC`
+- Operation state: `close_vault_confirmed`
+- Reconciliation: `ok`, issues `[]`
+- Live Hyperliquid:
+  - open orders: `0`
+  - positions: `0`
+  - perp account value: `0`
+  - remaining non-blocking dust: `0.00009999 USDC`, `0.00079632 HYPE`
+
+Profit-share check:
+
+- `feePaidTotal`: `0`
+- `profitShareAccruedUsd`: `0`
+- `fee_events`: `0`
+- `profit_share_accruals`: `0`
+
+## Fourth Start Monitoring
+
+New BotVault/GridBot start observed on 2026-05-21 around 16:31 UTC.
+
+Runtime IDs:
+
+- BotVault: `cmpfpjm0300xro71ypznq0i7f`
+- Grid instance: `cmpfpjlyk00xpo71y60h9qtbi`
+- Bot: `41099585-6fba-46c8-a12e-5584c0ce058d`
+- BotVault address: `0x0b5298098668e265F4C39af0Db60616B9aF32CDd`
+- Agent wallet: `0xf9Ac451068c7AD47F4e22a8138697797E8eFaD27`
+
+Observed flow:
+
+- Create tx confirmed: `0x91983e81462815cda372f1999aa5528a06f04cce1b6306ac9581ab559181fafe`.
+- Fund tx confirmed: `0x64ee53c912a0c7f74095cb2d6f2c278ab8a9183c422b73c3204cf31228e4f173`.
+- HyperEVM USDC reached the BotVault and was deposited to HyperCore.
+- Backend initially stuck at `hypercore_funded` / `submitted_waiting_hypercore_funding_indexer` with Grid still `created`.
+- Live Hyperliquid check before the fix:
+  - Vault Spot USDC: `5.0`
+  - Vault Perp account value: `0.0`
+
+Patch applied during this start:
+
+- Reconciliation job now auto-calls the v4 initial margin finalizer once HyperCore funding is visible, using the Grid allocation (`investUsd + extraMarginUsd`) instead of the full principal including the 1 USDC create/accounting component.
+- Reconciliation now preserves stored HYPE reserve retry details when classifying a pending reserve state, avoiding a false `recovery_required` downgrade.
+- Agent HyperEVM-to-Core HYPE topup retries are now rate-limited with `BOT_VAULT_V4_AGENT_HYPE_CORE_TOPUP_RETRY_DELAY_MS=1800000` to avoid repeated pending topup transactions.
+
+Validation:
+
+- `npm -w apps/api run test:botvault-v4-transitions` passed.
+- `npm -w apps/api run typecheck` passed.
+- `npm -w apps/api exec -- node ../../node_modules/tsx/dist/cli.mjs --test src/jobs/vaultOnchainReconciliationJob.test.ts` passed before the final cooldown patch.
+
+Post-patch live state:
+
+- Spot-to-Perp transfer succeeded:
+  - transfer tx: `0xadda92ec677b0b777ac09f192aac85da02247bafcbcdb56f3798e2ea384fc2ad`
+  - Vault Perp account value: `5.0`
+  - Vault Spot USDC: `0.0`
+- BotVault remains blocked only on v4 HYPE reserve:
+  - lifecycle: `perp_margin_transferred`
+  - verification: `hype_reserve_retryable`
+  - blocking reason: `bot_vault_v4_hype_reserve_agent_core_topup_pending`
+  - last pending topup tx observed: `0xd0bedb8eed6a0b6c333a462785452ea4fe8e217eb95168575053837f5f728c77`
+- After deploying the cooldown patch, subsequent reconciliation cycles reused the same pending topup hash and did not emit a new topup transaction.
 - Post-deploy checks:
   - API `healthy`, restart count `0` after replacement.
   - Postgres active connections stayed low; no `idle in transaction`.
@@ -356,3 +473,31 @@ Patch applied after this close:
   - Targeted `botVaultV3.service.test.ts` pattern passed.
   - `npm -w apps/api run typecheck` passed.
 - API redeployed with `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build api`.
+
+## Agent Wallet HyperCore Prewarm Fix
+
+Implemented after the fresh Agent Wallet run exposed that native HyperEVM HYPE can be present while spendable HyperCore Spot HYPE is still missing.
+
+- User Agent Wallet summaries now include live HyperCore HYPE readiness:
+  - balance, required amount, ready flag, state, bootstrap tx hash, and reason.
+- Creating or restoring a managed Agent Wallet now attempts a one-time HyperCore HYPE bootstrap immediately when native HyperEVM HYPE is already available.
+- Recording a user Agent Wallet HYPE funding tx now also attempts the same bootstrap after the funding action is tracked.
+- Grid preview/create preflight now blocks BotVault v4 startup unless:
+  - Agent Wallet exists,
+  - native HyperEVM HYPE is above the configured threshold,
+  - spendable HyperCore HYPE is already ready.
+- Duplicate protection:
+  - in-process bootstrap calls are deduped per user/Agent Wallet,
+  - recent submitted/prepared bootstrap actions are treated as pending,
+  - failed HyperCore balance reads fail closed and do not submit a top-up.
+- Validation:
+  - Targeted Agent Wallet and v4 HYPE reserve service tests passed.
+  - Grid/vault route tests passed.
+  - `npm -w apps/api run typecheck` passed.
+- API redeployed with `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d api`; post-deploy health was `healthy`, restart count `0`.
+- Current user Agent Wallet read-only check after deploy:
+  - address: `0xf9Ac451068c7AD47F4e22a8138697797E8eFaD27`
+  - native HyperEVM HYPE: `0.039388700410176106`
+  - HyperCore HYPE: `0.05`
+  - required HyperCore HYPE: `0.01`
+  - readiness: `ready`

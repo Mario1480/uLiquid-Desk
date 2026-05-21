@@ -1092,7 +1092,9 @@ test("getBotVaultForBot maps missing status to DEPLOYED instead of ACTIVE", asyn
       async getAgentCredentials() {
         return null;
       }
-    }
+    },
+    readHyperliquidSpotAssetBalance: async () => "0",
+    readAgentHyperEvmNativeHypeBalance: async () => "0"
   });
 
   const result = await service.getBotVaultForBot({
@@ -2095,7 +2097,7 @@ test("reconcileBotVaultV3ById tops up missing v4 HYPE reserve from the agent wal
 
   assert.equal(agentSpotTransfers.length, 1);
   assert.equal(agentSpotTransfers[0]?.destination, "0x1111111111111111111111111111111111111111");
-  assert.equal(agentSpotTransfers[0]?.amount, "0.005");
+  assert.equal(agentSpotTransfers[0]?.amount, "0.01");
   assert.equal(coreWriterOrders.length, 0);
   assert.equal(result?.fundingLifecycleStage, "execution_ready");
   assert.equal(result?.hypercoreFundingStatus, "funded");
@@ -2103,7 +2105,7 @@ test("reconcileBotVaultV3ById tops up missing v4 HYPE reserve from the agent wal
   const metadata = botVaultRow.executionMetadata;
   assert.equal(metadata?.marginAddFinalization?.verificationState, "funding_verified");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "ready");
-  assert.equal(metadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.005);
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.01);
 });
 
 test("reconcileBotVaultV3ById refills agent HyperCore HYPE from HyperEVM before v4 reserve transfer", async () => {
@@ -2181,12 +2183,12 @@ test("reconcileBotVaultV3ById refills agent HyperCore HYPE from HyperEVM before 
   assert.equal(agentCoreTopUps[0]?.systemAddress, "0x2222222222222222222222222222222222222222");
   assert.equal(agentCoreTopUps[0]?.amount, "0.01");
   assert.equal(agentSpotTransfers.length, 1);
-  assert.equal(agentSpotTransfers[0]?.amount, "0.005");
+  assert.equal(agentSpotTransfers[0]?.amount, "0.01");
   assert.equal(result?.fundingLifecycleStage, "execution_ready");
   assert.equal(result?.executionReadiness.ready, true);
   const metadata = botVaultRow.executionMetadata;
   assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "ready");
-  assert.equal(metadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.005);
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.01);
 });
 
 test("reconcileBotVaultV3ById dedupes concurrent v4 HYPE reserve agent transfers", async () => {
@@ -2265,10 +2267,10 @@ test("reconcileBotVaultV3ById dedupes concurrent v4 HYPE reserve agent transfers
   ]);
 
   assert.equal(agentSpotTransfers.length, 1);
-  assert.equal(agentSpotTransfers[0]?.amount, "0.005");
+  assert.equal(agentSpotTransfers[0]?.amount, "0.01");
   assert.equal(first?.executionReadiness.ready, true);
   assert.equal(second?.executionReadiness.ready, true);
-  assert.equal(botVaultRow.executionMetadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.005);
+  assert.equal(botVaultRow.executionMetadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.01);
 });
 
 test("reconcileBotVaultV3ById moves locally over-advanced lifecycle to recovery when funding is not observable", async () => {
@@ -4743,10 +4745,89 @@ test("createUserAgentWallet persists a managed agent wallet and links it to the 
     assert.equal(updatedVaults.length, 1);
     assert.equal(createdSecrets[0]?.data?.address, result.address);
     assert.equal(updatedUsers[0]?.data?.agentWallet, result.address);
+    assert.equal(result.hyperCoreHypeReady, false);
+    assert.equal(result.hyperCoreHypeState, "unavailable");
   } finally {
     if (previousKey == null) delete process.env.SECRET_MASTER_KEY;
     else process.env.SECRET_MASTER_KEY = previousKey;
   }
+});
+
+test("ensureUserAgentWalletHyperCoreReady bootstraps spendable agent HyperCore HYPE", async () => {
+  const privateKey = `0x${"2".repeat(64)}` as `0x${string}`;
+  const account = privateKeyToAccount(privateKey);
+  let coreHype = 0;
+  const topUps: any[] = [];
+  const actions: any[] = [];
+  const service = createBotVaultV3Service({
+    user: {
+      async findUnique() {
+        return {
+          id: "user_bootstrap",
+          agentWallet: account.address,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent_wallet:user_bootstrap:1:test",
+          agentHypeWarnThreshold: 0.001,
+          agentLastBalanceAt: null,
+          agentLastBalanceWei: null,
+          agentLastBalanceFormatted: null
+        };
+      }
+    },
+    onchainAction: {
+      async findMany() {
+        return [];
+      },
+      async findFirst(args: any) {
+        const txHash = args?.where?.txHash;
+        return actions.find((row) => row.txHash === txHash) ?? null;
+      },
+      async create(args: any) {
+        const row = { id: `action_${actions.length + 1}`, ...args.data, updatedAt: new Date() };
+        actions.push(row);
+        return row;
+      },
+      async update(args: any) {
+        const row = actions.find((entry) => entry.id === args.where.id);
+        if (row) Object.assign(row, args.data, { updatedAt: new Date() });
+        return row;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: account.address,
+          privateKey,
+          version: 1,
+          secretRef: "agent_wallet:user_bootstrap:1:test"
+        };
+      }
+    },
+    readHyperliquidSpotAssetBalance: async (_address, asset) => asset === "HYPE" ? String(coreHype) : "0",
+    readAgentHyperEvmNativeHypeBalance: async () => "0.0247",
+    sendAgentHyperEvmHypeToCore: async (input) => {
+      topUps.push(input);
+      coreHype += Number(input.amount);
+      return {
+        status: "confirmed",
+        txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      };
+    },
+    sleep: async () => undefined
+  });
+
+  const result = await service.ensureUserAgentWalletHyperCoreReady({ userId: "user_bootstrap" });
+
+  assert.equal(result.hyperCoreHypeReady, true);
+  assert.equal(result.hyperCoreHypeState, "ready");
+  assert.equal(result.hyperCoreHypeBalance, "0.01");
+  assert.equal(topUps.length, 1);
+  assert.equal(topUps[0]?.systemAddress, "0x2222222222222222222222222222222222222222");
+  assert.equal(topUps[0]?.amount, "0.01");
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0]?.actionType, "bootstrap_user_agent_wallet_hypercore_hype");
+  assert.equal(actions[0]?.status, "confirmed");
 });
 
 test("createAffiliatePayoutWallet persists a managed payout wallet on the affiliate profile", async () => {

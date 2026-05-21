@@ -124,6 +124,16 @@ export function deriveBotVaultFundingDisplayState(params: {
   const statusCategory = String(params.statusCategory ?? "").trim().toLowerCase();
   const operationState = params.operationState ?? null;
 
+  if (lifecycleStage === "settled" || fundingStatus === "settled" || hypercoreFundingStatus === "withdrawn") {
+    return buildBotVaultFundingDisplayState({
+      status: "funding_confirmed",
+      reasonCode: "settled",
+      detail: params.statusDetail ?? "closed",
+      recoveryHint: "none",
+      nextRecommendedAction: "none"
+    });
+  }
+
   if (operationState) {
     if (operationState.state === "failed_retryable") {
       return buildBotVaultFundingDisplayState({

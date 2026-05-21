@@ -154,6 +154,12 @@ export type AgentWalletSummary = {
   hypeBalanceWei: string | null;
   lowHypeThreshold: number;
   lowHypeState: "ok" | "low" | "unavailable";
+  hyperCoreHypeBalance: string | null;
+  hyperCoreHypeReady: boolean;
+  hyperCoreHypeRequired: string;
+  hyperCoreHypeState: "ready" | "missing" | "pending" | "unavailable";
+  hyperCoreBootstrapTxHash: string | null;
+  hyperCoreBootstrapReason: string | null;
   updatedAt: string | null;
   stale: boolean;
 };
@@ -615,6 +621,10 @@ type CreateUserAgentWalletParams = {
   userId: string;
 };
 
+type EnsureUserAgentWalletHyperCoreReadyParams = {
+  userId: string;
+};
+
 type CreateAffiliatePayoutWalletParams = {
   userId: string;
 };
@@ -700,7 +710,7 @@ function readBotVaultHypeReserveTarget(contractVersion: "v3" | "v4"): number {
   if (contractVersion === "v4") {
     return envNumber(
       "BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET",
-      envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.005)
+      0.01
     );
   }
   return envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.005);
@@ -754,6 +764,10 @@ function readBotVaultV4AgentHyperCoreHypeTopUpPollAttempts(): number {
 
 function readBotVaultV4AgentHyperCoreHypeTopUpPollDelayMs(): number {
   return Math.max(250, Math.trunc(envNumber("BOT_VAULT_V4_AGENT_HYPE_CORE_TOPUP_POLL_DELAY_MS", 3000)));
+}
+
+function readBotVaultV4AgentHyperCoreHypeTopUpRetryDelayMs(): number {
+  return Math.max(30_000, Math.trunc(envNumber("BOT_VAULT_V4_AGENT_HYPE_CORE_TOPUP_RETRY_DELAY_MS", 300_000)));
 }
 
 function buildBotVaultHypeReserveAdvisoryLockId(lockKey: string): string {
@@ -1046,6 +1060,10 @@ async function readBotVaultProfitShareFeeRatePct(params: {
 }
 
 const USD_VERIFICATION_EPSILON = 0.000001;
+const BOT_VAULT_V4_HYPERCORE_EXIT_DUST_USD = Math.max(
+  USD_VERIFICATION_EPSILON,
+  Number(process.env.BOT_VAULT_V4_HYPERCORE_EXIT_DUST_USD ?? "0.001") || 0.001
+);
 const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
   1,
   Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
@@ -1140,6 +1158,21 @@ function parseIsoDate(value: unknown): Date | null {
   if (!raw) return null;
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isRecentAgentCoreTopUpPending(state: Record<string, unknown>, now = new Date()): boolean {
+  const detail = [
+    toNullableString(state.hypeReserveError),
+    toNullableString(state.verificationBlockingReason),
+    toNullableString(state.hypeReserveReasonCode)
+  ].filter(Boolean).join(":").toLowerCase();
+  if (!detail.includes("bot_vault_v4_hype_reserve_agent_core_topup_pending")) return false;
+  const lastUpdated = parseIsoDate(state.hypeReserveUpdatedAt)
+    ?? parseIsoDate(state.updatedAt)
+    ?? parseIsoDate(state.resumedAt)
+    ?? parseIsoDate(state.observedAt);
+  if (!lastUpdated) return false;
+  return now.getTime() - lastUpdated.getTime() < readBotVaultV4AgentHyperCoreHypeTopUpRetryDelayMs();
 }
 
 function addMillisecondsIso(date: Date, ms: number): string {
@@ -1684,6 +1717,15 @@ function mapAgentWalletSummary(user: any): AgentWalletSummary {
   const hypeBalance = toNullableString(user?.agentLastBalanceFormatted);
   const hypeBalanceWei = toNullableString(user?.agentLastBalanceWei);
   const lowHypeThreshold = toNonNegativeNumber(user?.agentHypeWarnThreshold, 0.05);
+  const hyperCoreHypeRequired = formatTokenAmount(readBotVaultHypeReserveTarget("v4"), 8);
+  const hyperCoreHypeBalance = toNullableString(user?.agentHyperCoreHypeBalance);
+  const hyperCoreHypeReady = user?.agentHyperCoreHypeReady === true;
+  const hyperCoreHypeState = (() => {
+    const raw = String(user?.agentHyperCoreHypeState ?? "").trim().toLowerCase();
+    if (raw === "ready" || raw === "missing" || raw === "pending" || raw === "unavailable") return raw;
+    if (hyperCoreHypeReady) return "ready";
+    return hyperCoreHypeBalance == null ? "unavailable" : "missing";
+  })() as AgentWalletSummary["hyperCoreHypeState"];
   const updatedAt = user?.agentLastBalanceAt instanceof Date
     ? user.agentLastBalanceAt.toISOString()
     : toNullableString(user?.agentLastBalanceAt);
@@ -1699,6 +1741,12 @@ function mapAgentWalletSummary(user: any): AgentWalletSummary {
     hypeBalanceWei,
     lowHypeThreshold,
     lowHypeState: deriveLowHypeState(hypeBalanceWei, lowHypeThreshold),
+    hyperCoreHypeBalance,
+    hyperCoreHypeReady,
+    hyperCoreHypeRequired,
+    hyperCoreHypeState,
+    hyperCoreBootstrapTxHash: toNullableString(user?.agentHyperCoreBootstrapTxHash),
+    hyperCoreBootstrapReason: toNullableString(user?.agentHyperCoreBootstrapReason),
     updatedAt,
     stale
   };
@@ -1969,6 +2017,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
   const sleepImpl = deps?.sleep ?? sleep;
   const inFlightHypeReserveBootstrap = new Map<string, Promise<BotVaultHypeReserveResult>>();
+  const inFlightUserAgentHyperCoreBootstrap = new Map<string, Promise<AgentWalletSummary>>();
   const {
     createProfitShareFeeEventIfNew,
     readHypercoreAccountingFeeUsdForBotVault
@@ -3881,6 +3930,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           && params.persist !== false
           && onchainStatus === "ACTIVE"
           && executionSpotUsd > USD_VERIFICATION_EPSILON
+          && !isRecentAgentCoreTopUpPending(marginAddFinalization)
         ) {
           try {
             const context = await loadExecutionCloseoutContext({
@@ -3979,7 +4029,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         const hypeReserveStatus = buildBotVaultHypeReserveStatus({
           requiresHypeReserve,
           result: hypeReserveResult,
-          error: hypeReserveReadError,
+          error: hypeReserveReadError
+            ?? toNullableString(marginAddFinalization.hypeReserveError)
+            ?? toNullableString(marginAddFinalization.hypeReserveReasonCode),
           fallbackState: hypeReserveState || "pending"
         });
         const effectiveHypeReserveState = hypeReserveStatus.state;
@@ -4320,7 +4372,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       patchData.executionStatus = desiredExecutionStatus;
     }
 
-    if (economicallyClosed && executionSnapshot.state === "ok" && toNonNegativeNumber(executionSnapshot.totalVisibleUsd) > USD_VERIFICATION_EPSILON) {
+    if (
+      economicallyClosed
+      && executionSnapshot.state === "ok"
+      && toNonNegativeNumber(executionSnapshot.totalVisibleUsd) > BOT_VAULT_V4_HYPERCORE_EXIT_DUST_USD
+    ) {
       issues.push(buildBotVaultV3ReconciliationIssue({
         code: "execution_balance_remaining_after_close",
         severity: "blocking",
@@ -4693,6 +4749,312 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     });
   }
 
+  async function findRecentUserAgentHyperCoreBootstrapPending(params: {
+    userId: string;
+    agentAddress: string;
+  }): Promise<any | null> {
+    if (typeof db?.onchainAction?.findMany !== "function") return null;
+    const retryDelayMs = readBotVaultV4AgentHyperCoreHypeTopUpRetryDelayMs();
+    const rows = await db.onchainAction.findMany({
+      where: {
+        userId: params.userId,
+        actionType: "bootstrap_user_agent_wallet_hypercore_hype",
+        status: { in: ["prepared", "submitted"] }
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10
+    }).catch(() => []);
+    const now = Date.now();
+    return rows.find((row: any) => {
+      const metadata = toRecord(row?.metadata);
+      const rowAgent = toNullableString(metadata.agentWalletAddress ?? row?.toAddress);
+      if (!rowAgent || !sameAddress(rowAgent, params.agentAddress)) return false;
+      const updatedAt = row?.updatedAt instanceof Date ? row.updatedAt : parseIsoDate(row?.updatedAt);
+      if (!updatedAt) return false;
+      return now - updatedAt.getTime() < retryDelayMs;
+    }) ?? null;
+  }
+
+  async function recordUserAgentHyperCoreBootstrapAction(params: {
+    userId: string;
+    agentAddress: string;
+    txHash: string | null;
+    amountHype: number;
+    status: "submitted" | "confirmed";
+    coreHypeBefore: number;
+    coreHypeAfter: number | null;
+  }): Promise<void> {
+    if (typeof db?.onchainAction?.findFirst !== "function" || typeof db?.onchainAction?.create !== "function") return;
+    const txHash = params.txHash ? normalizeTxHash(params.txHash) : null;
+    const existing = txHash
+      ? await db.onchainAction.findFirst({ where: { txHash } }).catch(() => null)
+      : null;
+    if (existing) {
+      if (typeof db?.onchainAction?.update === "function") {
+        await db.onchainAction.update({
+          where: { id: existing.id },
+          data: {
+            status: params.status,
+            metadata: {
+              ...toRecord(existing.metadata),
+              coreHypeAfter: params.coreHypeAfter
+            }
+          }
+        }).catch(() => undefined);
+      }
+      return;
+    }
+    await db.onchainAction.create({
+      data: {
+        actionKey: `user_agent_wallet:hypercore_hype_bootstrap:${params.userId}:${params.agentAddress.toLowerCase()}:${txHash ?? crypto.randomUUID()}`,
+        actionType: "bootstrap_user_agent_wallet_hypercore_hype",
+        status: params.status,
+        userId: params.userId,
+        chainId: resolveWalletReadConfig().hyperEvmChainId,
+        toAddress: readBotVaultV4AgentHyperEvmToCoreSystemAddress(),
+        dataHex: "0x",
+        valueWei: parseEther(formatTokenAmount(params.amountHype, 8)).toString(),
+        txHash,
+        metadata: {
+          asset: "HYPE",
+          amountFormatted: formatTokenAmount(params.amountHype, 8),
+          sourceLocation: "agentWalletHyperEvm",
+          destinationLocation: "agentWalletHyperCore",
+          agentWalletAddress: params.agentAddress,
+          coreHypeBefore: params.coreHypeBefore,
+          coreHypeAfter: params.coreHypeAfter
+        }
+      }
+    }).catch((error: unknown) => {
+      logger.warn("user_agent_wallet_hypercore_bootstrap_action_persist_failed", {
+        userId: params.userId,
+        agentWalletAddress: params.agentAddress,
+        txHash,
+        error: String(error)
+      });
+    });
+  }
+
+  async function ensureUserAgentWalletHyperCoreReadyUnlocked(params: {
+    user: any;
+  }): Promise<AgentWalletSummary> {
+    const user = params.user;
+    const agentAddress = toNullableString(user.agentWallet);
+    if (!agentAddress || !isAddress(agentAddress)) {
+      return mapAgentWalletSummary({
+        ...user,
+        agentHyperCoreHypeState: "unavailable",
+        agentHyperCoreBootstrapReason: "agent_wallet_missing"
+      });
+    }
+    const targetCoreHype = readBotVaultHypeReserveTarget("v4");
+    const coreBeforeRaw = await readHyperliquidSpotAssetBalanceLive(agentAddress as `0x${string}`, "HYPE").catch(() => null);
+    if (coreBeforeRaw == null) {
+      return refreshUserAgentWalletSummary({
+        user: {
+          ...user,
+          agentHyperCoreHypeReady: false,
+          agentHyperCoreHypeState: "unavailable",
+          agentHyperCoreBootstrapReason: "agent_wallet_hypercore_hype_read_failed"
+        }
+      });
+    }
+    const coreBefore = toNonNegativeFinite(coreBeforeRaw);
+    if (coreBefore + 0.00000001 >= targetCoreHype) {
+      return refreshUserAgentWalletSummary({
+        user: {
+          ...user,
+          agentHyperCoreHypeBalance: formatTokenAmount(coreBefore, 8),
+          agentHyperCoreHypeReady: true,
+          agentHyperCoreHypeState: "ready"
+        }
+      });
+    }
+
+    const recentPending = await findRecentUserAgentHyperCoreBootstrapPending({
+      userId: String(user.id),
+      agentAddress
+    });
+    if (recentPending) {
+      return refreshUserAgentWalletSummary({
+        user: {
+          ...user,
+          agentHyperCoreHypeBalance: formatTokenAmount(coreBefore, 8),
+          agentHyperCoreHypeReady: false,
+          agentHyperCoreHypeState: "pending",
+          agentHyperCoreBootstrapTxHash: toNullableString(recentPending.txHash),
+          agentHyperCoreBootstrapReason: "agent_wallet_hypercore_hype_topup_pending"
+        }
+      });
+    }
+
+    const credentials = await agentSecretProvider.getAgentCredentials({
+      userId: String(user.id),
+      masterVaultId: null,
+      botVaultId: `user:${String(user.id)}`,
+      agentWalletAddress: agentAddress,
+      agentWalletVersion: user.agentWalletVersion,
+      agentSecretRef: user.agentSecretRef
+    }).catch(() => null);
+    const agentPrivateKey = normalizePrivateKey(credentials?.privateKey);
+    const agentSignerAddress = credentials?.address && isAddress(credentials.address)
+      ? credentials.address
+      : deriveAddressFromPrivateKey(credentials?.privateKey);
+    if (!agentPrivateKey || !agentSignerAddress || !sameAddress(agentSignerAddress, agentAddress)) {
+      return refreshUserAgentWalletSummary({
+        user: {
+          ...user,
+          agentHyperCoreHypeBalance: formatTokenAmount(coreBefore, 8),
+          agentHyperCoreHypeReady: false,
+          agentHyperCoreHypeState: "unavailable",
+          agentHyperCoreBootstrapReason: "agent_secret_missing"
+        }
+      });
+    }
+
+    const hyperEvmHypeBefore = toNonNegativeFinite(
+      await readAgentHyperEvmNativeHypeBalanceImpl(agentAddress as `0x${string}`).catch(() => "0")
+    );
+    const gasReserve = readBotVaultV4AgentHyperEvmHypeTopUpGasReserve();
+    const availableForTransfer = Math.max(0, hyperEvmHypeBefore - gasReserve);
+    const missingCoreHype = roundStep(Math.max(0, targetCoreHype - coreBefore), 0.00000001, "up");
+    const topUpAmount = roundStep(
+      Math.min(Math.max(missingCoreHype, readBotVaultV4AgentHyperCoreHypeTopUpAmount()), availableForTransfer),
+      0.00000001,
+      "down"
+    );
+    if (topUpAmount + 0.00000001 < missingCoreHype) {
+      return refreshUserAgentWalletSummary({
+        user: {
+          ...user,
+          agentHyperCoreHypeBalance: formatTokenAmount(coreBefore, 8),
+          agentHyperCoreHypeReady: false,
+          agentHyperCoreHypeState: "missing",
+          agentHyperCoreBootstrapReason: "agent_wallet_hyperevm_hype_missing"
+        }
+      });
+    }
+
+    const account: TradingAccount = {
+      id: `user-agent-wallet:${String(user.id)}`,
+      userId: String(user.id),
+      exchange: "hyperliquid",
+      label: `hyperliquid:user-agent-wallet:${String(user.id)}`,
+      apiKey: agentAddress,
+      apiSecret: agentPrivateKey,
+      passphrase: null,
+      botVaultAddress: null,
+      marketDataExchangeAccountId: null
+    };
+    const topUpResult = await sendAgentHyperEvmHypeToCoreImpl({
+      account,
+      systemAddress: readBotVaultV4AgentHyperEvmToCoreSystemAddress(),
+      amount: formatTokenAmount(topUpAmount, 8)
+    }).catch((error) => {
+      logger.warn("user_agent_wallet_hypercore_bootstrap_topup_failed", {
+        userId: String(user.id),
+        agentWalletAddress: agentAddress,
+        error: String(error)
+      });
+      return null;
+    });
+    const topUpStatus = String(topUpResult?.status ?? "").trim().toLowerCase();
+    if (!topUpResult || (topUpStatus && !["ok", "confirmed", "success"].includes(topUpStatus))) {
+      return refreshUserAgentWalletSummary({
+        user: {
+          ...user,
+          agentHyperCoreHypeBalance: formatTokenAmount(coreBefore, 8),
+          agentHyperCoreHypeReady: false,
+          agentHyperCoreHypeState: "pending",
+          agentHyperCoreBootstrapReason: `agent_wallet_hypercore_hype_topup_failed:${topUpStatus || "unknown"}`
+        }
+      });
+    }
+
+    const txHash = toNullableString(topUpResult.txHash);
+    await recordUserAgentHyperCoreBootstrapAction({
+      userId: String(user.id),
+      agentAddress,
+      txHash,
+      amountHype: topUpAmount,
+      status: "submitted",
+      coreHypeBefore: coreBefore,
+      coreHypeAfter: null
+    });
+
+    const attempts = readBotVaultV4AgentHyperCoreHypeTopUpPollAttempts();
+    const delayMs = readBotVaultV4AgentHyperCoreHypeTopUpPollDelayMs();
+    let coreAfter = coreBefore;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (attempt > 0) await sleepImpl(delayMs);
+      coreAfter = toNonNegativeFinite(
+        await readHyperliquidSpotAssetBalanceLive(agentAddress as `0x${string}`, "HYPE").catch(() => String(coreAfter))
+      );
+      if (coreAfter + 0.00000001 >= targetCoreHype) {
+        await recordUserAgentHyperCoreBootstrapAction({
+          userId: String(user.id),
+          agentAddress,
+          txHash,
+          amountHype: topUpAmount,
+          status: "confirmed",
+          coreHypeBefore: coreBefore,
+          coreHypeAfter: coreAfter
+        });
+        return refreshUserAgentWalletSummary({
+          user: {
+            ...user,
+            agentHyperCoreHypeBalance: formatTokenAmount(coreAfter, 8),
+            agentHyperCoreHypeReady: true,
+            agentHyperCoreHypeState: "ready",
+            agentHyperCoreBootstrapTxHash: txHash,
+            agentHyperCoreBootstrapReason: null
+          }
+        });
+      }
+    }
+
+    return refreshUserAgentWalletSummary({
+      user: {
+        ...user,
+        agentHyperCoreHypeBalance: formatTokenAmount(coreAfter, 8),
+        agentHyperCoreHypeReady: false,
+        agentHyperCoreHypeState: "pending",
+        agentHyperCoreBootstrapTxHash: txHash,
+        agentHyperCoreBootstrapReason: "agent_wallet_hypercore_hype_topup_pending"
+      }
+    });
+  }
+
+  async function ensureUserAgentWalletHyperCoreReady(params: EnsureUserAgentWalletHyperCoreReadyParams): Promise<AgentWalletSummary> {
+    const user = await db.user.findUnique({
+      where: { id: params.userId },
+      select: {
+        id: true,
+        agentWallet: true,
+        agentWalletVersion: true,
+        agentSecretRef: true,
+        agentHypeWarnThreshold: true,
+        agentLastBalanceAt: true,
+        agentLastBalanceWei: true,
+        agentLastBalanceFormatted: true
+      }
+    });
+    if (!user) throw new Error("user_not_found");
+    const agentAddress = toNullableString(user.agentWallet);
+    const lockKey = agentAddress && isAddress(agentAddress)
+      ? `${params.userId}:${agentAddress.toLowerCase()}`
+      : params.userId;
+    const existing = inFlightUserAgentHyperCoreBootstrap.get(lockKey);
+    if (existing) return existing;
+    const promise = ensureUserAgentWalletHyperCoreReadyUnlocked({ user }).finally(() => {
+      if (inFlightUserAgentHyperCoreBootstrap.get(lockKey) === promise) {
+        inFlightUserAgentHyperCoreBootstrap.delete(lockKey);
+      }
+    });
+    inFlightUserAgentHyperCoreBootstrap.set(lockKey, promise);
+    return promise;
+  }
+
   async function topUpAgentHyperCoreHypeFromHyperEvm(params: {
     account: TradingAccount;
     agentAddress: `0x${string}`;
@@ -4822,7 +5184,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         source: "existing_balance"
       };
     }
-    if (params.onchainStatus === "CLOSE_ONLY") {
+    const usesAgentSpotTransfer = readBotVaultHypeReserveUsesAgentSpotTransfer(contractVersion);
+    if (params.onchainStatus === "CLOSE_ONLY" && !usesAgentSpotTransfer) {
       throw new Error(
         [
           "bot_vault_v3_hypercore_exit_gas_external_top_up_required",
@@ -4831,11 +5194,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         ].join(":")
       );
     }
-    if (params.onchainStatus !== "ACTIVE") {
+    if (params.onchainStatus !== "ACTIVE" && !(params.onchainStatus === "CLOSE_ONLY" && usesAgentSpotTransfer)) {
       throw new Error(`bot_vault_v3_hypercore_exit_gas_order_not_allowed:${params.onchainStatus}`);
     }
 
-    if (readBotVaultHypeReserveUsesAgentSpotTransfer(contractVersion)) {
+    if (usesAgentSpotTransfer) {
       const agentAddress = toNullableString(params.account.apiKey);
       if (!agentAddress || !isAddress(agentAddress) || sameAddress(agentAddress, params.vaultAddress)) {
         throw new Error("bot_vault_v4_hype_reserve_agent_transfer_unavailable");
@@ -5079,7 +5442,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const accountValueUsd = toNonNegativeFinite(state.accountValue);
     const marginUsedUsd = toNonNegativeFinite(state.totalMarginUsed);
     const openPositionCount = Array.isArray(state.assetPositions) ? state.assetPositions.length : 0;
-    const spotUsdcUsd = toNonNegativeFinite(await readHyperliquidSpotUsdcBalanceLive(vaultAddress));
+    const rawSpotUsdcUsd = toNonNegativeFinite(await readHyperliquidSpotUsdcBalanceLive(vaultAddress));
+    const spotUsdcUsd = rawSpotUsdcUsd <= BOT_VAULT_V4_HYPERCORE_EXIT_DUST_USD ? 0 : rawSpotUsdcUsd;
     return {
       state,
       withdrawableUsd,
@@ -5281,7 +5645,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             return null;
           })
         : null;
-      const spotUsdcUsd = Math.max(0, Number(spotBalance?.amountUsd ?? 0));
+      const rawSpotUsdcUsd = Math.max(0, Number(spotBalance?.amountUsd ?? 0));
+      const spotUsdcUsd = rawSpotUsdcUsd <= BOT_VAULT_V4_HYPERCORE_EXIT_DUST_USD ? 0 : rawSpotUsdcUsd;
       if (spotUsdcUsd > 0.000001 && typeof adapterAny.transferUsdcSpotToEvm === "function") {
         const evmBalanceBeforeTransfer = typeof adapterAny.getEvmUsdcBalance === "function"
           ? await adapterAny.getEvmUsdcBalance().catch((error: unknown) => {
@@ -5392,11 +5757,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   async function refreshUserAgentWalletSummary(params: { user: any; persist?: boolean }): Promise<AgentWalletSummary> {
     const address = toNullableString(params.user?.agentWallet);
     if (!address || !isAddress(address)) return mapAgentWalletSummary(params.user);
+    const targetCoreHype = readBotVaultHypeReserveTarget("v4");
     try {
       const { publicClient } = buildHyperEvmClient();
-      const balance = await publicClient.getBalance({
-        address: address as `0x${string}`
-      });
+      const [balance, coreHypeBalanceRaw] = await Promise.all([
+        publicClient.getBalance({
+          address: address as `0x${string}`
+        }),
+        readHyperliquidSpotAssetBalanceLive(address as `0x${string}`, "HYPE").catch(() => null)
+      ]);
+      const coreHypeBalance = coreHypeBalanceRaw == null ? null : toNonNegativeFinite(coreHypeBalanceRaw);
+      const coreReady = coreHypeBalance != null && coreHypeBalance + 0.00000001 >= targetCoreHype;
       const updatedAt = new Date();
       const formatted = formatUnits(balance, 18);
       if (params.persist !== false) {
@@ -5418,7 +5789,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         ...params.user,
         agentLastBalanceAt: updatedAt,
         agentLastBalanceWei: balance.toString(),
-        agentLastBalanceFormatted: formatted
+        agentLastBalanceFormatted: formatted,
+        agentHyperCoreHypeBalance: coreHypeBalance == null ? null : formatTokenAmount(coreHypeBalance, 8),
+        agentHyperCoreHypeReady: coreReady,
+        agentHyperCoreHypeState: coreReady
+          ? "ready"
+          : toNullableString(params.user?.agentHyperCoreHypeState) ?? (coreHypeBalance == null ? "unavailable" : "missing")
       });
     } catch {
       return mapAgentWalletSummary(params.user);
@@ -5841,7 +6217,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           agentSecretRef: toNullableString(activeSecret.secretRef)
         }
       });
-      return refreshUserAgentWalletSummary({ user: restored });
+      return ensureUserAgentWalletHyperCoreReadyUnlocked({ user: restored });
     }
 
     const lastSecret = await db.agentWalletSecret.findFirst({
@@ -5898,7 +6274,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       return nextUser;
     });
 
-    return refreshUserAgentWalletSummary({ user: updated });
+    return ensureUserAgentWalletHyperCoreReadyUnlocked({ user: updated });
   }
 
   async function setUserAgentThreshold(params: SetUserAgentThresholdParams) {
@@ -6003,7 +6379,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       walletAddress: toNullableString(user.walletAddress),
       status: "submitted"
     });
-    const summary = await refreshUserAgentWalletSummary({ user }).catch(() => mapAgentWalletSummary(user));
+    const summary = await ensureUserAgentWalletHyperCoreReadyUnlocked({ user })
+      .catch(() => refreshUserAgentWalletSummary({ user }))
+      .catch(() => mapAgentWalletSummary(user));
     return {
       actionId: String(action.id),
       txHash: normalizeTxHash(params.txHash),
@@ -7731,7 +8109,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             ).trim().toLowerCase()
           : "not_required";
 
-        if (requiresHypeReserve && !isBotVaultHypeReserveReady(hypeReserveState)) {
+        if (
+          requiresHypeReserve
+          && !isBotVaultHypeReserveReady(hypeReserveState)
+          && !isRecentAgentCoreTopUpPending(existingMarginAddFinalization)
+        ) {
           try {
             hypeReserveResult = await retryHyperliquidTransient(
               "resume_hypercore_start_hype_reserve",
@@ -10239,6 +10621,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
   return {
     getUserAgentWalletSummary,
+    ensureUserAgentWalletHyperCoreReady,
     createUserAgentWallet,
     setUserAgentWallet,
     setUserAgentThreshold,

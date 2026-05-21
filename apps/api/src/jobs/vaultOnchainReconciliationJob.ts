@@ -71,6 +71,16 @@ function isGridExecutionActive(row: any): boolean {
 type VaultOnchainReconciliationIssueClass = "okay_to_swallow" | "recoverable_track" | "must_fail";
 
 type BotVaultRuntimeReconcileService = {
+  finalizeBotVaultMarginAdd?: (params: {
+    userId: string;
+    botVaultId: string;
+    amountUsd: number;
+  }) => Promise<unknown>;
+  finalizeBotVaultV4MarginAdd?: (params: {
+    userId: string;
+    botVaultId: string;
+    amountUsd: number;
+  }) => Promise<unknown>;
   reconcileBotVaultById?: (params: {
     userId: string;
     botVaultId: string;
@@ -589,6 +599,14 @@ function readBotVaultV3FundingIntentTimeout(params: {
 function readPositiveNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function readGridMarginTransferAmountUsd(row: unknown): number {
+  const gridInstance = toRecord(toRecord(row).gridInstance);
+  const investUsd = readPositiveNumber(gridInstance.investUsd, 0);
+  const extraMarginUsd = readPositiveNumber(gridInstance.extraMarginUsd, 0);
+  const amountUsd = investUsd + extraMarginUsd;
+  return Number.isFinite(amountUsd) && amountUsd > EPSILON ? amountUsd : 0;
 }
 
 function deriveLowHypeState(balanceWei: string | null, thresholdHype: number, stale: boolean): "ok" | "low" | "unavailable" {
@@ -1333,7 +1351,14 @@ export function createVaultOnchainReconciliationJob(
           status: true,
           executionStatus: true,
           fundingStatus: true,
-          hypercoreFundingStatus: true
+          hypercoreFundingStatus: true,
+          gridInstance: {
+            select: {
+              id: true,
+              investUsd: true,
+              extraMarginUsd: true
+            }
+          }
         },
         take: BOT_LIMIT,
         orderBy: [{ updatedAt: "desc" }]
@@ -1991,7 +2016,7 @@ export function createVaultOnchainReconciliationJob(
 	          await resolveMoneyFlowPlatformAlerts({ db, row });
 	        }
 
-	        if (isV3 && botVaultRuntimeService && hasPendingBotVaultRuntimeReconciliation(row)) {
+        if (isV3 && botVaultRuntimeService && hasPendingBotVaultRuntimeReconciliation(row)) {
           const reconcileById =
             botVaultRuntimeService.reconcileBotVaultById
             ?? botVaultRuntimeService.reconcileBotVaultV4ById
@@ -2013,6 +2038,39 @@ export function createVaultOnchainReconciliationJob(
                 error
               }));
             });
+          }
+          const finalizeMarginAdd =
+            botVaultRuntimeService.finalizeBotVaultV4MarginAdd
+            ?? botVaultRuntimeService.finalizeBotVaultMarginAdd;
+          const lifecycleStage = getBotVaultFundingLifecycleStage(row);
+          const shouldFinalizeInitialMargin =
+            typeof finalizeMarginAdd === "function"
+            && runtimeModel === BOT_VAULT_RUNTIME_MODEL_V4
+            && chainStatus === "ACTIVE"
+            && ["hypercore_funded", "perp_margin_transferred", "hype_reserve_ready"].includes(lifecycleStage)
+            && lifecycleStage !== "execution_ready"
+            && ["", "created", "funded"].includes(normalizeExecutionStatus(row.executionStatus));
+          if (shouldFinalizeInitialMargin) {
+            const amountUsd = readGridMarginTransferAmountUsd(row);
+            if (amountUsd > EPSILON) {
+              await finalizeMarginAdd.call(botVaultRuntimeService, {
+                userId: String(row.userId),
+                botVaultId: String(row.id),
+                amountUsd
+              }).catch((error: unknown) => {
+                logger.warn("vault_onchain_reconciliation_v4_initial_margin_finalize_failed", jobIssueMetadata({
+                  issueClass: "recoverable_track",
+                  mismatchCategory: "funding_verification_missing",
+                  recoveryAction: "retry",
+                  reason,
+                  botVaultId: row.id,
+                  vaultAddress: address,
+                  amountUsd,
+                  lifecycleStage,
+                  error
+                }));
+              });
+            }
           }
         }
 

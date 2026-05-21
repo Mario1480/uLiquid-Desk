@@ -223,6 +223,12 @@ export function deriveBotVaultV3OperationState(row: unknown): BotVaultV3Operatio
   const claimState = mapClaimSettlementOperationState(readBotVaultV3ClaimSettlementState(metadata));
   if (claimState && claimState.state !== "confirmed") return claimState;
 
+  const lifecycle = readBotVaultV3FundingLifecycleState(row);
+  const executionStatus = String(rowRecord.executionStatus ?? "").trim().toLowerCase();
+  if (lifecycle.stage === "settled" || executionStatus === "closed") {
+    return recoveryState ?? closeState ?? claimState ?? null;
+  }
+
   const reduceMarginFinalization = toRecord(metadata.reduceMarginFinalization);
   if (Object.keys(reduceMarginFinalization).length > 0) {
     const stage = String(reduceMarginFinalization.stage ?? "").trim().toLowerCase();
@@ -322,7 +328,6 @@ export function deriveBotVaultV3OperationState(row: unknown): BotVaultV3Operatio
     if (mapped.state !== "confirmed") return mapped;
   }
 
-  const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const fundingStatus = String(rowRecord.fundingStatus ?? "").trim().toLowerCase();
   const hypercoreFundingStatus = String(rowRecord.hypercoreFundingStatus ?? "").trim().toLowerCase();
   const { onchainBotVaultAddress } = readBotVaultV3AddressSemantics(row);
@@ -360,7 +365,7 @@ export function deriveBotVaultV3OperationState(row: unknown): BotVaultV3Operatio
       updatedAt
     });
   }
-  if (lifecycle.stage === "execution_ready" || lifecycle.stage === "settled") {
+  if (lifecycle.stage === "execution_ready") {
     return recoveryState ?? closeState ?? claimState ?? null;
   }
   if (lifecycle.stage === "perp_margin_transferred" || lifecycle.stage === "hype_reserve_ready") {

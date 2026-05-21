@@ -547,9 +547,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       }
 
       if (useUnifiedHyperVaultCreateFlow && botVaultRuntimeService) {
-        const agentWalletSummary = await botVaultRuntimeService.getUserAgentWalletSummary({
-          userId: user.id
-        });
+        const agentWalletSummary = typeof botVaultRuntimeService.ensureUserAgentWalletHyperCoreReady === "function"
+          ? await botVaultRuntimeService.ensureUserAgentWalletHyperCoreReady({ userId: user.id })
+          : await botVaultRuntimeService.getUserAgentWalletSummary({ userId: user.id });
         const agentWalletAddress = String(agentWalletSummary?.address ?? "").trim();
         if (!agentWalletAddress) {
           return res.status(409).json({
@@ -561,6 +561,13 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           return res.status(409).json({
             error: "grid_agent_wallet_hype_required",
             reason: String(agentWalletSummary?.lowHypeState ?? "unavailable")
+          });
+        }
+        if (agentWalletSummary?.hyperCoreHypeReady !== true) {
+          return res.status(409).json({
+            error: "grid_agent_wallet_hypercore_hype_required",
+            reason: String(agentWalletSummary?.hyperCoreHypeState ?? "unavailable"),
+            agentWalletSummary
           });
         }
       }
@@ -725,6 +732,32 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       }
       if (selectedReusableBotVaultId && !hyperliquidUsage.usesHyperliquid) {
         return res.status(400).json({ error: "grid_bot_vault_requires_hyperliquid" });
+      }
+      if ((useUnifiedHyperVaultCreateFlow || useFundingVaultCreateFlow) && botVaultRuntimeService) {
+        const agentWalletSummary = typeof botVaultRuntimeService.ensureUserAgentWalletHyperCoreReady === "function"
+          ? await botVaultRuntimeService.ensureUserAgentWalletHyperCoreReady({ userId: user.id })
+          : await botVaultRuntimeService.getUserAgentWalletSummary({ userId: user.id });
+        const agentWalletAddress = String(agentWalletSummary?.address ?? "").trim();
+        if (!agentWalletAddress) {
+          return res.status(409).json({
+            error: "grid_agent_wallet_required",
+            reason: "agent_wallet_missing"
+          });
+        }
+        if (String(agentWalletSummary?.lowHypeState ?? "").trim().toLowerCase() !== "ok") {
+          return res.status(409).json({
+            error: "grid_agent_wallet_hype_required",
+            reason: String(agentWalletSummary?.lowHypeState ?? "unavailable"),
+            agentWalletSummary
+          });
+        }
+        if (agentWalletSummary?.hyperCoreHypeReady !== true) {
+          return res.status(409).json({
+            error: "grid_agent_wallet_hypercore_hype_required",
+            reason: String(agentWalletSummary?.hyperCoreHypeState ?? "unavailable"),
+            agentWalletSummary
+          });
+        }
       }
 
       const computed = await deps.computeGridPreviewAndAllocation({
