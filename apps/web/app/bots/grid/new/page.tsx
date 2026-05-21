@@ -25,6 +25,7 @@ import {
   readAllowedGridExchanges
 } from "../../../../components/grid/utils";
 import { deriveNeutralModePreviewHints } from "../../../../src/grid/neutralModeHints";
+import { AppIcon } from "../../../components/AppIcon";
 import Web3Providers from "../../../components/Web3Providers";
 
 type GridPilotAccess = {
@@ -144,27 +145,31 @@ function GridBotsCreatePageContent() {
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
       if (!botVaultId || hypercoreProvisionTriggeredRef.current) return;
+      if (!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending) return;
       hypercoreProvisionTriggeredRef.current = true;
-      await flow.executeAction({
+      const completed = await flow.executeAction({
         busyKey: "fund-hypercore-grid-bot-create",
         buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/fund-hypercore-tx`,
         body: {
           actionKey: createIdempotencyKey(`grid_hypercore_funding:${botVaultId}`)
         }
       });
+      if (!completed) hypercoreProvisionTriggeredRef.current = false;
       return;
     }
     if (phase === "pending_reserve_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
       if (!botVaultId || reserveProvisionTriggeredRef.current) return;
+      if (!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending) return;
       reserveProvisionTriggeredRef.current = true;
-      await flow.executeAction({
+      const completed = await flow.executeAction({
         busyKey: "reserve-grid-bot-create",
         buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/reserve-tx`,
         body: {
           actionKey: createIdempotencyKey(`grid_reserve_provision:${botVaultId}`)
         }
       });
+      if (!completed) reserveProvisionTriggeredRef.current = false;
       return;
     }
     if (isBlockingProvisioningPhase(phase)) {
@@ -179,6 +184,28 @@ function GridBotsCreatePageContent() {
     if (latest) setCreatedInstance(latest);
     await continueProvisioning(latest, createdInstanceId);
   });
+  const provisioningSignaturePhase = normalizeGridProvisioningPhase(createdInstance?.provisioningStatus?.phase);
+  const canResumeProvisioningSignature = Boolean(
+    createdInstanceId
+      && createdInstance?.botVault?.id
+      && (
+        provisioningSignaturePhase === "pending_reserve_signature"
+        || provisioningSignaturePhase === "pending_hypercore_funding_signature"
+      )
+  );
+  const provisioningSignatureButtonLabel = provisioningSignaturePhase === "pending_hypercore_funding_signature"
+    ? tGrid("fundHypercoreAction")
+    : tGrid("reserveBotVaultAction");
+
+  async function resumeProvisioningSignature() {
+    if (provisioningSignaturePhase === "pending_hypercore_funding_signature") {
+      hypercoreProvisionTriggeredRef.current = false;
+    }
+    if (provisioningSignaturePhase === "pending_reserve_signature") {
+      reserveProvisionTriggeredRef.current = false;
+    }
+    await continueProvisioning(createdInstance, createdInstanceId);
+  }
 
   async function cleanupPendingProvisioningInstance(instanceId: string | null) {
     const targetId = String(instanceId ?? "").trim();
@@ -541,6 +568,18 @@ function GridBotsCreatePageContent() {
               ? tGrid("provisioningWalletSignatureRequired")
               : tGrid("provisioningIndexerWaiting")}
           </div>
+          {canResumeProvisioningSignature ? (
+            <button
+              className="btn btnPrimary"
+              type="button"
+              style={{ marginTop: 10 }}
+              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+              onClick={() => void resumeProvisioningSignature()}
+            >
+              <AppIcon name="deposit" />
+              {provisioningSignatureButtonLabel}
+            </button>
+          ) : null}
           {createdInstance.botVault?.id ? (
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
               {tGrid("provisioningBotVaultLine", { id: createdInstance.botVault.id })}

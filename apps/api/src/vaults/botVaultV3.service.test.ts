@@ -1535,7 +1535,11 @@ function createBotVaultV3ReconcileHarness(
     spotLastPrice?: number;
     spotBaseDecimals?: number;
     agentHypeBalance?: number;
+    agentHyperEvmHypeBalance?: number;
     agentSpotTransfers?: any[];
+    agentSpotTransferDelayMs?: number;
+    agentCoreTopUps?: any[];
+    agentCoreTopUpDelayMs?: number;
   }
 ) {
   let executionAddress: string | null = null;
@@ -1617,6 +1621,9 @@ function createBotVaultV3ReconcileHarness(
       ? undefined
       : async (input) => {
           options.agentSpotTransfers?.push(input);
+          if (options.agentSpotTransferDelayMs && options.agentSpotTransferDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, options.agentSpotTransferDelayMs));
+          }
           const amount = Number(input.amount);
           options.agentHypeBalance = Math.max(0, Number(options.agentHypeBalance ?? 0) - amount);
           const current = Number(Array.isArray(options.spotBalances?.HYPE)
@@ -1625,6 +1632,24 @@ function createBotVaultV3ReconcileHarness(
           if (!options.spotBalances) options.spotBalances = {};
           options.spotBalances.HYPE = String(current + amount);
           return { status: "ok" };
+        },
+    readAgentHyperEvmNativeHypeBalance: options.agentHyperEvmHypeBalance === undefined
+      ? undefined
+      : async () => String(options.agentHyperEvmHypeBalance ?? 0),
+    sendAgentHyperEvmHypeToCore: options.agentHyperEvmHypeBalance === undefined
+      ? undefined
+      : async (input) => {
+          options.agentCoreTopUps?.push(input);
+          if (options.agentCoreTopUpDelayMs && options.agentCoreTopUpDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, options.agentCoreTopUpDelayMs));
+          }
+          const amount = Number(input.amount);
+          options.agentHyperEvmHypeBalance = Math.max(0, Number(options.agentHyperEvmHypeBalance ?? 0) - amount);
+          options.agentHypeBalance = Math.max(0, Number(options.agentHypeBalance ?? 0) + amount);
+          return {
+            status: "confirmed",
+            txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          };
         },
     createVaultCoreWriter: options.enableHypeReserveBootstrap
       ? () => ({
@@ -2079,6 +2104,171 @@ test("reconcileBotVaultV3ById tops up missing v4 HYPE reserve from the agent wal
   assert.equal(metadata?.marginAddFinalization?.verificationState, "funding_verified");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "ready");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.005);
+});
+
+test("reconcileBotVaultV3ById refills agent HyperCore HYPE from HyperEVM before v4 reserve transfer", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_v4_agent_hype_core_refill",
+    botId: "bot_reconcile_v4_agent_hype_core_refill",
+    userId: "user_1",
+    vaultModel: "bot_vault_v4",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 6,
+    availableUsd: 0,
+    principalAllocated: 6,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionStatus: "created",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "perp_margin_transferred",
+        updatedAt: "2026-05-20T10:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      autoHypercoreFundingStatus: "confirmed",
+      autoHypercoreFundingAmountAtomic: "0"
+    },
+    status: "ACTIVE",
+    bot: null,
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-05-20T10:00:00.000Z"),
+    updatedAt: new Date("2026-05-20T10:00:00.000Z")
+  };
+  const agentSpotTransfers: any[] = [];
+  const agentCoreTopUps: any[] = [];
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 2n,
+      principalAllocatedUsd: 6,
+      availableUsd: 0
+    },
+    execution: {
+      coreSpotUsd: 5,
+      perpAvailableMarginUsd: 5,
+      perpEquityUsd: 5
+    },
+    spotBalances: {
+      HYPE: "0",
+      USDC: "5"
+    },
+    enableHypeReserveBootstrap: true,
+    agentHypeBalance: 0.000846,
+    agentHyperEvmHypeBalance: 0.0247,
+    agentSpotTransfers,
+    agentCoreTopUps
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_v4_agent_hype_core_refill"
+  });
+
+  assert.equal(agentCoreTopUps.length, 1);
+  assert.equal(agentCoreTopUps[0]?.systemAddress, "0x2222222222222222222222222222222222222222");
+  assert.equal(agentCoreTopUps[0]?.amount, "0.01");
+  assert.equal(agentSpotTransfers.length, 1);
+  assert.equal(agentSpotTransfers[0]?.amount, "0.005");
+  assert.equal(result?.fundingLifecycleStage, "execution_ready");
+  assert.equal(result?.executionReadiness.ready, true);
+  const metadata = botVaultRow.executionMetadata;
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "ready");
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.005);
+});
+
+test("reconcileBotVaultV3ById dedupes concurrent v4 HYPE reserve agent transfers", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_v4_agent_hype_concurrent",
+    botId: "bot_reconcile_v4_agent_hype_concurrent",
+    userId: "user_1",
+    vaultModel: "bot_vault_v4",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 6,
+    availableUsd: 0,
+    principalAllocated: 6,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionStatus: "created",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "perp_margin_transferred",
+        updatedAt: "2026-05-20T10:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      autoHypercoreFundingStatus: "confirmed",
+      autoHypercoreFundingAmountAtomic: "0"
+    },
+    status: "ACTIVE",
+    bot: null,
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-05-20T10:00:00.000Z"),
+    updatedAt: new Date("2026-05-20T10:00:00.000Z")
+  };
+  const agentSpotTransfers: any[] = [];
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 2n,
+      principalAllocatedUsd: 6,
+      availableUsd: 0
+    },
+    execution: {
+      coreSpotUsd: 5,
+      perpAvailableMarginUsd: 5,
+      perpEquityUsd: 5
+    },
+    spotBalances: {
+      HYPE: "0",
+      USDC: "5"
+    },
+    enableHypeReserveBootstrap: true,
+    agentHypeBalance: 0.02,
+    agentSpotTransfers,
+    agentSpotTransferDelayMs: 10
+  });
+
+  const [first, second] = await Promise.all([
+    service.reconcileBotVaultV3ById({
+      userId: "user_1",
+      botVaultId: "bv_reconcile_v4_agent_hype_concurrent"
+    }),
+    service.reconcileBotVaultV3ById({
+      userId: "user_1",
+      botVaultId: "bv_reconcile_v4_agent_hype_concurrent"
+    })
+  ]);
+
+  assert.equal(agentSpotTransfers.length, 1);
+  assert.equal(agentSpotTransfers[0]?.amount, "0.005");
+  assert.equal(first?.executionReadiness.ready, true);
+  assert.equal(second?.executionReadiness.ready, true);
+  assert.equal(botVaultRow.executionMetadata?.marginAddFinalization?.hypeReserveObservedBalance, 0.005);
 });
 
 test("reconcileBotVaultV3ById moves locally over-advanced lifecycle to recovery when funding is not observable", async () => {
@@ -5042,9 +5232,11 @@ async function runV4HypeReserveFailureScenario(mode: "pending" | "retryable" | "
   const previousTarget = process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET;
   const previousBudget = process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND;
   const previousSource = process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE;
+  const previousMinTradeNotional = process.env.HYPERLIQUID_SPOT_MIN_TRADE_NOTIONAL_USD;
   process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET = "0.25";
   process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND = "2";
   process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE = "bot_spot_buy";
+  process.env.HYPERLIQUID_SPOT_MIN_TRADE_NOTIONAL_USD = "0";
 
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
@@ -5249,6 +5441,8 @@ async function runV4HypeReserveFailureScenario(mode: "pending" | "retryable" | "
     else process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND = previousBudget;
     if (previousSource == null) delete process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE;
     else process.env.BOT_VAULT_V4_HYPE_RESERVE_SOURCE = previousSource;
+    if (previousMinTradeNotional == null) delete process.env.HYPERLIQUID_SPOT_MIN_TRADE_NOTIONAL_USD;
+    else process.env.HYPERLIQUID_SPOT_MIN_TRADE_NOTIONAL_USD = previousMinTradeNotional;
   }
 }
 
@@ -8590,7 +8784,7 @@ test("controllerCloseBotVault caps principal returned to gross balance when the 
   assert.ok(dbUpdates.length >= 1);
 });
 
-test("controllerCloseBotVault excludes Hypercore account creation fee from v3 profit share principal", async () => {
+test("controllerCloseBotVault infers Hypercore account creation fee from grid funding delta", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const factoryAddress = "0x3333333333333333333333333333333333333333";
@@ -8611,8 +8805,22 @@ test("controllerCloseBotVault excludes Hypercore account creation fee from v3 pr
           vaultModel: "bot_vault_v3",
           vaultAddress,
           controllerAddress,
-          executionMetadata: {
-            hypercoreAccountingFeeUsd: 1
+          executionMetadata: {}
+        };
+      },
+      async findUnique() {
+        return {
+          id: "bv_close_profit",
+          userId: "user_1",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          executionStatus: "running",
+          status: "CLOSE_ONLY",
+          executionMetadata: {},
+          principalAllocated: 26,
+          gridInstance: {
+            investUsd: 25,
+            extraMarginUsd: 0
           }
         };
       },

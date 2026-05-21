@@ -51,6 +51,11 @@ function roundUsd(value: number, digits = 6): number {
   return Math.round(value * factor) / factor;
 }
 
+function readBotVaultV4CreateAccountingFeeMaxUsd(): number {
+  const parsed = Number(process.env.BOT_VAULT_V4_CREATE_ACCOUNTING_FEE_MAX_USD ?? "1");
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   return String((error as any).code ?? "") === "P2002";
@@ -67,6 +72,33 @@ export function createBotVaultV3FeeEventService(db: any) {
       6
     );
     if (metadataFeeUsd > 0) return metadataFeeUsd;
+    const maxCreateAccountingFeeUsd = readBotVaultV4CreateAccountingFeeMaxUsd();
+    if (maxCreateAccountingFeeUsd > 0 && typeof db?.botVault?.findUnique === "function") {
+      const row = await db.botVault.findUnique({
+        where: { id: params.botVaultId },
+        select: {
+          principalAllocated: true,
+          gridInstance: {
+            select: {
+              investUsd: true,
+              extraMarginUsd: true
+            }
+          }
+        }
+      }).catch(() => null);
+      const principalAllocatedUsd = toNonNegativeNumber(row?.principalAllocated);
+      const gridFundingUsd = roundUsd(
+        toNonNegativeNumber(row?.gridInstance?.investUsd) + toNonNegativeNumber(row?.gridInstance?.extraMarginUsd),
+        6
+      );
+      const impliedCreateAccountingFeeUsd = roundUsd(principalAllocatedUsd - gridFundingUsd, 6);
+      if (
+        impliedCreateAccountingFeeUsd > 0.000001
+        && impliedCreateAccountingFeeUsd <= maxCreateAccountingFeeUsd + 0.000001
+      ) {
+        return impliedCreateAccountingFeeUsd;
+      }
+    }
     if (!db?.feeEvent?.findMany) return 0;
     const rows = await db.feeEvent.findMany({
       where: {

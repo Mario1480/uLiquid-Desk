@@ -79,6 +79,33 @@ const EXECUTION_LIFECYCLE_TX_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.VAULT_EXECUTION_LIFECYCLE_TX_TIMEOUT_MS ?? "60000")
 );
+const EXECUTION_LIFECYCLE_SYNC_CONCURRENCY = Math.max(
+  1,
+  Math.trunc(Number(process.env.VAULT_EXECUTION_LIFECYCLE_SYNC_CONCURRENCY ?? "4"))
+);
+
+function createAsyncLimiter(limit: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+
+  const release = () => {
+    active = Math.max(0, active - 1);
+    const next = queue.shift();
+    if (next) next();
+  };
+
+  return async function runLimited<T>(task: () => Promise<T>): Promise<T> {
+    if (active >= limit) {
+      await new Promise<void>((resolve) => queue.push(resolve));
+    }
+    active += 1;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
+  };
+}
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -291,6 +318,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
   const processControl = deps?.processControl ?? {};
   const logger = deps?.logger ?? defaultLogger;
   const riskPolicyService = deps?.riskPolicyService ?? createRiskPolicyService(db);
+  const limitExecutionStateSync = createAsyncLimiter(EXECUTION_LIFECYCLE_SYNC_CONCURRENCY);
+  const inFlightExecutionStateSync = new Map<string, Promise<BotExecutionState | null>>();
 
   async function withTx<T>(tx: any | undefined, run: (tx: any) => Promise<T>): Promise<T> {
     if (tx) return run(tx);
@@ -1101,42 +1130,55 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       });
     }
 
-    const botVault = await findBotVaultForUser(db, params.userId, params.botVaultId);
-    if (!botVault) throw new Error("bot_vault_not_found");
+    const inFlightKey = `${params.userId}:${params.botVaultId}`;
+    const inFlight = inFlightExecutionStateSync.get(inFlightKey);
+    if (inFlight) return inFlight;
 
-    const existingEvent = await findExecutionEventBySourceKey(db, sourceKey);
-    if (existingEvent) {
-      if (!executionOrchestrator) return null;
-      const state = await executionOrchestrator.safeGetState({
-        userId: params.userId,
-        botVaultId: String(botVault.id),
-        gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null
-      });
-      return state.ok ? state.data : null;
-    }
+    const syncPromise = limitExecutionStateSync(async () => {
+      const botVault = await findBotVaultForUser(db, params.userId, params.botVaultId);
+      if (!botVault) throw new Error("bot_vault_not_found");
 
-    const gridContext = await findBotVaultOwnerContext(db, botVault);
-    const result = await runProviderRead({ botVault, gridContext });
-
-    return db.$transaction(
-      async (tx: any) => {
-        const currentBotVault = await findBotVaultForUser(tx, params.userId, params.botVaultId);
-        if (!currentBotVault) throw new Error("bot_vault_not_found");
-        const duplicateEvent = await findExecutionEventBySourceKey(tx, sourceKey);
-        if (duplicateEvent) return result.ok ? result.data : null;
-        const currentGridContext = await findBotVaultOwnerContext(tx, currentBotVault);
-        return persistSyncResult({
-          tx,
-          botVault: currentBotVault,
-          gridContext: currentGridContext,
-          result
+      const existingEvent = await findExecutionEventBySourceKey(db, sourceKey);
+      if (existingEvent) {
+        if (!executionOrchestrator) return null;
+        const state = await executionOrchestrator.safeGetState({
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null
         });
-      },
-      {
-        maxWait: 5_000,
-        timeout: EXECUTION_LIFECYCLE_TX_TIMEOUT_MS
+        return state.ok ? state.data : null;
       }
-    );
+
+      const gridContext = await findBotVaultOwnerContext(db, botVault);
+      const result = await runProviderRead({ botVault, gridContext });
+
+      return db.$transaction(
+        async (tx: any) => {
+          const currentBotVault = await findBotVaultForUser(tx, params.userId, params.botVaultId);
+          if (!currentBotVault) throw new Error("bot_vault_not_found");
+          const duplicateEvent = await findExecutionEventBySourceKey(tx, sourceKey);
+          if (duplicateEvent) return result.ok ? result.data : null;
+          const currentGridContext = await findBotVaultOwnerContext(tx, currentBotVault);
+          return persistSyncResult({
+            tx,
+            botVault: currentBotVault,
+            gridContext: currentGridContext,
+            result
+          });
+        },
+        {
+          maxWait: 5_000,
+          timeout: EXECUTION_LIFECYCLE_TX_TIMEOUT_MS
+        }
+      );
+    }).finally(() => {
+      if (inFlightExecutionStateSync.get(inFlightKey) === syncPromise) {
+        inFlightExecutionStateSync.delete(inFlightKey);
+      }
+    });
+
+    inFlightExecutionStateSync.set(inFlightKey, syncPromise);
+    return syncPromise;
   }
 
   async function listExecutionEvents(params: { userId: string; botVaultId: string; limit?: number }) {

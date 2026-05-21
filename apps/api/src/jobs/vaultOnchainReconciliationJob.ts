@@ -1881,14 +1881,14 @@ export function createVaultOnchainReconciliationJob(
                 },
                 txHash: null,
                 status: {
-                  in: ["prepared", "submitted"]
+                  in: ["prepared", "submitted", "failed"]
                 }
               },
               data: {
-                status: "failed"
+                status: "confirmed"
               }
             }).catch((error: unknown) => {
-              logger.warn("vault_onchain_reconciliation_v3_unresolved_funding_actions_mark_failed", jobIssueMetadata({
+              logger.warn("vault_onchain_reconciliation_v3_unresolved_funding_actions_mark_confirmed_failed", jobIssueMetadata({
                 issueClass: "recoverable_track",
                 mismatchCategory: "funding_verification_missing",
                 recoveryAction: "retry",

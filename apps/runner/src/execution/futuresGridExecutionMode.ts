@@ -700,6 +700,13 @@ function normalizeExecutionMarginMode(value: unknown): "cross" | "isolated" {
   return String(value ?? "").trim().toLowerCase() === "isolated" ? "isolated" : "cross";
 }
 
+function resolveExecutionOrderMarginMode(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): "cross" | "isolated" {
+  // BotVault V4 writes go through HyperEVM CoreWriter. CoreWriter order calls do
+  // not carry an isolated/cross flag, so configure and size them as cross.
+  if (isRunnerBotVaultRuntimeExecution(bot.botVaultExecution)) return "cross";
+  return normalizeExecutionMarginMode(bot.marginMode);
+}
+
 export async function ensureGridLeverageConfigured(params: {
   adapter: SupportedFuturesAdapter | null;
   executionExchange: string;
@@ -1074,12 +1081,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
       };
       try {
+        const executionMarginMode = resolveExecutionOrderMarginMode(ctx.bot);
         const leverageConfig = await ensureGridLeverageConfigured({
           adapter,
           executionExchange,
           symbol: ctx.bot.symbol,
           leverage: ctx.bot.leverage,
-          marginMode: ctx.bot.marginMode,
+          marginMode: executionMarginMode,
           currentStateJson,
           now: ctx.now
         });
@@ -1095,7 +1103,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             exchange: executionExchange,
             symbol: normalizeSymbol(ctx.bot.symbol),
             leverage: Math.max(1, Math.trunc(Number(ctx.bot.leverage ?? 1))),
-            marginMode: normalizeExecutionMarginMode(ctx.bot.marginMode),
+            marginMode: resolveExecutionOrderMarginMode(ctx.bot),
             lastFailedAt: ctx.now.toISOString(),
             lastError: String(error)
           }
@@ -2787,7 +2795,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	          positionSide: seedPositionSide,
 	          qty: seedQty,
 	          reduceOnly: false,
-	          marginMode: "cross",
+          marginMode: resolveExecutionOrderMarginMode(ctx.bot),
 	          markPrice,
 	          seedPct,
 	          seedNotionalUsd: seedPlannedNotionalUsd,
@@ -2856,7 +2864,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	              qty: seedQty,
 	              clientOrderId: seedClientOrderId,
 	              reduceOnly: false,
-	              marginMode: "cross"
+	              marginMode: resolveExecutionOrderMarginMode(ctx.bot)
 	            });
             if (!isConfirmedPlaceOrderResult(seedSubmitResult) && !seedSubmitResult.submitted) {
               throw new Error(
@@ -3199,22 +3207,20 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           now: ctx.now
 	        })) {
 	          const terminalStatus = String(pendingSeedContext?.terminalOrderStatus ?? "").trim().toLowerCase();
-	          const retryReason = terminalStatus
-	            ? `terminal_order_${terminalStatus}`
-	            : "missing_confirmable_order";
-	          const nextAttemptSeq = terminalStatus
-	            ? resolveInitialSeedAttemptSeq(currentStateJson) + 1
-	            : resolveInitialSeedAttemptSeq(currentStateJson);
-	          currentStateJson = {
-	            ...currentStateJson,
-	            initialSeedPending: false,
-	            initialSeedNeedsReseed: true,
-	            initialSeedRetryScheduledAt: ctx.now.toISOString(),
-	            initialSeedRetryReason: retryReason,
-	            initialSeedAttemptSeq: nextAttemptSeq,
-	            ...(terminalStatus ? { initialSeedClientOrderId: null } : {}),
-	            initialSeedLastContext: pendingSeedContext ?? currentStateJson.initialSeedLastContext
-	          };
+		          const retryReason = terminalStatus
+		            ? `terminal_order_${terminalStatus}`
+		            : "missing_confirmable_order";
+		          const nextAttemptSeq = resolveInitialSeedAttemptSeq(currentStateJson) + 1;
+		          currentStateJson = {
+		            ...currentStateJson,
+		            initialSeedPending: false,
+		            initialSeedNeedsReseed: true,
+		            initialSeedRetryScheduledAt: ctx.now.toISOString(),
+		            initialSeedRetryReason: retryReason,
+		            initialSeedAttemptSeq: nextAttemptSeq,
+		            initialSeedClientOrderId: null,
+		            initialSeedLastContext: pendingSeedContext ?? currentStateJson.initialSeedLastContext
+		          };
           seedPending = false;
           await updateGridBotInstancePlannerState({
             instanceId: instance.id,
@@ -3422,7 +3428,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                     await (adapter as any).addPositionMargin({
                       symbol: ctx.bot.symbol,
                       amountUsd: topUpAmount,
-                      marginMode: "cross"
+	                      marginMode: resolveExecutionOrderMarginMode(ctx.bot)
                     });
                     autoMarginAddedUSDT = topUpAmount;
                     updatedExtraMarginUsd = Number((updatedExtraMarginUsd + topUpAmount).toFixed(6));
@@ -4018,12 +4024,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             executionPath: "direct_adapter",
             execute: async () => {
               try {
-                const placed = await executeMappedIntentViaAdapter({
-                  adapter,
-                  botSymbol: ctx.bot.symbol,
-                  intent: mappedIntent,
-                  clientOrderId
-                });
+	                const placed = await executeMappedIntentViaAdapter({
+	                  adapter,
+	                  botSymbol: ctx.bot.symbol,
+	                  intent: mappedIntent,
+	                  clientOrderId,
+	                  marginMode: resolveExecutionOrderMarginMode(ctx.bot)
+	                });
                 if (!isConfirmedPlaceOrderResult(placed)) {
                   const placeError = placed.errorMessage ?? placed.errorCode ?? placed.status;
                   return {

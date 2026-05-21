@@ -217,15 +217,22 @@ function isGridExecutionRunning(instance: GridInstance | null | undefined): bool
     || String(instance?.bot?.status ?? "").trim().toLowerCase() === "running"
     || String(instance?.bot?.runtime?.status ?? "").trim().toLowerCase() === "running"
     || String(instance?.botVault?.executionStatus ?? "").trim().toLowerCase() === "running"
+    || String(instance?.botVault?.lifecycle?.state ?? "").trim().toLowerCase() === "execution_active"
   );
+}
+
+function effectiveProvisioningPhase(instance: GridInstance | null | undefined): string {
+  if (isGridExecutionRunning(instance)) return "completed";
+  const lifecycleState = String(instance?.botVault?.lifecycle?.state ?? "").trim().toLowerCase();
+  if (lifecycleState === "execution_ready" || lifecycleState === "execution_active") return "completed";
+  return normalizeGridProvisioningPhase(instance?.provisioningStatus?.phase);
 }
 
 function buildProvisioningProgressSteps(
   instance: GridInstance | null,
   tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>
 ): ProvisioningProgressStep[] {
-  const phase = instance?.provisioningStatus?.phase;
-  const normalized = normalizeGridProvisioningPhase(phase);
+  const normalized = effectiveProvisioningPhase(instance);
   const currentIndex =
     normalized === "pending_reserve_signature" || normalized === "submitted_waiting_reserve_indexer"
       ? 1
@@ -342,27 +349,31 @@ function GridBotCatalogPageContent() {
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
       if (!botVaultId || hypercoreProvisionTriggeredRef.current) return;
+      if (!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending) return;
       hypercoreProvisionTriggeredRef.current = true;
-      await flow.executeAction({
+      const completed = await flow.executeAction({
         busyKey: "fund-hypercore-grid-bot-catalog",
         buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/fund-hypercore-tx`,
         body: {
           actionKey: createIdempotencyKey(`grid_hypercore_funding:${botVaultId}`)
         }
       });
+      if (!completed) hypercoreProvisionTriggeredRef.current = false;
       return;
     }
     if (phase === "pending_reserve_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
       if (!botVaultId || reserveProvisionTriggeredRef.current) return;
+      if (!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending) return;
       reserveProvisionTriggeredRef.current = true;
-      await flow.executeAction({
+      const completed = await flow.executeAction({
         busyKey: "reserve-grid-bot-catalog",
         buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/reserve-tx`,
         body: {
           actionKey: createIdempotencyKey(`grid_reserve_provision:${botVaultId}`)
         }
       });
+      if (!completed) reserveProvisionTriggeredRef.current = false;
       return;
     }
   }
@@ -444,13 +455,13 @@ function GridBotCatalogPageContent() {
     [provisioningSteps]
   );
   const provisioningPhaseText = useMemo(
-    () => provisioningPhaseLabel(createdInstance?.provisioningStatus?.phase, tGrid),
-    [createdInstance?.provisioningStatus?.phase, tGrid]
+    () => provisioningPhaseLabel(effectiveProvisioningPhase(createdInstance), tGrid),
+    [createdInstance, tGrid]
   );
   const provisioningHintText = useMemo(() => {
     if (provisioningFinished) return tGrid("provisioningTrackerReadyToClose");
-    if (!createdInstance?.provisioningStatus) return tGrid("provisioningPhaseUnknown");
-    const normalized = normalizeGridProvisioningPhase(createdInstance.provisioningStatus.phase);
+    if (!createdInstance) return tGrid("provisioningPhaseUnknown");
+    const normalized = effectiveProvisioningPhase(createdInstance);
     if (normalized === "ready" || normalized === "completed") {
       if (createdInstance.lastPlanError) return createdInstance.lastPlanError;
       if (!hasInitialSeedExecution(createdInstance) && createdInstance.initialSeedEnabled !== false) {
@@ -459,10 +470,33 @@ function GridBotCatalogPageContent() {
       if (!hasGridPlacement(createdInstance)) return tGrid("provisioningTrackerPlacingGrid");
       return tGrid("provisioningTrackerStartingBot");
     }
-    return createdInstance.provisioningStatus.walletSignatureRequired
+    return createdInstance.provisioningStatus?.walletSignatureRequired
       ? tGrid("provisioningWalletSignatureRequired")
       : tGrid("provisioningIndexerWaiting");
   }, [createdInstance, provisioningFinished, tGrid]);
+  const provisioningSignaturePhase = normalizeGridProvisioningPhase(createdInstance?.provisioningStatus?.phase);
+  const canResumeProvisioningSignature = Boolean(
+    createdInstanceId
+      && createdInstance?.botVault?.id
+      && !provisioningFinished
+      && (
+        provisioningSignaturePhase === "pending_reserve_signature"
+        || provisioningSignaturePhase === "pending_hypercore_funding_signature"
+      )
+  );
+  const provisioningSignatureButtonLabel = provisioningSignaturePhase === "pending_hypercore_funding_signature"
+    ? tGrid("fundHypercoreAction")
+    : tGrid("reserveBotVaultAction");
+
+  async function resumeProvisioningSignature() {
+    if (provisioningSignaturePhase === "pending_hypercore_funding_signature") {
+      hypercoreProvisionTriggeredRef.current = false;
+    }
+    if (provisioningSignaturePhase === "pending_reserve_signature") {
+      reserveProvisionTriggeredRef.current = false;
+    }
+    await continueProvisioning(createdInstance, createdInstanceId);
+  }
 
   useEffect(() => {
     if (!createdInstanceId || flowRedirectedRef.current || provisioningFinished) return undefined;
@@ -1605,6 +1639,23 @@ function GridBotCatalogPageContent() {
             ) : null}
 
             <div className="gridCatalogProgressHint">{provisioningHintText}</div>
+
+            {canResumeProvisioningSignature ? (
+              <div className="gridCatalogActionRow">
+                <div className="gridCatalogActionMeta">
+                  <div className="gridCatalogActionMetaHint">{tGrid("provisioningWalletSignatureRequired")}</div>
+                </div>
+                <button
+                  className="btn btnPrimary"
+                  type="button"
+                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+                  onClick={() => void resumeProvisioningSignature()}
+                >
+                  <AppIcon name="deposit" />
+                  {provisioningSignatureButtonLabel}
+                </button>
+              </div>
+            ) : null}
 
             <div className="gridCatalogProgressList">
               {provisioningSteps.map((step) => (

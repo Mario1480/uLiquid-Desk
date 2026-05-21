@@ -387,6 +387,12 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       deps.resolveGridHyperliquidPilotAccess(deps.db, {
         userId: user.id,
         email: user.email
+      }).catch((error: unknown) => {
+        logger.warn("grid_pilot_access_mapping_read_failed", {
+          userId: user.id,
+          error: String(error)
+        });
+        return null;
       }),
       shared.getGridHyperliquidExecutionContext(deps.db)
     ]);
@@ -926,12 +932,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
                   sourceType: "grid_instance_create_pending_funding_vault",
                   fundingSource: "funding_vault",
                   fundingVaultId: requestedFundingVaultId,
+                  hypercoreAccountingFeeUsd: HYPERVAULT_CREATE_FEE_USD,
                   provisioningPhase: "agent_launch_preparing",
                   createIdempotencyKey: createProvisioningKey
                 }
               : useUnifiedHyperVaultCreateFlow
               ? {
                   sourceType: "grid_instance_create_pending_onchain",
+                  hypercoreAccountingFeeUsd: HYPERVAULT_CREATE_FEE_USD,
                   provisioningPhase: "pending_signature",
                   createIdempotencyKey: createProvisioningKey
                 }
@@ -1111,6 +1119,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
                   ...(((currentBotVault?.executionMetadata && typeof currentBotVault.executionMetadata === "object" && !Array.isArray(currentBotVault.executionMetadata))
                     ? currentBotVault.executionMetadata
                     : {}) as Record<string, unknown>),
+                  hypercoreAccountingFeeUsd: HYPERVAULT_CREATE_FEE_USD,
                   provisioning: {
                     phase: "pending_signature",
                     idempotencyKey: createProvisioningKey,

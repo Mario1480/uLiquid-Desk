@@ -51,6 +51,7 @@ export async function executeMappedIntentViaAdapter(params: {
   botSymbol: string;
   intent: Extract<TradeIntent, { type: "open" }>;
   clientOrderId?: string | null;
+  marginMode?: "cross" | "isolated";
 }): Promise<PlaceOrderResult> {
   const order = params.intent.order ?? {};
   const qty = Number(order.qty ?? NaN);
@@ -75,7 +76,7 @@ export async function executeMappedIntentViaAdapter(params: {
     clientOrderId: String(params.clientOrderId ?? "").trim() || undefined,
     price: orderType === "limit" && Number.isFinite(price) && price > 0 ? price : undefined,
     reduceOnly: order.reduceOnly === true,
-    marginMode: "cross",
+    marginMode: params.marginMode ?? "cross",
     takeProfitPrice: takeProfitPrice ?? undefined,
     stopLossPrice: stopLossPrice ?? undefined
   });
