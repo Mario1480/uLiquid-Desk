@@ -328,6 +328,21 @@ test("GET /vaults/bot-vaults/overview returns usage counts and manual empty acti
             canRecover: true,
             hasOnchainVault: true,
             reusable: false
+          },
+          {
+            id: "bv_settled_fee_remainder",
+            allocatedUsd: 6,
+            availableUsd: 0,
+            withdrawableUsd: 0,
+            principalAllocated: 6,
+            principalReturned: 5,
+            status: "CLOSE_ONLY",
+            executionStatus: "closed",
+            statusCategory: "settled",
+            fundingDisplayStatus: "funding_confirmed",
+            fundingDisplayReasonCode: "settled",
+            hasOnchainVault: true,
+            reusable: true
           }
         ];
       }
@@ -340,15 +355,19 @@ test("GET /vaults/bot-vaults/overview returns usage counts and manual empty acti
   await handler({}, res);
 
   assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.counts?.total, 4);
+  assert.equal(res.body?.counts?.total, 5);
   assert.equal(res.body?.counts?.in_use, 1);
   assert.equal(res.body?.counts?.unused, 1);
   assert.equal(res.body?.counts?.error, 1);
-  assert.equal(res.body?.counts?.settled, 1);
+  assert.equal(res.body?.counts?.settled, 2);
   assert.equal(res.body?.counts?.manualEmptyAvailable, 1);
   assert.equal(res.body?.items?.find((item: any) => item.id === "bv_recover")?.manualEmptyAction?.type, "recover_closed");
   assert.equal(res.body?.items?.find((item: any) => item.id === "bv_running")?.manualEmptyAction?.reason, "vault_in_use");
+  assert.equal(res.body?.items?.find((item: any) => item.id === "bv_settled_fee_remainder")?.residualCapitalUsd, 0);
+  assert.equal(res.body?.items?.find((item: any) => item.id === "bv_settled_fee_remainder")?.capitalUsd, 0);
+  assert.equal(res.body?.items?.find((item: any) => item.id === "bv_settled_fee_remainder")?.manualEmptyAction?.reason, "already_empty");
   assert.equal(res.body?.totals?.availableUsd, 10);
+  assert.equal(res.body?.totals?.residualCapitalUsd, 157);
 });
 
 test("GET /vaults/master returns 410", async () => {

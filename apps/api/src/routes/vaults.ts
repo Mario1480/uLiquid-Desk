@@ -238,7 +238,30 @@ function normalizedOverviewText(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function botVaultIsEconomicallyEmptySettlement(item: any): boolean {
+  const availableUsd = overviewNumber(item?.availableUsd);
+  const withdrawableUsd = overviewNumber(item?.withdrawableUsd);
+  if (availableUsd > OVERVIEW_USD_EPSILON || withdrawableUsd > OVERVIEW_USD_EPSILON) return false;
+
+  const statusCategory = normalizedOverviewText(item?.statusCategory);
+  const fundingDisplayStatus = normalizedOverviewText(item?.fundingDisplayStatus);
+  const fundingDisplayReason = normalizedOverviewText(item?.fundingDisplayReasonCode);
+  const status = normalizedOverviewText(item?.status);
+  const executionStatus = normalizedOverviewText(item?.executionStatus);
+  const lifecycleState = normalizedOverviewText(item?.lifecycle?.state);
+
+  return (
+    statusCategory === "settled"
+    || fundingDisplayReason === "settled"
+    || (
+      fundingDisplayStatus === "funding_confirmed"
+      && (status === "closed" || status === "close_only" || executionStatus === "closed" || lifecycleState === "closed")
+    )
+  );
+}
+
 function botVaultPrincipalOutstandingUsd(item: any): number {
+  if (botVaultIsEconomicallyEmptySettlement(item)) return 0;
   return Math.max(
     0,
     overviewNumber(item?.principalAllocated ?? item?.allocatedUsd) - overviewNumber(item?.principalReturned)
@@ -246,6 +269,7 @@ function botVaultPrincipalOutstandingUsd(item: any): number {
 }
 
 function botVaultCapitalUsd(item: any): number {
+  if (botVaultIsEconomicallyEmptySettlement(item)) return 0;
   return roundOverviewUsd(Math.max(
     0,
     overviewNumber(item?.allocatedUsd),
