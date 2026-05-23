@@ -256,6 +256,21 @@ function GridBotsDashboardPageContent() {
     }
   }
 
+  async function loadFocusedInstance(loadId: number, baseItems: GridInstance[]) {
+    if (!requestedInstanceId) return;
+    try {
+      const focusedInstance = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(requestedInstanceId)}`);
+      if (loadId !== latestLoadIdRef.current) return;
+      const mergedItems = mergeGridInstancesById(baseItems, focusedInstance);
+      setInstances((current) => mergeGridInstancesById(current.length > 0 ? current : baseItems, focusedInstance));
+      setSelectedInstanceId(focusedInstance.id);
+      void loadInstanceStats(mergedItems, { background: true });
+    } catch (focusedError) {
+      if (loadId !== latestLoadIdRef.current) return;
+      console.warn("grid focused instance background refresh failed", focusedError);
+    }
+  }
+
   async function load(options?: { background?: boolean }) {
     const isBackground = options?.background === true;
     if (isBackground && backgroundLoadInFlightRef.current) return;
@@ -269,26 +284,15 @@ function GridBotsDashboardPageContent() {
     }
     try {
       const instanceListPath = `/grid/instances${showArchived ? "?includeArchived=true" : ""}`;
-      const [instanceResult, focusedResult] = await Promise.allSettled([
-        apiGet<{ items: GridInstance[] }>(instanceListPath),
-        requestedInstanceId
-          ? apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(requestedInstanceId)}`)
-          : Promise.resolve(null)
-      ]);
-      if (instanceResult.status !== "fulfilled") {
-        throw instanceResult.reason;
-      }
-      const focusedInstance = focusedResult.status === "fulfilled" ? focusedResult.value : null;
-      const instanceItems = mergeGridInstancesById(
-        Array.isArray(instanceResult.value.items) ? instanceResult.value.items : [],
-        focusedInstance
-      );
+      const instanceResponse = await apiGet<{ items: GridInstance[] }>(instanceListPath);
+      const instanceItems = Array.isArray(instanceResponse.items) ? instanceResponse.items : [];
       if (loadId !== latestLoadIdRef.current) return;
       setInstances(instanceItems);
       if (requestedInstanceId && instanceItems.some((row) => row.id === requestedInstanceId)) {
         setSelectedInstanceId(requestedInstanceId);
       }
       void loadInstanceStats(instanceItems, { background: isBackground });
+      void loadFocusedInstance(loadId, instanceItems);
     } catch (loadError) {
       if (loadId !== latestLoadIdRef.current) return;
       if (!isBackground) {
