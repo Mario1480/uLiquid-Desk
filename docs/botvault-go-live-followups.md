@@ -53,6 +53,31 @@ Prioritaet fuer den naechsten Optimierungsdurchlauf:
 - AI/Salad weiter separat behandeln. AI/Prediction-Probleme duerfen BotVault-
   Start und BotVault-UI-Status nicht blockieren.
 
+Umgesetzt im Optimierungsdurchlauf am 2026-05-23:
+
+- Scheduled Funding-Tx-Recovery auf einen kurzen 1000-Block-Lookback begrenzt.
+- Historische Funding-Tx-Recovery fuer manuelle/deepere Laeufe in 1000-Block-
+  Chunks aufgeteilt.
+- Create-Seite pollt den konkreten neuen GridBot waehrend Provisioning alle 2s.
+- Create-Seite redirectet sofort, sobald die konkrete Instanz `running` oder
+  `execution_active` ist.
+- GridBot-Uebersicht fetched den per URL fokussierten `instanceId` direkt.
+- GridBot-Uebersicht zeigt die Liste sofort und laedt Fill-/Round-Statistiken
+  danach im Hintergrund.
+- GridBot-Uebersicht aktualisiert bei fokussiertem `instanceId` alle 2.5s statt
+  alle 10s.
+- Sortierung nutzt `updatedAt`/`createdAt` als Fallback, damit neue Bots ohne
+  `lastPlanAt` nicht unten einsortiert werden.
+
+Noch per Live-Start zu verifizieren:
+
+- Der neue Bot erscheint in der UI innerhalb weniger Sekunden nach Backend-
+  `running`.
+- Der `query exceeds max block range 1000` Warning verschwindet aus dem
+  Scheduled-Recovery-Pfad.
+- Die externe HyperCore-Sichtbarkeit bleibt der groesste nicht voll lokal
+  kontrollierbare Zeitanteil.
+
 ## Verifikation 2026-05-06
 
 - `npm -w packages/futures-exchange run test:vault-grid-corewriter`: PASS, 64/64.

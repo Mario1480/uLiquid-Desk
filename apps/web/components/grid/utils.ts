@@ -143,6 +143,7 @@ export function normalizeGridProvisioningPhase(value: string | null | undefined)
     case "submitted_waiting_hypercore_funding_indexer":
     case "agent_launch_preparing":
     case "agent_refill_preparing":
+    case "execution_active":
     case "ready":
     case "completed":
       return phase;
@@ -153,7 +154,7 @@ export function normalizeGridProvisioningPhase(value: string | null | undefined)
 
 export function provisioningPhaseTone(value: string | null | undefined): "info" | "warning" | "success" {
   const phase = normalizeGridProvisioningPhase(value);
-  if (phase === "ready" || phase === "completed") return "success";
+  if (phase === "execution_active" || phase === "ready" || phase === "completed") return "success";
   if (
     phase === "pending_signature"
     || phase === "pending_reserve_signature"

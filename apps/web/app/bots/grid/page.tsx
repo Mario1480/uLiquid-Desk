@@ -48,6 +48,17 @@ function getStablecoinLabel(input: {
   return "USDT";
 }
 
+function mergeGridInstancesById(items: GridInstance[], focused?: GridInstance | null): GridInstance[] {
+  const merged = new Map<string, GridInstance>();
+  for (const item of items) {
+    merged.set(item.id, item);
+  }
+  if (focused?.id) {
+    merged.set(focused.id, focused);
+  }
+  return Array.from(merged.values());
+}
+
 function QuickActionIconButton({
   label,
   onClick,
@@ -93,6 +104,7 @@ function QuickActionIconButton({
 function GridBotsDashboardPageContent() {
   const locale = useLocale() as AppLocale;
   const searchParams = useSearchParams();
+  const requestedInstanceId = String(searchParams.get("instanceId") ?? "").trim();
   const tBots = useTranslations("system.botsList");
   const tGrid = useTranslations("grid.marketplace");
   const tInstance = useTranslations("grid.instance");
@@ -110,7 +122,9 @@ function GridBotsDashboardPageContent() {
   const [claimDialogInstanceId, setClaimDialogInstanceId] = useState<string>("");
   const [marginDialogInstanceId, setMarginDialogInstanceId] = useState<string>("");
   const latestLoadIdRef = useRef(0);
+  const latestStatsLoadIdRef = useRef(0);
   const backgroundLoadInFlightRef = useRef(false);
+  const backgroundStatsLoadInFlightRef = useRef(false);
 
   function formatModeBadge(instance: GridInstance): string {
     const mode = String(instance.template?.mode ?? "").trim();
@@ -159,8 +173,8 @@ function GridBotsDashboardPageContent() {
     return [...instances].sort((left, right) => {
       const stateDiff = rank(left.state) - rank(right.state);
       if (stateDiff !== 0) return stateDiff;
-      const leftTs = new Date(left.lastPlanAt ?? left.archivedAt ?? 0).getTime();
-      const rightTs = new Date(right.lastPlanAt ?? right.archivedAt ?? 0).getTime();
+      const leftTs = new Date(left.lastPlanAt ?? left.updatedAt ?? left.createdAt ?? left.archivedAt ?? 0).getTime();
+      const rightTs = new Date(right.lastPlanAt ?? right.updatedAt ?? right.createdAt ?? right.archivedAt ?? 0).getTime();
       return rightTs - leftTs;
     });
   }, [instances]);
@@ -193,23 +207,14 @@ function GridBotsDashboardPageContent() {
     ).length,
     [hyperVaultDemoInstances]
   );
-  async function load(options?: { background?: boolean }) {
+  async function loadInstanceStats(instanceItems: GridInstance[], options?: { background?: boolean }) {
     const isBackground = options?.background === true;
-    if (isBackground && backgroundLoadInFlightRef.current) return;
-    const loadId = ++latestLoadIdRef.current;
+    if (isBackground && backgroundStatsLoadInFlightRef.current) return;
+    const statsLoadId = ++latestStatsLoadIdRef.current;
     if (isBackground) {
-      backgroundLoadInFlightRef.current = true;
-    }
-    if (!isBackground) {
-      setLoading(true);
-      setError(null);
+      backgroundStatsLoadInFlightRef.current = true;
     }
     try {
-      const instanceResponse = await apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`);
-      const instanceItems = Array.isArray(instanceResponse.items) ? instanceResponse.items : [];
-      if (loadId !== latestLoadIdRef.current) return;
-      setInstances(instanceItems);
-
       const statEntries = await Promise.all(
         instanceItems.map(async (instance) => {
           try {
@@ -242,8 +247,48 @@ function GridBotsDashboardPageContent() {
           }
         })
       );
-      if (loadId !== latestLoadIdRef.current) return;
+      if (statsLoadId !== latestStatsLoadIdRef.current) return;
       setInstanceStats(Object.fromEntries(statEntries));
+    } finally {
+      if (isBackground) {
+        backgroundStatsLoadInFlightRef.current = false;
+      }
+    }
+  }
+
+  async function load(options?: { background?: boolean }) {
+    const isBackground = options?.background === true;
+    if (isBackground && backgroundLoadInFlightRef.current) return;
+    const loadId = ++latestLoadIdRef.current;
+    if (isBackground) {
+      backgroundLoadInFlightRef.current = true;
+    }
+    if (!isBackground) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      const instanceListPath = `/grid/instances${showArchived ? "?includeArchived=true" : ""}`;
+      const [instanceResult, focusedResult] = await Promise.allSettled([
+        apiGet<{ items: GridInstance[] }>(instanceListPath),
+        requestedInstanceId
+          ? apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(requestedInstanceId)}`)
+          : Promise.resolve(null)
+      ]);
+      if (instanceResult.status !== "fulfilled") {
+        throw instanceResult.reason;
+      }
+      const focusedInstance = focusedResult.status === "fulfilled" ? focusedResult.value : null;
+      const instanceItems = mergeGridInstancesById(
+        Array.isArray(instanceResult.value.items) ? instanceResult.value.items : [],
+        focusedInstance
+      );
+      if (loadId !== latestLoadIdRef.current) return;
+      setInstances(instanceItems);
+      if (requestedInstanceId && instanceItems.some((row) => row.id === requestedInstanceId)) {
+        setSelectedInstanceId(requestedInstanceId);
+      }
+      void loadInstanceStats(instanceItems, { background: isBackground });
     } catch (loadError) {
       if (loadId !== latestLoadIdRef.current) return;
       if (!isBackground) {
@@ -275,17 +320,16 @@ function GridBotsDashboardPageContent() {
     void load();
     const timer = setInterval(() => {
       void load({ background: true });
-    }, 10_000);
+    }, requestedInstanceId ? 2_500 : 10_000);
     return () => clearInterval(timer);
-  }, [showArchived]);
+  }, [requestedInstanceId, showArchived]);
 
   useEffect(() => {
-    const requestedInstanceId = String(searchParams.get("instanceId") ?? "").trim();
     if (!requestedInstanceId) return;
     if (sortedInstances.some((row) => row.id === requestedInstanceId)) {
       setSelectedInstanceId(requestedInstanceId);
     }
-  }, [searchParams, sortedInstances]);
+  }, [requestedInstanceId, sortedInstances]);
 
   if (!gridFeatureEnabled) {
     return (

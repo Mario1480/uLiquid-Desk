@@ -4,6 +4,7 @@ import {
   createVaultOnchainReconciliationJob,
   deriveV3ReconciledLifecycleState,
   hasPendingBotVaultRuntimeReconciliation,
+  recoverBotVaultV3FundingTxHash,
   shouldIncludeLegacyBotVaultsForReconciliation
 } from "./vaultOnchainReconciliationJob.js";
 import { GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY } from "../vaults/executionMode.js";
@@ -972,6 +973,95 @@ test("vaultOnchainReconciliationJob backfills missing v3 funding tx hashes befor
     process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
     process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
   }
+});
+
+test("recoverBotVaultV3FundingTxHash keeps scheduled log recovery inside the RPC block range", async () => {
+  const calls: any[] = [];
+  const txHash = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" as `0x${string}`;
+  const client = {
+    async getBlockNumber() {
+      return 5000n;
+    },
+    async getLogs(args: any) {
+      calls.push(args);
+      return [
+        {
+          transactionHash: txHash,
+          blockNumber: 4999n,
+          logIndex: 0,
+          args: {
+            amount: 6000000n,
+            principalDepositedAfter: 6000000n
+          }
+        }
+      ];
+    }
+  };
+
+  const recovered = await recoverBotVaultV3FundingTxHash({
+    client,
+    botVaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    actionMetadata: {
+      amountAtomic: "6000000"
+    },
+    principalAllocated: 6,
+    botVaultId: "bv_1",
+    reason: "scheduled"
+  });
+
+  assert.equal(recovered, txHash);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.fromBlock, 4001n);
+  assert.equal(calls[0]?.toBlock, 5000n);
+  assert.equal(calls[0]?.toBlock - calls[0]?.fromBlock + 1n, 1000n);
+});
+
+test("recoverBotVaultV3FundingTxHash chunks manual historical log recovery", async () => {
+  const calls: any[] = [];
+  const txHash = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" as `0x${string}`;
+  const client = {
+    async getBlockNumber() {
+      return 2500n;
+    },
+    async getLogs(args: any) {
+      calls.push(args);
+      if (args.fromBlock === 501n && args.toBlock === 1500n) {
+        return [
+          {
+            transactionHash: txHash,
+            blockNumber: 1200n,
+            logIndex: 0,
+            args: {
+              amount: 6000000n,
+              principalDepositedAfter: 6000000n
+            }
+          }
+        ];
+      }
+      return [];
+    }
+  };
+
+  const recovered = await recoverBotVaultV3FundingTxHash({
+    client,
+    botVaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    actionMetadata: {
+      amountAtomic: "6000000"
+    },
+    principalAllocated: 6,
+    botVaultId: "bv_1",
+    reason: "manual"
+  });
+
+  assert.equal(recovered, txHash);
+  assert.deepEqual(
+    calls.map((entry) => [entry.fromBlock, entry.toBlock]),
+    [
+      [1501n, 2500n],
+      [501n, 1500n],
+      [0n, 500n]
+    ]
+  );
 });
 
 test("vaultOnchainReconciliationJob resumes pending runtime reconciliation after restart", async () => {

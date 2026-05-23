@@ -38,6 +38,14 @@ const BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS = BigInt(Math.max(
   128,
   Number(process.env.VAULT_ONCHAIN_V3_FUNDING_TX_LOOKBACK_BLOCKS ?? "50000")
 ));
+const BOT_V3_FUNDING_TX_SCHEDULED_LOOKBACK_BLOCKS = BigInt(Math.max(
+  128,
+  Number(process.env.VAULT_ONCHAIN_V3_FUNDING_TX_SCHEDULED_LOOKBACK_BLOCKS ?? "1000")
+));
+const BOT_V3_FUNDING_TX_LOGS_MAX_BLOCK_RANGE = BigInt(Math.max(
+  1,
+  Number(process.env.VAULT_ONCHAIN_V3_FUNDING_TX_LOGS_MAX_BLOCK_RANGE ?? "1000")
+));
 const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
   1,
   Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
@@ -697,7 +705,96 @@ function shouldQueueBotVaultV3AutoActivate(metadata: unknown): boolean {
   return true;
 }
 
-async function recoverBotVaultV3FundingTxHash(params: {
+function maxBigInt(left: bigint, right: bigint): bigint {
+  return left > right ? left : right;
+}
+
+function minBigInt(left: bigint, right: bigint): bigint {
+  return left < right ? left : right;
+}
+
+function calculateFundingTxRecoveryFromBlock(params: {
+  latestBlock: bigint;
+  reason?: string;
+}): bigint {
+  const scheduled = String(params.reason ?? "").trim().toLowerCase() === "scheduled";
+  const lookback = scheduled
+    ? minBigInt(BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS, BOT_V3_FUNDING_TX_SCHEDULED_LOOKBACK_BLOCKS)
+    : BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS;
+  if (params.latestBlock + 1n <= lookback) return 0n;
+  return params.latestBlock - lookback + 1n;
+}
+
+async function readBotVaultV3FundingLogsInChunks(params: {
+  client: any;
+  botVaultAddress: `0x${string}`;
+  fromBlock: bigint;
+  toBlock: bigint;
+  botVaultId?: string;
+  reason?: string;
+}): Promise<any[]> {
+  const logs: any[] = [];
+  let cursorToBlock = params.toBlock;
+
+  while (cursorToBlock >= params.fromBlock) {
+    let chunkToBlock = cursorToBlock;
+    let chunkFromBlock = maxBigInt(params.fromBlock, chunkToBlock - BOT_V3_FUNDING_TX_LOGS_MAX_BLOCK_RANGE + 1n);
+
+    for (;;) {
+      try {
+        const chunkLogs = await params.client.getLogs({
+          address: params.botVaultAddress,
+          event: botVaultV3FundedEventAbi[0],
+          fromBlock: chunkFromBlock,
+          toBlock: chunkToBlock
+        });
+        if (Array.isArray(chunkLogs) && chunkLogs.length > 0) {
+          logs.push(...chunkLogs);
+        }
+        break;
+      } catch (error) {
+        const currentSpan = chunkToBlock - chunkFromBlock + 1n;
+        if (currentSpan > 1n) {
+          const nextSpan = maxBigInt(1n, currentSpan / 2n);
+          chunkFromBlock = chunkToBlock - nextSpan + 1n;
+          logger.warn("vault_onchain_reconciliation_v3_funding_tx_recovery_logs_chunk_shrunk", jobIssueMetadata({
+            issueClass: "okay_to_swallow",
+            mismatchCategory: "observed_state_incomplete",
+            recoveryAction: "retry",
+            reason: params.reason,
+            botVaultId: params.botVaultId,
+            vaultAddress: params.botVaultAddress,
+            fromBlock: chunkFromBlock.toString(),
+            toBlock: chunkToBlock.toString(),
+            nextSpan: nextSpan.toString(),
+            error
+          }));
+          continue;
+        }
+
+        logger.warn("vault_onchain_reconciliation_v3_funding_tx_recovery_logs_chunk_failed", jobIssueMetadata({
+          issueClass: "okay_to_swallow",
+          mismatchCategory: "observed_state_incomplete",
+          recoveryAction: "retry",
+          reason: params.reason,
+          botVaultId: params.botVaultId,
+          vaultAddress: params.botVaultAddress,
+          fromBlock: chunkFromBlock.toString(),
+          toBlock: chunkToBlock.toString(),
+          error
+        }));
+        break;
+      }
+    }
+
+    if (chunkFromBlock <= params.fromBlock) break;
+    cursorToBlock = chunkFromBlock - 1n;
+  }
+
+  return logs;
+}
+
+export async function recoverBotVaultV3FundingTxHash(params: {
   client: any;
   botVaultAddress: `0x${string}`;
   actionMetadata?: unknown;
@@ -719,14 +816,17 @@ async function recoverBotVaultV3FundingTxHash(params: {
   });
   if (typeof latestBlock !== "bigint") return null;
 
-  const fromBlock = latestBlock > BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS
-    ? latestBlock - BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS
-    : 0n;
-  const logs = await params.client.getLogs({
-    address: params.botVaultAddress,
-    event: botVaultV3FundedEventAbi[0],
+  const fromBlock = calculateFundingTxRecoveryFromBlock({
+    latestBlock,
+    reason: params.reason
+  });
+  const logs = await readBotVaultV3FundingLogsInChunks({
+    client: params.client,
+    botVaultAddress: params.botVaultAddress,
     fromBlock,
-    toBlock: latestBlock
+    toBlock: latestBlock,
+    botVaultId: params.botVaultId,
+    reason: params.reason
   }).catch((error: unknown) => {
     logger.warn("vault_onchain_reconciliation_v3_funding_tx_recovery_logs_failed", jobIssueMetadata({
       issueClass: "okay_to_swallow",

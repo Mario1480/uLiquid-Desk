@@ -86,6 +86,8 @@ function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnT
       return tGrid("provisioningPhasePendingHypercoreFundingSignature");
     case "submitted_waiting_hypercore_funding_indexer":
       return tGrid("provisioningPhaseSubmittedWaitingHypercoreFundingIndexer");
+    case "execution_active":
+      return tGrid("provisioningPhaseExecutionActive");
     case "ready":
     case "completed":
       return tGrid("provisioningPhaseCompleted");
@@ -104,6 +106,17 @@ function isBlockingProvisioningPhase(phase: string | null | undefined): boolean 
     || normalized === "pending_hypercore_funding_signature"
     || normalized === "submitted_waiting_hypercore_funding_indexer"
   );
+}
+
+function isGridInstanceExecutionActive(instance: GridInstance | null): boolean {
+  if (!instance) return false;
+  const phase = normalizeGridProvisioningPhase(instance.provisioningStatus?.phase ?? null);
+  return instance.state === "running"
+    || String(instance.bot?.status ?? "").trim().toLowerCase() === "running"
+    || String(instance.botVault?.executionStatus ?? "").trim().toLowerCase() === "running"
+    || phase === "execution_active"
+    || phase === "ready"
+    || phase === "completed";
 }
 
 function GridBotsCreatePageContent() {
@@ -141,6 +154,11 @@ function GridBotsCreatePageContent() {
   const hypercoreProvisionTriggeredRef = useRef(false);
   async function continueProvisioning(latest: GridInstance | null, instanceId: string | null) {
     if (!latest || !instanceId || flowRedirectedRef.current) return;
+    if (isGridInstanceExecutionActive(latest)) {
+      flowRedirectedRef.current = true;
+      router.push(`/bots/grid?instanceId=${encodeURIComponent(instanceId)}`);
+      return;
+    }
     const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
@@ -232,7 +250,7 @@ function GridBotsCreatePageContent() {
     void loadLatest();
     const timer = window.setInterval(() => {
       void loadLatest();
-    }, 5000);
+    }, 2000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);

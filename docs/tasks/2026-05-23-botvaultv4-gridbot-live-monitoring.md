@@ -352,3 +352,49 @@ Admin/ops:
   non-blocking diagnostics, not as user-facing failures.
 - Continue keeping AI/Salad optimization separate from the BotVault startup
   path; AI issues should not delay BotVault status updates.
+
+## Optimization Pass After Second Start
+
+Implemented after the 15:38 UTC live start:
+
+- Funding tx recovery no longer performs the scheduled historical `eth_getLogs`
+  lookup over the full 50k block window in one request.
+  - Scheduled recovery now uses a short default lookback of 1000 blocks.
+  - Manual/deeper recovery still supports the historical lookback, but reads it
+    in chunks of at most 1000 blocks.
+  - This targets the live `query exceeds max block range 1000` warning directly.
+- The GridBot create page now polls the concrete new instance every 2s while
+  provisioning is active instead of waiting up to 5s between status reads.
+- The create page redirects as soon as the concrete instance is observably live:
+  - Grid state `running`,
+  - bot status `running`,
+  - BotVault execution status `running`,
+  - or provisioning phase `execution_active`.
+- The GridBot overview now fetches the requested `instanceId` directly when the
+  user arrives from the creation flow. This prevents the new Bot from depending
+  only on the broader list refresh.
+- The GridBot overview now renders the instance list immediately and loads fill
+  statistics separately in the background. Slow fills/PnL stats can no longer
+  hold the whole list in loading state.
+- While a focused `instanceId` is present in the URL, the overview refreshes
+  every 2.5s instead of 10s.
+- Overview sorting now falls back to `updatedAt`/`createdAt` when `lastPlanAt`
+  is not available yet, so newly created or newly running bots are not pushed
+  down by missing plan timestamps.
+
+Validation:
+
+- `node ../../node_modules/tsx/dist/cli.mjs --test src/jobs/vaultOnchainReconciliationJob.test.ts`
+- `npm -w apps/api run typecheck`
+- `npm -w apps/web run typecheck`
+- `npm -w apps/web run i18n:check`
+- `docker compose --env-file .env.prod -f docker-compose.prod.yml config`
+
+Remaining validation:
+
+- Run one more production BotVault start and compare:
+  - time from funding confirmation to HyperCore funded,
+  - time from `execution_ready` to Grid overview visibility,
+  - whether the `eth_getLogs` block-range warning disappears.
+- HyperCore confirmation time is still partly external/indexer-dependent; this
+  pass mainly removes avoidable local/UI waiting and the oversized RPC lookup.
