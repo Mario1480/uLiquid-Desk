@@ -972,8 +972,9 @@ export default function PredictionsPage() {
     return params;
   }
 
-  async function loadPredictions() {
-    setLoading(true);
+  async function loadPredictions(options?: { background?: boolean }) {
+    const background = options?.background === true;
+    if (!background) setLoading(true);
     setError(null);
     try {
       const payload = await apiGet<{ items: PredictionListItem[] }>("/api/predictions?limit=100");
@@ -988,14 +989,15 @@ export default function PredictionsPage() {
           : []
       );
     } catch (e) {
-      setError(errMsg(e));
+      if (!background) setError(errMsg(e));
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }
 
-  async function loadRunningPredictions() {
-    setRunningLoading(true);
+  async function loadRunningPredictions(options?: { background?: boolean }) {
+    const background = options?.background === true;
+    if (!background) setRunningLoading(true);
     try {
       const payload = await apiGet<{ items: RunningPredictionItem[] }>("/api/predictions/running");
       setRunningRows(
@@ -1007,10 +1009,20 @@ export default function PredictionsPage() {
           : []
       );
     } catch (e) {
-      setActionError(errMsg(e));
+      if (!background) setActionError(errMsg(e));
     } finally {
-      setRunningLoading(false);
+      if (!background) setRunningLoading(false);
     }
+  }
+
+  function refreshPredictionOverviewInBackground() {
+    void Promise.allSettled([
+      loadPredictions({ background: true }),
+      loadRunningPredictions({ background: true }),
+      loadPredictionQuality(),
+      loadPredictionMetrics(),
+      loadSubscriptionQuota()
+    ]);
   }
 
   async function loadPredictionQuality() {
@@ -1803,13 +1815,15 @@ export default function PredictionsPage() {
           ? tPred("running.pausedNotice", { count: response.updatedCount })
           : tPred("running.resumedNotice", { count: response.updatedCount })
       );
-      await Promise.all([
-        loadPredictions(),
-        loadRunningPredictions(),
-        loadPredictionQuality(),
-        loadPredictionMetrics(),
-        loadSubscriptionQuota()
-      ]);
+      setRunningRows((current) =>
+        current.map((item) => item.id === row.id ? { ...item, paused: response.paused } : item)
+      );
+      setRows((current) =>
+        current.map((item) =>
+          item.id === row.id ? { ...item, autoScheduleEnabled: !response.paused } : item
+        )
+      );
+      refreshPredictionOverviewInBackground();
     } catch (e) {
       setActionError(quotaErrorMessage(e, tPred) ?? errMsg(e));
     } finally {

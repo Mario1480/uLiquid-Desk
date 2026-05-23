@@ -123,6 +123,7 @@ export function registerPredictionLifecycleRoutes(
             }
           }
         });
+        deps.predictionTriggerDebounceState.delete(stateRow.id);
 
         const normalizedSymbol = deps.normalizeSymbolInput(stateRow.symbol);
         const templateRowIds = await deps.findPredictionTemplateRowIds(user.id, {
