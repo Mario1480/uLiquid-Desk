@@ -398,3 +398,90 @@ Remaining validation:
   - whether the `eth_getLogs` block-range warning disappears.
 - HyperCore confirmation time is still partly external/indexer-dependent; this
   pass mainly removes avoidable local/UI waiting and the oversized RPC lookup.
+
+## Third Post-Optimization Live Start
+
+A third BotVault V4 start was monitored on 2026-05-23 around 18:55 UTC after
+the startup visibility and scheduled funding-recovery changes were deployed.
+
+Runtime IDs:
+
+- Grid instance: `cmpipkeho006go31z8rcgncd6`
+- BotVault: `cmpipkell006io31z8n95ukin`
+- Bot: `9b65bf8d-e6c2-44d4-9fcb-6a15abb8b94e`
+- User: `cmn4a70gc0dyap62e5febk3z7`
+- BotVault address: `0xb1eCD473e0f715251d61DAe079cF7f6C8c303ad2`
+- Agent wallet: `0xf9ac451068c7ad47f4e22a8138697797e8efad27`
+- Vault model: `bot_vault_v4`
+
+Observed timing:
+
+- Grid row created: `2026-05-23 18:55:01.979 UTC`
+- BotVault row created: `2026-05-23 18:55:02.121 UTC`
+- Create action confirmed: `2026-05-23 18:55:10.617 UTC`
+- Funding action prepared: `2026-05-23 18:55:15.181 UTC`
+- Funding action confirmed: `2026-05-23 18:55:55.806 UTC`
+- HyperCore funded lifecycle observed: around `2026-05-23 18:57:35 UTC`
+- Margin/execution-ready verified: around `2026-05-23 18:57:56 UTC`
+- Grid provisioning completed: `2026-05-23T18:57:59.511Z`
+- BotVault final `running` state observed: around `2026-05-23 18:58:00 UTC`
+- First live order/fill activity observed: around `2026-05-23 18:58:58 UTC`
+
+Final observed state after deploy/check:
+
+- BotVault status: `ACTIVE`
+- execution status: `running`
+- funding status: `hyper_evm_confirmed_onchain`
+- HyperCore funding status: `funded`
+- principal allocated: `6 USDC`
+- available USD: around `1.945`
+- execution last error: empty
+- Grid instance state: `running`
+- Grid provisioning phase: `execution_active`
+- Grid `last_plan_error`: empty
+- Bot orders: `3 OPEN`, `1 PARTIALLY_FILLED`
+- Bot fills: `1`
+
+Operational observations:
+
+- The start completed without manual intervention.
+- No new `query exceeds max block range 1000` warning was observed during this
+  start after the scheduled funding-recovery optimization.
+- One expected, retryable onchain drift remained visible after trading began:
+  local trading reconciliation had realized PnL/fill state before the observed
+  onchain aggregate reflected it. This was classified as
+  `local_ahead_of_observed_state` and did not block execution.
+- Backend startup improved, but HyperCore visibility still accounted for the
+  largest time slice.
+
+## Grid Overview Loading Hotfix
+
+During the third start, the user-facing Grid overview still showed
+`Loading grid runs...` after the backend and GridBot were already running.
+
+Root cause:
+
+- The Grid overview waited for both the broad `/grid/instances` list request
+  and the focused `/grid/instances/:id` detail request before clearing the
+  initial loading state.
+- The focused detail request can be slower because it enriches state from the
+  execution/provider path. That made a slow detail refresh block rendering of
+  the already available list.
+
+Hotfix:
+
+- The overview now awaits only the list request for initial render.
+- The focused `instanceId` detail request runs in the background and merges
+  into the list when it returns.
+- Fill/round stats remain background work and do not block the list.
+
+Validation/deploy:
+
+- `npm -w apps/web run typecheck`
+- `git diff --check`
+- `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build web`
+- Post-deploy container status: `api` healthy, `web` healthy.
+- Local route check:
+  - `/bots/grid?instanceId=cmpipkeho006go31z8rcgncd6`
+  - HTTP `200`
+  - response time around `0.09s`

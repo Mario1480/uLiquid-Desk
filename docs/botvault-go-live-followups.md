@@ -72,9 +72,14 @@ Umgesetzt im Optimierungsdurchlauf am 2026-05-23:
 Noch per Live-Start zu verifizieren:
 
 - Der neue Bot erscheint in der UI innerhalb weniger Sekunden nach Backend-
-  `running`.
+  `running`. Am 18:55-UTC-Start war der Backend-Start erfolgreich, aber die
+  Grid-Uebersicht blieb wegen eines blockierenden fokussierten Detail-Requests
+  noch auf `Loading grid runs...`. Dieser UI-Blocker wurde danach behoben:
+  die Liste rendert jetzt nach dem List-Request, Detail und Stats laufen im
+  Hintergrund.
 - Der `query exceeds max block range 1000` Warning verschwindet aus dem
-  Scheduled-Recovery-Pfad.
+  Scheduled-Recovery-Pfad. Beim 18:55-UTC-Start wurde dieser Warning nicht
+  erneut beobachtet.
 - Die externe HyperCore-Sichtbarkeit bleibt der groesste nicht voll lokal
   kontrollierbare Zeitanteil.
 
