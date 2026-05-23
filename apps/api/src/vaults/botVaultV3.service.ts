@@ -72,7 +72,8 @@ import {
 import {
   computeV4ProfitShareRaw,
   formatUsdAtomicToNumber,
-  toAtomicUsd
+  toAtomicUsd,
+  toSignedAtomicUsd
 } from "./botVaultV4ProfitShare.js";
 import {
   buildBotVaultV3ClaimSettlementSourceKey,
@@ -1057,6 +1058,54 @@ async function readBotVaultProfitShareFeeRatePct(params: {
       functionName: "profitShareFeeRatePct"
     }) as bigint;
   }
+}
+
+function computeSettlementProfitShareRaw(params: {
+  contractVersion: "v3" | "v4";
+  settlementActionVersion: "v3" | "v4";
+  payoutProfitRaw: bigint;
+  feeRatePctRaw: bigint;
+  realizedClosedPnlUsd: number;
+  highWaterMarkBeforeUsd: number;
+}) {
+  const highWaterMarkBeforeRaw = toAtomicUsd(params.highWaterMarkBeforeUsd);
+  if (params.contractVersion !== "v4") {
+    return {
+      feeBaseRaw: params.payoutProfitRaw,
+      feeAmountRaw: (params.payoutProfitRaw * params.feeRatePctRaw) / 100n,
+      realizedClosedPnlRaw: 0n,
+      highWaterMarkBeforeRaw,
+      highWaterMarkAfterRaw: highWaterMarkBeforeRaw,
+      realizedClosedPnlUsd: 0,
+      highWaterMarkBeforeUsd: params.highWaterMarkBeforeUsd,
+      highWaterMarkAfterUsd: params.highWaterMarkBeforeUsd
+    };
+  }
+  if (params.settlementActionVersion === "v4") {
+    return computeV4ProfitShareRaw({
+      payoutProfitRaw: params.payoutProfitRaw,
+      feeRatePctRaw: params.feeRatePctRaw,
+      realizedClosedPnlUsd: params.realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd: params.highWaterMarkBeforeUsd
+    });
+  }
+
+  // Early V4 deployments expose V4 fee fields but only support the legacy
+  // three-argument settlement selectors. Those contracts validate the fee
+  // directly against the paid-out profit component.
+  const highWaterMarkAfterRaw = params.payoutProfitRaw > highWaterMarkBeforeRaw
+    ? params.payoutProfitRaw
+    : highWaterMarkBeforeRaw;
+  return {
+    feeBaseRaw: params.payoutProfitRaw,
+    feeAmountRaw: (params.payoutProfitRaw * params.feeRatePctRaw) / 100n,
+    realizedClosedPnlRaw: toSignedAtomicUsd(params.realizedClosedPnlUsd),
+    highWaterMarkBeforeRaw,
+    highWaterMarkAfterRaw,
+    realizedClosedPnlUsd: roundUsd(params.realizedClosedPnlUsd, 6),
+    highWaterMarkBeforeUsd: params.highWaterMarkBeforeUsd,
+    highWaterMarkAfterUsd: formatUsdAtomicToNumber(highWaterMarkAfterRaw)
+  };
 }
 
 const USD_VERIFICATION_EPSILON = 0.000001;
@@ -6975,23 +7024,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const highWaterMarkBeforeUsd = contractVersion === "v4"
       ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
       : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
-    const profitShare = contractVersion === "v4"
-      ? computeV4ProfitShareRaw({
-          payoutProfitRaw: requestedAmountRaw,
-          feeRatePctRaw,
-          realizedClosedPnlUsd,
-          highWaterMarkBeforeUsd
-        })
-      : {
-          feeBaseRaw: requestedAmountRaw,
-          feeAmountRaw: (requestedAmountRaw * feeRatePctRaw) / 100n,
-          realizedClosedPnlRaw: 0n,
-          highWaterMarkBeforeRaw: highWaterMarkProfitRaw,
-          highWaterMarkAfterRaw: highWaterMarkProfitRaw,
-          realizedClosedPnlUsd: 0,
-          highWaterMarkBeforeUsd,
-          highWaterMarkAfterUsd: highWaterMarkBeforeUsd
-        };
+    const profitShare = computeSettlementProfitShareRaw({
+      contractVersion,
+      settlementActionVersion,
+      payoutProfitRaw: requestedAmountRaw,
+      feeRatePctRaw,
+      realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd
+    });
     const feeAmountRaw = profitShare.feeAmountRaw;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({
@@ -10053,23 +10093,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const highWaterMarkBeforeUsd = contractVersion === "v4"
       ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
       : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
-    const profitShare = contractVersion === "v4"
-      ? computeV4ProfitShareRaw({
-          payoutProfitRaw: profitComponentRaw,
-          feeRatePctRaw,
-          realizedClosedPnlUsd,
-          highWaterMarkBeforeUsd
-        })
-      : {
-          feeBaseRaw: profitComponentRaw,
-          feeAmountRaw: (profitComponentRaw * feeRatePctRaw) / 100n,
-          realizedClosedPnlRaw: 0n,
-          highWaterMarkBeforeRaw: highWaterMarkProfitRaw,
-          highWaterMarkAfterRaw: highWaterMarkProfitRaw,
-          realizedClosedPnlUsd: 0,
-          highWaterMarkBeforeUsd,
-          highWaterMarkAfterUsd: highWaterMarkBeforeUsd
-        };
+    const profitShare = computeSettlementProfitShareRaw({
+      contractVersion,
+      settlementActionVersion,
+      payoutProfitRaw: profitComponentRaw,
+      feeRatePctRaw,
+      realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd
+    });
     const feeAmountRaw = profitShare.feeAmountRaw;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({
@@ -10436,23 +10467,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const highWaterMarkBeforeUsd = contractVersion === "v4"
       ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
       : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
-    const profitShare = contractVersion === "v4"
-      ? computeV4ProfitShareRaw({
-          payoutProfitRaw: profitComponentRaw,
-          feeRatePctRaw,
-          realizedClosedPnlUsd,
-          highWaterMarkBeforeUsd
-        })
-      : {
-          feeBaseRaw: profitComponentRaw,
-          feeAmountRaw: (profitComponentRaw * feeRatePctRaw) / 100n,
-          realizedClosedPnlRaw: 0n,
-          highWaterMarkBeforeRaw: highWaterMarkProfitRaw,
-          highWaterMarkAfterRaw: highWaterMarkProfitRaw,
-          realizedClosedPnlUsd: 0,
-          highWaterMarkBeforeUsd,
-          highWaterMarkAfterUsd: highWaterMarkBeforeUsd
-        };
+    const profitShare = computeSettlementProfitShareRaw({
+      contractVersion,
+      settlementActionVersion,
+      payoutProfitRaw: profitComponentRaw,
+      feeRatePctRaw,
+      realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd
+    });
     const feeAmountRaw = profitShare.feeAmountRaw;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({
