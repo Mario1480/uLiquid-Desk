@@ -252,3 +252,103 @@ The 2026-05-23 BotVault V4 start succeeded end-to-end:
 - Reconciliation autostarted execution.
 - GridBot and BotVault reached `running`.
 - Initial seed executed and two follow-up grid orders remained open.
+
+## Second Post-Optimization Live Start
+
+A second BotVault V4 start was monitored on 2026-05-23 around 15:38 UTC to
+check the startup behavior after the indexer/reconciliation optimizations.
+
+Runtime IDs:
+
+- Grid instance: `cmpiij5to007wsh1yjsavxf8e`
+- BotVault: `cmpiij5vz007ysh1y63w5cutv`
+- Bot: `f6710c1e-5beb-4891-83d4-39c93df03cde`
+- User: `cmn4a70gc0dyap62e5febk3z7`
+- BotVault address: `0x51bfbcaaC46e5D5BDEA2f354de62E9ed1BB35663`
+- Vault model: `bot_vault_v4`
+
+Observed timing:
+
+- BotVault row created: `2026-05-23 15:38:06.862 UTC`
+- Create action confirmed: `2026-05-23 15:38:13.347 UTC`
+- Funding action confirmed: `2026-05-23 15:38:45.593 UTC`
+- HyperCore funded first observed: around `2026-05-23 15:40:26 UTC`
+- Grid provisioning completed: `2026-05-23T15:41:18.086Z`
+- BotVault final `running` update: around `2026-05-23 15:41:29 UTC`
+
+Final observed state:
+
+- BotVault status: `ACTIVE`
+- execution status: `running`
+- funding status: `hyper_evm_confirmed_onchain`
+- HyperCore funding status: `funded`
+- principal allocated: `6 USDC`
+- Grid instance state: `running`
+- Grid provisioning phase: `execution_active`
+- execution last error: empty
+
+The full start completed without manual intervention. The startup time was
+roughly 3m20s from create to final `running`. This is stable, but still long
+for the user-facing flow.
+
+Operational observations:
+
+- Create confirmation was fast, roughly 6s.
+- Funding confirmation took roughly 39s from BotVault creation.
+- The slowest visible phase remained HyperCore/funding visibility plus final
+  readiness propagation into Grid/BotVault state.
+- One recoverable RPC warning appeared during funding recovery:
+  - event: `vault_onchain_reconciliation_v3_funding_tx_recovery_logs_failed`
+  - error: `query exceeds max block range 1000`
+  - issue class: `okay_to_swallow`
+  - recovery action: `retry`
+- Trading started after the BotVault reached `running`; later reconciliation
+  observed one order and one fill, then returned to `clean`.
+
+## Remaining Work From Live Starts
+
+Startup/runtime:
+
+- Chunk `eth_getLogs` funding-recovery reads so HyperEVM RPC block-range
+  limits do not cause retry warnings or avoidable delay.
+- Reduce the time from HyperCore funding visibility to Grid `execution_active`.
+  The system should propagate `funded`/`execution_ready` into Grid state as soon
+  as final readiness is proven, without waiting for a later reconciliation loop
+  when the indexer already has enough evidence.
+- Add clearer metrics for each startup phase:
+  - create submitted/confirmed
+  - fund submitted/confirmed
+  - HyperCore funded observed
+  - margin transfer verified
+  - HYPE reserve ready
+  - execution ready
+  - Grid running
+- Keep old pre-v4 BotVault rows out of live reconciliation and clean up any
+  remaining legacy rows that still produce operational noise.
+
+User interface:
+
+- The UI can lag behind the backend state. During the 15:38 UTC start the
+  backend/Grid was already `running` while the new BotVault was not yet visible
+  quickly enough in the user-facing view.
+- Review the frontend refresh path after BotVault creation:
+  - ensure the created BotVault/Grid IDs are inserted optimistically or fetched
+    immediately after the create/start response;
+  - shorten or explicitly trigger the relevant cache invalidation/refetch;
+  - make the UI subscribe to, or poll, the concrete BotVault/Grid instance while
+    startup is pending;
+  - show intermediate states such as `funding confirmed`, `hypercore funded`,
+    `execution ready`, and `running` instead of leaving the user waiting on a
+    stale list state.
+- Check whether frontend data fetching is blocked by broad dashboard queries,
+  slow Predictions/AI calls, or Tradingdesk refreshes. BotVault list/status
+  updates should be isolated from unrelated slow widgets.
+
+Admin/ops:
+
+- Add an admin-visible startup timeline for a BotVault so support can see which
+  phase is currently slow without reading container logs.
+- Surface retryable RPC warnings like `query exceeds max block range 1000` as
+  non-blocking diagnostics, not as user-facing failures.
+- Continue keeping AI/Salad optimization separate from the BotVault startup
+  path; AI issues should not delay BotVault status updates.

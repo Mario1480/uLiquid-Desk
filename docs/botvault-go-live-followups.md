@@ -1,6 +1,6 @@
 # BotVault Go-live Follow-ups
 
-Stand: 2026-05-06
+Stand: 2026-05-23
 
 Dieses Dokument haelt Punkte fest, die nach den aktuellen BotVault-, HyperCore-/HyperEVM- und Profitshare-Fixes nicht als harte Code-Blocker fuer einen kontrollierten Canary gelten, aber vor einem breiteren Go-live oder kurz danach abgearbeitet werden sollten.
 
@@ -20,6 +20,38 @@ Die zuletzt geprueften kritischen Geldfluss-Pfade sind stabilisiert:
 - Money-Flow-Pending-Zustaende erzeugen deduplizierte PlatformAlerts nach definierter Schwelle und werden in Admin Vault-Ops inklusive `reasonCode`, `recoveryHint`, `txHash`, `idempotencyKey` und erwarteter/tatsaechlicher Balance angezeigt.
 
 Empfehlung: kontrollierter Production-Canary mit kleinen Limits ist vertretbar. Breiter Go-live erst nach echten Lifecycle-Durchlaeufen und Monitoring-Verifikation.
+
+## Aktuelle Live-Follow-ups 2026-05-23
+
+Aus den Production-Starts am 2026-05-23 sind keine harten BotVault-v4-Blocker
+offen geblieben. Der Start laeuft automatisiert bis `running`, ist fuer User
+aber noch zu langsam und in der UI nicht transparent genug.
+
+Prioritaet fuer den naechsten Optimierungsdurchlauf:
+
+- UI-Statuslatenz nach BotVault-Erstellung reduzieren. Der Backend-Status kann
+  bereits `running` sein, waehrend der neue BotVault in der Webapp noch nicht
+  schnell genug sichtbar oder aktualisiert ist.
+- Frontend-Refetch/Cache-Invalidation nach Create/Start pruefen. Die konkrete
+  BotVault-/Grid-Instanz sollte sofort nach der Startantwort nachgeladen oder
+  optimistisch in die Liste eingetragen werden.
+- BotVault-Statuspolling auf die konkrete neue Instanz ausrichten, solange der
+  Start pending ist. Die UI sollte nicht nur auf breite Dashboard-Refreshes
+  warten.
+- Backend-Startzeit weiter optimieren. Der beobachtete zweite Start brauchte
+  rund 3m20s von Create bis final `running`; stabil, aber fuer User lang.
+- HyperCore/Funding-Sichtbarkeit und finale Readiness-Propagation beschleunigen,
+  damit Grid `execution_active` sofort nach belastbarer `execution_ready`
+  Evidenz gesetzt wird.
+- HyperEVM `eth_getLogs` Recovery-Reads chunked ausfuehren. Live wurde ein
+  retrybarer RPC-Fehler `query exceeds max block range 1000` beobachtet.
+- Startup-Timeline als API/Admin-Diagnose aufbauen:
+  Create, Funding, HyperCore funded, Margin verified, HYPE reserve ready,
+  Execution ready, Grid running.
+- Alte pre-v4 BotVaults konsequent aus aktiver Reconciliation und UI-/Admin-
+  Sichtbarkeit entfernen, sofern sie nicht mehr produktiv genutzt werden.
+- AI/Salad weiter separat behandeln. AI/Prediction-Probleme duerfen BotVault-
+  Start und BotVault-UI-Status nicht blockieren.
 
 ## Verifikation 2026-05-06
 
