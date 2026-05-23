@@ -47,6 +47,7 @@ function createAiHealthDeps(overrides: {
   provider?: string;
   model?: string;
   apiKey?: string | null;
+  baseUrl?: string;
 }) {
   const provider = overrides.provider ?? "vllm";
   const model = overrides.model ?? "Qwen/Qwen2.5-32B-Instruct";
@@ -59,7 +60,7 @@ function createAiHealthDeps(overrides: {
     GLOBAL_SETTING_API_KEYS_KEY: "admin.apiKeys",
     parseStoredApiKeysSettings: (value: unknown) => value,
     resolveEffectiveAiProvider: () => ({ provider, source: "db" }),
-    resolveEffectiveAiBaseUrl: () => ({ baseUrl: "http://salad-vllm-proxy:8089/v1", source: "db" }),
+    resolveEffectiveAiBaseUrl: () => ({ baseUrl: overrides.baseUrl ?? "http://salad-vllm-proxy:8089/v1", source: "db" }),
     resolveEffectiveAiModel: () => ({ model, source: model ? "db" : "default" }),
     resolveEffectiveAiApiKey: () => ({
       apiKey: overrides.apiKey === undefined ? "vllm-key" : overrides.apiKey,
@@ -93,6 +94,34 @@ function createAiHealthDeps(overrides: {
     })
   };
 }
+
+test("checkAi uses a usable completion budget for OpenAI GPT-5 health checks", async () => {
+  const previousFetch = globalThis.fetch;
+  let requestedBody: any = null;
+  globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    requestedBody = JSON.parse(String(init?.body ?? "{}"));
+    return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  try {
+    const service = createExternalHealthService(createAiHealthDeps({
+      provider: "openai",
+      model: "gpt-5-nano",
+      apiKey: "openai-key",
+      baseUrl: "https://api.openai.com/v1"
+    }));
+    const result = await service.checkAi();
+    assert.equal(result.status, "ok");
+    assert.equal(requestedBody.model, "gpt-5-nano");
+    assert.equal(requestedBody.max_completion_tokens, 128);
+    assert.equal("max_tokens" in requestedBody, false);
+    assert.equal("temperature" in requestedBody, false);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
 
 test("checkAi reports missing_model for vllm without configured model", async () => {
   const service = createExternalHealthService(createAiHealthDeps({ model: "" }));

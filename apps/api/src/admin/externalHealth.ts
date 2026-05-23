@@ -145,6 +145,16 @@ function isSelfHostedProvider(provider: string | null | undefined): boolean {
   return provider === "ollama" || provider === "vllm";
 }
 
+function resolveAiHealthMaxCompletionTokens(params: {
+  provider: string;
+  model: string;
+}): number {
+  if (params.provider === "openai" && params.model.startsWith("gpt-5")) {
+    return parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_GPT5_MAX_COMPLETION_TOKENS, 128);
+  }
+  return 1;
+}
+
 export function buildOllamaProxyHealthUrl(baseUrl: string): string | null {
   try {
     const parsed = new URL(baseUrl);
@@ -290,10 +300,14 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
       const endpoint = `${effectiveBaseUrl.baseUrl.replace(/\/$/, "")}/chat/completions`;
       const isOpenAiGpt5Model =
         effectiveProvider.provider === "openai" && effectiveModel.model.startsWith("gpt-5");
+      const maxCompletionTokens = resolveAiHealthMaxCompletionTokens({
+        provider: effectiveProvider.provider,
+        model: effectiveModel.model
+      });
       const healthPayload: Record<string, unknown> = {
         model: effectiveModel.model,
-        messages: [{ role: "user", content: "ping" }],
-        ...(isOpenAiGpt5Model ? { max_completion_tokens: 1 } : { temperature: 0, max_tokens: 1 })
+        messages: [{ role: "user", content: "Reply with exactly: ok" }],
+        ...(isOpenAiGpt5Model ? { max_completion_tokens: maxCompletionTokens } : { temperature: 0, max_tokens: maxCompletionTokens })
       };
       const headers = {
         "Content-Type": "application/json",
