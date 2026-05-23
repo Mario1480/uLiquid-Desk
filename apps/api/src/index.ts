@@ -565,7 +565,8 @@ const botVaultRiskJob = createBotVaultRiskJob(db, vaultService);
 const botVaultTradingReconciliationJob = createBotVaultTradingReconciliationJob(db, tradingReconciliationService);
 const vaultOnchainIndexerJob = createVaultOnchainIndexerJob(db, {
   onchainActionService,
-  executionLifecycleService
+  executionLifecycleService,
+  botVaultRuntimeService
 });
 const vaultOnchainReconciliationJob = createVaultOnchainReconciliationJob(db, {
   executionLifecycleService,

@@ -40,8 +40,10 @@ import {
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
 import {
   buildBotVaultFundingLifecycleTransitionPatch,
-  createBotVaultFundingLifecycleMetadata
+  createBotVaultFundingLifecycleMetadata,
+  getBotVaultFundingLifecycleStage
 } from "../vaults/botVaultRuntime.lifecycle.js";
+import type { BotVaultRuntimeService } from "../vaults/botVaultRuntime.service.js";
 import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 import {
   DEFAULT_SETTLEMENT_FEE_RATE_PCT
@@ -88,6 +90,7 @@ const ACTION_POLL_LIMIT = Math.max(
   1,
   Number(process.env.VAULT_ONCHAIN_INDEXER_ACTION_POLL_LIMIT ?? "100")
 );
+const EPSILON = 0.000001;
 
 function isGridExecutionActive(row: any): boolean {
   const state = String(row?.state ?? "").trim().toLowerCase();
@@ -188,6 +191,29 @@ export function requiresDeferredReserve(botVault: {
   const principalAllocated = Number(botVault.principalAllocated ?? 0);
   const allocatedUsd = Number(botVault.allocatedUsd ?? 0);
   return principalAllocated <= 0 && allocatedUsd <= 0;
+}
+
+function readPositiveNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function readGridMarginTransferAmountUsd(row: unknown): number {
+  const gridInstance = toRecord(toRecord(row).gridInstance);
+  const investUsd = readPositiveNumber(gridInstance.investUsd, 0);
+  const extraMarginUsd = readPositiveNumber(gridInstance.extraMarginUsd, 0);
+  const amountUsd = investUsd + extraMarginUsd;
+  return Number.isFinite(amountUsd) && amountUsd > EPSILON ? amountUsd : 0;
+}
+
+function normalizeExecutionStatus(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isBotVaultV4ReadyForExecution(row: unknown): boolean {
+  const normalizedRow = toRecord(row);
+  if (resolveBotVaultRuntimeModel(normalizedRow) !== BOT_VAULT_RUNTIME_MODEL_V4) return false;
+  return getBotVaultFundingLifecycleStage(normalizedRow) === "execution_ready";
 }
 
 async function markGridProvisioningPendingReserve(params: {
@@ -529,6 +555,131 @@ async function promoteBotVaultExecutionActive(params: {
       }
     }).catch(() => undefined);
   }
+}
+
+async function accelerateBotVaultV4PostFunding(params: {
+  db: any;
+  botVaultRuntimeService: Pick<BotVaultRuntimeService, "finalizeBotVaultMarginAdd" | "finalizeBotVaultV4MarginAdd"> | null;
+  executionLifecycleService: Pick<ExecutionLifecycleService, "startExecution"> | null;
+  botVaultId: string;
+  txHash: string;
+  runtimeModel: unknown;
+}) {
+  if (resolveBotVaultRuntimeModel(params.runtimeModel) !== BOT_VAULT_RUNTIME_MODEL_V4) return;
+  const finalizeMarginAdd =
+    params.botVaultRuntimeService?.finalizeBotVaultV4MarginAdd
+    ?? params.botVaultRuntimeService?.finalizeBotVaultMarginAdd;
+  if (typeof finalizeMarginAdd !== "function") return;
+
+  const row = await params.db.botVault.findUnique({
+    where: { id: params.botVaultId },
+    select: {
+      id: true,
+      userId: true,
+      gridInstanceId: true,
+      vaultModel: true,
+      status: true,
+      executionStatus: true,
+      fundingStatus: true,
+      hypercoreFundingStatus: true,
+      executionMetadata: true,
+      gridInstance: {
+        select: {
+          id: true,
+          investUsd: true,
+          extraMarginUsd: true
+        }
+      }
+    }
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_indexer_v4_post_funding_row_read_failed", {
+      botVaultId: params.botVaultId,
+      txHash: params.txHash,
+      error: String(error)
+    });
+    return null;
+  });
+  if (!row) return;
+
+  const lifecycleStage = getBotVaultFundingLifecycleStage(row);
+  const shouldFinalizeInitialMargin =
+    String(row.status ?? "").trim().toUpperCase() === "ACTIVE"
+    && ["hypercore_funded", "perp_margin_transferred", "hype_reserve_ready"].includes(lifecycleStage)
+    && ["", "created", "funded"].includes(normalizeExecutionStatus(row.executionStatus));
+  if (shouldFinalizeInitialMargin) {
+    const amountUsd = readGridMarginTransferAmountUsd(row);
+    if (amountUsd > EPSILON) {
+      await finalizeMarginAdd.call(params.botVaultRuntimeService, {
+        userId: String(row.userId),
+        botVaultId: String(row.id),
+        amountUsd
+      }).catch((error: unknown) => {
+        logger.warn("vault_onchain_indexer_v4_initial_margin_finalize_failed", {
+          botVaultId: params.botVaultId,
+          txHash: params.txHash,
+          amountUsd,
+          lifecycleStage,
+          error: String(error)
+        });
+      });
+    }
+  }
+
+  if (!params.executionLifecycleService) return;
+  const latest = await params.db.botVault.findUnique({
+    where: { id: params.botVaultId },
+    select: {
+      id: true,
+      userId: true,
+      gridInstanceId: true,
+      vaultModel: true,
+      status: true,
+      executionStatus: true,
+      fundingStatus: true,
+      hypercoreFundingStatus: true,
+      executionMetadata: true
+    }
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_indexer_v4_post_finalize_row_read_failed", {
+      botVaultId: params.botVaultId,
+      txHash: params.txHash,
+      error: String(error)
+    });
+    return null;
+  });
+  if (!latest) return;
+  if (
+    String(latest.status ?? "").trim().toUpperCase() !== "ACTIVE"
+    || !isBotVaultV4ReadyForExecution(latest)
+    || !["", "created", "funded"].includes(normalizeExecutionStatus(latest.executionStatus))
+  ) {
+    return;
+  }
+
+  await params.db.$transaction(async (tx: any) => {
+    await promoteBotVaultExecutionActive({
+      tx,
+      executionLifecycleService: params.executionLifecycleService,
+      botVault: {
+        id: String(latest.id),
+        userId: String(latest.userId),
+        gridInstanceId: latest.gridInstanceId ? String(latest.gridInstanceId) : null,
+        status: String(latest.status ?? "ACTIVE"),
+        executionStatus: String(latest.executionStatus ?? "")
+      },
+      txHash: params.txHash,
+      reason: "bot_vault_onchain_indexer_autostart"
+    });
+  }, {
+    maxWait: 5_000,
+    timeout: INDEXER_EVENT_TX_TIMEOUT_MS
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_indexer_v4_autostart_failed", {
+      botVaultId: params.botVaultId,
+      txHash: params.txHash,
+      error: String(error)
+    });
+  });
 }
 
 export function mergeBotVaultExecutionMetadata(
@@ -916,11 +1067,13 @@ export function createVaultOnchainIndexerJob(
   deps?: {
     onchainActionService?: OnchainActionService;
     executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
+    botVaultRuntimeService?: Pick<BotVaultRuntimeService, "finalizeBotVaultMarginAdd" | "finalizeBotVaultV4MarginAdd"> | null;
     autoAdvanceBotVaultV3HypercoreFunding?: AutoAdvanceBotVaultV3HypercoreFundingFn | null;
   }
 ) {
   const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
   const executionLifecycleService = deps?.executionLifecycleService ?? null;
+  const botVaultRuntimeService = deps?.botVaultRuntimeService ?? null;
   const autoAdvanceBotVaultV3HypercoreFunding =
     deps?.autoAdvanceBotVaultV3HypercoreFunding ?? createDefaultAutoAdvanceBotVaultV3HypercoreFunding();
 
@@ -1654,6 +1807,16 @@ export function createVaultOnchainIndexerJob(
                       })
                     }
                   }).catch(() => undefined);
+                  if (advancement?.hypercoreFunded) {
+                    await accelerateBotVaultV4PostFunding({
+                      db,
+                      botVaultRuntimeService,
+                      executionLifecycleService,
+                      botVaultId,
+                      txHash,
+                      runtimeModel
+                    });
+                  }
                 });
               }
             }

@@ -3,7 +3,8 @@ import test from "node:test";
 import {
   createVaultOnchainReconciliationJob,
   deriveV3ReconciledLifecycleState,
-  hasPendingBotVaultRuntimeReconciliation
+  hasPendingBotVaultRuntimeReconciliation,
+  shouldIncludeLegacyBotVaultsForReconciliation
 } from "./vaultOnchainReconciliationJob.js";
 import { GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY } from "../vaults/executionMode.js";
 
@@ -95,6 +96,19 @@ test("hasPendingBotVaultRuntimeReconciliation finds pending deposit and withdraw
       }
     }
   }), false);
+});
+
+test("shouldIncludeLegacyBotVaultsForReconciliation excludes legacy rows by default in production", () => {
+  assert.equal(shouldIncludeLegacyBotVaultsForReconciliation({
+    NODE_ENV: "production"
+  } as NodeJS.ProcessEnv), false);
+  assert.equal(shouldIncludeLegacyBotVaultsForReconciliation({
+    NODE_ENV: "production",
+    VAULT_ONCHAIN_RECONCILIATION_INCLUDE_LEGACY_BOT_VAULTS: "1"
+  } as NodeJS.ProcessEnv), true);
+  assert.equal(shouldIncludeLegacyBotVaultsForReconciliation({
+    NODE_ENV: "test"
+  } as NodeJS.ProcessEnv), true);
 });
 
 test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async () => {
@@ -1052,6 +1066,154 @@ test("vaultOnchainReconciliationJob resumes pending runtime reconciliation after
       persist: true,
       throwOnPersistFailure: false
     });
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("vaultOnchainReconciliationJob auto-starts v4 in the same cycle after margin finalization", async () => {
+  const restoreEnv = installOnchainEnv();
+  const finalized: any[] = [];
+  const started: any[] = [];
+  const gridUpdates: any[] = [];
+  let currentRow: any = {
+    id: "bv_v4_finalize",
+    userId: "user_1",
+    vaultModel: "bot_vault_v4",
+    vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    gridInstanceId: "grid_1",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "hypercore_funded"
+      }
+    },
+    principalAllocated: 5,
+    principalReturned: 0,
+    realizedPnlNet: 0,
+    feePaidTotal: 0,
+    highWaterMark: 0,
+    status: "ACTIVE",
+    executionStatus: "created",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    gridInstance: {
+      id: "grid_1",
+      investUsd: 1.8,
+      extraMarginUsd: 3.2
+    }
+  };
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [currentRow];
+        },
+        async findUnique() {
+          return currentRow;
+        },
+        async update(args: any) {
+          currentRow = {
+            ...currentRow,
+            ...args.data,
+            executionMetadata: args.data?.executionMetadata ?? currentRow.executionMetadata
+          };
+          return currentRow;
+        }
+      },
+      gridBotInstance: {
+        async findUnique() {
+          return {
+            id: "grid_1",
+            botId: "bot_1",
+            stateJson: {
+              provisioning: {
+                phase: "submitted_waiting_hypercore_funding_indexer"
+              }
+            }
+          };
+        },
+        async update(args: any) {
+          gridUpdates.push(args);
+          return args;
+        }
+      },
+      bot: {
+        async update() {
+          return null;
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return null;
+        },
+        async updateMany() {
+          return { count: 0 };
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      executionLifecycleService: {
+        async startExecution(input: any) {
+          started.push(input);
+          return { executionStatus: "running" };
+        }
+      } as any,
+      botVaultRuntimeService: {
+        async finalizeBotVaultV4MarginAdd(input: any) {
+          finalized.push(input);
+          currentRow = {
+            ...currentRow,
+            executionMetadata: {
+              ...currentRow.executionMetadata,
+              fundingLifecycle: {
+                stage: "execution_ready"
+              }
+            },
+            fundingStatus: "hyper_evm_confirmed_onchain",
+            hypercoreFundingStatus: "funded",
+            executionStatus: "created"
+          };
+          return null;
+        }
+      },
+      readBotVaultV3State: async () => ({
+        principalAllocated: 5,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 2
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const { result } = await captureJsonLogs(() => job.runCycle("manual"));
+
+    assert.equal(result.enabled, true);
+    assert.equal(finalized.length, 1);
+    assert.equal(finalized[0]?.botVaultId, "bv_v4_finalize");
+    assert.equal(finalized[0]?.amountUsd, 5);
+    assert.equal(started.length, 1);
+    assert.equal(started[0]?.botVaultId, "bv_v4_finalize");
+    assert.equal(started[0]?.reason, "bot_vault_onchain_reconciliation_autostart");
+    assert.equal(gridUpdates.length, 1);
+    assert.equal(gridUpdates[0]?.data?.stateJson?.provisioning?.phase, "execution_active");
   } finally {
     restoreEnv();
   }

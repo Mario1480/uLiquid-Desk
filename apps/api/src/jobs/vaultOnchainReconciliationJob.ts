@@ -57,6 +57,26 @@ const MONEY_FLOW_ALERT_TYPES = [
   "botvault_reconcile_job_degraded"
 ] as const;
 
+export function shouldIncludeLegacyBotVaultsForReconciliation(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = String(env.VAULT_ONCHAIN_RECONCILIATION_INCLUDE_LEGACY_BOT_VAULTS ?? "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return String(env.NODE_ENV ?? "").trim().toLowerCase() !== "production";
+}
+
+function buildBotVaultReconciliationWhere(): Record<string, unknown> {
+  const where: Record<string, unknown> = { vaultAddress: { not: null } };
+  if (shouldIncludeLegacyBotVaultsForReconciliation()) return where;
+  return {
+    ...where,
+    OR: [
+      { vaultModel: BOT_VAULT_RUNTIME_MODEL_V4 },
+      { executionMetadata: { path: ["runtimeModel"], equals: BOT_VAULT_RUNTIME_MODEL_V4 } },
+      { executionMetadata: { path: ["onchainContractVersion"], equals: "v4" } }
+    ]
+  };
+}
+
 function isGridExecutionActive(row: any): boolean {
   const state = String(row?.state ?? "").trim().toLowerCase();
   const stateJson = row?.stateJson && typeof row.stateJson === "object" && !Array.isArray(row.stateJson)
@@ -1334,8 +1354,8 @@ export function createVaultOnchainReconciliationJob(
       });
 
       const bots = await db.botVault.findMany({
-        where: { vaultAddress: { not: null } },
-	        select: {
+        where: buildBotVaultReconciliationWhere(),
+		        select: {
 	          id: true,
 	          botId: true,
 	          userId: true,
@@ -2016,6 +2036,7 @@ export function createVaultOnchainReconciliationJob(
 	          await resolveMoneyFlowPlatformAlerts({ db, row });
 	        }
 
+        let postRuntimeReconcileRow: any | null = null;
         if (isV3 && botVaultRuntimeService && hasPendingBotVaultRuntimeReconciliation(row)) {
           const reconcileById =
             botVaultRuntimeService.reconcileBotVaultById
@@ -2053,11 +2074,15 @@ export function createVaultOnchainReconciliationJob(
           if (shouldFinalizeInitialMargin) {
             const amountUsd = readGridMarginTransferAmountUsd(row);
             if (amountUsd > EPSILON) {
-              await finalizeMarginAdd.call(botVaultRuntimeService, {
-                userId: String(row.userId),
-                botVaultId: String(row.id),
-                amountUsd
-              }).catch((error: unknown) => {
+              let finalizedInitialMargin = false;
+              try {
+                await finalizeMarginAdd.call(botVaultRuntimeService, {
+                  userId: String(row.userId),
+                  botVaultId: String(row.id),
+                  amountUsd
+                });
+                finalizedInitialMargin = true;
+              } catch (error) {
                 logger.warn("vault_onchain_reconciliation_v4_initial_margin_finalize_failed", jobIssueMetadata({
                   issueClass: "recoverable_track",
                   mismatchCategory: "funding_verification_missing",
@@ -2069,12 +2094,45 @@ export function createVaultOnchainReconciliationJob(
                   lifecycleStage,
                   error
                 }));
-              });
+              }
+              if (finalizedInitialMargin && typeof db.botVault?.findUnique === "function") {
+                postRuntimeReconcileRow = await db.botVault.findUnique({
+                  where: { id: String(row.id) },
+                  select: {
+                    id: true,
+                    userId: true,
+                    vaultModel: true,
+                    gridInstanceId: true,
+                    status: true,
+                    executionStatus: true,
+                    fundingStatus: true,
+                    hypercoreFundingStatus: true,
+                    executionMetadata: true
+                  }
+                }).catch((error: unknown) => {
+                  logger.warn("vault_onchain_reconciliation_v4_post_finalize_row_read_failed", jobIssueMetadata({
+                    issueClass: "recoverable_track",
+                    mismatchCategory: "observed_state_incomplete",
+                    recoveryAction: "retry",
+                    reason,
+                    botVaultId: row.id,
+                    vaultAddress: address,
+                    error
+                  }));
+                  return null;
+                });
+              }
             }
           }
         }
 
-        const effectiveDbStatus = v3FundingConfirmed ? chainStatus : dbStatus;
+        const autostartRow = postRuntimeReconcileRow ?? row;
+        const autostartDbStatus = normalizeBotVaultStatus(autostartRow.status);
+        const effectiveDbStatus = v3FundingConfirmed
+          ? chainStatus
+          : autostartDbStatus === "STOPPED"
+            ? "PAUSED"
+            : autostartDbStatus;
         const effectiveV3Stage = v3FundingConfirmed
           ? (() => {
               const currentStage = getBotVaultFundingLifecycleStage(row);
@@ -2093,7 +2151,7 @@ export function createVaultOnchainReconciliationJob(
               reason: "onchain_funding_confirmed",
               detail: chainStatus
             }).fundingStatus ?? row.fundingStatus ?? "")
-          : String(row.fundingStatus ?? "");
+          : String(autostartRow.fundingStatus ?? "");
         const effectiveHypercoreFundingStatus = v3FundingConfirmed
           ? String(buildBotVaultFundingLifecycleTransitionPatch({
               row,
@@ -2102,7 +2160,7 @@ export function createVaultOnchainReconciliationJob(
               reason: "onchain_funding_confirmed",
               detail: chainStatus
             }).hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "")
-          : String(row.hypercoreFundingStatus ?? "");
+          : String(autostartRow.hypercoreFundingStatus ?? "");
         const effectiveExecutionStatus = v3FundingConfirmed
           ? normalizeExecutionStatus(buildBotVaultFundingLifecycleTransitionPatch({
               row,
@@ -2111,23 +2169,23 @@ export function createVaultOnchainReconciliationJob(
               reason: "onchain_funding_confirmed",
               detail: chainStatus
             }).executionStatus ?? row.executionStatus)
-          : normalizeExecutionStatus(row.executionStatus);
+          : normalizeExecutionStatus(autostartRow.executionStatus);
         const shouldAutoStart = executionLifecycleService
           && effectiveDbStatus === "ACTIVE"
           && chainStatus === "ACTIVE"
           && hasFundingReadyForExecution({
-            vaultModel: row.vaultModel,
+            vaultModel: autostartRow.vaultModel,
             fundingStatus: effectiveFundingStatus,
             hypercoreFundingStatus: effectiveHypercoreFundingStatus,
-            executionMetadata: row.executionMetadata
+            executionMetadata: autostartRow.executionMetadata
           })
           && ["", "created", "funded"].includes(effectiveExecutionStatus);
         if (shouldAutoStart) {
           try {
             await executionLifecycleService.startExecution({
-              userId: String(row.userId),
-              botVaultId: String(row.id),
-              sourceKey: `bot_vault:${row.id}:onchain_reconciliation_autostart`,
+              userId: String(autostartRow.userId),
+              botVaultId: String(autostartRow.id),
+              sourceKey: `bot_vault:${autostartRow.id}:onchain_reconciliation_autostart`,
               reason: "bot_vault_onchain_reconciliation_autostart",
               metadata: {
                 sourceType: "onchain_reconciliation_autostart"
@@ -2136,8 +2194,8 @@ export function createVaultOnchainReconciliationJob(
             if (typeof db.gridBotInstance?.findUnique === "function" && typeof db.gridBotInstance?.update === "function") {
               await markGridProvisioningExecutionActive({
                 db,
-                botVaultId: String(row.id),
-                gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+                botVaultId: String(autostartRow.id),
+                gridInstanceId: autostartRow.gridInstanceId ? String(autostartRow.gridInstanceId) : null,
                 reason: v3FundingConfirmed
                   ? `${runtimeModel}_funding_reconciled_onchain`
                   : "bot_vault_onchain_reconciliation_autostart"
