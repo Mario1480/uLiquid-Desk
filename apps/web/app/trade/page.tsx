@@ -194,6 +194,17 @@ function errMsg(e: unknown, apiBase = getApiBaseUrl()): string {
   if (e instanceof ApiError) {
     const text = String(e.message ?? "");
     const code = String(e.payload?.code ?? "");
+    if (code === "EX_RATE_LIMIT") {
+      const retryAfterAt =
+        typeof e.payload?.retryAfterAt === "string" && e.payload.retryAfterAt.trim()
+          ? e.payload.retryAfterAt.trim()
+          : null;
+      const retryAt = retryAfterAt ? new Date(retryAfterAt) : null;
+      const suffix = retryAt && Number.isFinite(retryAt.getTime())
+        ? ` Retry ab ${retryAt.toLocaleTimeString()}.`
+        : "";
+      return `Exchange-Rate-Limit aktiv.${suffix}`;
+    }
     if (text.toLowerCase().includes("mexc capability") && text.toLowerCase().includes("disabled")) {
       return "MEXC ist aktuell im Read-only Stage-Modus (Order-Writes deaktiviert).";
     }
@@ -243,6 +254,40 @@ function errMsg(e: unknown, apiBase = getApiBaseUrl()): string {
   }
   if (e && typeof e === "object" && "message" in e) return String((e as any).message);
   return String(e);
+}
+
+function retryAfterMsFromError(error: unknown): number | null {
+  if (!(error instanceof ApiError)) return null;
+  if (error.status !== 429 && String(error.payload?.code ?? "") !== "EX_RATE_LIMIT") return null;
+
+  const retryAfterMs = Number(error.payload?.retryAfterMs);
+  if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+    return retryAfterMs;
+  }
+
+  const retryAfterAt = typeof error.payload?.retryAfterAt === "string"
+    ? Date.parse(error.payload.retryAfterAt)
+    : NaN;
+  if (Number.isFinite(retryAfterAt)) {
+    return Math.max(0, retryAfterAt - Date.now());
+  }
+
+  return 60_000;
+}
+
+function maxRetryAfterMs(errors: unknown[]): number | null {
+  let maxMs: number | null = null;
+  for (const error of errors) {
+    const retryAfterMs = retryAfterMsFromError(error);
+    if (retryAfterMs === null) continue;
+    maxMs = Math.max(maxMs ?? 0, retryAfterMs);
+  }
+  return maxMs;
+}
+
+function isBingxAccount(account: ExchangeAccountItem | null): boolean {
+  const exchange = String(account?.marketDataExchange ?? account?.exchange ?? "").trim().toLowerCase();
+  return exchange === "bingx";
 }
 
 function shortAddress(value: string | null | undefined): string {
@@ -552,12 +597,15 @@ function TradePageContent() {
   const marketWsRef = useRef<WebSocket | null>(null);
   const userWsRef = useRef<WebSocket | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
+  const liveRefreshInFlightRef = useRef<Promise<{ partialFailures: string[] }> | null>(null);
+  const liveRefreshBackoffUntilRef = useRef(0);
   const liveTableReadyRef = useRef(createLiveTableReadiness());
 
   const selectedAccount = useMemo(
     () => accounts.find((row) => row.id === selectedAccountId) ?? null,
     [accounts, selectedAccountId]
   );
+  const selectedAccountIsBingx = isBingxAccount(selectedAccount);
   const spotModeSupportedForAccount = useMemo(() => {
     if (!selectedAccount) return false;
     if (typeof selectedAccount.supportsSpotManual === "boolean") {
@@ -969,6 +1017,15 @@ function TradePageContent() {
     }
   }
 
+  function applyLiveRefreshBackoff(errors: unknown[]): boolean {
+    const retryAfterMs = maxRetryAfterMs(errors);
+    if (retryAfterMs === null) return false;
+
+    const backoffUntil = Date.now() + retryAfterMs + 1_000;
+    liveRefreshBackoffUntilRef.current = Math.max(liveRefreshBackoffUntilRef.current, backoffUntil);
+    return true;
+  }
+
   function markOpenOrdersStale() {
     liveTableReadyRef.current.openOrders = false;
   }
@@ -1087,6 +1144,12 @@ function TradePageContent() {
 
       const partialFailures: string[] = [];
       const blockingFailures: string[] = [];
+      const refreshErrors = [
+        summaryResult.status === "rejected" ? summaryResult.reason : null,
+        positionsResult.status === "rejected" ? positionsResult.reason : null,
+        ordersResult.status === "rejected" ? ordersResult.reason : null
+      ].filter((error): error is unknown => error !== null);
+      applyLiveRefreshBackoff(refreshErrors);
 
       if (summaryResult.status === "fulfilled") {
         const degraded = summaryResult.value.degraded === true;
@@ -1148,61 +1211,86 @@ function TradePageContent() {
     accountId: string,
     symbol: string
   ): Promise<{ partialFailures: string[] }> {
-    const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
-    const [positionsResult, ordersResult, summaryResult] = await Promise.allSettled([
-      apiGet<{ items: PositionItem[]; degraded?: boolean }>(
-        `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}${marketTypeParam}`
-      ),
-      apiGet<{ items: OpenOrderItem[] }>(
-        `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
-      ),
-      apiGet<AccountSummary>(
-        `/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
-      )
-    ]);
-    const partialFailures: string[] = [];
-    const blockingFailures: string[] = [];
+    if (liveRefreshBackoffUntilRef.current > Date.now()) {
+      return { partialFailures: [] };
+    }
 
-    if (positionsResult.status === "fulfilled") {
-      const degraded = positionsResult.value.degraded === true;
-      const items = normalizeDeskPositions(positionsResult.value.items ?? []);
-      setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
-      if (!degraded) {
-        liveTableReadyRef.current.positions = true;
+    if (liveRefreshInFlightRef.current) {
+      return liveRefreshInFlightRef.current;
+    }
+
+    const task = (async () => {
+      const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
+      const [positionsResult, ordersResult, summaryResult] = await Promise.allSettled([
+        apiGet<{ items: PositionItem[]; degraded?: boolean }>(
+          `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}${marketTypeParam}`
+        ),
+        apiGet<{ items: OpenOrderItem[] }>(
+          `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
+        ),
+        apiGet<AccountSummary>(
+          `/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
+        )
+      ]);
+      const partialFailures: string[] = [];
+      const blockingFailures: string[] = [];
+      const refreshErrors = [
+        positionsResult.status === "rejected" ? positionsResult.reason : null,
+        ordersResult.status === "rejected" ? ordersResult.reason : null,
+        summaryResult.status === "rejected" ? summaryResult.reason : null
+      ].filter((error): error is unknown => error !== null);
+      applyLiveRefreshBackoff(refreshErrors);
+
+      if (positionsResult.status === "fulfilled") {
+        const degraded = positionsResult.value.degraded === true;
+        const items = normalizeDeskPositions(positionsResult.value.items ?? []);
+        setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
+        if (!degraded) {
+          liveTableReadyRef.current.positions = true;
+        } else if (!liveTableReadyRef.current.positions) {
+          partialFailures.push("positions (degraded)");
+        }
       } else if (!liveTableReadyRef.current.positions) {
-        partialFailures.push("positions (degraded)");
+        partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
       }
-    } else if (!liveTableReadyRef.current.positions) {
-      partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
-    }
-    if (ordersResult.status === "fulfilled") {
-      setOpenOrders(normalizeDeskOpenOrders(ordersResult.value.items ?? [], symbol));
-      liveTableReadyRef.current.openOrders = true;
-    } else {
-      const failure = `open orders (${errMsg(ordersResult.reason)})`;
-      partialFailures.push(failure);
-      if (isLiveTableFailureBlocking("openOrders", liveTableReadyRef.current)) {
-        blockingFailures.push(failure);
+      if (ordersResult.status === "fulfilled") {
+        setOpenOrders(normalizeDeskOpenOrders(ordersResult.value.items ?? [], symbol));
+        liveTableReadyRef.current.openOrders = true;
+      } else {
+        const failure = `open orders (${errMsg(ordersResult.reason)})`;
+        partialFailures.push(failure);
+        if (isLiveTableFailureBlocking("openOrders", liveTableReadyRef.current)) {
+          blockingFailures.push(failure);
+        }
       }
-    }
-    if (summaryResult.status === "fulfilled") {
-      const degraded = summaryResult.value.degraded === true;
-      setSummary((prev) =>
-        mergeAccountSummary(prev, summaryResult.value, {
-          preserveNullNumbers: degraded,
-          preserveSpotBalances: true
-        })
-      );
-      if (!degraded) {
-        liveTableReadyRef.current.summary = true;
+      if (summaryResult.status === "fulfilled") {
+        const degraded = summaryResult.value.degraded === true;
+        setSummary((prev) =>
+          mergeAccountSummary(prev, summaryResult.value, {
+            preserveNullNumbers: degraded,
+            preserveSpotBalances: true
+          })
+        );
+        if (!degraded) {
+          liveTableReadyRef.current.summary = true;
+        } else if (!liveTableReadyRef.current.summary) {
+          partialFailures.push("account summary (degraded)");
+        }
       } else if (!liveTableReadyRef.current.summary) {
-        partialFailures.push("account summary (degraded)");
+        partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
       }
-    } else if (!liveTableReadyRef.current.summary) {
-      partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
+      applyLiveRefreshFailures(partialFailures, blockingFailures);
+      return { partialFailures };
+    })();
+
+    liveRefreshInFlightRef.current = task;
+    try {
+      return await task;
+    } finally {
+      if (liveRefreshInFlightRef.current === task) {
+        liveRefreshInFlightRef.current = null;
+      }
     }
-    applyLiveRefreshFailures(partialFailures, blockingFailures);
-    return { partialFailures };
   }
 
   useEffect(() => {
@@ -1438,7 +1526,9 @@ function TradePageContent() {
       refreshTimerRef.current = null;
     }
 
-    const liveRefreshMs = marketType === "spot" ? 20_000 : 8_000;
+    const liveRefreshMs = selectedAccountIsBingx
+      ? (marketType === "spot" ? 45_000 : 30_000)
+      : (marketType === "spot" ? 20_000 : 8_000);
     refreshTimerRef.current = window.setInterval(() => {
       void reloadLiveTables(selectedAccountId, selectedSymbol).catch(() => {
         // background refresh should not interrupt user
@@ -1451,7 +1541,7 @@ function TradePageContent() {
         refreshTimerRef.current = null;
       }
     };
-  }, [selectedAccountId, selectedSymbol, marketType]);
+  }, [selectedAccountId, selectedSymbol, marketType, selectedAccountIsBingx]);
 
   useEffect(() => {
     setSelectedPositionKey(null);
@@ -1460,6 +1550,8 @@ function TradePageContent() {
     setActionSuccess(null);
     setSpotOrderSide("buy");
     liveTableReadyRef.current = createLiveTableReadiness();
+    liveRefreshBackoffUntilRef.current = 0;
+    liveRefreshInFlightRef.current = null;
   }, [selectedAccountId, marketType]);
 
   async function applyLeverage() {
