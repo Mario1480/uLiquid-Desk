@@ -209,6 +209,22 @@ function createInMemoryDb() {
       }
     },
     botFundingEvent: {
+      async createMany(args: any) {
+        const rows = Array.isArray(args?.data) ? args.data : [args?.data].filter(Boolean);
+        let count = 0;
+        for (const data of rows) {
+          if (botFundingEvents.some((row) => row.sourceKey === data.sourceKey)) {
+            if (args?.skipDuplicates) continue;
+            const error: any = new Error("unique");
+            error.code = "P2002";
+            throw error;
+          }
+          fundingSeq += 1;
+          botFundingEvents.push({ id: `fund_${fundingSeq}`, ...data });
+          count += 1;
+        }
+        return { count };
+      },
       async create(args: any) {
         const data = args?.data ?? {};
         if (botFundingEvents.some((row) => row.sourceKey === data.sourceKey)) {
@@ -888,6 +904,60 @@ test("reconcileBotVault does not use normal Hyperliquid account reconciliation f
   });
   assert.equal(ctx.state.botVaults[0]?.availableUsd, 6);
   assert.equal(ctx.state.botVaults[0]?.hypercoreFundingStatus, "pending");
+});
+
+test("reconcileBotVault uses normal Hyperliquid account reconciliation for bot_vault_v4", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.vaultModel = "bot_vault_v4";
+  ctx.state.botVaults[0]!.availableUsd = 6;
+  ctx.state.botVaults[0]!.principalAllocated = 6;
+  ctx.state.botVaults[0]!.hypercoreFundingStatus = "pending";
+
+  let accountReads = 0;
+  const service = createBotVaultTradingReconciliationService(ctx.db, {
+    async createReadAdapter() {
+      return {
+        async getOpenOrders() {
+          return [];
+        },
+        async getOrderHistory() {
+          return [];
+        },
+        async getFills() {
+          return [];
+        },
+        async getFunding() {
+          return [];
+        },
+        async getPositions() {
+          return [];
+        },
+        async getAccountState() {
+          accountReads += 1;
+          return {
+            equity: 105,
+            availableMargin: 105
+          };
+        },
+        toCanonicalSymbol(value: string) {
+          return `${value}USDC`;
+        },
+        async close() {
+          return;
+        }
+      };
+    }
+  });
+
+  const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(accountReads, 1);
+  assert.equal(result.aggregate.isFlat, true);
+  assert.equal(result.aggregate.openPositionCount, 0);
+  assert.ok(ctx.state.pnlAggregates.get("bv_1"));
+
+  const summary = await service.reconcileHyperliquidBotVaults({ limit: 10 });
+  assert.equal(summary.scanned, 1);
+  assert.equal(summary.processed, 1);
 });
 
 test("reconcileHyperliquidBotVaults skips closed execution vaults", async () => {

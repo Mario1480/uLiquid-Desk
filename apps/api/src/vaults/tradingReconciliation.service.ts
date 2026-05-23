@@ -4,7 +4,7 @@ import {
   classifyHyperliquidReadError,
   executeHyperliquidRead
 } from "@mm/futures-exchange";
-import { isBotVaultRuntimeModelRow } from "@mm/core";
+import { BOT_VAULT_RUNTIME_MODEL_V3, resolveBotVaultRuntimeModel } from "@mm/core";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
 import { roundUsd } from "./profitShare.js";
@@ -931,19 +931,36 @@ async function createFundingIfNew(tx: any, params: {
   botVaultId: string;
   row: ReturnType<typeof normalizeFundingRow> extends infer T ? Exclude<T, null> : never;
 }) {
+  const data = {
+    botVaultId: params.botVaultId,
+    exchange: "hyperliquid",
+    symbol: params.row.symbol,
+    amount: params.row.amount,
+    positionSide: params.row.positionSide,
+    sourceKey: params.row.sourceKey,
+    fundingTs: params.row.fundingTs,
+    metadata: params.row.metadata,
+    createdAt: params.row.fundingTs
+  };
+
+  if (typeof tx.botFundingEvent.createMany === "function") {
+    const result = await tx.botFundingEvent.createMany({
+      data,
+      skipDuplicates: true
+    });
+    return { id: null, created: Number(result?.count ?? 0) > 0 };
+  }
+
+  if (typeof tx.botFundingEvent.findFirst === "function") {
+    const existing = await tx.botFundingEvent.findFirst({
+      where: { sourceKey: params.row.sourceKey }
+    });
+    if (existing) return { id: String(existing.id), created: false };
+  }
+
   try {
     const created = await tx.botFundingEvent.create({
-      data: {
-        botVaultId: params.botVaultId,
-        exchange: "hyperliquid",
-        symbol: params.row.symbol,
-        amount: params.row.amount,
-        positionSide: params.row.positionSide,
-        sourceKey: params.row.sourceKey,
-        fundingTs: params.row.fundingTs,
-        metadata: params.row.metadata,
-        createdAt: params.row.fundingTs
-      }
+      data
     });
     return { id: String(created.id), created: true };
   } catch (error) {
@@ -1188,7 +1205,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
   async function shouldUseReconciliationForBotVault(botVault: any): Promise<boolean> {
     const provider = String(botVault?.executionProvider ?? "").trim().toLowerCase();
     if (provider !== "hyperliquid") return false;
-    if (isBotVaultRuntimeModelRow(botVault)) return false;
+    if (resolveBotVaultRuntimeModel(botVault) === BOT_VAULT_RUNTIME_MODEL_V3) return false;
     const mode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
     return isOnchainMode(mode as any);
   }
@@ -1295,7 +1312,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       .filter((row) =>
         String(row.gridInstance?.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid"
         && !isClosedExecutionStatus(row.executionStatus)
-        && !isBotVaultRuntimeModelRow(row)
+        && resolveBotVaultRuntimeModel(row) !== BOT_VAULT_RUNTIME_MODEL_V3
         && typeof row.agentWallet === "string"
         && row.agentWallet.trim().length > 0
       );
