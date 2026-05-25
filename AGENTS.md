@@ -1,8 +1,19 @@
 # uLiquid Desk Agent Project Guide
 
-Last updated: 2026-05-18
+Last updated: 2026-05-25
 
 Diese Datei ist eine Projektkarte fuer Codex-/Agenten-Arbeit in diesem Repository. Sie beschreibt, was uLiquid Desk ist, wie das Monorepo aufgebaut ist, wo zentrale Feature-Bereiche liegen und welche Checks vor Aenderungen sinnvoll sind.
+
+## Grundregeln fuer Agenten
+
+- Den User als `Mario` ansprechen.
+- Diese Datei ist die zentrale Agenten-Anweisung fuer das Repository.
+- `AGENDA.md` ist die Release-/Gate-Historie und nicht mit dieser Agenten-Datei zu verwechseln.
+- Vor Aenderungen kurz `git status --short --branch` pruefen und vorhandene fremde Aenderungen respektieren.
+- Unrelated Working-Tree-Aenderungen nicht anfassen, nicht zurueckdrehen und nicht mitformatieren.
+- Keine destruktiven Git-Befehle wie `git reset --hard`, `git checkout --` oder massenhaftes Loeschen verwenden, ausser Mario verlangt es eindeutig.
+- Keine echten Secrets, Private Keys, Tokens, Wallet-Seed-Phrases oder Production-Credentials in Code, Docs, Logs oder Commits schreiben.
+- Bei Unsicherheit lieber lokale Doku und Code lesen als Annahmen ueber kritische Flows zu treffen.
 
 ## Projekt in Kurzform
 
@@ -206,11 +217,16 @@ BotVault/FundingVault Aenderungen betreffen fast immer mehrere Schichten:
 
 ## Design- und UI-Regeln fuer Agenten
 
-- Fuer Web-UI-Arbeit den Skill `apply-uliquid-ui-design` verwenden.
+- Fuer uLiquid-Webapp-UI-Arbeit immer den Skill `apply-uliquid-ui-design` verwenden, bevor Layouts, Komponenten, Farben, Cards, Forms, Navigation oder Admin-/Dashboard-/Wallet-/BotVault-Oberflaechen angepasst werden.
+- Fuer native uLiquid-iOS-/SwiftUI-Arbeit den Skill `apply-uliquid-ios-ui-design` verwenden.
+- Vor UI-Aenderungen bestehende Komponenten, CSS-Dateien und nahe Seiten lesen; die vorhandene uLiquid-Designsprache geht vor neuen Einzelstilen.
 - Keine neuen Inline-SVGs fuer normale UI-Icons. `AppIcon` aus `apps/web/app/components/AppIcon.tsx` nutzen.
 - Buttons fuer wichtige Aktionen mit Icons versehen.
 - Bestehende UI-Primitives bevorzugen: `uiPage`, `uiSection`, `card`, `btn`, `btnPrimary`, `AdminPageHeader`, `AdminTable`, `AdminNotice`.
 - Admin-Seiten sollen konsistente Breite, linke Ausrichtung und gemeinsame Admin-Komponenten nutzen.
+- Bei sichtbaren Texten i18n-Muster und `apps/web/messages` beachten.
+- Bei Web-/UI-Aenderungen nach Moeglichkeit lokal im Browser pruefen, besonders mobile/responsive Ansichten sowie Admin-, GridBot-, Wallet- und BotVault-Flows.
+- UI-Aenderungen sollen keine langsamen Detail-, Stats-, AI- oder Dashboard-Requests zum Blocker fuer kapitalnahe Statuslisten machen.
 - Keine echten Secrets in Code, Docs oder Commits schreiben.
 - Routes, API-Response-Shapes und Berechtigungslogik nicht ohne konkreten Grund veraendern.
 
@@ -223,6 +239,47 @@ BotVault/FundingVault Aenderungen betreffen fast immer mehrere Schichten:
 - Keine destruktiven Git-Befehle wie `git reset --hard` oder `git checkout --`, ausser der User verlangt es eindeutig.
 - Vor Loeschungen mit `rg` pruefen, ob Referenzen existieren.
 - Bei Exchange- oder Money-Flow-Aenderungen Rueckwaertskompatibilitaet und Idempotency beachten.
+
+## Capital-Flow und Production-Sicherheit
+
+Diese Bereiche sind kapital- oder onchain-relevant und brauchen besondere Vorsicht:
+
+- Wallet/Funding, FundingVault, BotVault, GridBot, Manual Trading, Exchange Accounts, Billing/Profitshare und Contracts.
+- Keine Production-Transaktionen, Deploys, Contract-Calls, Operator-Rotationen, Close-/Recover-Aktionen oder migrationsnahe Schritte stillschweigend ausfuehren.
+- Bei Money-Flows immer Idempotency, Zielbalance-Reconciliation, Pending-State, Retry/Backoff, Recovery-Hints und Audit-Trail beachten.
+- Source-Balance allein ist keine finale Bestaetigung fuer Transfers; Zielbalance und dokumentierter Reconcile-State sind entscheidend.
+- Bei BotVault/Grid/Funding-Aenderungen immer API, Runner, Web, Prisma, Contracts und Docs als moegliche Querwirkungen pruefen.
+- Bei FundingVault-Flows onchain `operator()` gegen DB/Agent-Wallet pruefen oder einen klaren Preflight einbauen, bevor ein Agent-Launch laeuft.
+- RPC Rate Limits, Indexer-Backoff und Reconciliation-Prioritaeten nicht als Funding-Fehler fehlklassifizieren.
+- Close/Recover/Claim nur mit frischer Trading-Reconciliation und sauberem Contract-/HyperCore-Balancebild weiterdenken.
+
+## Go-live Startregel
+
+Bei Go-live-, BotVault-, Funding-, Trading-, Contract- oder Production-Fragen zuerst diese Dateien pruefen:
+
+- `docs/go-live-master-plan.md`
+- `docs/go-live-readiness-followups.md`
+- `docs/botvault-go-live-followups.md`
+- `docs/wallet-funding-go-live-status.md`
+- `docs/gridbot-go-live-status.md`
+- `docs/trading-desk-go-live-status.md`
+- `docs/contract-readiness-checklist.md`
+- `docs/botvault-e2e-integration-test-matrix.md`
+- `docs/release-evidence-matrix.md`
+- aktuelle Nachweise unter `docs/tasks/`
+
+Live-Smokes, Canaries und Betreiberbeobachtungen sollen als Evidence dokumentiert werden, bevorzugt unter `docs/tasks/YYYY-MM-DD-*.md` und danach in den passenden Go-live-Statusdocs zusammengefasst.
+
+## Aktueller BotVault-Stand
+
+Stand 2026-05-25:
+
+- BotVault V4 ist der aktuelle Produktionspfad.
+- Wallet/User-funded BotVault V4 Start bis Grid/BotVault `running` ist low-value live belegt.
+- Wallet/User-funded BotVault V4 Close/Settlement bis `execution_status=closed`, `funding_status=settled`, `hypercore_funding_status=withdrawn` und Reconciliation `ok` ist low-value live belegt.
+- FundingVault-backed BotVault V4 Launch bis Grid/BotVault `running` ist low-value live belegt.
+- Erste FundingVault-Fehler am 2026-05-25 waren onchain/DB Operator-Mismatch (`only_operator`), kein bekannter BotVault-V4-Code-Blocker.
+- Weiter offen vor breitem Public-Go-live: generische Wallet-Transfer-Smokes, Profit-Claim, FundingVault-backed Close/Settlement, bewusst beobachtete Pending-/Recovery-Pfade, Alert-Delivery/Runbook-Probe, GridBot-Langlauf/Restart/Cancel-Recovery, Contract-Readiness und 24-48h Betriebsauswertung.
 
 ## Typische Checks
 
@@ -316,6 +373,16 @@ curl -i http://localhost:${API_PORT:-4000}/health
 - Kanonische Domains laut README:
   - Web: `https://desk.uliquid.vip`
   - API: `https://api.desk.uliquid.vip`
+
+## Deploy- und Push-Regel
+
+- Wenn ein Agent im Terminal einen Deploy fuer Mario durchfuehrt, danach den Git-Stand pruefen und die deploy-relevanten Aenderungen zeitnah sichern.
+- Standardziel ist `main` / `origin/main`, damit deployte Aenderungen nicht nur lokal oder auf dem VPS existieren.
+- Vor Commit/Push immer `git status --short --branch` und den relevanten Diff pruefen.
+- Nur Aenderungen committen, die zum Deploy oder zur beauftragten Arbeit gehoeren; fremde/unrelated Working-Tree-Aenderungen nicht aufnehmen.
+- Keine Secrets, `.env`-Werte, Private Keys, Tokens, Dumps oder lokale Artefakte committen.
+- Wenn der Branch nicht `main` ist, `main` divergiert, Tests/Checks klar rot sind oder unrelated Aenderungen im Weg sind, nicht blind pushen, sondern Mario kurz informieren und den sicheren naechsten Schritt nennen.
+- Nach erfolgreichem Commit den Stand auf `origin/main` pushen und im Abschluss die Commit-ID, den Push-Status und die wichtigsten Deploy-/Smoke-Ergebnisse nennen.
 
 ## Go-Live Dokumente
 

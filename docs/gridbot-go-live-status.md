@@ -1,6 +1,6 @@
 # GridBot Go-live Status
 
-Stand: 2026-05-02
+Stand: 2026-05-25
 
 Diese Doku ergaenzt `docs/botvault-go-live-followups.md` und haelt den aktuellen GridBot-Stand fuer Go-live, Canary und spaetere Nacharbeit fest.
 
@@ -8,7 +8,14 @@ Diese Doku ergaenzt `docs/botvault-go-live-followups.md` und haelt den aktuellen
 
 Der GridBot-Bereich ist nach den letzten Hardening-Patches deutlich stabiler fuer einen kontrollierten Canary. Funding, Seed-Order, Order-Recovery, Cancel-Pfad, Fill/PnL-Reconciliation und Live-Risk-Gates sind auf die wichtigsten Go-live-Risiken ausgerichtet.
 
-Wichtig: Das ist keine Freigabe fuer einen unbegrenzten Big-Bang-Go-live. Empfohlen bleibt ein Canary mit kleinen Limits, aktivem Monitoring und klarer manueller Recovery.
+Seit dem 2026-05-23/2026-05-25 gibt es zusaetzliche Production-Evidence fuer
+BotVault-V4-gestuetzte GridBot-Starts: mehrere kleine Live-Starts erreichten
+`running`, platzierten den Initial Seed und erzeugten Folgeorders; der
+FundingVault-backed Launch vom 2026-05-25 erreichte ebenfalls Grid `running`.
+
+Wichtig: Das ist keine Freigabe fuer einen unbegrenzten Big-Bang-Go-live.
+Empfohlen bleibt ein Canary mit kleinen Limits, aktivem Monitoring und klarer
+manueller Recovery.
 
 ## Behobene Go-live Blocker
 
@@ -29,6 +36,28 @@ Wichtig: Das ist keine Freigabe fuer einen unbegrenzten Big-Bang-Go-live. Empfoh
 - Langlauf-Test mit echten HyperCore/HyperEVM Latenzen sollte mindestens einmal ueber mehrere Marktzyklen laufen.
 - UI kann fuer Admins noch bessere Drilldowns auf `reasonCode`, `recoveryHint`, txHash, candidateOrderId und Account-State-Zeitpunkt bekommen.
 - Canary-Limits sollten technisch konfiguriert werden: maximale Vault-Groesse, maximale parallele Bots, maximale pending Dauer vor manueller Pruefung.
+- FundingVault-backed Starts brauchen einen Operator-Preflight, damit ein
+  onchain/DB Operator-Mismatch nicht erst als `only_operator` Revert sichtbar
+  wird.
+
+## Live-Evidence 2026-05-23/2026-05-25
+
+- Wallet/User-funded BotVault V4 GridBot:
+  - Create/Fund/HyperCore/Perp/HYPE-Reserve liefen bis `execution_ready`.
+  - Reconciliation autostartete Grid/BotVault bis `running`.
+  - Initial Seed wurde live ausgefuehrt; Folgeorders blieben offen.
+  - Nach Optimierungen lief der dritte Start ohne manuelle Intervention und
+    ohne neues `query exceeds max block range 1000` Warning.
+- FundingVault-backed BotVault V4 GridBot:
+  - Launch action wurde onchain bestaetigt.
+  - BotVault erreichte `hypercore_funding_status=funded` und
+    `execution_status=running`.
+  - Grid erreichte `state=running`; Initial Seed und offene Folgeorders wurden
+    beobachtet.
+- UI-Visibility:
+  - Create-Seite pollt die konkrete neue Instanz.
+  - Grid-Uebersicht laedt die Liste ohne Blockade durch langsame Detail- oder
+    Fill-/Round-Requests.
 
 ## Canary-Checkliste
 
@@ -64,4 +93,7 @@ Vor Canary erneut ausfuehren:
 
 ## Go-live Empfehlung
 
-Fuer einen kleinen Canary ist der GridBot nach erfolgreichem Testlauf grundsaetzlich bereit. Fuer einen breiten Go-live sollten die offenen Monitoring-, Runbook- und Langlaufpunkte vorher abgeschlossen oder bewusst als kontrolliertes Betriebsrisiko akzeptiert werden.
+Fuer weitere kleine interne Canaries ist der GridBot nach den dokumentierten
+BotVault-V4-Live-Starts grundsaetzlich bereit. Fuer einen breiten Go-live
+sollten die offenen Monitoring-, Runbook-, Limit- und Langlaufpunkte vorher
+abgeschlossen oder bewusst als kontrolliertes Betriebsrisiko akzeptiert werden.

@@ -2,6 +2,11 @@
 
 This checklist is for rolling out the current BotVaultV4 contracts.
 
+Status note 2026-05-25: low-value production BotVault V4 lifecycle evidence now
+exists for Wallet/User-funded start, close/settlement, and FundingVault-backed
+launch. This reduces rollout risk for controlled internal canaries, but it does
+not replace the broader contract-readiness items below for public scale.
+
 ## Production Assumptions
 
 - `BotVaultFactoryV4` is the only supported deployment target.
@@ -41,14 +46,24 @@ After deployment:
 Before first real capital:
 
 - Run the Foundry suite against the exact contract revision being deployed.
-- Perform one low-value funding flow on devnet or staging.
-- Exercise HyperEVM to HyperCore funding.
-- Exercise close-only and close/recovery paths in staging.
+- Perform one low-value funding flow on devnet or staging. Low-value production
+  evidence also exists for Wallet/User-funded and FundingVault-backed BotVault
+  V4 starts.
+- Exercise HyperEVM to HyperCore funding. Low-value production evidence exists
+  for the BotVault/Grid path.
+- Exercise close-only and close/recovery paths in staging. Low-value production
+  close/settlement evidence exists for a Wallet/User-funded BotVault.
 - Validate fee settlement to treasury and affiliate recipient with a controlled profit scenario.
 - Confirm monitoring/indexing can read:
   - BotVault balances
   - BotVault lifecycle events
   - treasury and affiliate fee events
+
+Live evidence references:
+
+- `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
+- `docs/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`
+- `docs/tasks/2026-05-25-funding-vault-live-start.md`
 
 During incident response:
 

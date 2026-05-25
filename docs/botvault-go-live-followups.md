@@ -1,6 +1,6 @@
 # BotVault Go-live Follow-ups
 
-Stand: 2026-05-23
+Stand: 2026-05-25
 
 Dieses Dokument haelt Punkte fest, die nach den aktuellen BotVault-, HyperCore-/HyperEVM- und Profitshare-Fixes nicht als harte Code-Blocker fuer einen kontrollierten Canary gelten, aber vor einem breiteren Go-live oder kurz danach abgearbeitet werden sollten.
 
@@ -19,7 +19,50 @@ Die zuletzt geprueften kritischen Geldfluss-Pfade sind stabilisiert:
 - Granulare Safety-Controls koennen Deposits, Withdraws, Grid-Starts und Profit-Claims getrennt sperren.
 - Money-Flow-Pending-Zustaende erzeugen deduplizierte PlatformAlerts nach definierter Schwelle und werden in Admin Vault-Ops inklusive `reasonCode`, `recoveryHint`, `txHash`, `idempotencyKey` und erwarteter/tatsaechlicher Balance angezeigt.
 
-Empfehlung: kontrollierter Production-Canary mit kleinen Limits ist vertretbar. Breiter Go-live erst nach echten Lifecycle-Durchlaeufen und Monitoring-Verifikation.
+Seit dem 2026-05-23/2026-05-25 liegen echte Low-Value-Live-Durchlaeufe vor:
+
+- Wallet/User-funded BotVault V4 Starts liefen mehrfach automatisiert bis
+  `running`, inklusive HyperEVM-Create/Fund, HyperCore-Funding,
+  Perp-Margin-Finalisierung, HYPE-Reserve, Autostart, Initial Seed und
+  Folgeorders.
+- Ein Wallet/User-funded BotVault V4 Close wurde live bis `CLOSE_ONLY` /
+  `execution_status=closed`, `funding_status=settled`,
+  `hypercore_funding_status=withdrawn` und sauberer Reconciliation
+  abgeschlossen.
+- FundingVault-backed BotVault V4 Launch wurde am 2026-05-25 erfolgreich auf
+  Production HyperEVM beobachtet: FundingVault reserve, onchain launch,
+  HyperCore-Funding, Execution-Ready, Autostart, Grid `running`, Initial Seed
+  und offene Folgeorders.
+- Laut Betreiber-Stand 2026-05-25 laesst sich BotVault V4 nun ohne Fehler von
+  Wallet oder FundingVault starten und beenden.
+
+Empfehlung: Der BotVault-V4-Pfad ist fuer weitere kontrollierte interne
+Capital-Canaries mit kleinen Limits nicht mehr durch bekannte Start/Stop-
+Blocker blockiert. Breiter Public-Go-live bleibt an Monitoring, Runbooks,
+Contract-Readiness, Profitshare-/Billing-Evidence und 24-48h Beobachtung
+gebunden.
+
+## Live-Evidence 2026-05-21 bis 2026-05-25
+
+- `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
+  - HYPE-Reserve-Automation, Reconciliation-Autostart und Close-Recovery
+    wurden live nachgezogen.
+  - Close final: `CLOSE_ONLY`, `execution_status=closed`,
+    `funding_status=settled`, `hypercore_funding_status=withdrawn`,
+    Reconciliation `ok`, keine offenen Orders/Positionen.
+- `docs/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`
+  - Drei BotVault-V4-Starts liefen bis `running`.
+  - Der dritte Start nach Optimierungen lief ohne manuelle Intervention, ohne
+    neues `query exceeds max block range 1000` Warning, mit Initial Seed und
+    offenen Grid-Orders.
+  - Grid-Overview Loading Hotfix wurde deployed, damit die Liste nicht mehr auf
+    langsame Detail-/Stats-Requests wartet.
+- `docs/tasks/2026-05-25-funding-vault-live-start.md`
+  - FundingVault-backed Launch lief nach Operator-Rotation erfolgreich durch.
+  - Root Cause fuer erste Fehlversuche war ein onchain/DB Operator-Mismatch
+    (`only_operator`), kein BotVault-V4-Fundingfehler.
+  - RPC Rate-Limit-Backoff, Aktionspriorisierung und Reconciliation-Prioritaet
+    wurden nach dem Run verbessert.
 
 ## Aktuelle Live-Follow-ups 2026-05-23
 
@@ -97,22 +140,32 @@ Noch per Live-Start zu verifizieren:
 
 Hinweis: Die lokale Standard-Node-Version war `v18.20.8`; die Node-20+-Checks wurden mit der gebuendelten Codex-Node-Runtime `v24.14.0` ausgefuehrt.
 
-## Vor Canary pruefen
+## Vor weiterem Canary pruefen
 
-- Live-Canary mit kleinem Betrag durchfuehren:
+- Bereits live belegt:
   - EVM Funding zum Vault.
   - Deposit nach HyperCore.
-  - Pending Deposit Reconcile.
-  - GridBot Start erst nach `funding_confirmed`.
+  - GridBot Start erst nach Funding-/Execution-Ready.
+  - Initial Seed und Folgeorders.
+  - Wallet/User-funded Close mit finalem Settlement/Reconcile.
+  - FundingVault-backed Launch nach korrekter Operator-Rotation.
+- Noch gezielt zu belegen oder zu wiederholen:
   - Profit Claim blockiert waehrend Spot-to-EVM Pending.
   - Claim erfolgreich nach EVM Balance Reconcile.
-  - Close oder Recover mit Spot-to-EVM Pending und finalem Reconcile.
+  - FundingVault-backed Close/Settlement als eigenes Evidence-Protokoll, falls
+    nicht bereits im gleichen Betreiberlauf separat dokumentiert.
+  - Close oder Recover mit Spot-to-EVM Pending und finalem Reconcile bewusst
+    als Recovery-Szenario pruefen.
+  - 24-48h Lauf mit Alert-/Runbook-Auswertung.
 - Runtime-Konfiguration pruefen:
   - Reconcile Scheduler aktiv.
   - Runner nutzt aktuelle API/DB Version.
   - HyperEVM RPC Write/Read URLs korrekt.
   - CoreWriter Private-Key/Agent-Wallet Secrets korrekt geladen.
   - HYPE Reserve Thresholds fuer v4 sinnvoll gesetzt.
+  - FundingVault onchain `operator()` stimmt mit DB/Agent-Wallet ueberein.
+  - Dedicated oder ausreichend dimensionierte HyperEVM RPC-Quote fuer
+    Indexer/Reconciliation ist vorhanden.
 - Canary Limits setzen:
   - Maximaler Deposit pro BotVault.
   - Maximaler Claim/Close Betrag.

@@ -1,6 +1,6 @@
 # Go-live Master Plan
 
-Stand: 2026-05-06
+Stand: 2026-05-25
 
 ## Ziel
 
@@ -24,7 +24,7 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
 | Gate 2: Security/Auth/RBAC | Zugriffsschutz und Security-Flows sind in echter Umgebung geprueft. | `IN_PROGRESS` | Superadmin/Admin-Backend-Access ist Betreiber-verifiziert; voller Auth- und RBAC-Rollenmatrix-Smoke bleibt nachzuhalten. |
 | Gate 3: Read-only Produktflaechen | Dashboard, Calendar, News und AI Reads failen sichtbar/degraded statt falsch offen. | `IN_PROGRESS` | Dashboard-, Calendar-, News-, AI- und Read-only-Monitoring-Smokes sind am 2026-05-06 Betreiber-verifiziert; Dashboard-RBAC-Rollenmatrix bleibt unter Gate 2 nachzuhalten. |
 | Gate 4: Trading Canary | Manuelles Trading ist mit kleinen Limits live getestet. | `OPEN` | Paper-Smoke, Live-Canary, Idempotency- und Close-Sync-Smokes bestanden. |
-| Gate 5: Wallet/Grid/BotVault Canary | Capital-Flows und Grid/Vault-Reconciliation laufen kontrolliert. | `OPEN` | Funding-, BotVault- und GridBot-Canary bestanden, Pending/Failed Alerts aktiv. |
+| Gate 5: Wallet/Grid/BotVault Canary | Capital-Flows und Grid/Vault-Reconciliation laufen kontrolliert. | `IN_PROGRESS` | Wallet/User-funded BotVault V4 Start/Close sowie FundingVault-backed Start sind low-value live belegt; offen bleiben Roh-Wallet-Transfer-Smokes, Profit-Claim/Recovery-Szenarien, Alert-/Runbook-Probe und 24-48h Beobachtung. |
 | Gate 6: Beobachtung & Freigabe | Canary-Daten wurden 24-48h ausgewertet. | `OPEN` | Keine offenen P1/P2-Runtime-Bugs, Runbooks angepasst, Freigabeentscheidung dokumentiert. |
 
 ## Phase 1: Build, Repo und Infra
@@ -98,21 +98,40 @@ Phase-3-Nachtrag 2026-05-06:
 
 | Aufgabe | Quelle | Status | Verifikation | Notizen |
 | --- | --- | --- | --- | --- |
-| Wallet Funding Deposit Canary. | Wallet/Funding | `OPEN` | Arbitrum USDC -> Intent -> pending -> Hyperliquid credited target -> confirmed | Balance-basiert reconciled. |
-| Wallet Funding Withdraw Canary. | Wallet/Funding | `OPEN` | Hyperliquid withdrawable -> pending -> Arbitrum Zielbalance -> confirmed | Source-Balance allein reicht nicht. |
+| Wallet Funding Deposit Canary. | Wallet/Funding | `OPEN` | Arbitrum USDC -> Intent -> pending -> Hyperliquid credited target -> confirmed | Generischer Rohfluss bleibt offen; BotVault-bezogenes Wallet/User-Funding ist live belegt. |
+| Wallet Funding Withdraw Canary. | Wallet/Funding | `OPEN` | Hyperliquid withdrawable -> pending -> Arbitrum Zielbalance -> confirmed | Generischer Rohfluss bleibt offen; BotVault-Close/Settlement ist live belegt. |
 | Core/EVM und Spot/Perp Transfer Canary. | Wallet/Funding | `OPEN` | Zielbalance-Anstieg um angefragten Betrag | Pending blockiert gleichen Flow bis Abschluss. |
 | Pending-Intent Cleanup/Expiry entscheiden. | Wallet/Funding | `OPEN` | Manuell akzeptiert oder Job/Runbook vorhanden | Aktuell konservativ manuell. |
-| BotVault Funding/Reconcile Canary. | BotVault | `IN_PROGRESS` | Pending Deposit/Withdraw, HYPE Reserve, Contract Balance, Claim/Close | Code-Hardening fuer Pending-Semantik, Freshness-TTL, Safety-Controls, PlatformAlerts und Admin Money-Flow-Details ist umgesetzt; echter Canary mit Kapital steht noch aus. |
+| BotVault Wallet/User-funded Start/Close Canary. | BotVault/Grid | `DONE` | HyperEVM create/fund -> HyperCore -> Perp/HYPE reserve -> Grid running -> Close/settled | Low-value Production-Evidence in `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md` und `docs/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`; laut Betreiber-Stand 2026-05-25 ohne bekannten Start/Stop-Fehler. |
+| BotVault FundingVault-backed Start Canary. | BotVault/FundingVault/Grid | `DONE` | FundingVault operator ok -> launch -> reserve release -> execution ready -> Grid running | Erfolgreicher Production-Run am 2026-05-25 dokumentiert in `docs/tasks/2026-05-25-funding-vault-live-start.md`. Erster Fehler war Operator-Mismatch, kein BotVault-Code-Blocker. |
+| BotVault Funding/Reconcile Recovery Canary. | BotVault | `IN_PROGRESS` | Pending Deposit/Withdraw, HYPE Reserve, Contract Balance, Claim/Close/Recover | Start/Close sind live belegt; Profit-Claim, bewusst erzeugte Spot-to-EVM Pending-Recovery und FundingVault-backed Close sollten noch als eigene Evidence nachgezogen werden. |
 | Bestehende Vaults normalisieren/pruefen. | BotVault | `OPEN` | Reconcile-Job oder Migration fuer alte Mischzustaende | Alte v3 Reads kompatibel halten, neue Writes v4-normalisiert. |
-| GridBot Funding/Seed/Recovery Canary. | GridBot | `OPEN` | Funding, Seed-Pending, Restart-Recovery, Cancel-Reconcile, Fill/PnL-Reconcile | Langlauf ueber mehrere Marktzyklen einplanen. |
+| GridBot Funding/Seed/Recovery Canary. | GridBot | `IN_PROGRESS` | Funding, Seed-Pending, Restart-Recovery, Cancel-Reconcile, Fill/PnL-Reconcile | Funding und Initial Seed sind live belegt; Restart-/Cancel-/Recovery-Langlauf ueber mehrere Marktzyklen bleibt offen. |
 | Canary-Limits technisch setzen. | GridBot/BotVault | `OPEN` | Max Vault-Groesse, parallele Bots, Pending-Dauer | Kleine Limits fuer ersten Live-Betrieb. |
-| Monitoring fuer Pending/Failed/Reconcile aktivieren. | Wallet/Grid/BotVault | `IN_PROGRESS` | Deposit/Withdraw/Funding pending, failed retry/final, Reconcile-Job | PlatformAlerts fuer Deposit/Withdraw/Contract-Balance/Reconcile-Job sind umgesetzt; Failed-Final/Low-HYPE Matrix und Schwellen muessen im Canary feinjustiert werden. |
-| Admin-Operational-View pruefen/erweitern. | BotVault/Grid/Admin | `IN_PROGRESS` | `reasonCode`, `recoveryHint`, `txHash`, `idempotencyKey`, Account-State-Zeitpunkt | Reconciliation Summary liefert Money-Flow-Details und offene Alert-IDs; echter Admin-Smoke bleibt offen. |
+| Monitoring fuer Pending/Failed/Reconcile aktivieren. | Wallet/Grid/BotVault | `IN_PROGRESS` | Deposit/Withdraw/Funding pending, failed retry/final, Reconcile-Job, RPC rate limit | PlatformAlerts fuer Deposit/Withdraw/Contract-Balance/Reconcile-Job sind umgesetzt; Failed-Final/Low-HYPE Matrix, RPC Rate-Limit-Metriken und Schwellen muessen im Canary feinjustiert werden. |
+| Admin-Operational-View pruefen/erweitern. | BotVault/Grid/Admin | `IN_PROGRESS` | `reasonCode`, `recoveryHint`, `txHash`, `idempotencyKey`, Account-State-Zeitpunkt, Startup-Timeline | Reconciliation Summary liefert Money-Flow-Details und offene Alert-IDs; Admin Startup-Timeline, FundingVault Operator-Mismatch und echter Admin-Smoke bleiben offen. |
 
 Phase-5-Laufnotizen 2026-05-06:
 - Code-Hardening aus der BotVault-Go-live-Analyse ist umgesetzt: `pending_reconciliation`, `funding_pending`, Zielbalance-Sicherung fuer Spot-to-EVM, Trading-Reconciliation-Freshness, granulare Safety-Controls, Money-Flow-Alerts und Admin-Vault-Ops-Details.
 - Verifikation PASS: Futures-Exchange 64/64, Runner Vault/Grid 127/127, API v4-Transitions 15/15, API Vault/Grid Corewriter 9/9, breite Vault-Suite 214/214, API/Runner/Web-Typechecks und `git diff --check`.
 - Offen bleibt der echte Kapital-Canary inklusive Alert-Schwellen, Low-HYPE-/Failed-Final-Matrix, Runbook-Probe und Admin-Live-Smoke.
+
+Phase-5-Nachtrag 2026-05-25:
+- Wallet/User-funded BotVault V4 Starts liefen am 2026-05-23 mehrfach bis
+  `running`; Initial Seed und Folgeorders wurden live beobachtet.
+- Wallet/User-funded Close/Settlement wurde am 2026-05-21 dokumentiert und
+  endete mit `execution_status=closed`, `funding_status=settled`,
+  `hypercore_funding_status=withdrawn` und Reconciliation `ok`.
+- FundingVault-backed BotVault V4 Launch lief am 2026-05-25 nach Operator-
+  Rotation bis BotVault/Grid `running`; initiale Fehlversuche waren
+  `only_operator` wegen onchain/DB Operator-Mismatch.
+- Nach dem FundingVault-Run wurden RPC Rate-Limit-Backoff, Indexer-
+  Aktionspriorisierung und Reconciliation-Priorisierung verbessert.
+- Damit ist der bekannte BotVault-V4 Start/Stop-Pfad fuer kleine interne
+  Canaries nicht mehr der Hauptblocker. Offen bleiben generische
+  Wallet-Transfer-Smokes, Profit-Claim-/Recovery-Evidence, FundingVault
+  Operator-Preflight, Alert-Delivery/Runbook-Probe, Contract-Readiness und
+  24-48h Betriebsauswertung.
 
 ## Phase 6: Normal Bots
 
@@ -146,9 +165,9 @@ Phase-5-Laufnotizen 2026-05-06:
 
 3. **Riskante Canary-Flows**
    - Trading Desk
-   - Wallet/Funding
-   - BotVault
-   - GridBot
+   - Generische Wallet/Funding Rohtransfers
+   - BotVault Profit-Claim/Recovery und FundingVault-backed Close
+   - GridBot Langlauf/Restart/Cancel-Recovery
 
 4. **Release-Kandidat erneut gegen Phase-1 pruefen**
    - Node/Build/Typecheck

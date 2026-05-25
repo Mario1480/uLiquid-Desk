@@ -1,10 +1,17 @@
 # Projektweite Go-live Feature-Analyse
 
-Stand: 2026-05-06
+Stand: 2026-05-25
 
 Scope: statischer Abgleich der aktuellen lokalen Working Tree gegen die vorhandenen Go-live-/Readiness-Dokumente. Es wurden keine externen Live-Systeme oder Production-Secrets abgefragt. Die lokal bereits vorhandenen, noch nicht committeten BotVault-Hardening-Aenderungen sind in dieser Analyse als aktueller Code-Stand mit betrachtet.
 
 Nachtrag 2026-05-06: Betreiber-verifiziert und in den Feature-Go-live-Dokumenten nachgetragen wurden Production-Secrets, Secret-Rotation, Superadmin/Admin-Backend-Access, Dashboard Open Positions gesund/degraded, Calendar-Smoke mit echtem FMP-Key, News-Risk Blocking-Smoke, AI Provider-Konfig-Smoke, AI Refresh-Degraded-Smoke in API und UI, AI Evaluator-Stichprobe gegen Candle-Daten sowie Monitoring fuer Read-only Flaechen.
+
+Nachtrag 2026-05-25: BotVault-V4-Live-Evidence wurde in die Go-live-Dokumente
+nachgezogen. Wallet/User-funded Start/Close und FundingVault-backed Start sind
+als Low-Value-Production-Flows dokumentiert; der breite Public-Go-live bleibt
+weiter an Auth/RBAC, Trading, generische Wallet-Transfers, Profitshare/
+Recovery, Alert-/Runbook-Probe, Contract-Readiness und 24-48h Beobachtung
+gebunden.
 
 ## Executive Summary
 
@@ -16,7 +23,10 @@ Fuer einen breiten Public Go-live bleiben aber mehrere harte Gates offen:
 
 - Live/Auth- und RBAC-Smoke: Superadmin/Admin-Backend-Access ist erledigt; volle Register/Login/Reset- und Rollenmatrix-Smokes fuer Admin/User/Viewer bleiben nachzuhalten.
 - Secrets/Infra: Production-Secrets und Rotation sind Betreiber-verifiziert; Migration, Backup/Restore und Docker/Caddy sind in Phase 1 dokumentiert. Bei Secret-/Provider-Wechseln muessen die Smokes wiederholt werden.
-- Kapital-Flows: Manual Trading, Wallet/Funding, GridBot und BotVault brauchen kleine, protokollierte Canary-Laeufe mit echten oder production-nahen Venues.
+- Kapital-Flows: BotVault V4 ist fuer Wallet/User-funded Start/Close und
+  FundingVault-backed Start low-value live belegt. Manual Trading, generische
+  Wallet/Funding-Rohtransfers, Profit-Claim/Recovery, GridBot-Langlauf und
+  Alert-/Runbook-Proben bleiben Go-live-Gates.
 - Monitoring/Runbooks: Read-only Monitoring ist aktiviert; kapitalbewegende Alerts, Eskalation und Operator-Runbooks muessen live bewiesen werden.
 - Contract Readiness: BotVault-Contract-Deployment, Ownership/Timelock/Dual-Control, Event-Indexing und externe Audit-/Fuzz-Follow-ups sind noch nicht als erledigte Release-Evidenz dokumentiert.
 - Dokumentationsdrift: Einige Feature-Go-live-Dokumente sind aelter als der aktuelle lokale Code-Stand. Vor Release sollte eine zentrale Evidence-Tabelle mit Commit, Datum, Check und Ergebnis gepflegt werden.
@@ -35,9 +45,9 @@ Fazit: Ein interner Read-only Canary ist nach den am 2026-05-06 erledigten Betre
 | AI Predictions | Prediction routes/jobs, provider proxy, evaluator, refresh jobs, AI trace/admin prompts | `ai-predictions-go-live-status.md` | Hoch | Mittel-Hoch fuer Read-only | Provider/Refresh/Evaluator/Monitoring erledigt; AI-only und Auto-Trading-Uebergabe separat pruefen |
 | Manual Trading Desk | Manual market/execution routes, exchange adapters, order idempotency | `trading-desk-go-live-status.md` | Hoch | Mittel | Paper/live canary, idempotency/degraded smokes, operator runbook |
 | Exchange Accounts/CEX | Exchange account routes, Bitget/Hyperliquid/MEXC/Binance/Paper adapters | `exchange-capability-matrix.md`, `venue-parity-gap-analysis.md`, CEX preflight docs | Mittel-Hoch | Mittel | Venue parity, connector-specific live smokes, Paper as first-class adapter |
-| Wallet/Funding | Funding intents, wallet overview, spot/EVM/Core transfers, reconciliation | `wallet-funding-go-live-status.md`, BotVault docs | Hoch | Mittel | Real transfer canary, pending/recovery ops, alert delivery |
-| GridBot | Grid API, runner grid runtime, templates, instances, recovery, fills/PnL | `gridbot-go-live-status.md`, BotVault docs | Hoch | Mittel | Canary monitoring, long-run observation, admin drilldowns |
-| BotVault/Profitshare | Vault routes/services/jobs, onchain actions, pnl, settlement, reconciliation | `botvault-go-live-followups.md`, `botvault-e2e-integration-test-matrix.md`, contract checklist | Hoch but active changes | Niedrig-Mittel | Capital canary, contract readiness, settlement proof, alert/runbook proof |
+| Wallet/Funding | Funding intents, wallet overview, spot/EVM/Core transfers, reconciliation | `wallet-funding-go-live-status.md`, BotVault docs | Hoch | Mittel-Hoch fuer BotVault-Funding, Mittel fuer Rohtransfers | BotVault Wallet/FundingVault Flows sind live belegt; generische transfer canaries, pending/recovery ops, alert delivery |
+| GridBot | Grid API, runner grid runtime, templates, instances, recovery, fills/PnL | `gridbot-go-live-status.md`, BotVault docs | Hoch | Mittel-Hoch fuer kleine BotVault-V4-Canaries | Live Start/Seed belegt; long-run observation, restart/cancel recovery, admin drilldowns |
+| BotVault/Profitshare | Vault routes/services/jobs, onchain actions, pnl, settlement, reconciliation | `botvault-go-live-followups.md`, `botvault-e2e-integration-test-matrix.md`, contract checklist | Hoch | Mittel-Hoch fuer kontrollierte interne Canaries | Wallet/FundingVault Start/Close belegt; Profit-Claim/Recovery, contract readiness, alert/runbook proof |
 | Normal Bots/Strategies | Bot catalog, bot lifecycle, local/composite strategies, runner modes | `normal-bots-go-live-status.md` | Mittel | Niedrig-Mittel | Real signal adapter, fill history, paper/live adapter parity |
 | Notifications/Monitoring | Telegram, SMTP, PlatformAlert, health jobs, admin alert UI | Readiness/admin/BotVault docs | Mittel-Hoch | Mittel-Hoch fuer Read-only | Read-only Monitoring aktiv; kapitalbewegende Alert-Delivery und Eskalation bleiben |
 | Contracts | `packages/contracts`, deployment/check scripts, BotVaultV4 ABI usage | `contract-readiness-checklist.md` | Mittel | Niedrig-Mittel | Deployment evidence, external audit, invariant/fuzz, ownership controls |
@@ -54,10 +64,10 @@ Fazit: Ein interner Read-only Canary ist nach den am 2026-05-06 erledigten Betre
 | `docs/trading-desk-go-live-status.md` | Trading Desk code-ready, Live/Paper-Smokes offen | Deckt Code-Schutzlogik gut ab. Canary/Runbook/Monitoring sind noch Go-live-Gates. | Weiterhin gueltig |
 | `docs/dashboard-calendar-news-go-live-status.md` | Dashboard/News/Calendar fail-closed und RBAC-hart | Open-Positions-, FMP-, News-Risk- und Read-only-Monitoring-Smokes sind am 2026-05-06 erledigt; Rollenmatrix bleibt separat. | Gueltig |
 | `docs/ai-predictions-go-live-status.md` | AI hardening erledigt, Provider/Evaluator/Refresh-Smokes offen | Provider-, Refresh-Degraded-, Evaluator- und Monitoring-Smokes sind am 2026-05-06 erledigt; AI-only/Auto-Trading-Uebergabe bleibt separat. | Gueltig |
-| `docs/wallet-funding-go-live-status.md` | Funding/Reconciliation verbessert, Canary offen | Passt zum aktuellen Projektbild. BotVault-Hardening erweitert denselben Risikobereich. | Gueltig, mit BotVault-Doku verbinden |
-| `docs/gridbot-go-live-status.md` | GridBot weitgehend code-ready, Canary/Monitoring offen | Passt. Aktueller Code fuehrt zusaetzliche Funding-Pending-Hardening-Pfade ein. | Aktualisieren nach BotVault-Fixes |
+| `docs/wallet-funding-go-live-status.md` | Funding/Reconciliation verbessert, generische Canary-Flows teils offen | Am 2026-05-25 aktualisiert: BotVault-bezogene Wallet/FundingVault-Live-Evidence ist nachgetragen; generische Rohtransfers bleiben separat. | Gueltig |
+| `docs/gridbot-go-live-status.md` | GridBot code-ready, Live Start/Seed belegt, Monitoring/Langlauf offen | Am 2026-05-25 aktualisiert: BotVault-V4 Live-Starts und FundingVault-backed Start sind nachgetragen. | Gueltig |
 | `docs/normal-bots-go-live-status.md` | Normal Bots bewusst begrenzt, reale Signal-/Fill-Parity offen | Passt. Normal Bots sollten nicht vor BotVault/Grid/Trading als kapitalstarkes Feature priorisiert werden. | Gueltig |
-| `docs/botvault-go-live-followups.md` | BotVault Canary/Public Go-live Punkte | Aktuell wichtigstes Kapital-Risikodokument. Muss nach lokalen BotVault-Hardening-Aenderungen final abgeglichen werden. | P0 fuer Kapital-Go-live |
+| `docs/botvault-go-live-followups.md` | BotVault Canary/Public Go-live Punkte | Am 2026-05-25 mit Wallet/User-funded Start/Close, FundingVault-backed Start und den verbleibenden Pendenzen abgeglichen. | Fuehrendes BotVault-Kapitaldokument |
 | `docs/botvault-e2e-integration-test-matrix.md` | End-to-end Matrix fuer Funding/Grid/Profitshare/Recovery | Sehr relevant, sollte als Canary-Protokoll genutzt werden. | Als Test-Evidence ausbauen |
 | `docs/contract-readiness-checklist.md` | Contract deployment, audit, ownership, monitoring | Noch nicht als erledigt belegt. Blockiert breiten Public BotVault-Go-live. | P0/P1 je nach Canary-Umfang |
 | `docs/exchange-capability-matrix.md` | Venue-/Adapter-Capabilities | Hilfreich, aber eher Matrix als Release-Status. | Mit CEX-Go-live zusammenfuehren |
@@ -363,7 +373,7 @@ Offen vor Public Go-live:
 | Risiko | Warum kritisch | Naechster Schritt |
 | --- | --- | --- |
 | Auth-/RBAC-Rollenmatrix nicht vollstaendig live belegt | Superadmin/Admin-Access ist gruen, aber Register/Login/Reset sowie User-/Viewer-Negativtests schuetzen vor Daten-/Trading-Exposure | Admin/User/Viewer-Smoke ausfuehren und protokollieren |
-| Kapital-Flows ohne Canary | Trading/Funding/BotVault koennen reale Verluste verursachen | Kleine limits, Canary-Protokoll, close-only fallback |
+| Kapital-Flows nur teilweise Canary-belegt | BotVault V4 Start/Close ist low-value belegt; Trading, generische Wallet-Transfers, Profit-Claim/Recovery und Langlauf koennen weiterhin reale Verluste verursachen | Kleine Limits, Canary-Protokoll, close-only fallback, 24-48h Beobachtung |
 | Kapital-Monitoring-Zustellung nicht bewiesen | Read-only Monitoring ist aktiv, aber kapitalbewegende Alerts helfen nur, wenn Ops sie sieht | Trading/Wallet/Grid/BotVault PlatformAlert Smoke |
 | Contract Readiness unvollstaendig | Onchain-Fehler sind schwer reversibel | Contract checklist als Release-Gate fuehren |
 
@@ -517,9 +527,11 @@ Vor Release sollten diese Dokumente ergaenzt oder aktualisiert werden:
 
 ## Naechste konkrete Schritte
 
-1. Aktuelle lokalen BotVault-Hardening-Aenderungen finalisieren und testen.
+1. BotVault-V4-Evidence weiter ergaenzen: Profit-Claim, FundingVault-backed
+   Close/Settlement, Recovery-Szenarien und 24-48h Betriebsauswertung.
 2. Auth-/RBAC-Rollenmatrix als naechstes echtes Staging-Gate ausfuehren.
 3. Secret-/Provider-/Monitoring-Smokes bei jedem Config-/Release-Wechsel erneut protokollieren.
 4. Billing-Go-live-Dokument erstellen.
-5. Trading, Wallet, GridBot und BotVault in dieser Reihenfolge canary-faehig testen.
+5. Trading, generische Wallet-Transfers und GridBot-Langlauf weiter
+   canary-faehig testen.
 6. Master-Plan mit einer Evidence-Tabelle als Single Source of Truth aktualisieren.
