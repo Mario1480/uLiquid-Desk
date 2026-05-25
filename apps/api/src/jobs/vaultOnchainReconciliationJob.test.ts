@@ -4,6 +4,7 @@ import {
   createVaultOnchainReconciliationJob,
   deriveV3ReconciledLifecycleState,
   hasPendingBotVaultRuntimeReconciliation,
+  rankBotVaultForOnchainReconciliation,
   recoverBotVaultV3FundingTxHash,
   shouldIncludeLegacyBotVaultsForReconciliation
 } from "./vaultOnchainReconciliationJob.js";
@@ -99,6 +100,43 @@ test("hasPendingBotVaultRuntimeReconciliation finds pending deposit and withdraw
   }), false);
 });
 
+test("rankBotVaultForOnchainReconciliation prioritizes pending funding lifecycle rows", () => {
+  const pending = {
+    vaultModel: "bot_vault_v4",
+    executionStatus: "created",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "hypercore_funded"
+      }
+    }
+  };
+  const running = {
+    vaultModel: "bot_vault_v4",
+    executionStatus: "running",
+    status: "ACTIVE",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "execution_ready"
+      }
+    }
+  };
+  const closed = {
+    vaultModel: "bot_vault_v4",
+    executionStatus: "closed",
+    status: "CLOSED",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "settled"
+      }
+    }
+  };
+
+  assert.ok(rankBotVaultForOnchainReconciliation(pending) < rankBotVaultForOnchainReconciliation(running));
+  assert.ok(rankBotVaultForOnchainReconciliation(running) < rankBotVaultForOnchainReconciliation(closed));
+});
+
 test("shouldIncludeLegacyBotVaultsForReconciliation excludes legacy rows by default in production", () => {
   assert.equal(shouldIncludeLegacyBotVaultsForReconciliation({
     NODE_ENV: "production"
@@ -129,6 +167,74 @@ test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async (
 
   const status = job.getStatus();
   assert.equal(status.mode, "offchain_shadow");
+});
+
+test("vaultOnchainReconciliationJob backs off and stops bot reads after an RPC rate limit", async () => {
+  const restoreEnv = installOnchainEnv();
+  let botReadCount = 0;
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_rate_1",
+              userId: "user_1",
+              vaultModel: "bot_vault_v4",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              executionStatus: "created",
+              executionMetadata: {
+                fundingLifecycle: {
+                  stage: "hypercore_funded"
+                }
+              }
+            },
+            {
+              id: "bv_rate_2",
+              userId: "user_1",
+              vaultModel: "bot_vault_v4",
+              vaultAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              executionStatus: "created",
+              executionMetadata: {
+                fundingLifecycle: {
+                  stage: "hypercore_funded"
+                }
+              }
+            }
+          ];
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      readBotVaultV3State: async () => {
+        botReadCount += 1;
+        throw new Error("LimitExceededRpcError: rate limited");
+      }
+    });
+
+    const result = await job.runCycle("manual");
+    const status = job.getStatus();
+
+    assert.equal(result.enabled, true);
+    assert.equal(botReadCount, 1);
+    assert.equal(status.totalRateLimitedCycles, 1);
+    assert.ok(status.rateLimitedUntil);
+    assert.ok(status.pollMs > 0);
+  } finally {
+    restoreEnv();
+  }
 });
 
 test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck in created execution state", async () => {

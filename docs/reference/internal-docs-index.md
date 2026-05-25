@@ -38,6 +38,7 @@ This page links existing technical and operational repository documents. It comp
 - [BotVault V4 Rollout](../botvault-v4-rollout.md)
 - [BotVault V4 Status Model](../botvault-v4-status-model.md)
 - [BotVault Capital State Machine](../botvault-capital-state-machine.md)
+- [FundingVault BotVault Launch Live Monitoring](../tasks/2026-05-25-funding-vault-live-start.md)
 - [Onchain Deploy Security Checklist](../onchain-deploy-security-checklist.md)
 
 ## AI and Predictions

@@ -92,6 +92,18 @@ const ACTION_POLL_LIMIT = Math.max(
 );
 const EPSILON = 0.000001;
 
+export function rankSubmittedOnchainActionForIndexer(action: { actionType?: unknown } | null | undefined): number {
+  const actionType = String(action?.actionType ?? "").trim();
+  if (actionType === "launch_bot_vault_from_funding_vault") return 0;
+  if (actionType === "fund_bot_vault_from_funding_vault") return 1;
+  if (BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES.includes(actionType as any)) return 2;
+  if (BOT_VAULT_RUNTIME_FUND_ACTION_TYPES.includes(actionType as any)) return 3;
+  if (actionType === "create_funding_vault") return 4;
+  if (actionType.includes("funding_vault")) return 5;
+  if (actionType.includes("master_vault")) return 6;
+  return 10;
+}
+
 function isGridExecutionActive(row: any): boolean {
   const state = String(row?.state ?? "").trim().toLowerCase();
   const stateJson = row?.stateJson && typeof row.stateJson === "object" && !Array.isArray(row.stateJson)
@@ -1120,7 +1132,7 @@ export function createVaultOnchainIndexerJob(
 
   function applyRateLimitBackoff(params: {
     reason: "startup" | "scheduled" | "manual";
-    stage: "block_number" | "get_logs";
+    stage: "block_number" | "factory_state" | "get_logs" | "receipt";
     error: unknown;
     fromBlock?: bigint | null;
     toBlock?: bigint | null;
@@ -1246,7 +1258,7 @@ export function createVaultOnchainIndexerJob(
         };
       }
 
-      const actions = await db.onchainAction.findMany({
+      const submittedActions = await db.onchainAction.findMany({
         where: {
           status: "submitted",
           txHash: { not: null }
@@ -1297,10 +1309,14 @@ export function createVaultOnchainIndexerJob(
           }
         }
       });
+      const actions = [...submittedActions].sort(
+        (left, right) => rankSubmittedOnchainActionForIndexer(left) - rankSubmittedOnchainActionForIndexer(right)
+      );
 
       let processedEvents = 0;
       let skippedDuplicates = 0;
       let failedEvents = 0;
+      let rateLimitedThisCycle = false;
 
       for (const action of actions) {
         const txHash = String(action.txHash ?? "").trim().toLowerCase();
@@ -1326,11 +1342,30 @@ export function createVaultOnchainIndexerJob(
             contractVersion === "v4" ? "v4" : "v3"
           );
           if (botId && factoryAddress && isAddress(factoryAddress)) {
+            let factoryStateRateLimited = false;
             const resolvedVaultAddress = await readBotVaultV3AddressForBotId(
               client,
               factoryAddress,
               botId
-            ).catch(() => null);
+            ).catch((error: unknown) => {
+              if (isRateLimitError(error)) {
+                rateLimitedThisCycle = true;
+                factoryStateRateLimited = true;
+                failedEvents += 1;
+                applyRateLimitBackoff({ reason, stage: "factory_state", error });
+                logger.warn("vault_onchain_indexer_factory_state_rate_limited", {
+                  reason,
+                  actionId: action.id,
+                  actionType: action.actionType,
+                  txHash,
+                  botId,
+                  factoryAddress,
+                  error: String(error)
+                });
+              }
+              return null;
+            });
+            if (factoryStateRateLimited) break;
             if (resolvedVaultAddress) {
               try {
                 await db.$transaction(async (tx: any) => {
@@ -1423,7 +1458,8 @@ export function createVaultOnchainIndexerJob(
         } catch (error) {
           if (isReceiptPendingError(error)) continue;
           if (isRateLimitError(error)) {
-            applyRateLimitBackoff({ reason, stage: "block_number", error });
+            rateLimitedThisCycle = true;
+            applyRateLimitBackoff({ reason, stage: "receipt", error });
             failedEvents += 1;
             logger.warn("vault_onchain_indexer_receipt_rate_limited", {
               reason,
@@ -1432,7 +1468,7 @@ export function createVaultOnchainIndexerJob(
               txHash,
               error: String(error)
             });
-            continue;
+            break;
           }
           failedEvents += 1;
           logger.warn("vault_onchain_indexer_receipt_poll_failed", {
@@ -1891,7 +1927,7 @@ export function createVaultOnchainIndexerJob(
       consecutiveFailedCycles = 0;
       lastError = null;
       lastErrorAt = null;
-      resetAdaptiveRateLimitState();
+      if (!rateLimitedThisCycle) resetAdaptiveRateLimitState();
 
       if (processedEvents > 0 || failedEvents > 0) {
         logger.info("vault_onchain_indexer_cycle", {

@@ -4,6 +4,7 @@ import {
   createVaultOnchainIndexerJob,
   filterLogsFromBlock,
   mergeBotVaultExecutionMetadata,
+  rankSubmittedOnchainActionForIndexer,
   readDeferredProvisioningAllocationUsd,
   requiresDeferredReserve,
   shouldQueueBotVaultV3AutoActivate
@@ -149,4 +150,16 @@ test("filterLogsFromBlock keeps only logs at or after the requested block", () =
   const filtered = filterLogsFromBlock(logs, 101n);
 
   assert.deepEqual(filtered.map((entry: any) => Number(entry.blockNumber)), [101, 102]);
+});
+
+test("rankSubmittedOnchainActionForIndexer prioritizes funding-vault launch confirmations", () => {
+  assert.equal(rankSubmittedOnchainActionForIndexer({ actionType: "launch_bot_vault_from_funding_vault" }), 0);
+  assert.ok(
+    rankSubmittedOnchainActionForIndexer({ actionType: "launch_bot_vault_from_funding_vault" })
+      < rankSubmittedOnchainActionForIndexer({ actionType: "create_bot_vault_v4" })
+  );
+  assert.ok(
+    rankSubmittedOnchainActionForIndexer({ actionType: "fund_bot_vault_from_funding_vault" })
+      < rankSubmittedOnchainActionForIndexer({ actionType: "withdraw_funding_vault" })
+  );
 });

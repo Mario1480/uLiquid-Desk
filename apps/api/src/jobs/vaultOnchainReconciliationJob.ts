@@ -28,6 +28,14 @@ import {
 const POLL_MS = Math.max(15, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_INTERVAL_SECONDS ?? "60")) * 1000;
 const MASTER_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_MASTER_LIMIT ?? "100"));
 const BOT_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_BOT_LIMIT ?? "200"));
+const RATE_LIMIT_BACKOFF_BASE_MS = Math.max(
+  POLL_MS,
+  Number(process.env.VAULT_ONCHAIN_RECONCILIATION_RATE_LIMIT_BACKOFF_SECONDS ?? "45") * 1000
+);
+const RATE_LIMIT_BACKOFF_MAX_MS = Math.max(
+  RATE_LIMIT_BACKOFF_BASE_MS,
+  Number(process.env.VAULT_ONCHAIN_RECONCILIATION_RATE_LIMIT_MAX_SECONDS ?? "300") * 1000
+);
 const EPSILON = 0.000001;
 const LOW_HYPE_STATE_KEY_PREFIX = "vault.agent_low_hype.v1:";
 const erc20BalanceOfAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
@@ -158,6 +166,14 @@ function jobIssueMetadata(params: {
     retryable: retryable ?? recoveryAction === "retry",
     ...(error === undefined ? {} : { error: stringifyJobError(error) })
   };
+}
+
+function isRateLimitError(error: unknown): boolean {
+  const raw = String(error ?? "").toLowerCase();
+  return raw.includes("limitexceededrpcerror")
+    || raw.includes("rate limit")
+    || raw.includes("rate limited")
+    || raw.includes("too many requests");
 }
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -657,6 +673,33 @@ function hasFundingReadyForExecution(row: {
 
 function normalizeExecutionStatus(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+export function rankBotVaultForOnchainReconciliation(row: unknown): number {
+  const normalizedRow = toRecord(row);
+  const lifecycleStage = getBotVaultFundingLifecycleStage(normalizedRow);
+  const executionStatus = normalizeExecutionStatus(normalizedRow.executionStatus);
+  const fundingStatus = normalizeSignal(normalizedRow.fundingStatus);
+  const hypercoreFundingStatus = normalizeSignal(normalizedRow.hypercoreFundingStatus);
+  const dbStatus = normalizeBotVaultStatus(normalizedRow.status);
+
+  if (hasPendingBotVaultRuntimeReconciliation(normalizedRow)) return 0;
+  if (
+    ["funding_requested", "hyper_evm_confirmed", "hypercore_funded", "perp_margin_transferred", "hype_reserve_ready", "execution_ready"].includes(lifecycleStage)
+    && ["", "created", "funded"].includes(executionStatus)
+  ) {
+    return 1;
+  }
+  if (
+    fundingStatus.includes("pending")
+    || fundingStatus.includes("confirmed")
+    || ["pending", "not_funded"].includes(hypercoreFundingStatus)
+  ) {
+    return 2;
+  }
+  if (executionStatus === "running") return 3;
+  if (dbStatus === "CLOSE_ONLY" || dbStatus === "CLOSED" || executionStatus === "closed") return 8;
+  return 5;
 }
 
 export function deriveV3ReconciledLifecycleState(params: {
@@ -1370,6 +1413,8 @@ export type VaultOnchainReconciliationStatus = {
   totalCycles: number;
   totalDrifts: number;
   totalFailedCycles: number;
+  totalRateLimitedCycles: number;
+  rateLimitedUntil: string | null;
 };
 
 export function createVaultOnchainReconciliationJob(
@@ -1415,6 +1460,48 @@ export function createVaultOnchainReconciliationJob(
   let totalCycles = 0;
   let totalDrifts = 0;
   let totalFailedCycles = 0;
+  let totalRateLimitedCycles = 0;
+  let currentPollMs = POLL_MS;
+  let rateLimitedUntil: Date | null = null;
+  let started = false;
+
+  function scheduleNextRun(delayMs = currentPollMs) {
+    if (!started) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      timer = null;
+      await runCycle("scheduled");
+      scheduleNextRun(currentPollMs);
+    }, delayMs);
+  }
+
+  function resetAdaptiveRateLimitState() {
+    currentPollMs = POLL_MS;
+    rateLimitedUntil = null;
+  }
+
+  function applyRateLimitBackoff(params: {
+    reason: "startup" | "scheduled" | "manual";
+    stage: "master_state" | "agent_balance" | "bot_state" | "bot_usdc_balance";
+    entityType: "master_vault" | "bot_vault";
+    entityId: string;
+    vaultAddress?: string | null;
+    error: unknown;
+  }) {
+    totalRateLimitedCycles += 1;
+    currentPollMs = Math.min(RATE_LIMIT_BACKOFF_MAX_MS, Math.max(RATE_LIMIT_BACKOFF_BASE_MS, currentPollMs * 2));
+    rateLimitedUntil = new Date(Date.now() + currentPollMs);
+    logger.warn("vault_onchain_reconciliation_rate_limited", {
+      reason: params.reason,
+      stage: params.stage,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      vaultAddress: params.vaultAddress ?? null,
+      nextPollMs: currentPollMs,
+      retryAfter: rateLimitedUntil.toISOString(),
+      error: String(params.error)
+    });
+  }
 
   async function runCycle(reason: "startup" | "scheduled" | "manual" = "scheduled") {
     if (running) return { enabled: false, mode: lastMode, drifts: 0 };
@@ -1429,6 +1516,7 @@ export function createVaultOnchainReconciliationJob(
         lastDriftCount = 0;
         lastError = null;
         lastErrorAt = null;
+        resetAdaptiveRateLimitState();
         return { enabled: false, mode, drifts: 0 };
       }
 
@@ -1486,11 +1574,23 @@ export function createVaultOnchainReconciliationJob(
 
       let driftCount = 0;
       let criticalPersistenceFailures = 0;
+      let rateLimitedThisCycle = false;
 
       for (const row of masters) {
         const address = String(row.onchainAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
         const onchain = await readMasterVaultStateFn(client, address).catch((error: unknown) => {
+          if (isRateLimitError(error)) {
+            rateLimitedThisCycle = true;
+            applyRateLimitBackoff({
+              reason,
+              stage: "master_state",
+              entityType: "master_vault",
+              entityId: String(row.id),
+              vaultAddress: address,
+              error
+            });
+          }
           logger.warn("vault_onchain_reconciliation_master_state_read_failed", jobIssueMetadata({
             issueClass: "recoverable_track",
             mismatchCategory: "observed_state_incomplete",
@@ -1502,6 +1602,7 @@ export function createVaultOnchainReconciliationJob(
           }));
           return null;
         });
+        if (rateLimitedThisCycle) break;
         if (!onchain) continue;
         const agentWallet = normalizeAddress(row.agentWallet);
         const lowHypeThreshold = readPositiveNumber(row.agentHypeWarnThreshold, 0.05);
@@ -1514,6 +1615,7 @@ export function createVaultOnchainReconciliationJob(
         let agentLastBalanceAt = row.agentLastBalanceAt instanceof Date ? row.agentLastBalanceAt : null;
         let agentBalanceStale = true;
         if (agentWallet) {
+          let agentBalanceRateLimited = false;
           try {
             const balanceWei = await readNativeBalance(client, agentWallet);
             agentBalanceWei = balanceWei.toString();
@@ -1539,6 +1641,18 @@ export function createVaultOnchainReconciliationJob(
               }));
             });
           } catch (error) {
+            if (isRateLimitError(error)) {
+              rateLimitedThisCycle = true;
+              agentBalanceRateLimited = true;
+              applyRateLimitBackoff({
+                reason,
+                stage: "agent_balance",
+                entityType: "master_vault",
+                entityId: String(row.id),
+                vaultAddress: address,
+                error
+              });
+            }
             logger.warn("vault_onchain_reconciliation_agent_balance_read_failed", jobIssueMetadata({
               issueClass: "recoverable_track",
               mismatchCategory: "observed_state_incomplete",
@@ -1550,6 +1664,7 @@ export function createVaultOnchainReconciliationJob(
             }));
             agentBalanceStale = true;
           }
+          if (agentBalanceRateLimited) break;
         }
         const lowHypeState = deriveLowHypeState(agentBalanceWei, lowHypeThreshold, agentBalanceStale);
         const notificationStateKey = `${LOW_HYPE_STATE_KEY_PREFIX}${row.id}`;
@@ -1703,13 +1818,28 @@ export function createVaultOnchainReconciliationJob(
         });
       }
 
-      for (const row of bots) {
+      const orderedBots = [...bots].sort(
+        (left, right) => rankBotVaultForOnchainReconciliation(left) - rankBotVaultForOnchainReconciliation(right)
+      );
+
+      for (const row of rateLimitedThisCycle ? [] : orderedBots) {
         const address = String(row.vaultAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
         const isV3 = isBotVaultRuntimeModelRow(row);
         const runtimeModel = resolveBotVaultRuntimeModel(row) ?? BOT_VAULT_RUNTIME_MODEL_V4;
         const onchain = isV3
           ? await readBotVaultV3StateFn(client, address).catch((error: unknown) => {
+              if (isRateLimitError(error)) {
+                rateLimitedThisCycle = true;
+                applyRateLimitBackoff({
+                  reason,
+                  stage: "bot_state",
+                  entityType: "bot_vault",
+                  entityId: String(row.id),
+                  vaultAddress: address,
+                  error
+                });
+              }
               logger.warn("vault_onchain_reconciliation_bot_state_read_failed", jobIssueMetadata({
                 issueClass: "recoverable_track",
                 mismatchCategory: "observed_state_incomplete",
@@ -1723,6 +1853,17 @@ export function createVaultOnchainReconciliationJob(
               return null;
             })
           : await readBotVaultStateFn(client, address).catch((error: unknown) => {
+              if (isRateLimitError(error)) {
+                rateLimitedThisCycle = true;
+                applyRateLimitBackoff({
+                  reason,
+                  stage: "bot_state",
+                  entityType: "bot_vault",
+                  entityId: String(row.id),
+                  vaultAddress: address,
+                  error
+                });
+              }
               logger.warn("vault_onchain_reconciliation_bot_state_read_failed", jobIssueMetadata({
                 issueClass: "recoverable_track",
                 mismatchCategory: "observed_state_incomplete",
@@ -1735,6 +1876,7 @@ export function createVaultOnchainReconciliationJob(
               }));
               return null;
             });
+        if (rateLimitedThisCycle) break;
         if (!onchain) continue;
 
         if (onchainActionService && typeof db.onchainAction?.findFirst === "function") {
@@ -1798,9 +1940,10 @@ export function createVaultOnchainReconciliationJob(
               ? "PAUSED"
               : onchain.status === 2
                 ? "CLOSE_ONLY"
-                : onchain.status === 3
+              : onchain.status === 3
                 ? "CLOSED"
                   : "ERROR";
+        let v3UsdcBalanceRateLimited = false;
         const v3UsdcBalanceRaw = isV3
           ? await client.readContract({
               address: addressBook.usdcAddress,
@@ -1808,6 +1951,18 @@ export function createVaultOnchainReconciliationJob(
               functionName: "balanceOf",
               args: [address]
             }).catch((error: unknown) => {
+              if (isRateLimitError(error)) {
+                rateLimitedThisCycle = true;
+                v3UsdcBalanceRateLimited = true;
+                applyRateLimitBackoff({
+                  reason,
+                  stage: "bot_usdc_balance",
+                  entityType: "bot_vault",
+                  entityId: String(row.id),
+                  vaultAddress: address,
+                  error
+                });
+              }
               logger.warn("vault_onchain_reconciliation_v3_usdc_balance_read_failed", jobIssueMetadata({
                 issueClass: "recoverable_track",
                 mismatchCategory: "observed_state_incomplete",
@@ -1821,6 +1976,7 @@ export function createVaultOnchainReconciliationJob(
               return null;
             })
           : null;
+        if (v3UsdcBalanceRateLimited) break;
         const v3UsdcBalanceUsd = typeof v3UsdcBalanceRaw === "bigint"
           ? Number(formatUnits(v3UsdcBalanceRaw, 6))
           : null;
@@ -2376,6 +2532,7 @@ export function createVaultOnchainReconciliationJob(
 
       lastDriftCount = driftCount;
       totalDrifts += driftCount;
+      if (!rateLimitedThisCycle) resetAdaptiveRateLimitState();
       if (criticalPersistenceFailures > 0) {
         lastError = `vault_onchain_reconciliation_critical_persistence_failures:${criticalPersistenceFailures}`;
         lastErrorAt = new Date();
@@ -2447,16 +2604,16 @@ export function createVaultOnchainReconciliationJob(
   }
 
   function start() {
-    if (timer) return;
-    timer = setInterval(() => {
-      void runCycle("scheduled");
-    }, POLL_MS);
-    void runCycle("startup");
+    if (started) return;
+    started = true;
+    void runCycle("startup").finally(() => {
+      scheduleNextRun(currentPollMs);
+    });
   }
 
   function stop() {
-    if (!timer) return;
-    clearInterval(timer);
+    started = false;
+    if (timer) clearTimeout(timer);
     timer = null;
   }
 
@@ -2465,7 +2622,7 @@ export function createVaultOnchainReconciliationJob(
       enabled: isOnchainMode((lastMode as any) ?? "offchain_shadow"),
       mode: lastMode,
       running,
-      pollMs: POLL_MS,
+      pollMs: currentPollMs,
       lastStartedAt: lastStartedAt ? lastStartedAt.toISOString() : null,
       lastFinishedAt: lastFinishedAt ? lastFinishedAt.toISOString() : null,
       lastError,
@@ -2474,7 +2631,9 @@ export function createVaultOnchainReconciliationJob(
       lastStatus: lastError ? "blocked" : lastDriftCount > 0 ? "drift_detected" : "clean",
       totalCycles,
       totalDrifts,
-      totalFailedCycles
+      totalFailedCycles,
+      totalRateLimitedCycles,
+      rateLimitedUntil: rateLimitedUntil ? rateLimitedUntil.toISOString() : null
     };
   }
 
