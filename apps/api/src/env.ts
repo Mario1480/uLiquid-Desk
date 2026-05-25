@@ -128,6 +128,14 @@ export function assertApiEnv(env: EnvMap = process.env): void {
       validate: (value) => validatePositiveInteger(value)
     },
     {
+      names: ["SESSION_TTL_DAYS"],
+      validate: (value) => validatePositiveInteger(value)
+    },
+    {
+      names: ["API_REQUEST_TIMEOUT_MS"],
+      validate: (value) => validatePositiveInteger(value)
+    },
+    {
       names: ["CORS_ORIGINS"],
       required: production,
       message: "CORS_ORIGINS is required in production.",
@@ -160,6 +168,14 @@ export function assertApiEnv(env: EnvMap = process.env): void {
   ], env);
 
   if (production) {
+    const cookieSecure = String(env.COOKIE_SECURE ?? "").trim().toLowerCase();
+    if (cookieSecure === "0" || cookieSecure === "false") {
+      throw new Error(
+        "[uLiquid Desk] apps/api environment validation failed:\n"
+        + "- COOKIE_SECURE must not be disabled in production."
+      );
+    }
+
     const strategyToken = readEnvValue(env, "PY_STRATEGY_AUTH_TOKEN");
     const gridToken = readEnvValue(env, "PY_GRID_AUTH_TOKEN");
     if (pythonRuntimeEnabled && strategyToken && gridToken && strategyToken !== gridToken) {

@@ -999,15 +999,22 @@ model DashboardPerformanceAccountSnapshot {
 }
 
 model Session {
-  id           String   @id @default(cuid())
-  userId       String
-  tokenHash    String   @unique
-  createdAt    DateTime @default(now())
-  lastActiveAt DateTime @default(now())
-  expiresAt    DateTime
-  user         User     @relation(fields: [userId], references: [id])
+  id             String   @id @default(cuid())
+  userId         String
+  tokenHash      String   @unique
+  createdAt      DateTime @default(now())
+  lastActiveAt   DateTime @default(now())
+  expiresAt      DateTime
+  deviceId       String?  @map("device_id")
+  deviceName     String?  @map("device_name")
+  devicePlatform String?  @map("device_platform")
+  appVersion     String?  @map("app_version")
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  user           User     @relation(fields: [userId], references: [id])
 
   @@index([userId, expiresAt])
+  @@index([userId, deviceId], map: "Session_userId_deviceId_idx")
 }
 
 model SiweNonce {

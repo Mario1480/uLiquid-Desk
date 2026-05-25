@@ -16,6 +16,7 @@ const DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? "30");
 const CSRF_MAX_AGE_MS = CSRF_TTL_DAYS * 24 * 60 * 60 * 1000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 function resolveCorsOrigins(): string[] {
   const origins = (process.env.CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS)
@@ -102,6 +103,25 @@ export function enforceSessionCsrf(req: express.Request, res: express.Response, 
   res.status(403).json({ error: "invalid_csrf_token" });
 }
 
+export function requestTimeoutMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const timeoutMs = Math.max(
+    1_000,
+    Number(process.env.API_REQUEST_TIMEOUT_MS ?? String(DEFAULT_REQUEST_TIMEOUT_MS))
+  );
+  const timer = setTimeout(() => {
+    if (res.headersSent || res.writableEnded) return;
+    res.status(504).json({
+      error: "request_timeout",
+      message: "The request took too long to complete."
+    });
+  }, timeoutMs);
+  timer.unref?.();
+
+  res.on("finish", () => clearTimeout(timer));
+  res.on("close", () => clearTimeout(timer));
+  next();
+}
+
 export function configureApiBaseMiddleware(app: express.Express): void {
   const origins = resolveCorsOrigins();
 
@@ -134,4 +154,5 @@ export function configureApiBaseMiddleware(app: express.Express): void {
     }
   }));
   app.use(attachRequestContext);
+  app.use(requestTimeoutMiddleware);
 }

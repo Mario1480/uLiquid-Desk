@@ -116,6 +116,12 @@ import { registerMobileDashboardRoutes } from "./mobile/routes.js";
 import { registerMobileMonitoringRoutes } from "./mobile/monitoringRoutes.js";
 import { registerMobilePushRoutes } from "./mobile/pushRoutes.js";
 import { registerMobileTradingRoutes } from "./mobile/tradingRoutes.js";
+import {
+  createMobileRateLimitMiddlewares,
+  monitorFailedMobileRequests,
+  sanitizeMobileRequest,
+  standardizeMobileErrorResponses
+} from "./mobile/security.js";
 import { registerPredictionReadRoutes } from "./predictions/routes-read.js";
 import { registerPredictionGenerateRoutes } from "./predictions/routes-generate.js";
 import { registerPredictionStateRoutes } from "./predictions/routes-state.js";
@@ -722,6 +728,13 @@ app.use(
 app.use(/^\/auth\/password-reset\/confirm\/?$/, authOtpIpRateLimit, authOtpAccountRateLimit);
 app.use("/auth/logout", logoutRateLimit);
 app.use("/auth/siwe/link", requireAuth, siweLinkRateLimit);
+app.use(
+  /^\/mobile(?:\/|$)/,
+  sanitizeMobileRequest,
+  standardizeMobileErrorResponses,
+  monitorFailedMobileRequests,
+  ...createMobileRateLimitMiddlewares()
+);
 
 app.use("/grid/templates/:id/instances",
   requireAuth,

@@ -1,7 +1,16 @@
+import crypto from "node:crypto";
 import express from "express";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { logger } from "../logger.js";
+import { getCorrelationId, getRequestId } from "../requestContext.js";
+import { SESSION_COOKIE } from "./cookies.js";
 import { clearSiweNonceCookie } from "./siwe.service.js";
 import { assignAffiliateReferral, resolveAffiliateUserIdByCode } from "../affiliate/program.js";
+import {
+  clearLoginFailures,
+  isLoginLocked,
+  recordLoginFailure
+} from "./loginProtection.js";
 import {
   LEGAL_ACKNOWLEDGEMENT_TEXT_HASH,
   LEGAL_ACKNOWLEDGEMENT_VERSION,
@@ -32,7 +41,7 @@ export type RegisterAuthRoutesDeps = {
   passwordResetConfirmSchema: any;
   hashPassword(password: string): Promise<string>;
   verifyPassword(password: string, hash: string): Promise<boolean>;
-  createSession(res: express.Response, userId: string): Promise<void>;
+  createSession(res: express.Response, userId: string, req?: express.Request): Promise<void>;
   destroySession(res: express.Response, token: string | null): Promise<void>;
   toSafeUser(user: any): any;
   ensureWorkspaceMembership(userId: string, email: string): Promise<any>;
@@ -54,6 +63,51 @@ export type RegisterAuthRoutesDeps = {
 };
 
 export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoutesDeps) {
+  function hashSessionToken(token: string): string {
+    return crypto.createHash("sha256").update(token).digest("hex");
+  }
+
+  function requestIp(req: express.Request): string | null {
+    const value = String(req.ip ?? req.headers["x-forwarded-for"] ?? "").trim();
+    return value || null;
+  }
+
+  async function recordAuthAuditEvent(input: {
+    req: express.Request;
+    userId: string;
+    action: "auth.login" | "auth.logout";
+    sessionId?: string | null;
+  }) {
+    try {
+      const member = await deps.db.workspaceMember.findFirst({
+        where: { userId: input.userId },
+        orderBy: { createdAt: "asc" },
+        select: { workspaceId: true }
+      });
+      if (!member?.workspaceId) return;
+      await deps.db.auditEvent.create({
+        data: {
+          workspaceId: member.workspaceId,
+          actorUserId: input.userId,
+          action: input.action,
+          entityType: "session",
+          entityId: input.sessionId ?? null,
+          ip: requestIp(input.req),
+          meta: {
+            requestId: getRequestId({ locals: input.req.res?.locals ?? {} } as express.Response),
+            userAgent: String(input.req.get("user-agent") ?? "").slice(0, 500)
+          }
+        }
+      });
+    } catch (error) {
+      logger.warn("auth_audit_event_failed", {
+        action: input.action,
+        userId: input.userId,
+        reason: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   async function markOtpFailure(otp: { id: string; attemptCount?: number | null; expiresAt: Date }) {
     await deps.db.reauthOtp.update({
       where: { id: otp.id },
@@ -277,7 +331,8 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
       select: { id: true, email: true, walletAddress: true, emailVerifiedAt: true }
     });
     await deps.db.reauthOtp.deleteMany({ where: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE } });
-    await deps.createSession(res, user.id);
+    await deps.createSession(res, user.id, req);
+    await recordAuthAuditEvent({ req, userId: user.id, action: "auth.login" });
     return res.json({ ok: true, user: deps.toSafeUser(verified) });
   });
 
@@ -288,11 +343,30 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     }
 
     const email = parsed.data.email.toLowerCase();
+    const locked = isLoginLocked(req);
+    if (locked.locked) {
+      res.setHeader("Retry-After", String(locked.retryAfterSec));
+      logger.warn("auth_login_bruteforce_blocked", {
+        email,
+        requestId: getRequestId(res),
+        correlationId: getCorrelationId(res),
+        retryAfterSec: locked.retryAfterSec
+      });
+      return res.status(429).json({
+        error: "too_many_login_attempts",
+        message: "Too many failed login attempts. Please wait before trying again.",
+        retryAfterSec: locked.retryAfterSec
+      });
+    }
+
     const user = await deps.db.user.findUnique({
       where: { email },
       select: { id: true, email: true, walletAddress: true, passwordHash: true, emailVerifiedAt: true }
     });
-    if (!user?.passwordHash) return res.status(401).json({ error: "invalid_credentials" });
+    if (!user?.passwordHash) {
+      recordLoginFailure(req);
+      return res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password." });
+    }
 
     const pendingEmailVerification = !user.emailVerifiedAt
       ? await findPendingEmailVerification(user.id)
@@ -302,8 +376,19 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     }
 
     const passwordOk = await deps.verifyPassword(parsed.data.password, user.passwordHash);
-    if (!passwordOk) return res.status(401).json({ error: "invalid_credentials" });
+    if (!passwordOk) {
+      const state = recordLoginFailure(req);
+      logger.warn("auth_login_failed", {
+        email,
+        userId: user.id,
+        failureCount: state.count,
+        requestId: getRequestId(res),
+        correlationId: getCorrelationId(res)
+      });
+      return res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password." });
+    }
 
+    clearLoginFailures(req);
     await deps.ensureWorkspaceMembership(user.id, user.email);
     try {
       const resolvedPlan = await deps.resolveEffectivePlanForUser(user.id);
@@ -311,13 +396,23 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     } catch {
       // ignore billing sync issues during login
     }
-    await deps.createSession(res, user.id);
+    await deps.createSession(res, user.id, req);
+    await recordAuthAuditEvent({ req, userId: user.id, action: "auth.login" });
     return res.json({ user: deps.toSafeUser(user) });
   });
 
   app.post("/auth/logout", async (req, res) => {
-    const token = req.cookies?.mm_session ?? null;
+    const token = req.cookies?.[SESSION_COOKIE] ?? null;
+    const session = token
+      ? await deps.db.session.findUnique({
+          where: { tokenHash: hashSessionToken(token) },
+          select: { id: true, userId: true }
+        })
+      : null;
     await deps.destroySession(res, token);
+    if (session?.userId) {
+      await recordAuthAuditEvent({ req, userId: session.userId, action: "auth.logout", sessionId: session.id });
+    }
     clearSiweNonceCookie(res);
     return res.json({ ok: true });
   });
