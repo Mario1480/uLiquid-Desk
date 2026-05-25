@@ -458,8 +458,16 @@ function SettingsHubContent() {
         )}
       />
 
-      {error ? <Notice tone="danger" className="card settingsAlert settingsAlertError">{error}</Notice> : null}
-      {notice ? <Notice tone="success" className="card settingsAlert settingsAlertSuccess">{notice}</Notice> : null}
+      {error ? (
+        <Notice tone="danger" className="card settingsAlert settingsAlertError" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      ) : null}
+      {notice ? (
+        <Notice tone="success" className="card settingsAlert settingsAlertSuccess" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Notice>
+      ) : null}
 
       <div className="settingsHubSummary">
         <div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${accountTone}`}>

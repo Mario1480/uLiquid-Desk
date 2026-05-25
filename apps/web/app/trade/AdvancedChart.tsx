@@ -109,8 +109,10 @@ declare global {
 }
 
 const CHART_CANDLE_FETCH_LIMIT = 1000;
+const BINGX_CHART_CANDLE_FETCH_LIMIT = 500;
+const ADVANCED_CHART_WARMUP_CANDLE_FETCH_LIMIT = 650;
 const ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT = 350;
-const ADVANCED_CHART_CANDLE_CACHE_TTL_MS = 4000;
+const ADVANCED_CHART_CANDLE_CACHE_TTL_MS = 12000;
 const ADVANCED_CHART_SUBSCRIBE_POLL_MS = 10000;
 const ADVANCED_CHART_CANDLES_POLL_MS = 30000;
 const ADVANCED_CHART_MARKERS_POLL_MS = 15000;
@@ -129,6 +131,7 @@ const DATAFEED_CONFIGURATION: DatafeedConfiguration = {
 let tradingViewScriptPromise: Promise<TradingViewGlobal> | null = null;
 const advancedChartCandleCache = new Map<string, {
   expiresAt: number;
+  limit: number;
   promise: Promise<CandleApiItem[]>;
 }>();
 
@@ -177,6 +180,39 @@ function buildCandlesPath(params: {
   return `/api/market/candles?exchangeAccountId=${encodeURIComponent(params.exchangeAccountId)}&symbol=${encodeURIComponent(params.symbol)}&timeframe=${encodeURIComponent(params.timeframe)}&limit=${params.limit}&marketType=${encodeURIComponent(params.marketType)}`;
 }
 
+function isBingxMarketDataExchange(value: string | null | undefined): boolean {
+  return String(value ?? "").trim().toLowerCase() === "bingx";
+}
+
+function chartCandleFetchLimitForExchange(value: string | null | undefined): number {
+  return isBingxMarketDataExchange(value) ? BINGX_CHART_CANDLE_FETCH_LIMIT : CHART_CANDLE_FETCH_LIMIT;
+}
+
+function chartWarmupFetchLimitForExchange(value: string | null | undefined): number {
+  return Math.min(
+    chartCandleFetchLimitForExchange(value),
+    isBingxMarketDataExchange(value) ? BINGX_CHART_CANDLE_FETCH_LIMIT : ADVANCED_CHART_WARMUP_CANDLE_FETCH_LIMIT
+  );
+}
+
+function buildCandleCacheScopeKey(params: {
+  exchangeAccountId: string;
+  symbol: string;
+  timeframe: string;
+  marketType: "spot" | "perp";
+}): string {
+  return [
+    params.exchangeAccountId,
+    params.marketType,
+    params.symbol.trim().toUpperCase(),
+    params.timeframe
+  ].join("::");
+}
+
+function limitCandleItems(items: CandleApiItem[], limit: number): CandleApiItem[] {
+  return items.length > limit ? items.slice(-limit) : items;
+}
+
 function pruneAdvancedChartCandleCache(now = Date.now()): void {
   for (const [key, entry] of advancedChartCandleCache) {
     if (entry.expiresAt <= now) {
@@ -197,32 +233,42 @@ async function fetchAdvancedChartCandles(params: {
   timeframe: string;
   limit: number;
   marketType: "spot" | "perp";
+}, options?: {
+  bypassCache?: boolean;
+  writeCache?: boolean;
 }): Promise<CandleApiItem[]> {
-  const cacheKey = [
-    params.exchangeAccountId,
-    params.marketType,
-    params.symbol.trim().toUpperCase(),
-    params.timeframe,
-    params.limit
-  ].join("::");
+  const rawLimit = Math.trunc(Number(params.limit));
+  const requestedLimit = Number.isFinite(rawLimit)
+    ? Math.max(20, Math.min(CHART_CANDLE_FETCH_LIMIT, rawLimit))
+    : 400;
+  const cacheKey = buildCandleCacheScopeKey(params);
   const now = Date.now();
   const cached = advancedChartCandleCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return cached.promise;
+  if (!options?.bypassCache && cached && cached.expiresAt > now && cached.limit >= requestedLimit) {
+    return cached.promise.then((items) => limitCandleItems(items, requestedLimit));
   }
 
   pruneAdvancedChartCandleCache(now);
-  const promise = apiGet<CandlesResponse>(buildCandlesPath(params))
+  const promise = apiGet<CandlesResponse>(buildCandlesPath({
+    ...params,
+    limit: requestedLimit
+  }))
     .then((payload) => payload.items ?? [])
     .catch((error) => {
-      advancedChartCandleCache.delete(cacheKey);
+      const current = advancedChartCandleCache.get(cacheKey);
+      if (current?.promise === promise) {
+        advancedChartCandleCache.delete(cacheKey);
+      }
       throw error;
     });
-  advancedChartCandleCache.set(cacheKey, {
-    expiresAt: now + ADVANCED_CHART_CANDLE_CACHE_TTL_MS,
-    promise
-  });
-  return promise;
+  if (options?.writeCache !== false) {
+    advancedChartCandleCache.set(cacheKey, {
+      expiresAt: now + ADVANCED_CHART_CANDLE_CACHE_TTL_MS,
+      limit: requestedLimit,
+      promise
+    });
+  }
+  return promise.then((items) => limitCandleItems(items, requestedLimit));
 }
 
 function toWsBase(url: string): string {
@@ -315,16 +361,16 @@ function toOptionalChartPrice(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : Number.NaN;
 }
 
-function computeFetchLimit(periodParams: PeriodParams, timeframe: string): number {
+function computeFetchLimit(periodParams: PeriodParams, timeframe: string, maxLimit: number): number {
   const exact = Number(periodParams.countBack);
   if (Number.isFinite(exact) && exact > 0) {
-    return Math.max(20, Math.min(CHART_CANDLE_FETCH_LIMIT, Math.ceil(exact) + 16));
+    return Math.max(20, Math.min(maxLimit, Math.ceil(exact) + 16));
   }
 
   const spanSeconds = Math.max(0, Number(periodParams.to) - Number(periodParams.from));
   const tfSeconds = timeframeToSeconds(timeframe);
   const estimated = tfSeconds > 0 ? Math.ceil(spanSeconds / tfSeconds) + 16 : 400;
-  return Math.max(20, Math.min(CHART_CANDLE_FETCH_LIMIT, estimated));
+  return Math.max(20, Math.min(maxLimit, estimated));
 }
 
 function scaleForTickSize(value: number | null | undefined): number {
@@ -384,6 +430,8 @@ async function loadTradingViewScript(): Promise<TradingViewGlobal> {
 function buildAdvancedDatafeed(params: {
   exchangeAccountId: string;
   marketType: "spot" | "perp";
+  candleFetchLimit: number;
+  enableRealtimeSocket: boolean;
   getSelectedSymbol: () => string;
   getSelectedTimeframe: () => string;
 }): IBasicDataFeed {
@@ -452,7 +500,11 @@ function buildAdvancedDatafeed(params: {
   const fetchBars = async (
     symbolName: string,
     timeframe: string,
-    limit: number
+    limit: number,
+    options?: {
+      bypassCache?: boolean;
+      writeCache?: boolean;
+    }
   ): Promise<Bar[]> => {
     const items = await fetchAdvancedChartCandles({
       exchangeAccountId: params.exchangeAccountId,
@@ -460,7 +512,7 @@ function buildAdvancedDatafeed(params: {
       timeframe,
       limit,
       marketType: params.marketType
-    });
+    }, options);
     return normalizeCandles(items)
       .map(toBar)
       .filter((bar): bar is Bar => isSaneAdvancedChartBar(bar));
@@ -553,7 +605,7 @@ function buildAdvancedDatafeed(params: {
     },
     getBars(symbolInfo, resolution, periodParams, onResult: HistoryCallback, onError): void {
       const timeframe = resolutionToDeskTimeframe(resolution as string, params.getSelectedTimeframe());
-      const limit = computeFetchLimit(periodParams, timeframe);
+      const limit = computeFetchLimit(periodParams, timeframe, params.candleFetchLimit);
       const symbolName = symbolInfo.ticker ?? symbolInfo.name ?? params.getSelectedSymbol();
 
       void fetchBars(symbolName, timeframe, limit)
@@ -582,7 +634,10 @@ function buildAdvancedDatafeed(params: {
       const historyKey = historyKeyFor(symbolName, timeframe);
       const pushLatestBar = async () => {
         try {
-          const bars = await fetchBars(symbolName, timeframe, 3);
+          const bars = await fetchBars(symbolName, timeframe, 3, {
+            bypassCache: true,
+            writeCache: false
+          });
           const latest = bars[bars.length - 1];
           if (!latest) return;
           const subscriber = subscribers.get(listenerGuid);
@@ -670,35 +725,37 @@ function buildAdvancedDatafeed(params: {
         tradeWatermarkMs: null
       });
 
-      let socket: WebSocket | null = null;
-      try {
-        socket = new WebSocket(
-          `${wsBase}/ws/market?exchangeAccountId=${encodeURIComponent(params.exchangeAccountId)}&symbol=${encodeURIComponent(symbolName)}&marketType=${encodeURIComponent(params.marketType)}`
-        );
-        socket.onmessage = (event) => {
-          let payload: WsEnvelope | null = null;
-          try {
-            payload = JSON.parse(event.data) as WsEnvelope;
-          } catch {
-            return;
-          }
-          if (!payload) return;
-          const payloadSymbol = String(payload.symbol ?? "").trim().toUpperCase();
-          if (payloadSymbol && payloadSymbol !== normalizedSymbol) return;
+      if (params.enableRealtimeSocket) {
+        let socket: WebSocket | null = null;
+        try {
+          socket = new WebSocket(
+            `${wsBase}/ws/market?exchangeAccountId=${encodeURIComponent(params.exchangeAccountId)}&symbol=${encodeURIComponent(symbolName)}&marketType=${encodeURIComponent(params.marketType)}`
+          );
+          socket.onmessage = (event) => {
+            let payload: WsEnvelope | null = null;
+            try {
+              payload = JSON.parse(event.data) as WsEnvelope;
+            } catch {
+              return;
+            }
+            if (!payload) return;
+            const payloadSymbol = String(payload.symbol ?? "").trim().toUpperCase();
+            if (payloadSymbol && payloadSymbol !== normalizedSymbol) return;
 
-          if ((payload.type === "trades" || payload.type === "snapshot:trades") && Array.isArray(payload.data)) {
-            handleRealtimeTrades(payload.data as WsTrade[]);
-            return;
-          }
+            if ((payload.type === "trades" || payload.type === "snapshot:trades") && Array.isArray(payload.data)) {
+              handleRealtimeTrades(payload.data as WsTrade[]);
+              return;
+            }
 
-          if ((payload.type === "ticker" || payload.type === "snapshot:ticker") && payload.data && typeof payload.data === "object") {
-            handleRealtimeTicker(payload.data as TickerState);
-          }
-        };
-        const subscriber = subscribers.get(listenerGuid);
-        if (subscriber) subscriber.socket = socket;
-      } catch {
-        socket = null;
+            if ((payload.type === "ticker" || payload.type === "snapshot:ticker") && payload.data && typeof payload.data === "object") {
+              handleRealtimeTicker(payload.data as TickerState);
+            }
+          };
+          const subscriber = subscribers.get(listenerGuid);
+          if (subscriber) subscriber.socket = socket;
+        } catch {
+          socket = null;
+        }
       }
       void pushLatestBar();
     },
@@ -714,6 +771,7 @@ function buildAdvancedDatafeed(params: {
 
 export function AdvancedChart({
   exchangeAccountId,
+  marketDataExchange,
   symbol,
   timeframe,
   marketType,
@@ -758,6 +816,10 @@ export function AdvancedChart({
   const [chartHeight, setChartHeight] = useState(
     Math.max(MIN_CHART_HEIGHT, Math.min(MAX_CHART_HEIGHT, Math.round(chartPreferences?.chartHeight ?? 520)))
   );
+  const candleFetchLimit = chartCandleFetchLimitForExchange(marketDataExchange);
+  const warmupCandleFetchLimit = chartWarmupFetchLimitForExchange(marketDataExchange);
+  const overlayCandleFetchLimit = Math.min(ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT, candleFetchLimit);
+  const enableRealtimeSocket = !isBingxMarketDataExchange(marketDataExchange);
 
   symbolRef.current = symbol;
   timeframeRef.current = normalizedTimeframe;
@@ -834,6 +896,19 @@ export function AdvancedChart({
   }, []);
 
   useEffect(() => {
+    if (!exchangeAccountId || !symbol) return;
+    void fetchAdvancedChartCandles({
+      exchangeAccountId,
+      symbol,
+      timeframe: normalizedTimeframe,
+      limit: warmupCandleFetchLimit,
+      marketType
+    }).catch(() => {
+      // The datafeed will surface noData/fallback if the real chart request also fails.
+    });
+  }, [exchangeAccountId, marketType, normalizedTimeframe, symbol, warmupCandleFetchLimit]);
+
+  useEffect(() => {
     if (!hostRef.current) return;
     let disposed = false;
     let widget: IChartingLibraryWidget | null = null;
@@ -889,6 +964,8 @@ export function AdvancedChart({
         const datafeed = buildAdvancedDatafeed({
           exchangeAccountId,
           marketType,
+          candleFetchLimit,
+          enableRealtimeSocket,
           getSelectedSymbol: () => symbolRef.current,
           getSelectedTimeframe: () => timeframeRef.current
         });
@@ -962,7 +1039,7 @@ export function AdvancedChart({
       widget?.remove();
       widgetRef.current = null;
     };
-  }, [exchangeAccountId, locale, marketType, onRuntimeFallback, readyAdvancedMessage]);
+  }, [candleFetchLimit, enableRealtimeSocket, exchangeAccountId, locale, marketType, onRuntimeFallback, readyAdvancedMessage]);
 
   useEffect(() => {
     void syncStudiesRef.current?.();
@@ -1009,7 +1086,7 @@ export function AdvancedChart({
           exchangeAccountId,
           symbol,
           timeframe: normalizedTimeframe,
-          limit: ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT,
+          limit: overlayCandleFetchLimit,
           marketType
         });
         if (!active) return;
@@ -1029,7 +1106,7 @@ export function AdvancedChart({
       active = false;
       if (timer) clearInterval(timer);
     };
-  }, [exchangeAccountId, marketType, normalizedTimeframe, symbol, widgetReadyVersion]);
+  }, [exchangeAccountId, marketType, normalizedTimeframe, overlayCandleFetchLimit, symbol, widgetReadyVersion]);
 
   useEffect(() => {
     if (!exchangeAccountId || !symbol || (!showUpMarkers && !showDownMarkers)) {

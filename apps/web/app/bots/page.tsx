@@ -94,6 +94,7 @@ function BotsPageContent() {
       const data = await apiGet<BotOverviewItem[]>(path);
       const rows = Array.isArray(data) ? data : [];
       setBots(rows.filter((row) => String(row.strategyKey ?? "").trim().toLowerCase() !== "futures_grid"));
+      setError(null);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -191,7 +192,7 @@ function BotsPageContent() {
       />
 
       {error ? (
-        <Notice tone="danger" className="card">
+        <Notice tone="danger" className="card" dismissible onDismiss={() => setError(null)}>
           <strong>{t("loadError")}:</strong> {error}
         </Notice>
       ) : null}

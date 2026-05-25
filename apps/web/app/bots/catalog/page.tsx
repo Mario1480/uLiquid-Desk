@@ -31,6 +31,7 @@ import {
 import { buildGridCatalogQuery, updateGridCatalogFavoriteState } from "../../../src/grid/catalog";
 import { deriveNeutralModePreviewHints } from "../../../src/grid/neutralModeHints";
 import { AppIcon } from "../../components/AppIcon";
+import { Notice } from "../../components/ui";
 import Web3Providers from "../../components/Web3Providers";
 
 type GridPilotAccess = {
@@ -1088,8 +1089,16 @@ function GridBotCatalogPageContent() {
 	        </div>
       </section>
 
-      {error || flow.error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error ?? flow.error}</div> : null}
-      {notice || flow.notice ? <div className="card gridCatalogStatus gridCatalogStatusSuccess">{notice ?? flow.notice}</div> : null}
+      {error || flow.error ? (
+        <Notice tone="danger" className="card gridCatalogStatus gridCatalogStatusError" dismissible onDismiss={error ? () => setError(null) : undefined}>
+          {error ?? flow.error}
+        </Notice>
+      ) : null}
+      {notice || flow.notice ? (
+        <Notice tone="success" className="card gridCatalogStatus gridCatalogStatusSuccess" onDismiss={notice ? () => setNotice(null) : undefined}>
+          {notice ?? flow.notice}
+        </Notice>
+      ) : null}
       <section className="card gridCatalogFilters">
         <div className="gridCatalogFilterGrid">
           <label className="gridCatalogField">

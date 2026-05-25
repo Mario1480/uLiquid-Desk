@@ -450,6 +450,44 @@
   color: #ffe4e6;
 }
 
+.uiNoticeDismissible {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-space-3);
+}
+
+.uiNoticeContent {
+  min-width: 0;
+}
+
+.uiNoticeDismiss {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin: -3px -4px -3px 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  color: currentColor;
+  background: rgba(8, 16, 30, 0.32);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.uiNoticeDismiss:hover,
+.uiNoticeDismiss:focus-visible {
+  border-color: rgba(148, 163, 184, 0.48);
+  background: rgba(148, 163, 184, 0.13);
+  transform: translateY(-1px);
+}
+
+.uiNoticeDismiss svg {
+  width: 1em;
+  height: 1em;
+}
+
 .adminPageHeader {
   padding: 22px 24px;
   border-color: rgba(100, 180, 255, 0.2);

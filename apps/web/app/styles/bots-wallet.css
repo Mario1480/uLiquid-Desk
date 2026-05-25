@@ -3,7 +3,8 @@
 .botGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 12px;
+  gap: 14px;
+  padding-top: 3px;
 }
 
 .botCard {
@@ -387,7 +388,8 @@
 .botsSetupSummaryGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
+  gap: 12px;
+  padding-top: 2px;
 }
 
 .botsSetupMetricCard {
@@ -1922,16 +1924,17 @@
 .gridRunningSplitLayout {
   display: grid;
   grid-template-columns: minmax(420px, 560px) minmax(0, 1fr);
-  gap: 12px;
+  gap: 16px;
   align-items: start;
 }
 
 .gridRunningSplitList {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   max-height: calc(100vh - 280px);
   overflow: auto;
-  padding-right: 4px;
+  padding: 2px 8px 6px 2px;
+  scrollbar-gutter: stable;
 }
 
 .gridRunningCard {
@@ -1989,7 +1992,7 @@
   border: 0;
   color: inherit;
   display: block;
-  padding: 14px 14px 12px;
+  padding: 16px 16px 14px;
   cursor: pointer;
 }
 
@@ -2035,7 +2038,7 @@
   grid-template-columns: 1fr 1fr;
   overflow: hidden;
   border-radius: 14px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   position: relative;
 }
 
@@ -2080,13 +2083,13 @@
 .gridRunningMetaGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .gridRunningMetaGrid > div {
   border: 1px solid rgba(255, 201, 38, 0.16);
   border-radius: 12px;
-  padding: 9px 10px;
+  padding: 10px 11px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2118,8 +2121,8 @@
 .gridRunningCardActions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding: 0 14px 14px;
+  gap: 12px;
+  padding: 0 16px 16px;
 }
 
 .gridRunningCardActions .btn {

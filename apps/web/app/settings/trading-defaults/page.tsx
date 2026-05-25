@@ -166,8 +166,16 @@ export default function TradingDefaultsPage() {
         )}
       />
 
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-      {notice ? <Notice tone="success">{notice}</Notice> : null}
+      {error ? (
+        <Notice tone="danger" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      ) : null}
+      {notice ? (
+        <Notice tone="success" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Notice>
+      ) : null}
 
       <section className="card settingsSection">
         <div className="settingsSectionHeader">

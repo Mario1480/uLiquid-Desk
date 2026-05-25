@@ -293,6 +293,7 @@ function GridBotsDashboardPageContent() {
       }
       void loadInstanceStats(instanceItems, { background: isBackground });
       void loadFocusedInstance(loadId, instanceItems);
+      setError(null);
     } catch (loadError) {
       if (loadId !== latestLoadIdRef.current) return;
       if (!isBackground) {
@@ -421,8 +422,16 @@ function GridBotsDashboardPageContent() {
         }
       />
 
-      {error ? <Notice tone="danger" className="card">{error}</Notice> : null}
-      {notice ? <Notice tone="success" className="card">{notice}</Notice> : null}
+      {error ? (
+        <Notice tone="danger" className="card" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      ) : null}
+      {notice ? (
+        <Notice tone="success" className="card" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Notice>
+      ) : null}
 
       <Section
         title={tGrid("runningTitle")}

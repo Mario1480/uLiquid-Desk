@@ -36,6 +36,7 @@ export type SelectedTradePosition = {
 
 export type TradeChartProps = {
   exchangeAccountId: string;
+  marketDataExchange?: string | null;
   symbol: string;
   timeframe: string;
   marketType: "spot" | "perp";

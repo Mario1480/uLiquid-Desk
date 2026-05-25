@@ -2267,6 +2267,29 @@ a.settingsHubCard:focus-visible {
 .adminNotice svg {
   margin-top: 2px;
 }
+.adminNoticeDismissible {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.adminNoticeDismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -5px -4px 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  color: currentColor;
+  background: rgba(8, 16, 30, 0.32);
+  cursor: pointer;
+}
+.adminNoticeDismiss:hover,
+.adminNoticeDismiss:focus-visible {
+  border-color: rgba(148, 163, 184, 0.48);
+  background: rgba(148, 163, 184, 0.13);
+}
+.adminNoticeDismiss svg {
+  margin-top: 0;
+}
 .adminNoticeinfo {
   border-color: rgba(96, 165, 250, 0.26);
   background: rgba(96, 165, 250, 0.08);

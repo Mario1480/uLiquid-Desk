@@ -253,8 +253,16 @@ export default function SettingsBotVaultsPage() {
         )}
       />
 
-      {error ? <Notice tone="danger" className="card settingsAlert settingsAlertError">{error}</Notice> : null}
-      {notice ? <Notice tone="success" className="card settingsAlert settingsAlertSuccess">{notice}</Notice> : null}
+      {error ? (
+        <Notice tone="danger" className="card settingsAlert settingsAlertError" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      ) : null}
+      {notice ? (
+        <Notice tone="success" className="card settingsAlert settingsAlertSuccess" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Notice>
+      ) : null}
 
       <section className="settingsHubSummary settingsBotVaultSummary" aria-label={t("summary.title")}>
         <div className="uiMetricTile settingsSummaryTile settingsSummaryTile-info">

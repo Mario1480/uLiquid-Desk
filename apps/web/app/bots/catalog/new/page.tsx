@@ -20,6 +20,7 @@ import {
   isPerpCapable,
   readAllowedGridExchanges
 } from "../../../../components/grid/utils";
+import { Notice } from "../../../components/ui";
 
 type GridPilotAccess = {
   allowed: boolean;
@@ -438,8 +439,16 @@ export default function UserGridTemplateCreatePage() {
         </div>
       </section>
 
-      {error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error}</div> : null}
-      {notice ? <div className="card gridCatalogStatus gridCatalogStatusSuccess">{notice}</div> : null}
+      {error ? (
+        <Notice tone="danger" className="card gridCatalogStatus gridCatalogStatusError" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      ) : null}
+      {notice ? (
+        <Notice tone="success" className="card gridCatalogStatus gridCatalogStatusSuccess" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Notice>
+      ) : null}
 
       <form onSubmit={saveTemplate} className="gridTemplateCreateLayout">
         <section className="card gridCatalogSection">

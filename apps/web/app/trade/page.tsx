@@ -2274,6 +2274,7 @@ function TradePageContent() {
               <TradeChart
                 chartEngine={chartEngine}
                 exchangeAccountId={selectedAccountId}
+                marketDataExchange={selectedAccount?.marketDataExchange ?? selectedAccount?.exchange ?? null}
                 symbol={selectedSymbol}
                 timeframe={timeframe}
                 marketType={marketType}
