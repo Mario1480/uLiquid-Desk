@@ -34,6 +34,15 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
   const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4", "fund_bot_vault_from_funding_vault"]);
   const isBotVaultRuntimeProvisioningActionType = (value: string) =>
     BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES.has(value) || BOT_VAULT_RUNTIME_FUND_ACTION_TYPES.has(value);
+  const normalizeTpTargetType = (value: unknown, tpPct: unknown, tpProfitUsd: unknown): "pct" | "usdc" => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (normalized === "usdc") return "usdc";
+    if (normalized === "pct") return "pct";
+    if (Number.isFinite(Number(tpProfitUsd)) && Number(tpProfitUsd) > 0 && !Number.isFinite(Number(tpPct))) return "usdc";
+    return "pct";
+  };
+  const normalizeTpAction = (value: unknown): "stop" | "end" =>
+    String(value ?? "").trim().toLowerCase() === "end" ? "end" : "stop";
   type ReusedBotVaultBinding = {
     botVaultId: string;
     previousGridInstanceId: string | null;
@@ -929,6 +938,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             triggerPrice: parsed.data.triggerPrice ?? null,
             slippagePct: fixedSlippagePct,
             tpPct: parsed.data.tpPct ?? template.tpDefaultPct ?? null,
+            tpTargetType: normalizeTpTargetType(parsed.data.tpTargetType, parsed.data.tpPct ?? template.tpDefaultPct ?? null, parsed.data.tpProfitUsd),
+            tpProfitUsd: parsed.data.tpProfitUsd ?? null,
+            tpAction: normalizeTpAction(parsed.data.tpAction),
             slPrice: parsed.data.slPrice ?? template.slDefaultPrice ?? null,
             autoMarginEnabled,
               stateJson: useUnifiedHyperVaultCreateFlow || useReusableRefillFlow || useFundingVaultCreateFlow || useFundingVaultRefillFlow
@@ -1888,6 +1900,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
       const updateData: Record<string, unknown> = {
         ...(parsed.data.tpPct !== undefined ? { tpPct: parsed.data.tpPct } : {}),
+        ...(parsed.data.tpTargetType !== undefined ? { tpTargetType: normalizeTpTargetType(parsed.data.tpTargetType, parsed.data.tpPct ?? row.tpPct, parsed.data.tpProfitUsd ?? row.tpProfitUsd) } : {}),
+        ...(parsed.data.tpProfitUsd !== undefined ? { tpProfitUsd: parsed.data.tpProfitUsd } : {}),
+        ...(parsed.data.tpAction !== undefined ? { tpAction: normalizeTpAction(parsed.data.tpAction) } : {}),
         ...(parsed.data.slPrice !== undefined ? { slPrice: parsed.data.slPrice } : {}),
         ...(parsed.data.autoMarginEnabled !== undefined ? { autoMarginEnabled: parsed.data.autoMarginEnabled } : {}),
         ...(parsed.data.marginMode !== undefined ? { marginMode: parsed.data.marginMode } : {}),

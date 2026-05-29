@@ -9,6 +9,8 @@ import {
   buildVaultBalanceSnapshot,
   hasSignalMarketSnapshot,
   computeInitialSeedSide,
+  computeGridRealizedProfitUsd,
+  computeGridUnrealizedPnlFromPosition,
   ensureGridLeverageConfigured,
   evaluateBotVaultGridReadinessForRunner,
   evaluateHyperliquidBotVaultExecutionReadiness,
@@ -29,6 +31,8 @@ import {
   resolveGridOrderPlacementFailure,
   resolvePlannerPositionForExecution,
   resolveGridRiskNoopReason,
+  resolveGridSlTrigger,
+  resolveGridTpTrigger,
   resolveGridOrderResubmitGuardReason,
   resolveRestartRecoveryGuardReason,
   resolveVaultReconciliationBlockReason,
@@ -76,6 +80,93 @@ test("resolveAllowedGridExchangesForBot keeps the base allowlist for non-hyperli
 
   assert.equal(allowed, base);
   assert.deepEqual([...allowed], ["paper"]);
+});
+
+test("resolveGridTpTrigger uses total PnL against percent of actual investment", () => {
+  const trigger = resolveGridTpTrigger({
+    instance: {
+      investUsd: 300,
+      extraMarginUsd: 100,
+      tpPct: 5,
+      tpTargetType: "pct",
+      tpProfitUsd: null,
+      tpAction: "stop"
+    },
+    totalPnlUsd: 20
+  });
+
+  assert.equal(trigger.triggered, true);
+  assert.equal(trigger.targetUsd, 20);
+  assert.equal(trigger.action, "stop");
+});
+
+test("resolveGridTpTrigger supports fixed USDC target and end action", () => {
+  const trigger = resolveGridTpTrigger({
+    instance: {
+      investUsd: 300,
+      extraMarginUsd: 100,
+      tpPct: null,
+      tpTargetType: "usdc",
+      tpProfitUsd: 42,
+      tpAction: "end"
+    },
+    totalPnlUsd: 41.99
+  });
+
+  assert.equal(trigger.triggered, false);
+  assert.equal(trigger.targetUsd, 42);
+  assert.equal(trigger.action, "end");
+});
+
+test("resolveGridSlTrigger handles long and short absolute price stops", () => {
+  assert.equal(resolveGridSlTrigger({
+    slPrice: 64000,
+    markPrice: 63999,
+    position: { side: "long", qty: 0.01, entryPrice: 66000 }
+  }), true);
+  assert.equal(resolveGridSlTrigger({
+    slPrice: 70000,
+    markPrice: 70001,
+    position: { side: "short", qty: 0.01, entryPrice: 68000 }
+  }), true);
+  assert.equal(resolveGridSlTrigger({
+    slPrice: 64000,
+    markPrice: 65000,
+    position: { side: "long", qty: 0.01, entryPrice: 66000 }
+  }), false);
+});
+
+test("computeGridRealizedProfitUsd pairs completed grid cycles", () => {
+  const realized = computeGridRealizedProfitUsd([
+    {
+      id: "open",
+      side: "buy",
+      fillQty: 1,
+      fillPrice: 100,
+      fillNotionalUsd: 100,
+      feeUsd: 0.1,
+      fillTs: new Date("2026-05-29T10:00:00.000Z"),
+      gridLeg: "long",
+      gridIndex: 1
+    },
+    {
+      id: "close",
+      side: "sell",
+      fillQty: 1,
+      fillPrice: 110,
+      fillNotionalUsd: 110,
+      feeUsd: 0.1,
+      fillTs: new Date("2026-05-29T10:01:00.000Z"),
+      gridLeg: "long",
+      gridIndex: 2
+    }
+  ]);
+
+  assert.equal(realized, 9.8);
+  assert.equal(computeGridUnrealizedPnlFromPosition({
+    position: { side: "long", qty: 1, entryPrice: 100 },
+    markPrice: 103
+  }), 3);
 });
 
 test("evaluateBotVaultGridReadinessForRunner blocks live orders when vault funding is not ready", () => {

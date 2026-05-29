@@ -167,6 +167,7 @@ export type GridBotInstanceCrossSideConfig = {
 
 export type GridBotInstanceRuntime = {
   id: string;
+  workspaceId: string;
   botId: string;
   templateId: string;
   state: GridBotInstanceStateValue;
@@ -203,6 +204,9 @@ export type GridBotInstanceRuntime = {
   triggerPrice: number | null;
   slippagePct: number;
   tpPct: number | null;
+  tpTargetType: "pct" | "usdc";
+  tpProfitUsd: number | null;
+  tpAction: "stop" | "end";
   slPrice: number | null;
   autoMarginEnabled: boolean;
   stateJson: Record<string, unknown>;
@@ -223,13 +227,18 @@ export type GridBotOpenOrder = {
 };
 
 export type GridBotFillEventRow = {
+  id?: string | null;
   exchangeOrderId?: string | null;
   clientOrderId?: string | null;
   side?: "buy" | "sell" | null;
   fillPrice?: number | null;
   fillQty?: number | null;
+  fillNotionalUsd?: number | null;
+  feeUsd?: number | null;
   fillTs?: Date | null;
+  gridLeg?: "long" | "short" | null;
   gridIndex?: number | null;
+  rawJson?: Record<string, unknown> | null;
 };
 
 export type GridBotOrderMapRef = {
@@ -287,6 +296,10 @@ export type RiskEventType =
   | "GRID_AUTO_MARGIN_BLOCKED"
   | "GRID_PLAN_BLOCKED"
   | "GRID_PLAN_APPLIED"
+  | "BOT_VAULT_LIQUIDATED"
+  | "GRID_TP_TRIGGERED"
+  | "GRID_SL_TRIGGERED"
+  | "GRID_PROTECTION_ALERT"
   | "GRID_TERMINATED"
   | "prediction_source_resolved"
   | "prediction_source_missing"
@@ -1937,6 +1950,7 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
     where: { botId },
     select: {
       id: true,
+      workspaceId: true,
       botId: true,
       templateId: true,
       state: true,
@@ -1965,6 +1979,9 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
       triggerPrice: true,
       slippagePct: true,
       tpPct: true,
+      tpTargetType: true,
+      tpProfitUsd: true,
+      tpAction: true,
       slPrice: true,
       autoMarginEnabled: true,
       stateJson: true,
@@ -2019,6 +2036,7 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
   });
   return {
     id: String(row.id),
+    workspaceId: String(row.workspaceId ?? ""),
     botId: String(row.botId),
     templateId: String(row.templateId),
     state: String(row.state ?? "created").toLowerCase() as GridBotInstanceStateValue,
@@ -2076,6 +2094,9 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
     triggerPrice: toNullableFiniteNumber(row.triggerPrice),
     slippagePct: Math.min(5, Math.max(0.0001, Number(row.slippagePct ?? 0.1))),
     tpPct: toNullableFiniteNumber(row.tpPct),
+    tpTargetType: String(row.tpTargetType ?? "").trim().toLowerCase() === "usdc" ? "usdc" : "pct",
+    tpProfitUsd: toNullableFiniteNumber(row.tpProfitUsd),
+    tpAction: String(row.tpAction ?? "").trim().toLowerCase() === "end" ? "end" : "stop",
     slPrice: toNullableFiniteNumber(row.slPrice),
     autoMarginEnabled: Boolean(row.autoMarginEnabled),
     stateJson: asRecord(row.stateJson) ?? {},
@@ -2259,6 +2280,112 @@ export async function archiveGridBotInstanceTerminal(params: {
       }
     });
   });
+}
+
+export async function stopGridBotInstanceForRunner(params: {
+  instanceId: string;
+  botId: string;
+  runtimeReason: string;
+  lastPlanError?: string | null;
+  stateJson?: Record<string, unknown> | null;
+  metricsJson?: Record<string, unknown> | null;
+}): Promise<void> {
+  const dbAny = db as any;
+  const now = new Date();
+  await dbAny.$transaction(async (tx: any) => {
+    await ignoreMissingTable(() => tx.gridBotInstance.update({
+      where: { id: params.instanceId },
+      data: {
+        state: "stopped",
+        archivedAt: null,
+        archivedReason: null,
+        ...(params.stateJson !== undefined ? { stateJson: params.stateJson ?? null } : {}),
+        ...(params.metricsJson !== undefined ? { metricsJson: params.metricsJson ?? null } : {}),
+        ...(params.lastPlanError !== undefined ? { lastPlanError: params.lastPlanError ?? null } : {}),
+        lastPlanAt: now
+      }
+    }));
+    await tx.bot.update({
+      where: { id: params.botId },
+      data: {
+        status: "stopped",
+        lastError: null
+      }
+    });
+    await tx.botRuntime.upsert({
+      where: { botId: params.botId },
+      update: {
+        status: "stopped",
+        reason: params.runtimeReason,
+        lastHeartbeatAt: now
+      },
+      create: {
+        botId: params.botId,
+        status: "stopped",
+        reason: params.runtimeReason,
+        lastHeartbeatAt: now
+      }
+    });
+  });
+}
+
+export async function upsertGridProtectionPlatformAlertForRunner(params: {
+  userId: string;
+  workspaceId?: string | null;
+  botId: string;
+  instanceId: string;
+  severity: "warning" | "critical";
+  type: "grid_tp_triggered" | "grid_sl_triggered" | "grid_protection_alert";
+  title: string;
+  message: string;
+  metadata?: Record<string, unknown> | null;
+}): Promise<void> {
+  const dbAny = db as any;
+  await ignoreMissingTable(() => dbAny.$transaction(async (tx: any) => {
+    const existing: any | null = await tx.platformAlert.findFirst({
+      where: {
+        source: "grid_protection",
+        type: params.type,
+        userId: params.userId,
+        botId: params.botId,
+        status: { in: ["open", "acknowledged"] }
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, metadata: true }
+    });
+    const metadata = {
+      ...(asRecord(existing?.metadata) ?? {}),
+      gridInstanceId: params.instanceId,
+      ...(params.metadata ?? {})
+    };
+    if (existing?.id) {
+      await tx.platformAlert.update({
+        where: { id: existing.id },
+        data: {
+          status: "open",
+          severity: params.severity,
+          title: params.title,
+          message: params.message,
+          metadata
+        }
+      });
+      return;
+    }
+    await tx.platformAlert.create({
+      data: {
+        severity: params.severity,
+        status: "open",
+        source: "grid_protection",
+        type: params.type,
+        title: params.title,
+        message: params.message,
+        userId: params.userId,
+        workspaceId: params.workspaceId ?? null,
+        botId: params.botId,
+        metadata
+      }
+    });
+  }));
 }
 
 export async function createGridBotOrderMapEntry(params: {
@@ -2617,26 +2744,36 @@ export async function listGridBotFillEvents(params: {
         : {})
     },
     select: {
+      id: true,
       exchangeOrderId: true,
       clientOrderId: true,
       side: true,
       fillPrice: true,
       fillQty: true,
+      fillNotionalUsd: true,
+      feeUsd: true,
       fillTs: true,
-      gridIndex: true
+      gridLeg: true,
+      gridIndex: true,
+      rawJson: true
     },
     orderBy: [{ fillTs: "asc" }],
     take: Math.max(1, Math.trunc(Number(params.take ?? 200)))
   }));
   if (!Array.isArray(rows)) return [];
   return rows.map((row) => ({
+    id: typeof row.id === "string" ? row.id : null,
     exchangeOrderId: typeof row.exchangeOrderId === "string" ? row.exchangeOrderId : null,
     clientOrderId: typeof row.clientOrderId === "string" ? row.clientOrderId : null,
     side: String(row.side ?? "").trim().toLowerCase() === "sell" ? "sell" : "buy",
     fillPrice: Number.isFinite(Number(row.fillPrice)) ? Number(row.fillPrice) : null,
     fillQty: Number.isFinite(Number(row.fillQty)) ? Number(row.fillQty) : null,
+    fillNotionalUsd: Number.isFinite(Number(row.fillNotionalUsd)) ? Number(row.fillNotionalUsd) : null,
+    feeUsd: Number.isFinite(Number(row.feeUsd)) ? Number(row.feeUsd) : null,
     fillTs: row.fillTs instanceof Date ? row.fillTs : null,
-    gridIndex: Number.isFinite(Number(row.gridIndex)) ? Math.max(0, Math.trunc(Number(row.gridIndex))) : null
+    gridLeg: String(row.gridLeg ?? "").trim().toLowerCase() === "short" ? "short" : "long",
+    gridIndex: Number.isFinite(Number(row.gridIndex)) ? Math.max(0, Math.trunc(Number(row.gridIndex))) : null,
+    rawJson: asRecord(row.rawJson)
   }));
 }
 
@@ -2667,6 +2804,185 @@ export async function updateBotVaultExecutionRuntime(params: {
       ...(params.executionMetadataPatch !== undefined ? { executionMetadata: mergedMetadata } : {})
     }
   }));
+}
+
+export async function markBotVaultLiquidatedForRunner(params: {
+  botVaultId: string;
+  gridInstanceId?: string | null;
+  botId?: string | null;
+  symbol?: string | null;
+  event: {
+    key: string;
+    exchangeFillId?: string | null;
+    exchangeOrderId?: string | null;
+    clientOrderId?: string | null;
+    cloid?: string | null;
+    symbol?: string | null;
+    side?: "buy" | "sell" | null;
+    fillPrice?: number | null;
+    fillQty?: number | null;
+    filledAt?: string | null;
+    evidence?: string[] | null;
+  };
+  canceledOpenOrders?: { canceled: number; failed: number } | null;
+  now?: Date;
+}): Promise<{ firstObserved: boolean; userId: string | null; botId: string | null; gridInstanceId: string | null }> {
+  const dbAny = db as any;
+  const now = params.now instanceof Date ? params.now : new Date();
+  const eventKey = normalizeDbText(params.event.key)
+    || normalizeDbText(params.event.exchangeFillId)
+    || normalizeDbText(params.event.exchangeOrderId)
+    || `liquidation:${params.botVaultId}:${now.toISOString()}`;
+  const current: any | null = await ignoreMissingTable(() => dbAny.botVault.findUnique({
+    where: { id: params.botVaultId },
+    select: {
+      id: true,
+      userId: true,
+      botId: true,
+      gridInstanceId: true,
+      status: true,
+      executionMetadata: true,
+      gridInstance: {
+        select: {
+          workspaceId: true
+        }
+      }
+    }
+  }));
+  if (!current) {
+    return {
+      firstObserved: false,
+      userId: null,
+      botId: params.botId ?? null,
+      gridInstanceId: params.gridInstanceId ?? null
+    };
+  }
+  const currentMetadata = asRecord(current.executionMetadata) ?? {};
+  const previousLiquidation = asRecord(currentMetadata.liquidation);
+  const firstObserved = String(previousLiquidation?.eventKey ?? "").trim() !== eventKey;
+  const resolvedBotId = normalizeDbText(params.botId) || normalizeDbText(current.botId) || null;
+  const resolvedGridInstanceId = normalizeDbText(params.gridInstanceId) || normalizeDbText(current.gridInstanceId) || null;
+  const evidence = Array.isArray(params.event.evidence)
+    ? params.event.evidence.map((item) => String(item ?? "").slice(0, 140)).filter(Boolean).slice(0, 12)
+    : [];
+  const eventMetadata = {
+    eventKey,
+    confirmedAt: now.toISOString(),
+    exchange: "hyperliquid",
+    symbol: normalizeDbText(params.event.symbol) || normalizeDbText(params.symbol) || null,
+    side: params.event.side ?? null,
+    fillPrice: Number.isFinite(Number(params.event.fillPrice)) ? Number(params.event.fillPrice) : null,
+    fillQty: Number.isFinite(Number(params.event.fillQty)) ? Number(params.event.fillQty) : null,
+    filledAt: normalizeDbText(params.event.filledAt) || null,
+    exchangeFillId: normalizeDbText(params.event.exchangeFillId) || null,
+    exchangeOrderId: normalizeDbText(params.event.exchangeOrderId) || null,
+    clientOrderId: normalizeDbText(params.event.clientOrderId) || null,
+    cloid: normalizeDbText(params.event.cloid) || null,
+    evidence,
+    canceledOpenOrders: params.canceledOpenOrders ?? null,
+    handling: "grid_stopped_botvault_close_only",
+    settlementState: "pending_reconciliation"
+  };
+
+  if (!firstObserved) {
+    return {
+      firstObserved: false,
+      userId: normalizeDbText(current.userId) || null,
+      botId: resolvedBotId,
+      gridInstanceId: resolvedGridInstanceId
+    };
+  }
+
+  await ignoreMissingTable(() => dbAny.$transaction(async (tx: any) => {
+    await tx.botVault.update({
+      where: { id: params.botVaultId },
+      data: {
+        status: String(current.status ?? "").trim() === "CLOSED" ? current.status : "CLOSE_ONLY",
+        executionStatus: "liquidated_pending_settlement",
+        executionLastSyncedAt: now,
+        executionLastError: "bot_vault_liquidated",
+        executionLastErrorAt: now,
+        executionMetadata: {
+          ...currentMetadata,
+          liquidation: eventMetadata,
+          lifecycleOverrideState: "liquidated",
+          closeOnlyReason: "liquidation"
+        }
+      }
+    });
+    if (resolvedGridInstanceId) {
+      await tx.gridBotInstance.update({
+        where: { id: resolvedGridInstanceId },
+        data: {
+          state: "stopped",
+          lastPlanError: "bot_vault_liquidated",
+          lastPlanAt: now
+        }
+      });
+    }
+    if (resolvedBotId) {
+      await tx.bot.update({
+        where: { id: resolvedBotId },
+        data: {
+          status: "stopped",
+          lastError: "bot_vault_liquidated"
+        }
+      });
+    }
+    const existingAlert: any | null = await tx.platformAlert.findFirst({
+      where: {
+        source: "bot_vault_liquidation",
+        type: "bot_vault_liquidated",
+        userId: normalizeDbText(current.userId) || undefined,
+        botId: resolvedBotId ?? undefined,
+        status: { in: ["open", "acknowledged"] }
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, metadata: true }
+    });
+    const alertMetadata = {
+      ...(asRecord(existingAlert?.metadata) ?? {}),
+      botVaultId: params.botVaultId,
+      gridInstanceId: resolvedGridInstanceId,
+      liquidation: eventMetadata
+    };
+    const alertSymbol = eventMetadata.symbol ?? (normalizeDbText(params.symbol) || "position");
+    const alertMessage = `Grid Bot ${alertSymbol} was liquidated on Hyperliquid. The bot was stopped and the BotVault was moved to close-only settlement.`;
+    if (existingAlert?.id) {
+      await tx.platformAlert.update({
+        where: { id: existingAlert.id },
+        data: {
+          status: "open",
+          severity: "critical",
+          title: "BotVault liquidated",
+          message: alertMessage,
+          metadata: alertMetadata
+        }
+      });
+    } else {
+      await tx.platformAlert.create({
+        data: {
+          severity: "critical",
+          status: "open",
+          source: "bot_vault_liquidation",
+          type: "bot_vault_liquidated",
+          title: "BotVault liquidated",
+          message: alertMessage,
+          userId: normalizeDbText(current.userId) || null,
+          workspaceId: normalizeDbText(current.gridInstance?.workspaceId) || null,
+          botId: resolvedBotId,
+          metadata: alertMetadata
+        }
+      });
+    }
+  }));
+
+  return {
+    firstObserved: true,
+    userId: normalizeDbText(current.userId) || null,
+    botId: resolvedBotId,
+    gridInstanceId: resolvedGridInstanceId
+  };
 }
 
 export async function applyBotVaultHypercoreAccountingFee(params: {

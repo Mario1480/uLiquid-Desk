@@ -79,7 +79,7 @@ export function buildGridPlanRequest(params: {
     leverage: params.instance.leverage,
     slippagePct: params.instance.slippagePct,
     triggerPrice: params.instance.triggerPrice,
-    tpPct: params.instance.tpPct,
+    tpPct: null,
     slPrice: params.instance.slPrice,
     trailingEnabled: false,
     markPrice: params.markPrice,

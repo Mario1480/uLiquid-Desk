@@ -131,7 +131,10 @@ function GridBotsCreatePageContent() {
   const [selectedBotVaultId, setSelectedBotVaultId] = useState("");
   const [investUsd, setInvestUsd] = useState("300");
   const [extraMarginUsd, setExtraMarginUsd] = useState("0");
+  const [tpTargetType, setTpTargetType] = useState<"pct" | "usdc">("pct");
   const [tpPct, setTpPct] = useState("");
+  const [tpProfitUsd, setTpProfitUsd] = useState("");
+  const [tpAction, setTpAction] = useState<"stop" | "end">("stop");
   const [slPrice, setSlPrice] = useState("");
   const [triggerPrice, setTriggerPrice] = useState("");
   const [marginMode, setMarginMode] = useState<"MANUAL" | "AUTO">("MANUAL");
@@ -403,7 +406,10 @@ function GridBotsCreatePageContent() {
         investUsd: investValue,
         extraMarginUsd: extraMarginValue,
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
-        tpPct: tpPct.trim() ? Number(tpPct) : null,
+        tpTargetType,
+        tpPct: tpTargetType === "pct" && tpPct.trim() ? Number(tpPct) : null,
+        tpProfitUsd: tpTargetType === "usdc" && tpProfitUsd.trim() ? Number(tpProfitUsd) : null,
+        tpAction,
         slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: autoMarginActive
@@ -470,7 +476,7 @@ function GridBotsCreatePageContent() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [accounts, autoMarginActive, exchangeAccountId, extraMarginUsd, investUsd, marginMode, pilotAccess, selectedTemplate, slPrice, tGrid, tpPct, triggerPrice]);
+  }, [accounts, autoMarginActive, exchangeAccountId, extraMarginUsd, investUsd, marginMode, pilotAccess, selectedTemplate, slPrice, tGrid, tpAction, tpPct, tpProfitUsd, tpTargetType, triggerPrice]);
 
   async function createInstance(event: React.FormEvent) {
     event.preventDefault();
@@ -502,7 +508,10 @@ function GridBotsCreatePageContent() {
         investUsd: Number(investUsd),
         extraMarginUsd: requestedExtraMarginUsd,
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
-        tpPct: tpPct.trim() ? Number(tpPct) : null,
+        tpTargetType,
+        tpPct: tpTargetType === "pct" && tpPct.trim() ? Number(tpPct) : null,
+        tpProfitUsd: tpTargetType === "usdc" && tpProfitUsd.trim() ? Number(tpProfitUsd) : null,
+        tpAction,
         slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: autoMarginActive,
@@ -716,8 +725,29 @@ function GridBotsCreatePageContent() {
                   <input className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
                 </label>
                 <label>
-                  {tGrid("tpPct")}
-                  <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+                  {tGrid("tpTargetType")}
+                  <select className="input" value={tpTargetType} onChange={(event) => setTpTargetType(event.target.value === "usdc" ? "usdc" : "pct")}>
+                    <option value="pct">{tGrid("tpTargetPct")}</option>
+                    <option value="usdc">{tGrid("tpTargetUsdc")}</option>
+                  </select>
+                </label>
+                {tpTargetType === "pct" ? (
+                  <label>
+                    {tGrid("tpPct")}
+                    <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+                  </label>
+                ) : (
+                  <label>
+                    {tGrid("tpProfitUsd")}
+                    <input className="input" type="number" min="0" step="0.01" value={tpProfitUsd} onChange={(event) => setTpProfitUsd(event.target.value)} />
+                  </label>
+                )}
+                <label>
+                  {tGrid("tpAction")}
+                  <select className="input" value={tpAction} onChange={(event) => setTpAction(event.target.value === "end" ? "end" : "stop")}>
+                    <option value="stop">{tGrid("tpActionStop")}</option>
+                    <option value="end">{tGrid("tpActionEnd")}</option>
+                  </select>
                 </label>
                 <label>
                   {tGrid("slPrice")}

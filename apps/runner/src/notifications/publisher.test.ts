@@ -72,6 +72,48 @@ test("mapRiskEventToEnvelope downgrades degraded primary plugin runtime errors",
   );
 });
 
+test("mapRiskEventToEnvelope marks BotVault liquidations critical and user-scoped", () => {
+  const event = mapRiskEventToEnvelope({
+    bot: makeBot(),
+    type: "BOT_VAULT_LIQUIDATED",
+    message: "bot_vault_liquidated",
+    meta: {
+      botVaultId: "bv_1",
+      symbol: "BTCUSDT"
+    },
+    now: new Date("2026-04-07T14:20:00.000Z")
+  });
+
+  assert.equal(event.type, "vault.bot_vault_liquidated");
+  assert.equal(event.category, "risk");
+  assert.equal(event.severity, "critical");
+  assert.equal(event.scope.userId, "user_1");
+  assert.equal(event.scope.botId, "bot_1");
+});
+
+test("mapRiskEventToEnvelope maps grid TP and SL events", () => {
+  const tp = mapRiskEventToEnvelope({
+    bot: makeBot(),
+    type: "GRID_TP_TRIGGERED",
+    message: "grid take profit triggered",
+    meta: {},
+    now: new Date("2026-04-07T14:20:00.000Z")
+  });
+  const sl = mapRiskEventToEnvelope({
+    bot: makeBot(),
+    type: "GRID_SL_TRIGGERED",
+    message: "grid stop loss triggered",
+    meta: {},
+    now: new Date("2026-04-07T14:20:00.000Z")
+  });
+
+  assert.equal(tp.type, "grid.take_profit_triggered");
+  assert.equal(tp.category, "trade");
+  assert.equal(sl.type, "grid.stop_loss_triggered");
+  assert.equal(sl.category, "risk");
+  assert.equal(sl.severity, "critical");
+});
+
 test("shouldThrottleTelegramNotificationEvent throttles repeated grid reconciliation blocks", () => {
   resetTelegramNotificationThrottleCache();
   const event = mapRiskEventToEnvelope({

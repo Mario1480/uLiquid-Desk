@@ -965,7 +965,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
     }
 
     const limit = parsed.data.limit;
-    const [accounts, bots, circuitEvents] = await Promise.all([
+    const [accounts, bots, circuitEvents, platformAlerts] = await Promise.all([
       deps.db.exchangeAccount.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "desc" },
@@ -1052,7 +1052,28 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
             }
           }
         }
-      })
+      }),
+      typeof deps.db.platformAlert?.findMany === "function"
+        ? deps.ignoreMissingTable(() => deps.db.platformAlert.findMany({
+            where: {
+              userId: user.id,
+              status: "open"
+            },
+            orderBy: { createdAt: "desc" },
+            take: Math.max(limit * 3, 30),
+            select: {
+              id: true,
+              severity: true,
+              type: true,
+              title: true,
+              message: true,
+              botId: true,
+              metadata: true,
+              createdAt: true,
+              updatedAt: true
+            }
+          }))
+        : Promise.resolve([])
     ]);
 
     const accountById = new Map<string, any>(
@@ -1109,6 +1130,52 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
 
     const now = Date.now();
     const alerts: any[] = [];
+
+    for (const row of Array.isArray(platformAlerts) ? platformAlerts : []) {
+      const severityRaw = String(row.severity ?? "").trim().toLowerCase();
+      const severity: DashboardAlertSeverity = severityRaw === "critical"
+        ? "critical"
+        : severityRaw === "warning" || severityRaw === "warn"
+          ? "warning"
+          : "info";
+      const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? row.metadata as Record<string, unknown>
+        : {};
+      const liquidation = metadata.liquidation && typeof metadata.liquidation === "object" && !Array.isArray(metadata.liquidation)
+        ? metadata.liquidation as Record<string, unknown>
+        : null;
+      const gridInstanceId = typeof metadata.gridInstanceId === "string" ? metadata.gridInstanceId : null;
+      const ts = row.createdAt instanceof Date
+        ? row.createdAt
+        : row.updatedAt instanceof Date
+          ? row.updatedAt
+          : new Date(now);
+      alerts.push({
+        id: deps.createDashboardAlertId(["PLATFORM_ALERT", row.id]),
+        severity,
+        type: String(row.type ?? "PLATFORM_ALERT").toUpperCase(),
+        title: row.title ?? "Platform alert",
+        message: String(row.message ?? "").slice(0, 220),
+        botId: typeof row.botId === "string" ? row.botId : undefined,
+        ts: ts.toISOString(),
+        link: gridInstanceId
+          ? `/bots/grid?instanceId=${encodeURIComponent(gridInstanceId)}`
+          : "/bots/grid",
+        metadata: {
+          platformAlertId: row.id,
+          botVaultId: typeof metadata.botVaultId === "string" ? metadata.botVaultId : null,
+          liquidation: liquidation
+            ? {
+                eventKey: typeof liquidation.eventKey === "string" ? liquidation.eventKey : null,
+                symbol: typeof liquidation.symbol === "string" ? liquidation.symbol : null,
+                filledAt: typeof liquidation.filledAt === "string" ? liquidation.filledAt : null,
+                fillPrice: deps.toFiniteNumber(liquidation.fillPrice),
+                fillQty: deps.toFiniteNumber(liquidation.fillQty)
+              }
+            : null
+        }
+      });
+    }
 
     for (const account of accounts) {
       const row = aggregate.get(account.id);

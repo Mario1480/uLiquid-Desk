@@ -283,6 +283,30 @@ export function mapRiskEventToEnvelope(params: {
       eventType = "error.runtime";
       title = "Runner runtime error";
     }
+  } else if (params.type === "BOT_VAULT_LIQUIDATED") {
+    category = "risk";
+    severity = "critical";
+    eventType = "vault.bot_vault_liquidated";
+    title = "BotVault liquidated";
+    message = "A Grid Bot vault was liquidated on Hyperliquid. The bot was stopped and the BotVault was moved to close-only settlement.";
+  } else if (params.type === "GRID_TP_TRIGGERED") {
+    category = "trade";
+    severity = "info";
+    eventType = "grid.take_profit_triggered";
+    title = "Grid take profit triggered";
+    message = params.message || "A Grid Bot reached its configured take-profit target.";
+  } else if (params.type === "GRID_SL_TRIGGERED") {
+    category = "risk";
+    severity = "critical";
+    eventType = "grid.stop_loss_triggered";
+    title = "Grid stop loss triggered";
+    message = params.message || "A Grid Bot reached its configured stop-loss price and was ended.";
+  } else if (params.type === "GRID_PROTECTION_ALERT") {
+    category = "risk";
+    severity = "warn";
+    eventType = "grid.protection_alert";
+    title = "Grid protection alert";
+    message = params.message || "A Grid Bot protection order could not be confirmed.";
   } else if (params.type === "PLUGIN_DISABLED_BY_POLICY" || params.type === "PLUGIN_FALLBACK_USED") {
     category = "warning";
     severity = "warn";

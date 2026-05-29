@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  detectHyperliquidLiquidationSignal,
   HyperliquidExecutionMonitor
 } from "./hyperliquidExecutionMonitor.js";
 
@@ -156,6 +157,57 @@ test("partial fill is processed without double counting repeated fills", async (
   });
   assert.equal(second.orders[0]?.filledQty, 2);
   assert.equal(second.newFills.length, 0);
+});
+
+test("liquidation fills are surfaced as critical reconciliation events", async () => {
+  const monitor = new HyperliquidExecutionMonitor({
+    orderVisibilityTimeoutMs: 60_000
+  });
+  const adapter = createAdapter({
+    async getRecentFills() {
+      return [{
+        tid: "liq-fill-1",
+        oid: "991",
+        coin: "BTC",
+        side: "sell",
+        px: 64800,
+        sz: 0.02,
+        fee: 1.2,
+        time: Date.parse("2026-03-29T10:00:03.000Z"),
+        dir: "Liquidation"
+      }];
+    }
+  });
+
+  const result = await monitor.reconcileOrders({
+    adapter,
+    symbol: "BTCUSDT",
+    now: new Date("2026-03-29T10:00:05.000Z")
+  });
+
+  assert.equal(result.status, "critical");
+  assert.equal(result.liquidationEvents.length, 1);
+  assert.equal(result.liquidationEvents[0]?.exchangeFillId, "liq-fill-1");
+  assert.equal(result.newAlerts[0]?.code, "bot_vault_liquidation_confirmed");
+
+  const repeated = await monitor.reconcileOrders({
+    adapter,
+    symbol: "BTCUSDT",
+    now: new Date("2026-03-29T10:00:06.000Z")
+  });
+  assert.equal(repeated.liquidationEvents.length, 0);
+});
+
+test("detectHyperliquidLiquidationSignal recognizes liquidatedCanceled status", () => {
+  const signal = detectHyperliquidLiquidationSignal({
+    status: "liquidatedCanceled",
+    order: {
+      status: "open"
+    }
+  }, "order_status");
+
+  assert.equal(signal?.source, "order_status");
+  assert.ok(signal?.evidence.some((entry) => entry.includes("liquidatedCanceled")));
 });
 
 test("cancel arriving late is modeled as delayed first and canceled once the order disappears", async () => {

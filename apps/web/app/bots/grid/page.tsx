@@ -484,6 +484,16 @@ function GridBotsDashboardPageContent() {
                 const rounds24h = Number(stats?.completedRounds24h ?? 0);
                 const liqEstimate = Number(metrics.liqEstimateLong ?? metrics.liqEstimateShort ?? NaN);
                 const positionSnapshot = (metrics.positionSnapshot as Record<string, unknown> | undefined) ?? {};
+                const liveLiquidationPrice = Number(
+                  readGridPositionValue(positionSnapshot, ["liquidationPrice", "liquidationPx", "liqPrice", "liqPx"])
+                    ?? NaN
+                );
+                const displayedLiquidationPrice = Number.isFinite(liveLiquidationPrice) && liveLiquidationPrice > 0
+                  ? liveLiquidationPrice
+                  : liqEstimate;
+                const liquidationLabel = Number.isFinite(liveLiquidationPrice) && liveLiquidationPrice > 0
+                  ? tGrid("cardLiqLiveLabel")
+                  : tGrid("cardLiqEstimateLabel");
                 const runtimeMarkPrice = computeGridRuntimeMarkPrice(instance.bot?.runtime ?? null);
                 const markPrice = Number(
                   readGridPositionValue(stateJson as Record<string, unknown>, ["lastMarkPrice", "markPrice", "markPx", "midPx"])
@@ -524,6 +534,15 @@ function GridBotsDashboardPageContent() {
                 const gridReturnPct = actualInvestment > 0 ? (gridProfit / actualInvestment) * 100 : null;
                 const trendReturnPct = actualInvestment > 0 ? (trendPnl / actualInvestment) * 100 : null;
                 const totalReturnPct = actualInvestment > 0 ? (totalPnl / actualInvestment) * 100 : null;
+                const tpTargetType = instance.tpTargetType === "usdc" ? "usdc" : "pct";
+                const tpTargetUsd = tpTargetType === "usdc"
+                  ? Number(instance.tpProfitUsd ?? NaN)
+                  : actualInvestment > 0 && Number.isFinite(Number(instance.tpPct ?? NaN))
+                    ? (actualInvestment * Number(instance.tpPct)) / 100
+                    : NaN;
+                const tpProgressPct = Number.isFinite(tpTargetUsd) && tpTargetUsd > 0
+                  ? (totalPnl / tpTargetUsd) * 100
+                  : null;
                 const selected = instance.id === selectedInstanceId;
                 const canPause = instance.state === "running" || instance.state === "funding_pending";
                 const toggleAction = canPause ? "pause" : "resume";
@@ -617,6 +636,11 @@ function GridBotsDashboardPageContent() {
                           <span>{formatSignedPercent(totalReturnPct)}</span>
                         </div>
                         <div>
+                          <span>{tGrid("tpTargetLabel")}</span>
+                          <strong>{Number.isFinite(tpTargetUsd) ? `${formatNumber(tpTargetUsd, 2)} ${stablecoinLabel}` : "n/a"}</strong>
+                          <span>{tpProgressPct === null ? "n/a" : `${formatNumber(tpProgressPct, 0)}% · ${instance.tpAction === "end" ? tGrid("tpActionEnd") : tGrid("tpActionStop")}`}</span>
+                        </div>
+                        <div>
                           <span>{tGrid("cardMarkLabel")}</span>
                           <strong>{formatNumber(markPrice, 2)}</strong>
                         </div>
@@ -644,8 +668,8 @@ function GridBotsDashboardPageContent() {
                           <strong>{formatNumber(instance.extraMarginUsd, 2)} {stablecoinLabel}</strong>
                         </div>
                         <div>
-                          <span>{tGrid("cardLiqLabel")}</span>
-                          <strong>{formatNumber(liqEstimate, 2)}</strong>
+                          <span>{liquidationLabel}</span>
+                          <strong>{formatNumber(displayedLiquidationPrice, 2)}</strong>
                         </div>
                         <div>
                           <span>{tGrid("cardStartPriceLabel")}</span>

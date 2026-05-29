@@ -182,7 +182,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const [pnlReport, setPnlReport] = useState<BotVaultPnlReport | null>(null);
   const [isAdminViewer, setIsAdminViewer] = useState(false);
 
+  const [tpTargetType, setTpTargetType] = useState<"pct" | "usdc">("pct");
   const [tpPct, setTpPct] = useState<string>("");
+  const [tpProfitUsd, setTpProfitUsd] = useState<string>("");
+  const [tpAction, setTpAction] = useState<"stop" | "end">("stop");
   const [slPrice, setSlPct] = useState<string>("");
   const [marginMode, setMarginMode] = useState<GridInstanceMarginMode>("MANUAL");
   const [activeTab, setActiveTab] = useState<"overview" | "placed" | "fills" | "events" | "params">("overview");
@@ -314,7 +317,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
       if (metricsLoadId === latestMetricsLoadIdRef.current) {
         setMetrics(metricsResponse);
       }
+      setTpTargetType(detailResponse.tpTargetType === "usdc" ? "usdc" : "pct");
       setTpPct(detailResponse.tpPct == null ? "" : String(detailResponse.tpPct));
+      setTpProfitUsd(detailResponse.tpProfitUsd == null ? "" : String(detailResponse.tpProfitUsd));
+      setTpAction(detailResponse.tpAction === "end" ? "end" : "stop");
       setSlPct(detailResponse.slPrice == null ? "" : String(detailResponse.slPrice));
       setMarginMode(detailResponse.marginMode === "AUTO" ? "AUTO" : "MANUAL");
     } catch (loadError) {
@@ -671,7 +677,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     setNotice(null);
     try {
       await apiPut(`/grid/instances/${detail.id}/risk`, {
-        tpPct: tpPct.trim() ? Number(tpPct) : null,
+        tpTargetType,
+        tpPct: tpTargetType === "pct" && tpPct.trim() ? Number(tpPct) : null,
+        tpProfitUsd: tpTargetType === "usdc" && tpProfitUsd.trim() ? Number(tpProfitUsd) : null,
+        tpAction,
         slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: marginMode === "AUTO"
@@ -1165,8 +1174,29 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
           <h3 style={{ marginTop: 0 }}>{tGrid("riskControlsTitle")}</h3>
           <form className="settingsFormGrid" onSubmit={saveRisk}>
             <label>
-              {tGrid("tpPct")}
-              <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+              {tGrid("tpTargetType")}
+              <select className="input" value={tpTargetType} onChange={(event) => setTpTargetType(event.target.value === "usdc" ? "usdc" : "pct")}>
+                <option value="pct">{tGrid("tpTargetPct")}</option>
+                <option value="usdc">{tGrid("tpTargetUsdc")}</option>
+              </select>
+            </label>
+            {tpTargetType === "pct" ? (
+              <label>
+                {tGrid("tpPct")}
+                <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+              </label>
+            ) : (
+              <label>
+                {tGrid("tpProfitUsd")}
+                <input className="input" type="number" min="0" step="0.01" value={tpProfitUsd} onChange={(event) => setTpProfitUsd(event.target.value)} />
+              </label>
+            )}
+            <label>
+              {tGrid("tpAction")}
+              <select className="input" value={tpAction} onChange={(event) => setTpAction(event.target.value === "end" ? "end" : "stop")}>
+                <option value="stop">{tGrid("tpActionStop")}</option>
+                <option value="end">{tGrid("tpActionEnd")}</option>
+              </select>
             </label>
             <label>
               {tGrid("slPrice")}

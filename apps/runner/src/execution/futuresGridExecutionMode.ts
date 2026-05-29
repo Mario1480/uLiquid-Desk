@@ -28,12 +28,15 @@ import {
   listGridBotFillEvents,
   listGridBotOpenOrders,
   loadBotTradeState,
+  markBotVaultLiquidatedForRunner,
   placePaperPositionForRunner,
   placePaperLimitOrderForRunner,
   setPaperPositionProtectionForRunner,
+  stopGridBotInstanceForRunner,
   loadGridBotInstanceByBotId,
   seedGridBotVaultMatchingStateForGridInstance,
   simulatePaperGridLimitFillsForRunner,
+  upsertGridProtectionPlatformAlertForRunner,
   upsertBotTradeState,
   updateGridBotOrderMapStatus,
   updateGridBotInstancePlannerState,
@@ -232,6 +235,18 @@ function summarizeVaultReconciliation(result: ReconciliationResult) {
     trackedOrdersCount: result.orders.length,
     recentFillCount: result.recentFills.length,
     newFillCount: result.newFills.length,
+    liquidationEventCount: result.liquidationEvents.length,
+    liquidationEvents: result.liquidationEvents.slice(0, 5).map((event) => ({
+      key: event.key,
+      symbol: event.symbol,
+      side: event.side,
+      fillPrice: event.fillPrice,
+      fillQty: event.fillQty,
+      filledAt: event.filledAt,
+      exchangeFillId: event.exchangeFillId,
+      exchangeOrderId: event.exchangeOrderId,
+      evidence: event.evidence
+    })),
     driftCount: result.drifts.length,
     criticalDriftCount: result.drifts.filter((row) => row.severity === "critical").length,
     alertCount: result.alerts.length,
@@ -271,6 +286,166 @@ export function resolveVaultReconciliationBlockReason(result: Pick<Reconciliatio
     return "grid_vault_execution_reconciliation_required";
   }
   return "grid_vault_reconciliation_required";
+}
+
+export function computeGridUnrealizedPnlFromPosition(params: {
+  position: PlannerPositionSnapshot | null;
+  markPrice: number;
+}): number {
+  const qty = Number(params.position?.qty ?? NaN);
+  const entryPrice = Number(params.position?.entryPrice ?? NaN);
+  const markPrice = Number(params.markPrice ?? NaN);
+  if (!Number.isFinite(qty) || !Number.isFinite(entryPrice) || !Number.isFinite(markPrice) || qty <= 0 || entryPrice <= 0 || markPrice <= 0) {
+    return 0;
+  }
+  return params.position?.side === "short"
+    ? Number(((entryPrice - markPrice) * qty).toFixed(8))
+    : Number(((markPrice - entryPrice) * qty).toFixed(8));
+}
+
+export function computeGridRealizedProfitUsd(fills: Array<{
+  id?: string | null;
+  side?: "buy" | "sell" | null;
+  fillQty?: number | null;
+  fillNotionalUsd?: number | null;
+  fillPrice?: number | null;
+  feeUsd?: number | null;
+  fillTs?: Date | null;
+  gridLeg?: "long" | "short" | null;
+  gridIndex?: number | null;
+}>): number {
+  const normalized = fills
+    .map((fill, index) => {
+      const qty = Number(fill.fillQty ?? NaN);
+      const price = Number(fill.fillPrice ?? NaN);
+      const notional = Number.isFinite(Number(fill.fillNotionalUsd)) && Number(fill.fillNotionalUsd) > 0
+        ? Number(fill.fillNotionalUsd)
+        : Number.isFinite(qty) && Number.isFinite(price)
+          ? qty * price
+          : NaN;
+      if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(notional) || notional <= 0) return null;
+      return {
+        key: String(fill.id ?? index),
+        side: fill.side === "sell" ? "sell" as const : "buy" as const,
+        qty,
+        notional,
+        feeUsd: Number.isFinite(Number(fill.feeUsd)) ? Math.max(0, Number(fill.feeUsd)) : 0,
+        fillTs: fill.fillTs instanceof Date ? fill.fillTs : new Date(0),
+        gridLeg: fill.gridLeg === "short" ? "short" as const : "long" as const,
+        gridIndex: Number.isFinite(Number(fill.gridIndex)) ? Math.trunc(Number(fill.gridIndex)) : 0
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .sort((left, right) => left.fillTs.getTime() - right.fillTs.getTime());
+  type NormalizedFill = (typeof normalized)[number];
+  type Lot = {
+    fill: NormalizedFill;
+    qty: number;
+    feePerUnit: number;
+  };
+  const pendingBuys = new Map<string, Lot[]>();
+  const pendingSells = new Map<string, Lot[]>();
+  const keyFor = (gridLeg: "long" | "short", gridIndex: number) => `${gridLeg}:${gridIndex}`;
+  const pushLot = (map: Map<string, Lot[]>, key: string, lot: Lot) => {
+    const current = map.get(key) ?? [];
+    current.push(lot);
+    map.set(key, current);
+  };
+  const shiftLot = (map: Map<string, Lot[]>, key: string) => {
+    const current = map.get(key) ?? [];
+    current.shift();
+    if (current.length === 0) map.delete(key);
+    else map.set(key, current);
+  };
+  const findFallbackLot = (map: Map<string, Lot[]>, closeFill: NormalizedFill) => {
+    for (const [key, lots] of map.entries()) {
+      const lot = lots[0];
+      if (!lot) continue;
+      if (lot.fill.gridLeg !== closeFill.gridLeg) continue;
+      if (lot.fill.side === closeFill.side) continue;
+      if (closeFill.fillTs.getTime() < lot.fill.fillTs.getTime()) continue;
+      return { key, lot };
+    }
+    return null;
+  };
+  let realized = 0;
+  for (const fill of normalized) {
+    let remainingQty = fill.qty;
+    const matchingQueue = fill.side === "buy" ? pendingSells : pendingBuys;
+    while (remainingQty > 0) {
+      const expectedKey = keyFor(fill.gridLeg, fill.gridIndex);
+      const exactLot = matchingQueue.get(expectedKey)?.[0] ?? null;
+      const fallback = exactLot ? { key: expectedKey, lot: exactLot } : findFallbackLot(matchingQueue, fill);
+      if (!fallback) break;
+      const matchedQty = Math.min(remainingQty, fallback.lot.qty);
+      const openUnitNotional = fallback.lot.fill.notional / Math.max(fallback.lot.fill.qty, 1e-12);
+      const closeUnitNotional = fill.notional / Math.max(fill.qty, 1e-12);
+      const closeFeePart = fill.feeUsd * (matchedQty / Math.max(fill.qty, 1e-12));
+      const openFeePart = fallback.lot.feePerUnit * matchedQty;
+      realized += fallback.lot.fill.side === "buy"
+        ? (closeUnitNotional - openUnitNotional) * matchedQty - openFeePart - closeFeePart
+        : (openUnitNotional - closeUnitNotional) * matchedQty - openFeePart - closeFeePart;
+      fallback.lot.qty = Number((fallback.lot.qty - matchedQty).toFixed(12));
+      remainingQty = Number((remainingQty - matchedQty).toFixed(12));
+      if (fallback.lot.qty <= 0) shiftLot(matchingQueue, fallback.key);
+    }
+    if (remainingQty > 0) {
+      const openFee = fill.feeUsd * (remainingQty / Math.max(fill.qty, 1e-12));
+      const lot = {
+        fill,
+        qty: Number(remainingQty.toFixed(12)),
+        feePerUnit: remainingQty > 0 ? openFee / remainingQty : 0
+      };
+      const expectedCloseIndex = fill.side === "buy" ? fill.gridIndex + 1 : fill.gridIndex - 1;
+      pushLot(fill.side === "buy" ? pendingBuys : pendingSells, keyFor(fill.gridLeg, expectedCloseIndex), lot);
+    }
+  }
+  return Number(realized.toFixed(8));
+}
+
+export function resolveGridTpTrigger(params: {
+  instance: {
+    investUsd: number;
+    extraMarginUsd: number;
+    tpPct: number | null;
+    tpTargetType: "pct" | "usdc";
+    tpProfitUsd: number | null;
+    tpAction: "stop" | "end";
+  };
+  totalPnlUsd: number;
+}): {
+  triggered: boolean;
+  targetType: "pct" | "usdc";
+  targetUsd: number | null;
+  action: "stop" | "end";
+} {
+  const targetType = params.instance.tpTargetType === "usdc" ? "usdc" : "pct";
+  const investment = Math.max(0, Number(params.instance.investUsd ?? 0) + Number(params.instance.extraMarginUsd ?? 0));
+  const targetUsd = targetType === "usdc"
+    ? toPositiveNumberOrNull(params.instance.tpProfitUsd)
+    : (() => {
+        const pct = toPositiveNumberOrNull(params.instance.tpPct);
+        return pct !== null && investment > 0 ? Number(((investment * pct) / 100).toFixed(8)) : null;
+      })();
+  return {
+    triggered: targetUsd !== null && Number(params.totalPnlUsd) >= targetUsd,
+    targetType,
+    targetUsd,
+    action: params.instance.tpAction === "end" ? "end" : "stop"
+  };
+}
+
+export function resolveGridSlTrigger(params: {
+  slPrice: number | null;
+  markPrice: number;
+  position: PlannerPositionSnapshot | null;
+}): boolean {
+  const slPrice = toPositiveNumberOrNull(params.slPrice);
+  const markPrice = toPositiveNumberOrNull(params.markPrice);
+  if (slPrice === null || markPrice === null || !hasOpenPlannerPosition(params.position)) return false;
+  return params.position?.side === "short"
+    ? markPrice >= slPrice
+    : markPrice <= slPrice;
 }
 
 async function resolveExchangeSymbolForDiagnostics(
@@ -1406,6 +1581,27 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             ));
             openOrders = await listGridBotOpenOrders(instance.id);
           }
+          const liveSnapshotPosition = reconciliationResult.snapshot?.positions.find((row) =>
+            normalizeSymbol(row.symbol) === normalizeSymbol(ctx.bot.symbol)
+          ) ?? reconciliationResult.snapshot?.positions[0] ?? null;
+          if (liveSnapshotPosition) {
+            await updateGridBotInstancePlannerState({
+              instanceId: instance.id,
+              state: instance.state === "running" ? "running" : instance.state,
+              metricsJson: mergeCurrentMetrics({
+                positionSnapshot: {
+                  side: liveSnapshotPosition.side,
+                  qty: liveSnapshotPosition.size,
+                  entryPrice: liveSnapshotPosition.entryPrice,
+                  markPrice: liveSnapshotPosition.markPrice,
+                  liquidationPrice: liveSnapshotPosition.liquidationPrice,
+                  liquidationDistancePct: liveSnapshotPosition.liquidationDistancePct,
+                  source: "hyperliquid_reconciliation",
+                  capturedAt: reconciliationResult.snapshot?.capturedAt ?? reconciliationResult.at
+                }
+              })
+            });
+          }
           await updateBotVaultExecutionRuntime({
             botVaultId,
             executionLastSyncedAt: ctx.now,
@@ -1413,6 +1609,63 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               reconciliationMonitor: summarizeVaultReconciliation(reconciliationResult)
             }
           });
+          if (reconciliationResult.liquidationEvents.length > 0) {
+            const liquidationEvent = reconciliationResult.liquidationEvents[0]!;
+            const cancelSummary = await cancelGridOpenOrdersBestEffort({
+              adapter,
+              openOrders,
+              botSymbol: ctx.bot.symbol
+            });
+            const liquidationMark = await markBotVaultLiquidatedForRunner({
+              botVaultId,
+              gridInstanceId: instance.id,
+              botId: ctx.bot.id,
+              symbol: ctx.bot.symbol,
+              event: liquidationEvent,
+              canceledOpenOrders: cancelSummary,
+              now: ctx.now
+            });
+            if (liquidationMark.firstObserved) {
+              await writeRiskEventFn({
+                botId: ctx.bot.id,
+                type: "BOT_VAULT_LIQUIDATED",
+                message: "bot_vault_liquidated",
+                meta: buildGridExecutionMeta({
+                  stage: "vault_liquidation",
+                  symbol: ctx.bot.symbol,
+                  instanceId: instance.id,
+                  reason: "bot_vault_liquidated",
+                  extra: {
+                    botVaultId,
+                    liquidationEvent: {
+                      key: liquidationEvent.key,
+                      symbol: liquidationEvent.symbol,
+                      side: liquidationEvent.side,
+                      fillPrice: liquidationEvent.fillPrice,
+                      fillQty: liquidationEvent.fillQty,
+                      filledAt: liquidationEvent.filledAt,
+                      exchangeFillId: liquidationEvent.exchangeFillId,
+                      exchangeOrderId: liquidationEvent.exchangeOrderId,
+                      clientOrderId: liquidationEvent.clientOrderId,
+                      evidence: liquidationEvent.evidence
+                    },
+                    canceledOpenOrders: cancelSummary,
+                    reconciliation: summarizeVaultReconciliation(reconciliationResult)
+                  }
+                })
+              });
+            }
+            return buildModeBlockedResult(signal, "bot_vault_liquidated", {
+              mode: "futures_grid",
+              preserveReason: true,
+              liquidation: {
+                eventKey: liquidationEvent.key,
+                firstObserved: liquidationMark.firstObserved,
+                canceledOpenOrders: cancelSummary
+              },
+              reconciliation: summarizeVaultReconciliation(reconciliationResult)
+            });
+          }
           for (const alert of reconciliationResult.newAlerts.slice(0, 5)) {
             await writeRiskEventFn({
               botId: ctx.bot.id,
@@ -3288,6 +3541,208 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         liveAccountStateForPlan = buildGridPlanLiveAccountState(vaultBalanceSnapshot);
       }
 
+      const allGridFillEvents = await listGridBotFillEvents({
+        instanceId: instance.id,
+        take: 5_000
+      });
+      const realizedGridProfitUsd = computeGridRealizedProfitUsd(allGridFillEvents);
+      const unrealizedPnlUsd = computeGridUnrealizedPnlFromPosition({
+        position: plannerPosition,
+        markPrice
+      });
+      const totalPnlUsd = Number((realizedGridProfitUsd + unrealizedPnlUsd).toFixed(8));
+      const tpTrigger = resolveGridTpTrigger({
+        instance,
+        totalPnlUsd
+      });
+      const slTriggeredByMark = resolveGridSlTrigger({
+        slPrice: instance.slPrice,
+        markPrice,
+        position: plannerPosition
+      });
+      const protectionMetrics = {
+        gridProfitUsd: realizedGridProfitUsd,
+        unrealizedPnlUsd,
+        totalPnlUsd,
+        tpTargetType: tpTrigger.targetType,
+        tpTargetUsd: tpTrigger.targetUsd,
+        tpAction: tpTrigger.action,
+        slPrice: instance.slPrice ?? null,
+        protectionCheckedAt: ctx.now.toISOString()
+      };
+      if (tpTrigger.triggered) {
+        const openOrdersAfter = await listGridBotOpenOrders(instance.id);
+        const cancelSummary = await cancelGridOpenOrdersBestEffort({
+          adapter,
+          openOrders: openOrdersAfter,
+          botSymbol: ctx.bot.symbol
+        });
+        const reason = tpTrigger.action === "end" ? "tp_profit_end_terminal" : "tp_profit_stop";
+        const metricsJson = mergeCurrentMetrics({
+          ...protectionMetrics,
+          terminalReason: reason,
+          canceledOrders: cancelSummary.canceled,
+          cancelErrors: cancelSummary.failed
+        });
+        if (tpTrigger.action === "stop") {
+          await stopGridBotInstanceForRunner({
+            instanceId: instance.id,
+            botId: ctx.bot.id,
+            runtimeReason: "grid_tp_profit_target_stopped",
+            stateJson: {
+              ...currentStateJson,
+              tpTriggeredAt: ctx.now.toISOString(),
+              tpTrigger: protectionMetrics
+            },
+            metricsJson,
+            lastPlanError: null
+          });
+        } else {
+          const closeSummary = await closeGridResidualPositionBestEffort({
+            executionExchange,
+            adapter,
+            exchangeAccountId: ctx.bot.exchangeAccountId,
+            botSymbol: ctx.bot.symbol,
+            markPrice,
+            paperMarketDataVenue: paperContext?.linkedMarketData.marketDataVenue ?? null
+          });
+          await archiveGridBotInstanceTerminal({
+            instanceId: instance.id,
+            botId: ctx.bot.id,
+            archivedReason: "tp_hit_terminal",
+            runtimeReason: "grid_instance_archived_terminal",
+            stateJson: {
+              ...currentStateJson,
+              tpTriggeredAt: ctx.now.toISOString(),
+              tpTrigger: protectionMetrics
+            },
+            metricsJson: {
+              ...metricsJson,
+              closeResidualOutcome: closeSummary
+            },
+            lastPlanError: null
+          });
+        }
+        await upsertGridProtectionPlatformAlertForRunner({
+          userId: ctx.bot.userId,
+          workspaceId: instance.workspaceId,
+          botId: ctx.bot.id,
+          instanceId: instance.id,
+          severity: "warning",
+          type: "grid_tp_triggered",
+          title: "Grid take profit triggered",
+          message: `Grid Bot ${ctx.bot.symbol} reached TP with total PnL ${totalPnlUsd.toFixed(2)} USDC.`,
+          metadata: {
+            symbol: ctx.bot.symbol,
+            reason,
+            totalPnlUsd,
+            targetUsd: tpTrigger.targetUsd,
+            action: tpTrigger.action,
+            canceledOpenOrders: cancelSummary
+          }
+        });
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_TP_TRIGGERED",
+          message: "grid take profit triggered",
+          meta: buildGridExecutionMeta({
+            stage: "grid_tp_profit_triggered",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason,
+            extra: {
+              totalPnlUsd,
+              targetUsd: tpTrigger.targetUsd,
+              targetType: tpTrigger.targetType,
+              action: tpTrigger.action,
+              canceledOpenOrders: cancelSummary
+            }
+          })
+        });
+        return buildModeNoopResult(signal, reason, {
+          mode: "futures_grid",
+          totalPnlUsd,
+          targetUsd: tpTrigger.targetUsd,
+          action: tpTrigger.action
+        });
+      }
+      if (slTriggeredByMark) {
+        const openOrdersAfter = await listGridBotOpenOrders(instance.id);
+        const cancelSummary = await cancelGridOpenOrdersBestEffort({
+          adapter,
+          openOrders: openOrdersAfter,
+          botSymbol: ctx.bot.symbol
+        });
+        const closeSummary = await closeGridResidualPositionBestEffort({
+          executionExchange,
+          adapter,
+          exchangeAccountId: ctx.bot.exchangeAccountId,
+          botSymbol: ctx.bot.symbol,
+          markPrice,
+          paperMarketDataVenue: paperContext?.linkedMarketData.marketDataVenue ?? null
+        });
+        await archiveGridBotInstanceTerminal({
+          instanceId: instance.id,
+          botId: ctx.bot.id,
+          archivedReason: "sl_hit_terminal",
+          runtimeReason: "grid_instance_archived_terminal",
+          stateJson: {
+            ...currentStateJson,
+            slTriggeredAt: ctx.now.toISOString(),
+            slTrigger: protectionMetrics
+          },
+          metricsJson: mergeCurrentMetrics({
+            ...protectionMetrics,
+            terminalReason: "sl_hit_terminal",
+            canceledOrders: cancelSummary.canceled,
+            cancelErrors: cancelSummary.failed,
+            closeResidualOutcome: closeSummary
+          }),
+          lastPlanError: null
+        });
+        await upsertGridProtectionPlatformAlertForRunner({
+          userId: ctx.bot.userId,
+          workspaceId: instance.workspaceId,
+          botId: ctx.bot.id,
+          instanceId: instance.id,
+          severity: "critical",
+          type: "grid_sl_triggered",
+          title: "Grid stop loss triggered",
+          message: `Grid Bot ${ctx.bot.symbol} reached SL at mark ${Number(markPrice).toFixed(2)} and was ended.`,
+          metadata: {
+            symbol: ctx.bot.symbol,
+            markPrice,
+            slPrice: instance.slPrice,
+            totalPnlUsd,
+            canceledOpenOrders: cancelSummary,
+            closeResidualOutcome: closeSummary
+          }
+        });
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_SL_TRIGGERED",
+          message: "grid stop loss triggered",
+          meta: buildGridExecutionMeta({
+            stage: "grid_sl_triggered",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason: "sl_hit_terminal",
+            extra: {
+              markPrice,
+              slPrice: instance.slPrice,
+              totalPnlUsd,
+              canceledOpenOrders: cancelSummary,
+              closeResidualOutcome: closeSummary
+            }
+          })
+        });
+        return buildModeNoopResult(signal, "sl_hit_terminal", {
+          mode: "futures_grid",
+          markPrice,
+          slPrice: instance.slPrice
+        });
+      }
+
       const plannerPayload = buildGridPlanRequest({
         instance,
         markPrice,
@@ -4312,6 +4767,40 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const protectionExecutedCount = delegatedResults.filter((entry) => entry.reason === "grid_adapter_protection_set" || entry.reason === "grid_paper_protection_set").length;
       const protectionBlockedCount = delegatedResults.filter((entry) => entry.reason.startsWith("grid_set_protection_") && entry.status === "blocked").length;
       const protectionNoopCount = delegatedResults.filter((entry) => entry.reason.startsWith("grid_set_protection_") && entry.status === "noop").length;
+      if (protectionBlockedCount > 0) {
+        const primaryProtectionIssue = protectionOutcomeEntries.find((entry) => entry.status === "blocked") ?? null;
+        await upsertGridProtectionPlatformAlertForRunner({
+          userId: ctx.bot.userId,
+          workspaceId: instance.workspaceId,
+          botId: ctx.bot.id,
+          instanceId: instance.id,
+          severity: "warning",
+          type: "grid_protection_alert",
+          title: "Grid protection alert",
+          message: `Grid Bot ${ctx.bot.symbol} could not confirm its SL protection.`,
+          metadata: {
+            symbol: ctx.bot.symbol,
+            protectionOutcomes: protectionOutcomeEntries,
+            primaryReason: primaryProtectionIssue?.reason ?? null
+          }
+        });
+        if (!shouldThrottleGridNoiseRiskEvent(ctx.bot.id, "GRID_PROTECTION_ALERT:sl_protection_failed", ctx.now)) {
+          await writeRiskEventFn({
+            botId: ctx.bot.id,
+            type: "GRID_PROTECTION_ALERT",
+            message: "grid SL protection could not be confirmed",
+            meta: buildGridExecutionMeta({
+              stage: "grid_protection",
+              symbol: ctx.bot.symbol,
+              instanceId: instance.id,
+              reason: primaryProtectionIssue?.reason ?? "grid_set_protection_failed",
+              extra: {
+                protectionOutcomes: protectionOutcomeEntries
+              }
+            })
+          });
+        }
+      }
       const hasActionablePlanChanges =
         orderIntents.length > 0
         || cancelIntents.length > 0
@@ -4413,6 +4902,28 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         const terminalCloseOutcome = mergeNormalizedCloseOutcomeMetadata(closeSummary, {
           historyClose
         });
+        await upsertGridProtectionPlatformAlertForRunner({
+          userId: ctx.bot.userId,
+          workspaceId: instance.workspaceId,
+          botId: ctx.bot.id,
+          instanceId: instance.id,
+          severity: archivedReason === "sl_hit_terminal" ? "critical" : "warning",
+          type: archivedReason === "sl_hit_terminal" ? "grid_sl_triggered" : "grid_tp_triggered",
+          title: archivedReason === "sl_hit_terminal" ? "Grid stop loss triggered" : "Grid take profit triggered",
+          message: archivedReason === "sl_hit_terminal"
+            ? `Grid Bot ${ctx.bot.symbol} hit SL protection and was ended.`
+            : `Grid Bot ${ctx.bot.symbol} hit TP protection and was ended.`,
+          metadata: {
+            symbol: ctx.bot.symbol,
+            archivedReason,
+            terminalTpHits,
+            terminalSlHits,
+            terminalIntentHit,
+            canceledOrders: cancelSummary.canceled,
+            cancelErrors: cancelSummary.failed,
+            closeResidualOutcome: terminalCloseOutcome
+          }
+        });
         await archiveGridBotInstanceTerminal({
           instanceId: instance.id,
           botId: ctx.bot.id,
@@ -4424,6 +4935,25 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             terminalReason: archivedReason
           }),
           lastPlanError: null
+        });
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: archivedReason === "sl_hit_terminal" ? "GRID_SL_TRIGGERED" : "GRID_TP_TRIGGERED",
+          message: archivedReason === "sl_hit_terminal" ? "grid stop loss triggered" : "grid take profit triggered",
+          meta: buildGridExecutionMeta({
+            stage: "terminated_protective_exit",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason: archivedReason,
+            extra: {
+              terminalTpHits,
+              terminalSlHits,
+              terminalIntentHit,
+              canceledOrders: cancelSummary.canceled,
+              cancelErrors: cancelSummary.failed,
+              closeResidualOutcome: terminalCloseOutcome
+            }
+          })
         });
         await writeRiskEventFn({
           botId: ctx.bot.id,

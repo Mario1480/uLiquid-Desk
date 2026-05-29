@@ -52,6 +52,27 @@ export type FillRecord = {
   fillQty: number;
   feeUsd: number;
   filledAt: string;
+  liquidation: LiquidationSignal | null;
+  raw: Record<string, unknown>;
+};
+
+export type LiquidationSignal = {
+  source: "fill" | "order_status";
+  evidence: string[];
+};
+
+export type LiquidationEvent = {
+  key: string;
+  exchangeFillId: string | null;
+  exchangeOrderId: string | null;
+  clientOrderId: string | null;
+  cloid: string | null;
+  symbol: string | null;
+  side: "buy" | "sell" | null;
+  fillPrice: number;
+  fillQty: number;
+  filledAt: string;
+  evidence: string[];
   raw: Record<string, unknown>;
 };
 
@@ -68,6 +89,8 @@ export type VaultSnapshot = {
     size: number;
     entryPrice: number | null;
     markPrice: number | null;
+    liquidationPrice: number | null;
+    liquidationDistancePct: number | null;
     notionalUsd: number;
     unrealizedPnl: number | null;
   }>;
@@ -167,6 +190,7 @@ export type ReconciliationResult = {
   liveOpenOrders: NormalizedOrder[];
   recentFills: FillRecord[];
   newFills: FillRecord[];
+  liquidationEvents: LiquidationEvent[];
   snapshot: VaultSnapshot | null;
   drifts: ReconciliationDrift[];
   alerts: ReconciliationAlert[];
@@ -299,11 +323,95 @@ function compareStateRank(state: OrderState): number {
 function toOrderStateFromOrderStatus(status: unknown): OrderState | null {
   const normalized = String(status ?? "").trim().toLowerCase();
   if (!normalized) return null;
+  if (normalized.includes("liquidat")) return "canceled";
   if (normalized.includes("cancel")) return "canceled";
   if (normalized.includes("reject")) return "rejected";
   if (normalized.includes("fill")) return "filled";
   if (normalized.includes("open") || normalized.includes("rest")) return "open";
   return null;
+}
+
+function appendLiquidationEvidence(params: {
+  value: unknown;
+  path: string;
+  evidence: string[];
+  depth?: number;
+}): void {
+  const depth = params.depth ?? 0;
+  if (depth > 5 || params.evidence.length >= 12) return;
+  const key = params.path.split(".").at(-1)?.toLowerCase() ?? "";
+  if (typeof params.value === "string") {
+    const text = params.value.trim();
+    const normalized = text.toLowerCase();
+    if (
+      normalized.includes("liquidat")
+      || ((key === "dir" || key === "type" || key === "status" || key === "event") && normalized === "liq")
+      || normalized === "liquidatedcanceled"
+    ) {
+      params.evidence.push(`${params.path}:${text.slice(0, 80)}`);
+    }
+    return;
+  }
+  if (typeof params.value === "boolean") {
+    if (params.value === true && key.includes("liquidat")) {
+      params.evidence.push(`${params.path}:true`);
+    }
+    return;
+  }
+  if (!params.value || typeof params.value !== "object") return;
+  if (Array.isArray(params.value)) {
+    for (let index = 0; index < params.value.length && index < 20; index += 1) {
+      appendLiquidationEvidence({
+        value: params.value[index],
+        path: `${params.path}[${index}]`,
+        evidence: params.evidence,
+        depth: depth + 1
+      });
+    }
+    return;
+  }
+  for (const [childKey, childValue] of Object.entries(params.value as Record<string, unknown>)) {
+    appendLiquidationEvidence({
+      value: childValue,
+      path: params.path ? `${params.path}.${childKey}` : childKey,
+      evidence: params.evidence,
+      depth: depth + 1
+    });
+  }
+}
+
+export function detectHyperliquidLiquidationSignal(
+  raw: unknown,
+  source: LiquidationSignal["source"]
+): LiquidationSignal | null {
+  const evidence: string[] = [];
+  appendLiquidationEvidence({
+    value: raw,
+    path: "raw",
+    evidence
+  });
+  const uniqueEvidence = Array.from(new Set(evidence));
+  return uniqueEvidence.length > 0
+    ? { source, evidence: uniqueEvidence.slice(0, 12) }
+    : null;
+}
+
+function liquidationEventFromFill(fill: FillRecord): LiquidationEvent | null {
+  if (!fill.liquidation) return null;
+  return {
+    key: `liquidation:${fill.key}`,
+    exchangeFillId: fill.exchangeFillId,
+    exchangeOrderId: fill.exchangeOrderId,
+    clientOrderId: fill.clientOrderId,
+    cloid: fill.cloid,
+    symbol: fill.symbol,
+    side: fill.side,
+    fillPrice: fill.fillPrice,
+    fillQty: fill.fillQty,
+    filledAt: fill.filledAt,
+    evidence: fill.liquidation.evidence,
+    raw: fill.raw
+  };
 }
 
 function normalizeLiveOrder(row: NormalizedOrder): LiveOrderRef {
@@ -370,6 +478,7 @@ function normalizeFillRecord(raw: unknown): FillRecord | null {
     fillQty,
     feeUsd: Number(row.fee ?? row.feeUsd ?? 0) || 0,
     filledAt: filledAtDate.toISOString(),
+    liquidation: detectHyperliquidLiquidationSignal(row, "fill"),
     raw: row
   };
 }
@@ -962,6 +1071,12 @@ export class HyperliquidExecutionMonitor {
         size,
         entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null,
         markPrice: Number.isFinite(markPrice) && markPrice > 0 ? markPrice : null,
+        liquidationPrice: Number.isFinite(Number(row.liquidationPrice)) && Number(row.liquidationPrice) > 0
+          ? Number(row.liquidationPrice)
+          : null,
+        liquidationDistancePct: Number.isFinite(Number(row.liquidationDistancePct))
+          ? Number(row.liquidationDistancePct)
+          : null,
         notionalUsd: Number.isFinite(markPrice) && markPrice > 0 ? Number((size * markPrice).toFixed(8)) : 0,
         unrealizedPnl: Number.isFinite(Number(row.unrealizedPnl)) ? Number(row.unrealizedPnl) : null
       };
@@ -1069,9 +1184,21 @@ export class HyperliquidExecutionMonitor {
       this.fills.set(fill.key, fill);
       newFills.push(fill);
     }
+    const liquidationEvents = newFills
+      .map((fill) => liquidationEventFromFill(fill))
+      .filter((event): event is LiquidationEvent => Boolean(event));
 
     const statusChanges: ReconciliationResult["statusChanges"] = [];
     const newAlerts: ReconciliationAlert[] = [];
+    for (const event of liquidationEvents) {
+      newAlerts.push({
+        key: event.key,
+        severity: "critical",
+        code: "bot_vault_liquidation_confirmed",
+        message: `Hyperliquid reported a liquidation fill for ${event.symbol ?? params.symbol ?? "vault position"}`,
+        orderKey: event.exchangeOrderId ?? event.clientOrderId ?? undefined
+      });
+    }
     for (const order of this.orders.values()) {
       const previousState = order.state;
       const matchedLive = liveRefs.find((live) => matchOrderRef({ record: order, live })) ?? null;
@@ -1198,6 +1325,7 @@ export class HyperliquidExecutionMonitor {
       liveOpenOrders,
       recentFills: [...this.fills.values()],
       newFills,
+      liquidationEvents,
       snapshot,
       drifts,
       alerts,

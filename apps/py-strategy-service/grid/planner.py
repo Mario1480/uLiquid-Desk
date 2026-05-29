@@ -1320,21 +1320,14 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
         if client_id not in existing_client_ids:
             intents.append(desired)
 
-    if payload.tpPct is not None or payload.slPrice is not None:
-        tp_price = None
+    if payload.slPrice is not None:
         sl_price = None
-        if payload.tpPct is not None:
-            if payload.mode == "short":
-                tp_price = round6(payload.markPrice * (1.0 - payload.tpPct / 100.0))
-            else:
-                tp_price = round6(payload.markPrice * (1.0 + payload.tpPct / 100.0))
-        if payload.slPrice is not None:
-            sl_price = round6(payload.slPrice)
+        sl_price = round6(payload.slPrice)
 
         intents.append(
             GridIntent(
                 type="set_protection",
-                tpPrice=tp_price,
+                tpPrice=None,
                 slPrice=sl_price,
             )
         )

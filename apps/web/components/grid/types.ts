@@ -222,6 +222,9 @@ export type GridInstance = {
   triggerPrice: number | null;
   slippagePct: number;
   tpPct: number | null;
+  tpTargetType?: "pct" | "usdc";
+  tpProfitUsd?: number | null;
+  tpAction?: "stop" | "end";
   slPrice: number | null;
   autoMarginEnabled: boolean;
   marginMode: GridInstanceMarginMode;
