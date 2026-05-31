@@ -1991,8 +1991,18 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       ?? NaN
     );
     if (Number.isFinite(liveValue) && liveValue > 0) return liveValue;
+    const botVaultLivePosition = readBotVaultLatestPositionSnapshot(row);
+    const botVaultLiveValue = Number(
+      botVaultLivePosition.liquidationPrice
+      ?? botVaultLivePosition.liquidationPx
+      ?? botVaultLivePosition.liqPrice
+      ?? botVaultLivePosition.liqPx
+      ?? NaN
+    );
+    if (Number.isFinite(botVaultLiveValue) && botVaultLiveValue > 0) return botVaultLiveValue;
     const side = String(positionSnapshot.side ?? positionSnapshot.direction ?? "").trim().toLowerCase();
-    return readSideSpecificGridLiqEstimate(metrics, side);
+    const botVaultSide = String(botVaultLivePosition.side ?? botVaultLivePosition.direction ?? "").trim().toLowerCase();
+    return readSideSpecificGridLiqEstimate(metrics, side || botVaultSide);
   }
 
   function readGridInstancePositionSide(row: any): string | null {
@@ -2003,7 +2013,44 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       ? metrics.positionSnapshot as Record<string, unknown>
       : {};
     const side = String(positionSnapshot.side ?? positionSnapshot.direction ?? "").trim().toLowerCase();
-    return side === "long" || side === "short" ? side : null;
+    if (side === "long" || side === "short") return side;
+    const botVaultLivePosition = readBotVaultLatestPositionSnapshot(row);
+    const botVaultSide = String(botVaultLivePosition.side ?? botVaultLivePosition.direction ?? "").trim().toLowerCase();
+    if (botVaultSide === "long" || botVaultSide === "short") return botVaultSide;
+    return null;
+  }
+
+  function normalizeGridComparableMarketSymbol(value: unknown): string {
+    let normalized = String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    for (let i = 0; i < 3; i += 1) {
+      const previous = normalized;
+      if (normalized.length > 4 && (normalized.endsWith("USDT") || normalized.endsWith("USDC"))) {
+        normalized = normalized.slice(0, -4);
+      }
+      if (normalized.length > 4 && normalized.endsWith("PERP")) {
+        normalized = normalized.slice(0, -4);
+      }
+      if (normalized === previous) break;
+    }
+    return normalized;
+  }
+
+  function readBotVaultLatestPositionSnapshot(row: any): Record<string, unknown> {
+    const metadata = asRecord(row?.botVault?.executionMetadata);
+    const tradingReconciliation = asRecord(metadata.tradingReconciliation);
+    const raw = tradingReconciliation.latestPositionSnapshot;
+    const positions = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+      .map(asRecord)
+      .filter((position: Record<string, unknown>) => Object.keys(position).length > 0);
+    if (positions.length === 0) return {};
+    const targetSymbol = normalizeGridComparableMarketSymbol(row?.bot?.symbol ?? row?.template?.symbol);
+    return positions.find((position: Record<string, unknown>) =>
+      targetSymbol
+      && normalizeGridComparableMarketSymbol(position.symbol) === targetSymbol
+      && Number(position.qty ?? position.size ?? position.szi ?? 0) > 0
+    ) ?? positions.find((position: Record<string, unknown>) =>
+      Number(position.qty ?? position.size ?? position.szi ?? 0) > 0
+    ) ?? positions[0] ?? {};
   }
 
   function readSideSpecificGridLiqEstimate(source: Record<string, unknown>, side?: string | null): number | null {

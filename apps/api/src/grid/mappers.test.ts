@@ -326,6 +326,78 @@ function buildGridInstanceRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+test("mapGridInstanceRow overlays BotVault live liquidation into grid metrics", () => {
+  const mapped = mapGridInstanceRow(buildGridInstanceRow({
+    template: {
+      id: "tpl_1",
+      symbol: "BTCUSDC",
+      marketType: "perp",
+      mode: "long",
+      gridMode: "arithmetic",
+      lowerPrice: 70000,
+      upperPrice: 80000,
+      gridCount: 2
+    },
+    bot: {
+      id: "bot_1",
+      name: "Grid",
+      symbol: "BTCUSDC",
+      status: "paused",
+      exchange: "hyperliquid",
+      exchangeAccount: {
+        id: "acct_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    },
+    metricsJson: {
+      liqEstimateLong: 74350.95875,
+      positionSnapshot: {
+        side: "long",
+        qty: 0.00039,
+        entryPrice: 77387,
+        markPrice: 73869
+      }
+    },
+    botVault: {
+      id: "bv_1",
+      userId: "user_1",
+      masterVaultId: "mv_1",
+      templateId: "tpl_1",
+      gridInstanceId: "grid_health_1",
+      botId: "bot_1",
+      vaultModel: "bot_vault_v4",
+      status: "ACTIVE",
+      vaultAddress: `0x${"1".repeat(40)}`,
+      fundingStatus: "hyper_evm_confirmed_onchain",
+      hypercoreFundingStatus: "funded",
+      executionStatus: "paused",
+      executionMetadata: {
+        tradingReconciliation: {
+          latestPositionSnapshot: [{
+            symbol: "BTCUSDC",
+            side: "long",
+            size: 0.00039,
+            entryPrice: 77387,
+            markPrice: 73680,
+            unrealizedPnl: -1.44612,
+            liquidationPrice: 65457.3554040896,
+            liquidationDistancePct: 11.15994109108361
+          }]
+        }
+      },
+      onchainActions: []
+    }
+  }));
+
+  const positionSnapshot = mapped.metricsJson.positionSnapshot as Record<string, unknown>;
+  assert.equal(positionSnapshot.liquidationPrice, 65457.3554040896);
+  assert.equal(positionSnapshot.liquidationDistancePct, 11.15994109108361);
+  assert.equal(positionSnapshot.markPrice, 73680);
+  assert.equal(positionSnapshot.source, "bot_vault_execution_metadata");
+  assert.equal(Array.isArray(mapped.botVault?.latestPositionSnapshot), true);
+});
+
 test("mapGridInstanceRow exposes explicit grid health diagnostics", () => {
   const mapped = mapGridInstanceRow(buildGridInstanceRow({
     stateJson: {

@@ -232,6 +232,7 @@ export type BotVaultSnapshot = {
   } | null;
   providerMetadataSummary?: BotVaultProviderMetadataSummary | null;
   feeConfigSummary?: LockedAffiliateFeeConfig | null;
+  latestPositionSnapshot?: unknown;
   providerMetadataRaw?: Record<string, unknown> | null;
   operationState?: BotVaultV3OperationState | null;
   fundingDisplayStatus?: BotVaultFundingDisplayStatus;
@@ -680,6 +681,7 @@ export function mapBotVaultSnapshot(
   options?: { includeProviderMetadataRaw?: boolean }
 ): BotVaultSnapshot {
   const executionMetadata = asRecord(row?.executionMetadata);
+  const tradingReconciliation = toRecord(executionMetadata?.tradingReconciliation);
   const contractVersion = normalizeOnchainContractVersion(
     executionMetadata?.onchainContractVersion ?? row?.masterVault?.contractVersion,
     "v1"
@@ -759,6 +761,7 @@ export function mapBotVaultSnapshot(
     ownerSummary: mapBotVaultOwnerSummary(row),
     providerMetadataSummary,
     feeConfigSummary,
+    latestPositionSnapshot: tradingReconciliation.latestPositionSnapshot ?? null,
     providerMetadataRaw: options?.includeProviderMetadataRaw ? providerMetadataRaw : null,
     operationState,
     fundingDisplayStatus: fundingDisplay.status,

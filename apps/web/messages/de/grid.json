@@ -396,6 +396,7 @@
     "overviewCurrentPosition": "Aktuelle Position",
     "overviewAvgHoldPrice": "Ø Haltpreis",
     "overviewEstLiqPrice": "Gesch. Liq.-Preis",
+    "cardLiqLiveLabel": "Exchange Liq.-Preis",
     "overviewBreakEvenPrice": "Break-even Preis",
     "overviewProfitTitle": "Profit in USDT",
     "overviewProfitMeta": "24H Txs: {tx24h} / Total Txs: {totalTx}",

@@ -25,6 +25,91 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function toFiniteNumberOrNull(value: unknown): number | null {
+  const parsed = Number(value ?? NaN);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeComparableMarketSymbol(value: unknown): string {
+  let normalized = String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  for (let i = 0; i < 3; i += 1) {
+    const previous = normalized;
+    if (normalized.length > 4 && (normalized.endsWith("USDT") || normalized.endsWith("USDC"))) {
+      normalized = normalized.slice(0, -4);
+    }
+    if (normalized.length > 4 && normalized.endsWith("PERP")) {
+      normalized = normalized.slice(0, -4);
+    }
+    if (normalized === previous) break;
+  }
+  return normalized;
+}
+
+function readFirstDefined(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") return value;
+  }
+  return null;
+}
+
+function selectBotVaultLatestPositionSnapshot(
+  botVault: Record<string, unknown> | null,
+  symbol: unknown
+): Record<string, unknown> | null {
+  const raw = botVault?.latestPositionSnapshot;
+  const rows = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+    .map(asRecord)
+    .filter((row) => Object.keys(row).length > 0);
+  if (rows.length === 0) return null;
+  const targetSymbol = normalizeComparableMarketSymbol(symbol);
+  return rows.find((row) =>
+    targetSymbol
+    && normalizeComparableMarketSymbol(row.symbol) === targetSymbol
+    && Number(readFirstDefined(row, ["qty", "size", "szi"]) ?? 0) > 0
+  ) ?? rows.find((row) => Number(readFirstDefined(row, ["qty", "size", "szi"]) ?? 0) > 0) ?? rows[0] ?? null;
+}
+
+function mergeBotVaultLivePositionIntoMetrics(
+  metricsJson: unknown,
+  livePosition: Record<string, unknown> | null
+): Record<string, unknown> {
+  const metrics = asRecord(metricsJson);
+  if (!livePosition) return metrics;
+  const existingSnapshot = asRecord(metrics.positionSnapshot);
+  const nextSnapshot = { ...existingSnapshot };
+
+  const side = toNullableString(readFirstDefined(livePosition, ["side", "direction"]));
+  if (side) nextSnapshot.side = side;
+
+  const qty = toFiniteNumberOrNull(readFirstDefined(livePosition, ["qty", "size", "szi"]));
+  if (qty !== null) nextSnapshot.qty = Math.abs(qty);
+
+  const entryPrice = toFiniteNumberOrNull(readFirstDefined(livePosition, ["entryPrice", "entryPx", "avgEntryPrice"]));
+  if (entryPrice !== null && entryPrice > 0) nextSnapshot.entryPrice = entryPrice;
+
+  const markPrice = toFiniteNumberOrNull(readFirstDefined(livePosition, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"]));
+  if (markPrice !== null && markPrice > 0) nextSnapshot.markPrice = markPrice;
+
+  const liquidationPrice = toFiniteNumberOrNull(readFirstDefined(livePosition, ["liquidationPrice", "liquidationPx", "liqPrice", "liqPx"]));
+  if (liquidationPrice !== null && liquidationPrice > 0) nextSnapshot.liquidationPrice = liquidationPrice;
+
+  const liquidationDistancePct = toFiniteNumberOrNull(readFirstDefined(livePosition, ["liquidationDistancePct", "liqDistancePct"]));
+  if (liquidationDistancePct !== null) nextSnapshot.liquidationDistancePct = liquidationDistancePct;
+
+  const unrealizedPnlUsd = toFiniteNumberOrNull(readFirstDefined(livePosition, ["unrealizedPnlUsd", "unrealizedPnl", "pnl"]));
+  if (unrealizedPnlUsd !== null) nextSnapshot.unrealizedPnlUsd = unrealizedPnlUsd;
+
+  if (Object.keys(nextSnapshot).length === 0) return metrics;
+  return {
+    ...metrics,
+    positionSnapshot: {
+      ...nextSnapshot,
+      source: "bot_vault_execution_metadata"
+    }
+  };
+}
+
 function coerceTemplateVisibility(value: unknown): "PUBLIC" | "PRIVATE" {
   const normalized = String(value ?? "").trim().toUpperCase();
   return normalized === "PRIVATE" ? "PRIVATE" : "PUBLIC";
@@ -404,6 +489,11 @@ export function mapGridInstanceRow(
   const hasOnchainBotVault = deriveHasOnchainBotVault(
     botVault ? (botVault as Record<string, unknown>) : null
   );
+  const livePositionSnapshot = selectBotVaultLatestPositionSnapshot(
+    botVault ? (botVault as Record<string, unknown>) : null,
+    row.bot?.symbol ?? row.template?.symbol
+  );
+  const metricsJson = mergeBotVaultLivePositionIntoMetrics(row.metricsJson ?? {}, livePositionSnapshot);
   const health = deriveGridHealth(row);
   return {
     id: row.id,
@@ -466,7 +556,7 @@ export function mapGridInstanceRow(
     slPrice: row.slPrice ?? null,
     autoMarginEnabled: row.autoMarginEnabled,
     stateJson: row.stateJson ?? {},
-    metricsJson: row.metricsJson ?? {},
+    metricsJson,
     lastPlanAt: row.lastPlanAt ?? null,
     lastPlanError: row.lastPlanError ?? null,
     lastPlanVersion: row.lastPlanVersion ?? null,

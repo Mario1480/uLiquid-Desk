@@ -107,6 +107,7 @@ export type BotVaultSnapshot = {
     providerSelectionReason?: string | null;
     pilotScope?: string | null;
   } | null;
+  latestPositionSnapshot?: Record<string, unknown> | Record<string, unknown>[] | null;
   providerMetadataRaw?: Record<string, unknown> | null;
   updatedAt?: string | null;
 };
