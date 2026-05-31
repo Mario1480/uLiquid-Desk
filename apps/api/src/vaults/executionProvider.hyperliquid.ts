@@ -312,6 +312,8 @@ function mapExecutionPositions(positions: Awaited<ReturnType<HyperliquidFuturesA
     qty: Number(row.size ?? 0),
     entryPrice: row.entryPrice ?? null,
     markPrice: row.markPrice ?? null,
+    liquidationPrice: row.liquidationPrice ?? null,
+    liquidationDistancePct: row.liquidationDistancePct ?? null,
     unrealizedPnlUsd: row.unrealizedPnl ?? null
   }));
 }

@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readMarkPriceDiagnosticFromAdapter } from "./futuresVenueRuntime.js";
+import {
+  normalizeComparableMarketSymbol,
+  normalizeComparableSymbol,
+  readMarkPriceDiagnosticFromAdapter
+} from "./futuresVenueRuntime.js";
+
+test("normalizeComparableMarketSymbol matches stablecoin-quoted perp aliases without changing raw symbol normalization", () => {
+  assert.equal(normalizeComparableSymbol("BTCUSDT"), "BTCUSDT");
+  assert.equal(normalizeComparableMarketSymbol("BTCUSDT"), "BTC");
+  assert.equal(normalizeComparableMarketSymbol("BTCUSDC"), "BTC");
+  assert.equal(normalizeComparableMarketSymbol("BTC-PERP"), "BTC");
+  assert.equal(normalizeComparableMarketSymbol("BTC-USDT-PERP"), "BTC");
+  assert.equal(normalizeComparableMarketSymbol("BTC/USDT:USDT"), "BTC");
+  assert.equal(normalizeComparableMarketSymbol("USDC"), "USDC");
+});
 
 test("readMarkPriceDiagnosticFromAdapter uses cached snapshot diagnostics when available", async () => {
   let remoteCalls = 0;

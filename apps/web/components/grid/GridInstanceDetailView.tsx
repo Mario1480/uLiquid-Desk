@@ -30,6 +30,7 @@ import {
   formatDateTime,
   formatNumber,
   formatVaultExecutionProviderLabel,
+  readGridEstimatedLiquidationPrice,
   readGridPositionValue
 } from "./utils";
 
@@ -518,6 +519,19 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
       ?? runtimeMarkPrice
       ?? NaN
   );
+  const liveLiquidationPrice = useMemo(() => {
+    const value = Number(
+      readGridPositionValue(positionSnapshot, ["liquidationPrice", "liquidationPx", "liqPrice", "liqPx"])
+        ?? readGridPositionValue(executionPosition, ["liquidationPrice", "liquidationPx", "liqPrice", "liqPx"])
+        ?? NaN
+    );
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }, [executionPosition, positionSnapshot]);
+  const estimatedLiquidationPrice = useMemo(() => {
+    return readGridEstimatedLiquidationPrice(metricsRecord, currentPositionSide);
+  }, [currentPositionSide, metricsRecord]);
+  const displayedLiquidationPrice = liveLiquidationPrice ?? estimatedLiquidationPrice;
+  const liquidationPriceLabel = liveLiquidationPrice !== null ? tGrid("cardLiqLiveLabel") : tGrid("overviewEstLiqPrice");
   const buyOrders = useMemo(
     () => [...orders].filter((row) => row.side === "buy").sort((left, right) => Number(right.price ?? 0) - Number(left.price ?? 0)),
     [orders]
@@ -662,10 +676,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const performanceStart = performanceSeries[0] ?? 0;
   const performanceEnd = performanceSeries[performanceSeries.length - 1] ?? 0;
   const performancePositive = performanceEnd >= performanceStart;
-  const liqEstimateValue = useMemo(
-    () => Number(metricsRecord.liqEstimateLong ?? metricsRecord.liqEstimateShort ?? NaN),
-    [metricsRecord]
-  );
   const describeOpenCycle = (cycle: typeof gridCycles[number]) =>
     cycle.openFill.side === "buy" ? tGrid("fillsWaiting") : tGrid("fillsWaitingBuyback");
 
@@ -814,8 +824,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   <div className="gridOverviewAllocValue">{formatNumber(currentPositionEntry, 2)}</div>
                 </div>
                 <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("overviewEstLiqPrice")}</div>
-                  <div className="gridOverviewAllocValue">{formatNumber(Number(metricsRecord.liqEstimateLong ?? metricsRecord.liqEstimateShort ?? NaN), 2)}</div>
+                  <div className="gridOverviewAllocLabel">{liquidationPriceLabel}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(displayedLiquidationPrice, 2)}</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewBreakEvenPrice")}</div>
@@ -1054,8 +1064,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   <div className="gridOverviewAllocValue">{worstCaseLiqDistancePct == null ? "n/a" : `${formatNumber(worstCaseLiqDistancePct, 2)}%`}</div>
                 </div>
                 <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("kpiLiqEstimate")}</div>
-                  <div className="gridOverviewAllocValue">{formatNumber(liqEstimateValue, 2)}</div>
+                  <div className="gridOverviewAllocLabel">{liquidationPriceLabel}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(displayedLiquidationPrice, 2)}</div>
                 </div>
               </div>
               <div className="gridOverviewChartFooter">

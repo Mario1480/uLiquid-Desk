@@ -355,6 +355,246 @@ test("GET /grid/instances/:id/orders returns real open orders instead of project
   assert.equal(res.body?.items?.[0]?.price, 73000);
 });
 
+test("POST /grid/instances/:id/margin/preview uses live position liquidation before stale estimate", async () => {
+  const app = createFakeApp();
+
+  registerGridInstanceRoutes(app as any, {
+    loadGridInstanceForUser: async () => ({
+      id: "grid_1",
+      exchangeAccountId: "account_1",
+      marginMode: "MANUAL",
+      autoMarginEnabled: false,
+      investUsd: 100,
+      extraMarginUsd: 20,
+      leverage: 5,
+      slippagePct: 0.1,
+      tpPct: null,
+      tpProfitUsd: null,
+      slPrice: null,
+      triggerPrice: null,
+      metricsJson: {
+        liqEstimateLong: 47000,
+        positionSnapshot: {
+          side: "long",
+          qty: 0.01,
+          entryPrice: 50000,
+          markPrice: 51000,
+          liquidationPrice: 45500
+        }
+      },
+      template: {
+        id: "template_1",
+        symbol: "BTCUSDT",
+        tpDefaultPct: null,
+        slDefaultPrice: null,
+        autoReservePolicy: "LIQ_GUARD_MAX_GRID",
+        autoReserveFixedGridPct: 70,
+        autoReserveTargetLiqDistancePct: null,
+        autoReserveMaxPreviewIterations: 8,
+        activeOrderWindowSize: 100,
+        recenterDriftLevels: 1
+      }
+    }),
+    computeGridPreviewAndAllocation: async () => ({
+      markPrice: 51000,
+      minInvestmentUSDT: 10,
+      minInvestmentBreakdown: {
+        long: 10,
+        short: 0,
+        seed: 0,
+        total: 10
+      },
+      initialSeed: {
+        enabled: true,
+        seedPct: 30,
+        seedSide: "buy",
+        seedQty: 0.001,
+        seedNotionalUsd: 51,
+        seedMarginUsd: 10,
+        seedMinMarginUsd: 10
+      },
+      allocation: {
+        totalBudgetUsd: 125,
+        gridInvestUsd: 100,
+        extraMarginUsd: 25,
+        splitMode: "manual",
+        policy: null,
+        targetLiqDistancePct: null,
+        searchIterationsUsed: 0,
+        insufficient: false,
+        reasonCodes: []
+      },
+      preview: {
+        validationErrors: [],
+        liqEstimateLong: 44000,
+        liqEstimateShort: null,
+        worstCaseLiqPrice: 44000,
+        worstCaseLiqDistancePct: 13,
+        liqDistanceMinPct: 8,
+        capitalSummary: {
+          effectiveGridSlots: 10,
+          effectiveGridInvestUsd: 100,
+          capitalPerGridUsd: 10,
+          initialSeedMarginUsd: 10,
+          initialSeedPct: 30
+        },
+        safetySummary: {
+          liqDistanceMinPct: 8,
+          worstCaseLiqDistancePct: 13
+        }
+      },
+      venueContext: {
+        markPrice: 51000,
+        marketDataVenue: "hyperliquid",
+        constraintSource: "live",
+        venueConstraints: {},
+        liqDistanceMinPct: 8
+      },
+      warnings: []
+    }),
+    resolveVenueContext: async () => null
+  } as any, {
+    ...createShared(),
+    gridMarginAdjustSchema: {
+      safeParse(value: any) {
+        return { success: true, data: value };
+      }
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/margin/preview");
+  const res = createMockRes();
+
+  await handler({
+    params: { id: "grid_1" },
+    body: { mode: "add", amountUsd: 5 }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.adjustment?.currentLiqEstimate, 45500);
+  assert.equal(res.body?.adjustment?.projectedLiqEstimate, 44000);
+});
+
+test("POST /grid/instances/:id/margin/preview uses side-specific liquidation estimate when live value is missing", async () => {
+  const app = createFakeApp();
+
+  registerGridInstanceRoutes(app as any, {
+    loadGridInstanceForUser: async () => ({
+      id: "grid_1",
+      exchangeAccountId: "account_1",
+      marginMode: "MANUAL",
+      autoMarginEnabled: false,
+      investUsd: 100,
+      extraMarginUsd: 20,
+      leverage: 5,
+      slippagePct: 0.1,
+      tpPct: null,
+      tpProfitUsd: null,
+      slPrice: null,
+      triggerPrice: null,
+      metricsJson: {
+        liqEstimateLong: 47000,
+        liqEstimateShort: 56000,
+        positionSnapshot: {
+          side: "short",
+          qty: 0.01,
+          entryPrice: 52000,
+          markPrice: 51000
+        }
+      },
+      template: {
+        id: "template_1",
+        symbol: "BTCUSDT",
+        tpDefaultPct: null,
+        slDefaultPrice: null,
+        autoReservePolicy: "LIQ_GUARD_MAX_GRID",
+        autoReserveFixedGridPct: 70,
+        autoReserveTargetLiqDistancePct: null,
+        autoReserveMaxPreviewIterations: 8,
+        activeOrderWindowSize: 100,
+        recenterDriftLevels: 1
+      }
+    }),
+    computeGridPreviewAndAllocation: async () => ({
+      markPrice: 51000,
+      minInvestmentUSDT: 10,
+      minInvestmentBreakdown: {
+        long: 10,
+        short: 0,
+        seed: 0,
+        total: 10
+      },
+      initialSeed: {
+        enabled: true,
+        seedPct: 30,
+        seedSide: "sell",
+        seedQty: 0.001,
+        seedNotionalUsd: 51,
+        seedMarginUsd: 10,
+        seedMinMarginUsd: 10
+      },
+      allocation: {
+        totalBudgetUsd: 125,
+        gridInvestUsd: 100,
+        extraMarginUsd: 25,
+        splitMode: "manual",
+        policy: null,
+        targetLiqDistancePct: null,
+        searchIterationsUsed: 0,
+        insufficient: false,
+        reasonCodes: []
+      },
+      preview: {
+        validationErrors: [],
+        liqEstimateLong: 43000,
+        liqEstimateShort: 57000,
+        worstCaseLiqPrice: 57000,
+        worstCaseLiqDistancePct: 11,
+        liqDistanceMinPct: 8,
+        capitalSummary: {
+          effectiveGridSlots: 10,
+          effectiveGridInvestUsd: 100,
+          capitalPerGridUsd: 10,
+          initialSeedMarginUsd: 10,
+          initialSeedPct: 30
+        },
+        safetySummary: {
+          liqDistanceMinPct: 8,
+          worstCaseLiqDistancePct: 11
+        }
+      },
+      venueContext: {
+        markPrice: 51000,
+        marketDataVenue: "hyperliquid",
+        constraintSource: "live",
+        venueConstraints: {},
+        liqDistanceMinPct: 8
+      },
+      warnings: []
+    }),
+    resolveVenueContext: async () => null
+  } as any, {
+    ...createShared(),
+    gridMarginAdjustSchema: {
+      safeParse(value: any) {
+        return { success: true, data: value };
+      }
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/margin/preview");
+  const res = createMockRes();
+
+  await handler({
+    params: { id: "grid_1" },
+    body: { mode: "add", amountUsd: 5 }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.adjustment?.currentLiqEstimate, 56000);
+  assert.equal(res.body?.adjustment?.projectedLiqEstimate, 57000);
+});
+
 test("POST /grid/instances/:id/start returns vault_reconcile_required when BotVault v3 reconcile failed before start", async () => {
   const app = createFakeApp();
 

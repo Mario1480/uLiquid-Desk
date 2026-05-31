@@ -283,6 +283,44 @@ test("resolvePlannerPositionForExecution tolerates hyperliquid position read fai
   assert.match(String(result.readError ?? ""), /unknown error occurred/i);
 });
 
+test("resolvePlannerPositionForExecution preserves adapter liquidation fields across Hyperliquid USDC symbols", async () => {
+  const result = await resolvePlannerPositionForExecution({
+    adapter: {
+      async getPositions() {
+        return [{
+          symbol: "BTCUSDC",
+          side: "long",
+          size: 0.2,
+          entryPrice: 50000,
+          markPrice: 51000,
+          liquidationPrice: 45500,
+          liquidationDistancePct: 10.78,
+          unrealizedPnl: 200
+        }];
+      }
+    } as any,
+    symbol: "BTCUSDT",
+    executionExchange: "hyperliquid",
+    tradeState: {
+      openSide: null,
+      openQty: 0,
+      openEntryPrice: null
+    } as any,
+    openOrdersCount: 1,
+    currentStateJson: {
+      initialSeedExecuted: true
+    }
+  });
+
+  assert.equal(result.position?.side, "long");
+  assert.equal(result.position?.qty, 0.2);
+  assert.equal(result.position?.entryPrice, 50000);
+  assert.equal(result.position?.markPrice, 51000);
+  assert.equal(result.position?.liquidationPrice, 45500);
+  assert.equal(result.position?.liquidationDistancePct, 10.78);
+  assert.equal(result.position?.unrealizedPnlUsd, 200);
+});
+
 test("resolvePlannerPositionForExecution keeps throwing non-bootstrap adapter read failures", async () => {
   await assert.rejects(
     () => resolvePlannerPositionForExecution({

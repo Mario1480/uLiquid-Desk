@@ -63,7 +63,7 @@ import {
 import {
   fetchBinancePerpMarkPrice,
   getOrCreateRunnerFuturesAdapter,
-  normalizeComparableSymbol,
+  normalizeComparableMarketSymbol,
   normalizeVaultExecutionState,
   readMarkPriceDiagnosticFromAdapter
 } from "./futuresVenueRuntime.js";
@@ -301,6 +301,30 @@ export function computeGridUnrealizedPnlFromPosition(params: {
   return params.position?.side === "short"
     ? Number(((entryPrice - markPrice) * qty).toFixed(8))
     : Number(((markPrice - entryPrice) * qty).toFixed(8));
+}
+
+function buildGridPositionSnapshotFromPlannerPosition(
+  position: PlannerPositionSnapshot | null,
+  fallbackMarkPrice: number | null | undefined
+): Record<string, unknown> {
+  const markPrice = Number.isFinite(Number(position?.markPrice))
+    ? Number(position?.markPrice)
+    : Number.isFinite(Number(fallbackMarkPrice))
+      ? Number(fallbackMarkPrice)
+      : null;
+  return {
+    side: position?.side ?? null,
+    qty: Number.isFinite(Number(position?.qty)) ? Number(position?.qty) : 0,
+    entryPrice: Number.isFinite(Number(position?.entryPrice)) ? Number(position?.entryPrice) : null,
+    markPrice,
+    liquidationPrice: Number.isFinite(Number(position?.liquidationPrice)) && Number(position?.liquidationPrice) > 0
+      ? Number(position?.liquidationPrice)
+      : null,
+    liquidationDistancePct: Number.isFinite(Number(position?.liquidationDistancePct))
+      ? Number(position?.liquidationDistancePct)
+      : null,
+    unrealizedPnlUsd: Number.isFinite(Number(position?.unrealizedPnlUsd)) ? Number(position?.unrealizedPnlUsd) : null
+  };
 }
 
 export function computeGridRealizedProfitUsd(fills: Array<{
@@ -629,9 +653,9 @@ function summarizeSeedPositions(
   positions: Array<Record<string, unknown>>,
   symbol: string
 ): Record<string, unknown> {
-  const normalizedSymbol = normalizeComparableSymbol(symbol);
+  const normalizedSymbol = normalizeComparableMarketSymbol(symbol);
   const matching = positions.filter((row) =>
-    normalizeComparableSymbol(String(row.symbol ?? "")) === normalizedSymbol
+    normalizeComparableMarketSymbol(String(row.symbol ?? "")) === normalizedSymbol
   );
   return {
     totalCount: positions.length,
@@ -650,9 +674,9 @@ function summarizeSeedOpenOrders(
   openOrders: Array<Record<string, unknown>>,
   symbol: string
 ): Record<string, unknown> {
-  const normalizedSymbol = normalizeComparableSymbol(symbol);
+  const normalizedSymbol = normalizeComparableMarketSymbol(symbol);
   const matching = openOrders.filter((row) =>
-    normalizeComparableSymbol(String(row.symbol ?? "")) === normalizedSymbol
+    normalizeComparableMarketSymbol(String(row.symbol ?? "")) === normalizedSymbol
   );
   return {
     totalCount: openOrders.length,
@@ -675,9 +699,9 @@ function summarizeSeedRecentFills(
   fills: Array<Record<string, unknown>>,
   symbol: string
 ): Record<string, unknown> {
-  const normalizedSymbol = normalizeComparableSymbol(symbol);
+  const normalizedSymbol = normalizeComparableMarketSymbol(symbol);
   const matching = fills.filter((row) =>
-    normalizeComparableSymbol(String(row.symbol ?? row.coin ?? row.asset ?? "")) === normalizedSymbol
+    normalizeComparableMarketSymbol(String(row.symbol ?? row.coin ?? row.asset ?? "")) === normalizedSymbol
   );
   return {
     totalCount: fills.length,
@@ -1581,8 +1605,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             ));
             openOrders = await listGridBotOpenOrders(instance.id);
           }
+          const targetMarketSymbol = normalizeComparableMarketSymbol(ctx.bot.symbol);
           const liveSnapshotPosition = reconciliationResult.snapshot?.positions.find((row) =>
-            normalizeSymbol(row.symbol) === normalizeSymbol(ctx.bot.symbol)
+            normalizeComparableMarketSymbol(row.symbol) === targetMarketSymbol
           ) ?? reconciliationResult.snapshot?.positions[0] ?? null;
           if (liveSnapshotPosition) {
             await updateGridBotInstancePlannerState({
@@ -2331,12 +2356,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             state: instance.state === "running" ? "running" : instance.state,
             stateJson: currentStateJson,
             metricsJson: mergeCurrentMetrics({
-              positionSnapshot: {
-                side: plannerPosition?.side ?? null,
-                qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
-                entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
-                markPrice: nextMarkPrice
-              }
+              positionSnapshot: buildGridPositionSnapshotFromPlannerPosition(plannerPosition, nextMarkPrice)
             })
           });
         }
@@ -2373,12 +2393,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 ? Number(plannerPosition?.entryPrice)
                 : markPrice
             }),
-            positionSnapshot: {
-              side: plannerPosition?.side ?? null,
-              qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
-              entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
-              markPrice
-            }
+            positionSnapshot: buildGridPositionSnapshotFromPlannerPosition(plannerPosition, markPrice)
           }),
           lastPlanError: null,
           lastPlanVersion: "python-v1-seed-metrics-reconciled"
@@ -2421,12 +2436,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 ? Number(plannerPosition?.entryPrice)
                 : markPrice
             }),
-            positionSnapshot: {
-              side: plannerPosition?.side ?? null,
-              qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
-              entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
-              markPrice
-            }
+            positionSnapshot: buildGridPositionSnapshotFromPlannerPosition(plannerPosition, markPrice)
           }),
           lastPlanError: null,
           lastPlanVersion: "python-v1-seed-confirmed"
@@ -3337,12 +3347,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               initialSeedFailureFinal: true,
               initialSeedRetryCategory: retry.category,
               initialSeedRetryReasonCode: retry.reasonCode,
-              positionSnapshot: {
-                side: plannerPosition?.side ?? null,
-                qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
-                entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
-                markPrice
-              }
+              positionSnapshot: buildGridPositionSnapshotFromPlannerPosition(plannerPosition, markPrice)
             }),
             lastPlanError: reason,
             lastPlanVersion: "python-v1-seed"
@@ -4680,19 +4685,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
 
       const planWindowMeta = asRecord(plan.windowMeta) ?? {};
-      const currentPositionSnapshot = plannerPosition
-        ? {
-            side: plannerPosition.side ?? null,
-            qty: Number.isFinite(Number(plannerPosition.qty)) ? Number(plannerPosition.qty) : 0,
-            entryPrice: Number.isFinite(Number(plannerPosition.entryPrice)) ? Number(plannerPosition.entryPrice) : null,
-            markPrice
-          }
-        : {
-            side: null,
-            qty: 0,
-            entryPrice: null,
-            markPrice
-          };
+      const currentPositionSnapshot = buildGridPositionSnapshotFromPlannerPosition(plannerPosition, markPrice);
       const targetActiveOrders = Number(planWindowMeta.activeOrdersTotal ?? NaN);
       const targetActiveBuys = Number(planWindowMeta.activeBuys ?? NaN);
       const targetActiveSells = Number(planWindowMeta.activeSells ?? NaN);

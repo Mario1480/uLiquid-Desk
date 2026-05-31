@@ -9,7 +9,7 @@ import {
   loadBotTradeState,
   upsertBotTradeState
 } from "../db.js";
-import { normalizeComparableSymbol } from "./futuresVenueRuntime.js";
+import { normalizeComparableMarketSymbol } from "./futuresVenueRuntime.js";
 
 export type PlannerFillEventInput = {
   exchangeOrderId?: string | null;
@@ -25,6 +25,10 @@ export type PlannerPositionSnapshot = {
   side?: "long" | "short" | null;
   qty?: number | null;
   entryPrice?: number | null;
+  markPrice?: number | null;
+  liquidationPrice?: number | null;
+  liquidationDistancePct?: number | null;
+  unrealizedPnlUsd?: number | null;
 } | null;
 
 export function resolvePlannerFillEventsForExecution(params: {
@@ -283,8 +287,9 @@ export async function toPlannerPositionFromAdapter(params: {
   symbol: string;
 }): Promise<PlannerPositionSnapshot> {
   const positions = await params.adapter.getPositions();
+  const targetSymbol = normalizeComparableMarketSymbol(params.symbol);
   const row = positions.find((entry: any) =>
-    normalizeComparableSymbol(String(entry?.symbol ?? "")) === normalizeComparableSymbol(params.symbol)
+    normalizeComparableMarketSymbol(String(entry?.symbol ?? "")) === targetSymbol
     && Number(entry?.size ?? 0) > 0
   );
   if (!row) return null;
@@ -293,7 +298,15 @@ export async function toPlannerPositionFromAdapter(params: {
   return {
     side: String(row.side ?? "").trim().toLowerCase() === "short" ? "short" : "long",
     qty,
-    entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null
+    entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null,
+    markPrice: Number.isFinite(Number(row.markPrice)) ? Number(row.markPrice) : null,
+    liquidationPrice: Number.isFinite(Number(row.liquidationPrice)) && Number(row.liquidationPrice) > 0
+      ? Number(row.liquidationPrice)
+      : null,
+    liquidationDistancePct: Number.isFinite(Number(row.liquidationDistancePct))
+      ? Number(row.liquidationDistancePct)
+      : null,
+    unrealizedPnlUsd: Number.isFinite(Number(row.unrealizedPnl)) ? Number(row.unrealizedPnl) : null
   };
 }
 

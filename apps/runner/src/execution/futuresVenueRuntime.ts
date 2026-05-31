@@ -47,6 +47,21 @@ export function normalizeComparableSymbol(value: string): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
+export function normalizeComparableMarketSymbol(value: string): string {
+  let normalized = normalizeComparableSymbol(value);
+  for (let i = 0; i < 3; i += 1) {
+    const previous = normalized;
+    if (normalized.length > 4 && (normalized.endsWith("USDT") || normalized.endsWith("USDC"))) {
+      normalized = normalized.slice(0, -4);
+    }
+    if (normalized.length > 4 && normalized.endsWith("PERP")) {
+      normalized = normalized.slice(0, -4);
+    }
+    if (normalized === previous) break;
+  }
+  return normalized;
+}
+
 export async function fetchBinancePerpMarkPrice(symbol: string): Promise<number | null> {
   const normalized = normalizeComparableSymbol(symbol);
   if (!normalized) return null;

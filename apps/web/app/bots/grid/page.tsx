@@ -22,6 +22,7 @@ import {
   formatNumber,
   formatSignedPercent,
   formatVaultExecutionProviderLabel,
+  readGridEstimatedLiquidationPrice,
   readGridPositionValue
 } from "../../../components/grid/utils";
 import {
@@ -482,8 +483,12 @@ function GridBotsDashboardPageContent() {
                     ? Number(metrics.rounds ?? 0)
                     : Number(stats?.completedRounds ?? 0);
                 const rounds24h = Number(stats?.completedRounds24h ?? 0);
-                const liqEstimate = Number(metrics.liqEstimateLong ?? metrics.liqEstimateShort ?? NaN);
                 const positionSnapshot = (metrics.positionSnapshot as Record<string, unknown> | undefined) ?? {};
+                const currentSide = String(
+                  readGridPositionValue(positionSnapshot, ["side", "direction"])
+                    ?? "flat"
+                );
+                const liqEstimate = readGridEstimatedLiquidationPrice(metrics, currentSide);
                 const liveLiquidationPrice = Number(
                   readGridPositionValue(positionSnapshot, ["liquidationPrice", "liquidationPx", "liqPrice", "liqPx"])
                     ?? NaN
@@ -508,10 +513,6 @@ function GridBotsDashboardPageContent() {
                 const currentQty = Number(
                   readGridPositionValue(positionSnapshot, ["qty", "size", "szi"])
                     ?? NaN
-                );
-                const currentSide = String(
-                  readGridPositionValue(positionSnapshot, ["side", "direction"])
-                    ?? "flat"
                 );
                 const unrealizedTrendPnl = Number.isFinite(Number(metrics.unrealizedPnlUsd ?? NaN))
                   ? Number(metrics.unrealizedPnlUsd ?? 0)

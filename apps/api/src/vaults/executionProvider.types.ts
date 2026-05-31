@@ -22,6 +22,8 @@ export type BotExecutionPosition = {
   qty: number;
   entryPrice: number | null;
   markPrice: number | null;
+  liquidationPrice?: number | null;
+  liquidationDistancePct?: number | null;
   unrealizedPnlUsd: number | null;
 };
 

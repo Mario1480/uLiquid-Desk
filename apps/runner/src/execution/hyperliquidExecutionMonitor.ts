@@ -7,6 +7,7 @@ import {
   orderReferenceInputsMatch
 } from "@mm/futures-exchange";
 import type { NormalizedOrder } from "@mm/futures-exchange";
+import { normalizeComparableMarketSymbol } from "./futuresVenueRuntime.js";
 
 export type OrderState =
   | "submitted"
@@ -268,8 +269,8 @@ function toNonNegativeNumber(value: unknown): number | null {
   return parsed;
 }
 
-function normalizeComparableSymbol(value: unknown): string {
-  return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+function normalizeComparablePositionSymbol(value: unknown): string {
+  return normalizeComparableMarketSymbol(String(value ?? ""));
 }
 
 function parseIsoTimestamp(value: unknown): number | null {
@@ -616,9 +617,9 @@ function resolveLivePositionForSymbol(params: {
   entryPrice: number | null;
 } | null {
   if (!params.snapshot) return null;
-  const targetSymbol = normalizeComparableSymbol(params.symbol);
+  const targetSymbol = normalizeComparablePositionSymbol(params.symbol);
   const rows = params.snapshot.positions.filter((row) =>
-    !targetSymbol || normalizeComparableSymbol(row.symbol) === targetSymbol
+    !targetSymbol || normalizeComparablePositionSymbol(row.symbol) === targetSymbol
   );
   if (rows.length === 0) return null;
   const longQty = rows
@@ -772,7 +773,7 @@ export function detectStateDrift(params: {
   });
   if (expectedPosition && !livePosition) {
     drifts.push({
-      key: `position:missing-live:${normalizeComparableSymbol(expectedPosition.symbol) || "symbol"}`,
+      key: `position:missing-live:${normalizeComparablePositionSymbol(expectedPosition.symbol) || "symbol"}`,
       severity: "critical",
       scope: "positions",
       sourceOfTruth: "live_venue",
@@ -782,7 +783,7 @@ export function detectStateDrift(params: {
     });
   } else if (!expectedPosition && livePosition) {
     drifts.push({
-      key: `position:missing-local:${normalizeComparableSymbol(livePosition.symbol) || "symbol"}`,
+      key: `position:missing-local:${normalizeComparablePositionSymbol(livePosition.symbol) || "symbol"}`,
       severity: "critical",
       scope: "positions",
       sourceOfTruth: "live_venue",
@@ -793,7 +794,7 @@ export function detectStateDrift(params: {
   } else if (expectedPosition && livePosition) {
     if (expectedPosition.side !== livePosition.side) {
       drifts.push({
-        key: `position:side:${normalizeComparableSymbol(livePosition.symbol) || "symbol"}`,
+        key: `position:side:${normalizeComparablePositionSymbol(livePosition.symbol) || "symbol"}`,
         severity: "critical",
         scope: "positions",
         sourceOfTruth: "live_venue",
@@ -807,7 +808,7 @@ export function detectStateDrift(params: {
       const relativeDelta = qtyDelta / qtyScale;
       if (qtyDelta > 1e-8 && relativeDelta > 0.02) {
         drifts.push({
-          key: `position:size:${normalizeComparableSymbol(livePosition.symbol) || "symbol"}`,
+          key: `position:size:${normalizeComparablePositionSymbol(livePosition.symbol) || "symbol"}`,
           severity: relativeDelta >= 0.25 ? "critical" : "warning",
           scope: "positions",
           sourceOfTruth: "live_venue",

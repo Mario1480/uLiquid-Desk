@@ -8,7 +8,13 @@ import { TARGET_CHAIN_NAME } from "../../lib/web3/config";
 import { AppIcon } from "../../app/components/AppIcon";
 import type { GridInstance } from "./types";
 import { useOnchainActionFlow } from "./OnchainVaultActions";
-import { createIdempotencyKey, errMsg, formatNumber } from "./utils";
+import {
+  createIdempotencyKey,
+  errMsg,
+  formatNumber,
+  readGridEstimatedLiquidationPrice,
+  readGridPositionValue
+} from "./utils";
 
 type ClaimPreviewResponse = {
   ok: true;
@@ -52,6 +58,20 @@ function getStablecoinLabel(input: {
   const provider = String(input.executionProvider ?? "").trim().toLowerCase();
   if (provider === "hyperliquid" || provider === "hyperliquid_demo") return "USDC";
   return "USDT";
+}
+
+function readCurrentLiquidationPrice(instance: GridInstance | null): number | null {
+  const metrics = instance?.metricsJson ?? {};
+  const positionSnapshot = metrics.positionSnapshot && typeof metrics.positionSnapshot === "object" && !Array.isArray(metrics.positionSnapshot)
+    ? metrics.positionSnapshot as Record<string, unknown>
+    : {};
+  const liveValue = Number(
+    readGridPositionValue(positionSnapshot, ["liquidationPrice", "liquidationPx", "liqPrice", "liqPx"])
+      ?? NaN
+  );
+  if (Number.isFinite(liveValue) && liveValue > 0) return liveValue;
+  const side = readGridPositionValue(positionSnapshot, ["side", "direction"]);
+  return readGridEstimatedLiquidationPrice(metrics, typeof side === "string" ? side : null);
 }
 
 function formatAmountInput(value: number): string {
@@ -330,6 +350,7 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
   const liqDelta = preview?.adjustment?.currentLiqEstimate != null && preview?.adjustment?.projectedLiqEstimate != null
     ? preview.adjustment.projectedLiqEstimate - preview.adjustment.currentLiqEstimate
     : null;
+  const currentLiquidationPrice = preview?.adjustment?.currentLiqEstimate ?? readCurrentLiquidationPrice(instance);
   const walletFundingRequired = mode === "add" && isBotVaultRuntimeModelRow(instance.botVault);
   const canSubmitAdd = !walletFundingRequired || flow.canSignLiveActions;
 
@@ -445,7 +466,7 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
           <div className="card" style={{ padding: 10 }}>
             <div className="settingsMutedText">{tGrid("quickMarginLiqLabel")}</div>
             <strong>
-              {formatNumber(preview?.adjustment?.currentLiqEstimate ?? Number(instance.metricsJson?.liqEstimateLong ?? instance.metricsJson?.liqEstimateShort ?? NaN), 2)}
+              {formatNumber(currentLiquidationPrice, 2)}
               {" → "}
               {formatNumber(preview?.adjustment?.projectedLiqEstimate ?? NaN, 2)}
             </strong>

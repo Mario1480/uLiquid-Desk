@@ -80,6 +80,8 @@ test("hyperliquid execution provider persists live provider metadata and reads l
         size: 0.25,
         entryPrice: 50000,
         markPrice: 51000,
+        liquidationPrice: 45000,
+        liquidationDistancePct: 11.76,
         unrealizedPnl: 250
       }
     ] as any;
@@ -115,6 +117,8 @@ test("hyperliquid execution provider persists live provider metadata and reads l
     assert.equal(state.freeUsd, 67.89);
     assert.equal(state.usedMarginUsd, 55.56);
     assert.equal(state.positions.length, 1);
+    assert.equal(state.positions[0]?.liquidationPrice, 45000);
+    assert.equal(state.positions[0]?.liquidationDistancePct, 11.76);
     assert.equal(state.providerMetadata?.providerMode, "live");
     assert.equal(state.providerMetadata?.vaultAddress, "0x9999999999999999999999999999999999999999");
     assert.equal(state.providerMetadata?.agentWallet, "0x1111111111111111111111111111111111111111");
@@ -231,6 +235,8 @@ test("hyperliquid execution provider serves degraded stale state on rate-limited
           size: 0.1,
           entryPrice: 50000,
           markPrice: 50100,
+          liquidationPrice: 45500,
+          liquidationDistancePct: 9.18,
           unrealizedPnl: 10
         }
       ] as any;
@@ -260,6 +266,8 @@ test("hyperliquid execution provider serves degraded stale state on rate-limited
     assert.equal(state.freeUsd, 80);
     assert.equal(state.usedMarginUsd, 40);
     assert.equal(state.positions.length, 1);
+    assert.equal(state.positions[0]?.liquidationPrice, 45500);
+    assert.equal(state.positions[0]?.liquidationDistancePct, 9.18);
     assert.equal(state.providerMetadata?.degradedRead, true);
     assert.equal(Array.isArray(state.providerMetadata?.readErrors), true);
     assert.equal((state.providerMetadata?.readErrors as any[])?.length, 2);

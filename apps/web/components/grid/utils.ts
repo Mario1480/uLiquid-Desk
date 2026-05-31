@@ -409,6 +409,30 @@ export function readGridPositionValue(
   return null;
 }
 
+export function readGridEstimatedLiquidationPrice(
+  metrics: Record<string, unknown> | null | undefined,
+  side?: string | null
+): number | null {
+  const longEstimate = Number(metrics?.liqEstimateLong ?? NaN);
+  const shortEstimate = Number(metrics?.liqEstimateShort ?? NaN);
+  const hasLongEstimate = Number.isFinite(longEstimate);
+  const hasShortEstimate = Number.isFinite(shortEstimate);
+  const normalizedSide = String(side ?? "").trim().toLowerCase();
+  if (normalizedSide === "short") {
+    if (hasShortEstimate) return shortEstimate;
+    if (hasLongEstimate) return longEstimate;
+    return null;
+  }
+  if (normalizedSide === "long") {
+    if (hasLongEstimate) return longEstimate;
+    if (hasShortEstimate) return shortEstimate;
+    return null;
+  }
+  if (hasLongEstimate) return longEstimate;
+  if (hasShortEstimate) return shortEstimate;
+  return null;
+}
+
 export function computeGridRuntimeMarkPrice(input: {
   mid?: number | null;
   bid?: number | null;

@@ -10,7 +10,7 @@ import {
   type NormalizedCloseOutcome
 } from "../runtime/executionEvents.js";
 import type { GridPlannerIntent } from "../grid/pythonGridClient.js";
-import { normalizeComparableSymbol } from "./futuresVenueRuntime.js";
+import { normalizeComparableMarketSymbol } from "./futuresVenueRuntime.js";
 import type { ExecutionResult } from "./types.js";
 
 function toPositiveNumberOrNull(value: unknown): number | null {
@@ -215,9 +215,10 @@ export async function closeGridResidualPositionBestEffort(params: {
   }
   try {
     const positions = await params.adapter.getPositions();
+    const targetSymbol = normalizeComparableMarketSymbol(params.botSymbol);
     const target = positions.find((row: any) => {
-      const symbol = normalizeComparableSymbol(String(row?.symbol ?? ""));
-      return symbol === normalizeComparableSymbol(params.botSymbol) && Number(row?.size ?? 0) > 0;
+      const symbol = normalizeComparableMarketSymbol(String(row?.symbol ?? ""));
+      return symbol === targetSymbol && Number(row?.size ?? 0) > 0;
     });
     if (!target) {
       return createNormalizedCloseOutcome({

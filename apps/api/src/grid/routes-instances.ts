@@ -1980,8 +1980,47 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     const metrics = row?.metricsJson && typeof row.metricsJson === "object" && !Array.isArray(row.metricsJson)
       ? row.metricsJson as Record<string, unknown>
       : {};
-    const value = Number(metrics.liqEstimateLong ?? metrics.liqEstimateShort ?? NaN);
-    return Number.isFinite(value) ? value : null;
+    const positionSnapshot = metrics.positionSnapshot && typeof metrics.positionSnapshot === "object" && !Array.isArray(metrics.positionSnapshot)
+      ? metrics.positionSnapshot as Record<string, unknown>
+      : {};
+    const liveValue = Number(
+      positionSnapshot.liquidationPrice
+      ?? positionSnapshot.liquidationPx
+      ?? positionSnapshot.liqPrice
+      ?? positionSnapshot.liqPx
+      ?? NaN
+    );
+    if (Number.isFinite(liveValue) && liveValue > 0) return liveValue;
+    const side = String(positionSnapshot.side ?? positionSnapshot.direction ?? "").trim().toLowerCase();
+    return readSideSpecificGridLiqEstimate(metrics, side);
+  }
+
+  function readGridInstancePositionSide(row: any): string | null {
+    const metrics = row?.metricsJson && typeof row.metricsJson === "object" && !Array.isArray(row.metricsJson)
+      ? row.metricsJson as Record<string, unknown>
+      : {};
+    const positionSnapshot = metrics.positionSnapshot && typeof metrics.positionSnapshot === "object" && !Array.isArray(metrics.positionSnapshot)
+      ? metrics.positionSnapshot as Record<string, unknown>
+      : {};
+    const side = String(positionSnapshot.side ?? positionSnapshot.direction ?? "").trim().toLowerCase();
+    return side === "long" || side === "short" ? side : null;
+  }
+
+  function readSideSpecificGridLiqEstimate(source: Record<string, unknown>, side?: string | null): number | null {
+    const longEstimate = Number(source.liqEstimateLong ?? NaN);
+    const shortEstimate = Number(source.liqEstimateShort ?? NaN);
+    if (side === "short") {
+      if (Number.isFinite(shortEstimate)) return shortEstimate;
+      if (Number.isFinite(longEstimate)) return longEstimate;
+      return null;
+    }
+    if (side === "long") {
+      if (Number.isFinite(longEstimate)) return longEstimate;
+      if (Number.isFinite(shortEstimate)) return shortEstimate;
+      return null;
+    }
+    if (Number.isFinite(longEstimate)) return longEstimate;
+    return Number.isFinite(shortEstimate) ? shortEstimate : null;
   }
 
   function asRecord(value: unknown): Record<string, unknown> {
@@ -2222,7 +2261,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       resolveVenueContext: deps.resolveVenueContext
     });
 
-    const projectedLiqEstimate = Number(computed.preview.liqEstimateLong ?? computed.preview.liqEstimateShort ?? NaN);
+    const projectedLiqEstimate = readSideSpecificGridLiqEstimate(
+      computed.preview as unknown as Record<string, unknown>,
+      readGridInstancePositionSide(params.row)
+    );
     const updateData = marginMode === "AUTO"
       ? {
           investUsd: computed.allocation.gridInvestUsd,
@@ -2244,7 +2286,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       marginMode,
       computed,
       currentLiqEstimate: readGridInstanceLiqEstimate(params.row),
-      projectedLiqEstimate: Number.isFinite(projectedLiqEstimate) ? projectedLiqEstimate : null,
+      projectedLiqEstimate,
       currentTotalBudgetUsd,
       nextTotalBudgetUsd: marginMode === "AUTO"
         ? shared.toTwoDecimals(computed.allocation.totalBudgetUsd)
