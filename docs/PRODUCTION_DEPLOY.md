@@ -31,6 +31,13 @@ Required for WalletConnect/Web3 in production:
 - `NEXT_PUBLIC_HYPEREVM_EXPLORER_URL`
 - `NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM` (optional `0|1`)
 
+Required for iOS push notifications:
+- `APNS_TEAM_ID`
+- `APNS_KEY_ID`
+- `APNS_PRIVATE_KEY` as a single line with escaped `\n` characters
+- `APNS_BUNDLE_ID=de.marioeuchner.uliquid.monitor`
+- `APNS_ENV=production` for TestFlight/App Store builds
+
 Important: all `NEXT_PUBLIC_*` values are build-time inputs for `web`.
 If changed, rebuild `web`:
 
