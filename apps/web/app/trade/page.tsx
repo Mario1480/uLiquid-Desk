@@ -1418,7 +1418,10 @@ function TradePageContent() {
         );
 
         if (Array.isArray(data.positions)) {
-          setPositions(normalizeDeskPositions(data.positions));
+          const nextPositions = normalizeDeskPositions(data.positions);
+          setPositions((prev) =>
+            nextPositions.length === 0 && prev.length > 0 ? prev : nextPositions
+          );
           liveTableReadyRef.current.positions = true;
         }
         if (Array.isArray(data.openOrders)) {

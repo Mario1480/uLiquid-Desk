@@ -892,7 +892,7 @@ export function registerManualTradingMarketDataRoutes(
         deps.loadGridDeskVisibilityMask(user.id, [String(resolved.selectedAccount.id)]),
         perpReadService.getTradingState({
           resolved,
-          symbol,
+          openOrdersSymbol: symbol,
           endpoint: "/api/trading/live-state"
         })
       ]);

@@ -171,15 +171,24 @@ export function createPerpReadService(deps: PerpReadServiceDeps) {
 
     async getTradingState(input: {
       resolved: ResolvedPerpExecutionAccounts;
-      symbol?: string;
+      positionSymbol?: string;
+      openOrdersSymbol?: string;
       endpoint: string;
     }) {
       return withContext(input.resolved, input.endpoint, async (ctx) => {
         if (ctx.mode === "paper") {
           const [accountStateResult, positionsResult, openOrdersResult] = await Promise.allSettled([
             requireDep(deps.getPaperAccountState, "getPaperAccountState")(ctx.selectedAccount, ctx.marketDataClient),
-            requireDep(deps.listPaperPositions, "listPaperPositions")(ctx.selectedAccount, ctx.marketDataClient, input.symbol),
-            requireDep(deps.listPaperOpenOrders, "listPaperOpenOrders")(ctx.selectedAccount, ctx.marketDataClient, input.symbol)
+            requireDep(deps.listPaperPositions, "listPaperPositions")(
+              ctx.selectedAccount,
+              ctx.marketDataClient,
+              input.positionSymbol
+            ),
+            requireDep(deps.listPaperOpenOrders, "listPaperOpenOrders")(
+              ctx.selectedAccount,
+              ctx.marketDataClient,
+              input.openOrdersSymbol
+            )
           ]);
 
           return {
@@ -198,8 +207,8 @@ export function createPerpReadService(deps: PerpReadServiceDeps) {
 
         const [accountStateResult, positionsResult, openOrdersResult] = await Promise.allSettled([
           ctx.adapter.getAccountState(),
-          requireDep(deps.listPositions, "listPositions")(ctx.adapter, input.symbol),
-          requireDep(deps.listOpenOrders, "listOpenOrders")(ctx.adapter, input.symbol)
+          requireDep(deps.listPositions, "listPositions")(ctx.adapter, input.positionSymbol),
+          requireDep(deps.listOpenOrders, "listOpenOrders")(ctx.adapter, input.openOrdersSymbol)
         ]);
 
         return {
