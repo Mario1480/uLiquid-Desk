@@ -71,7 +71,7 @@ export function resolvePermissionRequirementForRequest(
   }
 
   if (p === "/api/symbols") return any("bots.view", "trading.manual_market", "trading.manual_limit");
-  if (p === "/api/account/summary" || p === "/api/market/candles") {
+  if (p === "/api/account/summary" || p === "/api/trading/live-state" || p === "/api/market/candles") {
     return any("trading.manual_market", "trading.manual_limit");
   }
   if (p === "/api/account/leverage") return any("trading.manual_market");

@@ -110,10 +110,11 @@ declare global {
 
 const CHART_CANDLE_FETCH_LIMIT = 1000;
 const BINGX_CHART_CANDLE_FETCH_LIMIT = 500;
-const ADVANCED_CHART_WARMUP_CANDLE_FETCH_LIMIT = 650;
+const ADVANCED_CHART_WARMUP_CANDLE_FETCH_LIMIT = CHART_CANDLE_FETCH_LIMIT;
 const ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT = 350;
 const ADVANCED_CHART_CANDLE_CACHE_TTL_MS = 12000;
-const ADVANCED_CHART_SUBSCRIBE_POLL_MS = 10000;
+const ADVANCED_CHART_SUBSCRIBE_POLL_MS = 30000;
+const ADVANCED_CHART_FALLBACK_SUBSCRIBE_POLL_MS = 10000;
 const ADVANCED_CHART_CANDLES_POLL_MS = 30000;
 const ADVANCED_CHART_MARKERS_POLL_MS = 15000;
 const MIN_CHART_HEIGHT = 280;
@@ -711,10 +712,10 @@ function buildAdvancedDatafeed(params: {
         if (nextBar) onTick(nextBar);
       };
 
+      const seededBar = historySeedBars.get(historyKey) ?? null;
       const timer = setInterval(() => {
         void pushLatestBar();
-      }, ADVANCED_CHART_SUBSCRIBE_POLL_MS);
-      const seededBar = historySeedBars.get(historyKey) ?? null;
+      }, params.enableRealtimeSocket ? ADVANCED_CHART_SUBSCRIBE_POLL_MS : ADVANCED_CHART_FALLBACK_SUBSCRIBE_POLL_MS);
       subscribers.set(listenerGuid, {
         timer,
         socket: null,
@@ -757,7 +758,9 @@ function buildAdvancedDatafeed(params: {
           socket = null;
         }
       }
-      void pushLatestBar();
+      if (!params.enableRealtimeSocket || !seededBar) {
+        void pushLatestBar();
+      }
     },
     unsubscribeBars(listenerGuid): void {
       const subscriber = subscribers.get(listenerGuid);

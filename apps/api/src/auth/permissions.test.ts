@@ -43,6 +43,7 @@ test("feature routes map to expected RBAC permissions", () => {
 test("trading desk read and settings routes map consistently", () => {
   const manualRead = { any: ["trading.manual_market", "trading.manual_limit"] };
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/account/summary", {}), manualRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/trading/live-state", {}), manualRead);
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/positions", {}), manualRead);
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/orders/open", {}), manualRead);
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/market/candles", {}), manualRead);

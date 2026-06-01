@@ -98,6 +98,17 @@ function sendMarketDataDegraded(res: express.Response, params: {
   });
 }
 
+function readErrorMessage(error: unknown): string | null {
+  if (!error) return null;
+  const result = buildManualTradingErrorResponse(error);
+  return String(
+    result.payload.message ??
+    result.payload.code ??
+    result.payload.error ??
+    "read_failed"
+  );
+}
+
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 
 type MarketCandlesQuery = {
@@ -121,6 +132,66 @@ type CandleBar = {
   close: number;
   volume: number | null;
 };
+
+const manualCandleCache = new Map<string, {
+  expiresAt: number;
+  limit: number;
+  promise: Promise<CandleBar[]>;
+}>();
+
+function manualCandleCacheTtlMs(timeframe: MarketCandlesQuery["timeframe"]): number {
+  if (timeframe === "1m") return 5_000;
+  if (timeframe === "5m") return 8_000;
+  return 15_000;
+}
+
+function pruneManualCandleCache(now = Date.now()): void {
+  for (const [key, entry] of manualCandleCache) {
+    if (entry.expiresAt <= now) {
+      manualCandleCache.delete(key);
+    }
+  }
+
+  while (manualCandleCache.size > 250) {
+    const oldestKey = manualCandleCache.keys().next().value;
+    if (!oldestKey) break;
+    manualCandleCache.delete(oldestKey);
+  }
+}
+
+function limitCandleBars(items: CandleBar[], limit: number): CandleBar[] {
+  return items.length > limit ? items.slice(-limit) : items;
+}
+
+async function readCachedManualCandles(params: {
+  cacheKey: string;
+  timeframe: MarketCandlesQuery["timeframe"];
+  limit: number;
+  fetch: () => Promise<CandleBar[]>;
+}): Promise<CandleBar[]> {
+  const now = Date.now();
+  const cached = manualCandleCache.get(params.cacheKey);
+  if (cached && cached.expiresAt > now && cached.limit >= params.limit) {
+    return cached.promise.then((items) => limitCandleBars(items, params.limit));
+  }
+
+  pruneManualCandleCache(now);
+  const promise = params.fetch()
+    .then((items) => limitCandleBars(items, params.limit))
+    .catch((error) => {
+      const current = manualCandleCache.get(params.cacheKey);
+      if (current?.promise === promise) {
+        manualCandleCache.delete(params.cacheKey);
+      }
+      throw error;
+    });
+  manualCandleCache.set(params.cacheKey, {
+    expiresAt: now + manualCandleCacheTtlMs(params.timeframe),
+    limit: params.limit,
+    promise
+  });
+  return promise;
+}
 
 const manualMarketTypeSchema = z.enum(["spot", "perp"]);
 
@@ -308,14 +379,29 @@ export function registerManualTradingMarketDataRoutes(
         if (!symbol) {
           return res.status(400).json({ error: "symbol_required" });
         }
-        const spotClient = createManualSpotClient(resolved.marketDataAccount, "/api/market/candles");
         const granularity = deps.marketTimeframeToBitgetSpotGranularity(parsed.data.timeframe);
-        const raw = await spotClient.getCandles({
+        const cacheKey = [
+          user.id,
+          resolved.selectedAccount.id,
+          resolved.marketDataAccount.id,
+          marketType,
           symbol,
+          parsed.data.timeframe
+        ].join("::");
+        const items = await readCachedManualCandles({
+          cacheKey,
           timeframe: parsed.data.timeframe,
-          limit: parsed.data.limit
+          limit: parsed.data.limit,
+          fetch: async () => {
+            const spotClient = createManualSpotClient(resolved.marketDataAccount, "/api/market/candles");
+            const raw = await spotClient.getCandles({
+              symbol,
+              timeframe: parsed.data.timeframe,
+              limit: parsed.data.limit
+            });
+            return deps.parseBitgetCandles(raw);
+          }
         });
-        const items = deps.parseBitgetCandles(raw);
         return res.json({
           exchangeAccountId: resolved.selectedAccount.id,
           exchange: resolved.selectedAccount.exchange,
@@ -329,40 +415,54 @@ export function registerManualTradingMarketDataRoutes(
       }
       ensureManualPerpEligibility(resolved);
       await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
-      const perpClient = createManualPerpMarketDataClient(
-        resolved.marketDataAccount,
-        "/api/market/candles"
-      );
-      try {
-        const symbol = deps.normalizeSymbolInput(parsed.data.symbol);
-        if (!symbol) {
-          return res.status(400).json({ error: "symbol_required" });
-        }
-        const granularity = deps.marketTimeframeToBitgetGranularity(
-          parsed.data.timeframe as "1m" | PredictionTimeframe
-        );
-        const raw = await perpClient.getCandles({
-          symbol,
-          timeframe: parsed.data.timeframe,
-          granularity,
-          limit: parsed.data.limit
-        });
-
-        const items = deps.parseBitgetCandles(raw);
-
-        return res.json({
-          exchangeAccountId: resolved.selectedAccount.id,
-          exchange: resolved.selectedAccount.exchange,
-          marketDataExchange: resolved.marketDataAccount.exchange,
-          marketType,
-          symbol,
-          timeframe: parsed.data.timeframe,
-          granularity,
-          items
-        });
-      } finally {
-        await perpClient.close();
+      const symbol = deps.normalizeSymbolInput(parsed.data.symbol);
+      if (!symbol) {
+        return res.status(400).json({ error: "symbol_required" });
       }
+      const granularity = deps.marketTimeframeToBitgetGranularity(
+        parsed.data.timeframe as "1m" | PredictionTimeframe
+      );
+      const cacheKey = [
+        user.id,
+        resolved.selectedAccount.id,
+        resolved.marketDataAccount.id,
+        marketType,
+        symbol,
+        parsed.data.timeframe
+      ].join("::");
+      const items = await readCachedManualCandles({
+        cacheKey,
+        timeframe: parsed.data.timeframe,
+        limit: parsed.data.limit,
+        fetch: async () => {
+          const perpClient = createManualPerpMarketDataClient(
+            resolved.marketDataAccount,
+            "/api/market/candles"
+          );
+          try {
+            const raw = await perpClient.getCandles({
+              symbol,
+              timeframe: parsed.data.timeframe,
+              granularity,
+              limit: parsed.data.limit
+            });
+            return deps.parseBitgetCandles(raw);
+          } finally {
+            await perpClient.close();
+          }
+        }
+      });
+
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        exchange: resolved.selectedAccount.exchange,
+        marketDataExchange: resolved.marketDataAccount.exchange,
+        marketType,
+        symbol,
+        timeframe: parsed.data.timeframe,
+        granularity,
+        items
+      });
     } catch (error) {
       return deps.sendManualTradingError(res, error);
     }
@@ -576,6 +676,358 @@ export function registerManualTradingMarketDataRoutes(
           updatedAt: new Date().toISOString(),
           degraded: true,
           ...buildHyperliquidAccountContext(resolvedForFallback.marketDataAccount)
+        });
+      }
+      return deps.sendManualTradingError(res, error);
+    }
+  });
+
+  app.get("/api/trading/live-state", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    let resolvedForFallback: ResolvedTradingAccountPair | null = null;
+    let marketTypeForFallback: "spot" | "perp" | null = null;
+    let settingsForFallback: TradingSettings | null = null;
+    try {
+      const settings = await deps.getTradingSettings(user.id);
+      settingsForFallback = settings;
+      const marketType = resolveManualMarketType({
+        requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
+        settings
+      });
+      marketTypeForFallback = marketType;
+      const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
+        ? req.query.exchangeAccountId
+        : undefined;
+      const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+      resolvedForFallback = resolved;
+
+      if (marketType === "spot") {
+        ensureManualSpotEligibility(resolved);
+        await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
+        const symbol = deps.normalizeSpotSymbol(
+          typeof req.query.symbol === "string" ? req.query.symbol : settings.symbol
+        );
+        if (!symbol) {
+          return res.status(400).json({ error: "symbol_required" });
+        }
+
+        const spotClient = createManualSpotClient(resolved.marketDataAccount, "/api/trading/live-state");
+        const preferredPair = deps.splitCanonicalSymbol(symbol);
+        const summaryCurrency =
+          preferredPair.quoteAsset ??
+          (String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+            ? "USDC"
+            : "USDT");
+        const preferredBaseAsset = preferredPair.baseAsset ?? null;
+
+        if (deps.isPaperTradingAccount(resolved.selectedAccount)) {
+          const [summaryResult, positionsResult, openOrdersResult] = await Promise.allSettled([
+            deps.getPaperSpotAccountState(resolved.selectedAccount, spotClient),
+            deps.listPaperSpotPositions(resolved.selectedAccount, spotClient, symbol),
+            deps.listPaperSpotOpenOrders(resolved.selectedAccount, spotClient, symbol)
+          ]);
+          if (
+            summaryResult.status === "rejected" &&
+            positionsResult.status === "rejected" &&
+            openOrdersResult.status === "rejected"
+          ) {
+            throw summaryResult.reason;
+          }
+          const accountState = summaryResult.status === "fulfilled" ? summaryResult.value : null;
+          const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
+          const openOrders = openOrdersResult.status === "fulfilled" ? openOrdersResult.value : [];
+          const basePosition = positions.find((row) => row.symbol === symbol) ?? null;
+          const baseAvailable =
+            basePosition && Number.isFinite(basePosition.size)
+              ? Number(basePosition.size)
+              : null;
+          const summaryError = summaryResult.status === "rejected" ? summaryResult.reason : null;
+          const positionsError = positionsResult.status === "rejected" ? positionsResult.reason : null;
+          const openOrdersError = openOrdersResult.status === "rejected" ? openOrdersResult.reason : null;
+          const degraded = Boolean(summaryError || positionsError || openOrdersError);
+
+          return res.json({
+            exchangeAccountId: resolved.selectedAccount.id,
+            exchange: resolved.selectedAccount.exchange,
+            marketDataExchange: resolved.marketDataAccount.exchange,
+            marketType,
+            symbol,
+            fetchedAt: new Date().toISOString(),
+            degraded,
+            summary: {
+              exchangeAccountId: resolved.selectedAccount.id,
+              exchange: resolved.selectedAccount.exchange,
+              marketDataExchange: resolved.marketDataAccount.exchange,
+              marketType,
+              equity: accountState?.equity ?? null,
+              availableMargin: accountState?.availableMargin ?? null,
+              spotQuoteAsset: summaryCurrency,
+              spotQuoteAvailable: accountState?.availableMargin ?? null,
+              spotBaseAsset: preferredBaseAsset,
+              spotBaseAvailable: baseAvailable,
+              spotBaseTotal: baseAvailable,
+              marginMode: accountState?.marginMode ?? null,
+              positionsCount: positions.length,
+              updatedAt: new Date().toISOString(),
+              degraded: Boolean(summaryError),
+              error: readErrorMessage(summaryError),
+              ...buildHyperliquidAccountContext(resolved.marketDataAccount)
+            },
+            positions: {
+              items: positions,
+              degraded: Boolean(positionsError),
+              error: readErrorMessage(positionsError)
+            },
+            openOrders: {
+              items: openOrders,
+              degraded: Boolean(openOrdersError),
+              error: readErrorMessage(openOrdersError)
+            }
+          });
+        }
+
+        const [balancesResult, positionsResult, openOrdersResult] = await Promise.allSettled([
+          spotClient.getBalances(),
+          listBitgetSpotPositions({
+            client: spotClient,
+            symbol,
+            preferredQuoteAsset: summaryCurrency
+          }),
+          spotClient.getOpenOrders(symbol)
+        ]);
+        if (
+          balancesResult.status === "rejected" &&
+          positionsResult.status === "rejected" &&
+          openOrdersResult.status === "rejected"
+        ) {
+          throw balancesResult.reason;
+        }
+
+        const balances = balancesResult.status === "fulfilled" ? balancesResult.value : [];
+        const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
+        const openOrders = openOrdersResult.status === "fulfilled" ? openOrdersResult.value : [];
+        const hyperliquidHint =
+          balances.length === 0
+            ? await getHyperliquidAccountSetupHint(resolved.selectedAccount)
+            : null;
+        if (hyperliquidHint?.requiresAccountAddress) {
+          throw new ManualTradingError(
+            "hyperliquid_agent_account_address_required",
+            400,
+            "hyperliquid_agent_account_address_required"
+          );
+        }
+        const summary = selectSpotSummary(
+          balances.map((row) => ({
+            coin: String(row.coin ?? row.asset ?? "").toUpperCase(),
+            available: String(row.available ?? "0"),
+            frozen: String(row.frozen ?? row.locked ?? row.lock ?? "0")
+          })),
+          summaryCurrency
+        );
+        const baseBalance = preferredBaseAsset
+          ? balances.find((row) => String(row.coin ?? row.asset ?? "").trim().toUpperCase() === preferredBaseAsset)
+          : null;
+        const baseAvailable = baseBalance ? toFiniteNumber(baseBalance.available) : null;
+        const baseFrozen = baseBalance ? toFiniteNumber(baseBalance.frozen ?? baseBalance.locked ?? baseBalance.lock) : null;
+        const baseTotal =
+          baseAvailable === null && baseFrozen === null
+            ? null
+            : Number(((baseAvailable ?? 0) + (baseFrozen ?? 0)).toFixed(8));
+        const balancesError = balancesResult.status === "rejected" ? balancesResult.reason : null;
+        const positionsError = positionsResult.status === "rejected" ? positionsResult.reason : null;
+        const openOrdersError = openOrdersResult.status === "rejected" ? openOrdersResult.reason : null;
+        const degraded = Boolean(balancesError || positionsError || openOrdersError);
+
+        return res.json({
+          exchangeAccountId: resolved.selectedAccount.id,
+          exchange: resolved.selectedAccount.exchange,
+          marketDataExchange: resolved.marketDataAccount.exchange,
+          marketType,
+          symbol,
+          fetchedAt: new Date().toISOString(),
+          degraded,
+          summary: {
+            exchangeAccountId: resolved.selectedAccount.id,
+            exchange: resolved.selectedAccount.exchange,
+            marketDataExchange: resolved.marketDataAccount.exchange,
+            marketType,
+            equity: balancesError ? null : summary.equity,
+            availableMargin: balancesError ? null : summary.available,
+            spotQuoteAsset: summary.currency ?? summaryCurrency,
+            spotQuoteAvailable: balancesError ? null : summary.available,
+            spotBaseAsset: preferredBaseAsset,
+            spotBaseAvailable: baseAvailable,
+            spotBaseTotal: baseTotal,
+            marginMode: null,
+            positionsCount: positions.length,
+            updatedAt: new Date().toISOString(),
+            degraded: Boolean(balancesError),
+            error: readErrorMessage(balancesError),
+            ...buildHyperliquidAccountContext(resolved.marketDataAccount)
+          },
+          positions: {
+            items: positions,
+            degraded: Boolean(positionsError),
+            error: readErrorMessage(positionsError)
+          },
+          openOrders: {
+            items: openOrders,
+            degraded: Boolean(openOrdersError),
+            error: readErrorMessage(openOrdersError)
+          }
+        });
+      }
+
+      ensureManualPerpEligibility(resolved);
+      await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
+      const symbol = deps.normalizeSymbolInput(
+        typeof req.query.symbol === "string" ? req.query.symbol : settings.symbol
+      );
+      if (!symbol) {
+        return res.status(400).json({ error: "symbol_required" });
+      }
+
+      const [visibilityMask, state] = await Promise.all([
+        deps.loadGridDeskVisibilityMask(user.id, [String(resolved.selectedAccount.id)]),
+        perpReadService.getTradingState({
+          resolved,
+          symbol,
+          endpoint: "/api/trading/live-state"
+        })
+      ]);
+      const accountError = state.errors.accountState;
+      const positionsError = state.errors.positions;
+      const openOrdersError = state.errors.openOrders;
+      if (accountError && positionsError && openOrdersError) {
+        throw accountError;
+      }
+
+      const visiblePositions = deps.filterGridBotPositionsForDesk(
+        state.positions,
+        visibilityMask,
+        resolved.selectedAccount.id
+      );
+      const visibleOrders = deps.filterGridBotOrdersForDesk(
+        state.openOrders,
+        visibilityMask,
+        resolved.selectedAccount.id
+      );
+      const hyperliquidHint =
+        Number(state.accountState?.equity ?? 0) <= 0
+        && Number(state.accountState?.availableMargin ?? 0) <= 0
+        && visiblePositions.length === 0
+          ? await getHyperliquidAccountSetupHint(resolved.selectedAccount)
+          : null;
+      if (hyperliquidHint?.requiresAccountAddress) {
+        throw new ManualTradingError(
+          "hyperliquid_agent_account_address_required",
+          400,
+          "hyperliquid_agent_account_address_required"
+        );
+      }
+
+      const degraded = Boolean(accountError || positionsError || openOrdersError);
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        exchange: resolved.selectedAccount.exchange,
+        marketDataExchange: state.marketDataExchange,
+        marketType,
+        symbol,
+        fetchedAt: new Date().toISOString(),
+        degraded,
+        summary: {
+          exchangeAccountId: resolved.selectedAccount.id,
+          exchange: resolved.selectedAccount.exchange,
+          marketDataExchange: state.marketDataExchange,
+          marketType,
+          equity: state.accountState?.equity ?? null,
+          availableMargin: state.accountState?.availableMargin ?? null,
+          marginMode: state.accountState?.marginMode ?? null,
+          positionsCount: positionsError
+            ? visiblePositions.length
+            : deps.countVisibleDeskPositions(
+                state.positions,
+                visibilityMask,
+                resolved.selectedAccount.id
+              ),
+          updatedAt: new Date().toISOString(),
+          degraded: Boolean(accountError || positionsError),
+          error: readErrorMessage(accountError ?? positionsError),
+          ...buildHyperliquidAccountContext(resolved.marketDataAccount)
+        },
+        positions: {
+          items: visiblePositions,
+          degraded: Boolean(positionsError),
+          error: readErrorMessage(positionsError)
+        },
+        openOrders: {
+          items: visibleOrders,
+          degraded: Boolean(openOrdersError),
+          error: readErrorMessage(openOrdersError)
+        }
+      });
+    } catch (error) {
+      if (
+        resolvedForFallback &&
+        marketTypeForFallback &&
+        settingsForFallback &&
+        shouldUseTransientHyperliquidDeskFallback(error, resolvedForFallback)
+      ) {
+        logTransientHyperliquidDeskFallback("/api/trading/live-state", error);
+        const symbol = marketTypeForFallback === "spot"
+          ? deps.normalizeSpotSymbol(
+              typeof req.query.symbol === "string" ? req.query.symbol : settingsForFallback.symbol
+            )
+          : deps.normalizeSymbolInput(
+              typeof req.query.symbol === "string" ? req.query.symbol : settingsForFallback.symbol
+            );
+        const preferredPair = marketTypeForFallback === "spot" && symbol
+          ? deps.splitCanonicalSymbol(symbol)
+          : null;
+        const summaryCurrency =
+          preferredPair?.quoteAsset ??
+          (String(resolvedForFallback.marketDataAccount.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+            ? "USDC"
+            : "USDT");
+
+        return res.json({
+          exchangeAccountId: resolvedForFallback.selectedAccount.id,
+          exchange: resolvedForFallback.selectedAccount.exchange,
+          marketDataExchange: resolvedForFallback.marketDataAccount.exchange,
+          marketType: marketTypeForFallback,
+          symbol,
+          fetchedAt: new Date().toISOString(),
+          degraded: true,
+          summary: {
+            exchangeAccountId: resolvedForFallback.selectedAccount.id,
+            exchange: resolvedForFallback.selectedAccount.exchange,
+            marketDataExchange: resolvedForFallback.marketDataAccount.exchange,
+            marketType: marketTypeForFallback,
+            equity: null,
+            availableMargin: null,
+            spotQuoteAsset: marketTypeForFallback === "spot" ? summaryCurrency : undefined,
+            spotQuoteAvailable: marketTypeForFallback === "spot" ? null : undefined,
+            spotBaseAsset: preferredPair?.baseAsset ?? undefined,
+            spotBaseAvailable: marketTypeForFallback === "spot" ? null : undefined,
+            spotBaseTotal: marketTypeForFallback === "spot" ? null : undefined,
+            marginMode: null,
+            positionsCount: 0,
+            updatedAt: new Date().toISOString(),
+            degraded: true,
+            error: readErrorMessage(error),
+            ...buildHyperliquidAccountContext(resolvedForFallback.marketDataAccount)
+          },
+          positions: {
+            items: [],
+            degraded: true,
+            error: readErrorMessage(error)
+          },
+          openOrders: {
+            items: [],
+            degraded: true,
+            error: readErrorMessage(error)
+          }
         });
       }
       return deps.sendManualTradingError(res, error);

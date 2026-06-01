@@ -14,6 +14,10 @@ type AccountState = {
   marginMode?: string | null;
 };
 
+function rejectionReason(result: PromiseSettledResult<unknown>): unknown | null {
+  return result.status === "rejected" ? result.reason : null;
+}
+
 type PerpReadServiceDeps = {
   isPaperTradingAccount(account: TradingAccount): boolean;
   createPerpExecutionAdapter(account: TradingAccount): PerpExecutionAdapter;
@@ -161,6 +165,54 @@ export function createPerpReadService(deps: PerpReadServiceDeps) {
           marketDataExchange: ctx.marketDataAccount.exchange,
           accountState,
           positions
+        };
+      });
+    },
+
+    async getTradingState(input: {
+      resolved: ResolvedPerpExecutionAccounts;
+      symbol?: string;
+      endpoint: string;
+    }) {
+      return withContext(input.resolved, input.endpoint, async (ctx) => {
+        if (ctx.mode === "paper") {
+          const [accountStateResult, positionsResult, openOrdersResult] = await Promise.allSettled([
+            requireDep(deps.getPaperAccountState, "getPaperAccountState")(ctx.selectedAccount, ctx.marketDataClient),
+            requireDep(deps.listPaperPositions, "listPaperPositions")(ctx.selectedAccount, ctx.marketDataClient, input.symbol),
+            requireDep(deps.listPaperOpenOrders, "listPaperOpenOrders")(ctx.selectedAccount, ctx.marketDataClient, input.symbol)
+          ]);
+
+          return {
+            exchangeAccountId: ctx.selectedAccount.id,
+            marketDataExchange: ctx.marketDataAccount.exchange,
+            accountState: accountStateResult.status === "fulfilled" ? accountStateResult.value : null,
+            positions: positionsResult.status === "fulfilled" ? positionsResult.value : [],
+            openOrders: openOrdersResult.status === "fulfilled" ? openOrdersResult.value : [],
+            errors: {
+              accountState: rejectionReason(accountStateResult),
+              positions: rejectionReason(positionsResult),
+              openOrders: rejectionReason(openOrdersResult)
+            }
+          };
+        }
+
+        const [accountStateResult, positionsResult, openOrdersResult] = await Promise.allSettled([
+          ctx.adapter.getAccountState(),
+          requireDep(deps.listPositions, "listPositions")(ctx.adapter, input.symbol),
+          requireDep(deps.listOpenOrders, "listOpenOrders")(ctx.adapter, input.symbol)
+        ]);
+
+        return {
+          exchangeAccountId: ctx.selectedAccount.id,
+          marketDataExchange: ctx.marketDataAccount.exchange,
+          accountState: accountStateResult.status === "fulfilled" ? accountStateResult.value : null,
+          positions: positionsResult.status === "fulfilled" ? positionsResult.value : [],
+          openOrders: openOrdersResult.status === "fulfilled" ? openOrdersResult.value : [],
+          errors: {
+            accountState: rejectionReason(accountStateResult),
+            positions: rejectionReason(positionsResult),
+            openOrders: rejectionReason(openOrdersResult)
+          }
         };
       });
     }
