@@ -1313,7 +1313,7 @@ export default function PredictionsPage() {
       void loadPredictionMetrics();
     }, 280);
     return () => window.clearTimeout(timer);
-  }, [filterSymbol, filterTimeframe, signalSource, rows, createSymbols]);
+  }, [performanceFilterSymbol, filterTimeframe, signalSource]);
 
   const selectedStrategyRef = useMemo(
     () => decodeStrategySelectValue(newStrategySelectValue),
