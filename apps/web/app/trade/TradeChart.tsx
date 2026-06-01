@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AdvancedChart } from "./AdvancedChart";
 import type { ChartEngine, TradeChartProps } from "./chartTypes";
@@ -11,7 +11,7 @@ type TradeChartWrapperProps = TradeChartProps & {
   onChartEngineChange?: (next: ChartEngine) => void;
 };
 
-export function TradeChart({
+export const TradeChart = memo(function TradeChart({
   chartEngine,
   onChartEngineChange,
   ...chartProps
@@ -73,4 +73,4 @@ export function TradeChart({
       )}
     </div>
   );
-}
+});

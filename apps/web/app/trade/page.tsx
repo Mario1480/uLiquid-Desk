@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, getApiBaseUrl } from "../../lib/api";
@@ -196,6 +196,8 @@ const QTY_INPUT_MODE_OPTIONS: QtyInputModeOption[] = [
     unit: "USDT"
   }
 ];
+
+const TICKER_RENDER_THROTTLE_MS = 750;
 
 function toWsBase(url: string): string {
   if (url.startsWith("https://")) return `wss://${url.slice("https://".length)}`;
@@ -485,6 +487,89 @@ function normalizeDeskOpenOrders(rows: OpenOrderItem[], symbol: string): OpenOrd
   );
 }
 
+function sameNullableNumber(left: number | null | undefined, right: number | null | undefined): boolean {
+  return Object.is(left ?? null, right ?? null);
+}
+
+function sameNullableString(left: string | null | undefined, right: string | null | undefined): boolean {
+  return (left ?? null) === (right ?? null);
+}
+
+function accountSummariesEqual(left: AccountSummary | null, right: AccountSummary | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.exchangeAccountId === right.exchangeAccountId
+    && left.exchange === right.exchange
+    && (left.marketType ?? null) === (right.marketType ?? null)
+    && sameNullableNumber(left.equity, right.equity)
+    && sameNullableNumber(left.availableMargin, right.availableMargin)
+    && sameNullableString(left.spotQuoteAsset, right.spotQuoteAsset)
+    && sameNullableNumber(left.spotQuoteAvailable, right.spotQuoteAvailable)
+    && sameNullableString(left.spotBaseAsset, right.spotBaseAsset)
+    && sameNullableNumber(left.spotBaseAvailable, right.spotBaseAvailable)
+    && sameNullableNumber(left.spotBaseTotal, right.spotBaseTotal)
+    && left.positionsCount === right.positionsCount
+    && Boolean(left.degraded) === Boolean(right.degraded)
+    && sameNullableString(left.hyperliquidSigningAddress, right.hyperliquidSigningAddress)
+    && sameNullableString(left.hyperliquidReadAddress, right.hyperliquidReadAddress)
+    && sameNullableString(left.hyperliquidReadAddressSource, right.hyperliquidReadAddressSource);
+}
+
+function positionsEqual(left: PositionItem[], right: PositionItem[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const other = right[index];
+    return item.symbol === other.symbol
+      && item.side === other.side
+      && sameNullableNumber(item.size, other.size)
+      && sameNullableNumber(item.entryPrice, other.entryPrice)
+      && sameNullableNumber(item.markPrice, other.markPrice)
+      && sameNullableNumber(item.unrealizedPnl, other.unrealizedPnl)
+      && sameNullableNumber(item.leverage, other.leverage)
+      && item.marginMode === other.marginMode
+      && sameNullableNumber(item.marginUsd, other.marginUsd)
+      && sameNullableNumber(item.notionalUsd, other.notionalUsd)
+      && sameNullableNumber(item.liquidationPrice, other.liquidationPrice)
+      && sameNullableNumber(item.liquidationDistancePct, other.liquidationDistancePct)
+      && sameNullableNumber(item.roePct, other.roePct)
+      && sameNullableNumber(item.pnlPct, other.pnlPct)
+      && sameNullableNumber(item.takeProfitPrice, other.takeProfitPrice)
+      && sameNullableNumber(item.stopLossPrice, other.stopLossPrice);
+  });
+}
+
+function openOrdersEqual(left: OpenOrderItem[], right: OpenOrderItem[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const other = right[index];
+    return item.orderId === other.orderId
+      && item.symbol === other.symbol
+      && sameNullableString(item.side, other.side)
+      && sameNullableString(item.type, other.type)
+      && sameNullableString(item.status, other.status)
+      && sameNullableNumber(item.price, other.price)
+      && sameNullableNumber(item.qty, other.qty)
+      && sameNullableNumber(item.triggerPrice, other.triggerPrice)
+      && sameNullableNumber(item.takeProfitPrice, other.takeProfitPrice)
+      && sameNullableNumber(item.stopLossPrice, other.stopLossPrice)
+      && (item.reduceOnly ?? null) === (other.reduceOnly ?? null)
+      && sameNullableString(item.createdAt, other.createdAt);
+  });
+}
+
+function tickersEqual(left: TickerState | null, right: TickerState | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.symbol === right.symbol
+    && sameNullableNumber(left.last, right.last)
+    && sameNullableNumber(left.mark, right.mark)
+    && sameNullableNumber(left.bid, right.bid)
+    && sameNullableNumber(left.ask, right.ask)
+    && sameNullableNumber(left.ts, right.ts);
+}
+
 function mergeAccountSummary(
   prev: AccountSummary | null,
   next: AccountSummary,
@@ -616,6 +701,9 @@ function TradePageContent() {
   const marketWsRef = useRef<WebSocket | null>(null);
   const userWsRef = useRef<WebSocket | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
+  const tickerUpdateTimerRef = useRef<number | null>(null);
+  const pendingTickerRef = useRef<TickerState | null>(null);
+  const lastTickerCommitAtRef = useRef(0);
   const liveRefreshInFlightRef = useRef<Promise<{ partialFailures: string[] }> | null>(null);
   const liveRefreshBackoffUntilRef = useRef(0);
   const liveTableReadyRef = useRef(createLiveTableReadiness());
@@ -849,6 +937,36 @@ function TradePageContent() {
     });
   }, [marginMode, numericLeverage, orderQtyValue, orderReferencePrice, summary?.availableMargin, summary?.equity]);
 
+  const clearPendingTickerUpdate = useCallback(() => {
+    if (tickerUpdateTimerRef.current !== null) {
+      window.clearTimeout(tickerUpdateTimerRef.current);
+      tickerUpdateTimerRef.current = null;
+    }
+    pendingTickerRef.current = null;
+  }, []);
+
+  const applyTickerUpdate = useCallback((nextTicker: TickerState) => {
+    const commitTicker = (candidate: TickerState) => {
+      lastTickerCommitAtRef.current = Date.now();
+      setTicker((prev) => (tickersEqual(prev, candidate) ? prev : candidate));
+    };
+    const elapsedMs = Date.now() - lastTickerCommitAtRef.current;
+    if (elapsedMs >= TICKER_RENDER_THROTTLE_MS) {
+      clearPendingTickerUpdate();
+      commitTicker(nextTicker);
+      return;
+    }
+
+    pendingTickerRef.current = nextTicker;
+    if (tickerUpdateTimerRef.current !== null) return;
+    tickerUpdateTimerRef.current = window.setTimeout(() => {
+      tickerUpdateTimerRef.current = null;
+      const pending = pendingTickerRef.current;
+      pendingTickerRef.current = null;
+      if (pending) commitTicker(pending);
+    }, Math.max(50, TICKER_RENDER_THROTTLE_MS - elapsedMs));
+  }, [clearPendingTickerUpdate]);
+
   function setQtyFromPercent(nextPercent: number) {
     const clamped = Math.max(0, Math.min(100, nextPercent));
     setQtyPercent(clamped);
@@ -955,13 +1073,13 @@ function TradePageContent() {
     }
   }
 
-  async function persistSettings(next: Partial<TradingSettings>) {
+  const persistSettings = useCallback(async (next: Partial<TradingSettings>) => {
     try {
       await apiPost<TradingSettings>("/api/trading/settings", next);
     } catch (e) {
       setSoftWarning(t("messages.settingsSaveFailed", { error: errMsg(e) }));
     }
-  }
+  }, [t]);
 
   function selectPositionForChart(position: PositionItem, rowKey: string) {
     if (selectedPositionKey === rowKey) {
@@ -1028,12 +1146,15 @@ function TradePageContent() {
     const blockingFailures: string[] = [];
 
     const summaryDegraded = payload.summary?.degraded === true;
-    setSummary((prev) =>
-      mergeAccountSummary(prev, payload.summary, {
-        preserveNullNumbers: summaryDegraded,
-        preserveSpotBalances: true
-      })
-    );
+    startTransition(() => {
+      setSummary((prev) => {
+        const next = mergeAccountSummary(prev, payload.summary, {
+          preserveNullNumbers: summaryDegraded,
+          preserveSpotBalances: true
+        });
+        return accountSummariesEqual(prev, next) ? prev : next;
+      });
+    });
     if (!summaryDegraded) {
       liveTableReadyRef.current.summary = true;
     } else if (!liveTableReadyRef.current.summary) {
@@ -1042,7 +1163,12 @@ function TradePageContent() {
 
     const positionsDegraded = payload.positions?.degraded === true;
     const positionItems = normalizeDeskPositions(payload.positions?.items ?? []);
-    setPositions((prev) => (positionsDegraded && liveTableReadyRef.current.positions ? prev : positionItems));
+    startTransition(() => {
+      setPositions((prev) => {
+        if (positionsDegraded && liveTableReadyRef.current.positions) return prev;
+        return positionsEqual(prev, positionItems) ? prev : positionItems;
+      });
+    });
     if (!positionsDegraded) {
       liveTableReadyRef.current.positions = true;
     } else if (!liveTableReadyRef.current.positions) {
@@ -1051,7 +1177,12 @@ function TradePageContent() {
 
     const openOrdersDegraded = payload.openOrders?.degraded === true;
     const orderItems = normalizeDeskOpenOrders(payload.openOrders?.items ?? [], symbol);
-    setOpenOrders((prev) => (openOrdersDegraded && liveTableReadyRef.current.openOrders ? prev : orderItems));
+    startTransition(() => {
+      setOpenOrders((prev) => {
+        if (openOrdersDegraded && liveTableReadyRef.current.openOrders) return prev;
+        return openOrdersEqual(prev, orderItems) ? prev : orderItems;
+      });
+    });
     if (!openOrdersDegraded) {
       liveTableReadyRef.current.openOrders = true;
     } else {
@@ -1278,6 +1409,7 @@ function TradePageContent() {
       if (marketWsRef.current) marketWsRef.current.close();
       if (userWsRef.current) userWsRef.current.close();
       if (refreshTimerRef.current) window.clearInterval(refreshTimerRef.current);
+      clearPendingTickerUpdate();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1343,7 +1475,7 @@ function TradePageContent() {
       if (!payload) return;
 
       if (payload.type.includes("ticker") && payload.data) {
-        setTicker(payload.data as TickerState);
+        applyTickerUpdate(payload.data as TickerState);
       }
 
       if (payload.type === "error") {
@@ -1357,11 +1489,12 @@ function TradePageContent() {
 
     return () => {
       marketWs.close();
+      clearPendingTickerUpdate();
       if (marketWsRef.current === marketWs) {
         marketWsRef.current = null;
       }
     };
-  }, [selectedAccountId, selectedSymbol, marketType, wsBase]);
+  }, [applyTickerUpdate, clearPendingTickerUpdate, selectedAccountId, selectedSymbol, marketType, wsBase]);
 
   useEffect(() => {
     if (!selectedAccountId) return;
@@ -1398,34 +1531,42 @@ function TradePageContent() {
           openOrders?: OpenOrderItem[];
         };
 
-        setSummary((prev) =>
-          prev
-            ? mergeAccountSummary(prev, {
-                ...prev,
-                equity: data.equity,
-                availableMargin: data.availableMargin,
-                spotQuoteAsset: data.spotQuoteAsset !== undefined ? data.spotQuoteAsset : prev.spotQuoteAsset,
-                spotQuoteAvailable: data.spotQuoteAvailable !== undefined ? data.spotQuoteAvailable : prev.spotQuoteAvailable,
-                spotBaseAsset: data.spotBaseAsset !== undefined ? data.spotBaseAsset : prev.spotBaseAsset,
-                spotBaseAvailable: data.spotBaseAvailable !== undefined ? data.spotBaseAvailable : prev.spotBaseAvailable,
-                spotBaseTotal: data.spotBaseTotal !== undefined ? data.spotBaseTotal : prev.spotBaseTotal,
-                updatedAt: new Date().toISOString()
-              }, {
-                preserveNullNumbers: true,
-                preserveSpotBalances: true
-              })
-            : prev
-        );
+        startTransition(() => {
+          setSummary((prev) => {
+            if (!prev) return prev;
+            const next = mergeAccountSummary(prev, {
+              ...prev,
+              equity: data.equity,
+              availableMargin: data.availableMargin,
+              spotQuoteAsset: data.spotQuoteAsset !== undefined ? data.spotQuoteAsset : prev.spotQuoteAsset,
+              spotQuoteAvailable: data.spotQuoteAvailable !== undefined ? data.spotQuoteAvailable : prev.spotQuoteAvailable,
+              spotBaseAsset: data.spotBaseAsset !== undefined ? data.spotBaseAsset : prev.spotBaseAsset,
+              spotBaseAvailable: data.spotBaseAvailable !== undefined ? data.spotBaseAvailable : prev.spotBaseAvailable,
+              spotBaseTotal: data.spotBaseTotal !== undefined ? data.spotBaseTotal : prev.spotBaseTotal,
+              updatedAt: new Date().toISOString()
+            }, {
+              preserveNullNumbers: true,
+              preserveSpotBalances: true
+            });
+            return accountSummariesEqual(prev, next) ? prev : next;
+          });
+        });
 
         if (Array.isArray(data.positions)) {
           const nextPositions = normalizeDeskPositions(data.positions);
-          setPositions((prev) =>
-            nextPositions.length === 0 && prev.length > 0 ? prev : nextPositions
-          );
+          startTransition(() => {
+            setPositions((prev) => {
+              if (nextPositions.length === 0 && prev.length > 0) return prev;
+              return positionsEqual(prev, nextPositions) ? prev : nextPositions;
+            });
+          });
           liveTableReadyRef.current.positions = true;
         }
         if (Array.isArray(data.openOrders)) {
-          setOpenOrders(normalizeDeskOpenOrders(data.openOrders, selectedSymbol));
+          const nextOrders = normalizeDeskOpenOrders(data.openOrders, selectedSymbol);
+          startTransition(() => {
+            setOpenOrders((prev) => (openOrdersEqual(prev, nextOrders) ? prev : nextOrders));
+          });
           liveTableReadyRef.current.openOrders = true;
         }
       }
@@ -1899,6 +2040,16 @@ function TradePageContent() {
     router.replace(nextPath);
   }
 
+  const handleChartEngineChange = useCallback((next: ChartEngine) => {
+    setChartEngine(next);
+    void persistSettings({ chartEngine: next });
+  }, [persistSettings]);
+
+  const handleChartPreferencesChange = useCallback((next: TradingChartPreferences) => {
+    setChartPreferences(next);
+    void persistSettings({ chartPreferences: next });
+  }, [persistSettings]);
+
   return (
     <div className="tradeDeskWrap">
       <PageHeader title={t("title")} description={t("subtitle")} />
@@ -2212,14 +2363,8 @@ function TradePageContent() {
                 prefill={activePrefill}
                 chartPreferences={chartPreferences}
                 selectedPosition={selectedPosition}
-                onChartEngineChange={(next) => {
-                  setChartEngine(next);
-                  void persistSettings({ chartEngine: next });
-                }}
-                onChartPreferencesChange={(next) => {
-                  setChartPreferences(next);
-                  void persistSettings({ chartPreferences: next });
-                }}
+                onChartEngineChange={handleChartEngineChange}
+                onChartPreferencesChange={handleChartPreferencesChange}
               />
             </article>
 
