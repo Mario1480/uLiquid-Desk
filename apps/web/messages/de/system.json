@@ -1101,6 +1101,11 @@
         "showUp": "Up-Signale anzeigen",
         "showDown": "Down-Signale anzeigen"
       },
+      "decisionOverlay": {
+        "show": "Decision-Overlay",
+        "title": "Decision",
+        "rr": "R/R"
+      },
       "advancedIndicators": {
         "title": "Advanced-Chart-Studien:"
       },

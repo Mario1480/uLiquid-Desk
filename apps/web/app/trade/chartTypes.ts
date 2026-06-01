@@ -22,6 +22,7 @@ export type TradingChartPreferences = {
   indicatorToggles: IndicatorToggleState;
   showUpMarkers: boolean;
   showDownMarkers: boolean;
+  showDecisionOverlay: boolean;
   chartHeight: number;
 };
 
@@ -66,5 +67,6 @@ export const DEFAULT_CHART_PREFERENCES: TradingChartPreferences = {
   indicatorToggles: DEFAULT_INDICATOR_TOGGLES,
   showUpMarkers: false,
   showDownMarkers: false,
+  showDecisionOverlay: true,
   chartHeight: 520
 };

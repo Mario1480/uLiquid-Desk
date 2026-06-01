@@ -87,7 +87,8 @@
       "equity": "Total Equity",
       "margin": "Available Margin",
       "pnl": "Today PnL",
-      "bots": "Running / Error Bots"
+      "bots": "Running / Error Bots",
+      "minMax": "Min/Max"
     }
   },
   "lossAnalysis": {

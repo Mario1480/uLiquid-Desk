@@ -676,6 +676,47 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const performanceStart = performanceSeries[0] ?? 0;
   const performanceEnd = performanceSeries[performanceSeries.length - 1] ?? 0;
   const performancePositive = performanceEnd >= performanceStart;
+  const performancePlotPoints = useMemo(() => {
+    const width = 880;
+    const height = 220;
+    if (performanceSeries.length <= 1) {
+      return [
+        { x: 0, y: height / 2, value: performanceSeries[0] ?? 0 },
+        { x: width, y: height / 2, value: performanceSeries[performanceSeries.length - 1] ?? 0 }
+      ];
+    }
+    const min = Math.min(...performanceSeries);
+    const max = Math.max(...performanceSeries);
+    const range = Math.max(max - min, 1e-9);
+    return performanceSeries.map((value, index) => ({
+      x: (index / (performanceSeries.length - 1)) * width,
+      y: height - ((value - min) / range) * height,
+      value
+    }));
+  }, [performanceSeries]);
+  const priceMarkers = useMemo(() => {
+    const rangeLow = Number.isFinite(windowLowPrice) && windowLowPrice > 0 ? windowLowPrice : visibleLadderMinPrice;
+    const rangeHigh = Number.isFinite(windowHighPrice) && windowHighPrice > 0 ? windowHighPrice : visibleLadderMaxPrice;
+    if (!Number.isFinite(rangeLow) || !Number.isFinite(rangeHigh) || rangeHigh <= rangeLow) return [];
+    const toX = (price: number) => Math.min(840, Math.max(40, 40 + ((price - rangeLow) / (rangeHigh - rangeLow)) * 800));
+    return [
+      { key: "mark", label: tGrid("cardMarkLabel"), price: currentPositionMark, color: "#38bdf8" },
+      { key: "entry", label: tGrid("overviewBreakEvenPrice"), price: breakEvenPrice, color: "#e2e8f0" },
+      { key: "liq", label: liquidationPriceLabel, price: displayedLiquidationPrice, color: "#fb7185" }
+    ]
+      .filter((marker) => Number.isFinite(marker.price) && Number(marker.price) > 0)
+      .map((marker) => ({ ...marker, x: toX(Number(marker.price)) }));
+  }, [
+    breakEvenPrice,
+    currentPositionMark,
+    displayedLiquidationPrice,
+    liquidationPriceLabel,
+    tGrid,
+    visibleLadderMaxPrice,
+    visibleLadderMinPrice,
+    windowHighPrice,
+    windowLowPrice
+  ]);
   const describeOpenCycle = (cycle: typeof gridCycles[number]) =>
     cycle.openFill.side === "buy" ? tGrid("fillsWaiting") : tGrid("fillsWaitingBuyback");
 
@@ -873,8 +914,26 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                     </linearGradient>
                   </defs>
                   <line x1="0" y1="110" x2="880" y2="110" className="gridOverviewChartZero" />
+                  <rect x="40" y="12" width="800" height="18" rx="9" className="gridOverviewRangeBand" />
+                  {priceMarkers.map((marker, index) => (
+                    <g key={marker.key}>
+                      <line x1={marker.x} y1="8" x2={marker.x} y2="205" className="gridOverviewPriceMarkerLine" style={{ stroke: marker.color }} />
+                      <text x={marker.x} y={index % 2 === 0 ? 24 : 48} textAnchor="middle" className="gridOverviewPriceMarkerText" style={{ fill: marker.color }}>
+                        {marker.label} {formatNumber(marker.price, 2)}
+                      </text>
+                    </g>
+                  ))}
                   <polygon points={`0,220 ${performancePolyline} 880,220`} fill={`url(#gridOverviewProfitFill-${instanceId})`} />
                   <polyline points={performancePolyline} fill="none" stroke={`url(#gridOverviewProfitStroke-${instanceId})`} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+                  {performancePlotPoints.map((point, index) => (
+                    <circle
+                      key={`${index}-${point.x}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r={index === performancePlotPoints.length - 1 && completedCycles.length < gridCycles.length ? 5 : 3.5}
+                      className={index === performancePlotPoints.length - 1 && completedCycles.length < gridCycles.length ? "gridOverviewOpenCycleDot" : "gridOverviewCycleDot"}
+                    />
+                  ))}
                 </svg>
                 <div className="gridOverviewChartFooter">
                   <span>{tGrid("overviewRangeLine", { low: formatNumber(windowLowPrice, 2), high: formatNumber(windowHighPrice, 2) })}</span>

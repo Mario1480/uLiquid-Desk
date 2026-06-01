@@ -602,6 +602,7 @@ export function LightweightChart({
   const [lastClose, setLastClose] = useState<number | null>(null);
   const [showUpMarkers, setShowUpMarkers] = useState(Boolean(chartPreferences?.showUpMarkers));
   const [showDownMarkers, setShowDownMarkers] = useState(Boolean(chartPreferences?.showDownMarkers));
+  const [showDecisionOverlay, setShowDecisionOverlay] = useState(chartPreferences?.showDecisionOverlay ?? true);
   const [predictionMarkers, setPredictionMarkers] = useState<SeriesMarker<Time>[]>([]);
   const [smcMarkers, setSmcMarkers] = useState<SeriesMarker<Time>[]>([]);
   const [breakerMarkers, setBreakerMarkers] = useState<SeriesMarker<Time>[]>([]);
@@ -623,6 +624,28 @@ export function LightweightChart({
     }
     return null;
   }, [indicatorToggles]);
+  const decisionOverlayActive = showDecisionOverlay && (Boolean(prefill) || Boolean(selectedPosition));
+  const decisionOverlaySummary = useMemo(() => {
+    if (!decisionOverlayActive) return null;
+    const entry =
+      prefill?.suggestedEntry?.type === "limit" && typeof prefill.suggestedEntry.price === "number"
+        ? prefill.suggestedEntry.price
+        : selectedPosition?.entryPrice ?? lastClose;
+    const takeProfit = prefill?.suggestedTakeProfit ?? selectedPosition?.takeProfitPrice ?? null;
+    const stopLoss = prefill?.suggestedStopLoss ?? selectedPosition?.stopLossPrice ?? null;
+    const risk = typeof entry === "number" && typeof stopLoss === "number" ? Math.abs(entry - stopLoss) : null;
+    const reward = typeof entry === "number" && typeof takeProfit === "number" ? Math.abs(takeProfit - entry) : null;
+    const rr = risk && reward && risk > 0 ? reward / risk : null;
+    const signal = prefill ? `${prefill.signal.toUpperCase()} ${Number.isFinite(prefill.confidence) ? `${prefill.confidence.toFixed(0)}%` : ""}`.trim() : null;
+    return {
+      signal,
+      entry,
+      takeProfit,
+      stopLoss,
+      mark: selectedPosition?.markPrice ?? lastClose,
+      rr
+    };
+  }, [decisionOverlayActive, lastClose, prefill, selectedPosition]);
 
   const drawSuperOverlayCanvas = useCallback(() => {
     const canvas = overlayCanvasRef.current;
@@ -722,12 +745,14 @@ export function LightweightChart({
     setIndicatorToggles(nextToggles);
     setShowUpMarkers(Boolean(chartPreferences.showUpMarkers));
     setShowDownMarkers(Boolean(chartPreferences.showDownMarkers));
+    setShowDecisionOverlay(chartPreferences.showDecisionOverlay ?? true);
     lastPersistedHeightRef.current = nextChartHeight;
     setChartHeight(nextChartHeight);
     serializedPrefsRef.current = JSON.stringify({
       indicatorToggles: nextToggles,
       showUpMarkers: Boolean(chartPreferences.showUpMarkers),
       showDownMarkers: Boolean(chartPreferences.showDownMarkers),
+      showDecisionOverlay: chartPreferences.showDecisionOverlay ?? true,
       chartHeight: nextChartHeight
     });
   }, [chartPreferences]);
@@ -737,6 +762,7 @@ export function LightweightChart({
       indicatorToggles,
       showUpMarkers,
       showDownMarkers,
+      showDecisionOverlay,
       chartHeight
     });
     if (serialized === serializedPrefsRef.current) return;
@@ -745,9 +771,10 @@ export function LightweightChart({
       indicatorToggles,
       showUpMarkers,
       showDownMarkers,
+      showDecisionOverlay,
       chartHeight
     });
-  }, [chartHeight, indicatorToggles, onChartPreferencesChange, showDownMarkers, showUpMarkers]);
+  }, [chartHeight, indicatorToggles, onChartPreferencesChange, showDecisionOverlay, showDownMarkers, showUpMarkers]);
 
   const normalizedTimeframe = useMemo(() => {
     if (timeframe === "1m" || timeframe === "5m" || timeframe === "15m" || timeframe === "1h" || timeframe === "4h" || timeframe === "1d") {
@@ -1099,7 +1126,7 @@ export function LightweightChart({
     }
     prefillLinesRef.current = [];
 
-    if (!prefill) return;
+    if (!prefill || !showDecisionOverlay) return;
 
     const lines: IPriceLine[] = [];
     const suggestedEntry =
@@ -1144,7 +1171,7 @@ export function LightweightChart({
     }
 
     prefillLinesRef.current = lines;
-  }, [prefill, lastClose]);
+  }, [prefill, lastClose, showDecisionOverlay]);
 
   useEffect(() => {
     const series = candleSeriesRef.current;
@@ -1153,7 +1180,7 @@ export function LightweightChart({
       series.removePriceLine(line);
     }
     selectedPositionLinesRef.current = [];
-    if (!selectedPosition) return;
+    if (!selectedPosition || !showDecisionOverlay) return;
 
     const nextLines: IPriceLine[] = [];
     const selectedPositionLabel = `${selectedPosition.symbol} ${selectedPosition.side.toUpperCase()}`;
@@ -1192,7 +1219,7 @@ export function LightweightChart({
       );
     }
     selectedPositionLinesRef.current = nextLines;
-  }, [selectedPosition, t]);
+  }, [selectedPosition, showDecisionOverlay, t]);
 
   useEffect(() => {
     if (!candleSeriesRef.current) return;
@@ -1617,6 +1644,14 @@ export function LightweightChart({
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <input
             type="checkbox"
+            checked={showDecisionOverlay}
+            onChange={(event) => setShowDecisionOverlay(event.target.checked)}
+          />
+          {t("decisionOverlay.show")}
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
             checked={showUpMarkers}
             onChange={(event) => setShowUpMarkers(event.target.checked)}
           />
@@ -1631,6 +1666,17 @@ export function LightweightChart({
           {t("markers.showDown")}
         </label>
       </div>
+      {decisionOverlaySummary ? (
+        <div className="tradeDecisionOverlayLegend">
+          <span>{t("decisionOverlay.title")}</span>
+          {decisionOverlaySummary.signal ? <strong>{decisionOverlaySummary.signal}</strong> : null}
+          <span>{t("position.entry")}: {Number.isFinite(Number(decisionOverlaySummary.entry)) ? Number(decisionOverlaySummary.entry).toFixed(4) : "-"}</span>
+          <span>{t("position.tp")}: {Number.isFinite(Number(decisionOverlaySummary.takeProfit)) ? Number(decisionOverlaySummary.takeProfit).toFixed(4) : "-"}</span>
+          <span>{t("position.sl")}: {Number.isFinite(Number(decisionOverlaySummary.stopLoss)) ? Number(decisionOverlaySummary.stopLoss).toFixed(4) : "-"}</span>
+          <span>{t("position.mark")}: {Number.isFinite(Number(decisionOverlaySummary.mark)) ? Number(decisionOverlaySummary.mark).toFixed(4) : "-"}</span>
+          <span>{t("decisionOverlay.rr")}: {decisionOverlaySummary.rr !== null ? decisionOverlaySummary.rr.toFixed(2) : "-"}</span>
+        </div>
+      ) : null}
       <div className="tradeChartIndicatorToggles" style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12 }}>
         <span style={{ opacity: 0.8 }}>{t("indicators.title")}</span>
         {[

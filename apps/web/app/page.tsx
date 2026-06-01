@@ -145,6 +145,8 @@ type DashboardPerformanceResponse = {
 type DashboardPerformanceChartPoint = {
   ts: number;
   totalEquity: number;
+  totalAvailableMargin: number;
+  totalTodayPnl: number;
 };
 
 type DashboardRiskAnalysisTrigger = "dailyLoss" | "margin" | "insufficientData";
@@ -864,7 +866,14 @@ export default function Page() {
         if (!Number.isFinite(ts)) return null;
         const totalEquity = Number(point.totalEquity);
         if (!Number.isFinite(totalEquity)) return null;
-        return { ts, totalEquity };
+        const totalAvailableMargin = Number(point.totalAvailableMargin);
+        const totalTodayPnl = Number(point.totalTodayPnl);
+        return {
+          ts,
+          totalEquity,
+          totalAvailableMargin: Number.isFinite(totalAvailableMargin) ? totalAvailableMargin : 0,
+          totalTodayPnl: Number.isFinite(totalTodayPnl) ? totalTodayPnl : 0
+        };
       })
       .filter((point): point is DashboardPerformanceChartPoint => Boolean(point));
   }, [performancePoints]);
@@ -1081,6 +1090,9 @@ export default function Page() {
                   <DashboardPerformanceAreaChart
                     data={performanceChartData}
                     equityLabel={t("performance.metrics.equity")}
+                    marginLabel={t("performance.metrics.margin")}
+                    pnlLabel={t("performance.metrics.pnl")}
+                    minMaxLabel={t("performance.metrics.minMax")}
                     locale={locale}
                     range={performanceRange}
                   />
@@ -1206,6 +1218,40 @@ export default function Page() {
                         <span>
                           Sync: {item.lastSyncAt ? formatPerformanceAxisTick(new Date(item.lastSyncAt).getTime(), "24h", locale) : "—"}
                         </span>
+                      </div>
+                      <div className="dashboardLossBars" aria-label={`${item.label} risk bars`}>
+                        <div className="dashboardLossBarRow">
+                          <span>{t("lossAnalysis.triggers.dailyLoss")}</span>
+                          <div className="dashboardLossBarTrack">
+                            <span
+                              className={`dashboardLossBarFill ${
+                                item.severity === "critical"
+                                  ? "dashboardLossBarFillCritical"
+                                  : item.severity === "warning"
+                                    ? "dashboardLossBarFillWarning"
+                                    : "dashboardLossBarFillOk"
+                              }`}
+                              style={{ width: `${Math.max(4, Math.min(100, Math.abs(Number(item.lossPct ?? 0))))}%` }}
+                            />
+                          </div>
+                          <strong>{formatPct(item.lossPct, locale)}</strong>
+                        </div>
+                        <div className="dashboardLossBarRow">
+                          <span>{t("lossAnalysis.triggers.margin")}</span>
+                          <div className="dashboardLossBarTrack dashboardLossBarTrackSegmented">
+                            <span
+                              className={`dashboardLossBarFill ${
+                                Number(item.marginPct ?? 0) >= 85
+                                  ? "dashboardLossBarFillCritical"
+                                  : Number(item.marginPct ?? 0) >= 65
+                                    ? "dashboardLossBarFillWarning"
+                                    : "dashboardLossBarFillOk"
+                              }`}
+                              style={{ width: `${Math.max(4, Math.min(100, Number(item.marginPct ?? 0)))}%` }}
+                            />
+                          </div>
+                          <strong>{formatPct(item.marginPct, locale)}</strong>
+                        </div>
                       </div>
                       <Link
                         href={`${withLocalePath("/trade", locale)}?exchangeAccountId=${encodeURIComponent(item.exchangeAccountId)}`}

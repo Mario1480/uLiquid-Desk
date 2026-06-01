@@ -87,7 +87,8 @@
       "equity": "Gesamte Equity",
       "margin": "Verfügbare Margin",
       "pnl": "Heutiges PnL",
-      "bots": "Laufende / Fehler-Bots"
+      "bots": "Laufende / Fehler-Bots",
+      "minMax": "Min/Max"
     }
   },
   "lossAnalysis": {

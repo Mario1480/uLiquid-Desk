@@ -763,6 +763,63 @@ function PredictionAlert(props: {
   );
 }
 
+function PredictionCalibrationPlot({
+  bins,
+  labels
+}: {
+  bins: PredictionMetricsResponse["calibrationBins"];
+  labels: {
+    avgConf: string;
+    accuracy: string;
+    sample: string;
+  };
+}) {
+  const visibleBins = bins.filter((bin) => bin.n > 0);
+  if (visibleBins.length === 0) return null;
+  const maxN = Math.max(...visibleBins.map((bin) => bin.n), 1);
+  const width = 360;
+  const height = 220;
+  const padding = { left: 36, right: 18, top: 16, bottom: 34 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const xFor = (value: number) => padding.left + (Math.max(0, Math.min(100, value)) / 100) * plotWidth;
+  const yFor = (value: number) => padding.top + plotHeight - (Math.max(0, Math.min(100, value)) / 100) * plotHeight;
+
+  return (
+    <div className="predictionCalibrationPlotWrap">
+      <svg className="predictionCalibrationPlot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${labels.avgConf} / ${labels.accuracy}`}>
+        <line x1={padding.left} y1={padding.top + plotHeight} x2={padding.left + plotWidth} y2={padding.top + plotHeight} className="predictionCalibrationAxis" />
+        <line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + plotHeight} className="predictionCalibrationAxis" />
+        {[0, 25, 50, 75, 100].map((tick) => (
+          <g key={tick}>
+            <line x1={xFor(tick)} y1={padding.top} x2={xFor(tick)} y2={padding.top + plotHeight} className="predictionCalibrationGridLine" />
+            <line x1={padding.left} y1={yFor(tick)} x2={padding.left + plotWidth} y2={yFor(tick)} className="predictionCalibrationGridLine" />
+            <text x={xFor(tick)} y={height - 12} textAnchor="middle" className="predictionCalibrationTick">{tick}</text>
+            <text x={padding.left - 8} y={yFor(tick) + 4} textAnchor="end" className="predictionCalibrationTick">{tick}</text>
+          </g>
+        ))}
+        <line x1={xFor(0)} y1={yFor(0)} x2={xFor(100)} y2={yFor(100)} className="predictionCalibrationIdeal" />
+        {visibleBins.map((bin) => {
+          const xValue = bin.avgConf ?? (bin.binFrom + bin.binTo) / 2;
+          const yValue = bin.accuracy ?? 0;
+          const radius = 4 + Math.sqrt(bin.n / maxN) * 9;
+          return (
+            <g key={`${bin.binFrom}-${bin.binTo}`}>
+              <line x1={xFor(xValue)} y1={yFor(0)} x2={xFor(xValue)} y2={yFor(yValue)} className="predictionCalibrationStem" />
+              <circle cx={xFor(xValue)} cy={yFor(yValue)} r={radius} className="predictionCalibrationDot" />
+              <text x={xFor(xValue)} y={yFor(yValue) - radius - 4} textAnchor="middle" className="predictionCalibrationSample">
+                {labels.sample}={bin.n}
+              </text>
+            </g>
+          );
+        })}
+        <text x={padding.left + plotWidth / 2} y={height - 1} textAnchor="middle" className="predictionCalibrationAxisLabel">{labels.avgConf}</text>
+        <text x={13} y={padding.top + plotHeight / 2} textAnchor="middle" className="predictionCalibrationAxisLabel" transform={`rotate(-90 13 ${padding.top + plotHeight / 2})`}>{labels.accuracy}</text>
+      </svg>
+    </div>
+  );
+}
+
 function fmtNum(value: unknown, decimals = 2): string {
   const parsed = toNum(value);
   if (parsed === null) return "n/a";
@@ -3240,93 +3297,70 @@ export default function PredictionsPage() {
           </div>
         </div>
         <div className="predictionsQualityGrid">
-          <div className="card" style={{ margin: 0, padding: 10 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>{tPred("performance.evaluatedSignals")}</div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>{quality?.sampleSize ?? 0}</div>
-          </div>
-          <div className="card" style={{ margin: 0, padding: 10 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>{tPred("performance.tpWinRate")}</div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>
-              {quality?.winRatePct !== null && quality?.winRatePct !== undefined
-                ? `${quality.winRatePct.toFixed(2)}%`
-                : "-"}
-            </div>
-          </div>
-          <div className="card" style={{ margin: 0, padding: 10 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>{tPred("performance.avgOutcomePnl")}</div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>
-              {quality?.avgOutcomePnlPct !== null && quality?.avgOutcomePnlPct !== undefined
-                ? `${quality.avgOutcomePnlPct.toFixed(2)}%`
-                : "-"}
-            </div>
-          </div>
-          <div className="card" style={{ margin: 0, padding: 10 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>{tPred("performance.tpSlExpired")}</div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>
-              {(quality?.tp ?? 0)} / {(quality?.sl ?? 0)} / {(quality?.expired ?? 0)}
-            </div>
-          </div>
-          <div className="card" style={{ margin: 0, padding: 10 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>{tPred("performance.directionalHitRate")}</div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>
-              {metrics?.hitRate !== null && metrics?.hitRate !== undefined
-                ? `${metrics.hitRate.toFixed(2)}%`
-                : "-"}
-            </div>
-            <div style={{ color: "var(--muted)", fontSize: 11 }}>
-              {tPred("performance.evaluated", { count: metrics?.evaluatedCount ?? 0 })}
-            </div>
-          </div>
-          <div className="card" style={{ margin: 0, padding: 10 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>{tPred("performance.mae")}</div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>
-              {metrics?.mae !== null && metrics?.mae !== undefined
-                ? metrics.mae.toFixed(4)
-                : "-"}
-            </div>
-          </div>
-          <div className="card" style={{ margin: 0, padding: 10 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>{tPred("performance.mse")}</div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>
-              {metrics?.mse !== null && metrics?.mse !== undefined
-                ? metrics.mse.toFixed(4)
-                : "-"}
-            </div>
-          </div>
+          <MetricTile label={tPred("performance.evaluatedSignals")} value={quality?.sampleSize ?? 0} />
+          <MetricTile
+            label={tPred("performance.tpWinRate")}
+            value={quality?.winRatePct !== null && quality?.winRatePct !== undefined ? `${quality.winRatePct.toFixed(2)}%` : "-"}
+            tone={Number(quality?.winRatePct ?? 0) >= 50 ? "success" : "neutral"}
+          />
+          <MetricTile
+            label={tPred("performance.avgOutcomePnl")}
+            value={quality?.avgOutcomePnlPct !== null && quality?.avgOutcomePnlPct !== undefined ? `${quality.avgOutcomePnlPct.toFixed(2)}%` : "-"}
+            tone={Number(quality?.avgOutcomePnlPct ?? 0) > 0 ? "success" : Number(quality?.avgOutcomePnlPct ?? 0) < 0 ? "danger" : "neutral"}
+          />
+          <MetricTile label={tPred("performance.tpSlExpired")} value={`${quality?.tp ?? 0} / ${quality?.sl ?? 0} / ${quality?.expired ?? 0}`} />
+          <MetricTile
+            label={tPred("performance.directionalHitRate")}
+            value={metrics?.hitRate !== null && metrics?.hitRate !== undefined ? `${metrics.hitRate.toFixed(2)}%` : "-"}
+            meta={tPred("performance.evaluated", { count: metrics?.evaluatedCount ?? 0 })}
+            tone={Number(metrics?.hitRate ?? 0) >= 50 ? "success" : "neutral"}
+          />
+          <MetricTile label={tPred("performance.mae")} value={metrics?.mae !== null && metrics?.mae !== undefined ? metrics.mae.toFixed(4) : "-"} />
+          <MetricTile label={tPred("performance.mse")} value={metrics?.mse !== null && metrics?.mse !== undefined ? metrics.mse.toFixed(4) : "-"} />
         </div>
         <div className="predictionCalibrationWrap">
           <div className="predictionCalibrationHeader">
             <strong>{tPred("performance.calibrationTitle")}</strong>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>
+            <span className="predictionCalibrationHint">
               {tPred("performance.calibrationHint")}
             </span>
           </div>
           {!metrics || metrics.calibrationBins.filter((bin) => bin.n > 0).length === 0 ? (
             <div className="predictionCalibrationEmpty">{tPred("performance.noBins")}</div>
           ) : (
-            <div className="predictionCalibrationTableWrap">
-              <table className="predictionCalibrationTable">
-                <thead>
-                  <tr>
-                    <th>{tPred("performance.bin")}</th>
-                    <th>{tPred("performance.avgConf")}</th>
-                    <th>{tPred("performance.accuracy")}</th>
-                    <th>N</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics.calibrationBins
-                    .filter((bin) => bin.n > 0)
-                    .map((bin) => (
-                      <tr key={`${bin.binFrom}-${bin.binTo}`}>
-                        <td>{bin.binFrom.toFixed(0)}-{bin.binTo.toFixed(0)}%</td>
-                        <td>{bin.avgConf !== null ? `${bin.avgConf.toFixed(2)}%` : "-"}</td>
-                        <td>{bin.accuracy !== null ? `${bin.accuracy.toFixed(2)}%` : "-"}</td>
-                        <td>{bin.n}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+            <div className="predictionCalibrationLayout">
+              <PredictionCalibrationPlot
+                bins={metrics.calibrationBins}
+                labels={{
+                  avgConf: tPred("performance.avgConf"),
+                  accuracy: tPred("performance.accuracy"),
+                  sample: tPred("performance.sample")
+                }}
+              />
+              <div className="predictionCalibrationTableWrap">
+                <table className="predictionCalibrationTable">
+                  <thead>
+                    <tr>
+                      <th>{tPred("performance.bin")}</th>
+                      <th>{tPred("performance.avgConf")}</th>
+                      <th>{tPred("performance.accuracy")}</th>
+                      <th>N</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.calibrationBins
+                      .filter((bin) => bin.n > 0)
+                      .map((bin) => (
+                        <tr key={`${bin.binFrom}-${bin.binTo}`}>
+                          <td>{bin.binFrom.toFixed(0)}-{bin.binTo.toFixed(0)}%</td>
+                          <td>{bin.avgConf !== null ? `${bin.avgConf.toFixed(2)}%` : "-"}</td>
+                          <td>{bin.accuracy !== null ? `${bin.accuracy.toFixed(2)}%` : "-"}</td>
+                          <td>{bin.n}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

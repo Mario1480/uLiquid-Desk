@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, getApiBaseUrl } from "../../lib/api";
 import {
@@ -808,6 +808,7 @@ export function AdvancedChart({
   const [rawCandles, setRawCandles] = useState<CandleApiItem[]>([]);
   const [showUpMarkers, setShowUpMarkers] = useState(Boolean(chartPreferences?.showUpMarkers));
   const [showDownMarkers, setShowDownMarkers] = useState(Boolean(chartPreferences?.showDownMarkers));
+  const [showDecisionOverlay, setShowDecisionOverlay] = useState(chartPreferences?.showDecisionOverlay ?? true);
   const [predictionMarkers, setPredictionMarkers] = useState<PredictionListItem[]>([]);
   const [indicatorToggles, setIndicatorToggles] = useState<IndicatorToggleState>({
     ...DEFAULT_INDICATOR_TOGGLES,
@@ -820,6 +821,30 @@ export function AdvancedChart({
   const warmupCandleFetchLimit = chartWarmupFetchLimitForExchange(marketDataExchange);
   const overlayCandleFetchLimit = Math.min(ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT, candleFetchLimit);
   const enableRealtimeSocket = !isBingxMarketDataExchange(marketDataExchange);
+  const decisionOverlayActive = showDecisionOverlay && (Boolean(prefill) || Boolean(selectedPosition));
+  const decisionOverlaySummary = useMemo(() => {
+    if (!decisionOverlayActive) return null;
+    const latest = normalizeCandles(rawCandles).at(-1) ?? null;
+    const latestClose = latest?.close ?? null;
+    const entry =
+      prefill?.suggestedEntry?.type === "limit" && typeof prefill.suggestedEntry.price === "number"
+        ? prefill.suggestedEntry.price
+        : selectedPosition?.entryPrice ?? latestClose;
+    const takeProfit = prefill?.suggestedTakeProfit ?? selectedPosition?.takeProfitPrice ?? null;
+    const stopLoss = prefill?.suggestedStopLoss ?? selectedPosition?.stopLossPrice ?? null;
+    const risk = typeof entry === "number" && typeof stopLoss === "number" ? Math.abs(entry - stopLoss) : null;
+    const reward = typeof entry === "number" && typeof takeProfit === "number" ? Math.abs(takeProfit - entry) : null;
+    const rr = risk && reward && risk > 0 ? reward / risk : null;
+    const signal = prefill ? `${prefill.signal.toUpperCase()} ${Number.isFinite(prefill.confidence) ? `${prefill.confidence.toFixed(0)}%` : ""}`.trim() : null;
+    return {
+      signal,
+      entry,
+      takeProfit,
+      stopLoss,
+      mark: selectedPosition?.markPrice ?? latestClose,
+      rr
+    };
+  }, [decisionOverlayActive, prefill, rawCandles, selectedPosition]);
 
   symbolRef.current = symbol;
   timeframeRef.current = normalizedTimeframe;
@@ -837,12 +862,14 @@ export function AdvancedChart({
     setIndicatorToggles(nextToggles);
     setShowUpMarkers(Boolean(chartPreferences?.showUpMarkers));
     setShowDownMarkers(Boolean(chartPreferences?.showDownMarkers));
+    setShowDecisionOverlay(chartPreferences?.showDecisionOverlay ?? true);
     lastPersistedHeightRef.current = nextChartHeight;
     setChartHeight(nextChartHeight);
     serializedPrefsRef.current = JSON.stringify({
       indicatorToggles: nextToggles,
       showUpMarkers: Boolean(chartPreferences?.showUpMarkers),
       showDownMarkers: Boolean(chartPreferences?.showDownMarkers),
+      showDecisionOverlay: chartPreferences?.showDecisionOverlay ?? true,
       chartHeight: nextChartHeight
     });
   }, [chartPreferences]);
@@ -852,6 +879,7 @@ export function AdvancedChart({
       indicatorToggles,
       showUpMarkers,
       showDownMarkers,
+      showDecisionOverlay,
       chartHeight
     });
     if (serialized === serializedPrefsRef.current) return;
@@ -860,9 +888,10 @@ export function AdvancedChart({
       indicatorToggles,
       showUpMarkers,
       showDownMarkers,
+      showDecisionOverlay,
       chartHeight
     });
-  }, [chartHeight, indicatorToggles, onChartPreferencesChange, showDownMarkers, showUpMarkers]);
+  }, [chartHeight, indicatorToggles, onChartPreferencesChange, showDecisionOverlay, showDownMarkers, showUpMarkers]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -1249,11 +1278,13 @@ export function AdvancedChart({
       const selectedPositionLineText = (label: string) =>
         selectedPositionLabel ? `${selectedPositionLabel} ${label}` : label;
 
-      await buildHorizontalLine(toOptionalChartPrice(prefill?.suggestedTakeProfit), "#22c55e", "TP", 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(toOptionalChartPrice(prefill?.suggestedStopLoss), "#ef4444", "SL", 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.takeProfitPrice), "#22c55e", selectedPositionLineText(t("position.tp")), 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.stopLossPrice), "#ef4444", selectedPositionLineText(t("position.sl")), 2, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.entryPrice), "#e2e8f0", selectedPositionLineText(t("position.entry")), 0, 2, anchorTimeSec, chart, output);
+      if (showDecisionOverlay) {
+        await buildHorizontalLine(toOptionalChartPrice(prefill?.suggestedTakeProfit), "#22c55e", "TP", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(toOptionalChartPrice(prefill?.suggestedStopLoss), "#ef4444", "SL", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.takeProfitPrice), "#22c55e", selectedPositionLineText(t("position.tp")), 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.stopLossPrice), "#ef4444", selectedPositionLineText(t("position.sl")), 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(toOptionalChartPrice(selectedPosition?.entryPrice), "#e2e8f0", selectedPositionLineText(t("position.entry")), 0, 2, anchorTimeSec, chart, output);
+      }
 
       const candleByTimeSec = new Map<number, CandleApiItem & { ts: number }>();
       for (const candle of normalized) {
@@ -1287,7 +1318,7 @@ export function AdvancedChart({
     return () => {
       active = false;
     };
-  }, [predictionMarkers, prefill, rawCandles, selectedPosition, t]);
+  }, [predictionMarkers, prefill, rawCandles, selectedPosition, showDecisionOverlay, t]);
 
   return (
     <div>
@@ -1312,6 +1343,27 @@ export function AdvancedChart({
         <span>{t("engineAdvanced")}</span>
         <span>{fatalError ? t("status.autoFallback") : statusMessage}</span>
       </div>
+      <div className="tradeChartMarkerToggles" style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={showDecisionOverlay}
+            onChange={(event) => setShowDecisionOverlay(event.target.checked)}
+          />
+          {t("decisionOverlay.show")}
+        </label>
+      </div>
+      {decisionOverlaySummary ? (
+        <div className="tradeDecisionOverlayLegend">
+          <span>{t("decisionOverlay.title")}</span>
+          {decisionOverlaySummary.signal ? <strong>{decisionOverlaySummary.signal}</strong> : null}
+          <span>{t("position.entry")}: {Number.isFinite(Number(decisionOverlaySummary.entry)) ? Number(decisionOverlaySummary.entry).toFixed(4) : "-"}</span>
+          <span>{t("position.tp")}: {Number.isFinite(Number(decisionOverlaySummary.takeProfit)) ? Number(decisionOverlaySummary.takeProfit).toFixed(4) : "-"}</span>
+          <span>{t("position.sl")}: {Number.isFinite(Number(decisionOverlaySummary.stopLoss)) ? Number(decisionOverlaySummary.stopLoss).toFixed(4) : "-"}</span>
+          <span>{t("position.mark")}: {Number.isFinite(Number(decisionOverlaySummary.mark)) ? Number(decisionOverlaySummary.mark).toFixed(4) : "-"}</span>
+          <span>{t("decisionOverlay.rr")}: {decisionOverlaySummary.rr !== null ? decisionOverlaySummary.rr.toFixed(2) : "-"}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

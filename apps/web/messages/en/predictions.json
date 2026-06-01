@@ -211,7 +211,8 @@
     "noBins": "No evaluated bins yet.",
     "bin": "Bin",
     "avgConf": "Avg conf",
-    "accuracy": "Accuracy"
+    "accuracy": "Accuracy",
+    "sample": "N"
   },
   "modes": {
     "localOnly": "Local only",

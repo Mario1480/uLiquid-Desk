@@ -1603,6 +1603,38 @@
   stroke-width: 1;
 }
 
+.gridOverviewRangeBand {
+  fill: rgba(56, 189, 248, 0.08);
+  stroke: rgba(56, 189, 248, 0.22);
+}
+
+.gridOverviewPriceMarkerLine {
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+  opacity: 0.75;
+}
+
+.gridOverviewPriceMarkerText {
+  font-size: 13px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(6, 13, 23, 0.9);
+  stroke-width: 4px;
+}
+
+.gridOverviewCycleDot,
+.gridOverviewOpenCycleDot {
+  fill: rgba(255,255,255,0.95);
+  stroke: rgba(6, 13, 23, 0.86);
+  stroke-width: 2;
+}
+
+.gridOverviewOpenCycleDot {
+  fill: #facc15;
+  stroke: rgba(250,204,21,0.35);
+  stroke-width: 5;
+}
+
 .gridOverviewChartFooter {
   display: flex;
   justify-content: space-between;

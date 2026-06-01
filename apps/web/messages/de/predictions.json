@@ -211,7 +211,8 @@
     "noBins": "Noch keine ausgewerteten Bins.",
     "bin": "Bin",
     "avgConf": "Ø Konfidenz",
-    "accuracy": "Genauigkeit"
+    "accuracy": "Genauigkeit",
+    "sample": "N"
   },
   "modes": {
     "localOnly": "Nur Lokal",
