@@ -64,6 +64,36 @@ function predictionReadHandler(
   };
 }
 
+function applyPredictionSignalSourceWhere(
+  where: Record<string, unknown>,
+  signalSource: "local" | "ai" | undefined
+): void {
+  if (!signalSource) return;
+
+  const aiSourceFilter = {
+    featuresSnapshot: {
+      path: ["selectedSignalSource"],
+      equals: "ai"
+    }
+  };
+
+  if (signalSource === "ai") {
+    where.featuresSnapshot = aiSourceFilter.featuresSnapshot;
+    return;
+  }
+
+  where.NOT = [
+    ...(
+      Array.isArray(where.NOT)
+        ? where.NOT
+        : where.NOT
+          ? [where.NOT]
+          : []
+    ),
+    aiSourceFilter
+  ];
+}
+
 export type RegisterPredictionReadRoutesDeps = {
   db: any;
   normalizePredictionMarketType(value: unknown): "spot" | "perp";
@@ -453,6 +483,7 @@ export function registerPredictionReadRoutes(
     if (resetAt) {
       where.tsCreated = { gte: resetAt };
     }
+    applyPredictionSignalSourceWhere(where, signalSource);
 
     const rowsRaw = await deps.db.prediction.findMany({
       where,
@@ -463,18 +494,12 @@ export function registerPredictionReadRoutes(
         signal: true,
         expectedMovePct: true,
         confidence: true,
-        featuresSnapshot: true,
         outcomeMeta: true,
         outcomeResult: true,
         outcomePnlPct: true
       }
     });
-    const rows = signalSource
-      ? rowsRaw.filter((row: any) => {
-          const snapshot = deps.asRecord(row.featuresSnapshot);
-          return deps.readSelectedSignalSource(snapshot) === signalSource;
-        })
-      : rowsRaw;
+    const rows = rowsRaw;
 
     let tp = 0;
     let sl = 0;
@@ -616,6 +641,7 @@ export function registerPredictionReadRoutes(
         ...(to ? { lte: to } : {})
       };
     }
+    applyPredictionSignalSourceWhere(where, signalSource);
 
     const rows = await deps.db.prediction.findMany({
       where,
@@ -626,7 +652,6 @@ export function registerPredictionReadRoutes(
         signal: true,
         confidence: true,
         expectedMovePct: true,
-        featuresSnapshot: Boolean(signalSource),
         outcomeMeta: true,
         outcomePnlPct: true
       }
@@ -634,10 +659,6 @@ export function registerPredictionReadRoutes(
 
     const samples: Array<Record<string, unknown>> = [];
     for (const row of rows) {
-      if (signalSource) {
-        const snapshot = deps.asRecord(row.featuresSnapshot);
-        if (deps.readSelectedSignalSource(snapshot) !== signalSource) continue;
-      }
       const signal = deps.normalizePredictionSignal(row.signal);
       const realizedMetrics = resolvePredictionPerformanceMetrics({
         signal,
