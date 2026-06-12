@@ -1087,6 +1087,7 @@
         "advanced": "Advanced",
         "lightweight": "Lightweight"
       },
+      "attribution": "Advanced Technical Charts powered by <tradingView>TradingView</tradingView>.",
       "advancedNotice": "SMC, PVSRA, Breaker Blocks und Super OrderBlock / FVG / BoS bleiben vorerst vollständig im Lightweight-Fallback verfügbar.",
       "fallbackNotice": "Advanced Charts konnten nicht initialisiert werden, deshalb wurde fuer diese Sitzung auf den Lightweight-Fallback umgeschaltet. Fehler: {error}",
       "status": {

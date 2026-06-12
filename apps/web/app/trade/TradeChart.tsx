@@ -71,6 +71,16 @@ export const TradeChart = memo(function TradeChart({
       ) : (
         <LightweightChart {...chartProps} />
       )}
+
+      <div className="tradeChartAttribution">
+        {t.rich("attribution", {
+          tradingView: (chunks) => (
+            <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
+              {chunks}
+            </a>
+          )
+        })}
+      </div>
     </div>
   );
 });
