@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { ApiError, apiPost } from "../../lib/api";
+import { redirectAfterAuth } from "../../lib/auth/redirect";
 import { buildSiweMessage, fetchSiweNonce, shortenWalletAddress, verifySiweLogin } from "../../lib/auth/siwe";
 import { wagmiConfig } from "../../lib/web3/config";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
@@ -36,7 +36,6 @@ function mapSiweErrorCode(error: unknown): string {
 function LoginPageContent() {
   const t = useTranslations("auth");
   const locale = useLocale() as AppLocale;
-  const router = useRouter();
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const [email, setEmail] = useState("");
@@ -60,7 +59,7 @@ function LoginPageContent() {
     setErrorCode("");
     try {
       await apiPost("/auth/login", { email, password });
-      router.push(withLocalePath("/", locale));
+      redirectAfterAuth(locale);
     } catch (e) {
       setStatus("");
       setErrorCode(e instanceof ApiError ? String(e.payload?.error ?? "").trim() : "");
@@ -104,7 +103,7 @@ function LoginPageContent() {
       });
 
       setSiweStatus(t("siwe.success", { wallet: shortenWalletAddress(address) || address }));
-      router.push(withLocalePath("/", locale));
+      redirectAfterAuth(locale);
     } catch (e) {
       setSiweStatus("");
       const code = mapSiweErrorCode(e);

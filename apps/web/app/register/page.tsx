@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { ApiError, apiPost } from "../../lib/api";
+import { redirectAfterAuth } from "../../lib/auth/redirect";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { AppIcon } from "../components/AppIcon";
 import LegalRiskNotice, { LEGAL_ACKNOWLEDGEMENT_VERSION } from "../components/LegalRiskNotice";
@@ -93,7 +94,7 @@ export default function RegisterPage() {
       await apiPost("/auth/register/verify", { email, code });
       setStatus(t("emailVerified"));
       setTimeout(() => {
-        router.push(withLocalePath("/", locale));
+        redirectAfterAuth(locale);
       }, 800);
     } catch (e) {
       setStatus("");
