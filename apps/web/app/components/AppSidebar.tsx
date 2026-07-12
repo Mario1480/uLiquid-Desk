@@ -68,9 +68,11 @@ type SubscriptionFeatureResponse = {
 
 export default function AppSidebar({
   isOpen,
+  mobileMode,
   onClose
 }: {
   isOpen: boolean;
+  mobileMode: boolean;
   onClose: () => void;
 }) {
   const tNav = useTranslations("nav");
@@ -310,6 +312,14 @@ export default function AppSidebar({
       active: pathnameWithoutLocale.startsWith("/wallet") || pathnameWithoutLocale.startsWith("/funding")
     });
 
+    capitalItems.push({
+      key: "vaults",
+      label: tNav("vaults"),
+      href: hrefFor("/vaults"),
+      icon: "vaults",
+      active: pathnameWithoutLocale.startsWith("/vaults")
+    });
+
     operationsItems.push({
       key: "settings",
       label: tNav("settings"),
@@ -345,20 +355,30 @@ export default function AppSidebar({
   }, [featureGates, hasPlatformAdminAccess, hrefFor, pathnameWithoutLocale, tNav, tSidebar, visibility]);
 
   return (
-    <aside id="appSidebar" className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}>
+    <aside
+      id="appSidebar"
+      className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}
+      role={mobileMode ? "dialog" : undefined}
+      aria-modal={mobileMode && isOpen ? true : undefined}
+      aria-label={mobileMode ? "uLiquid Desk" : undefined}
+    >
       <div className="appSidebarInner">
         <div className="appSidebarTop">
           <Link href={hrefFor("/")} className="appSidebarLogo" aria-label="uLiquid Desk" onClick={onClose}>
             <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appSidebarLogoMark" />
-            <span className="appSidebarLogoText">{tCommon("betaLabel", { version: appReleaseVersion })}</span>
+            <span className="appSidebarBrandCopy">
+              <strong className="appSidebarBrandName">uLiquid Desk</strong>
+              <span className="appSidebarLogoText">{tCommon("betaLabel", { version: appReleaseVersion })}</span>
+            </span>
           </Link>
           <button
             type="button"
             className="appSidebarClose"
             onClick={onClose}
             aria-label={tSidebar("close")}
+            title={tSidebar("close")}
           >
-            {tSidebar("close")}
+            <AppIcon name="close" />
           </button>
         </div>
 

@@ -9,20 +9,14 @@
   --ui-page-gap: var(--ui-space-4);
   --ui-section-padding: 16px;
   --ui-section-padding-compact: 12px;
-  --ui-radius-control: 14px;
-  --ui-radius-card: 16px;
-  --ui-radius-menu: 16px;
-  --ui-radius-panel: 18px;
-  --ui-surface-panel:
-    radial-gradient(circle at 100% -18%, rgba(96, 165, 250, 0.12), transparent 38%),
-    linear-gradient(180deg, rgba(10, 18, 33, 0.96), rgba(7, 13, 25, 0.98));
-  --ui-surface-card:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
-  --ui-surface-control:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.022));
-  --ui-surface-menu:
-    radial-gradient(circle at 100% -18%, rgba(96, 165, 250, 0.12), transparent 38%),
-    linear-gradient(180deg, rgba(9, 17, 32, 0.98), rgba(6, 12, 24, 0.98));
+  --ui-radius-control: 11px;
+  --ui-radius-card: 13px;
+  --ui-radius-menu: 14px;
+  --ui-radius-panel: 15px;
+  --ui-surface-panel: linear-gradient(180deg, rgba(13, 27, 44, 0.96), rgba(9, 21, 35, 0.98));
+  --ui-surface-card: rgba(255, 255, 255, 0.025);
+  --ui-surface-control: rgba(255, 255, 255, 0.035);
+  --ui-surface-menu: linear-gradient(180deg, rgba(15, 31, 50, 0.99), rgba(8, 19, 33, 0.99));
   --ui-border: var(--color-border-default);
   --ui-border-strong: var(--color-border-strong);
   --ui-shadow: var(--shadow-panel);

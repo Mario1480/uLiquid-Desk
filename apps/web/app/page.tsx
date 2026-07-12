@@ -456,6 +456,8 @@ export default function Page() {
   const locale = useLocale() as AppLocale;
   const gridRef = useRef<HTMLDivElement | null>(null);
   const overviewPollInFlightRef = useRef(false);
+  const addWidgetMenuRef = useRef<HTMLDivElement | null>(null);
+  const addWidgetTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [overview, setOverview] = useState<ExchangeAccountOverview[]>([]);
   const [overviewTotals, setOverviewTotals] = useState<DashboardTotals | null>(null);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
@@ -507,6 +509,34 @@ export default function Page() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!addWidgetMenuOpen) return;
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const firstItem = addWidgetMenuRef.current?.querySelector<HTMLElement>("[role='menuitem']");
+      (firstItem ?? addWidgetMenuRef.current)?.focus();
+    });
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!addWidgetMenuRef.current?.parentElement?.contains(event.target as Node)) {
+        setAddWidgetMenuOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setAddWidgetMenuOpen(false);
+      addWidgetTriggerRef.current?.focus();
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [addWidgetMenuOpen]);
 
   useEffect(() => {
     let mounted = true;
@@ -2096,14 +2126,12 @@ export default function Page() {
   }
 
   return (
-    <div>
+    <div className="dashboardPage">
       <section id="overview" className="dashboardSectionAnchor">
         <div className="dashboardHeader dashboardBuilderHeader">
-          <div>
-            <h2 style={{ margin: 0 }}>{t("title")}</h2>
-            <div style={{ fontSize: 13, color: "var(--muted)" }}>
-              {t("subtitle")}
-            </div>
+          <div className="dashboardHeaderCopy">
+            <h1>{t("title")}</h1>
+            <p>{t("subtitle")}</p>
           </div>
 
           <div className="dashboardBuilderActions">
@@ -2123,18 +2151,47 @@ export default function Page() {
                 </button>
                 <div className="dashboardBuilderAddWidgetWrap">
                   <button
+                    id="dashboardAddWidgetTrigger"
+                    ref={addWidgetTriggerRef}
                     type="button"
                     className="btn"
                     onClick={() => setAddWidgetMenuOpen((current) => !current)}
                     disabled={layoutSaving}
+                    aria-haspopup="menu"
+                    aria-expanded={addWidgetMenuOpen}
+                    aria-controls="dashboardAddWidgetMenu"
                   >
                     <AppIcon name="add" />
                     {builderT("addWidget")}
                   </button>
                   {addWidgetMenuOpen ? (
-                    <div className="dashboardBuilderAddWidgetMenu">
+                    <div
+                      id="dashboardAddWidgetMenu"
+                      ref={addWidgetMenuRef}
+                      className="dashboardBuilderAddWidgetMenu"
+                      role="menu"
+                      aria-labelledby="dashboardAddWidgetTrigger"
+                      tabIndex={-1}
+                      onKeyDown={(event) => {
+                        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                        const items = Array.from(
+                          event.currentTarget.querySelectorAll<HTMLElement>("[role='menuitem']")
+                        );
+                        if (items.length === 0) return;
+                        event.preventDefault();
+                        const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+                        const nextIndex = event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? items.length - 1
+                            : event.key === "ArrowUp"
+                              ? (currentIndex <= 0 ? items.length - 1 : currentIndex - 1)
+                              : (currentIndex + 1) % items.length;
+                        items[nextIndex]?.focus();
+                      }}
+                    >
                       {hiddenAvailableItems.length === 0 ? (
-                        <div className="dashboardBuilderAddWidgetEmpty">{builderT("addWidgetEmpty")}</div>
+                        <div className="dashboardBuilderAddWidgetEmpty" role="status">{builderT("addWidgetEmpty")}</div>
                       ) : (
                         hiddenAvailableItems.map((item) => (
                           <button
@@ -2142,6 +2199,7 @@ export default function Page() {
                             type="button"
                             className="dashboardBuilderAddWidgetItem"
                             onClick={() => handleShowWidget(item.id)}
+                            role="menuitem"
                           >
                             {widgetContent[item.id].title}
                           </button>

@@ -1,6 +1,6 @@
 {
   "title": "Dashboard",
-  "subtitle": "One overview card per exchange account.",
+  "subtitle": "All accounts, positions, and automations at a glance.",
   "actions": {
     "predictions": "Predictions",
     "calendar": "Calendar",

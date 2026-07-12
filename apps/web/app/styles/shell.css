@@ -1,9 +1,10 @@
 /* Shell, public layout, navigation, and app chrome styles. */
 
 .container {
-  max-width: auto;
+  width: 100%;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 24px 16px 64px;
+  padding: 24px 28px 64px;
 }
 
 .appHeader {
@@ -544,6 +545,10 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.appBreadcrumbsMobileEllipsis {
+  display: none;
 }
 
 .appHeaderCompact {
@@ -1698,6 +1703,13 @@
     display: none;
   }
 
+  .appBreadcrumbsMobileEllipsis {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-text-muted);
+    font-size: 13px;
+  }
+
   .appBreadcrumbsLink,
   .appBreadcrumbsCurrent {
     padding: 3px 8px 3px 6px;
@@ -2010,4 +2022,1342 @@
 .authDivider .btn {
   width: 100%;
   justify-content: center;
+}
+
+/* App shell v2: quiet command-center chrome. */
+
+@keyframes appShellContentEnter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes appShellMenuEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes appShellActiveRail {
+  from {
+    opacity: 0;
+    transform: scaleY(0.35);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.container {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+  padding-inline: 28px;
+}
+
+.appShell {
+  width: 100%;
+  position: relative;
+}
+
+.appShellWithSidebar {
+  display: grid;
+  grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr);
+  align-items: start;
+}
+
+.appShellContent {
+  min-width: 0;
+  min-height: 100dvh;
+  position: relative;
+}
+
+.appHeader {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--app-shell-line);
+  background: rgba(7, 18, 31, 0.9);
+  box-shadow: none;
+  backdrop-filter: blur(20px) saturate(120%);
+  overflow-anchor: none;
+}
+
+.appHeaderCompact .appHeaderInner {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.appHeaderMobileStart,
+.appHeaderMobileLogo {
+  display: none;
+}
+
+.appHeaderSearch {
+  display: flex;
+  align-items: center;
+  width: min(440px, 42vw);
+  min-width: 240px;
+  margin-right: auto;
+}
+
+.appHeaderSearchWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.appHeaderSearchIcon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  z-index: 1;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: rgba(174, 193, 216, 0.66);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.appHeaderSearchIcon svg,
+.appHeaderSearchSubmitIcon svg,
+.appHeaderChevron svg,
+.appHeaderLanguageIcon svg,
+.appHeaderWalletIcon svg,
+.appHeaderMenuIcon svg,
+.appHeaderIconButton svg {
+  width: 100%;
+  height: 100%;
+}
+
+.appHeaderIconButton > svg {
+  width: 17px;
+  height: 17px;
+}
+
+.appHeaderSearchInput {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  padding: 8px 66px 8px 40px;
+  border: 1px solid rgba(137, 165, 198, 0.2);
+  border-radius: 10px;
+  background: rgba(8, 20, 35, 0.84);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  color: var(--text);
+  font-size: 13px;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.appHeaderSearchInput::placeholder {
+  color: rgba(155, 174, 199, 0.7);
+}
+
+.appHeaderSearchInput:focus {
+  border-color: rgba(72, 160, 255, 0.58);
+  background: rgba(10, 24, 41, 0.96);
+  box-shadow: 0 0 0 3px rgba(69, 152, 247, 0.1);
+  outline: none;
+}
+
+.appHeaderSearchSubmit {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  min-width: 48px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid rgba(137, 165, 198, 0.18);
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(190, 206, 226, 0.74);
+  background: rgba(255, 255, 255, 0.035);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.appHeaderSearchSubmit:hover {
+  color: #fff;
+  border-color: rgba(72, 160, 255, 0.42);
+  background: rgba(69, 152, 247, 0.1);
+}
+
+.appHeaderSearchShortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.appHeaderSearchShortcut kbd {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: 600 10px/1 system-ui, -apple-system, sans-serif;
+}
+
+.appHeaderSearchSubmitIcon {
+  display: none;
+  width: 15px;
+  height: 15px;
+}
+
+.appHeaderSearchResults {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 45;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid rgba(137, 165, 198, 0.2);
+  border-radius: 14px;
+  background: var(--ui-surface-menu);
+  box-shadow: var(--shadow-elevated);
+  backdrop-filter: blur(22px);
+  transform-origin: top center;
+  animation: appShellMenuEnter 150ms ease-out both;
+}
+
+.appHeaderSearchResult {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.appHeaderSearchResult:hover,
+.appHeaderSearchResultActive {
+  background: rgba(69, 152, 247, 0.12);
+}
+
+.appHeaderSearchResultLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appHeaderToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.appHeaderMenuAnchor {
+  position: relative;
+}
+
+.appHeaderPillButton,
+.appHeaderIconButton,
+.appHeaderWalletTrigger,
+.appHeaderUserTrigger {
+  min-height: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  box-shadow: none;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.appHeaderPillButton:hover,
+.appHeaderIconButton:hover,
+.appHeaderWalletTrigger:hover:not(:disabled),
+.appHeaderUserTrigger:hover,
+.appHeaderPillButtonOpen,
+.appHeaderIconButtonOpen,
+.appHeaderWalletTriggerOpen,
+.appHeaderUserTriggerOpen {
+  border-color: rgba(137, 165, 198, 0.16);
+  background: rgba(255, 255, 255, 0.045);
+  color: #fff;
+}
+
+.appHeaderPillButton {
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.appHeaderWalletTrigger {
+  max-width: 176px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.appHeaderWalletButtonConnected {
+  border-color: rgba(44, 190, 117, 0.2);
+  color: #b7f4d2;
+  background: rgba(33, 153, 95, 0.08);
+}
+
+.appHeaderWalletButtonWarning,
+.appHeaderStatusPill {
+  border-color: rgba(245, 158, 11, 0.26);
+  color: #f8d99d;
+  background: rgba(181, 112, 15, 0.1);
+}
+
+.appHeaderWalletIcon,
+.appHeaderLanguageIcon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.appHeaderWalletTriggerLabel,
+.appHeaderUserTriggerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appHeaderLanguageCode,
+.appHeaderUserTriggerName {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.appHeaderChevron {
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  color: rgba(155, 174, 199, 0.66);
+}
+
+.appHeaderIconButton {
+  position: relative;
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.appHeaderBellBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #e84d61;
+  box-shadow: 0 0 0 3px rgba(7, 18, 31, 0.96);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.appHeaderUserTrigger {
+  max-width: 180px;
+  padding: 3px 8px 3px 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.appHeaderAvatar {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border: 1px solid rgba(137, 165, 198, 0.18);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #172a42;
+  color: #dcecff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.appHeaderAvatarLarge {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  font-size: 13px;
+}
+
+.appHeaderUserTriggerMeta {
+  min-width: 0;
+  display: grid;
+}
+
+.appHeaderStatusPill {
+  min-height: 34px;
+  padding: 0 9px;
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.appHeaderStatusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f1aa37;
+  box-shadow: 0 0 0 3px rgba(241, 170, 55, 0.12);
+}
+
+.appHeaderMenuPanel {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  padding: 7px;
+  border: 1px solid rgba(137, 165, 198, 0.2);
+  border-radius: 14px;
+  background: var(--ui-surface-menu);
+  box-shadow: var(--shadow-elevated);
+  backdrop-filter: blur(22px);
+  transform-origin: top right;
+  animation: appShellMenuEnter 150ms ease-out both;
+}
+
+.appHeaderMenuPanelCompact {
+  min-width: 168px;
+}
+
+.appHeaderAlertsPanel {
+  min-width: 330px;
+}
+
+.appHeaderUserPanel,
+.appHeaderWalletPanel {
+  min-width: 270px;
+}
+
+.appHeaderMenuTitleRow,
+.appHeaderUserPanelHeader,
+.appHeaderAlertMeta,
+.appHeaderWalletPanelValueRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.appHeaderMenuTitleRow,
+.appHeaderAlertMeta {
+  justify-content: space-between;
+}
+
+.appHeaderMenuTitleRow {
+  min-height: 34px;
+  padding: 2px 7px 6px;
+}
+
+.appHeaderMenuTitle {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.appHeaderMenuLink,
+.appHeaderMenuFooterLink {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.appHeaderMenuLink:hover,
+.appHeaderMenuFooterLink:hover,
+.appHeaderMenuLinkActive {
+  background: rgba(69, 152, 247, 0.1);
+  color: #fff;
+}
+
+.appHeaderMenuLinkDanger {
+  color: #f4a6b0;
+}
+
+.appHeaderMenuIcon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.appHeaderAlertsList {
+  display: grid;
+  gap: 3px;
+}
+
+.appHeaderAlertLink {
+  padding: 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.appHeaderAlertLink:hover {
+  background: rgba(69, 152, 247, 0.08);
+}
+
+.appHeaderAlertSeverity,
+.appHeaderAlertsCount {
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.appHeaderAlertsCount {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #e84d61;
+}
+
+.appHeaderAlertSeverity {
+  padding: 2px 6px;
+  letter-spacing: 0.06em;
+}
+
+.appHeaderAlertSeverity-critical {
+  color: #ffc7ce;
+  background: rgba(222, 63, 82, 0.18);
+}
+
+.appHeaderAlertSeverity-warning {
+  color: #f8d99d;
+  background: rgba(211, 139, 31, 0.16);
+}
+
+.appHeaderAlertTime,
+.appHeaderAlertMessage,
+.appHeaderMenuState,
+.appHeaderUserPanelSubtext,
+.appHeaderWalletPanelLabel {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.appHeaderAlertTitle,
+.appHeaderUserPanelName {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.appHeaderAlertMessage {
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.appHeaderMenuFooterLink {
+  justify-content: center;
+  color: var(--color-accent);
+  font-weight: 650;
+}
+
+.appHeaderUserPanelHeader {
+  padding: 6px 7px 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--app-shell-line);
+}
+
+.appHeaderUserPanelText,
+.appHeaderWalletPanelValue {
+  min-width: 0;
+}
+
+.appHeaderWalletPanelMeta {
+  display: grid;
+  gap: 4px;
+  padding: 7px 9px;
+}
+
+.appHeaderWalletPanelValueRow {
+  align-items: flex-start;
+}
+
+.appHeaderWalletPanelValue {
+  flex: 1;
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.appHeaderWalletCopyButton {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.appBreadcrumbs {
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid rgba(137, 165, 198, 0.09);
+  background: rgba(7, 18, 31, 0.44);
+}
+
+.appBreadcrumbsInner {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.appBreadcrumbsList,
+.appBreadcrumbsItem {
+  display: flex;
+  align-items: center;
+}
+
+.appBreadcrumbsList {
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.appBreadcrumbsList::-webkit-scrollbar {
+  display: none;
+}
+
+.appBreadcrumbsItem {
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.appBreadcrumbsItemCurrent {
+  max-width: min(52vw, 420px);
+}
+
+.appBreadcrumbsLink,
+.appBreadcrumbsCurrent {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.appBreadcrumbsLink:hover {
+  color: var(--text);
+  background: transparent;
+}
+
+.appBreadcrumbsCurrent {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.appBreadcrumbsIcon,
+.appBreadcrumbsIconHome {
+  width: 17px;
+  min-width: 17px;
+  height: 17px;
+  border: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  color: currentColor;
+}
+
+.appBreadcrumbsIcon svg,
+.appBreadcrumbsIconHome svg {
+  width: 13px;
+  height: 13px;
+}
+
+.appBreadcrumbsSeparator {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(155, 174, 199, 0.42);
+}
+
+.appBreadcrumbsSeparator svg {
+  width: 11px;
+  height: 11px;
+}
+
+.appBreadcrumbsLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appMain {
+  flex: 1 0 auto;
+  width: 100%;
+  padding-top: 24px;
+  padding-bottom: 64px;
+  animation: appShellContentEnter 280ms ease-out both;
+}
+
+.appSidebar {
+  position: sticky;
+  top: 0;
+  width: var(--app-sidebar-width);
+  min-width: var(--app-sidebar-width);
+  height: 100dvh;
+  padding: 16px 10px 14px;
+  border-right: 1px solid rgba(137, 165, 198, 0.14);
+  background: linear-gradient(180deg, rgba(5, 16, 29, 0.99), rgba(5, 13, 24, 0.99));
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.015);
+  overflow-anchor: none;
+}
+
+.appSidebarInner {
+  height: 100%;
+  padding-right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.appSidebarTop {
+  min-height: 38px;
+  padding: 0 8px 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.appSidebarLogo {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.appSidebarLogoMark {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  object-fit: contain;
+  object-position: center;
+}
+
+.appSidebarBrandCopy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.appSidebarBrandName {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.appSidebarLogoText {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.appSidebarClose {
+  display: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(137, 165, 198, 0.18);
+  border-radius: 10px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.appSidebarSection {
+  display: grid;
+  gap: 5px;
+}
+
+.appSidebarSectionTitle {
+  padding: 0 10px;
+  color: rgba(139, 170, 205, 0.78);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.appSidebarNav {
+  display: grid;
+  gap: 2px;
+}
+
+.appSidebarLink {
+  position: relative;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  box-shadow: none;
+  color: rgba(205, 219, 237, 0.82);
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.appSidebarLinkIcon {
+  width: 21px;
+  min-width: 21px;
+  height: 21px;
+  border: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(155, 179, 208, 0.84);
+  transition: color 140ms ease, transform 140ms ease;
+}
+
+.appSidebarGlyph {
+  width: 15px;
+  height: 15px;
+}
+
+.appSidebarLinkLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appSidebarLink:hover {
+  background: rgba(255, 255, 255, 0.038);
+  color: #fff;
+  transform: translateX(1px);
+}
+
+.appSidebarLink:hover .appSidebarLinkIcon {
+  color: #dcecff;
+  transform: translateX(1px);
+}
+
+.appSidebarLinkActive {
+  background: linear-gradient(90deg, rgba(69, 152, 247, 0.17), rgba(69, 152, 247, 0.07));
+  color: #fff;
+  font-weight: 700;
+}
+
+.appSidebarLinkActive::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 3px;
+  background: #48a5ff;
+  box-shadow: 0 0 12px rgba(72, 165, 255, 0.46);
+  transform-origin: center;
+  animation: appShellActiveRail 180ms ease-out both;
+}
+
+.appSidebarLinkActive .appSidebarLinkIcon {
+  color: #66b4ff;
+}
+
+.appSidebarSnapshot {
+  margin-top: 2px;
+  padding: 10px;
+  border: 1px solid rgba(137, 165, 198, 0.13);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.018);
+  box-shadow: none;
+}
+
+.appSidebarSnapshotGrid {
+  display: grid;
+  gap: 0;
+}
+
+.appSidebarSnapshotItem {
+  min-height: 34px;
+  padding: 6px 2px;
+  border: 0;
+  border-bottom: 1px solid rgba(137, 165, 198, 0.08);
+  border-radius: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.appSidebarSnapshotItem:last-child {
+  border-bottom: 0;
+}
+
+.appSidebarSnapshotLabel {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.appSidebarSnapshotValue {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.appSidebarFooter {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.appSidebarLogoutButton {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+}
+
+.appSidebarLogoutButton:hover:not(:disabled) {
+  background: rgba(205, 66, 83, 0.1);
+  color: #ffc3cb;
+}
+
+.appBurger {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(137, 165, 198, 0.16);
+  border-radius: 10px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.appBurger svg {
+  width: 19px;
+  height: 19px;
+}
+
+.appSidebarBackdrop {
+  display: none;
+  overflow-anchor: none;
+}
+
+.appSidebarLink:focus-visible,
+.appSidebarLogo:focus-visible,
+.appSidebarClose:focus-visible,
+.appBurger:focus-visible,
+.appSidebarBackdrop:focus-visible,
+.appHeaderPillButton:focus-visible,
+.appHeaderIconButton:focus-visible,
+.appHeaderWalletTrigger:focus-visible,
+.appHeaderUserTrigger:focus-visible,
+.appBreadcrumbsLink:focus-visible,
+.appHeaderSearchSubmit:focus-visible,
+.appHeaderMenuLink:focus-visible,
+.appHeaderMenuFooterLink:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (min-width: 1000px) {
+  .appBurgerVisible,
+  .appSidebarBackdrop {
+    display: none !important;
+  }
+
+  .appFooter {
+    margin-left: var(--app-sidebar-width);
+  }
+}
+
+@media (max-width: 999px) {
+  .appShellWithSidebar {
+    display: block;
+  }
+
+  .appHeaderCompact .appHeaderInner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px 12px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+
+  .appHeaderMobileStart {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .appHeaderCompact .appHeaderMobileLogo {
+    min-width: 0;
+    display: inline-flex;
+  }
+
+  .appHeaderCompact .appHeaderMobileLogo .appLogoMark {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+  }
+
+  .appHeaderBrandName {
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 760;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  .appHeaderCompact .appBurgerVisible {
+    display: inline-flex;
+  }
+
+  .appHeaderSearch {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .appHeaderToolbar {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 5px;
+  }
+
+  .appHeaderUserTriggerName {
+    max-width: 86px;
+  }
+
+  .appSidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    width: min(296px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    min-width: 0;
+    padding: 14px 9px 12px;
+    transform: translateX(-105%);
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    box-shadow: 20px 0 60px rgba(0, 6, 18, 0.44);
+  }
+
+  .appSidebarDrawer {
+    transform: translateX(0);
+  }
+
+  .appSidebarClose {
+    display: inline-flex;
+  }
+
+  .appSidebarBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: block;
+    padding: 0;
+    border: 0;
+    background: rgba(1, 8, 18, 0.68);
+    opacity: 0;
+    pointer-events: none;
+    backdrop-filter: blur(3px);
+    transition: opacity 180ms ease;
+  }
+
+  .appSidebarBackdropOpen {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .appMain {
+    padding-top: 20px;
+  }
+}
+
+@media (max-width: 700px) {
+  .container {
+    padding-inline: 14px;
+  }
+
+  .appHeaderPillButton,
+  .appHeaderWalletTrigger,
+  .appHeaderUserTrigger,
+  .appHeaderStatusPill {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .appHeaderLanguageCode,
+  .appHeaderPillButton .appHeaderChevron,
+  .appHeaderWalletTriggerLabel,
+  .appHeaderWalletTrigger .appHeaderChevron,
+  .appHeaderUserTriggerMeta,
+  .appHeaderUserTrigger .appHeaderChevron,
+  .appHeaderStatusPill > span:last-child {
+    display: none;
+  }
+
+  .appHeaderSearchSubmit {
+    min-width: 30px;
+    width: 30px;
+    padding: 0;
+  }
+
+  .appHeaderSearchShortcut {
+    display: none;
+  }
+
+  .appHeaderSearchSubmitIcon {
+    display: inline-flex;
+  }
+
+  .appHeaderSearchInput {
+    padding-right: 43px;
+  }
+
+  .appBreadcrumbsInner {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+
+  .appBreadcrumbsItemMobileHidden {
+    display: none;
+  }
+
+  .appBreadcrumbsMobileEllipsis {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-text-muted);
+    font-size: 13px;
+  }
+
+  .appBreadcrumbsItemCurrent {
+    max-width: min(70vw, 270px);
+  }
+
+  .appHeaderMenuPanel,
+  .appHeaderAlertsPanel,
+  .appHeaderUserPanel,
+  .appHeaderWalletPanel,
+  .appHeaderMenuPanelCompact {
+    position: fixed;
+    top: 108px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: calc(100dvh - 120px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .appHeaderSearchResults {
+    max-height: calc(100dvh - 124px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .appMain {
+    padding-bottom: 48px;
+  }
+}
+
+@media (max-width: 430px) {
+  .appHeaderBrandName {
+    display: none;
+  }
+}
+
+@media (max-width: 359px) {
+  .container {
+    padding-inline: 10px;
+  }
+
+  .appHeaderCompact .appHeaderInner {
+    gap: 8px;
+  }
+
+  .appHeaderMobileStart {
+    gap: 7px;
+  }
+
+  .appHeaderCompact .appHeaderMobileLogo .appLogoMark {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+  }
+
+  .appHeaderToolbar {
+    gap: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appMain,
+  .appHeaderMenuPanel,
+  .appHeaderSearchResults,
+  .appSidebarLinkActive::before {
+    animation: none;
+  }
+
+  .appSidebar,
+  .appSidebarBackdrop,
+  .appSidebarLink,
+  .appHeaderPillButton,
+  .appHeaderIconButton,
+  .appHeaderWalletTrigger,
+  .appHeaderUserTrigger,
+  .appHeaderSearchInput {
+    transition: none;
+  }
+
+  .appSidebarLink,
+  .appHeaderPillButton,
+  .appHeaderIconButton,
+  .appHeaderWalletTrigger,
+  .appHeaderUserTrigger {
+    transform: none !important;
+  }
+}
+
+/* Keep every breadcrumb tone within the flat app-shell language. */
+.appBreadcrumbsCurrent.appBreadcrumbsTone-settings,
+.appBreadcrumbsCurrent.appBreadcrumbsTone-admin {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-accent);
+}
+
+.appBreadcrumbsCurrent.appBreadcrumbsTone-settings .appBreadcrumbsIconCurrent,
+.appBreadcrumbsCurrent.appBreadcrumbsTone-admin .appBreadcrumbsIconCurrent {
+  background: transparent;
+  color: currentColor;
 }

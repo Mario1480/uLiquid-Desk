@@ -6,6 +6,244 @@
   --dashboard-widget-shadow: var(--ui-shadow);
 }
 
+/* Dashboard v2: structured command-center rhythm. */
+
+@keyframes dashboardWidgetEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dashboardPage {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboardPage .dashboardSectionAnchor {
+  scroll-margin-top: 108px;
+}
+
+.dashboardPage .dashboardHeader {
+  margin: 0;
+  padding: 0 2px 6px;
+  align-items: flex-end;
+}
+
+.dashboardHeaderCopy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.dashboardPage .dashboardHeaderCopy h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(28px, 2.4vw, 34px);
+  font-weight: 760;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+.dashboardHeaderCopy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.dashboardPage .dashboardBuilderActions {
+  padding: 0;
+  gap: 7px;
+}
+
+.dashboardPage .dashboardBuilderActions .btn {
+  min-height: 36px;
+  border-radius: 10px;
+  padding: 7px 11px;
+  box-shadow: none;
+}
+
+.dashboardPage .dashboardBuilderMeta {
+  margin-top: 2px;
+  border-left: 2px solid rgba(69, 152, 247, 0.54);
+  padding: 7px 10px;
+  background: rgba(69, 152, 247, 0.055);
+}
+
+.dashboardPage .dashboardWidgetDesktopGrid,
+.dashboardPage .dashboardWidgetMobileStack {
+  gap: 14px;
+}
+
+.dashboardPage .dashboardWidgetFrame,
+.dashboardPage .dashboardWidgetMobileItem {
+  animation: dashboardWidgetEnter 300ms ease-out both;
+}
+
+.dashboardPage .dashboardWidgetFrame:nth-child(2),
+.dashboardPage .dashboardWidgetMobileItem:nth-child(2) {
+  animation-delay: 35ms;
+}
+
+.dashboardPage .dashboardWidgetFrame:nth-child(3),
+.dashboardPage .dashboardWidgetMobileItem:nth-child(3) {
+  animation-delay: 70ms;
+}
+
+.dashboardPage .dashboardWidgetFrame:nth-child(4),
+.dashboardPage .dashboardWidgetMobileItem:nth-child(4) {
+  animation-delay: 105ms;
+}
+
+.dashboardPage .dashboardWidgetFrame:nth-child(n + 5),
+.dashboardPage .dashboardWidgetMobileItem:nth-child(n + 5) {
+  animation-delay: 130ms;
+}
+
+.dashboardPage .dashboardWidgetFrameBody > .card,
+.dashboardPage .dashboardWidgetFrameBody > .dashboardAccountsWidget,
+.dashboardPage .dashboardWidgetFrameBody > .dashboardAlertsCard,
+.dashboardPage .dashboardPerformanceProCard,
+.dashboardPage .dashboardOpenPositionsCard,
+.dashboardPage .dashboardBotOverviewCard,
+.dashboardPage .dashboardWalletCard,
+.dashboardPage .dashboardAffiliateProfitshareCard,
+.dashboardPage .dashboardLossAnalysisCard,
+.dashboardPage .dashboardCalendarProCard,
+.dashboardPage .dashboardNewsProCard {
+  border-color: rgba(137, 165, 198, 0.17);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(13, 27, 44, 0.95), rgba(9, 21, 35, 0.98));
+  box-shadow: 0 12px 28px rgba(0, 7, 18, 0.16);
+}
+
+.dashboardPage .dashboardPerformanceHead,
+.dashboardPage .dashboardOpenPositionsHead,
+.dashboardPage .dashboardBotOverviewHead,
+.dashboardPage .dashboardAffiliateProfitshareHead,
+.dashboardPage .dashboardCalendarProHead,
+.dashboardPage .dashboardNewsProHead {
+  border-bottom-color: rgba(137, 165, 198, 0.1);
+}
+
+.dashboardPage .dashboardPerformanceTab,
+.dashboardPage .dashboardLossScopeChip,
+.dashboardPage .dashboardPerformanceSummaryChip {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.dashboardPage .dashboardPerformanceTabActive {
+  border-color: rgba(72, 160, 255, 0.44);
+  background: rgba(69, 152, 247, 0.13);
+}
+
+.dashboardPage .dashboardOpenPositionsTable thead th {
+  background: rgba(4, 13, 24, 0.38);
+}
+
+.dashboardPage .dashboardOpenPositionsRow,
+.dashboardPage .dashboardBotOverviewItem,
+.dashboardPage .dashboardAlertItem,
+.dashboardPage .dashboardNewsProRow {
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.dashboardPage .dashboardOpenPositionsRow:hover,
+.dashboardPage .dashboardBotOverviewItem:hover,
+.dashboardPage .dashboardNewsProRow:hover {
+  background: rgba(69, 152, 247, 0.045);
+}
+
+.dashboardPage .dashboardWidgetFrameEditable {
+  border-color: rgba(72, 160, 255, 0.42);
+  border-radius: 15px;
+  background: rgba(69, 152, 247, 0.035);
+}
+
+@media (max-width: 700px) {
+  .dashboardPage {
+    gap: 12px;
+  }
+
+  .dashboardPage .dashboardHeader {
+    align-items: flex-start;
+    gap: 13px;
+    padding-bottom: 4px;
+  }
+
+  .dashboardPage .dashboardHeaderCopy h1 {
+    font-size: 30px;
+  }
+
+  .dashboardHeaderCopy p {
+    max-width: 34rem;
+    font-size: 13px;
+  }
+
+  .dashboardPage .dashboardBuilderActions {
+    width: 100%;
+  }
+
+  .dashboardPage .dashboardBuilderActions .btn {
+    min-height: 40px;
+  }
+
+  .dashboardPage .dashboardWidgetDesktopGrid,
+  .dashboardPage .dashboardWidgetMobileStack {
+    gap: 12px;
+  }
+
+  .dashboardPage .dashboardWidgetFrameBody > .card,
+  .dashboardPage .dashboardPerformanceProCard,
+  .dashboardPage .dashboardOpenPositionsCard,
+  .dashboardPage .dashboardBotOverviewCard,
+  .dashboardPage .dashboardWalletCard {
+    border-radius: 13px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dashboardPage .dashboardWidgetFrameBody > .card,
+  .dashboardPage .dashboardPerformanceProCard,
+  .dashboardPage .dashboardOpenPositionsCard,
+  .dashboardPage .dashboardBotOverviewCard,
+  .dashboardPage .dashboardWalletCard {
+    transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+
+  .dashboardPage .dashboardWidgetFrame:hover .dashboardWidgetFrameBody > .card,
+  .dashboardPage .dashboardWidgetFrame:hover .dashboardPerformanceProCard,
+  .dashboardPage .dashboardWidgetFrame:hover .dashboardOpenPositionsCard,
+  .dashboardPage .dashboardWidgetFrame:hover .dashboardBotOverviewCard,
+  .dashboardPage .dashboardWidgetFrame:hover .dashboardWalletCard {
+    border-color: rgba(72, 160, 255, 0.27);
+    box-shadow: 0 16px 34px rgba(0, 7, 18, 0.22);
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboardPage .dashboardWidgetFrame,
+  .dashboardPage .dashboardWidgetMobileItem {
+    animation: none;
+  }
+
+  .dashboardPage .dashboardWidgetFrameBody > .card,
+  .dashboardPage .dashboardPerformanceProCard,
+  .dashboardPage .dashboardOpenPositionsCard,
+  .dashboardPage .dashboardBotOverviewCard,
+  .dashboardPage .dashboardWalletCard {
+    transition: none;
+    transform: none !important;
+  }
+}
+
 .dashboardHeader {
   display: flex;
   justify-content: space-between;
@@ -4616,6 +4854,47 @@
   .dashboardLossAnalysisFooter .btn {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* Dashboard v2 cascade guard: legacy widget rules below must not reintroduce
+   nested cards or mixed panel treatments inside the redesigned app area. */
+.dashboardPage .card.dashboardFearGreedCard,
+.dashboardPage .card.dashboardUttCard,
+.dashboardPage .card.dashboardInsightCard,
+.dashboardPage .card.dashboardAlertsCard,
+.dashboardPage .card.exchangeOverviewCard,
+.dashboardPage .card.exchangeOverviewEmpty {
+  border-color: rgba(137, 165, 198, 0.17) !important;
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, rgba(13, 27, 44, 0.95), rgba(9, 21, 35, 0.98)) !important;
+  box-shadow: 0 12px 28px rgba(0, 7, 18, 0.16) !important;
+}
+
+.dashboardPage .dashboardPerformanceBody > .dashboardLossAnalysisCard {
+  padding: 0 0 0 14px;
+  border: 0;
+  border-left: 1px solid rgba(137, 165, 198, 0.13);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (max-width: 1000px) {
+  .dashboardPage .dashboardPerformanceBody > .dashboardLossAnalysisCard {
+    padding: 14px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(137, 165, 198, 0.13);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboardPage .dashboardWidgetFrameBody > .card,
+  .dashboardPage .dashboardPerformanceProCard,
+  .dashboardPage .dashboardOpenPositionsCard,
+  .dashboardPage .dashboardBotOverviewCard,
+  .dashboardPage .dashboardWalletCard {
+    transform: none !important;
   }
 }
 

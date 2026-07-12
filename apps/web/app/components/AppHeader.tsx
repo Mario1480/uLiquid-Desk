@@ -105,7 +105,6 @@ export default function AppHeader({
   onToggleSidebar: () => void;
 }) {
   const tNav = useTranslations("nav");
-  const tCommon = useTranslations("common");
   const tHeader = useTranslations("nav.header");
   const locale = useLocale() as AppLocale;
   const pathname = usePathname();
@@ -127,6 +126,7 @@ export default function AppHeader({
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const blurTimeoutRef = useRef<number | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const alertsMenuRef = useRef<HTMLDivElement | null>(null);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
@@ -254,7 +254,9 @@ export default function AppHeader({
       items.push({ key: "news", label: tNav("news"), href: withLocalePath("/news", locale) });
     }
 
+    items.push({ key: "accounts", label: tNav("accounts"), href: withLocalePath("/accounts", locale) });
     items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
+    items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
     if (hasPlatformAdminAccess && adminEnabled) {
       items.push({ key: "admin", label: tNav("admin"), href: withLocalePath("/admin", locale) });
@@ -310,9 +312,37 @@ export default function AppHeader({
   }, []);
 
   useEffect(() => {
+    const handleSearchShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        setOpenMenu(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleSearchShortcut);
+    return () => {
+      window.removeEventListener("keydown", handleSearchShortcut);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!openMenu) return;
 
     const refs = [languageMenuRef.current, alertsMenuRef.current, userMenuRef.current];
+    const activeMenuRef = openMenu === "language"
+      ? languageMenuRef.current
+      : openMenu === "alerts"
+        ? alertsMenuRef.current
+        : userMenuRef.current;
+    const activeTrigger = activeMenuRef?.querySelector<HTMLButtonElement>("button");
+    const focusFrame = window.requestAnimationFrame(() => {
+      const initialFocus = openMenu === "alerts"
+        ? activeMenuRef?.querySelector<HTMLElement>("[role='dialog']")
+        : activeMenuRef?.querySelector<HTMLElement>("[role='menuitem']");
+      initialFocus?.focus();
+    });
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
@@ -320,16 +350,37 @@ export default function AppHeader({
       if (!clickedInside) setOpenMenu(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenMenu(null);
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpenMenu(null);
+      activeTrigger?.focus();
     };
 
     window.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [openMenu]);
+
+  function handleMenuNavigation(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[role='menuitem']"));
+    if (items.length === 0) return;
+
+    event.preventDefault();
+    const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : event.key === "ArrowUp"
+          ? (currentIndex <= 0 ? items.length - 1 : currentIndex - 1)
+          : (currentIndex + 1) % items.length;
+    items[nextIndex]?.focus();
+  }
 
   function navigateToHref(href: string) {
     router.push(href);
@@ -417,10 +468,23 @@ export default function AppHeader({
   return (
     <header className="appHeader appHeaderCompact">
       <div className="container appHeaderInner">
-        <Link href={withLocalePath("/", locale)} className="appLogo appHeaderMobileLogo" aria-label="uLiquid Desk">
-          <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appLogoMark" />
-          <span className="appLogoText">{tCommon("betaLabel")}</span>
-        </Link>
+        <div className="appHeaderMobileStart">
+          <button
+            id="appSidebarToggle"
+            className="appBurger appBurgerVisible"
+            aria-label={tNav("toggleMenu")}
+            aria-expanded={sidebarOpen}
+            aria-controls="appSidebar"
+            onClick={onToggleSidebar}
+            type="button"
+          >
+            <AppIcon name={sidebarOpen ? "close" : "menu"} />
+          </button>
+          <Link href={withLocalePath("/", locale)} className="appLogo appHeaderMobileLogo" aria-label="uLiquid Desk">
+            <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appLogoMark" />
+            <span className="appHeaderBrandName">uLiquid</span>
+          </Link>
+        </div>
 
         <form className="appHeaderSearch" onSubmit={handleSubmit}>
           <div className="appHeaderSearchWrap">
@@ -428,6 +492,7 @@ export default function AppHeader({
               <AppIcon name="search" />
             </span>
             <input
+              ref={searchInputRef}
               className="input appHeaderSearchInput"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -457,7 +522,10 @@ export default function AppHeader({
               }
             />
             <button type="submit" className="appHeaderSearchSubmit" aria-label={tHeader("searchButton")}>
-              <AppIcon name="search" />
+              <span className="appHeaderSearchShortcut" aria-hidden="true">
+                <kbd>Ctrl/⌘</kbd><kbd>K</kbd>
+              </span>
+              <span className="appHeaderSearchSubmitIcon" aria-hidden="true"><AppIcon name="search" /></span>
             </button>
             {showSearchResults ? (
               <div id="appHeaderSearchResults" className="appHeaderSearchResults" role="listbox">
@@ -486,19 +554,6 @@ export default function AppHeader({
         </form>
 
         <div className="appHeaderToolbar">
-          <button
-            className="appBurger appBurgerVisible"
-            aria-label={tNav("toggleMenu")}
-            aria-expanded={sidebarOpen}
-            aria-controls="appSidebar"
-            onClick={onToggleSidebar}
-            type="button"
-          >
-            <span />
-            <span />
-            <span />
-          </button>
-
           <div ref={languageMenuRef} className="appHeaderMenuAnchor">
             <button
               type="button"
@@ -513,7 +568,11 @@ export default function AppHeader({
               <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
             </button>
             {openMenu === "language" ? (
-              <div className="appHeaderMenuPanel appHeaderMenuPanelCompact" role="menu">
+              <div
+                className="appHeaderMenuPanel appHeaderMenuPanelCompact"
+                role="menu"
+                onKeyDown={handleMenuNavigation}
+              >
                 {LANGUAGE_OPTIONS.map((option) => (
                   <button
                     key={option.locale}
@@ -550,7 +609,7 @@ export default function AppHeader({
               type="button"
               className={`appHeaderIconButton ${openMenu === "alerts" ? "appHeaderIconButtonOpen" : ""}`}
               onClick={() => setOpenMenu((current) => (current === "alerts" ? null : "alerts"))}
-              aria-haspopup="menu"
+              aria-haspopup="dialog"
               aria-expanded={openMenu === "alerts"}
               aria-label={tHeader("alertsMenu")}
             >
@@ -558,7 +617,12 @@ export default function AppHeader({
               {alertCount > 0 ? <span className="appHeaderBellBadge">{alertCount}</span> : null}
             </button>
             {openMenu === "alerts" ? (
-              <div className="appHeaderMenuPanel appHeaderAlertsPanel" role="menu">
+              <div
+                className="appHeaderMenuPanel appHeaderAlertsPanel"
+                role="dialog"
+                aria-label={tHeader("alerts.title")}
+                tabIndex={-1}
+              >
                 <div className="appHeaderMenuTitleRow">
                   <div className="appHeaderMenuTitle">{tHeader("alerts.title")}</div>
                   {alertCount > 0 ? <span className="appHeaderAlertsCount">{alertCount}</span> : null}
@@ -617,7 +681,11 @@ export default function AppHeader({
               <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
             </button>
             {openMenu === "user" ? (
-              <div className="appHeaderMenuPanel appHeaderUserPanel" role="menu">
+              <div
+                className="appHeaderMenuPanel appHeaderUserPanel"
+                role="menu"
+                onKeyDown={handleMenuNavigation}
+              >
                 <div className="appHeaderUserPanelHeader">
                   <span className="appHeaderAvatar appHeaderAvatarLarge" aria-hidden="true">{userInitials}</span>
                   <div className="appHeaderUserPanelText">

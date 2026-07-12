@@ -29,10 +29,14 @@ function WalletConnectionWidgetContent({
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const hasChainMismatch = isConnected && chainId !== TARGET_CHAIN_ID;
 
   useEffect(() => {
     if (!menuOpen) return;
+
+    const focusFrame = window.requestAnimationFrame(() => panelRef.current?.focus());
 
     function handlePointerDown(event: MouseEvent) {
       if (!anchorRef.current?.contains(event.target as Node)) {
@@ -43,12 +47,14 @@ function WalletConnectionWidgetContent({
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setMenuOpen(false);
+        triggerRef.current?.focus();
       }
     }
 
     window.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("keydown", handleEscape);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleEscape);
     };
@@ -118,6 +124,7 @@ function WalletConnectionWidgetContent({
   return (
     <div ref={anchorRef} className="appHeaderMenuAnchor">
       <button
+        ref={triggerRef}
         type="button"
         className={`appHeaderWalletTrigger ${
           isConnected
@@ -127,16 +134,26 @@ function WalletConnectionWidgetContent({
             : ""
         } ${menuOpen ? "appHeaderWalletTriggerOpen" : ""}`}
         title={buttonTitle}
+        aria-label={buttonLabel}
         onClick={() => void handlePrimaryAction()}
         disabled={isButtonDisabled}
-        aria-haspopup={isConnected ? "menu" : undefined}
-        aria-expanded={isConnected ? menuOpen : undefined}
+        aria-haspopup={isConnected && !hasChainMismatch ? "dialog" : undefined}
+        aria-expanded={isConnected && !hasChainMismatch ? menuOpen : undefined}
       >
+        <span className="appHeaderWalletIcon" aria-hidden="true"><AppIcon name="wallet" /></span>
         <span className="appHeaderWalletTriggerLabel">{buttonLabel}</span>
-        {isConnected ? <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span> : null}
+        {isConnected && !hasChainMismatch ? (
+          <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
+        ) : null}
       </button>
       {isConnected && menuOpen ? (
-        <div className="appHeaderMenuPanel appHeaderWalletPanel" role="menu">
+        <div
+          ref={panelRef}
+          className="appHeaderMenuPanel appHeaderWalletPanel"
+          role="dialog"
+          aria-label={tWallet("walletTitle")}
+          tabIndex={-1}
+        >
           <div className="appHeaderMenuTitleRow">
             <div className="appHeaderMenuTitle">{tWallet("walletTitle")}</div>
             <span className={`badge ${hasChainMismatch ? "badgeWarn" : "badgeOk"}`}>
@@ -181,7 +198,6 @@ function WalletConnectionWidgetContent({
               className="appHeaderMenuLink"
               onClick={() => void handleSwitchFromMenu()}
               disabled={isSwitchPending}
-              role="menuitem"
             >
               <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="switch" /></span>
               <span>{isSwitchPending ? tWallet("statusSwitching") : tWallet("switchToHyperEvm")}</span>
@@ -192,7 +208,6 @@ function WalletConnectionWidgetContent({
             className="appHeaderMenuLink appHeaderMenuLinkDanger"
             onClick={() => void handleDisconnect()}
             disabled={isDisconnectPending || isSwitchPending}
-            role="menuitem"
           >
             <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="logout" /></span>
             <span>{isDisconnectPending ? tWallet("statusDisconnecting") : tWallet("disconnect")}</span>

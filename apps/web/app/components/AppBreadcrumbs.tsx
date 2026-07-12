@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import {
   extractLocaleFromPathname,
   withLocalePath,
@@ -575,45 +575,49 @@ export default function AppBreadcrumbs() {
             const isFirst = index === 0;
             const hideOnMobile = items.length > 3 && index > 0 && index < items.length - 2;
             return (
-              <li
-                key={`${item.label}-${index}`}
-                className={`appBreadcrumbsItem ${hideOnMobile ? "appBreadcrumbsItemMobileHidden" : ""} ${isLast ? "appBreadcrumbsItemCurrent" : ""}`}
-              >
-                {item.href && !isLast ? (
-                  <Link
-                    href={item.href}
-                    className={`appBreadcrumbsLink appBreadcrumbsTone-${item.tone ?? "default"} ${isFirst ? "appBreadcrumbsLinkHome" : ""}`}
-                    aria-label={isFirst ? item.label : undefined}
-                    title={item.label}
-                  >
-                    <span
-                      className={`appBreadcrumbsIcon ${isFirst ? "appBreadcrumbsIconHome" : ""}`}
-                      aria-hidden="true"
+              <Fragment key={`${item.label}-${index}`}>
+                <li
+                  className={`appBreadcrumbsItem ${hideOnMobile ? "appBreadcrumbsItemMobileHidden" : ""} ${isLast ? "appBreadcrumbsItemCurrent" : ""}`}
+                >
+                  {item.href && !isLast ? (
+                    <Link
+                      href={item.href}
+                      className={`appBreadcrumbsLink appBreadcrumbsTone-${item.tone ?? "default"} ${isFirst ? "appBreadcrumbsLinkHome" : ""}`}
+                      aria-label={isFirst ? item.label : undefined}
+                      title={item.label}
                     >
-                      <AppIcon name={item.icon} />
-                    </span>
-                    {!isFirst ? <span className="appBreadcrumbsLabel">{item.label}</span> : null}
-                  </Link>
-                ) : (
-                  <span
-                    className={`appBreadcrumbsCurrent appBreadcrumbsTone-${item.tone ?? "default"} ${isFirst ? "appBreadcrumbsCurrentHome" : ""}`}
-                    aria-current="page"
-                  >
+                      <span
+                        className={`appBreadcrumbsIcon ${isFirst ? "appBreadcrumbsIconHome" : ""}`}
+                        aria-hidden="true"
+                      >
+                        <AppIcon name={item.icon} />
+                      </span>
+                      {!isFirst || isLast ? <span className="appBreadcrumbsLabel">{item.label}</span> : null}
+                    </Link>
+                  ) : (
                     <span
-                      className={`appBreadcrumbsIcon appBreadcrumbsIconCurrent ${isFirst ? "appBreadcrumbsIconHome" : ""}`}
-                      aria-hidden="true"
+                      className={`appBreadcrumbsCurrent appBreadcrumbsTone-${item.tone ?? "default"} ${isFirst ? "appBreadcrumbsCurrentHome" : ""}`}
+                      aria-current="page"
                     >
-                      <AppIcon name={item.icon} />
+                      <span
+                        className={`appBreadcrumbsIcon appBreadcrumbsIconCurrent ${isFirst ? "appBreadcrumbsIconHome" : ""}`}
+                        aria-hidden="true"
+                      >
+                        <AppIcon name={item.icon} />
+                      </span>
+                      {!isFirst || isLast ? <span className="appBreadcrumbsLabel">{item.label}</span> : null}
                     </span>
-                    {!isFirst ? <span className="appBreadcrumbsLabel">{item.label}</span> : null}
-                  </span>
-                )}
-                {!isLast ? (
-                  <span className="appBreadcrumbsSeparator" aria-hidden="true">
-                    {hideOnMobile ? "..." : <AppIcon name="chevronRight" />}
-                  </span>
+                  )}
+                  {!isLast ? (
+                    <span className="appBreadcrumbsSeparator" aria-hidden="true">
+                      <AppIcon name="chevronRight" />
+                    </span>
+                  ) : null}
+                </li>
+                {hideOnMobile && index === items.length - 3 ? (
+                  <li className="appBreadcrumbsMobileEllipsis" aria-hidden="true">…</li>
                 ) : null}
-              </li>
+              </Fragment>
             );
           })}
         </ol>
