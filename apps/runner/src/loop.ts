@@ -48,6 +48,7 @@ export type LoopDependencies = {
   writeBotTickFn?: typeof writeBotTick;
   writeRiskEventFn?: typeof writeRiskEvent;
   markExchangeAccountUsedFn?: typeof markExchangeAccountUsed;
+  getVaultSafetyControlsFn?: typeof getVaultSafetyControls;
   publishRiskNotificationFn?: (params: {
     bot: ActiveFuturesBot;
     type: RiskEventType;
@@ -224,6 +225,7 @@ export async function loopOnce(
   const writeBotTickFn = deps.writeBotTickFn ?? writeBotTick;
   const writeRiskEventFn = deps.writeRiskEventFn ?? writeRiskEvent;
   const markExchangeAccountUsedFn = deps.markExchangeAccountUsedFn ?? markExchangeAccountUsed;
+  const getVaultSafetyControlsFn = deps.getVaultSafetyControlsFn ?? getVaultSafetyControls;
   const publishRiskNotificationFn = deps.publishRiskNotificationFn ?? (() => undefined);
 
   const pluginModeActive = !deps.resolveSignalEngine && !deps.resolveExecutionMode;
@@ -573,7 +575,7 @@ export async function loopOnce(
     };
   }
 
-  const vaultSafetyControls = await getVaultSafetyControls();
+  const vaultSafetyControls = await getVaultSafetyControlsFn();
   if (shouldBlockNewOrderForSafety(bot, signalDecisionWithSource.legacyIntent, vaultSafetyControls)) {
     const executionReason = vaultSafetyControls.haltNewOrders
       ? "halt_new_orders_active"

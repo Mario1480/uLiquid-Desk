@@ -2,10 +2,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import ts from "typescript";
 
 const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const configPath = path.join(rootDir, "config", "any-budget.json");
-const ANY_PATTERN = /\bany\b/g;
 const SUPPRESSION_PATTERN = /@ts-(?:ignore|expect-error)/g;
 
 function readJson(filePath) {
@@ -28,6 +28,23 @@ function countMatches(text, pattern) {
   return text.match(pattern)?.length ?? 0;
 }
 
+function countAnyTypeNodes(filePath, source) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  let count = 0;
+  function visit(node) {
+    if (node.kind === ts.SyntaxKind.AnyKeyword) count += 1;
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return count;
+}
+
 const config = readJson(configPath);
 const failures = [];
 
@@ -39,7 +56,7 @@ for (const [name, budget] of Object.entries(config)) {
 
   for (const filePath of files) {
     const source = fs.readFileSync(filePath, "utf8");
-    anyCount += countMatches(source, ANY_PATTERN);
+    anyCount += countAnyTypeNodes(filePath, source);
     suppressionCount += countMatches(source, SUPPRESSION_PATTERN);
   }
 

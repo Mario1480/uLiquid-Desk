@@ -50,17 +50,47 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
       - name: Generate Prisma Client
         run: npx prisma generate
+
+      - name: Typecheck from clean checkout
+        run: npm run typecheck
 
       - name: Build
         run: npm run build
 
-      - name: Typecheck
-        run: npm run typecheck
-
       - name: API release hardening tests
         run: npm -w apps/api run test:release-hardening
+
+      - name: API auth tests
+        run: npm -w apps/api run test:auth
+
+      - name: API AI tests
+        run: npm -w apps/api run test:ai
+
+      - name: API vault tests
+        run: npm -w apps/api run test:vaults
+
+      - name: BotVault V4 smoke and transition tests
+        run: |
+          npm -w apps/api run test:botvault-grid-smoke
+          npm -w apps/api run test:botvault-v4-transitions
+
+      - name: Runner tests
+        run: npm -w apps/runner run test
+
+      - name: Web behavior and i18n tests
+        run: |
+          npm -w apps/web run test:prefill
+          npm -w apps/web run test:predictions-ui
+          npm -w apps/web run test:bots-ui
+          npm -w apps/web run test:api-base
+          npm -w apps/web run test:grid-catalog
+          npm -w apps/web run test:i18n-routing
+          npm -w apps/web run i18n:check
 
       - name: Capital-moving type debt budget
         run: npm run quality:any-budget

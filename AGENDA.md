@@ -1,10 +1,18 @@
 # uLiquid Desk Release Agenda
 
-Last updated: 2026-05-16
+Last updated: 2026-07-28
 
 This agenda tracks the review findings against the live repository. It is intentionally release-focused: new feature work should stay behind these gates until the canary path is repeatable.
 
 ## Review Alignment
+
+- [x] Retire normal BotVault V3 factory/reconciliation/treasury targeting after operator confirmation that no V3 vault remains open.
+- [x] Make the root typecheck independent of pre-existing workspace `dist` declarations.
+- [x] Make Runner `loopOnce` safety-control tests hermetic instead of reading Postgres.
+- [x] Replace the stale V3 close regression with current V4 close coverage.
+- [x] Expand Release Gates with API auth/AI/vault, BotVault V4, Runner, Web behavior, and i18n suites.
+- [x] Rebase the capital `any` ratchet on TypeScript AST nodes; reductions from the new baseline remain open work.
+- [x] Clear dependency advisories on Node 20 through compatible upgrades, deduplication, and scoped transitive overrides (`npm audit`: 0).
 
 - [x] Replace unordered root `npm -ws` build/typecheck with a topological workspace runner.
 - [x] Run Prisma Client generation as an explicit early root build/typecheck step.

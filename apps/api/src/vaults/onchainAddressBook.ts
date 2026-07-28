@@ -197,7 +197,7 @@ export function canResolveOnchainAddressBook(
 
 export function resolveAllOnchainAddressBooks(mode: VaultExecutionMode): OnchainAddressBook[] {
   const books: OnchainAddressBook[] = [];
-  for (const contractVersion of ["v1", "v2", "v3", "v4"] as const) {
+  for (const contractVersion of ["v1", "v2", "v4"] as const) {
     try {
       const next = resolveOnchainAddressBook({ mode, contractVersion });
       if (!books.some((entry) => entry.factoryAddress === next.factoryAddress)) {

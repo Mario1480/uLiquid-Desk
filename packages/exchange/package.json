@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@mm/core": "0.0.1",
-    "ws": "^8.18.0",
+    "ws": "^8.21.1",
     "ccxt": "^4.5.0"
   },
   "devDependencies": {

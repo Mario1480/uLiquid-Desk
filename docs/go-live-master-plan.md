@@ -1,6 +1,8 @@
 # Go-live Master Plan
 
-Stand: 2026-05-25
+Stand: 2026-07-28
+
+Lokaler Review-Nachtrag 2026-07-28: Die technische Remediation ist unter `docs/tasks/2026-07-28-project-review-remediation.md` dokumentiert. BotVault V3 ist nach Betreiberbestätigung aus der regulären Factory-/Treasury-/Reconciliation-Auswahl entfernt. Dieser lokale Nachtrag ersetzt keine noch offene Production-, Canary-, Alert- oder 24–48-h-Betriebsevidenz.
 
 ## Ziel
 

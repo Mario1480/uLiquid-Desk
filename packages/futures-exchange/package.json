@@ -7,8 +7,8 @@
   "dependencies": {
     "@mm/futures-core": "0.0.1",
     "hyperliquid": "^1.7.7",
-    "viem": "^2.39.5",
-    "ws": "^8.18.3"
+    "viem": "^2.55.10",
+    "ws": "^8.21.1"
   },
   "scripts": {
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",

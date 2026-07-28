@@ -89,7 +89,18 @@ test("loopOnce blocks when signal layer blocks and does not execute execution mo
     },
     markExchangeAccountUsedFn: async () => {
       markCalls += 1;
-    }
+    },
+    getVaultSafetyControlsFn: async () => ({
+      haltNewOrders: false,
+      depositsDisabled: false,
+      withdrawsDisabled: false,
+      gridStartsDisabled: false,
+      profitClaimsDisabled: false,
+      closeOnlyAllUserIds: [],
+      updatedByUserId: null,
+      updatedAt: null,
+      reason: null
+    })
   });
 
   assert.equal(result.outcome, "blocked");
@@ -176,7 +187,18 @@ test("loopOnce executes execution mode and emits split trace", async () => {
     },
     markExchangeAccountUsedFn: async () => {
       markCalls += 1;
-    }
+    },
+    getVaultSafetyControlsFn: async () => ({
+      haltNewOrders: false,
+      depositsDisabled: false,
+      withdrawsDisabled: false,
+      gridStartsDisabled: false,
+      profitClaimsDisabled: false,
+      closeOnlyAllUserIds: [],
+      updatedByUserId: null,
+      updatedAt: null,
+      reason: null
+    })
   });
 
   assert.equal(result.outcome, "ok");

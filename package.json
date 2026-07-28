@@ -11,7 +11,7 @@
     "build": "npm run build:node",
     "typecheck": "npm run typecheck:node",
     "build:node": "node ./scripts/run_workspace_ordered.mjs build --skip @mm/contracts --prisma-generate",
-    "typecheck:node": "node ./scripts/run_workspace_ordered.mjs typecheck --skip @mm/contracts --prisma-generate",
+    "typecheck:node": "node ./scripts/run_workspace_ordered.mjs typecheck --skip @mm/contracts --prisma-generate --build-packages",
     "build:all": "npm run build:node && npm run contracts:build",
     "typecheck:all": "npm run typecheck:node && npm -w packages/contracts run typecheck",
     "quality:any-budget": "node ./scripts/check_any_budget.mjs",
@@ -40,20 +40,36 @@
     "node": ">=20.9.0 <21"
   },
   "devDependencies": {
-    "@base-org/account": "^2.5.2",
+    "@base-org/account": "2.5.2",
     "@prisma/client": "^6.19.1",
     "@types/node": "^22.19.7",
     "@types/ws": "^8.18.1",
     "@wagmi/connectors": "^7.2.1",
     "@wagmi/core": "^3.4.0",
+    "next": "16.2.12",
     "porto": "^0.2.37",
     "prisma": "^6.0.0",
     "typescript": "^5.6.3",
     "wagmi": "^3.5.0"
   },
   "overrides": {
-    "axios": "1.15.2",
-    "postcss": "8.5.10"
+    "axios": "1.18.1",
+    "body-parser": "1.20.6",
+    "@coinbase/cdp-sdk": "1.48.2",
+    "form-data": "4.0.6",
+    "hono": "4.12.32",
+    "@nktkas/hyperliquid@0.32.2": {
+      "valibot": "1.4.2"
+    },
+    "next": {
+      "postcss": "8.5.24",
+      "sharp": "0.35.3"
+    },
+    "postcss": "8.5.24",
+    "qs": "6.15.3",
+    "sharp": "0.35.3",
+    "valibot": "1.4.2",
+    "ws": "8.21.1"
   },
   "packageManager": "npm@10.8.2"
 }

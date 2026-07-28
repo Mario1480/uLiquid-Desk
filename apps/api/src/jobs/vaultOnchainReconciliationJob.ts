@@ -77,7 +77,7 @@ export function shouldIncludeLegacyBotVaultsForReconciliation(env: NodeJS.Proces
   const raw = String(env.VAULT_ONCHAIN_RECONCILIATION_INCLUDE_LEGACY_BOT_VAULTS ?? "").trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(raw)) return true;
   if (["0", "false", "no", "off"].includes(raw)) return false;
-  return String(env.NODE_ENV ?? "").trim().toLowerCase() !== "production";
+  return false;
 }
 
 function buildBotVaultReconciliationWhere(): Record<string, unknown> {

@@ -20,11 +20,16 @@ Use this file as the per-release Go/No-Go evidence checklist. Keep completed cop
 |---|---|---:|---|
 | Node version | `node --version` must be Node 20.x |  |  |
 | Install | `npm ci` |  |  |
+| Dependency audit | `npm audit --audit-level=high` |  |  |
 | Prisma generate | `npx prisma generate` |  |  |
 | Prisma engine cache/offline policy | `docs/prisma-engine-cache-and-offline-builds.md` reviewed; cache hit/miss noted |  |  |
 | Root typecheck | `npm run typecheck` |  |  |
 | Root build | `npm run build` |  |  |
 | API release hardening tests | `npm -w apps/api run test:release-hardening` |  |  |
+| API auth/AI/vault tests | `npm -w apps/api run test:auth`; `test:ai`; `test:vaults` |  |  |
+| BotVault V4 smoke/transitions | `npm -w apps/api run test:botvault-grid-smoke`; `test:botvault-v4-transitions` |  |  |
+| Runner tests | `npm -w apps/runner run test` |  |  |
+| Web behavior/i18n tests | Web `test:*` release suites; `npm -w apps/web run i18n:check` |  |  |
 | Any budget | `npm run quality:any-budget` |  |  |
 | Type-safety ratchet | `docs/type-safety-strictness-plan.md` reviewed; budget decreases recorded |  |  |
 | Vendored charting checksum | `npm run quality:vendor-charting` |  |  |

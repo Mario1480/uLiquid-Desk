@@ -137,7 +137,7 @@ test("rankBotVaultForOnchainReconciliation prioritizes pending funding lifecycle
   assert.ok(rankBotVaultForOnchainReconciliation(running) < rankBotVaultForOnchainReconciliation(closed));
 });
 
-test("shouldIncludeLegacyBotVaultsForReconciliation excludes legacy rows by default in production", () => {
+test("shouldIncludeLegacyBotVaultsForReconciliation excludes retired v3 rows by default", () => {
   assert.equal(shouldIncludeLegacyBotVaultsForReconciliation({
     NODE_ENV: "production"
   } as NodeJS.ProcessEnv), false);
@@ -147,7 +147,7 @@ test("shouldIncludeLegacyBotVaultsForReconciliation excludes legacy rows by defa
   } as NodeJS.ProcessEnv), true);
   assert.equal(shouldIncludeLegacyBotVaultsForReconciliation({
     NODE_ENV: "test"
-  } as NodeJS.ProcessEnv), true);
+  } as NodeJS.ProcessEnv), false);
 });
 
 test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async () => {

@@ -26,7 +26,7 @@ async function loadRootEnv() {
 function usage() {
   console.error(
     [
-      "Usage: node scripts/run_workspace_ordered.mjs <script> [--skip <package>] [--prisma-generate] [--dry-run]",
+      "Usage: node scripts/run_workspace_ordered.mjs <script> [--skip <package>] [--prisma-generate] [--build-packages] [--dry-run]",
       "",
       "Runs an npm workspace script in dependency order for the configured root workspaces."
     ].join("\n")
@@ -76,6 +76,7 @@ function run(command, args) {
 const args = process.argv.slice(2);
 let scriptName = "";
 let prismaGenerate = false;
+let buildPackages = false;
 let dryRun = false;
 const skipped = new Set();
 
@@ -87,6 +88,10 @@ for (let index = 0; index < args.length; index += 1) {
   }
   if (arg === "--prisma-generate") {
     prismaGenerate = true;
+    continue;
+  }
+  if (arg === "--build-packages") {
+    buildPackages = true;
     continue;
   }
   if (arg === "--dry-run") {
@@ -201,6 +206,17 @@ if (dryRun) {
 if (prismaGenerate) {
   console.log("[workspace-order] running prisma generate");
   run("npx", ["prisma", "generate"]);
+}
+
+if (buildPackages) {
+  const packagesToBuild = ordered.filter(
+    (workspace) => workspace.dir.startsWith("packages/") && workspace.pkg.scripts?.build
+  );
+  console.log(`[workspace-order] preparing package declarations: ${packagesToBuild.map((workspace) => workspace.name).join(" -> ")}`);
+  for (const workspace of packagesToBuild) {
+    console.log(`[workspace-order] npm --workspace ${workspace.dir} run build`);
+    run("npm", ["--workspace", workspace.dir, "run", "build"]);
+  }
 }
 
 for (const workspace of ordered) {

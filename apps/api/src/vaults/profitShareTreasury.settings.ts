@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from "viem";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
-import { resolveAllOnchainAddressBooks, resolveBotVaultV3AddressBook } from "./onchainAddressBook.js";
+import { resolveAllOnchainAddressBooks } from "./onchainAddressBook.js";
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import {
   createOnchainPublicClient,
@@ -92,14 +92,6 @@ async function readOnchainTreasuryState(db: any): Promise<{
   const mode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow" as const);
   if (!isOnchainMode(mode)) return { recipient: null, feeRatePct: null, factories: [] };
   const addressBooks = resolveAllOnchainAddressBooks(mode as any);
-  try {
-    const v3AddressBook = resolveBotVaultV3AddressBook(mode as any);
-    if (!addressBooks.some((entry) => entry.factoryAddress === v3AddressBook.factoryAddress)) {
-      addressBooks.push(v3AddressBook);
-    }
-  } catch {
-    // v3 factory not configured
-  }
   const factories = await Promise.all(
     addressBooks.map(async (addressBook) => {
       const client = createOnchainPublicClient(addressBook);
@@ -116,7 +108,7 @@ async function readOnchainTreasuryState(db: any): Promise<{
     })
   );
   const preferred =
-    factories.find((entry) => entry.contractVersion === "v3")
+    factories.find((entry) => entry.contractVersion === "v4")
     ?? factories.find((entry) => entry.contractVersion === "v2")
     ?? factories[0]
     ?? null;

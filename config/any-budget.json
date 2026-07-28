@@ -1,12 +1,12 @@
 {
   "api-vaults": {
     "paths": ["apps/api/src/vaults"],
-    "maxAny": 323,
+    "maxAny": 334,
     "maxSuppressions": 0
   },
   "api-grid": {
     "paths": ["apps/api/src/grid", "apps/api/src/routes/grid.ts", "apps/api/src/routes/vaults.ts"],
-    "maxAny": 188,
+    "maxAny": 199,
     "maxSuppressions": 0
   },
   "api-manual-trading": {
@@ -16,7 +16,7 @@
   },
   "runner": {
     "paths": ["apps/runner/src"],
-    "maxAny": 88,
+    "maxAny": 97,
     "maxSuppressions": 0
   },
   "futures-core": {

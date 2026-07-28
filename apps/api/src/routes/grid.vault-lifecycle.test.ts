@@ -512,7 +512,7 @@ test("POST /grid/instances/:id/end stays 200 and stops before close-only + close
   );
 });
 
-test("POST /grid/instances/:id/end stops execution before controller close for active bot_vault_v3", async () => {
+test("POST /grid/instances/:id/end persists an active v4 runtime stop before controller close", async () => {
   const app = createFakeApp();
   const base = createDeps();
   const controllerCalls: any[] = [];
@@ -527,7 +527,7 @@ test("POST /grid/instances/:id/end stops execution before controller close for a
               userId: "user_1",
               masterVaultId: "mv_1",
               gridInstanceId: "grid_1",
-              vaultModel: "bot_vault_v3",
+              vaultModel: "bot_vault_v4",
               principalAllocated: 100,
               principalReturned: 0,
               allocatedUsd: 100,
@@ -543,7 +543,10 @@ test("POST /grid/instances/:id/end stops execution before controller close for a
               executionLastSyncedAt: new Date("2026-03-08T09:00:00.000Z"),
               executionLastError: null,
               executionLastErrorAt: null,
-              executionMetadata: {},
+              executionMetadata: {
+                runtimeModel: "bot_vault_v4",
+                onchainContractVersion: "v4"
+              },
               status: "ACTIVE",
               updatedAt: new Date()
             }
@@ -555,12 +558,17 @@ test("POST /grid/instances/:id/end stops execution before controller close for a
       ...base.deps.vaultService,
       getBotVaultByGridInstance: async () => ({
         id: "bv_1",
-        vaultModel: "bot_vault_v3",
+        vaultModel: "bot_vault_v4",
+        contractVersion: "v4",
+        executionMetadata: {
+          runtimeModel: "bot_vault_v4",
+          onchainContractVersion: "v4"
+        },
         status: "ACTIVE"
       })
     },
-    botVaultV3Service: {
-      async controllerCloseBotVault(payload: any) {
+    botVaultRuntimeService: {
+      async closeBotVaultOnchain(payload: any) {
         controllerCalls.push(payload);
         return {};
       }
@@ -579,12 +587,12 @@ test("POST /grid/instances/:id/end stops execution before controller close for a
   assert.equal(res.body?.ok, true);
   assert.deepEqual(
     base.lifecycleCalls.map((entry) => entry.method),
-    ["stop"]
+    []
   );
   assert.deepEqual(controllerCalls, [{ userId: "user_1", botVaultId: "bv_1" }]);
 });
 
-test("POST /grid/instances/:id/end skips stop when bot_vault_v3 is already settling in close-only mode", async () => {
+test("POST /grid/instances/:id/end skips stop when v4 is already settling in close-only mode", async () => {
   const app = createFakeApp();
   const base = createDeps();
   const controllerCalls: any[] = [];
@@ -593,7 +601,12 @@ test("POST /grid/instances/:id/end skips stop when bot_vault_v3 is already settl
       ...base.deps.vaultService,
       getBotVaultByGridInstance: async () => ({
         id: "bv_1",
-        vaultModel: "bot_vault_v3",
+        vaultModel: "bot_vault_v4",
+        contractVersion: "v4",
+        executionMetadata: {
+          runtimeModel: "bot_vault_v4",
+          onchainContractVersion: "v4"
+        },
         status: "CLOSE_ONLY",
         lifecycle: {
           state: "settling",
@@ -601,8 +614,8 @@ test("POST /grid/instances/:id/end skips stop when bot_vault_v3 is already settl
         }
       })
     },
-    botVaultV3Service: {
-      async controllerCloseBotVault(payload: any) {
+    botVaultRuntimeService: {
+      async closeBotVaultOnchain(payload: any) {
         controllerCalls.push(payload);
         return {};
       }
