@@ -233,6 +233,7 @@ export default function AppHeader({
       { key: "dashboard", label: tNav("dashboard"), href: withLocalePath("/dashboard", locale) }
     ];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
+    const aiPredictionsEnabled = isProductFeatureAllowed(featureGates, "ai_predictions") || hasPlatformAdminAccess;
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     if (visibility.tradingDesk) {
@@ -246,6 +247,9 @@ export default function AppHeader({
     }
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
+    }
+    if (visibility.strategy && aiPredictionsEnabled) {
+      items.push({ key: "prediction-builder", label: tNav("predictionBuilder"), href: withLocalePath("/strategies", locale) });
     }
     if (visibility.economicCalendar) {
       items.push({ key: "calendar", label: tNav("calendar"), href: withLocalePath("/calendar", locale) });

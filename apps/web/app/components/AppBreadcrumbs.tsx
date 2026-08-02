@@ -92,6 +92,7 @@ export default function AppBreadcrumbs() {
       bots: { label: tNav("bots"), icon: "bots" as BreadcrumbIconKey },
       gridBots: { label: tNav("gridBots"), icon: "grid" as BreadcrumbIconKey },
       predictions: { label: tNav("predictions"), icon: "predictions" as BreadcrumbIconKey },
+      predictionBuilder: { label: tNav("predictionBuilder"), icon: "strategies" as BreadcrumbIconKey },
       calendar: { label: tNav("calendar"), icon: "calendar" as BreadcrumbIconKey },
       news: { label: tNav("news"), icon: "news" as BreadcrumbIconKey },
       accounts: { label: tNav("accounts"), icon: "accounts" as BreadcrumbIconKey },
@@ -196,6 +197,13 @@ export default function AppBreadcrumbs() {
       {
         test: /^\/predictions$/,
         items: [{ label: root.predictions.label, path: "/predictions", icon: root.predictions.icon }]
+      },
+      {
+        test: /^\/strategies$/,
+        items: [
+          { label: root.predictions.label, path: "/predictions", icon: root.predictions.icon },
+          { label: root.predictionBuilder.label, path: null, icon: root.predictionBuilder.icon }
+        ]
       },
       {
         test: /^\/calendar$/,

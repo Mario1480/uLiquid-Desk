@@ -224,6 +224,7 @@ export default function AppSidebar({
     const capitalItems: SidebarItem[] = [];
     const operationsItems: SidebarItem[] = [];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
+    const aiPredictionsEnabled = isProductFeatureAllowed(featureGates, "ai_predictions") || hasPlatformAdminAccess;
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     deskItems.push({
@@ -273,6 +274,16 @@ export default function AppSidebar({
         href: hrefFor("/predictions"),
         icon: "predictions",
         active: pathnameWithoutLocale.startsWith("/predictions")
+      });
+    }
+
+    if (visibility.strategy && aiPredictionsEnabled) {
+      automationItems.push({
+        key: "prediction-builder",
+        label: tNav("predictionBuilder"),
+        href: hrefFor("/strategies"),
+        icon: "strategies",
+        active: pathnameWithoutLocale.startsWith("/strategies")
       });
     }
 
