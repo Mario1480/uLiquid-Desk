@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
-import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../lib/api";
+import { ApiError, apiDelete, apiGet, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { AppIcon } from "../components/AppIcon";
 
@@ -48,20 +48,6 @@ type StrategyOwnPromptsResponse = {
   updatedAt: string | null;
 };
 
-type StrategyGenerateBody = {
-  name: string;
-  strategyDescription: string;
-  indicatorKeys: string[];
-  ohlcvBars: number;
-  timeframes: StrategyTimeframe[];
-  runTimeframe: StrategyTimeframe | null;
-  directionPreference: "long" | "short" | "either";
-  confidenceTargetPct: number;
-  slTpSource: "local" | "ai" | "hybrid";
-  newsRiskMode: "off" | "block";
-  promptMode: PromptMode;
-};
-
 type StrategyChatMessage = {
   id: string;
   role: "assistant" | "user";
@@ -70,10 +56,67 @@ type StrategyChatMessage = {
 
 type StrategyPromptBuilderChatResponse = {
   assistantMessage: string;
-  strategyDescription: string;
-  suggestedName: string | null;
+  toolCall: {
+    name: "create_template_draft" | "update_template_draft";
+    arguments: { draft: PredictionTemplateDraft };
+  };
+  proposedDraft: PredictionTemplateDraft;
+  diff: PredictionTemplateDraftChange[];
+  validation: PredictionTemplateDraftValidation;
   readyForPreview: boolean;
   generationMeta: StrategyPromptGenerationMeta;
+  safety: PredictionBuilderSafety;
+};
+
+type PredictionTemplateDraft = {
+  schemaVersion: "prediction-template-draft/v1";
+  draftId: string;
+  revision: number;
+  name: string;
+  analysisGoal: string;
+  promptMode: PromptMode;
+  timeframes: StrategyTimeframe[];
+  runTimeframe: StrategyTimeframe | null;
+  horizon: { value: number; unit: "minutes" | "hours" | "days" };
+  indicatorKeys: string[];
+  directionRules: {
+    preference: "long" | "short" | "either";
+    long: string;
+    short: string;
+    noTrade: string;
+  };
+  priceLevels: {
+    entry: number | null;
+    invalidation: number | null;
+    targets: number[];
+  };
+  confidenceTargetPct: number;
+  ohlcvBars: number;
+  slTpSource: "local" | "ai" | "hybrid";
+  newsRiskMode: "off" | "block";
+};
+
+type PredictionTemplateDraftChange = { path: string; before: unknown; after: unknown };
+type PredictionTemplateDraftValidation = {
+  valid: boolean;
+  issues: Array<{ path: string; code: string; severity: "error" | "warning"; message: string }>;
+};
+type PredictionBuilderSafety = {
+  allowedTools: string[];
+  sideEffects: {
+    predictionCreated: false;
+    orderCreated: false;
+    positionModified: false;
+    copierConfigured: false;
+    copierActivated: false;
+  };
+};
+
+type PredictionDraftProposal = {
+  draft: PredictionTemplateDraft;
+  diff: PredictionTemplateDraftChange[];
+  validation: PredictionTemplateDraftValidation;
+  toolName: "create_template_draft" | "update_template_draft";
 };
 
 const STRATEGY_TIMEFRAME_OPTIONS = ["5m", "15m", "1h", "4h", "1d"] as const;
@@ -129,6 +172,20 @@ export default function StrategiesPage() {
   const [strategyChatInput, setStrategyChatInput] = useState("");
   const [strategyChatSending, setStrategyChatSending] = useState(false);
   const [strategyChatMeta, setStrategyChatMeta] = useState<StrategyPromptGenerationMeta | null>(null);
+  const [strategyDraftId] = useState(() => `prediction_draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  const [strategyDraftRevision, setStrategyDraftRevision] = useState(1);
+  const [strategyHorizonValue, setStrategyHorizonValue] = useState("4");
+  const [strategyHorizonUnit, setStrategyHorizonUnit] = useState<"minutes" | "hours" | "days">("hours");
+  const [strategyLongRule, setStrategyLongRule] = useState("");
+  const [strategyShortRule, setStrategyShortRule] = useState("");
+  const [strategyNoTradeRule, setStrategyNoTradeRule] = useState("");
+  const [strategyEntryLevel, setStrategyEntryLevel] = useState("");
+  const [strategyInvalidationLevel, setStrategyInvalidationLevel] = useState("");
+  const [strategyTargetLevels, setStrategyTargetLevels] = useState("");
+  const [strategyDraftProposal, setStrategyDraftProposal] = useState<PredictionDraftProposal | null>(null);
+  const [strategyDraftValidation, setStrategyDraftValidation] = useState<PredictionTemplateDraftValidation | null>(null);
+  const [strategyDraftHistory, setStrategyDraftHistory] = useState<PredictionTemplateDraft[]>([]);
+  const [strategyPreviewSafety, setStrategyPreviewSafety] = useState<PredictionBuilderSafety | null>(null);
 
   function toggleStrategyIndicator(key: string) {
     setStrategyIndicatorKeys((prev) =>
@@ -182,6 +239,103 @@ export default function StrategiesPage() {
     return out;
   }
 
+  function parseOptionalPrice(value: string): number | null {
+    const normalized = value.trim().replace(",", ".");
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  function buildPredictionTemplateDraft(): PredictionTemplateDraft {
+    const horizonValue = Number(strategyHorizonValue);
+    const confidenceTarget = Number(strategyConfidenceTargetPct);
+    const ohlcvBars = Number(strategyOhlcvBars);
+    return {
+      schemaVersion: "prediction-template-draft/v1",
+      draftId: strategyDraftId,
+      revision: strategyDraftRevision,
+      name: strategyName.trim(),
+      analysisGoal: strategyDescription.trim(),
+      promptMode: strategyPromptMode,
+      timeframes: strategyTimeframes,
+      runTimeframe: strategyTimeframes.length > 0
+        ? (strategyRunTimeframe || strategyTimeframes[0])
+        : null,
+      horizon: {
+        value: Number.isFinite(horizonValue) ? Math.max(1, Math.trunc(horizonValue)) : 4,
+        unit: strategyHorizonUnit
+      },
+      indicatorKeys: strategyIndicatorKeys,
+      directionRules: {
+        preference: strategyPromptMode === "market_analysis" ? "either" : strategyDirectionPreference,
+        long: strategyLongRule.trim(),
+        short: strategyShortRule.trim(),
+        noTrade: strategyNoTradeRule.trim()
+      },
+      priceLevels: {
+        entry: parseOptionalPrice(strategyEntryLevel),
+        invalidation: parseOptionalPrice(strategyInvalidationLevel),
+        targets: strategyTargetLevels
+          .split(/[;,\s]+/)
+          .map(parseOptionalPrice)
+          .filter((value): value is number => value !== null)
+          .slice(0, 5)
+      },
+      confidenceTargetPct: Number.isFinite(confidenceTarget) ? confidenceTarget : 60,
+      ohlcvBars: Number.isFinite(ohlcvBars) ? Math.trunc(ohlcvBars) : 100,
+      slTpSource: strategyPromptMode === "market_analysis" ? "local" : strategySlTpSource,
+      newsRiskMode: strategyPromptMode === "market_analysis" ? "off" : strategyNewsRiskMode
+    };
+  }
+
+  function applyPredictionTemplateDraft(draft: PredictionTemplateDraft, keepCurrent = true) {
+    if (keepCurrent) setStrategyDraftHistory((items) => [...items.slice(-9), buildPredictionTemplateDraft()]);
+    setStrategyDraftRevision(draft.revision);
+    setStrategyName(draft.name);
+    setStrategyDescription(draft.analysisGoal);
+    setStrategyPromptMode(draft.promptMode);
+    setStrategyTimeframes(normalizeStrategyTimeframes(draft.timeframes));
+    setStrategyRunTimeframe(draft.runTimeframe ?? "");
+    setStrategyHorizonValue(String(draft.horizon.value));
+    setStrategyHorizonUnit(draft.horizon.unit);
+    setStrategyIndicatorKeys(draft.indicatorKeys);
+    setStrategyDirectionPreference(draft.directionRules.preference);
+    setStrategyLongRule(draft.directionRules.long);
+    setStrategyShortRule(draft.directionRules.short);
+    setStrategyNoTradeRule(draft.directionRules.noTrade);
+    setStrategyEntryLevel(draft.priceLevels.entry === null ? "" : String(draft.priceLevels.entry));
+    setStrategyInvalidationLevel(draft.priceLevels.invalidation === null ? "" : String(draft.priceLevels.invalidation));
+    setStrategyTargetLevels(draft.priceLevels.targets.join(", "));
+    setStrategyConfidenceTargetPct(String(draft.confidenceTargetPct));
+    setStrategyOhlcvBars(String(draft.ohlcvBars));
+    setStrategySlTpSource(draft.slTpSource);
+    setStrategyNewsRiskMode(draft.newsRiskMode);
+  }
+
+  function acceptStrategyDraftProposal() {
+    if (!strategyDraftProposal) return;
+    applyPredictionTemplateDraft(strategyDraftProposal.draft);
+    setStrategyDraftValidation(strategyDraftProposal.validation);
+    setStrategyDraftProposal(null);
+    setNotice(tMain("strategy.builder.diffAccepted"));
+  }
+
+  function rejectStrategyDraftProposal() {
+    if (!strategyDraftProposal) return;
+    setStrategyDraftProposal(null);
+    setNotice(tMain("strategy.builder.diffRejected"));
+  }
+
+  function undoStrategyDraftChange() {
+    const previous = strategyDraftHistory.at(-1);
+    if (!previous) return;
+    setStrategyDraftHistory((items) => items.slice(0, -1));
+    applyPredictionTemplateDraft(previous, false);
+    setStrategyDraftValidation(null);
+    setStrategyDraftProposal(null);
+    setNotice(tMain("strategy.builder.undoDone"));
+  }
+
   function resetStrategyPromptEditor() {
     setStrategyEditingId(null);
     setStrategyName("");
@@ -198,6 +352,19 @@ export default function StrategiesPage() {
     setStrategyPreviewOpen(false);
     setStrategyPreviewPromptText("");
     setStrategyPreviewMeta(null);
+    setStrategyDraftRevision(1);
+    setStrategyHorizonValue("4");
+    setStrategyHorizonUnit("hours");
+    setStrategyLongRule("");
+    setStrategyShortRule("");
+    setStrategyNoTradeRule("");
+    setStrategyEntryLevel("");
+    setStrategyInvalidationLevel("");
+    setStrategyTargetLevels("");
+    setStrategyDraftProposal(null);
+    setStrategyDraftValidation(null);
+    setStrategyDraftHistory([]);
+    setStrategyPreviewSafety(null);
   }
 
   function editStrategyPrompt(item: StrategyPromptTemplate) {
@@ -223,6 +390,13 @@ export default function StrategiesPage() {
     setStrategyPreviewPromptText(item.promptText);
     setStrategyPreviewMeta(null);
     setStrategyPreviewOpen(false);
+    setStrategyDraftRevision(1);
+    setStrategyLongRule(mode === "market_analysis" ? item.promptText : `Apply the saved template's long conditions: ${item.name}`);
+    setStrategyShortRule(mode === "market_analysis" ? item.promptText : `Apply the saved template's short conditions: ${item.name}`);
+    setStrategyNoTradeRule("No trade when required data is missing, conflicting, or outside the saved template conditions.");
+    setStrategyDraftProposal(null);
+    setStrategyDraftValidation(null);
+    setStrategyDraftHistory([]);
     setStrategyLastSavedPromptText("");
     setStrategyLastSavedMeta(null);
     setError(null);
@@ -233,58 +407,6 @@ export default function StrategiesPage() {
     resetStrategyPromptEditor();
     setError(null);
     setNotice(tMain("strategy.messages.editCanceled"));
-  }
-
-  function buildStrategyGenerateBody(): StrategyGenerateBody | null {
-    setError(null);
-    setNotice(null);
-
-    const name = strategyName.trim();
-    const description = strategyDescription.trim();
-    if (!name) {
-      setError(tMain("strategy.messages.promptNameRequired"));
-      return null;
-    }
-    if (!description) {
-      setError(tMain("strategy.messages.strategyRequired"));
-      return null;
-    }
-    if (strategyTimeframes.length > 0 && !strategyRunTimeframe) {
-      setError(tMain("strategy.messages.runTimeframeRequired"));
-      return null;
-    }
-    if (strategyTimeframes.length > 0 && !strategyTimeframes.includes(strategyRunTimeframe as StrategyTimeframe)) {
-      setError(tMain("strategy.messages.runTimeframeMustBeInSet"));
-      return null;
-    }
-    const confidenceTarget = Number(strategyConfidenceTargetPct);
-    if (
-      strategyPromptMode === "trading_explainer"
-      && (!Number.isFinite(confidenceTarget) || confidenceTarget < 0 || confidenceTarget > 100)
-    ) {
-      setError(tMain("strategy.messages.confidenceRange"));
-      return null;
-    }
-    const ohlcvBars = Number(strategyOhlcvBars);
-    if (!Number.isFinite(ohlcvBars) || ohlcvBars < 20 || ohlcvBars > 500) {
-      setError(tMain("strategy.messages.ohlcvRange"));
-      return null;
-    }
-
-    const isMarketAnalysis = strategyPromptMode === "market_analysis";
-    return {
-      name,
-      strategyDescription: description,
-      indicatorKeys: strategyIndicatorKeys,
-      ohlcvBars: Math.trunc(ohlcvBars),
-      timeframes: strategyTimeframes,
-      runTimeframe: strategyTimeframes.length > 0 ? (strategyRunTimeframe || strategyTimeframes[0]) : null,
-      directionPreference: isMarketAnalysis ? "either" : strategyDirectionPreference,
-      confidenceTargetPct: isMarketAnalysis ? 60 : confidenceTarget,
-      slTpSource: isMarketAnalysis ? "local" : strategySlTpSource,
-      newsRiskMode: isMarketAnalysis ? "off" : strategyNewsRiskMode,
-      promptMode: strategyPromptMode
-    };
   }
 
   async function loadStrategyPrompts() {
@@ -304,16 +426,24 @@ export default function StrategiesPage() {
   }
 
   async function generateStrategyPreview() {
-    const body = buildStrategyGenerateBody();
-    if (!body) return;
+    const draft = buildPredictionTemplateDraft();
     setStrategyGenerating(true);
+    setError(null);
     try {
       const payload = await apiPost<{
+        state: "preview_result";
         generatedPromptText: string;
         generationMeta: StrategyPromptGenerationMeta;
-      }>("/settings/ai-prompts/own/generate-preview", body);
+        validation: PredictionTemplateDraftValidation;
+        safety: PredictionBuilderSafety;
+      }>("/settings/ai-prompts/own/builder/preview", {
+        toolName: "request_preview",
+        draft
+      });
       setStrategyPreviewPromptText(payload.generatedPromptText ?? "");
       setStrategyPreviewMeta(payload.generationMeta ?? null);
+      setStrategyDraftValidation(payload.validation ?? null);
+      setStrategyPreviewSafety(payload.safety ?? null);
       setStrategyPreviewOpen(true);
       setNotice(
         tMain("strategy.messages.previewGenerated", {
@@ -329,8 +459,7 @@ export default function StrategiesPage() {
   }
 
   async function saveStrategyFromPreview() {
-    const body = buildStrategyGenerateBody();
-    if (!body) return;
+    const draft = buildPredictionTemplateDraft();
     const promptText = strategyPreviewPromptText.trim();
     if (!promptText) {
       setError(tMain("strategy.messages.previewMissing"));
@@ -339,22 +468,28 @@ export default function StrategiesPage() {
     setStrategySaving(true);
     try {
       const requestBody = {
-        ...body,
+        draft,
+        templateId: strategyEditingId,
         generatedPromptText: promptText,
-        generationMeta: strategyPreviewMeta ?? undefined
+        generationMeta: strategyPreviewMeta ?? undefined,
+        confirmation: {
+          confirmed: true,
+          acknowledgedAnalysisOnly: true
+        }
       };
       const editingId = strategyEditingId;
-      const payload = editingId ? await apiPut<{
+      const payload = await apiPost<{
+        state: "saved_template" | "published_template";
         prompt: StrategyPromptTemplate;
         generatedPromptText: string;
         generationMeta: StrategyPromptGenerationMeta;
-      }>(`/settings/ai-prompts/own/${encodeURIComponent(editingId)}`, requestBody) : await apiPost<{
-        prompt: StrategyPromptTemplate;
-        generatedPromptText: string;
-        generationMeta: StrategyPromptGenerationMeta;
-      }>("/settings/ai-prompts/own/generate-save", requestBody);
+        validation: PredictionTemplateDraftValidation;
+        safety: PredictionBuilderSafety;
+      }>("/settings/ai-prompts/own/builder/save", requestBody);
       setStrategyLastSavedPromptText(payload.generatedPromptText ?? "");
       setStrategyLastSavedMeta(payload.generationMeta ?? null);
+      setStrategyDraftValidation(payload.validation ?? null);
+      setStrategyPreviewSafety(payload.safety ?? null);
       if (editingId) {
         resetStrategyPromptEditor();
       } else {
@@ -378,34 +513,7 @@ export default function StrategiesPage() {
 
   async function updateStrategyPromptFromEditor() {
     if (!strategyEditingId) return;
-    const body = buildStrategyGenerateBody();
-    if (!body) return;
-    const promptText = strategyPreviewPromptText.trim();
-    if (!promptText) {
-      setError(tMain("strategy.messages.promptTextRequired"));
-      return;
-    }
-    setStrategySaving(true);
-    try {
-      const payload = await apiPut<{
-        prompt: StrategyPromptTemplate;
-        generatedPromptText: string;
-        generationMeta: StrategyPromptGenerationMeta;
-      }>(`/settings/ai-prompts/own/${encodeURIComponent(strategyEditingId)}`, {
-        ...body,
-        generatedPromptText: promptText,
-        generationMeta: strategyPreviewMeta ?? undefined
-      });
-      setStrategyLastSavedPromptText(payload.generatedPromptText ?? payload.prompt?.promptText ?? "");
-      setStrategyLastSavedMeta(payload.generationMeta ?? null);
-      resetStrategyPromptEditor();
-      await loadStrategyPrompts();
-      setNotice(tMain("strategy.messages.updated"));
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setStrategySaving(false);
-    }
+    await generateStrategyPreview();
   }
 
   async function deleteStrategyPrompt(id: string) {
@@ -468,31 +576,6 @@ export default function StrategiesPage() {
     return nextDescription.slice(0, 8000).trim();
   }
 
-  function buildStrategyChatRequestBody(messages: StrategyChatMessage[]) {
-    const confidenceTarget = Number(strategyConfidenceTargetPct);
-    const ohlcvBars = Number(strategyOhlcvBars);
-    const isMarketAnalysis = strategyPromptMode === "market_analysis";
-    return {
-      messages: messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      })),
-      currentStrategyDescription: strategyDescription,
-      indicatorKeys: strategyIndicatorKeys,
-      ohlcvBars: Number.isFinite(ohlcvBars) ? Math.trunc(ohlcvBars) : 100,
-      timeframes: strategyTimeframes,
-      runTimeframe: strategyTimeframes.length > 0 ? (strategyRunTimeframe || strategyTimeframes[0]) : null,
-      directionPreference: isMarketAnalysis ? "either" : strategyDirectionPreference,
-      confidenceTargetPct: isMarketAnalysis
-        ? 60
-        : (Number.isFinite(confidenceTarget) ? confidenceTarget : 60),
-      slTpSource: isMarketAnalysis ? "local" : strategySlTpSource,
-      newsRiskMode: isMarketAnalysis ? "off" : strategyNewsRiskMode,
-      promptMode: strategyPromptMode,
-      locale
-    };
-  }
-
   async function submitStrategyChatMessage(raw?: string) {
     const text = trimStrategyChatText(raw ?? strategyChatInput);
     if (!text || strategyChatSending) return;
@@ -511,8 +594,12 @@ export default function StrategiesPage() {
 
     try {
       const payload = await apiPost<StrategyPromptBuilderChatResponse>(
-        "/settings/ai-prompts/own/chat",
-        buildStrategyChatRequestBody(nextMessages)
+        "/settings/ai-prompts/own/builder/chat",
+        {
+          messages: nextMessages.map((message) => ({ role: message.role, content: message.content })),
+          draft: buildPredictionTemplateDraft(),
+          locale
+        }
       );
       const assistantMessage: StrategyChatMessage = {
         id: makeStrategyChatMessageId(),
@@ -520,13 +607,16 @@ export default function StrategiesPage() {
         content: payload.assistantMessage || tMain("strategy.chat.replyReady")
       };
       setStrategyChatMessages([...nextMessages, assistantMessage]);
-      setStrategyDescription(payload.strategyDescription ?? buildStrategyDescriptionFromChat(nextMessages));
       setStrategyChatMeta(payload.generationMeta ?? null);
-      if (!strategyName.trim() && payload.suggestedName) {
-        setStrategyName(payload.suggestedName);
-      }
+      setStrategyDraftProposal({
+        draft: payload.proposedDraft,
+        diff: payload.diff,
+        validation: payload.validation,
+        toolName: payload.toolCall.name
+      });
+      setStrategyDraftValidation(payload.validation);
       if (payload.readyForPreview) {
-        setNotice(tMain("strategy.chat.readyForPreview"));
+        setNotice(tMain("strategy.builder.proposalReady"));
       }
     } catch (e) {
       const assistantMessage: StrategyChatMessage = {
@@ -535,7 +625,6 @@ export default function StrategiesPage() {
         content: tMain("strategy.chat.aiUnavailable")
       };
       setStrategyChatMessages([...nextMessages, assistantMessage]);
-      setStrategyDescription(buildStrategyDescriptionFromChat(nextMessages));
       setError(errMsg(e));
     } finally {
       setStrategyChatSending(false);
@@ -665,6 +754,20 @@ export default function StrategiesPage() {
               ) : null}
             </div>
 
+            <div className="settingsBuilderStateStrip" aria-label={tMain("strategy.builder.statesLabel")}>
+              <span className="badge">{tMain("strategy.builder.conversationDraft")}</span>
+              <span className="badge">{tMain("strategy.builder.structuredDraft")} · v1 r{strategyDraftRevision}</span>
+              <span className={`badge ${strategyPreviewOpen || strategyPreviewPromptText ? "badgeOk" : ""}`}>
+                {tMain("strategy.builder.previewResult")}
+              </span>
+              <span className={`badge ${strategyLastSavedPromptText || strategyEditingId ? "badgeOk" : ""}`}>
+                {tMain("strategy.builder.savedTemplate")}
+              </span>
+              {strategyPrompts.some((item) => item.isPublic) ? (
+                <span className="badge badgeOk">{tMain("strategy.builder.publishedTemplate")}</span>
+              ) : null}
+            </div>
+
             <div className="settingsPromptBuilder">
               <div className="settingsPromptChatPanel">
                 <div className="settingsPromptChatHeader">
@@ -755,6 +858,109 @@ export default function StrategiesPage() {
                   </button>
                 </div>
               </div>
+              <aside className="settingsPredictionDraftPanel">
+                <div className="settingsPromptChatHeader">
+                  <div>
+                    <div className="settingsInlineTitle">{tMain("strategy.builder.draftTitle")}</div>
+                    <div className="settingsMutedText">{tMain("strategy.builder.draftSubtitle")}</div>
+                  </div>
+                  <span className="badge">v1 · r{strategyDraftRevision}</span>
+                </div>
+
+                {strategyDraftProposal ? (
+                  <div className="settingsDraftDiff" aria-live="polite">
+                    <div className="settingsDraftDiffHeader">
+                      <strong>{tMain("strategy.builder.diffTitle")}</strong>
+                      <span className="badge">{strategyDraftProposal.toolName}</span>
+                    </div>
+                    {strategyDraftProposal.diff.length > 0 ? (
+                      <div className="settingsDraftDiffList">
+                        {strategyDraftProposal.diff.map((change) => (
+                          <div className="settingsDraftDiffRow" key={change.path}>
+                            <code>{change.path}</code>
+                            <span className="settingsDraftDiffBefore">{String(change.before ?? "—")}</span>
+                            <span aria-hidden="true">→</span>
+                            <span>{String(change.after ?? "—")}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : <div className="settingsMutedText">{tMain("strategy.builder.noDiff")}</div>}
+                    <div className="settingsPromptChatActions">
+                      <button className="btn btnPrimary" type="button" onClick={acceptStrategyDraftProposal}>
+                        <AppIcon name="check" />
+                        {tMain("strategy.builder.acceptDiff")}
+                      </button>
+                      <button className="btn" type="button" onClick={rejectStrategyDraftProposal}>
+                        <AppIcon name="cancel" />
+                        {tMain("strategy.builder.rejectDiff")}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="settingsTwoColGrid">
+                  <label className="settingsField">
+                    <span className="settingsFieldLabel">{tMain("strategy.builder.horizon")}</span>
+                    <input className="input" type="number" min={1} value={strategyHorizonValue} onChange={(event) => setStrategyHorizonValue(event.target.value)} />
+                  </label>
+                  <label className="settingsField">
+                    <span className="settingsFieldLabel">{tMain("strategy.builder.horizonUnit")}</span>
+                    <select className="input" value={strategyHorizonUnit} onChange={(event) => setStrategyHorizonUnit(event.target.value as "minutes" | "hours" | "days")}>
+                      <option value="minutes">{tMain("strategy.builder.minutes")}</option>
+                      <option value="hours">{tMain("strategy.builder.hours")}</option>
+                      <option value="days">{tMain("strategy.builder.days")}</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="settingsField">
+                  <span className="settingsFieldLabel">{tMain("strategy.builder.longRule")}</span>
+                  <textarea className="input" rows={2} maxLength={2000} value={strategyLongRule} onChange={(event) => setStrategyLongRule(event.target.value)} />
+                </label>
+                <label className="settingsField">
+                  <span className="settingsFieldLabel">{tMain("strategy.builder.shortRule")}</span>
+                  <textarea className="input" rows={2} maxLength={2000} value={strategyShortRule} onChange={(event) => setStrategyShortRule(event.target.value)} />
+                </label>
+                <label className="settingsField">
+                  <span className="settingsFieldLabel">{tMain("strategy.builder.noTradeRule")}</span>
+                  <textarea className="input" rows={2} maxLength={2000} value={strategyNoTradeRule} onChange={(event) => setStrategyNoTradeRule(event.target.value)} />
+                </label>
+                <div className="settingsThreeColGrid">
+                  <label className="settingsField">
+                    <span className="settingsFieldLabel">{tMain("strategy.builder.entryLevel")}</span>
+                    <input className="input" inputMode="decimal" value={strategyEntryLevel} onChange={(event) => setStrategyEntryLevel(event.target.value)} />
+                  </label>
+                  <label className="settingsField">
+                    <span className="settingsFieldLabel">{tMain("strategy.builder.invalidationLevel")}</span>
+                    <input className="input" inputMode="decimal" value={strategyInvalidationLevel} onChange={(event) => setStrategyInvalidationLevel(event.target.value)} />
+                  </label>
+                  <label className="settingsField">
+                    <span className="settingsFieldLabel">{tMain("strategy.builder.targetLevels")}</span>
+                    <input className="input" value={strategyTargetLevels} onChange={(event) => setStrategyTargetLevels(event.target.value)} placeholder="105, 110" />
+                  </label>
+                </div>
+
+                {strategyDraftValidation ? (
+                  <div className={strategyDraftValidation.valid ? "settingsDraftValidationOk" : "settingsDraftValidationError"}>
+                    <strong>{strategyDraftValidation.valid ? tMain("strategy.builder.validDraft") : tMain("strategy.builder.invalidDraft")}</strong>
+                    {strategyDraftValidation.issues.length > 0 ? (
+                      <ul>
+                        {strategyDraftValidation.issues.map((issue) => <li key={`${issue.path}-${issue.code}`}>{issue.message}</li>)}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="settingsPromptChatActions">
+                  <button className="btn" type="button" disabled={strategyDraftHistory.length === 0} onClick={undoStrategyDraftChange}>
+                    <AppIcon name="restore" />
+                    {tMain("strategy.builder.undo")}
+                  </button>
+                </div>
+                <div className="settingsBuilderSafetyNote">
+                  <AppIcon name="shield" />
+                  <span>{tMain("strategy.builder.safetyBoundary")}</span>
+                </div>
+              </aside>
             </div>
 
             <label className="settingsField">
@@ -995,6 +1201,14 @@ export default function StrategiesPage() {
                     : ""}
                 </div>
                 <textarea className="input" rows={12} readOnly value={strategyLastSavedPromptText} />
+                <div className="settingsBuilderSafetyNote">
+                  <AppIcon name="shield" />
+                  <span>{tMain("strategy.builder.savedWithoutCopier")}</span>
+                </div>
+                <Link className="btn" href={withLocalePath("/bots/new?review=1&strategy=prediction_copier", locale)}>
+                  <AppIcon name="external" />
+                  {tMain("strategy.builder.openCopierReview")}
+                </Link>
               </div>
             ) : null}
           </div>
@@ -1033,6 +1247,14 @@ export default function StrategiesPage() {
                 })
                 : tMain("strategy.previewHint", { mode: "fallback", model: "n/a" })}
             </div>
+            <div className="settingsBuilderSafetyNote">
+              <AppIcon name="shield" />
+              <span>
+                {strategyPreviewSafety
+                  ? tMain("strategy.builder.previewSafetyVerified")
+                  : tMain("strategy.builder.previewSafety")}
+              </span>
+            </div>
             <textarea
               className="input"
               rows={18}
@@ -1059,7 +1281,7 @@ export default function StrategiesPage() {
                 <AppIcon name="save" />
                 {strategySaving
                   ? tMain("strategy.previewSaving")
-                  : (strategyEditingId ? tMain("strategy.updatePrompt") : tMain("strategy.previewSave"))}
+                  : (strategyEditingId ? tMain("strategy.builder.confirmUpdate") : tMain("strategy.builder.confirmSave"))}
               </button>
             </div>
           </div>

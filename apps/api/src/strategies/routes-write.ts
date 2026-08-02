@@ -2,6 +2,14 @@ import express from "express";
 import { z } from "zod";
 import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { requireAuth } from "../auth.js";
+import {
+  buildPredictionTemplateStrategyDescription,
+  createPredictionTemplateDraft,
+  diffPredictionTemplateDraft,
+  inferPredictionTemplateDraft,
+  predictionBuilderSafetyEnvelope,
+  validatePredictionTemplateDraft
+} from "../ai/predictionTemplateDraft.js";
 
 const localStrategyIdParamSchema = z.object({
   id: z.string().trim().min(1)
@@ -14,6 +22,65 @@ const compositeStrategyIdParamSchema = z.object({
 const userAiPromptTemplateIdParamSchema = z.object({
   id: z.string().trim().min(1)
 });
+
+const predictionTemplateDraftSchema = z.object({
+  schemaVersion: z.literal("prediction-template-draft/v1"),
+  draftId: z.string().trim().min(1).max(120),
+  revision: z.number().int().min(1),
+  name: z.string().max(64),
+  analysisGoal: z.string().max(8000),
+  promptMode: z.enum(["trading_explainer", "market_analysis"]),
+  timeframes: z.array(z.enum(["5m", "15m", "1h", "4h", "1d"])).max(4),
+  runTimeframe: z.enum(["5m", "15m", "1h", "4h", "1d"]).nullable(),
+  horizon: z.object({
+    value: z.number().int().min(1).max(43_200),
+    unit: z.enum(["minutes", "hours", "days"])
+  }),
+  indicatorKeys: z.array(z.string().trim().min(1).max(120)).max(128),
+  directionRules: z.object({
+    preference: z.enum(["long", "short", "either"]),
+    long: z.string().max(2000),
+    short: z.string().max(2000),
+    noTrade: z.string().max(2000)
+  }),
+  priceLevels: z.object({
+    entry: z.number().positive().nullable(),
+    invalidation: z.number().positive().nullable(),
+    targets: z.array(z.number().positive()).max(5)
+  }),
+  confidenceTargetPct: z.number().min(0).max(100),
+  ohlcvBars: z.number().int().min(20).max(500),
+  slTpSource: z.enum(["local", "ai", "hybrid"]),
+  newsRiskMode: z.enum(["off", "block"])
+}).strict();
+
+const predictionBuilderChatSchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(["assistant", "user"]),
+    content: z.string().trim().min(1).max(2000)
+  })).min(1).max(24),
+  draft: predictionTemplateDraftSchema,
+  locale: z.enum(["de", "en"]).optional()
+}).strict();
+
+const predictionBuilderPreviewSchema = z.object({
+  toolName: z.literal("request_preview"),
+  draft: predictionTemplateDraftSchema
+}).strict();
+
+const predictionBuilderSaveSchema = z.object({
+  draft: predictionTemplateDraftSchema,
+  templateId: z.string().trim().min(1).max(160).nullable().optional(),
+  generatedPromptText: z.string().trim().min(1).max(8000),
+  generationMeta: z.object({
+    mode: z.enum(["ai", "fallback"]),
+    model: z.string().trim().min(1).max(120)
+  }).optional(),
+  confirmation: z.object({
+    confirmed: z.literal(true),
+    acknowledgedAnalysisOnly: z.literal(true)
+  }).strict()
+}).strict();
 
 export type RegisterStrategyWriteRoutesDeps = {
   db: any;
@@ -53,6 +120,7 @@ export type RegisterStrategyWriteRoutesDeps = {
     strategyDescription: string;
     suggestedName: string | null;
     readyForPreview: boolean;
+    draftPatch?: Record<string, unknown> | null;
     mode: "ai" | "fallback";
     model: string;
   }>;
@@ -439,6 +507,182 @@ export function registerStrategyWriteRoutes(
       systemMessage: preview.systemMessage,
       cacheKey: preview.cacheKey,
       userPayload: preview.userPayload
+    });
+  });
+
+  app.post("/settings/ai-prompts/own/builder/chat", requireAuth, async (req, res) => {
+    const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await deps.isStrategyFeatureEnabledForUser(user))) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    const parsed = predictionBuilderChatSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const currentDraft = createPredictionTemplateDraft(parsed.data.draft);
+    const availableIndicators = deps.getAiPromptIndicatorOptionsPublic()
+      .map((item: any) => ({
+        key: String(item.key ?? ""),
+        label: String(item.label ?? item.key ?? ""),
+        description: String(item.description ?? "")
+      }))
+      .filter((item: any) => item.key);
+    const selected = deps.resolveSelectedAiPromptIndicators(currentDraft.indicatorKeys);
+    if (selected.invalidKeys.length > 0) {
+      return res.status(400).json({
+        error: "invalid_indicator_keys",
+        details: { invalidKeys: selected.invalidKeys }
+      });
+    }
+
+    const chat = await deps.generatePromptBuilderChat({
+      messages: parsed.data.messages,
+      currentStrategyDescription: currentDraft.analysisGoal,
+      currentDraft,
+      availableIndicators,
+      selectedIndicators: selected.selectedIndicators,
+      timeframes: currentDraft.timeframes,
+      runTimeframe: currentDraft.runTimeframe,
+      promptMode: currentDraft.promptMode,
+      directionPreference: currentDraft.directionRules.preference,
+      confidenceTargetPct: currentDraft.confidenceTargetPct,
+      slTpSource: currentDraft.slTpSource,
+      newsRiskMode: currentDraft.newsRiskMode,
+      ohlcvBars: currentDraft.ohlcvBars,
+      locale: parsed.data.locale,
+      billingUserId: user.id
+    }).catch(() => null);
+
+    if (!chat) {
+      return res.status(500).json({ error: "chat_failed" });
+    }
+
+    const proposedDraft = inferPredictionTemplateDraft(
+      currentDraft,
+      parsed.data.messages,
+      availableIndicators,
+      chat.draftPatch
+    );
+    if (!proposedDraft.name && chat.suggestedName) proposedDraft.name = chat.suggestedName;
+    if (!proposedDraft.analysisGoal && chat.strategyDescription) proposedDraft.analysisGoal = chat.strategyDescription;
+    const validation = validatePredictionTemplateDraft(
+      proposedDraft,
+      availableIndicators.map((item: any) => item.key)
+    );
+    const safety = predictionBuilderSafetyEnvelope();
+
+    return res.json({
+      assistantMessage: chat.assistantMessage,
+      toolCall: {
+        name: currentDraft.revision <= 1 && !currentDraft.analysisGoal
+          ? "create_template_draft"
+          : "update_template_draft",
+        arguments: { draft: proposedDraft }
+      },
+      proposedDraft,
+      diff: diffPredictionTemplateDraft(currentDraft, proposedDraft),
+      validation,
+      readyForPreview: validation.valid,
+      generationMeta: { mode: chat.mode, model: chat.model },
+      safety
+    });
+  });
+
+  app.post("/settings/ai-prompts/own/builder/preview", requireAuth, async (req, res) => {
+    const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await deps.isStrategyFeatureEnabledForUser(user))) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    const parsed = predictionBuilderPreviewSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const draft = createPredictionTemplateDraft(parsed.data.draft);
+    const availableIndicatorKeys = deps.getAiPromptIndicatorOptionsPublic().map((item: any) => String(item.key ?? ""));
+    const validation = validatePredictionTemplateDraft(draft, availableIndicatorKeys);
+    if (!validation.valid) {
+      return res.status(422).json({ error: "draft_validation_failed", validation, safety: predictionBuilderSafetyEnvelope() });
+    }
+    const selected = deps.resolveSelectedAiPromptIndicators(draft.indicatorKeys);
+    if (selected.invalidKeys.length > 0) {
+      return res.status(400).json({ error: "invalid_indicator_keys", details: { invalidKeys: selected.invalidKeys } });
+    }
+    const generation = await deps.generateHybridPromptText({
+      strategyDescription: buildPredictionTemplateStrategyDescription(draft),
+      selectedIndicators: selected.selectedIndicators,
+      timeframes: draft.timeframes,
+      runTimeframe: draft.runTimeframe,
+      billingUserId: user.id
+    }).catch(() => null);
+    if (!generation) return res.status(500).json({ error: "generation_failed" });
+
+    return res.json({
+      state: "preview_result",
+      draftRevision: draft.revision,
+      generatedPromptText: generation.promptText,
+      generationMeta: { mode: generation.mode, model: generation.model },
+      validation,
+      safety: predictionBuilderSafetyEnvelope()
+    });
+  });
+
+  app.post("/settings/ai-prompts/own/builder/save", requireAuth, async (req, res) => {
+    const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await deps.isStrategyFeatureEnabledForUser(user))) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    const parsed = predictionBuilderSaveSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "save_confirmation_required",
+        details: parsed.error.flatten()
+      });
+    }
+    const draft = createPredictionTemplateDraft(parsed.data.draft);
+    const availableIndicatorKeys = deps.getAiPromptIndicatorOptionsPublic().map((item: any) => String(item.key ?? ""));
+    const validation = validatePredictionTemplateDraft(draft, availableIndicatorKeys);
+    if (!validation.valid) {
+      return res.status(422).json({ error: "draft_validation_failed", validation, safety: predictionBuilderSafetyEnvelope() });
+    }
+    const selected = deps.resolveSelectedAiPromptIndicators(draft.indicatorKeys);
+    if (selected.invalidKeys.length > 0) {
+      return res.status(400).json({ error: "invalid_indicator_keys", details: { invalidKeys: selected.invalidKeys } });
+    }
+
+    const templateInput = {
+      userId: user.id,
+      name: draft.name,
+      promptText: parsed.data.generatedPromptText,
+      indicatorKeys: selected.selectedIndicators.map((item: any) => item.key),
+      ohlcvBars: draft.ohlcvBars,
+      timeframes: draft.timeframes,
+      runTimeframe: draft.runTimeframe,
+      promptMode: draft.promptMode,
+      directionPreference: draft.directionRules.preference,
+      confidenceTargetPct: draft.confidenceTargetPct,
+      slTpSource: draft.slTpSource,
+      newsRiskMode: draft.newsRiskMode,
+      now: new Date()
+    };
+    const prompt = parsed.data.templateId
+      ? await deps.updateUserAiPromptTemplate(user.id, parsed.data.templateId, templateInput)
+      : await deps.createUserAiPromptTemplate(templateInput);
+    if (!prompt) return res.status(404).json({ error: "not_found" });
+
+    return res.json({
+      state: prompt.isPublic ? "published_template" : "saved_template",
+      prompt,
+      generatedPromptText: prompt.promptText,
+      generationMeta: parsed.data.generationMeta ?? { mode: "fallback", model: deps.getAiModel() },
+      validation,
+      safety: predictionBuilderSafetyEnvelope()
     });
   });
 

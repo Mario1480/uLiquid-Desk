@@ -808,7 +808,9 @@
 }
 .settingsPromptBuilder {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
   gap: 10px;
+  align-items: start;
 }
 .settingsPromptChatPanel {
   display: grid;
@@ -873,6 +875,92 @@
 .settingsPromptChatInput {
   min-height: 82px;
   resize: vertical;
+}
+.settingsBuilderStateStrip {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.settingsPredictionDraftPanel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: rgba(6, 14, 24, 0.72);
+}
+.settingsThreeColGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.settingsDraftDiff {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.08);
+}
+.settingsDraftDiffHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settingsDraftDiffList {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+.settingsDraftDiffRow {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.settingsDraftDiffBefore {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.settingsDraftValidationOk,
+.settingsDraftValidationError {
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.settingsDraftValidationOk {
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  background: rgba(16, 185, 129, 0.08);
+}
+.settingsDraftValidationError {
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+}
+.settingsDraftValidationOk ul,
+.settingsDraftValidationError ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.settingsBuilderSafetyNote {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settingsBuilderSafetyNote svg {
+  flex: 0 0 auto;
+  color: var(--color-accent);
 }
 .gridTemplateCreateLayout {
   display: grid;
@@ -1821,6 +1909,16 @@ a.settingsHubCard:focus-visible {
   }
   .settingsPromptChatBubble {
     width: 100%;
+  }
+  .settingsPromptBuilder,
+  .settingsThreeColGrid {
+    grid-template-columns: 1fr;
+  }
+  .settingsDraftDiffRow {
+    grid-template-columns: 1fr;
+  }
+  .settingsDraftDiffRow > span[aria-hidden="true"] {
+    display: none;
   }
   .settingsPromptChatInputRow {
     grid-template-columns: 1fr;

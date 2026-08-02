@@ -98,7 +98,12 @@ test("generatePromptBuilderChat parses AI JSON response", async () => {
       assistantMessage: "Klar, ich habe daraus einen strukturierten Brief erstellt.",
       strategyDescription: "Validate RSI pullbacks only when trend context and momentum agree.",
       suggestedName: "RSI Trend Pullback",
-      readyForPreview: true
+      readyForPreview: true,
+      draftPatch: {
+        name: "RSI Trend Pullback",
+        timeframes: ["15m"],
+        indicatorKeys: ["rsi"]
+      }
     })
   });
 
@@ -107,6 +112,11 @@ test("generatePromptBuilderChat parses AI JSON response", async () => {
   assert.equal(result.strategyDescription.includes("RSI pullbacks"), true);
   assert.equal(result.suggestedName, "RSI Trend Pullback");
   assert.equal(result.readyForPreview, true);
+  assert.deepEqual(result.draftPatch, {
+    name: "RSI Trend Pullback",
+    timeframes: ["15m"],
+    indicatorKeys: ["rsi"]
+  });
 });
 
 test("generatePromptBuilderChat falls back to deterministic brief when AI fails", async () => {
