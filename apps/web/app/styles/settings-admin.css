@@ -2138,6 +2138,53 @@ a.settingsHubCard:focus-visible {
   display: grid;
   gap: 18px;
 }
+
+.adminProviderToolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.adminProviderToolbar h2,
+.adminProviderToolbar p {
+  margin: 0;
+}
+
+.adminProviderToolbar p {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.adminProviderTableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.adminProviderTableWrap .adminTable {
+  min-width: 920px;
+}
+
+.adminProviderSubline {
+  display: block;
+  max-width: 360px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.adminProviderTableWrap select.input {
+  min-width: 150px;
+}
+
+@media (max-width: 720px) {
+  .adminProviderToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .adminShellContent .adminPageStack,
 .adminShellContent .settingsWrap {
   width: 100%;

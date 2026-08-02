@@ -14,7 +14,11 @@ const newsQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   fromTs: z.string().datetime({ offset: true }).optional(),
-  toTs: z.string().datetime({ offset: true }).optional()
+  toTs: z.string().datetime({ offset: true }).optional(),
+  categories: z.string().trim().max(300).optional(),
+  language: z.string().trim().max(16).optional(),
+  publisher: z.string().trim().max(120).optional(),
+  cursor: z.string().trim().max(191).optional()
 });
 
 export { newsQuerySchema };
@@ -60,7 +64,11 @@ export function registerNewsRoutes(app: Express, deps: { db: any }) {
         from: parsed.data.from ?? null,
         to: parsed.data.to ?? null,
         fromTs: parsed.data.fromTs ?? null,
-        toTs: parsed.data.toTs ?? null
+        toTs: parsed.data.toTs ?? null,
+        categories: parseSymbols(parsed.data.categories).map((entry) => entry.toLowerCase()),
+        language: parsed.data.language ?? null,
+        publisher: parsed.data.publisher ?? null,
+        cursor: parsed.data.cursor ?? null
       });
       return res.json(payload);
     } catch (error) {

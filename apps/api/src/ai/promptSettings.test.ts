@@ -12,6 +12,12 @@ test("filterFeatureSnapshotForAiPrompt keeps only selected indicators and contex
     emaSpread: 0.02,
     prefillExchange: "paper",
     meta: { indicatorSettingsHash: "abc" },
+    marketIntelligence: {
+      schemaVersion: "market-intelligence-context/v1",
+      degraded: true,
+      warnings: ["stale"],
+      facts: [{ id: "news_1", title: "Source-backed fact" }]
+    },
     ohlcvSeries: {
       timeframe: "15m",
       format: ["ts", "open", "high", "low", "close", "volume"],
@@ -78,6 +84,7 @@ test("filterFeatureSnapshotForAiPrompt keeps only selected indicators and contex
   assert.equal("emaSpread" in filtered, false);
   assert.equal(filtered.prefillExchange, "paper");
   assert.deepEqual(filtered.meta, { indicatorSettingsHash: "abc" });
+  assert.equal((filtered as any).marketIntelligence?.facts?.[0]?.id, "news_1");
   assert.equal((filtered as any).ohlcvSeries?.timeframe, "15m");
   assert.equal(Array.isArray((filtered as any).ohlcvSeries?.bars), true);
   assert.equal((filtered as any).historyContext?.summaries?.regime?.state, "trend");

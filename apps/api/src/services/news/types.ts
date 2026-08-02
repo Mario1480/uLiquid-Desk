@@ -3,7 +3,7 @@ export type NewsMode = "all" | NewsFeed;
 
 export type NewsItemNormalized = {
   id: string;
-  source: "fmp";
+  source: string;
   feed: NewsFeed;
   title: string;
   url: string;
@@ -16,7 +16,7 @@ export type NewsItemNormalized = {
 
 export type NewsItemView = {
   id: string;
-  source: "fmp";
+  source: string;
   feed: NewsFeed;
   title: string;
   url: string;
@@ -38,6 +38,10 @@ export type ListNewsParams = {
   to?: string | null;
   fromTs?: string | null;
   toTs?: string | null;
+  categories?: string[];
+  language?: string | null;
+  publisher?: string | null;
+  cursor?: string | null;
 };
 
 export type ListNewsResult = {
@@ -52,5 +56,14 @@ export type ListNewsResult = {
     searchQuery?: string;
     searchApplied?: boolean;
     searchFallback?: boolean;
+    degraded?: boolean;
+    stale?: boolean;
+    warnings?: string[];
+    providerStates?: Array<{
+      providerId: string;
+      state: string;
+      message?: string;
+    }>;
+    nextCursor?: string;
   };
 };

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>ECB sample</title>
+  <entry>
+    <id>ecb-fixture-1</id>
+    <title>ECB announces monetary policy decisions</title>
+    <link rel="alternate" href="https://www.ecb.europa.eu/press/pr/date/2026/html/ecb.mp260801~fixture.en.html" />
+    <summary>Interest-rate and monetary-policy decision.</summary>
+    <updated>2026-08-01T12:15:00Z</updated>
+  </entry>
+</feed>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Federal Reserve sample</title>
+    <item>
+      <guid>fed-fixture-1</guid>
+      <title>Federal Reserve publishes monetary policy statement</title>
+      <link>https://www.federalreserve.gov/newsevents/pressreleases/monetary20260801a.htm?utm_source=fixture</link>
+      <description><![CDATA[Policy statement &amp; supporting materials. <script>alert(1)</script>]]></description>
+      <pubDate>Sat, 01 Aug 2026 18:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

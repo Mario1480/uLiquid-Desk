@@ -1,6 +1,8 @@
+import { getMarketIntelligenceService } from "../services/marketIntelligence/service.js";
+
 type ExternalHealthState = "healthy" | "unhealthy" | "skipped";
 
-export type ExternalHealthCheckId = "ai" | "saladRuntime" | "fmp";
+export type ExternalHealthCheckId = "ai" | "saladRuntime" | "marketIntelligence" | "fmp";
 
 export type ExternalHealthCheckResult = {
   id: ExternalHealthCheckId;
@@ -56,6 +58,15 @@ export type SaladRuntimeHealthCheckResponse = {
 export type ExternalHealthSnapshot = {
   ai: AiHealthCheckResponse;
   saladRuntime: SaladRuntimeHealthCheckResponse;
+  marketIntelligence: {
+    ok: boolean;
+    status: "ok" | "degraded" | "unavailable" | "disabled";
+    state: ExternalHealthState;
+    source: string;
+    checkedAt: string;
+    message: string;
+    details: Record<string, unknown>;
+  };
   fmp: FmpHealthCheckResponse;
 };
 
@@ -368,6 +379,16 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
   }
 
   async function checkFmp(): Promise<FmpHealthCheckResponse> {
+    if (["0", "false", "off", "no"].includes(String(process.env.FMP_LEGACY_ENABLED ?? "").trim().toLowerCase())) {
+      return {
+        ok: false,
+        status: "missing_key",
+        state: "skipped",
+        source: "disabled",
+        checkedAt: new Date().toISOString(),
+        message: "Legacy FMP provider is disabled."
+      };
+    }
     const settings = await loadApiKeySettings(deps);
     const resolved = deps.resolveEffectiveFmpApiKey(settings);
     const checkedAt = new Date().toISOString();
@@ -496,18 +517,59 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
     };
   }
 
+  async function checkMarketIntelligence() {
+    const checkedAt = new Date().toISOString();
+    const states = await getMarketIntelligenceService(deps.db).getProviderStates();
+    const active = states.filter((state) => state.enabled && (
+      state.providerType === "news" || state.providerType === "economic_calendar"
+    ));
+    const unavailable = active.filter((state) => state.state === "unavailable");
+    const degraded = active.filter((state) => state.state === "degraded");
+    const hasNews = active.some((state) => state.providerType === "news" && state.state !== "unavailable");
+    const hasCalendar = active.some((state) => state.providerType === "economic_calendar" && state.state !== "unavailable");
+    const status = active.length === 0
+      ? "disabled" as const
+      : !hasNews || !hasCalendar
+        ? "unavailable" as const
+        : unavailable.length > 0 || degraded.length > 0
+          ? "degraded" as const
+          : "ok" as const;
+    return {
+      ok: status === "ok" || status === "degraded",
+      status,
+      state: status === "ok" ? "healthy" as const : status === "disabled" ? "skipped" as const : "unhealthy" as const,
+      source: "provider_registry",
+      checkedAt,
+      message: active.length === 0
+        ? "No market intelligence providers are active."
+        : `${active.length} providers/sources checked; ${unavailable.length} unavailable; ${degraded.length} degraded.`,
+      details: {
+        providers: states.map((provider) => ({
+          id: provider.providerId,
+          type: provider.providerType,
+          state: provider.state,
+          enabled: provider.enabled,
+          staleDataAgeSeconds: provider.staleDataAgeSeconds ?? null,
+          licenseStatus: provider.licenseStatus ?? null
+        }))
+      }
+    };
+  }
+
   async function checkAll(): Promise<ExternalHealthSnapshot> {
-    const [ai, saladRuntime, fmp] = await Promise.all([
+    const [ai, saladRuntime, marketIntelligence, fmp] = await Promise.all([
       checkAi(),
       checkSaladRuntime(),
+      checkMarketIntelligence(),
       checkFmp()
     ]);
-    return { ai, saladRuntime, fmp };
+    return { ai, saladRuntime, marketIntelligence, fmp };
   }
 
   return {
     checkAi,
     checkFmp,
+    checkMarketIntelligence,
     checkSaladRuntime,
     checkAll
   };

@@ -287,6 +287,7 @@ function buildAllowedDataLines(input: {
   }
 
   lines.push(
+    "- featureSnapshot.marketIntelligence (source-backed facts, upcoming events, freshness, and provider state; if present)",
     "- prediction",
     "- selectedIndicatorKeys",
     "- tagsAllowlist (only for selecting tags)"

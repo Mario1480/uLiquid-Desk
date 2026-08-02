@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>SEC sample</title>
+    <item>
+      <guid>sec-fixture-1</guid>
+      <title>SEC publishes digital asset market statement</title>
+      <link>https://www.sec.gov/newsroom/press-releases/2026-fixture</link>
+      <description>Regulatory market update.</description>
+      <pubDate>Fri, 31 Jul 2026 15:30:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -49,6 +49,7 @@ test("generateHybridPromptText uses AI summary and keeps required sections", asy
   assert.equal(result.promptText.includes("ROLE / STRATEGY SCOPE"), true);
   assert.equal(result.promptText.includes("ALLOWED DATA (HARD LIMIT)"), true);
   assert.equal(result.promptText.includes("IMPORTANT OUTPUT CONTRACT"), true);
+  assert.equal(result.promptText.includes("featureSnapshot.marketIntelligence"), true);
   assert.equal(result.promptText.includes("TIMEFRAME RULES"), true);
   assert.equal(result.promptText.includes("KEYDRIVERS PATH FORMAT"), true);
   assert.equal(result.promptText.includes("INDICATOR SCOPE"), true);

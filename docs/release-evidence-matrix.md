@@ -27,6 +27,7 @@ Use this file as the per-release Go/No-Go evidence checklist. Keep completed cop
 | Root build | `npm run build` |  |  |
 | API release hardening tests | `npm -w apps/api run test:release-hardening` |  |  |
 | API auth/AI/vault tests | `npm -w apps/api run test:auth`; `test:ai`; `test:vaults` |  |  |
+| Market intelligence providers | `npm -w apps/api run test:market-intelligence`; verify RSS partial failure, official calendar UTC, citations and stale mode |  | `docs/market-intelligence-operations.md` |
 | BotVault V4 smoke/transitions | `npm -w apps/api run test:botvault-grid-smoke`; `test:botvault-v4-transitions` |  |  |
 | Runner tests | `npm -w apps/runner run test` |  |  |
 | Web behavior/i18n tests | Web `test:*` release suites; `npm -w apps/web run i18n:check` |  |  |
@@ -61,6 +62,7 @@ Use this file as the per-release Go/No-Go evidence checklist. Keep completed cop
 | Python strategy tokens meet production quality |  |  |  |
 | Web/API CORS origins reviewed |  |  |  |
 | Webhook secrets/signatures configured |  |  |  |
+| Market-data source terms and flags | Active RSS sources `approved`; `FMP_LEGACY_ENABLED=false` after rollout gate |  |  |
 
 ## Onchain
 

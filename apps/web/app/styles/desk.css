@@ -6045,6 +6045,199 @@
   color: var(--muted);
 }
 
+.dashboardMarketSummaryStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.dashboardMarketSummaryStrip strong {
+  flex: 1 1 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* Market Intelligence */
+.marketIntelligencePage {
+  display: grid;
+  gap: 16px;
+}
+
+.marketIntelligenceToolbar,
+.marketIntelligenceActions,
+.marketSourceLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.marketIntelligenceMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.marketIntelligenceMetrics .uiMetricTile {
+  min-width: 0;
+}
+
+.marketIntelligenceMetrics .uiMetricTile span,
+.marketProviderRow span,
+.marketUpcomingRow span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.marketIntelligenceMetrics .uiMetricTile strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 18px;
+  text-transform: capitalize;
+}
+
+.marketIntelligenceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.marketIntelligenceAside {
+  display: grid;
+  gap: 16px;
+}
+
+.marketDriverList,
+.marketUpcomingList,
+.marketProviderList {
+  display: grid;
+}
+
+.marketDriverRow {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0;
+  border-top: 1px solid var(--ui-border);
+}
+
+.marketDriverRow:first-child,
+.marketUpcomingRow:first-child,
+.marketProviderRow:first-child {
+  border-top: 0;
+}
+
+.marketDriverHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.marketDriverRow h3,
+.marketDriverRow p {
+  margin: 0;
+}
+
+.marketDriverRow h3 {
+  font-size: 15px;
+}
+
+.marketDriverRow p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.marketSourceLinks .btn {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.marketUpcomingRow,
+.marketProviderRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--ui-border);
+}
+
+.marketUpcomingRow > div,
+.marketProviderRow > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.marketUpcomingSources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.marketUpcomingSources a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.marketUpcomingSources a:hover {
+  text-decoration: underline;
+}
+
+.marketUncertaintyList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.marketUpcomingRow strong,
+.marketProviderRow strong,
+.marketUpcomingRow span,
+.marketProviderRow span {
+  overflow-wrap: anywhere;
+}
+
+.marketProviderRow .uiStatusBadge {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 980px) {
+  .marketIntelligenceMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .marketIntelligenceGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .marketIntelligenceMetrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .marketIntelligenceToolbar .btn,
+  .marketIntelligenceActions .btn {
+    flex: 1 1 auto;
+  }
+}
+
 /* Dashboard widgets share one outer panel surface. */
 .card.dashboardInsightCard,
 .card.dashboardAlertsCard,

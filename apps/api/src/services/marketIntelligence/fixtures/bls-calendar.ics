@@ -1,0 +1,16 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//uLiquid Desk//Sanitized BLS Contract Fixture//EN
+BEGIN:VEVENT
+UID:bls-cpi-fixture-1
+DTSTART;TZID=America/New_York:20260812T083000
+SUMMARY:Consumer Price Index
+URL:https://www.bls.gov/cpi/
+END:VEVENT
+BEGIN:VEVENT
+UID:bls-jobs-fixture-1
+DTSTART;VALUE=DATE:20260904
+SUMMARY:The Employment Situation
+URL:https://www.bls.gov/ces/
+END:VEVENT
+END:VCALENDAR

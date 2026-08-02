@@ -7,6 +7,28 @@
     "loading": "Loading...",
     "saving": "Saving..."
   },
+  "marketProviders": {
+    "eyebrow": "Market intelligence",
+    "title": "Data providers",
+    "subtitle": "Health, source licensing and refresh controls for news and economic-calendar providers.",
+    "overview": "Provider overview",
+    "overviewDescription": "Provider writes remain server-side; blocked or unreviewed sources cannot be activated for production use.",
+    "resync": "Refresh providers",
+    "loading": "Loading providers...",
+    "empty": "No providers registered.",
+    "saved": "Provider settings saved.",
+    "refreshStarted": "Provider refresh completed.",
+    "enable": "Enable",
+    "disable": "Disable",
+    "columns": {
+      "provider": "Provider",
+      "state": "State",
+      "lastSuccess": "Last success",
+      "items": "Items",
+      "license": "Terms status",
+      "actions": "Actions"
+    }
+  },
   "landing": {
     "title": "Admin Backend",
     "subtitle": "Select a section.",

@@ -626,7 +626,7 @@
   },
   "news": {
     "title": "News",
-    "subtitle": "FMP Crypto- und General-News Feed.",
+    "subtitle": "Providerneutraler Feed für Markt-, Makro- und Regulierungsquellen.",
     "tabs": {
       "all": "Alle",
       "crypto": "Crypto",
@@ -660,6 +660,37 @@
     "loadError": "Ladefehler",
     "loading": "News werden geladen...",
     "empty": "Keine News für die gewählten Filter gefunden."
+  },
+  "marketIntelligence": {
+    "title": "Market Intelligence",
+    "subtitle": "Priorisierter, quellenbasierter Marktkontext ohne automatische Trading-Aktionen.",
+    "refresh": "Aktualisieren",
+    "horizonLabel": "Zeithorizont",
+    "horizons": {
+      "intraday": "Intraday",
+      "24h": "24 Stunden",
+      "7d": "7 Tage"
+    },
+    "overviewTitle": "Heutige Übersicht",
+    "risk": "Gesamtrisiko",
+    "tone": "Marktton",
+    "providers": "Gesunde Quellen",
+    "updated": "Aktualisiert",
+    "driversTitle": "Markttreiber",
+    "driversDescription": "Fakten und klar markierte Inferenz, jeweils bis zur Quelle nachvollziehbar.",
+    "upcomingTitle": "Bevorstehende Events",
+    "uncertaintiesTitle": "Unsicherheiten",
+    "providerTitle": "Datenqualität",
+    "inference": "AI-Inferenz",
+    "fact": "Quellenfakt",
+    "timeUnknown": "Zeit nicht verfügbar",
+    "noUpcoming": "Keine High-Impact-Events in diesem Horizont.",
+    "createPrediction": "Prediction erstellen",
+    "openNews": "Quellen-Feed öffnen",
+    "dataIncomplete": "Daten unvollständig: Mindestens ein Provider ist beeinträchtigt, veraltet oder nicht verfügbar.",
+    "loadError": "Market Intelligence konnte nicht geladen werden",
+    "loading": "Market Intelligence wird geladen...",
+    "empty": "Keine quellenbasierten Markttreiber verfügbar."
   },
   "settingsMain": {
     "title": "Einstellungen",

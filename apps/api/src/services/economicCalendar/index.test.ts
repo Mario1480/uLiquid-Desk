@@ -83,26 +83,14 @@ test("applyNewsRiskToFeatureSnapshot exposes degraded calendar state without add
   assert.equal((next.newsBlackout as any)?.degradedReason, "fmp_api_key_missing");
 });
 
-test("evaluateNewsRiskForSymbol marks missing FMP key as degraded", { concurrency: false }, async () => {
-  const prevApiKey = process.env.FMP_API_KEY;
-  delete process.env.FMP_API_KEY;
-  try {
-    const result = await evaluateNewsRiskForSymbol({
-      db: {
-        globalSetting: {
-          async findUnique() {
-            return null;
-          }
-        }
-      },
-      symbol: "BTC/USDC:USDC",
-      now: new Date("2026-02-12T12:00:00.000Z")
-    });
+test("evaluateNewsRiskForSymbol conservatively marks missing provider-neutral schema as degraded", async () => {
+  const result = await evaluateNewsRiskForSymbol({
+    db: {},
+    symbol: "BTC/USDC:USDC",
+    now: new Date("2026-02-12T12:00:00.000Z")
+  });
 
-    assert.equal(result.newsRisk, false);
-    assert.equal(result.degraded, true);
-    assert.equal(result.degradedReason, "fmp_api_key_missing");
-  } finally {
-    process.env.FMP_API_KEY = prevApiKey;
-  }
+  assert.equal(result.newsRisk, false);
+  assert.equal(result.degraded, true);
+  assert.equal(result.degradedReason, "schema_not_ready");
 });

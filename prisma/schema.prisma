@@ -2314,7 +2314,7 @@ model EconomicCalendarConfig {
   currencies           String?
   preMinutes           Int      @default(30) @map("pre_minutes")
   postMinutes          Int      @default(30) @map("post_minutes")
-  provider             String   @default("fmp")
+  provider             String   @default("official")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -2332,14 +2332,88 @@ model EconomicEvent {
   forecast  Float?
   previous  Float?
   actual    Float?
-  source    String   @default("fmp")
+  source    String   @default("official")
+  sourceName String?  @map("source_name")
+  sourceUrl  String?  @map("source_url")
+  category   String   @default("economic_release")
+  status     String   @default("scheduled")
+  unit       String?
+  period     String?
+  fetchedAt  DateTime @default(now()) @map("fetched_at")
+  originalTimezone String? @map("original_timezone")
+  timeConfidence String? @map("time_confidence")
+  revision    Int      @default(0)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+
+  revisions EconomicEventRevision[]
 
   @@unique([source, sourceId])
   @@index([ts])
   @@index([currency, ts])
   @@map("economic_events")
+}
+
+model EconomicEventRevision {
+  id              String        @id @default(cuid())
+  economicEventId String        @map("economic_event_id")
+  economicEvent   EconomicEvent @relation(fields: [economicEventId], references: [id], onDelete: Cascade)
+  revision        Int           @default(0)
+  actual          Float?
+  previous        Float?
+  releasedAt      DateTime      @map("released_at")
+  sourceName      String        @map("source_name")
+  sourceUrl       String?       @map("source_url")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@unique([economicEventId, revision])
+  @@index([releasedAt(sort: Desc)])
+  @@map("economic_event_revisions")
+}
+
+model MarketNewsItem {
+  id              String   @id @default(cuid())
+  sourceId        String   @map("source_id")
+  provider        String
+  sourceName      String   @map("source_name")
+  sourceUrl       String   @map("source_url")
+  canonicalUrl    String?  @map("canonical_url")
+  title           String
+  summary         String?
+  publishedAt     DateTime @map("published_at")
+  fetchedAt       DateTime @map("fetched_at")
+  language        String?
+  symbols         Json     @default("[]")
+  categories      Json     @default("[]")
+  contentHash     String   @map("content_hash")
+  licenseStatus   String   @default("approved") @map("license_status")
+  termsReviewedAt DateTime? @map("terms_reviewed_at")
+  retentionUntil  DateTime? @map("retention_until")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([provider, sourceId])
+  @@index([publishedAt(sort: Desc)])
+  @@index([provider, publishedAt(sort: Desc)])
+  @@index([contentHash])
+  @@map("market_news_items")
+}
+
+model MarketSummaryCache {
+  id                String   @id @default(cuid())
+  sourceClusterHash String   @map("source_cluster_hash")
+  promptVersion     String   @map("prompt_version")
+  model             String
+  horizon           String
+  payload           Json
+  generatedAt       DateTime @map("generated_at")
+  expiresAt         DateTime @map("expires_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([sourceClusterHash, promptVersion, model, horizon], map: "market_summary_cache_identity_key")
+  @@index([expiresAt])
+  @@map("market_summary_cache")
 }
 
 model PredictionState {

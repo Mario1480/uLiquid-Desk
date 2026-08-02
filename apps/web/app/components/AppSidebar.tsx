@@ -289,6 +289,14 @@ export default function AppSidebar({
 
     if (visibility.economicCalendar) {
       deskItems.push({
+        key: "market-intelligence",
+        label: tNav("marketIntelligence"),
+        href: hrefFor("/market-intelligence"),
+        icon: "performance",
+        active: pathnameWithoutLocale.startsWith("/market-intelligence")
+      });
+
+      deskItems.push({
         key: "calendar",
         label: tSidebar("calendarShort"),
         href: hrefFor("/calendar"),

@@ -10,7 +10,7 @@ export type StoredSystemHealthState = {
   rawStateStreak?: number;
 };
 
-export type SystemHealthStateStore = Partial<Record<"ai" | "saladRuntime" | "fmp", StoredSystemHealthState>>;
+export type SystemHealthStateStore = Record<string, StoredSystemHealthState | undefined>;
 
 export type SystemHealthTelegramJobStatus = {
   enabled: boolean;
@@ -48,7 +48,8 @@ type ExternalHealthCheckLike = {
 type ExternalHealthSnapshotLike = {
   ai: ExternalHealthCheckLike;
   saladRuntime: ExternalHealthCheckLike;
-  fmp: ExternalHealthCheckLike;
+  marketIntelligence?: ExternalHealthCheckLike;
+  fmp?: ExternalHealthCheckLike;
 };
 
 export type CreateSystemHealthTelegramJobDeps = {
@@ -63,7 +64,7 @@ function parseStoredSystemHealthState(value: unknown): SystemHealthStateStore {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const record = value as Record<string, unknown>;
   const out: SystemHealthStateStore = {};
-  for (const key of ["ai", "saladRuntime", "fmp"] as const) {
+  for (const key of Object.keys(record).filter((entry) => /^[a-zA-Z][a-zA-Z0-9_-]{0,80}$/.test(entry))) {
     const raw = record[key];
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const entry = raw as Record<string, unknown>;
@@ -168,10 +169,14 @@ export function createSystemHealthTelegramJob(
       ]);
 
       const previous = parseStoredSystemHealthState(row?.value);
-      const nextObservedState: ExternalHealthSnapshotLike = {
+      const nextObservedState: Record<string, ExternalHealthCheckLike> = {
         ai: snapshot.ai,
         saladRuntime: snapshot.saladRuntime,
-        fmp: snapshot.fmp
+        ...(snapshot.marketIntelligence
+          ? { marketIntelligence: snapshot.marketIntelligence }
+          : snapshot.fmp
+            ? { fmp: snapshot.fmp }
+            : {})
       };
       const nextState: SystemHealthStateStore = {};
 

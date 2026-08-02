@@ -221,6 +221,7 @@ const AI_PROMPT_CONTEXT_BASE_KEYS = new Set<string>([
   "tags",
   "newsRisk",
   "newsBlackout",
+  "marketIntelligence",
   "riskFlags",
   "positionSizeHint",
   "requestedLeverage",

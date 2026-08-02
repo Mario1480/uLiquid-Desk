@@ -1,5 +1,5 @@
 export type EconomicImpact = "low" | "medium" | "high";
-export type EconomicCalendarProvider = "fmp";
+export type EconomicCalendarProvider = string;
 
 export type EconomicEventNormalized = {
   sourceId: string;
@@ -12,6 +12,13 @@ export type EconomicEventNormalized = {
   previous: number | null;
   actual: number | null;
   source: EconomicCalendarProvider;
+  sourceName?: string;
+  sourceUrl?: string | null;
+  category?: string;
+  status?: "scheduled" | "released" | "revised" | "cancelled";
+  fetchedAt?: Date;
+  originalTimezone?: string | null;
+  timeConfidence?: "exact" | "estimated" | "date_only" | null;
 };
 
 export type EconomicCalendarConfigSnapshot = {
@@ -52,6 +59,12 @@ export type EconomicEventView = {
   previous: number | null;
   actual: number | null;
   source: EconomicCalendarProvider;
+  sourceName?: string;
+  sourceUrl?: string | null;
+  category?: string;
+  status?: "scheduled" | "released" | "revised" | "cancelled";
+  fetchedAt?: string;
+  timeConfidence?: "exact" | "estimated" | "date_only" | null;
 };
 
 export type EconomicBlackoutWindow = {

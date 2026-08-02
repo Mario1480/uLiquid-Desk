@@ -81,6 +81,18 @@ type DashboardNewsResponse = {
   items: DashboardNewsItem[];
 };
 
+type DashboardMarketSummaryResponse = {
+  summary: {
+    overallRisk: "low" | "moderate" | "high" | "unknown";
+    sentiment: "bearish" | "neutral" | "bullish" | "mixed";
+    generatedAt: string;
+    highlights: Array<{ headline: string }>;
+  };
+  meta: {
+    degraded: boolean;
+  };
+};
+
 type DashboardOverviewResponse = {
   accounts: ExchangeAccountOverview[];
   totals: DashboardTotals;
@@ -469,6 +481,7 @@ export default function Page() {
   const [gridBotsOverviewLoadError, setGridBotsOverviewLoadError] = useState(false);
   const [newsItems, setNewsItems] = useState<DashboardNewsItem[]>([]);
   const [newsLoadError, setNewsLoadError] = useState(false);
+  const [marketSummary, setMarketSummary] = useState<DashboardMarketSummaryResponse | null>(null);
   const [performanceRange, setPerformanceRange] = useState<PerformanceRange>("24h");
   const [performanceExchangeFilter, setPerformanceExchangeFilter] = useState<string>("all");
   const [performancePoints, setPerformancePoints] = useState<DashboardPerformancePoint[]>([]);
@@ -764,6 +777,24 @@ export default function Page() {
       clearInterval(timer);
     };
   }, [performanceExchangeFilter, performanceRange]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadMarketSummary() {
+      try {
+        const response = await apiGet<DashboardMarketSummaryResponse>("/market-intelligence/summary?horizon=24h");
+        if (mounted) setMarketSummary(response);
+      } catch {
+        if (mounted) setMarketSummary(null);
+      }
+    }
+    void loadMarketSummary();
+    const timer = window.setInterval(() => void loadMarketSummary(), 120_000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (performanceExchangeFilter === "all") return;
@@ -1357,13 +1388,23 @@ export default function Page() {
       render: () => (
         <div className="card dashboardInsightCard dashboardNewsProCard dashboardWidgetCardFill">
           <div className="dashboardNewsProHead">
-            <div className="dashboardNewsProTitle">{t("news.title")}</div>
-            <Link href={withLocalePath("/news", locale)} className="btn">
-              <AppIcon name="news" />
-              {t("news.open")}
+            <div className="dashboardNewsProTitle">{t("news.intelligenceTitle")}</div>
+            <Link href={withLocalePath("/market-intelligence", locale)} className="btn">
+              <AppIcon name="performance" />
+              {t("news.openIntelligence")}
             </Link>
           </div>
           <div className="dashboardWidgetScrollArea">
+            {marketSummary ? (
+              <div className="dashboardMarketSummaryStrip">
+                <span className="badge">{t("news.risk")}: {marketSummary.summary.overallRisk}</span>
+                <span className="badge">{t("news.tone")}: {marketSummary.summary.sentiment}</span>
+                {marketSummary.meta.degraded ? <span className="badge">{t("news.dataIncomplete")}</span> : null}
+                {marketSummary.summary.highlights[0] ? (
+                  <strong>{marketSummary.summary.highlights[0].headline}</strong>
+                ) : null}
+              </div>
+            ) : null}
             {newsLoadError ? (
               <div className="dashboardNewsProMeta">{t("news.unavailable")}</div>
             ) : loading && newsItems.length === 0 ? (

@@ -375,6 +375,7 @@ import {
 } from "./predictions/refreshHealth.js";
 import { createEconomicCalendarRefreshJob } from "./jobs/economicCalendarRefreshJob.js";
 import { createEconomicCalendarDailyTelegramJob } from "./jobs/economicCalendarDailyTelegramJob.js";
+import { createMarketIntelligenceRefreshJob } from "./jobs/marketIntelligenceRefreshJob.js";
 import { createVaultAccountingJob } from "./jobs/vaultAccountingJob.js";
 import { createBotVaultRiskJob } from "./jobs/botVaultRiskJob.js";
 import { createBotVaultTradingReconciliationJob } from "./jobs/botVaultTradingReconciliationJob.js";
@@ -386,6 +387,8 @@ import { createHyperliquidApiExpiryReminderJob } from "./jobs/hyperliquidApiExpi
 import { createBillingOnchainJob } from "./jobs/billingOnchainJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
+import { registerMarketIntelligenceRoutes } from "./routes/market-intelligence.js";
+import { getMarketIntelligenceService } from "./services/marketIntelligence/service.js";
 import { registerGridVaultRouteGroup } from "./routes/gridVaultRouteGroup.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
 import {
@@ -514,6 +517,7 @@ import {
 const db = prisma as any;
 const economicCalendarRefreshJob = createEconomicCalendarRefreshJob(db);
 const economicCalendarDailyTelegramJob = createEconomicCalendarDailyTelegramJob(db);
+const marketIntelligenceRefreshJob = createMarketIntelligenceRefreshJob(db);
 const externalHealthService = createExternalHealthService({
   db,
   GLOBAL_SETTING_API_KEYS_KEY: "admin.apiKeys",
@@ -5879,6 +5883,26 @@ async function generateAutoPredictionForUser(
       inferred.featureSnapshot,
       newsBlackout
     );
+    try {
+      inferred.featureSnapshot.marketIntelligence = await getMarketIntelligenceService(db)
+        .getPredictionContext({ symbol: canonicalSymbol, horizon: "24h" });
+    } catch (error) {
+      inferred.featureSnapshot.marketIntelligence = {
+        schemaVersion: "market-intelligence-context/v1",
+        symbol: canonicalSymbol,
+        generatedAt: new Date().toISOString(),
+        dataAgeSeconds: null,
+        degraded: true,
+        warnings: ["market_intelligence_context_unavailable"],
+        facts: [],
+        upcomingHighImpactEvents: [],
+        providerStates: []
+      };
+      logger.warn("prediction_market_intelligence_context_failed", {
+        symbol: canonicalSymbol,
+        reason: String(error)
+      });
+    }
     const globalNewsRiskBlockEnabled = await readGlobalNewsRiskEnforcement();
     const strategyNewsRiskMode = resolveStrategyNewsRiskMode({
       strategyRef: strategyRefForInitialSnapshot,
@@ -9468,6 +9492,26 @@ async function refreshPredictionStateForTemplate(params: {
       inferred.featureSnapshot,
       newsBlackout
     );
+    try {
+      inferred.featureSnapshot.marketIntelligence = await getMarketIntelligenceService(db)
+        .getPredictionContext({ symbol: template.symbol, horizon: "24h" });
+    } catch (error) {
+      inferred.featureSnapshot.marketIntelligence = {
+        schemaVersion: "market-intelligence-context/v1",
+        symbol: template.symbol,
+        generatedAt: new Date().toISOString(),
+        dataAgeSeconds: null,
+        degraded: true,
+        warnings: ["market_intelligence_context_unavailable"],
+        facts: [],
+        upcomingHighImpactEvents: [],
+        providerStates: []
+      };
+      logger.warn("prediction_market_intelligence_context_failed", {
+        symbol: template.symbol,
+        reason: String(error)
+      });
+    }
 
     const prevStateRow = await db.predictionState.findUnique({
       where: { id: template.stateId }
@@ -11683,6 +11727,11 @@ registerEconomicCalendarRoutes(app, {
   requireSuperadmin,
   refreshJob: economicCalendarRefreshJob
 });
+registerMarketIntelligenceRoutes(app, {
+  db,
+  requireSuperadmin,
+  refreshJob: marketIntelligenceRefreshJob
+});
 registerGridVaultRouteGroup({
   app,
   db,
@@ -13087,7 +13136,7 @@ const apiLifecycle = createApiLifecycle({
     { name: "prediction-performance-eval", start: startPredictionPerformanceEvalScheduler, stop: stopPredictionPerformanceEvalScheduler },
     { name: "bot-queue-recovery", start: startBotQueueRecoveryScheduler, stop: stopBotQueueRecoveryScheduler },
     { name: "billing-onchain", start: () => billingOnchainJob.start(), stop: () => billingOnchainJob.stop() },
-    { name: "economic-calendar-refresh", start: () => economicCalendarRefreshJob.start(), stop: () => economicCalendarRefreshJob.stop() },
+    { name: "market-intelligence-refresh", start: () => marketIntelligenceRefreshJob.start(), stop: () => marketIntelligenceRefreshJob.stop() },
     { name: "economic-calendar-daily-telegram", start: () => economicCalendarDailyTelegramJob.start(), stop: () => economicCalendarDailyTelegramJob.stop() },
     { name: "system-health-telegram", start: () => systemHealthTelegramJob.start(), stop: () => systemHealthTelegramJob.stop() },
     { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },

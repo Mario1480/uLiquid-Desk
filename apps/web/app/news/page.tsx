@@ -11,7 +11,7 @@ type NewsFeed = "crypto" | "general";
 
 type NewsItem = {
   id: string;
-  source: "fmp";
+  source: string;
   feed: NewsFeed;
   title: string;
   url: string;
@@ -34,6 +34,10 @@ type NewsResponse = {
     searchQuery?: string;
     searchApplied?: boolean;
     searchFallback?: boolean;
+    degraded?: boolean;
+    stale?: boolean;
+    warnings?: string[];
+    providerStates?: Array<{ providerId: string; state: string; message?: string }>;
   };
 };
 

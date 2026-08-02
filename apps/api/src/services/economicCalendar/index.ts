@@ -4,6 +4,7 @@ import { decryptSecret } from "../../secret-crypto.js";
 import { evaluateNewsBlackout } from "./blackout.js";
 import { fetchFmpEconomicEvents } from "./providers/fmp.js";
 import { symbolToMacroCurrency } from "./symbolCurrency.js";
+import { getMarketIntelligenceService } from "../marketIntelligence/service.js";
 import type {
   EconomicBlackoutResult,
   EconomicCalendarConfigSnapshot,
@@ -19,7 +20,7 @@ const DEFAULT_CURRENCIES = "USD,EUR,GBP,JPY,CHF,CAD,AUD,NZD,CNY";
 const DEFAULT_IMPACT: EconomicImpact = "high";
 const DEFAULT_PRE_MINUTES = 30;
 const DEFAULT_POST_MINUTES = 30;
-const DEFAULT_PROVIDER = "fmp";
+const DEFAULT_PROVIDER = "official";
 
 const REDIS_EVENTS_TTL_SEC = Math.max(300, Number(process.env.ECON_REDIS_EVENTS_TTL_SEC ?? "21600"));
 const REDIS_NEXT_TTL_SEC = Math.max(30, Number(process.env.ECON_REDIS_NEXT_TTL_SEC ?? "300"));
@@ -136,6 +137,12 @@ function toEventView(event: {
   previous: number | null;
   actual: number | null;
   source: string;
+  sourceName?: string | null;
+  sourceUrl?: string | null;
+  category?: string | null;
+  status?: "scheduled" | "released" | "revised" | "cancelled";
+  fetchedAt?: Date | null;
+  timeConfidence?: "exact" | "estimated" | "date_only" | null;
 }): EconomicEventView {
   return {
     id: String(event.id ?? event.sourceId),
@@ -148,7 +155,13 @@ function toEventView(event: {
     forecast: Number.isFinite(Number(event.forecast)) ? Number(event.forecast) : null,
     previous: Number.isFinite(Number(event.previous)) ? Number(event.previous) : null,
     actual: Number.isFinite(Number(event.actual)) ? Number(event.actual) : null,
-    source: String(event.source || "fmp") as "fmp"
+    source: String(event.source || "unknown"),
+    ...(event.sourceName ? { sourceName: String(event.sourceName) } : {}),
+    ...(event.sourceUrl ? { sourceUrl: String(event.sourceUrl) } : {}),
+    ...(event.category ? { category: String(event.category) } : {}),
+    ...(event.status ? { status: event.status } : {}),
+    ...(event.fetchedAt ? { fetchedAt: event.fetchedAt.toISOString() } : {}),
+    ...(event.timeConfidence ? { timeConfidence: event.timeConfidence } : {})
   };
 }
 
@@ -161,7 +174,7 @@ function normalizeConfigRow(row: any): EconomicCalendarConfigSnapshot {
     currencies: normalizeCurrenciesCsv(row?.currencies ?? DEFAULT_CURRENCIES),
     preMinutes: Math.max(0, Math.trunc(Number(row?.preMinutes ?? DEFAULT_PRE_MINUTES))),
     postMinutes: Math.max(0, Math.trunc(Number(row?.postMinutes ?? DEFAULT_POST_MINUTES))),
-    provider: DEFAULT_PROVIDER,
+    provider: String(row?.provider ?? DEFAULT_PROVIDER).trim() || DEFAULT_PROVIDER,
     createdAt: row?.createdAt instanceof Date ? row.createdAt : new Date(),
     updatedAt: row?.updatedAt instanceof Date ? row.updatedAt : new Date()
   };
@@ -293,7 +306,7 @@ export async function updateEconomicCalendarConfig(
       patch.postMinutes !== undefined && patch.postMinutes !== null
         ? Math.max(0, Math.trunc(Number(patch.postMinutes)))
         : current.postMinutes,
-    provider: DEFAULT_PROVIDER
+    provider: String(patch.provider ?? current.provider).trim() || DEFAULT_PROVIDER
   };
   const row = await db.economicCalendarConfig.update({
     where: { key: DEFAULT_CONFIG_KEY },
@@ -532,16 +545,6 @@ export async function getEconomicCalendarNextSummary(params: {
     };
   }
 
-  const apiKey = await resolveEffectiveFmpApiKey(params.db);
-  if (!apiKey) {
-    return createDegradedNextSummary({
-      currency,
-      impactMin,
-      now,
-      reason: "fmp_api_key_missing"
-    });
-  }
-
   const cacheKey = nextCacheKey(currency, impactMin);
   const cached = await redisGetJson<EconomicNextSummary>(cacheKey);
   if (cached) return cached;
@@ -596,8 +599,30 @@ export async function getEconomicCalendarNextSummary(params: {
     forecast: Number.isFinite(Number(row.forecast)) ? Number(row.forecast) : null,
     previous: Number.isFinite(Number(row.previous)) ? Number(row.previous) : null,
     actual: Number.isFinite(Number(row.actual)) ? Number(row.actual) : null,
-    source: "fmp"
+    source: String(row.source ?? "unknown"),
+    sourceName: row.sourceName ? String(row.sourceName) : undefined,
+    sourceUrl: row.sourceUrl ? String(row.sourceUrl) : null,
+    category: row.category ? String(row.category) : undefined,
+    status: ["scheduled", "released", "revised", "cancelled"].includes(String(row.status))
+      ? row.status
+      : undefined,
+    fetchedAt: row.fetchedAt instanceof Date ? row.fetchedAt : undefined,
+    originalTimezone: row.originalTimezone ? String(row.originalTimezone) : null,
+    timeConfidence: ["exact", "estimated", "date_only"].includes(String(row.timeConfidence))
+      ? row.timeConfidence
+      : null
   }));
+
+  if (normalized.length === 0) {
+    const fallbackSummary = createDegradedNextSummary({
+      currency,
+      impactMin,
+      now,
+      reason: "calendar_data_unavailable"
+    });
+    await redisSetJson(cacheKey, fallbackSummary, REDIS_NEXT_TTL_SEC);
+    return fallbackSummary;
+  }
 
   const blackout = evaluateNewsBlackout({
     now,
@@ -682,6 +707,21 @@ export async function refreshEconomicCalendarData(params: {
   currencies: string[];
 }> {
   const now = params.now ?? new Date();
+  const marketIntelligenceEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.MARKET_INTELLIGENCE_ENABLED ?? "true").trim().toLowerCase()
+  );
+  if (marketIntelligenceEnabled) {
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const to = plusDays(from, 90);
+    const result = await getMarketIntelligenceService(params.db).refreshEconomicEvents({ from, to });
+    return {
+      fetchedCount: result.fetchedCount,
+      upsertedCount: result.storedCount,
+      windowFrom: parseDateKey(from),
+      windowTo: parseDateKey(to),
+      currencies: DEFAULT_CURRENCIES.split(",")
+    };
+  }
   if (!hasCalendarModels(params.db)) {
     logger.warn("economic_calendar_schema_not_ready", {
       reason: "prisma_client_missing_models_or_migration_not_applied"

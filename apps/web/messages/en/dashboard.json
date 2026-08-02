@@ -40,6 +40,11 @@
   },
   "news": {
     "title": "Market News",
+    "intelligenceTitle": "Market Intelligence",
+    "openIntelligence": "Open Intelligence",
+    "risk": "Risk",
+    "tone": "Tone",
+    "dataIncomplete": "Data incomplete",
     "open": "Open News",
     "loading": "Loading news...",
     "unavailable": "News currently unavailable.",

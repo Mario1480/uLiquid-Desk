@@ -41,7 +41,7 @@ const configUpdateSchema = z.object({
   currencies: z.string().trim().max(128).nullable().optional(),
   preMinutes: z.number().int().min(0).max(240).optional(),
   postMinutes: z.number().int().min(0).max(240).optional(),
-  provider: z.literal("fmp").optional()
+  provider: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{0,80}$/).optional()
 });
 
 const preferencesUpdateSchema = z.object({

@@ -40,6 +40,11 @@
   },
   "news": {
     "title": "Markt-News",
+    "intelligenceTitle": "Market Intelligence",
+    "openIntelligence": "Intelligence öffnen",
+    "risk": "Risiko",
+    "tone": "Marktton",
+    "dataIncomplete": "Daten unvollständig",
     "open": "News öffnen",
     "loading": "News werden geladen...",
     "unavailable": "News aktuell nicht verfügbar.",

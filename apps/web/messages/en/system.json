@@ -626,7 +626,7 @@
   },
   "news": {
     "title": "News",
-    "subtitle": "FMP crypto and general news feed.",
+    "subtitle": "Provider-neutral market, macro and regulatory source feed.",
     "tabs": {
       "all": "All",
       "crypto": "Crypto",
@@ -660,6 +660,37 @@
     "loadError": "Load error",
     "loading": "Loading news...",
     "empty": "No news found for the selected filters."
+  },
+  "marketIntelligence": {
+    "title": "Market Intelligence",
+    "subtitle": "Prioritized, source-backed market context without automated trading actions.",
+    "refresh": "Refresh",
+    "horizonLabel": "Summary horizon",
+    "horizons": {
+      "intraday": "Intraday",
+      "24h": "24 hours",
+      "7d": "7 days"
+    },
+    "overviewTitle": "Today overview",
+    "risk": "Overall risk",
+    "tone": "Market tone",
+    "providers": "Healthy sources",
+    "updated": "Updated",
+    "driversTitle": "Market drivers",
+    "driversDescription": "Facts and explicitly marked inference, each linked to its source.",
+    "upcomingTitle": "Upcoming events",
+    "uncertaintiesTitle": "Uncertainties",
+    "providerTitle": "Data quality",
+    "inference": "AI inference",
+    "fact": "Source fact",
+    "timeUnknown": "Time not available",
+    "noUpcoming": "No high-impact events in this horizon.",
+    "createPrediction": "Create prediction",
+    "openNews": "Open source feed",
+    "dataIncomplete": "Data incomplete: one or more providers are degraded, stale, or unavailable.",
+    "loadError": "Market intelligence could not be loaded",
+    "loading": "Loading market intelligence...",
+    "empty": "No source-backed market drivers are available."
   },
   "settingsMain": {
     "title": "Settings",

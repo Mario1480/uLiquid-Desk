@@ -7,6 +7,28 @@
     "loading": "Lädt...",
     "saving": "Speichern..."
   },
+  "marketProviders": {
+    "eyebrow": "Market Intelligence",
+    "title": "Datenprovider",
+    "subtitle": "Health, Quellenfreigabe und Refresh-Steuerung für News- und Wirtschaftskalender-Provider.",
+    "overview": "Providerübersicht",
+    "overviewDescription": "Providerzugriffe bleiben serverseitig; blockierte oder ungeprüfte Quellen können nicht produktiv aktiviert werden.",
+    "resync": "Provider aktualisieren",
+    "loading": "Provider werden geladen...",
+    "empty": "Keine Provider registriert.",
+    "saved": "Provider-Einstellungen gespeichert.",
+    "refreshStarted": "Provider-Refresh abgeschlossen.",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "columns": {
+      "provider": "Provider",
+      "state": "Status",
+      "lastSuccess": "Letzter Erfolg",
+      "items": "Einträge",
+      "license": "Terms-Status",
+      "actions": "Aktionen"
+    }
+  },
   "landing": {
     "title": "Admin-Backend",
     "subtitle": "Bereich auswählen.",
