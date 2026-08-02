@@ -44,6 +44,7 @@ const predictionGenerateAutoSchema = z.object({
   symbol: z.string().trim().min(1),
   marketType: z.enum(["spot", "perp"]),
   timeframe: z.enum(["5m", "15m", "1h", "4h", "1d"]),
+  horizonMs: z.number().int().min(60_000).max(30 * 24 * 60 * 60 * 1000).optional(),
   leverage: z.number().int().min(1).max(125).optional(),
   modelVersionBase: z.string().trim().min(1).optional(),
   responseLanguage: z.unknown().optional(),

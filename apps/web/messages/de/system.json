@@ -130,6 +130,8 @@
     },
     "copier": {
       "title": "Prediction-Copier Einstellungen",
+      "reviewFlowTitle": "Prediction-Copier-Review",
+      "reviewFlowDescription": "Diese Quelle ist nur zur Prüfung vorausgewählt. Prüfe Konto, Limits, Risikoregeln und Zusammenfassung; auch das Erstellen startet den Bot noch nicht.",
       "descriptionBefore": "Kopiert Signale aus",
       "descriptionAfter": "(Entry/Exit) mit Risiko-Filter.",
       "sourceRequired": "Für prediction_copier muss eine Prediction-Quelle gewählt werden.",

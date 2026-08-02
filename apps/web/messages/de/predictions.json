@@ -1,6 +1,27 @@
 {
   "title": "Prognosen Dashboard",
-  "subtitle": "Wähle eine Prognose und fülle das Ticket im manuellen Trading Desk vor.",
+  "subtitle": "Prüfe Marktanalysen, überwache aktive Prognosen und konfiguriere Automatisierung über einen expliziten Review-Flow.",
+  "navigation": {
+    "label": "Prognoseansichten", "overview": "Übersicht", "active": "Aktiv", "history": "Historie", "performance": "Performance", "newAnalysis": "Neue Analyse"
+  },
+  "overview": {
+    "activePredictions": "Aktive Prognosen", "todayAnalyses": "Heutige Analysen", "averageConfidence": "Ø Konfidenz", "directionAccuracy": "Richtungsgenauigkeit", "aiUsage": "AI-Verbrauch", "runningAllocation": "laufende Belegung", "dataSources": "Datenquellen", "operational": "Betriebsbereit", "degraded": "Eingeschränkt", "degradedCount": "{count} Quelle(n) eingeschränkt", "allSourcesHealthy": "Alle geplanten Quellen gesund", "copierStatus": "Prediction Copier", "reviewAvailable": "Review verfügbar", "activeRulesUnavailable": "Regelanzahl in dieser Ansicht nicht verfügbar", "recentPredictions": "Aktuelle Prognosen", "viewHistory": "Historie öffnen", "currentOutcome": "Zwischenstatus", "finalEvaluation": "Finale Auswertung"
+  },
+  "wizard": {
+    "title": "Neue Analyse",
+    "description": "Markt und Analyse getrennt konfigurieren und vor der Generierung prüfen.",
+    "steps": { "market": "Markt", "analysis": "Analysetyp", "advanced": "Erweiterte Einstellungen", "review": "Prüfen", "generate": "Generieren" },
+    "analysisHorizon": "Analyse-Horizont", "analysisHorizonHint": "Dauer der Thesis-Auswertung; unabhängig vom Candle-Zeitrahmen.", "back": "Zurück", "next": "Weiter", "close": "Schließen", "generate": "Analyse generieren", "readyTitle": "Bereit zur Generierung", "readyDescription": "Die Generierung erstellt oder aktualisiert einen Prognose-Zeitplan. Sie platziert keine Order und aktiviert den Prediction Copier nicht."
+  },
+  "active": {
+    "direction": "Prognoserichtung", "confidence": "Konfidenz", "entryZone": "Entry-Zone", "stop": "Stop", "targets": "Ziele", "currentPrice": "Aktueller Preis", "currentOutcome": "Zwischenstatus", "finalEvaluation": "Finale Auswertung", "notFinal": "Nicht final"
+  },
+  "history": {
+    "allMarkets": "Alle Märkte", "filterPrompt": "Prompt oder Strategie filtern...", "allProviders": "Alle Provider / Modi", "allResults": "Alle Ergebnisse", "pending": "Ausstehend", "final": "Final", "expired": "Abgelaufen"
+  },
+  "copier": {
+    "eligibilityTitle": "Copier-Zulässigkeit und Review", "reviewOnlyDescription": "Öffnet eine vorkonfigurierte Prüfung. Aus dieser Prognose wird keine Regel gespeichert, aktiviert oder ausgeführt.", "eligible": "Für Review geeignet", "notEligible": "Aktuell nicht geeignet", "configure": "Prediction Copier konfigurieren"
+  },
   "header": {
     "dashboard": "Dashboard",
     "manualTrading": "Manuelles Trading"
@@ -212,12 +233,17 @@
     "bin": "Bin",
     "avgConf": "Ø Konfidenz",
     "accuracy": "Genauigkeit",
-    "sample": "N"
+    "sample": "N",
+    "mfeExcursion": "Ø MFE",
+    "maeExcursion": "Ø MAE",
+    "stopHitRate": "Stop-Trefferquote",
+    "qualityBoundaryTitle": "Prognosequalität",
+    "qualityBoundaryDescription": "Diese Kennzahlen bewerten die Prognose-These. Prediction-Copier-Ausführungen und Trading-PnL werden bewusst nicht damit vermischt."
   },
   "modes": {
-    "localOnly": "Nur Lokal",
+    "localOnly": "Nur Regeln",
     "aiOnly": "Nur AI",
-    "both": "Lokal + AI"
+    "both": "Regeln, durch AI validiert"
   },
   "detail": {
     "loadingDetails": "Prognosedetails werden geladen...",
@@ -258,7 +284,29 @@
     "noRecentChanges": "Keine aktuellen Änderungen protokolliert.",
     "expandForEvents": "Aufklappen, um die letzten Refresh-Events zu sehen.",
     "runStatus": "Run {status}",
-    "runStatusUnknown": "Run k. A."
+    "runStatusUnknown": "Run k. A.",
+    "executiveSummary": "Executive Summary",
+    "tradePlanEyebrow": "Levels und Risiko",
+    "tradePlan": "Trading-These",
+    "entryZone": "Entry-Zone",
+    "stopInvalidation": "Stop / Invalidierung",
+    "targets": "Ziele",
+    "riskReward": "Risiko / Ertrag",
+    "candleTimeframe": "Candle-Zeitrahmen",
+    "analysisHorizon": "Analyse-Horizont",
+    "keyDrivers": "Schlüsselfaktoren",
+    "noKeyDrivers": "Keine strukturierten Faktoren verfügbar.",
+    "invalidations": "Invalidierungen",
+    "invalidationAtStop": "Die These wird am konfigurierten Stop nahe {price} ungültig.",
+    "invalidationUnavailable": "Kein strukturiertes Invalidierungslevel verfügbar.",
+    "riskUncertainty": "Risiko und Unsicherheit",
+    "dataQualityDegraded": "Die Marktdatenqualität ist eingeschränkt. Diese Analyse nicht als ausführungsbereit behandeln.",
+    "uncertaintyNotice": "Konfidenz ist probabilistisch und garantiert kein Marktergebnis.",
+    "dataSourcesTime": "Datenquellen und Zeitpunkt",
+    "openTradingDesk": "Im Trading Desk öffnen",
+    "createSimilar": "Ähnliche Analyse erstellen",
+    "monitorMarket": "Markt beobachten",
+    "saveTemplate": "Als Vorlage speichern"
   },
   "misc": {
     "na": "n/a",

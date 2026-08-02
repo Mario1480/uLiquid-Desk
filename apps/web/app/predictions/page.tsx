@@ -29,6 +29,20 @@ import {
   titleForProductFeature,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
+import {
+  ActivePredictions,
+  PredictionCopierEligibility,
+  PredictionCreateWizard,
+  PredictionDetailDrawer,
+  PredictionHistory,
+  PredictionPerformance,
+  PredictionsOverview,
+  PREDICTION_WIZARD_STEPS,
+  averageConfidence,
+  buildPredictionCopierReviewHref,
+  type PredictionsView,
+  type PredictionWizardStep
+} from "../../components/predictions";
 
 type PredictionSignal = "up" | "down" | "neutral";
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
@@ -37,6 +51,8 @@ type ResponseLanguage = "de" | "en";
 type DirectionPreference = "long" | "short" | "either";
 type SortMode = "newest" | "confidence" | "move";
 type RunningStatusFilter = "all" | "running" | "paused";
+type HistoryResultFilter = "all" | "pending" | "closed" | "tp" | "sl" | "expired";
+type HistoryProviderFilter = "all" | StrategyKind;
 type SignalSource = "local" | "ai";
 type CreateSignalMode = "local_only" | "ai_only" | "both";
 type PredictionRefreshStatus = "ok" | "degraded";
@@ -159,6 +175,10 @@ type PredictionListItem = {
   maxFavorablePct?: number | null;
   maxAdversePct?: number | null;
   outcomeEvaluatedAt?: string | null;
+  entryPrice?: number | null;
+  stopLossPrice?: number | null;
+  takeProfitPrice?: number | null;
+  horizonMs?: number | null;
   realizedReturnPct?: number | null;
   realizedEvaluatedAt?: string | null;
   realizedHit?: boolean | null;
@@ -183,6 +203,7 @@ type PredictionListItem = {
   lastRefreshErrorAt?: string | null;
   lastRefreshError?: string | null;
   refreshFailureCount?: number;
+  modelVersion?: string | null;
 };
 
 type PredictionEventItem = {
@@ -962,6 +983,9 @@ export default function PredictionsPage() {
   const [runningLoading, setRunningLoading] = useState(true);
   const [runningActionId, setRunningActionId] = useState<string | null>(null);
   const [runningStatusFilter, setRunningStatusFilter] = useState<RunningStatusFilter>("all");
+  const [activeView, setActiveView] = useState<PredictionsView>("overview");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<PredictionWizardStep>("market");
 
   const [accounts, setAccounts] = useState<ExchangeAccountItem[]>([]);
   const [createAccountId, setCreateAccountId] = useState("");
@@ -972,12 +996,17 @@ export default function PredictionsPage() {
   const [filterSymbol, setFilterSymbol] = useState("");
   const [filterSignal, setFilterSignal] = useState<PredictionSignal | "all">("all");
   const [filterTimeframe, setFilterTimeframe] = useState<PredictionTimeframe | "all">("all");
+  const [filterMarket, setFilterMarket] = useState<PredictionMarketType | "all">("all");
+  const [filterPrompt, setFilterPrompt] = useState("");
+  const [filterProvider, setFilterProvider] = useState<HistoryProviderFilter>("all");
+  const [filterResult, setFilterResult] = useState<HistoryResultFilter>("all");
   const [signalSource, setSignalSource] = useState<SignalSource>("local");
   const [sortMode, setSortMode] = useState<SortMode>("newest");
 
   const [newSymbol, setNewSymbol] = useState("BTCUSDT");
   const [newMarketType, setNewMarketType] = useState<PredictionMarketType>("perp");
   const [newTimeframe, setNewTimeframe] = useState<PredictionTimeframe>("15m");
+  const [newHorizonMs, setNewHorizonMs] = useState(4 * 60 * 60 * 1000);
   const [publicAiPrompts, setPublicAiPrompts] = useState<PublicAiPromptItem[]>([]);
   const [publicAiPromptsLoading, setPublicAiPromptsLoading] = useState(false);
   const [ownAiPrompts, setOwnAiPrompts] = useState<PublicAiPromptItem[]>([]);
@@ -1579,6 +1608,18 @@ export default function PredictionsPage() {
       if (symbolSearch && !row.symbol.toUpperCase().includes(symbolSearch)) return false;
       if (filterSignal !== "all" && resolveSignal(row, effectiveSource) !== filterSignal) return false;
       if (filterTimeframe !== "all" && row.timeframe !== filterTimeframe) return false;
+      if (filterMarket !== "all" && row.marketType !== filterMarket) return false;
+      if (filterPrompt.trim()) {
+        const promptSearch = filterPrompt.trim().toLowerCase();
+        const promptLabel = `${row.aiPromptTemplateName ?? ""} ${row.localStrategyName ?? ""} ${row.compositeStrategyName ?? ""}`.toLowerCase();
+        if (!promptLabel.includes(promptSearch)) return false;
+      }
+      if (filterProvider !== "all" && (row.strategyRef?.kind ?? "ai") !== filterProvider) return false;
+      if (filterResult !== "all") {
+        if (filterResult === "pending" && row.outcomeStatus === "closed") return false;
+        if (filterResult === "closed" && row.outcomeStatus !== "closed") return false;
+        if (filterResult !== "pending" && filterResult !== "closed" && row.outcomeResult !== filterResult) return false;
+      }
       return true;
     });
 
@@ -1600,7 +1641,7 @@ export default function PredictionsPage() {
     });
 
     return next;
-  }, [filterSignal, filterSymbol, filterTimeframe, rows, signalSource, sortMode]);
+  }, [filterMarket, filterPrompt, filterProvider, filterResult, filterSignal, filterSymbol, filterTimeframe, rows, signalSource, sortMode]);
 
   const filteredRunningRows = useMemo(() => {
     if (runningStatusFilter === "all") return runningRows;
@@ -1631,10 +1672,86 @@ export default function PredictionsPage() {
     if (filterSymbol.trim()) count += 1;
     if (filterSignal !== "all") count += 1;
     if (filterTimeframe !== "all") count += 1;
+    if (filterMarket !== "all") count += 1;
+    if (filterPrompt.trim()) count += 1;
+    if (filterProvider !== "all") count += 1;
+    if (filterResult !== "all") count += 1;
     if (signalSource !== "local") count += 1;
     if (sortMode !== "newest") count += 1;
     return count;
-  }, [filterSignal, filterSymbol, filterTimeframe, signalSource, sortMode]);
+  }, [filterMarket, filterPrompt, filterProvider, filterResult, filterSignal, filterSymbol, filterTimeframe, signalSource, sortMode]);
+
+  const todayAnalysesCount = useMemo(() => {
+    const today = new Date(nowMs);
+    return rows.filter((row) => {
+      const created = new Date(row.tsCreated);
+      return created.getFullYear() === today.getFullYear()
+        && created.getMonth() === today.getMonth()
+        && created.getDate() === today.getDate();
+    }).length;
+  }, [nowMs, rows]);
+  const averageConfidencePct = useMemo(
+    () => averageConfidence(rows.map((row) => resolveConfidence(row, getEffectiveRowSource(row, signalSource)))),
+    [rows, signalSource]
+  );
+  const degradedSourcesCount = useMemo(
+    () => runningRows.filter((row) => isPredictionRefreshDegraded(row)).length,
+    [runningRows]
+  );
+  const recentPredictions = useMemo(
+    () => [...rows].sort((a, b) => new Date(b.tsCreated).getTime() - new Date(a.tsCreated).getTime()).slice(0, 5),
+    [rows]
+  );
+  const evaluatedPerformanceRows = useMemo(
+    () => filteredRows.filter((row) => row.outcomeStatus === "closed"),
+    [filteredRows]
+  );
+  const averageMfePct = useMemo(() => {
+    const values = evaluatedPerformanceRows.map((row) => row.maxFavorablePct).filter((value): value is number => typeof value === "number");
+    return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  }, [evaluatedPerformanceRows]);
+  const averageMaePct = useMemo(() => {
+    const values = evaluatedPerformanceRows.map((row) => row.maxAdversePct).filter((value): value is number => typeof value === "number");
+    return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  }, [evaluatedPerformanceRows]);
+
+  function openPredictionWizard(row?: PredictionListItem) {
+    if (row) {
+      setNewSymbol(row.symbol);
+      setNewMarketType(row.marketType);
+      setNewTimeframe(row.timeframe);
+      if (row.accountId) setCreateAccountId(row.accountId);
+      if (row.strategyRef) setNewStrategySelectValue(encodeStrategySelectValue(row.strategyRef));
+    }
+    setWizardStep("market");
+    setWizardOpen(true);
+  }
+
+  function nextPredictionWizardStep() {
+    setActionError(null);
+    if (wizardStep === "market" && (!createAccountId || !newSymbol.trim())) {
+      setActionError(
+        !createAccountId
+          ? tPred("create.validationSelectExchangeAccount")
+          : tPred("create.validationSelectPair")
+      );
+      return;
+    }
+    if (wizardStep === "advanced" && newMarketType === "perp") {
+      const leverage = Number(newLeverage);
+      if (!Number.isFinite(leverage) || leverage < 1 || leverage > 125) {
+        setActionError(tPred("create.validationLeverageRange"));
+        return;
+      }
+    }
+    const currentIndex = PREDICTION_WIZARD_STEPS.indexOf(wizardStep);
+    setWizardStep(PREDICTION_WIZARD_STEPS[Math.min(currentIndex + 1, PREDICTION_WIZARD_STEPS.length - 1)]);
+  }
+
+  function previousPredictionWizardStep() {
+    const currentIndex = PREDICTION_WIZARD_STEPS.indexOf(wizardStep);
+    setWizardStep(PREDICTION_WIZARD_STEPS[Math.max(0, currentIndex - 1)]);
+  }
 
   async function sendToDesk(id: string) {
     setActionError(null);
@@ -1799,6 +1916,7 @@ export default function PredictionsPage() {
         symbol,
         marketType: newMarketType,
         timeframe: effectiveCreateTimeframe,
+        horizonMs: newHorizonMs,
         strategyRef: selectedStrategyRef ?? undefined,
         aiPromptTemplateId: selectedStrategyRef?.kind === "ai" ? selectedStrategyRef.id : undefined,
         compositeStrategyId: selectedStrategyRef?.kind === "composite" ? selectedStrategyRef.id : undefined,
@@ -1850,6 +1968,9 @@ export default function PredictionsPage() {
         loadPredictionMetrics(),
         loadSubscriptionQuota()
       ]);
+      setWizardOpen(false);
+      setWizardStep("market");
+      setActiveView("overview");
     } catch (e) {
       setActionError(quotaErrorMessage(e, tPred) ?? errMsg(e));
     } finally {
@@ -1918,6 +2039,10 @@ export default function PredictionsPage() {
     setFilterSymbol("");
     setFilterSignal("all");
     setFilterTimeframe("all");
+    setFilterMarket("all");
+    setFilterPrompt("");
+    setFilterProvider("all");
+    setFilterResult("all");
     setSignalSource("local");
     setSortMode("newest");
   }
@@ -2003,6 +2128,28 @@ export default function PredictionsPage() {
           : parsedReason.kind === "manual"
             ? "predictionReasonBadgeManual"
             : "predictionReasonBadgeUnknown";
+    const copierState = runningRows.find((candidate) =>
+      candidate.symbol === row.symbol
+      && candidate.timeframe === row.timeframe
+      && candidate.marketType === row.marketType
+      && (!row.accountId || candidate.exchangeAccountId === row.accountId)
+    ) ?? null;
+    const copierEligible = Boolean(
+      copierState
+      && !copierState.paused
+      && activeSignal !== "neutral"
+      && !dataGap
+      && !isPredictionRefreshDegraded(row)
+    );
+    const rewardDistance = row.entryPrice != null && row.takeProfitPrice != null
+      ? Math.abs(row.takeProfitPrice - row.entryPrice)
+      : null;
+    const riskDistance = row.entryPrice != null && row.stopLossPrice != null
+      ? Math.abs(row.entryPrice - row.stopLossPrice)
+      : null;
+    const riskReward = rewardDistance != null && riskDistance != null && riskDistance > 0
+      ? rewardDistance / riskDistance
+      : null;
 
     if (loadingDetail && !detail) {
       return (
@@ -2013,6 +2160,12 @@ export default function PredictionsPage() {
     }
 
     return (
+      <PredictionDetailDrawer
+        title={`${row.symbol} · ${row.timeframe}`}
+        subtitle={tPred("detail.executiveSummary")}
+        closeLabel={tPred("wizard.close")}
+        onClose={() => setExpandedDetailId(null)}
+      >
       <div className="predictionDetailStack">
         <div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
@@ -2231,6 +2384,53 @@ export default function PredictionsPage() {
           ) : null}
         </div>
 
+        <div className="card predictionDetailPanel predictionDecisionPanel">
+          <div className="predictionDetailHeaderCopy">
+            <span className="predictionSectionEyebrow">{tPred("detail.tradePlanEyebrow")}</span>
+            <strong>{tPred("detail.tradePlan")}</strong>
+          </div>
+          <div className="predictionDecisionGrid">
+            <div><span>{tPred("detail.entryZone")}</span><strong>{fmtNum(row.entryPrice, 4)}</strong></div>
+            <div><span>{tPred("detail.stopInvalidation")}</span><strong>{fmtNum(row.stopLossPrice, 4)}</strong></div>
+            <div><span>{tPred("detail.targets")}</span><strong>{fmtNum(row.takeProfitPrice, 4)}</strong></div>
+            <div><span>{tPred("detail.riskReward")}</span><strong>{riskReward == null ? "n/a" : `1 : ${riskReward.toFixed(2)}`}</strong></div>
+            <div><span>{tPred("detail.candleTimeframe")}</span><strong>{row.timeframe}</strong></div>
+            <div><span>{tPred("detail.analysisHorizon")}</span><strong>{row.horizonMs ? fmtMs(row.horizonMs) : "n/a"}</strong></div>
+          </div>
+          <div className="predictionDetailNarrativeGrid">
+            <div>
+              <strong>{tPred("detail.keyDrivers")}</strong>
+              <p>{row.tags.length > 0 ? row.tags.join(" · ") : tPred("detail.noKeyDrivers")}</p>
+            </div>
+            <div>
+              <strong>{tPred("detail.invalidations")}</strong>
+              <p>{row.stopLossPrice != null ? tPred("detail.invalidationAtStop", { price: fmtNum(row.stopLossPrice, 4) }) : tPred("detail.invalidationUnavailable")}</p>
+            </div>
+            <div>
+              <strong>{tPred("detail.riskUncertainty")}</strong>
+              <p>{dataGap ? tPred("detail.dataQualityDegraded") : tPred("detail.uncertaintyNotice")}</p>
+            </div>
+            <div>
+              <strong>{tPred("detail.dataSourcesTime")}</strong>
+              <p>{row.exchange.toUpperCase()} · {updatedAtIso ? new Date(updatedAtIso).toLocaleString() : "n/a"}</p>
+            </div>
+          </div>
+        </div>
+
+        <PredictionCopierEligibility
+          eligible={copierEligible}
+          href={buildPredictionCopierReviewHref({
+            localePath: withLocalePath("/bots/new", locale),
+            stateId: copierState?.id ?? row.id,
+            accountId: row.accountId
+          })}
+          title={tPred("copier.eligibilityTitle")}
+          description={tPred("copier.reviewOnlyDescription")}
+          eligibleLabel={tPred("copier.eligible")}
+          unavailableLabel={tPred("copier.notEligible")}
+          actionLabel={tPred("copier.configure")}
+        />
+
         <div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
             <div className="predictionDetailHeaderCopy">
@@ -2290,44 +2490,166 @@ export default function PredictionsPage() {
             </div>
           )}
         </div>
+        <div className="predictionDetailActionsBar">
+          <button className="btn btnPrimary" type="button" onClick={() => void sendToDesk(row.id)} disabled={!canSendToDesk(row, signalSource)}>
+            <AppIcon name="trading" />
+            {tPred("detail.openTradingDesk")}
+          </button>
+          <button className="btn" type="button" onClick={() => { setExpandedDetailId(null); openPredictionWizard(row); }}>
+            <AppIcon name="copy" />
+            {tPred("detail.createSimilar")}
+          </button>
+          <button className="btn" type="button" onClick={() => { setExpandedDetailId(null); setActiveView("active"); }}>
+            <AppIcon name="preview" />
+            {tPred("detail.monitorMarket")}
+          </button>
+          <Link className="btn" href={withLocalePath("/strategies", locale)}>
+            <AppIcon name="template" />
+            {tPred("detail.saveTemplate")}
+          </Link>
+        </div>
       </div>
+      </PredictionDetailDrawer>
     );
   }
 
   return (
     <div className="predictionsWrap">
-      <PageHeader title={tPred("title")} description={tPred("subtitle")} />
+      <PageHeader
+        title={tPred("title")}
+        description={tPred("subtitle")}
+        actions={(
+          <button className="btn btnPrimary" type="button" onClick={() => openPredictionWizard()}>
+            <AppIcon name="create" />
+            {tPred("navigation.newAnalysis")}
+          </button>
+        )}
+      />
 
+      <nav className="predictionTabs" aria-label={tPred("navigation.label")}>
+        {(["overview", "active", "history", "performance"] as PredictionsView[]).map((view) => (
+          <button
+            key={view}
+            className={`predictionTab ${activeView === view ? "predictionTabActive" : ""}`}
+            type="button"
+            onClick={() => setActiveView(view)}
+            aria-current={activeView === view ? "page" : undefined}
+          >
+            <AppIcon name={view === "performance" ? "performance" : view === "active" ? "play" : view === "history" ? "list" : "dashboard"} />
+            {tPred(`navigation.${view}`)}
+          </button>
+        ))}
+      </nav>
+
+      <PredictionsOverview active={activeView === "overview"}>
       <section className="card predictionsSection predictionQuickStatsSection">
         <div className="predictionQuickStatsGrid">
           <MetricTile
             className="predictionQuickStat"
-            label={tPred("quickStats.listed")}
-            value={filteredRows.length}
-            meta={`/ ${rows.length} ${tPred("quickStats.total")}`}
+            label={tPred("overview.activePredictions")}
+            value={runningRows.filter((row) => !row.paused).length}
+            tone={runningRows.some((row) => !row.paused) ? "success" : "neutral"}
           />
           <MetricTile
             className="predictionQuickStat"
-            label={tPred("quickStats.actionableNow")}
-            value={actionableRowsCount}
-            tone={actionableRowsCount > 0 ? "success" : "neutral"}
+            label={tPred("overview.todayAnalyses")}
+            value={todayAnalysesCount}
           />
           <MetricTile
             className="predictionQuickStat"
-            label={tPred("quickStats.autoEnabled")}
-            value={autoEnabledRowsCount}
-            tone={autoEnabledRowsCount > 0 ? "info" : "neutral"}
+            label={tPred("overview.averageConfidence")}
+            value={averageConfidencePct === null ? "-" : `${averageConfidencePct.toFixed(1)}%`}
+            tone={Number(averageConfidencePct ?? 0) >= 70 ? "success" : "neutral"}
           />
           <MetricTile
             className="predictionQuickStat"
-            label={tPred("quickStats.disagreements")}
-            value={aiDisagreementRowsCount}
-            tone={aiDisagreementRowsCount > 0 ? "warning" : "neutral"}
+            label={tPred("overview.directionAccuracy")}
+            value={metrics?.hitRate == null ? "-" : `${metrics.hitRate.toFixed(1)}%`}
+            meta={tPred("performance.evaluated", { count: metrics?.evaluatedCount ?? 0 })}
+          />
+          <MetricTile
+            className="predictionQuickStat"
+            label={tPred("overview.aiUsage")}
+            value={`${subscriptionQuota?.usage.predictions.ai.running ?? 0} / ${subscriptionQuota?.limits.predictions.ai.maxRunning ?? tPred("create.unlimited")}`}
+            meta={tPred("overview.runningAllocation")}
+            tone="info"
+          />
+          <MetricTile
+            className="predictionQuickStat"
+            label={tPred("overview.dataSources")}
+            value={degradedSourcesCount > 0 ? tPred("overview.degraded") : tPred("overview.operational")}
+            meta={degradedSourcesCount > 0 ? tPred("overview.degradedCount", { count: degradedSourcesCount }) : tPred("overview.allSourcesHealthy")}
+            tone={degradedSourcesCount > 0 ? "warning" : "success"}
+          />
+          <MetricTile
+            className="predictionQuickStat"
+            label={tPred("overview.copierStatus")}
+            value={tPred("overview.reviewAvailable")}
+            meta={tPred("overview.activeRulesUnavailable")}
+            tone="accent"
           />
         </div>
       </section>
 
-      <section className="card predictionsSection predictionCreateSection">
+      <section className="card predictionsSection predictionRecentSection">
+        <div className="predictionsListHeader">
+          <div className="predictionsListTitle">{tPred("overview.recentPredictions")}</div>
+          <button className="btn" type="button" onClick={() => setActiveView("history")}>
+            <AppIcon name="list" />
+            {tPred("overview.viewHistory")}
+          </button>
+        </div>
+        {recentPredictions.length === 0 ? (
+          <div className="predictionsListState">{tPred("feed.noPredictions")}</div>
+        ) : (
+          <div className="predictionRecentList">
+            {recentPredictions.map((row) => {
+              const source = getEffectiveRowSource(row, signalSource);
+              const signal = resolveSignal(row, source);
+              const isFinal = row.outcomeStatus === "closed" && Boolean(row.outcomeEvaluatedAt ?? row.realizedEvaluatedAt);
+              return (
+                <button className="predictionRecentRow" type="button" key={row.id} onClick={() => void togglePredictionDetail(row.id)}>
+                  <span className="predictionRecentSymbol">{row.symbol}</span>
+                  <span>{row.marketType} · {row.timeframe}</span>
+                  <span className="badge" style={signalBadgeStyle(signal)}>{signal}</span>
+                  <span>{fmtConfidence(resolveConfidence(row, source))}</span>
+                  <span>{isFinal ? tPred("overview.finalEvaluation") : tPred("overview.currentOutcome")}</span>
+                  <AppIcon name="chevronRight" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      </PredictionsOverview>
+
+      {(activeView === "active" || wizardOpen) ? (
+      <PredictionCreateWizard
+        open={wizardOpen}
+        step={wizardStep}
+        steps={[
+          tPred("wizard.steps.market"),
+          tPred("wizard.steps.analysis"),
+          tPred("wizard.steps.advanced"),
+          tPred("wizard.steps.review"),
+          tPred("wizard.steps.generate")
+        ]}
+        title={tPred("wizard.title")}
+        description={tPred("wizard.description")}
+        backLabel={tPred("wizard.back")}
+        nextLabel={tPred("wizard.next")}
+        closeLabel={tPred("wizard.close")}
+        generateLabel={tPred("wizard.generate")}
+        generatingLabel={tPred("create.creating")}
+        canGenerate={!createBlockedByLimit && !createBlockedByFeature}
+        generating={creating}
+        onBack={previousPredictionWizardStep}
+        onNext={nextPredictionWizardStep}
+        onClose={() => setWizardOpen(false)}
+        onGenerate={() => void createPrediction()}
+      >
+      <ActivePredictions active>
+      <section className={`card predictionsSection predictionCreateSection ${wizardOpen ? "predictionCreateWizardMode" : "predictionActiveSchedulesMode"}`}>
         <div className="predictionCreateHeader">
           <div>
             <div className="predictionCreateTitle">{tPred("create.title")}</div>
@@ -2354,7 +2676,7 @@ export default function PredictionsPage() {
           </div>
         </div>
         <div className="predictionCreateGrid">
-          <label className="predictionCreateField predictionCreateFieldPrompt">
+          <label className="predictionCreateField predictionCreateFieldPrompt" data-wizard-section="analysis">
             <div className="predictionCreateLabel">{tPred("create.strategy")}</div>
             <div className="predictionCreateHint">
               {tPred("create.strategyHint")}
@@ -2441,7 +2763,7 @@ export default function PredictionsPage() {
             </div>
           </label>
 
-          <label className="predictionCreateField">
+          <label className="predictionCreateField" data-wizard-section="market">
             <div className="predictionCreateLabel">{tPred("create.exchangeAccount")}</div>
             <div className="predictionCreateHint">{tPred("create.exchangeAccountHint")}</div>
             <select
@@ -2462,7 +2784,7 @@ export default function PredictionsPage() {
             </select>
           </label>
 
-          <label className="predictionCreateField">
+          <label className="predictionCreateField" data-wizard-section="market">
             <div className="predictionCreateLabel">{tPred("create.pair")}</div>
             <div className="predictionCreateHint">{tPred("create.pairHint")}</div>
             <SymbolSearchSelect
@@ -2478,7 +2800,7 @@ export default function PredictionsPage() {
             />
           </label>
 
-          <label className="predictionCreateField">
+          <label className="predictionCreateField" data-wizard-section="market">
             <div className="predictionCreateLabel">{tPred("create.marketType")}</div>
             <div className="predictionCreateHint">{tPred("create.marketTypeHint")}</div>
             <select className="input" value={newMarketType} onChange={(e) => setNewMarketType(e.target.value as PredictionMarketType)}>
@@ -2487,7 +2809,7 @@ export default function PredictionsPage() {
             </select>
           </label>
 
-          <label className="predictionCreateField">
+          <label className="predictionCreateField" data-wizard-section="advanced">
             <div className="predictionCreateLabel">{tPred("create.timeframe")}</div>
             <div className="predictionCreateHint">
               {selectedPromptLockedTimeframe
@@ -2506,7 +2828,19 @@ export default function PredictionsPage() {
             </select>
           </label>
 
-          <label className="predictionCreateField">
+          <label className="predictionCreateField" data-wizard-section="advanced">
+            <div className="predictionCreateLabel">{tPred("wizard.analysisHorizon")}</div>
+            <div className="predictionCreateHint">{tPred("wizard.analysisHorizonHint")}</div>
+            <select className="input" value={newHorizonMs} onChange={(e) => setNewHorizonMs(Number(e.target.value))}>
+              <option value={60 * 60 * 1000}>1h</option>
+              <option value={4 * 60 * 60 * 1000}>4h</option>
+              <option value={12 * 60 * 60 * 1000}>12h</option>
+              <option value={24 * 60 * 60 * 1000}>1d</option>
+              <option value={3 * 24 * 60 * 60 * 1000}>3d</option>
+            </select>
+          </label>
+
+          <label className="predictionCreateField" data-wizard-section="advanced">
             <div className="predictionCreateLabel">{tPred("create.responseLanguage")}</div>
             <div className="predictionCreateHint">{tPred("create.responseLanguageHint")}</div>
             <select
@@ -2519,7 +2853,7 @@ export default function PredictionsPage() {
             </select>
           </label>
 
-          <label className="predictionCreateField">
+          <label className="predictionCreateField" data-wizard-section="advanced">
             <div className="predictionCreateLabel">{tPred("create.leverage")}</div>
             <div className="predictionCreateHint">{tPred("create.leverageHint")}</div>
             <input
@@ -2534,10 +2868,34 @@ export default function PredictionsPage() {
               disabled={newMarketType !== "perp"}
             />
           </label>
+
+          <div className="predictionWizardReview" data-wizard-section="review">
+            <div><span>{tPred("create.exchangeAccount")}</span><strong>{accounts.find((account) => account.id === createAccountId)?.label ?? tPred("misc.na")}</strong></div>
+            <div><span>{tPred("create.pair")}</span><strong>{newSymbol} · {newMarketType}</strong></div>
+            <div><span>{tPred("create.timeframe")}</span><strong>{effectiveCreateTimeframe}</strong></div>
+            <div><span>{tPred("wizard.analysisHorizon")}</span><strong>{fmtMs(newHorizonMs)}</strong></div>
+            <div><span>{tPred("create.strategy")}</span><strong>{strategyRefLabel(selectedStrategyRef, {
+              aiPromptTemplateName: selectedPrompt?.name ?? null,
+              localStrategyName: selectedLocalStrategy?.name ?? null,
+              compositeStrategyName: selectedCompositeStrategy?.name ?? null
+            })}</strong></div>
+            <div><span>{tPred("create.signalMode")}</span><strong>{createSignalModeLabel}</strong></div>
+          </div>
+
+          <div className="predictionWizardGenerate" data-wizard-section="generate">
+            <AppIcon name="ai" />
+            <div>
+              <strong>{tPred("wizard.readyTitle")}</strong>
+              <p>{tPred("wizard.readyDescription")}</p>
+            </div>
+          </div>
         </div>
 
         <div className="predictionCreateFooter">
           <div className="predictionCreateStatusRow">
+            {wizardOpen && actionError ? (
+              <div className="predictionCreateAlert predictionCreateAlertWarn">{actionError}</div>
+            ) : null}
             {symbolsError ? (
               <div className="predictionCreateAlert predictionCreateAlertWarn">
                 {tPred("create.pairsLoadFailed")}: {symbolsError}
@@ -2672,6 +3030,14 @@ export default function PredictionsPage() {
                     <th style={{ padding: "8px 6px" }}>{tPred("running.market")}</th>
                     <th style={{ padding: "8px 6px" }}>{tPred("running.account")}</th>
                     <th style={{ padding: "8px 6px" }}>{tPred("running.prefs")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.direction")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.confidence")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.entryZone")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.stop")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.targets")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.currentPrice")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.currentOutcome")}</th>
+                    <th style={{ padding: "8px 6px" }}>{tPred("active.finalEvaluation")}</th>
                     <th style={{ padding: "8px 6px" }}>{tPred("running.status")}</th>
                     <th style={{ padding: "8px 6px" }}>{tPred("running.nextRun")}</th>
                     <th style={{ padding: "8px 6px" }}>{tPred("running.actions")}</th>
@@ -2680,6 +3046,8 @@ export default function PredictionsPage() {
                 <tbody>
 	                  {filteredRunningRows.map((row) => {
 	                    const refreshDegraded = isPredictionRefreshDegraded(row);
+	                    const latest = rows.find((candidate) => candidate.symbol === row.symbol && candidate.timeframe === row.timeframe && candidate.marketType === row.marketType) ?? null;
+	                    const latestSource = latest ? getEffectiveRowSource(latest, signalSource) : signalSource;
 	                    return (
 	                    <tr key={row.id} style={{ borderTop: "1px solid rgba(255,255,255,.06)" }}>
                       <td style={{ padding: "8px 6px", fontWeight: 700 }}>{row.symbol}</td>
@@ -2698,6 +3066,14 @@ export default function PredictionsPage() {
                           compositeStrategyName: row.compositeStrategyName
                         })}`}
 	                      </td>
+	                      <td style={{ padding: "8px 6px" }}>{latest ? resolveSignal(latest, latestSource) : row.directionPreference}</td>
+	                      <td style={{ padding: "8px 6px" }}>{latest ? fmtConfidence(resolveConfidence(latest, latestSource)) : `${row.confidenceTargetPct}%`}</td>
+	                      <td style={{ padding: "8px 6px" }}>{fmtNum(latest?.entryPrice, 4)}</td>
+	                      <td style={{ padding: "8px 6px" }}>{fmtNum(latest?.stopLossPrice, 4)}</td>
+	                      <td style={{ padding: "8px 6px" }}>{fmtNum(latest?.takeProfitPrice, 4)}</td>
+	                      <td style={{ padding: "8px 6px" }}>n/a</td>
+	                      <td style={{ padding: "8px 6px" }}>{latest ? outcomeLabel(latest.outcomeStatus, latest.outcomeResult) : tPred("history.pending")}</td>
+	                      <td style={{ padding: "8px 6px" }}>{latest?.outcomeEvaluatedAt ? (latest.outcomeResult ?? tPred("history.final")) : tPred("active.notFinal")}</td>
 	                      <td style={{ padding: "8px 6px" }}>
 	                        <span className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
 	                          {refreshDegraded ? tPred("running.degraded") : row.paused ? tPred("running.paused") : tPred("running.running")}
@@ -2744,6 +3120,8 @@ export default function PredictionsPage() {
             <div className="predictionsRunningMobileList">
 	              {filteredRunningRows.map((row) => {
 	                const refreshDegraded = isPredictionRefreshDegraded(row);
+	                const latest = rows.find((candidate) => candidate.symbol === row.symbol && candidate.timeframe === row.timeframe && candidate.marketType === row.marketType) ?? null;
+	                const latestSource = latest ? getEffectiveRowSource(latest, signalSource) : signalSource;
 	                return (
 	                <div key={`${row.id}_mobile`} className="card predictionRunningCard">
 	                  <div className="predictionRunningCardHeader">
@@ -2761,6 +3139,14 @@ export default function PredictionsPage() {
                     <span>{row.timeframe}</span>
                     <span>{row.marketType}</span>
                     <span>{row.exchange.toUpperCase()}</span>
+                  </div>
+                  <div className="predictionActiveMobileGrid">
+                    <div><span>{tPred("active.direction")}</span><strong>{latest ? resolveSignal(latest, latestSource) : row.directionPreference}</strong></div>
+                    <div><span>{tPred("active.confidence")}</span><strong>{latest ? fmtConfidence(resolveConfidence(latest, latestSource)) : `${row.confidenceTargetPct}%`}</strong></div>
+                    <div><span>{tPred("active.entryZone")}</span><strong>{fmtNum(latest?.entryPrice, 4)}</strong></div>
+                    <div><span>{tPred("active.stop")}</span><strong>{fmtNum(latest?.stopLossPrice, 4)}</strong></div>
+                    <div><span>{tPred("active.targets")}</span><strong>{fmtNum(latest?.takeProfitPrice, 4)}</strong></div>
+                    <div><span>{tPred("active.finalEvaluation")}</span><strong>{latest?.outcomeEvaluatedAt ? (latest.outcomeResult ?? tPred("history.final")) : tPred("active.notFinal")}</strong></div>
                   </div>
                   <div className="predictionRunningCardLine">
                     <span>{tPred("running.account")}</span>
@@ -2822,6 +3208,9 @@ export default function PredictionsPage() {
         </div>
 
       </section>
+      </ActivePredictions>
+      </PredictionCreateWizard>
+      ) : null}
 
       {error ? <PredictionAlert tone="error" title={tPred("alerts.loadError")} message={error} /> : null}
 
@@ -2831,6 +3220,7 @@ export default function PredictionsPage() {
 
       {notice ? <PredictionAlert tone="warning" title={tPred("alerts.notice")} message={notice} /> : null}
 
+      <PredictionHistory active={activeView === "history"}>
       <section className="card predictionsSection">
         <div className="predictionsListHeader">
           <div className="predictionsListTitle">{tPred("feed.title")}</div>
@@ -2897,6 +3287,31 @@ export default function PredictionsPage() {
             {TIMEFRAMES.map((tf) => (
               <option key={tf} value={tf}>{tf}</option>
             ))}
+          </select>
+          <select className="input" value={filterMarket} onChange={(e) => setFilterMarket(e.target.value as PredictionMarketType | "all")}>
+            <option value="all">{tPred("history.allMarkets")}</option>
+            <option value="spot">Spot</option>
+            <option value="perp">Perpetual</option>
+          </select>
+          <input
+            className="input"
+            placeholder={tPred("history.filterPrompt")}
+            value={filterPrompt}
+            onChange={(e) => setFilterPrompt(e.target.value)}
+          />
+          <select className="input" value={filterProvider} onChange={(e) => setFilterProvider(e.target.value as HistoryProviderFilter)}>
+            <option value="all">{tPred("history.allProviders")}</option>
+            <option value="ai">AI</option>
+            <option value="local">Rules</option>
+            <option value="composite">Rules + AI</option>
+          </select>
+          <select className="input" value={filterResult} onChange={(e) => setFilterResult(e.target.value as HistoryResultFilter)}>
+            <option value="all">{tPred("history.allResults")}</option>
+            <option value="pending">{tPred("history.pending")}</option>
+            <option value="closed">{tPred("history.final")}</option>
+            <option value="tp">TP</option>
+            <option value="sl">SL</option>
+            <option value="expired">{tPred("history.expired")}</option>
           </select>
           <select className="input" value={signalSource} onChange={(e) => setSignalSource(e.target.value as SignalSource)}>
             <option value="local">{tPred("feed.signalSourceLocal")}</option>
@@ -3268,7 +3683,9 @@ export default function PredictionsPage() {
           )}
         </div>
       </section>
+      </PredictionHistory>
 
+      <PredictionPerformance active={activeView === "performance"}>
       <section className="card predictionsSection">
         <div className="predictionsPerformanceHeader">
           <div>
@@ -3317,6 +3734,19 @@ export default function PredictionsPage() {
           />
           <MetricTile label={tPred("performance.mae")} value={metrics?.mae !== null && metrics?.mae !== undefined ? metrics.mae.toFixed(4) : "-"} />
           <MetricTile label={tPred("performance.mse")} value={metrics?.mse !== null && metrics?.mse !== undefined ? metrics.mse.toFixed(4) : "-"} />
+          <MetricTile label={tPred("performance.mfeExcursion")} value={averageMfePct == null ? "-" : `${averageMfePct.toFixed(2)}%`} />
+          <MetricTile label={tPred("performance.maeExcursion")} value={averageMaePct == null ? "-" : `${averageMaePct.toFixed(2)}%`} />
+          <MetricTile
+            label={tPred("performance.stopHitRate")}
+            value={quality?.sampleSize ? `${((quality.sl / quality.sampleSize) * 100).toFixed(2)}%` : "-"}
+          />
+        </div>
+        <div className="predictionPerformanceBoundaryNotice">
+          <AppIcon name="shield" />
+          <div>
+            <strong>{tPred("performance.qualityBoundaryTitle")}</strong>
+            <span>{tPred("performance.qualityBoundaryDescription")}</span>
+          </div>
         </div>
         <div className="predictionCalibrationWrap">
           <div className="predictionCalibrationHeader">
@@ -3365,6 +3795,7 @@ export default function PredictionsPage() {
           )}
         </div>
       </section>
+      </PredictionPerformance>
     </div>
   );
 }

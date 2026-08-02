@@ -130,6 +130,8 @@
     },
     "copier": {
       "title": "Prediction Copier Settings",
+      "reviewFlowTitle": "Prediction Copier review",
+      "reviewFlowDescription": "This source is preselected for review only. Check account, limits, risk rules, and the final summary before creating; creation still does not start the bot.",
       "descriptionBefore": "Copies signals from",
       "descriptionAfter": "(enter/exit) with risk filter.",
       "sourceRequired": "Prediction source is required for prediction_copier.",

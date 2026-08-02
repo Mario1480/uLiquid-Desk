@@ -5147,6 +5147,460 @@
   }
 }
 
+/* Predictions workspace: tabbed beta workflow, review wizard and detail drawer */
+.predictionTabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-control);
+}
+
+.predictionTab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.predictionTab:hover,
+.predictionTab:focus-visible {
+  color: var(--color-text-primary);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.predictionTabActive {
+  color: var(--color-text-primary);
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.predictionView {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.predictionsListHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.predictionRecentList {
+  display: grid;
+  margin-top: 8px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.predictionRecentRow {
+  display: grid;
+  grid-template-columns: minmax(100px, 1.1fr) minmax(120px, 1fr) auto auto minmax(120px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.predictionRecentRow:hover,
+.predictionRecentRow:focus-visible {
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.predictionRecentSymbol {
+  font-weight: 750;
+}
+
+.predictionActiveSchedulesMode > .predictionCreateHeader,
+.predictionActiveSchedulesMode > .predictionCreateGrid,
+.predictionActiveSchedulesMode > .predictionCreateFooter {
+  display: none;
+}
+
+.predictionActiveSchedulesMode .predictionSubCard {
+  margin-top: 0;
+}
+
+.predictionWizardBackdrop,
+.predictionDrawerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(2, 6, 14, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.predictionWizardBackdrop {
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.predictionWizard {
+  width: min(920px, 100%);
+  max-height: min(860px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-panel);
+  background: var(--ui-surface-menu);
+  box-shadow: var(--ui-shadow);
+}
+
+.predictionWizardHeader,
+.predictionDrawerHeader {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-menu);
+}
+
+.predictionWizardTitle,
+.predictionDrawerTitle {
+  margin: 3px 0 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.predictionWizardDescription {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.predictionDrawerClose {
+  min-width: 38px;
+  padding: 8px;
+}
+
+.predictionWizardSteps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 12px 16px;
+  list-style: none;
+}
+
+.predictionWizardSteps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.predictionWizardSteps li span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+}
+
+.predictionWizardSteps .predictionWizardStepActive,
+.predictionWizardSteps .predictionWizardStepDone {
+  color: var(--color-text-primary);
+}
+
+.predictionWizardSteps .predictionWizardStepActive span {
+  border-color: var(--color-accent, #60a5fa);
+  background: rgba(96, 165, 250, 0.18);
+}
+
+.predictionWizardSteps .predictionWizardStepDone span {
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #86efac;
+}
+
+.predictionWizardBody {
+  padding: 0 16px 16px;
+}
+
+.predictionCreateWizardMode {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+
+.predictionCreateWizardMode > .predictionCreateHeader,
+.predictionCreateWizardMode > .predictionSubCard,
+.predictionCreateWizardMode .predictionCreateActions {
+  display: none;
+}
+
+.predictionCreateWizardMode .predictionCreateFooter {
+  border: 0;
+  padding-top: 0;
+}
+
+.predictionCreateWizardMode [data-wizard-section] {
+  display: none;
+}
+
+.predictionWizardBody[data-step="market"] [data-wizard-section="market"],
+.predictionWizardBody[data-step="analysis"] [data-wizard-section="analysis"],
+.predictionWizardBody[data-step="advanced"] [data-wizard-section="advanced"] {
+  display: grid;
+}
+
+.predictionWizardBody[data-step="review"] [data-wizard-section="review"] {
+  display: grid;
+}
+
+.predictionWizardBody[data-step="generate"] [data-wizard-section="generate"] {
+  display: flex;
+}
+
+.predictionWizardReview {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.predictionWizardReview > div,
+.predictionDecisionGrid > div,
+.predictionActiveMobileGrid > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-card);
+}
+
+.predictionWizardReview span,
+.predictionDecisionGrid span,
+.predictionActiveMobileGrid span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.predictionWizardGenerate {
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: var(--ui-radius-card);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.predictionWizardGenerate > svg {
+  flex: 0 0 auto;
+  font-size: 24px;
+}
+
+.predictionWizardGenerate p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.predictionWizardFooter {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface-menu);
+}
+
+.predictionDrawer {
+  width: min(760px, 100%);
+  height: 100%;
+  overflow: auto;
+  border-left: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-menu);
+  box-shadow: -24px 0 64px rgba(0, 0, 0, 0.38);
+}
+
+.predictionDrawerBody {
+  padding: 12px;
+}
+
+.predictionDecisionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.predictionDetailNarrativeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.predictionDetailNarrativeGrid > div {
+  padding: 10px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.predictionDetailNarrativeGrid p,
+.predictionCopierEligibility p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.predictionCopierEligibility {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: var(--ui-radius-card);
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.predictionCopierEligibilityActions,
+.predictionDetailActionsBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.predictionDetailActionsBar {
+  position: sticky;
+  bottom: -12px;
+  z-index: 1;
+  padding: 10px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-menu);
+}
+
+.predictionActiveMobileGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.predictionPerformanceBoundaryNotice,
+.botsSetupReviewNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: var(--ui-radius-card);
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.predictionPerformanceBoundaryNotice > div,
+.botsSetupReviewNotice > div {
+  display: grid;
+  gap: 3px;
+}
+
+.predictionPerformanceBoundaryNotice span,
+.botsSetupReviewNotice span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+  .predictionTabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .predictionRecentRow {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .predictionRecentRow > :nth-child(2),
+  .predictionRecentRow > :nth-child(5) {
+    display: none;
+  }
+
+  .predictionWizardBackdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .predictionWizard {
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .predictionWizardSteps {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .predictionWizardSteps li {
+    flex: 0 0 auto;
+  }
+
+  .predictionWizardReview,
+  .predictionDecisionGrid,
+  .predictionDetailNarrativeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .predictionDrawer {
+    width: 100%;
+    border-left: 0;
+  }
+
+  .predictionCopierEligibility {
+    flex-direction: column;
+  }
+
+  .predictionCopierEligibilityActions,
+  .predictionCopierEligibilityActions .btn,
+  .predictionDetailActionsBar,
+  .predictionDetailActionsBar .btn {
+    width: 100%;
+  }
+}
+
 /* Dashboard calendar card alignment */
 
 .dashboardCalendarProCard {

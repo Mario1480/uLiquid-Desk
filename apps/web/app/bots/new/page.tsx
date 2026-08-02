@@ -133,6 +133,8 @@ export default function NewBotPage() {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [exchangeAccountId, setExchangeAccountId] = useState("");
   const [strategyKey, setStrategyKey] = useState<StrategyKey>("dummy");
+  const [reviewPrefillSourceId, setReviewPrefillSourceId] = useState("");
+  const [isPredictionReviewFlow, setIsPredictionReviewFlow] = useState(false);
   const [marginMode, setMarginMode] = useState<"isolated" | "cross">("isolated");
   const [leverage, setLeverage] = useState(1);
   const [tickMs, setTickMs] = useState(1000);
@@ -204,6 +206,16 @@ export default function NewBotPage() {
   const [subscriptionQuota, setSubscriptionQuota] = useState<SubscriptionQuotaSnapshot | null>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("review") !== "1" || params.get("strategy") !== "prediction_copier") return;
+    setIsPredictionReviewFlow(true);
+    setStrategyKey("prediction_copier");
+    setReviewPrefillSourceId(params.get("sourceStateId")?.trim() ?? "");
+    const accountId = params.get("exchangeAccountId")?.trim();
+    if (accountId) setExchangeAccountId(accountId);
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     async function loadAccounts() {
       try {
@@ -250,6 +262,9 @@ export default function NewBotPage() {
         setSources(items);
         setSourceStateId((prev) => {
           if (prev && items.some((item) => item.stateId === prev)) return prev;
+          if (reviewPrefillSourceId && items.some((item) => item.stateId === reviewPrefillSourceId)) {
+            return reviewPrefillSourceId;
+          }
           return items[0]?.stateId ?? "";
         });
       } catch (e) {
@@ -265,7 +280,7 @@ export default function NewBotPage() {
     return () => {
       mounted = false;
     };
-  }, [strategyKey, exchangeAccountId]);
+  }, [strategyKey, exchangeAccountId, reviewPrefillSourceId]);
 
   useEffect(() => {
     let mounted = true;
@@ -494,6 +509,16 @@ export default function NewBotPage() {
 	            {t("actions.back")}
 	          </Link>
         </div>
+
+        {isPredictionReviewFlow ? (
+          <div className="botsSetupReviewNotice" role="status">
+            <AppIcon name="preview" />
+            <div>
+              <strong>{t("copier.reviewFlowTitle")}</strong>
+              <span>{t("copier.reviewFlowDescription")}</span>
+            </div>
+          </div>
+        ) : null}
 
         {error ? <div className="botsSetupError">{error}</div> : null}
 

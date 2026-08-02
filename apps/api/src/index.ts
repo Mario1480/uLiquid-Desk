@@ -5360,6 +5360,7 @@ type PredictionGenerateAutoInput = {
   symbol: string;
   marketType: PredictionMarketType;
   timeframe: PredictionTimeframe;
+  horizonMs?: number;
   leverage?: number;
   modelVersionBase?: string;
   responseLanguage?: unknown;
@@ -5998,6 +5999,19 @@ async function generateAutoPredictionForUser(
           strategyNewsRiskMode
         }
       );
+    }
+
+    if (Number.isFinite(payload.horizonMs)) {
+      const horizonMs = Math.max(60_000, Math.trunc(payload.horizonMs!));
+      inferred.featureSnapshot = {
+        ...inferred.featureSnapshot,
+        horizonMs,
+        predictionHorizonMs: horizonMs
+      };
+      inferred.tracking = {
+        ...inferred.tracking,
+        horizonMs
+      };
     }
 
     const tsCreated = new Date().toISOString();

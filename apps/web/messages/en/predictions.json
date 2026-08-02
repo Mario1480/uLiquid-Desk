@@ -1,6 +1,60 @@
 {
   "title": "Predictions Dashboard",
-  "subtitle": "Select a prediction and prefill the Manual Trading Desk ticket.",
+  "subtitle": "Review market analyses, monitor active predictions, and configure automation through an explicit review flow.",
+  "navigation": {
+    "label": "Prediction views",
+    "overview": "Overview",
+    "active": "Active",
+    "history": "History",
+    "performance": "Performance",
+    "newAnalysis": "New Analysis"
+  },
+  "overview": {
+    "activePredictions": "Active predictions",
+    "todayAnalyses": "Today's analyses",
+    "averageConfidence": "Average confidence",
+    "directionAccuracy": "Direction accuracy",
+    "aiUsage": "AI usage",
+    "runningAllocation": "running allocation",
+    "dataSources": "Data sources",
+    "operational": "Operational",
+    "degraded": "Degraded",
+    "degradedCount": "{count} source(s) degraded",
+    "allSourcesHealthy": "All scheduled sources healthy",
+    "copierStatus": "Prediction Copier",
+    "reviewAvailable": "Review available",
+    "activeRulesUnavailable": "Rule count not exposed by this view",
+    "recentPredictions": "Recent predictions",
+    "viewHistory": "View history",
+    "currentOutcome": "Current outcome",
+    "finalEvaluation": "Final evaluation"
+  },
+  "wizard": {
+    "title": "New Analysis",
+    "description": "Configure the market and analysis independently, then review before generation.",
+    "steps": { "market": "Market", "analysis": "Analysis Type", "advanced": "Advanced Settings", "review": "Review", "generate": "Generate" },
+    "analysisHorizon": "Analysis horizon",
+    "analysisHorizonHint": "How long the thesis is evaluated; independent from candle timeframe.",
+    "back": "Back",
+    "next": "Continue",
+    "close": "Close",
+    "generate": "Generate analysis",
+    "readyTitle": "Ready to generate",
+    "readyDescription": "Generation creates or refreshes a prediction schedule. It does not place an order or activate the Prediction Copier."
+  },
+  "active": {
+    "direction": "Prediction direction", "confidence": "Confidence", "entryZone": "Entry zone", "stop": "Stop", "targets": "Targets", "currentPrice": "Current price", "currentOutcome": "Current outcome", "finalEvaluation": "Final evaluation", "notFinal": "Not final"
+  },
+  "history": {
+    "allMarkets": "All markets", "filterPrompt": "Filter prompt or strategy...", "allProviders": "All providers / modes", "allResults": "All results", "pending": "Pending", "final": "Final", "expired": "Expired"
+  },
+  "copier": {
+    "eligibilityTitle": "Copier eligibility and review",
+    "reviewOnlyDescription": "Opens a preconfigured review. No rule is saved, activated, or executed from this prediction.",
+    "eligible": "Eligible for review",
+    "notEligible": "Not currently eligible",
+    "configure": "Configure Prediction Copier"
+  },
   "header": {
     "dashboard": "Dashboard",
     "manualTrading": "Manual Trading"
@@ -212,12 +266,17 @@
     "bin": "Bin",
     "avgConf": "Avg conf",
     "accuracy": "Accuracy",
-    "sample": "N"
+    "sample": "N",
+    "mfeExcursion": "Average MFE",
+    "maeExcursion": "Average MAE",
+    "stopHitRate": "Stop Hit Rate",
+    "qualityBoundaryTitle": "Prediction quality",
+    "qualityBoundaryDescription": "These metrics evaluate the prediction thesis. Prediction Copier executions and trading PnL are intentionally not combined with them."
   },
   "modes": {
-    "localOnly": "Local only",
+    "localOnly": "Rules only",
     "aiOnly": "AI only",
-    "both": "Local + AI"
+    "both": "Rules validated by AI"
   },
   "detail": {
     "loadingDetails": "Loading prediction details...",
@@ -258,7 +317,29 @@
     "noRecentChanges": "No recent changes recorded.",
     "expandForEvents": "Expand to see the last refresh events.",
     "runStatus": "run {status}",
-    "runStatusUnknown": "run n/a"
+    "runStatusUnknown": "run n/a",
+    "executiveSummary": "Executive Summary",
+    "tradePlanEyebrow": "Levels and risk",
+    "tradePlan": "Trade thesis",
+    "entryZone": "Entry zone",
+    "stopInvalidation": "Stop / invalidation",
+    "targets": "Targets",
+    "riskReward": "Risk / reward",
+    "candleTimeframe": "Candle timeframe",
+    "analysisHorizon": "Analysis horizon",
+    "keyDrivers": "Key drivers",
+    "noKeyDrivers": "No structured drivers available.",
+    "invalidations": "Invalidations",
+    "invalidationAtStop": "The thesis is invalidated at the configured stop near {price}.",
+    "invalidationUnavailable": "No structured invalidation level is available.",
+    "riskUncertainty": "Risk and uncertainty",
+    "dataQualityDegraded": "Market-data quality is degraded. Do not treat this analysis as execution-ready.",
+    "uncertaintyNotice": "Confidence is probabilistic and does not guarantee a market outcome.",
+    "dataSourcesTime": "Data sources and timestamp",
+    "openTradingDesk": "Open in Trading Desk",
+    "createSimilar": "Create similar analysis",
+    "monitorMarket": "Monitor market",
+    "saveTemplate": "Save as template"
   },
   "misc": {
     "na": "n/a",
