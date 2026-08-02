@@ -132,12 +132,33 @@
       "title": "Prediction-Copier Einstellungen",
       "reviewFlowTitle": "Prediction-Copier-Review",
       "reviewFlowDescription": "Diese Quelle ist nur zur Prüfung vorausgewählt. Prüfe Konto, Limits, Risikoregeln und Zusammenfassung; auch das Erstellen startet den Bot noch nicht.",
+      "guidedReviewTitle": "Geführte Prüfung vor dem Erstellen",
+      "guidedReviewHint": "Alle elf Punkte bleiben nutzerkontrolliert. Spot ist in der Limited Beta nicht freigeschaltet.",
+      "perpetualBetaOnly": "Perpetual · Limited Beta (Spot nicht verfügbar)",
+      "finalReviewTitle": "Zusammenfassung und Bestätigung",
+      "finalReviewHint": "Die Konfiguration wird gestoppt angelegt. Aktivieren kannst du sie erst danach mit einer zweiten Bestätigung.",
+      "confirmReview": "Ich habe Konto, Quelle, Markt, Symbol, Sizing, Leverage, Stops/Targets und alle Limits geprüft.",
+      "activationSeparateHint": "Diese Bestätigung erstellt nur die Regel. Sie löst keine Order aus und aktiviert den Copier nicht.",
+      "reviewSteps": {
+        "step1": "Ausführungskonto prüfen",
+        "step2": "Perpetual-Markt bestätigen",
+        "step3": "Symbol prüfen",
+        "step4": "Prediction-Quelle und Strategie prüfen",
+        "step5": "Mindest-Confidence festlegen",
+        "step6": "Positionsgröße begrenzen",
+        "step7": "Leverage-Limit prüfen",
+        "step8": "Stop, Target und Time-Stop prüfen",
+        "step9": "Tagesverlust und Exposure begrenzen",
+        "step10": "Gesamte Regel zusammenfassen",
+        "step11": "Erstellung ausdrücklich bestätigen"
+      },
       "descriptionBefore": "Kopiert Signale aus",
       "descriptionAfter": "(Entry/Exit) mit Risiko-Filter.",
       "sourceRequired": "Für prediction_copier muss eine Prediction-Quelle gewählt werden.",
       "loadingSources": "Prediction-Quellen werden geladen...",
       "noSources": "Keine aktiven Prediction-Quellen für dieses Konto gefunden.",
       "fields": {
+        "marketType": "Markt",
         "source": "Prediction-Quelle",
         "predictionTf": "Prediction TF",
         "minConfidence": "Min. Confidence (%)",
@@ -158,6 +179,7 @@
         "maxNotionalPerSymbol": "Max. Notional / Symbol (USD)",
         "maxNotionalTotal": "Max. Gesamt-Notional (USD)",
         "maxLeverage": "Max. Leverage",
+        "dailyLossLimitUsd": "Tagesverlust-Limit (USD)",
         "stopLossPct": "Stop-Loss (%)",
         "takeProfitPct": "Take-Profit (%)",
         "timeStopMin": "Time-Stop (Min)",
@@ -218,6 +240,12 @@
       "stopping": "Stoppt...",
       "stopAndClose": "Stopp + Trade schließen",
       "stoppingAndClosing": "Stoppt + schließt..."
+    },
+    "copierActivation": {
+      "title": "Prediction Copier aktivieren?",
+      "description": "Du bestätigst Konto, Perpetual-Markt, Prediction-Quelle, Symbol, Confidence, Positionsgröße, Leverage, Stop/Target sowie Tages- und Exposure-Limits. Der Copier bleibt regelbasiert; AI darf diese Regeln nicht ändern oder den Bot selbst aktivieren.",
+      "confirm": "Regeln geprüft · aktivieren",
+      "cancel": "Noch einmal prüfen"
     },
     "fields": {
       "botStatus": "Bot-Status",
@@ -286,6 +314,22 @@
         "expected_move_below_min": "Expected Move unter Mindestwert",
         "missing_prediction_state": "Kein Prediction-State verfügbar",
         "stale_prediction_state": "Prediction-State veraltet"
+      }
+    },
+    "copierAudit": {
+      "title": "Prediction-Copier Ausführungsprüfung",
+      "reviewed": "Vor Order geprüft",
+      "submitted": "Übermittelt/ausgeführt",
+      "unknown": "Status unklar",
+      "performanceHint": "Prediction-Qualität und Trading-Ergebnis sind getrennte Kennzahlen. Ein gutes Signal garantiert weder Ausführung noch Gewinn.",
+      "empty": "Noch keine Order-Reviews vorhanden.",
+      "columns": {
+        "time": "Prüfzeit",
+        "prediction": "Prediction-ID",
+        "action": "Aktion",
+        "order": "Order-ID / Plan",
+        "status": "Status",
+        "reason": "Fehler/Grund"
       }
     },
     "metrics": {

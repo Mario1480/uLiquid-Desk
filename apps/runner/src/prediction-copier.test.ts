@@ -2,15 +2,47 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ActiveFuturesBot, BotTradeState, PredictionGateState } from "./db.js";
 import {
+  buildPredictionCopierIdempotencyKey,
   buildPredictionHash,
+  classifyPredictionCopierFailure,
   computePredictionCopierCandidateNotionalUsd,
   evaluatePredictionCopierDecision,
   inferExternalCloseOutcome,
+  isPredictionCopierGloballyEnabled,
   readPredictionCopierConfig,
   resolvePredictionCopierLeverage,
   resolveEntryTpSlPrices,
   type PredictionCopierConfig
 } from "./prediction-copier.js";
+
+test("prediction copier idempotency key is stable per rule, prediction and action", () => {
+  const input = {
+    botId: "bot_1",
+    predictionStateId: "state_1",
+    predictionHash: "prediction_hash_1",
+    action: "enter" as const
+  };
+  assert.equal(buildPredictionCopierIdempotencyKey(input), buildPredictionCopierIdempotencyKey(input));
+  assert.notEqual(
+    buildPredictionCopierIdempotencyKey(input),
+    buildPredictionCopierIdempotencyKey({ ...input, predictionHash: "prediction_hash_2" })
+  );
+  assert.notEqual(
+    buildPredictionCopierIdempotencyKey(input),
+    buildPredictionCopierIdempotencyKey({ ...input, action: "exit" })
+  );
+});
+
+test("unknown order outcomes stay non-retryable for reconciliation", () => {
+  assert.equal(classifyPredictionCopierFailure("exchange timeout after submit"), "unknown");
+  assert.equal(classifyPredictionCopierFailure("order rejected: invalid qty"), "failed");
+});
+
+test("prediction copier global switch fails closed for disabled and kill switch values", () => {
+  assert.equal(isPredictionCopierGloballyEnabled({}), true);
+  assert.equal(isPredictionCopierGloballyEnabled({ PREDICTION_COPIER_ENABLED: "false" }), false);
+  assert.equal(isPredictionCopierGloballyEnabled({ PREDICTION_COPIER_GLOBAL_KILL_SWITCH: "true" }), false);
+});
 
 function makeBot(overrides: Partial<ActiveFuturesBot> = {}): ActiveFuturesBot {
   return {
@@ -102,6 +134,8 @@ function makeConfig(overrides: Partial<PredictionCopierConfig> = {}): Prediction
       cooldownSecAfterTrade: 120,
       maxNotionalPerSymbolUsd: 500,
       maxTotalNotionalUsd: 1500,
+      maxLeverage: 5,
+      dailyLossLimitUsd: null,
       stopLossPct: null,
       takeProfitPct: null,
       timeStopMin: null
@@ -121,6 +155,9 @@ function makeConfig(overrides: Partial<PredictionCopierConfig> = {}): Prediction
     exit: {
       onSignalFlip: false,
       onConfidenceDrop: false
+    },
+    controls: {
+      userEnabled: true
     },
     ...overrides
   };
@@ -273,6 +310,31 @@ test("decision enters on fresh up signal when flat", () => {
   if (decision.action === "enter") {
     assert.equal(decision.side, "long");
   }
+});
+
+test("decision blocks and signals auto-pause after the daily loss limit", () => {
+  const decision = evaluatePredictionCopierDecision({
+    config: makeConfig({
+      risk: {
+        ...makeConfig().risk,
+        dailyLossLimitUsd: 100
+      }
+    }),
+    now: new Date("2026-02-12T12:01:00.000Z"),
+    prediction: makePrediction(),
+    predictionHash: "hash_daily_loss",
+    state: makeState(),
+    openPosition: null,
+    openTradeCount: 0,
+    openPositionsCount: 0,
+    totalNotionalUsd: 0,
+    symbolNotionalUsd: 0,
+    candidateNotionalUsd: 100,
+    dailyTradeCount: 0,
+    dailyRealizedPnlUsd: -100
+  });
+
+  assert.deepEqual(decision, { action: "skip", reason: "daily_loss_limit_reached" });
 });
 
 test("decision keeps long open when signal flips down and exit toggle is disabled", () => {

@@ -3711,6 +3711,113 @@ export async function getBotDailyTradeCount(params: {
   return Number(result?._sum?.dailyTradeCount ?? 0) || 0;
 }
 
+export async function getBotDailyRealizedPnlUsd(params: {
+  botId: string;
+  now?: Date;
+}): Promise<number> {
+  const dayStart = normalizeUtcDayStart(params.now ?? new Date());
+  const result = await db.botTradeHistory.aggregate({
+    where: {
+      botId: params.botId,
+      status: "closed",
+      exitTs: { gte: dayStart }
+    },
+    _sum: { realizedPnlUsd: true }
+  });
+  return Number(result?._sum?.realizedPnlUsd ?? 0) || 0;
+}
+
+export async function pausePredictionCopierForSafety(params: {
+  botId: string;
+  reason: string;
+}) {
+  const now = new Date();
+  await Promise.all([
+    db.bot.update({
+      where: { id: params.botId },
+      data: { status: "stopped", lastError: params.reason }
+    }),
+    db.botRuntime.upsert({
+      where: { botId: params.botId },
+      update: { status: "stopped", reason: params.reason, lastError: params.reason, lastHeartbeatAt: now },
+      create: { botId: params.botId, status: "stopped", reason: params.reason, lastError: params.reason, lastHeartbeatAt: now }
+    })
+  ]);
+}
+
+export type PredictionCopierExecutionReservation = {
+  id: string;
+  status: string;
+  orderId: string | null;
+  failureReason: string | null;
+};
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && String((error as any).code) === "P2002");
+}
+
+export async function reservePredictionCopierExecution(params: {
+  botId: string;
+  userId: string;
+  exchangeAccountId: string;
+  predictionStateId: string;
+  predictionHash: string;
+  idempotencyKey: string;
+  action: "enter" | "exit";
+  side: "long" | "short" | null;
+  symbol: string;
+  orderType: "market" | "limit";
+  requestedQty: number | null;
+  requestedNotionalUsd: number | null;
+  referencePrice: number | null;
+  limitPrice: number | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  leverage: number | null;
+  predictionJson: Record<string, unknown>;
+  ruleSnapshotJson: Record<string, unknown>;
+  gateSnapshotJson: Record<string, unknown>;
+}): Promise<{ created: boolean; record: PredictionCopierExecutionReservation }> {
+  try {
+    const created = await db.predictionCopierExecution.create({
+      data: {
+        ...params,
+        marketType: "perp",
+        status: "reviewed"
+      },
+      select: { id: true, status: true, orderId: true, failureReason: true }
+    });
+    return { created: true, record: created };
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) throw error;
+    const existing = await db.predictionCopierExecution.findUnique({
+      where: { idempotencyKey: params.idempotencyKey },
+      select: { id: true, status: true, orderId: true, failureReason: true }
+    });
+    if (!existing) throw error;
+    return { created: false, record: existing };
+  }
+}
+
+export async function updatePredictionCopierExecution(params: {
+  id: string;
+  status: "submitting" | "submitted" | "filled" | "failed" | "unknown";
+  orderId?: string | null;
+  failureReason?: string | null;
+}) {
+  const terminal = params.status === "filled" || params.status === "failed";
+  return db.predictionCopierExecution.update({
+    where: { id: params.id },
+    data: {
+      status: params.status,
+      ...(params.orderId !== undefined ? { orderId: params.orderId } : {}),
+      ...(params.failureReason !== undefined ? { failureReason: params.failureReason } : {}),
+      ...(params.status === "submitting" ? { submittedAt: new Date() } : {}),
+      ...(terminal ? { completedAt: new Date() } : {})
+    }
+  });
+}
+
 export async function upsertBotRuntime(params: {
   botId: string;
   status: BotStatusValue;

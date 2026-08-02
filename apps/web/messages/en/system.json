@@ -132,12 +132,33 @@
       "title": "Prediction Copier Settings",
       "reviewFlowTitle": "Prediction Copier review",
       "reviewFlowDescription": "This source is preselected for review only. Check account, limits, risk rules, and the final summary before creating; creation still does not start the bot.",
+      "guidedReviewTitle": "Guided review before creation",
+      "guidedReviewHint": "All eleven checks remain user-controlled. Spot is not enabled in the Limited Beta.",
+      "perpetualBetaOnly": "Perpetual · Limited Beta (spot unavailable)",
+      "finalReviewTitle": "Summary and confirmation",
+      "finalReviewHint": "The configuration is created stopped. Activation requires a second confirmation afterwards.",
+      "confirmReview": "I reviewed the account, source, market, symbol, sizing, leverage, stops/targets and all limits.",
+      "activationSeparateHint": "This confirmation only creates the rule. It does not place an order or activate the copier.",
+      "reviewSteps": {
+        "step1": "Review execution account",
+        "step2": "Confirm perpetual market",
+        "step3": "Review symbol",
+        "step4": "Review prediction source and strategy",
+        "step5": "Set minimum confidence",
+        "step6": "Limit position size",
+        "step7": "Review leverage limit",
+        "step8": "Review stop, target and time-stop",
+        "step9": "Limit daily loss and exposure",
+        "step10": "Review the complete rule",
+        "step11": "Explicitly confirm creation"
+      },
       "descriptionBefore": "Copies signals from",
       "descriptionAfter": "(enter/exit) with risk filter.",
       "sourceRequired": "Prediction source is required for prediction_copier.",
       "loadingSources": "Loading prediction sources...",
       "noSources": "No active prediction sources found for this account.",
       "fields": {
+        "marketType": "Market",
         "source": "Prediction Source",
         "predictionTf": "Prediction TF",
         "minConfidence": "Min confidence (%)",
@@ -158,6 +179,7 @@
         "maxNotionalPerSymbol": "Max notional / symbol (USD)",
         "maxNotionalTotal": "Max total notional (USD)",
         "maxLeverage": "Max leverage",
+        "dailyLossLimitUsd": "Daily loss limit (USD)",
         "stopLossPct": "Stop-loss (%)",
         "takeProfitPct": "Take-profit (%)",
         "timeStopMin": "Time-stop (min)",
@@ -218,6 +240,12 @@
       "stopping": "Stopping...",
       "stopAndClose": "Stop + close trade",
       "stoppingAndClosing": "Stopping + closing..."
+    },
+    "copierActivation": {
+      "title": "Activate Prediction Copier?",
+      "description": "You confirm the account, perpetual market, prediction source, symbol, confidence, position size, leverage, stop/target, daily and exposure limits. The copier remains rule-based; AI cannot change these rules or activate the bot.",
+      "confirm": "Rules reviewed · activate",
+      "cancel": "Review again"
     },
     "fields": {
       "botStatus": "Bot status",
@@ -286,6 +314,22 @@
         "expected_move_below_min": "Expected move below minimum",
         "missing_prediction_state": "Missing prediction state",
         "stale_prediction_state": "Prediction state is stale"
+      }
+    },
+    "copierAudit": {
+      "title": "Prediction Copier execution review",
+      "reviewed": "Reviewed before order",
+      "submitted": "Submitted/executed",
+      "unknown": "Unknown status",
+      "performanceHint": "Prediction quality and trading outcome are separate metrics. A good signal guarantees neither execution nor profit.",
+      "empty": "No order reviews yet.",
+      "columns": {
+        "time": "Review time",
+        "prediction": "Prediction ID",
+        "action": "Action",
+        "order": "Order ID / plan",
+        "status": "Status",
+        "reason": "Failure/reason"
       }
     },
     "metrics": {

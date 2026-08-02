@@ -17,6 +17,7 @@ import {
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 import { AppIcon } from "../../components/AppIcon";
+import AdminConfirmDialog from "../../admin/_components/AdminConfirmDialog";
 import Web3Providers from "../../components/Web3Providers";
 import { HyperEvmAddressLink } from "../../../components/wallet/ExplorerLinks";
 
@@ -192,6 +193,26 @@ type BotOverviewDetail = {
     closedTrades?: number | null;
     wins?: number | null;
     losses?: number | null;
+  } | null;
+  predictionCopier?: {
+    reviewedExecutions: number;
+    submittedExecutions: number;
+    unknownExecutions: number;
+    executions: Array<{
+      id: string;
+      predictionStateId: string;
+      action: string;
+      side?: string | null;
+      symbol: string;
+      status: string;
+      orderType: string;
+      requestedQty?: number | null;
+      requestedNotionalUsd?: number | null;
+      orderId?: string | null;
+      failureReason?: string | null;
+      reviewedAt: string;
+      submittedAt?: string | null;
+    }>;
   } | null;
   recentEvents?: Array<{
     id: string;
@@ -393,6 +414,7 @@ function BotDetailsPageContent() {
   const [agentWithdrawHypeInput, setAgentWithdrawHypeInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [startConfirmationOpen, setStartConfirmationOpen] = useState(false);
 
   const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
 
@@ -466,10 +488,16 @@ function BotDetailsPageContent() {
   }, [id, historyOutcome, historyFrom, historyTo]);
 
   async function startBot() {
+    setStartConfirmationOpen(false);
     setBusy("start");
     setError(null);
     try {
-      await apiPost(`/bots/${id}/start`, {});
+      await apiPost(
+        `/bots/${id}/start`,
+        bot?.futuresConfig?.strategyKey === "prediction_copier"
+          ? { predictionCopierActivationConfirmed: true }
+          : {}
+      );
       await loadBase();
     } catch (e) {
       setError(errMsg(e));
@@ -833,7 +861,14 @@ function BotDetailsPageContent() {
         </div>
 
 	        <div className="botsDetailToolbar">
-	          <button className={startStopUi.startClassName} onClick={startBot} disabled={startStopUi.startDisabled}>
+	          <button
+              className={startStopUi.startClassName}
+              onClick={() => {
+                if (bot.futuresConfig?.strategyKey === "prediction_copier") setStartConfirmationOpen(true);
+                else void startBot();
+              }}
+              disabled={startStopUi.startDisabled}
+            >
 	            <AppIcon name="play" />
 	            {startStopUi.startLabel}
 	          </button>
@@ -1038,6 +1073,47 @@ function BotDetailsPageContent() {
         </div>
       </BotAccordionSection>
 
+      {bot.futuresConfig?.strategyKey === "prediction_copier" ? (
+        <BotAccordionSection title={t("copierAudit.title")}>
+          <div className="botTradeHistorySummary" style={{ marginBottom: 10 }}>
+            <span>{t("copierAudit.reviewed")}: {overview?.predictionCopier?.reviewedExecutions ?? 0}</span>
+            <span>{t("copierAudit.submitted")}: {overview?.predictionCopier?.submittedExecutions ?? 0}</span>
+            <span>{t("copierAudit.unknown")}: {overview?.predictionCopier?.unknownExecutions ?? 0}</span>
+          </div>
+          <div className="botReasonText" style={{ marginBottom: 10, fontSize: 12 }}>
+            {t("copierAudit.performanceHint")}
+          </div>
+          <div className="botTradeHistoryTableWrap">
+            <table className="botTradeHistoryTable">
+              <thead>
+                <tr>
+                  <th>{t("copierAudit.columns.time")}</th>
+                  <th>{t("copierAudit.columns.prediction")}</th>
+                  <th>{t("copierAudit.columns.action")}</th>
+                  <th>{t("copierAudit.columns.order")}</th>
+                  <th>{t("copierAudit.columns.status")}</th>
+                  <th>{t("copierAudit.columns.reason")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(overview?.predictionCopier?.executions ?? []).length === 0 ? (
+                  <tr><td colSpan={6}>{t("copierAudit.empty")}</td></tr>
+                ) : (overview?.predictionCopier?.executions ?? []).map((execution) => (
+                  <tr key={execution.id}>
+                    <td>{formatDateTime(execution.reviewedAt)}</td>
+                    <td>{execution.predictionStateId}</td>
+                    <td>{execution.action} {execution.side ?? ""}</td>
+                    <td>{execution.orderId ?? `${execution.orderType} · ${formatNumber(execution.requestedQty, 6)}`}</td>
+                    <td><span className="badge">{execution.status}</span></td>
+                    <td>{execution.failureReason ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </BotAccordionSection>
+      ) : null}
+
       <BotAccordionSection title={t("sections.openTrades")}>
         <div className="botTradeHistorySummary" style={{ marginBottom: 10 }}>
           <span>{t("openTrades.consistencyLabel")}: {consistencyLabel}</span>
@@ -1234,6 +1310,18 @@ function BotDetailsPageContent() {
           ) : null}
         </div>
       </BotAccordionSection>
+
+      <AdminConfirmDialog
+        open={startConfirmationOpen}
+        title={t("copierActivation.title")}
+        description={t("copierActivation.description")}
+        confirmLabel={t("copierActivation.confirm")}
+        cancelLabel={t("copierActivation.cancel")}
+        tone="primary"
+        loading={busy === "start"}
+        onCancel={() => setStartConfirmationOpen(false)}
+        onConfirm={() => void startBot()}
+      />
     </div>
   );
 }

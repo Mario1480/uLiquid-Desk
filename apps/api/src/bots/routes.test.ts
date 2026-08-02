@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registerBotRoutes } from "./routes.js";
+import { hasPredictionCopierActivationConfirmation, registerBotRoutes } from "./routes.js";
+
+test("Prediction Copier activation requires an explicit boolean confirmation", () => {
+  assert.equal(hasPredictionCopierActivationConfirmation({ predictionCopierActivationConfirmed: true }), true);
+  assert.equal(hasPredictionCopierActivationConfirmation({ predictionCopierActivationConfirmed: "true" }), false);
+  assert.equal(hasPredictionCopierActivationConfirmation({}), false);
+  assert.equal(hasPredictionCopierActivationConfirmation(null), false);
+});
 
 type RouteMap = Map<string, Array<(...args: any[]) => any>>;
 

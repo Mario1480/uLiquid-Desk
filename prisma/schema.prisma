@@ -262,24 +262,25 @@ model Bot {
   user                 User?            @relation(fields: [userId], references: [id])
   exchangeAccount      ExchangeAccount? @relation(fields: [exchangeAccountId], references: [id])
 
-  mmConfig           MarketMakingConfig?
-  futuresConfig      FuturesBotConfig?
-  volConfig          VolumeConfig?
-  riskConfig         RiskConfig?
-  notificationConfig BotNotificationConfig?
-  priceSupportConfig BotPriceSupportConfig?
-  runtime            BotRuntime?
-  riskEvents         RiskEvent[]
-  alerts             BotAlert[]
-  manualTrades       ManualTradeLog[]
-  metrics            BotMetric[]
-  tradeStates        BotTradeState[]
-  tradeHistory       BotTradeHistory[]
-  platformAlerts     PlatformAlert[]
-  gridInstance       GridBotInstance?
-  botVault           BotVault?
-  gridOrderMaps      GridBotOrderMap[]
-  gridFillEvents     GridBotFillEvent[]
+  mmConfig                    MarketMakingConfig?
+  futuresConfig               FuturesBotConfig?
+  volConfig                   VolumeConfig?
+  riskConfig                  RiskConfig?
+  notificationConfig          BotNotificationConfig?
+  priceSupportConfig          BotPriceSupportConfig?
+  runtime                     BotRuntime?
+  riskEvents                  RiskEvent[]
+  alerts                      BotAlert[]
+  manualTrades                ManualTradeLog[]
+  metrics                     BotMetric[]
+  tradeStates                 BotTradeState[]
+  tradeHistory                BotTradeHistory[]
+  predictionCopierExecutions PredictionCopierExecution[]
+  platformAlerts              PlatformAlert[]
+  gridInstance                GridBotInstance?
+  botVault                    BotVault?
+  gridOrderMaps               GridBotOrderMap[]
+  gridFillEvents              GridBotFillEvent[]
 }
 
 model FuturesBotConfig {
@@ -515,6 +516,46 @@ model BotTradeHistory {
   @@index([userId, entryTs(sort: Desc)])
   @@index([botId, symbol, status])
   @@map("bot_trade_history")
+}
+
+model PredictionCopierExecution {
+  id                   String    @id @default(cuid())
+  botId                String    @map("bot_id")
+  userId               String    @map("user_id")
+  exchangeAccountId    String    @map("exchange_account_id")
+  predictionStateId    String    @map("prediction_state_id")
+  predictionHash       String    @map("prediction_hash")
+  idempotencyKey       String    @unique @map("idempotency_key")
+  action               String
+  side                 String?
+  symbol               String
+  marketType           String    @default("perp") @map("market_type")
+  status               String    @default("reviewed")
+  orderType            String    @map("order_type")
+  requestedQty         Float?    @map("requested_qty")
+  requestedNotionalUsd Float? @map("requested_notional_usd")
+  referencePrice       Float?    @map("reference_price")
+  limitPrice           Float?    @map("limit_price")
+  stopLossPrice        Float?    @map("stop_loss_price")
+  takeProfitPrice      Float?    @map("take_profit_price")
+  leverage             Int?
+  orderId              String?   @map("order_id")
+  failureReason        String?   @map("failure_reason")
+  predictionJson       Json      @map("prediction_json")
+  ruleSnapshotJson     Json      @map("rule_snapshot_json")
+  gateSnapshotJson     Json      @map("gate_snapshot_json")
+  reviewedAt           DateTime  @default(now()) @map("reviewed_at")
+  submittedAt          DateTime? @map("submitted_at")
+  completedAt          DateTime? @map("completed_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, createdAt(sort: Desc)], map: "prediction_copier_execution_bot_created_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "prediction_copier_execution_user_created_idx")
+  @@index([predictionStateId, createdAt(sort: Desc)], map: "prediction_copier_execution_prediction_created_idx")
+  @@map("prediction_copier_executions")
 }
 
 model RiskEvent {

@@ -133,6 +133,10 @@ function asRouteRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+export function hasPredictionCopierActivationConfirmation(body: unknown): boolean {
+  return asRouteRecord(body)?.predictionCopierActivationConfirmed === true;
+}
+
 function isLegacyDummySignalPluginId(value: unknown): boolean {
   return String(value ?? "").trim() === "core.signal.legacy_dummy";
 }
@@ -471,6 +475,28 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     })));
     const recentEventsRaw = await deps.ignoreMissingTable(() => deps.db.riskEvent.findMany({ where: { botId: bot.id }, orderBy: { createdAt: "desc" }, take: queryParsed.data.limit }));
     const recentEvents = Array.isArray(recentEventsRaw) ? recentEventsRaw : [];
+    const copierExecutionsRaw = await deps.ignoreMissingTable(() => deps.db.predictionCopierExecution.findMany({
+      where: { botId: bot.id },
+      orderBy: { createdAt: "desc" },
+      take: queryParsed.data.limit,
+      select: {
+        id: true,
+        predictionStateId: true,
+        action: true,
+        side: true,
+        symbol: true,
+        status: true,
+        orderType: true,
+        requestedQty: true,
+        requestedNotionalUsd: true,
+        orderId: true,
+        failureReason: true,
+        reviewedAt: true,
+        submittedAt: true,
+        createdAt: true
+      }
+    }));
+    const copierExecutions = Array.isArray(copierExecutionsRaw) ? copierExecutionsRaw : [];
     const lastPredictionConfidence = deps.extractLastDecisionConfidence((recentEvents as any[]).map((event) => ({ type: event.type, meta: event.meta })));
     const dayStartUtc = new Date();
     dayStartUtc.setUTCHours(0, 0, 0, 0);
@@ -531,6 +557,12 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         winRatePct: coreMetrics.winRatePct, avgWinUsd: coreMetrics.avgWinUsd, avgLossUsd: coreMetrics.avgLossUsd,
         profitFactor: coreMetrics.profitFactor, netPnlUsd: coreMetrics.netPnlUsd, maxDrawdownUsd: coreMetrics.maxDrawdownUsd,
         avgHoldMinutes: coreMetrics.avgHoldMinutes, closedTrades: coreMetrics.trades, wins: coreMetrics.wins, losses: coreMetrics.losses
+      },
+      predictionCopier: {
+        reviewedExecutions: copierExecutions.length,
+        submittedExecutions: (copierExecutions as any[]).filter((row) => ["submitted", "filled"].includes(String(row.status))).length,
+        unknownExecutions: (copierExecutions as any[]).filter((row) => String(row.status) === "unknown").length,
+        executions: copierExecutions
       },
       recentEvents: (recentEvents as any[]).map((event) => ({ id: event.id, type: event.type, message: event.message ?? null, createdAt: event.createdAt, meta: event.meta ?? null }))
     });
@@ -1160,6 +1192,14 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       }
     }
     if (bot.futuresConfig.strategyKey === "prediction_copier") {
+      const activationConfirmed = hasPredictionCopierActivationConfirmation(req.body);
+      if (!activationConfirmed) {
+        return res.status(409).json({
+          error: "prediction_copier_activation_confirmation_required",
+          code: "prediction_copier_activation_confirmation_required",
+          message: "Review the Prediction Copier account, source, execution and risk rules before activation."
+        });
+      }
       const { root, nested } = deps.readPredictionCopierRootConfig(bot.futuresConfig.paramsJson);
       const copierParsed = deps.predictionCopierSettingsSchema.safeParse(root);
       if (!copierParsed.success) return res.status(409).json({ error: "prediction_copier_config_invalid" });
@@ -1220,6 +1260,16 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       ]);
       return res.status(503).json({ error: "queue_enqueue_failed", reason: String(error) });
     }
+    if (bot.futuresConfig.strategyKey === "prediction_copier") {
+      await deps.ignoreMissingTable(() => deps.db.riskEvent.create({
+        data: {
+          botId: bot.id,
+          type: "PREDICTION_COPIER_TRADE",
+          message: "activated_by_user",
+          meta: { action: "activated", source: "explicit_user_confirmation" }
+        }
+      }));
+    }
     return res.json({ id: updated.id, status: updated.status });
   });
 
@@ -1227,11 +1277,24 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     const user = getUserFromLocals(res);
     const parsedBody = deps.botStopSchema.safeParse(req.body ?? {});
     if (!parsedBody.success) return res.status(400).json({ error: "invalid_payload", details: parsedBody.error.flatten() });
-    const bot = await deps.db.bot.findFirst({ where: { id: req.params.id, userId: user.id } });
+    const bot = await deps.db.bot.findFirst({
+      where: { id: req.params.id, userId: user.id },
+      include: { futuresConfig: { select: { strategyKey: true } } }
+    });
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
     const updated = await deps.db.bot.update({ where: { id: bot.id }, data: { status: "stopped" } });
     await deps.db.botRuntime.upsert({ where: { botId: bot.id }, update: { status: "stopped", reason: "stopped_by_user", lastHeartbeatAt: new Date() }, create: { botId: bot.id, status: "stopped", reason: "stopped_by_user", lastHeartbeatAt: new Date() } });
     try { await deps.cancelBotRun(bot.id); } catch {}
+    if (bot.futuresConfig?.strategyKey === "prediction_copier") {
+      await deps.ignoreMissingTable(() => deps.db.riskEvent.create({
+        data: {
+          botId: bot.id,
+          type: "PREDICTION_COPIER_TRADE",
+          message: "paused_by_user",
+          meta: { action: "paused", source: "user" }
+        }
+      }));
+    }
     const closeRequested = parsedBody.data.closeOpenPosition === true;
     let closeResult: { requested: boolean; closedCount: number; orderIds: string[]; error?: string } | null = null;
     if (closeRequested) {

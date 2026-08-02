@@ -888,6 +888,7 @@ const predictionCopierSettingsSchema = z.object({
     maxNotionalPerSymbolUsd: z.number().positive().optional(),
     maxTotalNotionalUsd: z.number().positive().optional(),
     maxLeverage: z.number().int().min(1).max(125).optional(),
+    dailyLossLimitUsd: z.number().positive().optional(),
     stopLossPct: z.number().positive().max(95).nullable().optional(),
     takeProfitPct: z.number().positive().max(500).nullable().optional(),
     timeStopMin: z.number().int().positive().max(10_080).nullable().optional()
@@ -907,6 +908,14 @@ const predictionCopierSettingsSchema = z.object({
   exit: z.object({
     onSignalFlip: z.boolean().optional(),
     onConfidenceDrop: z.boolean().optional()
+  }).optional(),
+  controls: z.object({
+    userEnabled: z.boolean().optional()
+  }).optional(),
+  review: z.object({
+    version: z.literal("limited_beta_v1"),
+    configurationConfirmed: z.literal(true),
+    confirmedAt: z.string().datetime()
   }).optional()
 });
 

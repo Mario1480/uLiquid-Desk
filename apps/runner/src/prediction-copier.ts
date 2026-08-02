@@ -21,6 +21,7 @@ import {
   closeOpenBotTradeHistoryEntries,
   countOpenBotTradeHistoryEntries,
   createBotTradeHistoryEntry,
+  getBotDailyRealizedPnlUsd,
   getBotDailyTradeCount,
   listPaperPositionsForRunner,
   loadBotTradeState,
@@ -28,7 +29,10 @@ import {
   loadLatestPredictionStateForGate,
   loadPredictionStateByIdForGate,
   placePaperPositionForRunner,
+  pausePredictionCopierForSafety,
+  reservePredictionCopierExecution,
   upsertBotTradeState,
+  updatePredictionCopierExecution,
   writeRiskEvent
 } from "./db.js";
 import {
@@ -88,6 +92,8 @@ export type PredictionCopierConfig = {
     cooldownSecAfterTrade: number;
     maxNotionalPerSymbolUsd: number;
     maxTotalNotionalUsd: number;
+    maxLeverage: number;
+    dailyLossLimitUsd: number | null;
     stopLossPct: number | null;
     takeProfitPct: number | null;
     timeStopMin: number | null;
@@ -107,6 +113,9 @@ export type PredictionCopierConfig = {
   exit: {
     onSignalFlip: boolean;
     onConfidenceDrop: boolean;
+  };
+  controls: {
+    userEnabled: boolean;
   };
 };
 
@@ -128,6 +137,7 @@ export type PredictionCopierEvalInput = {
   symbolNotionalUsd: number;
   candidateNotionalUsd: number | null;
   dailyTradeCount: number;
+  dailyRealizedPnlUsd?: number;
 };
 
 export type PredictionCopierTickResult = {
@@ -145,6 +155,15 @@ export type PredictionCopierTickResult = {
 
 export function resolvePredictionCopierLeverage(botLeverage: number): number {
   return Math.max(1, Math.trunc(botLeverage));
+}
+
+export function isPredictionCopierGloballyEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const enabled = String(env.PREDICTION_COPIER_ENABLED ?? "true").trim().toLowerCase();
+  const killed = String(env.PREDICTION_COPIER_GLOBAL_KILL_SWITCH ?? "false").trim().toLowerCase();
+  return !["0", "false", "off", "no"].includes(enabled)
+    && !["1", "true", "on", "yes"].includes(killed);
 }
 
 type AnyObject = Record<string, unknown>;
@@ -332,6 +351,9 @@ export function readPredictionCopierConfig(bot: ActiveFuturesBot): PredictionCop
   const exitRaw = root.exit && typeof root.exit === "object" && !Array.isArray(root.exit)
     ? (root.exit as AnyObject)
     : {};
+  const controlsRaw = root.controls && typeof root.controls === "object" && !Array.isArray(root.controls)
+    ? (root.controls as AnyObject)
+    : {};
 
   const symbols = normalizeStringArray(root.symbols, 100)
     .map((item) => normalizeSymbol(item))
@@ -376,6 +398,11 @@ export function readPredictionCopierConfig(bot: ActiveFuturesBot): PredictionCop
       cooldownSecAfterTrade: Math.max(0, Math.trunc(toNumber(riskRaw.cooldownSecAfterTrade) ?? 120)),
       maxNotionalPerSymbolUsd: Math.max(1, toNumber(riskRaw.maxNotionalPerSymbolUsd) ?? 500),
       maxTotalNotionalUsd: Math.max(1, toNumber(riskRaw.maxTotalNotionalUsd) ?? 1500),
+      maxLeverage: Math.max(1, Math.trunc(toNumber(riskRaw.maxLeverage) ?? bot.leverage)),
+      dailyLossLimitUsd: (() => {
+        const value = toNumber(riskRaw.dailyLossLimitUsd);
+        return value !== null && value > 0 ? value : null;
+      })(),
       stopLossPct: toNumber(riskRaw.stopLossPct),
       takeProfitPct: toNumber(riskRaw.takeProfitPct),
       timeStopMin: timeStopMin !== null && timeStopMin > 0 ? timeStopMin : null
@@ -399,6 +426,9 @@ export function readPredictionCopierConfig(bot: ActiveFuturesBot): PredictionCop
     exit: {
       onSignalFlip: toBoolean(exitRaw.onSignalFlip, false),
       onConfidenceDrop: toBoolean(exitRaw.onConfidenceDrop, false)
+    },
+    controls: {
+      userEnabled: toBoolean(controlsRaw.userEnabled, true)
     }
   };
 
@@ -428,6 +458,39 @@ export function buildPredictionHash(prediction: PredictionGateState): string {
   const ts = prediction.tsUpdated.toISOString();
   const seed = `${signal}|${confidence}|${expectedMove}|${tags}|${ts}`;
   return crypto.createHash("sha256").update(seed).digest("hex");
+}
+
+export function buildPredictionCopierIdempotencyKey(params: {
+  botId: string;
+  predictionStateId: string;
+  predictionHash: string;
+  action: "enter" | "exit";
+}): string {
+  const seed = [params.botId, params.predictionStateId, params.predictionHash, params.action].join("|");
+  return `prediction_copier:${crypto.createHash("sha256").update(seed).digest("hex")}`;
+}
+
+export function classifyPredictionCopierFailure(reason: string): "failed" | "unknown" {
+  const normalized = String(reason ?? "").toLowerCase();
+  return /unknown|timeout|timed out|network|econnreset|socket|temporar/.test(normalized)
+    ? "unknown"
+    : "failed";
+}
+
+function predictionSnapshot(prediction: PredictionGateState): Record<string, unknown> {
+  return {
+    id: prediction.id,
+    signal: prediction.signal,
+    confidence: prediction.confidence,
+    expectedMovePct: prediction.expectedMovePct ?? null,
+    stopLossPrice: prediction.stopLossPrice ?? null,
+    takeProfitPrice: prediction.takeProfitPrice ?? null,
+    tags: prediction.tags,
+    symbol: prediction.symbol,
+    marketType: prediction.marketType,
+    timeframe: prediction.timeframe,
+    updatedAt: prediction.tsUpdated.toISOString()
+  };
 }
 
 function evaluateTagFilters(config: PredictionCopierConfig, prediction: PredictionGateState): string | null {
@@ -466,10 +529,18 @@ export function evaluatePredictionCopierDecision(input: PredictionCopierEvalInpu
     totalNotionalUsd,
     symbolNotionalUsd,
     candidateNotionalUsd,
-    dailyTradeCount
+    dailyTradeCount,
+    dailyRealizedPnlUsd = 0
   } = input;
 
   if (!prediction) return { action: "skip", reason: "missing_prediction_state" };
+
+  if (
+    config.risk.dailyLossLimitUsd !== null
+    && dailyRealizedPnlUsd <= -config.risk.dailyLossLimitUsd
+  ) {
+    return { action: "skip", reason: "daily_loss_limit_reached" };
+  }
 
   const predictionAgeMs = now.getTime() - prediction.tsUpdated.getTime();
   if (!Number.isFinite(predictionAgeMs) || predictionAgeMs > config.maxPredictionAgeSec * 1000) {
@@ -877,6 +948,25 @@ export async function preparePredictionCopierTick(
       })
     : null;
 
+  if (!isPredictionCopierGloballyEnabled()) {
+    return {
+      kind: "blocked",
+      result: createBlockedPredictionCopierTick({ config, reason: "prediction_copier_global_paused" })
+    };
+  }
+  if (!config.controls.userEnabled) {
+    return {
+      kind: "blocked",
+      result: createBlockedPredictionCopierTick({ config, reason: "prediction_copier_user_paused" })
+    };
+  }
+  if (resolvePredictionCopierLeverage(bot.leverage) > config.risk.maxLeverage) {
+    return {
+      kind: "blocked",
+      result: createBlockedPredictionCopierTick({ config, reason: "prediction_copier_leverage_limit_exceeded" })
+    };
+  }
+
   const executionSupported =
     executionExchange === "bitget" ||
     executionExchange === "hyperliquid" ||
@@ -1162,8 +1252,9 @@ export async function preparePredictionCopierTick(
     ? desiredNotionalUsd
     : null;
 
-  const [dailyTradeCount, openTradeCountFromHistory] = await Promise.all([
+  const [dailyTradeCount, dailyRealizedPnlUsd, openTradeCountFromHistory] = await Promise.all([
     getBotDailyTradeCount({ botId: bot.id, now }),
+    getBotDailyRealizedPnlUsd({ botId: bot.id, now }),
     countOpenBotTradeHistoryEntries({ botId: bot.id, symbol })
   ]);
   let openTradeCountRaw = openTradeCountFromHistory;
@@ -1225,7 +1316,8 @@ export async function preparePredictionCopierTick(
     totalNotionalUsd: positionSummary.totalNotionalUsd,
     symbolNotionalUsd: positionSummary.bySymbol.get(symbol) ?? 0,
     candidateNotionalUsd,
-    dailyTradeCount
+    dailyTradeCount,
+    dailyRealizedPnlUsd
   });
 
   await writeRiskEvent({
@@ -1246,11 +1338,27 @@ export async function preparePredictionCopierTick(
       sourceStateId: config.sourceStateId ?? null,
       predictionStateId: prediction?.id ?? null,
       dailyTradeCount,
+      dailyRealizedPnlUsd,
       openTradeCount,
       openPositionsCount: positionSummary.openPositionsCount,
       totalNotionalUsd: Number(positionSummary.totalNotionalUsd.toFixed(4))
     }
   });
+
+  if (decision.action === "skip" && decision.reason === "daily_loss_limit_reached") {
+    const reason = "prediction_copier_auto_paused:daily_loss_limit_reached";
+    await pausePredictionCopierForSafety({ botId: bot.id, reason });
+    await writeRiskEvent({
+      botId: bot.id,
+      type: "PREDICTION_COPIER_TRADE",
+      message: reason,
+      meta: {
+        dailyRealizedPnlUsd,
+        dailyLossLimitUsd: config.risk.dailyLossLimitUsd,
+        action: "auto_pause"
+      }
+    });
+  }
 
   return {
     kind: "ready",
@@ -1389,8 +1497,49 @@ export async function executePredictionCopierPreparedTick(
       entryPrice: entryPriceForPnl,
       exitPrice: exitPriceForPnl
     });
-    const placed = executionExchange === "paper"
-      ? await closePaperPositionForRunner({
+    if (!prediction || !predictionHash) {
+      return createBlockedPredictionCopierTick({ config, reason: "prediction_copier_execution_review_missing" });
+    }
+    const reservation = await reservePredictionCopierExecution({
+      botId: bot.id,
+      userId: bot.userId,
+      exchangeAccountId: bot.exchangeAccountId,
+      predictionStateId: prediction.id,
+      predictionHash,
+      idempotencyKey: buildPredictionCopierIdempotencyKey({
+        botId: bot.id,
+        predictionStateId: prediction.id,
+        predictionHash,
+        action: "exit"
+      }),
+      action: "exit",
+      side: openPosition.side,
+      symbol,
+      orderType: "market",
+      requestedQty: openPosition.size,
+      requestedNotionalUsd: exitPriceForPnl ? exitPriceForPnl * openPosition.size : null,
+      referencePrice: exitPriceForPnl,
+      limitPrice: null,
+      stopLossPrice: null,
+      takeProfitPrice: null,
+      leverage,
+      predictionJson: predictionSnapshot(prediction),
+      ruleSnapshotJson: config as unknown as Record<string, unknown>,
+      gateSnapshotJson: { decision, dailyTradeCount, globalTradingEnabled: true }
+    });
+    if (!reservation.created) {
+      return createBlockedPredictionCopierTick({
+        config,
+        reason: `prediction_copier_duplicate_execution:${reservation.record.status}`,
+        gateReason: "duplicate_execution"
+      });
+    }
+
+    await updatePredictionCopierExecution({ id: reservation.record.id, status: "submitting" });
+    let placed: PredictionCopierEngineExecutionResult;
+    try {
+      placed = executionExchange === "paper"
+        ? await closePaperPositionForRunner({
           exchangeAccountId: bot.exchangeAccountId,
           symbol,
           side: openPosition.side,
@@ -1399,8 +1548,8 @@ export async function executePredictionCopierPreparedTick(
             ?? openPosition.markPrice
             ?? openPosition.entryPrice
             ?? null
-        }).then((row) => ({ orderId: row.orderId ?? `paper_${bot.id}_${Date.now()}`, blockedReason: null }))
-      : await executePredictionCopierIntentViaEngine({
+          }).then((row) => ({ orderId: row.orderId ?? `paper_${bot.id}_${Date.now()}`, blockedReason: null }))
+        : await executePredictionCopierIntentViaEngine({
           adapter,
           botId: bot.id,
           intent: {
@@ -1413,9 +1562,22 @@ export async function executePredictionCopierPreparedTick(
               reduceOnly: config.execution.reduceOnlyOnExit
             }
           }
-        });
+          });
+    } catch (error) {
+      await updatePredictionCopierExecution({
+        id: reservation.record.id,
+        status: "unknown",
+        failureReason: String(error)
+      });
+      throw error;
+    }
 
     if (placed.blockedReason) {
+      await updatePredictionCopierExecution({
+        id: reservation.record.id,
+        status: classifyPredictionCopierFailure(placed.blockedReason),
+        failureReason: placed.blockedReason
+      });
       return {
         outcome: "blocked",
         intent: { type: "none" },
@@ -1429,6 +1591,12 @@ export async function executePredictionCopierPreparedTick(
         }
       };
     }
+
+    await updatePredictionCopierExecution({
+      id: reservation.record.id,
+      status: executionExchange === "paper" ? "filled" : "submitted",
+      orderId: placed.orderId
+    });
 
     await upsertBotTradeState({
       botId: bot.id,
@@ -1562,8 +1730,49 @@ export async function executePredictionCopierPreparedTick(
     predictionTakeProfitPrice: prediction?.takeProfitPrice ?? null
   });
 
-  const placed = executionExchange === "paper"
-    ? await placePaperPositionForRunner({
+  if (!prediction || !predictionHash) {
+    return createBlockedPredictionCopierTick({ config, reason: "prediction_copier_execution_review_missing" });
+  }
+  const reservation = await reservePredictionCopierExecution({
+    botId: bot.id,
+    userId: bot.userId,
+    exchangeAccountId: bot.exchangeAccountId,
+    predictionStateId: prediction.id,
+    predictionHash,
+    idempotencyKey: buildPredictionCopierIdempotencyKey({
+      botId: bot.id,
+      predictionStateId: prediction.id,
+      predictionHash,
+      action: "enter"
+    }),
+    action: "enter",
+    side: decision.side,
+    symbol,
+    orderType: config.execution.orderType,
+    requestedQty: qty,
+    requestedNotionalUsd: candidateNotionalUsd,
+    referencePrice: markPrice,
+    limitPrice: limitPrice ?? null,
+    stopLossPrice: tpSl.stopLossPrice ?? null,
+    takeProfitPrice: tpSl.takeProfitPrice ?? null,
+    leverage,
+    predictionJson: predictionSnapshot(prediction),
+    ruleSnapshotJson: config as unknown as Record<string, unknown>,
+    gateSnapshotJson: { decision, dailyTradeCount, globalTradingEnabled: true }
+  });
+  if (!reservation.created) {
+    return createBlockedPredictionCopierTick({
+      config,
+      reason: `prediction_copier_duplicate_execution:${reservation.record.status}`,
+      gateReason: "duplicate_execution"
+    });
+  }
+
+  await updatePredictionCopierExecution({ id: reservation.record.id, status: "submitting" });
+  let placed: PredictionCopierEngineExecutionResult;
+  try {
+    placed = executionExchange === "paper"
+      ? await placePaperPositionForRunner({
         exchangeAccountId: bot.exchangeAccountId,
         symbol,
         side: decision.side,
@@ -1571,28 +1780,41 @@ export async function executePredictionCopierPreparedTick(
         fillPrice: markPrice,
         takeProfitPrice: tpSl.takeProfitPrice ?? null,
         stopLossPrice: tpSl.stopLossPrice ?? null
-      }).then((row) => ({ orderId: row.orderId ?? `paper_${bot.id}_${Date.now()}`, blockedReason: null }))
-    : await executePredictionCopierIntentViaEngine({
-        adapter,
-        botId: bot.id,
-        intent: {
-          type: "open",
-          symbol,
-          side: decision.side,
-          order: {
-            type: config.execution.orderType,
-            qty,
-            price: limitPrice,
-            leverage,
-            marginMode: bot.marginMode,
-            reduceOnly: false,
-            takeProfitPrice: tpSl.takeProfitPrice ?? undefined,
-            stopLossPrice: tpSl.stopLossPrice ?? undefined
+        }).then((row) => ({ orderId: row.orderId ?? `paper_${bot.id}_${Date.now()}`, blockedReason: null }))
+      : await executePredictionCopierIntentViaEngine({
+          adapter,
+          botId: bot.id,
+          intent: {
+            type: "open",
+            symbol,
+            side: decision.side,
+            order: {
+              type: config.execution.orderType,
+              qty,
+              price: limitPrice,
+              leverage,
+              marginMode: bot.marginMode,
+              reduceOnly: false,
+              takeProfitPrice: tpSl.takeProfitPrice ?? undefined,
+              stopLossPrice: tpSl.stopLossPrice ?? undefined
+            }
           }
-        }
-      });
+        });
+  } catch (error) {
+    await updatePredictionCopierExecution({
+      id: reservation.record.id,
+      status: "unknown",
+      failureReason: String(error)
+    });
+    throw error;
+  }
 
   if (placed.blockedReason) {
+    await updatePredictionCopierExecution({
+      id: reservation.record.id,
+      status: classifyPredictionCopierFailure(placed.blockedReason),
+      failureReason: placed.blockedReason
+    });
     return {
       outcome: "blocked",
       intent: { type: "none" },
@@ -1606,6 +1828,12 @@ export async function executePredictionCopierPreparedTick(
       }
     };
   }
+
+  await updatePredictionCopierExecution({
+    id: reservation.record.id,
+    status: executionExchange === "paper" ? "filled" : "submitted",
+    orderId: placed.orderId
+  });
 
   await upsertBotTradeState({
     botId: bot.id,
@@ -1627,10 +1855,10 @@ export async function executePredictionCopierPreparedTick(
     openTs: openPosition ? (tradeState.openTs ?? now) : now
   });
 
-    const historyEntry = await recordTradeEntryHistory({
-      botId: bot.id,
-      userId: bot.userId,
-      exchangeAccountId: bot.exchangeAccountId,
+  const historyEntry = await recordTradeEntryHistory({
+    botId: bot.id,
+    userId: bot.userId,
+    exchangeAccountId: bot.exchangeAccountId,
     symbol,
     side: decision.side,
     now,

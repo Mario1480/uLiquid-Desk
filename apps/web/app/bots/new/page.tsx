@@ -184,6 +184,7 @@ export default function NewBotPage() {
   const [riskCooldownSec, setRiskCooldownSec] = useState(120);
   const [riskMaxNotionalSymbol, setRiskMaxNotionalSymbol] = useState(500);
   const [riskMaxNotionalTotal, setRiskMaxNotionalTotal] = useState(1500);
+  const [riskDailyLossLimitUsd, setRiskDailyLossLimitUsd] = useState(100);
   const [riskStopLossPct, setRiskStopLossPct] = useState("");
   const [riskTakeProfitPct, setRiskTakeProfitPct] = useState("");
   const [riskTimeStopMin, setRiskTimeStopMin] = useState("");
@@ -202,6 +203,7 @@ export default function NewBotPage() {
   const [executionReduceOnlyOnExit, setExecutionReduceOnlyOnExit] = useState(true);
 
   const [saving, setSaving] = useState(false);
+  const [copierReviewConfirmed, setCopierReviewConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionQuota, setSubscriptionQuota] = useState<SubscriptionQuotaSnapshot | null>(null);
 
@@ -355,8 +357,9 @@ export default function NewBotPage() {
 
   const canCreate = useMemo(() => {
     const hasRequiredSource = strategyKey !== "prediction_copier" || Boolean(sourceStateId);
-    return Boolean(name.trim() && symbol.trim() && exchangeAccountId && !saving && hasRequiredSource);
-  }, [name, symbol, exchangeAccountId, saving, subscriptionQuota, strategyKey, sourceStateId]);
+    const hasRequiredReview = strategyKey !== "prediction_copier" || copierReviewConfirmed;
+    return Boolean(name.trim() && symbol.trim() && exchangeAccountId && !saving && hasRequiredSource && hasRequiredReview);
+  }, [name, symbol, exchangeAccountId, saving, strategyKey, sourceStateId, copierReviewConfirmed]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -406,6 +409,8 @@ export default function NewBotPage() {
                 cooldownSecAfterTrade: riskCooldownSec,
                 maxNotionalPerSymbolUsd: riskMaxNotionalSymbol,
                 maxTotalNotionalUsd: riskMaxNotionalTotal,
+                maxLeverage: leverage,
+                dailyLossLimitUsd: riskDailyLossLimitUsd,
                 stopLossPct: riskStopLossPct.trim() ? Number(riskStopLossPct) : null,
                 takeProfitPct: riskTakeProfitPct.trim() ? Number(riskTakeProfitPct) : null,
                 timeStopMin: riskTimeStopMin.trim() ? Number(riskTimeStopMin) : null
@@ -425,6 +430,14 @@ export default function NewBotPage() {
               exit: {
                 onSignalFlip: exitOnSignalFlip,
                 onConfidenceDrop: exitOnConfidenceDrop
+              },
+              controls: {
+                userEnabled: true
+              },
+              review: {
+                version: "limited_beta_v1" as const,
+                configurationConfirmed: true as const,
+                confirmedAt: new Date().toISOString()
               }
             }
           : null;
@@ -738,12 +751,29 @@ export default function NewBotPage() {
               <>
                 <div className="card botsSetupSection">
                   <div className="botsSetupSectionHeader">
+                    <div className="botsSetupSectionTitle">{t("copier.guidedReviewTitle")}</div>
+                    <div className="botsSetupSectionHint">{t("copier.guidedReviewHint")}</div>
+                  </div>
+                  <ol className="botsCopierReviewSteps">
+                    {Array.from({ length: 11 }, (_, index) => (
+                      <li key={index}>{t(`copier.reviewSteps.step${index + 1}` as any)}</li>
+                    ))}
+                  </ol>
+                </div>
+
+                <div className="card botsSetupSection">
+                  <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("sections.copier")}</div>
                     <div className="botsSetupSectionHint">{t("sections.copierHint")}</div>
                   </div>
                   <div className="botsSetupInlineHint">
                     {t("copier.descriptionBefore")} <code>predictions_state</code> {t("copier.descriptionAfter")}
                   </div>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.marketType")}</span>
+                    <input className="input" value={t("copier.perpetualBetaOnly")} disabled />
+                  </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.source")}</span>
@@ -831,6 +861,7 @@ export default function NewBotPage() {
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.cooldownSec")}</span><input className="input" type="number" min={0} value={riskCooldownSec} onChange={(e) => setRiskCooldownSec(Number(e.target.value || 0))} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxNotionalPerSymbol")}</span><input className="input" type="number" min={1} value={riskMaxNotionalSymbol} onChange={(e) => setRiskMaxNotionalSymbol(Number(e.target.value || 1))} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxNotionalTotal")}</span><input className="input" type="number" min={1} value={riskMaxNotionalTotal} onChange={(e) => setRiskMaxNotionalTotal(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.dailyLossLimitUsd")}</span><input className="input" type="number" min={1} step="1" value={riskDailyLossLimitUsd} onChange={(e) => setRiskDailyLossLimitUsd(Number(e.target.value || 1))} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.stopLossPct")}</span><input className="input" type="number" min={0} step="0.1" value={riskStopLossPct} onChange={(e) => setRiskStopLossPct(e.target.value)} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.takeProfitPct")}</span><input className="input" type="number" min={0} step="0.1" value={riskTakeProfitPct} onChange={(e) => setRiskTakeProfitPct(e.target.value)} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.timeStopMin")}</span><input className="input" type="number" min={0} step="1" value={riskTimeStopMin} onChange={(e) => setRiskTimeStopMin(e.target.value)} /></label>
@@ -889,6 +920,31 @@ export default function NewBotPage() {
                       </label>
                     </div>
                   </div>
+                </div>
+
+                <div className="card botsSetupSection botsCopierFinalReview">
+                  <div className="botsSetupSectionHeader">
+                    <div className="botsSetupSectionTitle">{t("copier.finalReviewTitle")}</div>
+                    <div className="botsSetupSectionHint">{t("copier.finalReviewHint")}</div>
+                  </div>
+                  <div className="botsCopierReviewSummary">
+                    <span>{selectedAccountLabel}</span>
+                    <span>Perp · {symbol}</span>
+                    <span>{selectedSource ? formatPredictionSourceStrategy(selectedSource) : "-"} · {copierTimeframe}</span>
+                    <span>{copierMinConfidence}% · {copierSizingValue} {copierSizingType}</span>
+                    <span>{leverage}x · SL {riskStopLossPct || "-"}% · TP {riskTakeProfitPct || "-"}%</span>
+                    <span>{t("copier.fields.dailyLossLimitUsd")}: {riskDailyLossLimitUsd} USD</span>
+                  </div>
+                  <label className="botsNewCheckField">
+                    <span className="botsNewCheckFieldLabel">{t("copier.confirmReview")}</span>
+                    <input
+                      className="botsNewCheckInput"
+                      type="checkbox"
+                      checked={copierReviewConfirmed}
+                      onChange={(event) => setCopierReviewConfirmed(event.target.checked)}
+                    />
+                  </label>
+                  <div className="botsSetupInlineHint">{t("copier.activationSeparateHint")}</div>
                 </div>
               </>
             ) : null}
