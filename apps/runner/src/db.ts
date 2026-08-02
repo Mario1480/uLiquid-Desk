@@ -3753,7 +3753,7 @@ export type PredictionCopierExecutionReservation = {
 };
 
 function isUniqueConstraintError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && String((error as any).code) === "P2002");
+  return Boolean(error && typeof error === "object" && "code" in error && String(error.code) === "P2002");
 }
 
 export async function reservePredictionCopierExecution(params: {

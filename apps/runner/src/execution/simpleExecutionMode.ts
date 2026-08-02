@@ -572,7 +572,7 @@ export function createSimpleExecutionMode(deps: Dependencies = {}): ExecutionMod
         },
         intent: intentForEngine,
         gate,
-        guard: async () => {
+        guard: async (request) => {
           if (guard.allow) {
             const clientOrder = nextClientOrderId({
               botId: ctx.bot.id,
@@ -583,6 +583,7 @@ export function createSimpleExecutionMode(deps: Dependencies = {}): ExecutionMod
             });
             pendingClientOrderId = clientOrder.clientOrderId;
             intentForEngine = withClientOrderId(intentForEngine, pendingClientOrderId);
+            request.intent = intentForEngine;
             pendingOrder = buildPendingOrder({
               intent: intentForEngine as Extract<TradeIntent, { type: "open" | "close" }>,
               clientOrderId: pendingClientOrderId,
