@@ -1,13 +1,23 @@
 import crypto from "node:crypto";
 import { prisma } from "@mm/db";
+import { logger } from "../logger.js";
 import {
-  formatUsdCents,
-  getCcpayBaseUrl,
-  getCcpayPriceFiatId,
-  getCcpayWebBaseUrl,
-  isCcpayConfigured,
-  makeCcpayHeaders
-} from "./ccpayment.js";
+  ARBITRUM_ONE_CHAIN_ID,
+  ARBITRUM_USDC_ADDRESS,
+  ARBITRUM_USDC_DECIMALS,
+  BILLING_PAYMENT_CONFIRMATIONS,
+  ERC20_DECIMALS_FUNCTION,
+  ERC20_TRANSFER_EVENT,
+  createBillingOnchainClient,
+  formatArbitrumUsdcAmount,
+  getArbitrumTransactionExplorerUrl,
+  getBillingArbitrumRpcUrl,
+  normalizeBillingAddress,
+  normalizeBillingTreasuryAddress,
+  normalizeBillingTxHash,
+  verifyArbitrumUsdcTransaction,
+  type BillingOnchainClient
+} from "./onchain.js";
 
 const db = prisma as any;
 
@@ -18,32 +28,23 @@ export type BillingAddonType =
   | "running_predictions_ai"
   | "running_predictions_composite"
   | "ai_credits";
-export type BillingOrderStatus = "pending" | "paid" | "failed" | "expired";
+export type BillingOrderStatus =
+  | "pending"
+  | "confirming"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "review_required";
 export type AiLedgerReason = "monthly_grant" | "topup" | "usage_debit" | "admin_adjust";
 export type BillingFeatureFlags = {
   billingEnabled: boolean;
-  billingWebhookEnabled: boolean;
   aiTokenBillingEnabled: boolean;
-};
-
-type CcpayCreateInvoiceResponse = {
-  code?: number;
-  msg?: string;
-  message?: string;
-  error?: string;
-  data?: {
-    invoiceUrl?: string;
-    msg?: string;
-    message?: string;
-    error?: string;
-  };
 };
 
 const BILLING_FEATURE_FLAGS_KEY = "admin.billingFeatureFlags.v1";
 const BILLING_FEATURE_FLAGS_CACHE_MS = 5_000;
 const DEFAULT_BILLING_FEATURE_FLAGS: BillingFeatureFlags = {
   billingEnabled: false,
-  billingWebhookEnabled: true,
   aiTokenBillingEnabled: true
 };
 
@@ -54,6 +55,21 @@ const FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE: number | null = null;
 const PRO_MAX_RUNNING_PREDICTIONS_AI = 3;
 const PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE = 2;
 const DEFAULT_BILLING_CURRENCY = "USD";
+const BILLING_PAYMENT_CONFIGURATION_ID = "arbitrum-usdc";
+const BILLING_ORDER_TTL_MS = 24 * 60 * 60 * 1000;
+const BILLING_GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
+const BILLING_RETRY_BASE_MS = 30_000;
+const BILLING_MAX_MISSING_TRANSACTION_ATTEMPTS = 20;
+const BILLING_LATE_PAYMENT_RECOVERY_MS = 7 * 24 * 60 * 60 * 1000;
+const BILLING_DISCOVERY_LOOKBACK_BLOCKS = 5_000n;
+const BILLING_DISCOVERY_SCAN_CHUNK_BLOCKS = 2_000n;
+const BILLING_DISCOVERY_REORG_OVERLAP_BLOCKS = 32n;
+const BILLING_DISCOVERY_RETRY_MAX_MS = 60 * 60 * 1000;
+const BILLING_AI_GRANT_ALERT_SOURCE = "billing_subscription_lifecycle";
+const BILLING_AI_GRANT_ALERT_TYPE = "subscription_ai_credit_failed";
+export const BILLING_DB_BIGINT_MIN = -(2n ** 63n);
+export const BILLING_DB_BIGINT_MAX = (2n ** 63n) - 1n;
+export const BILLING_ORDER_AMOUNT_CENTS_MAX = 2_147_483_647;
 
 export type PredictionQuotaKind = "local" | "ai" | "composite";
 
@@ -137,6 +153,26 @@ function toBigInt(value: unknown): bigint {
     }
   }
   return 0n;
+}
+
+export function parseBillingDbBigInt(value: unknown, options?: { min?: bigint; max?: bigint }): bigint {
+  let parsed: bigint;
+  if (typeof value === "bigint") {
+    parsed = value;
+  } else if (typeof value === "number" && Number.isSafeInteger(value)) {
+    parsed = BigInt(value);
+  } else if (
+    typeof value === "string"
+    && /^(?:0|[1-9]\d*|-[1-9]\d*)$/.test(value)
+  ) {
+    parsed = BigInt(value);
+  } else {
+    throw new Error("invalid_billing_integer");
+  }
+  const min = options?.min ?? BILLING_DB_BIGINT_MIN;
+  const max = options?.max ?? BILLING_DB_BIGINT_MAX;
+  if (parsed < min || parsed > max) throw new Error("billing_integer_out_of_range");
+  return parsed;
 }
 
 function normalizeInt(value: unknown, fallback: number, min = 0): number {
@@ -282,13 +318,80 @@ function isSubscriptionPlanActive(row: any, now: Date): boolean {
   if (!row) return false;
   if (row.effectivePlan !== "PRO") return false;
   if (!(row.proValidUntil instanceof Date)) return false;
-  return row.proValidUntil.getTime() > now.getTime();
+  return addGracePeriod(row.proValidUntil).getTime() > now.getTime();
 }
 
-function addMonths(base: Date, months: number): Date {
+export function addBillingMonths(base: Date, months: number): Date {
+  const count = Math.max(1, Math.trunc(months));
+  const sourceDay = base.getUTCDate();
   const next = new Date(base);
-  next.setMonth(next.getMonth() + Math.max(1, months));
+  next.setUTCDate(1);
+  next.setUTCMonth(next.getUTCMonth() + count);
+  const lastDay = new Date(Date.UTC(
+    next.getUTCFullYear(),
+    next.getUTCMonth() + 1,
+    0,
+    next.getUTCHours(),
+    next.getUTCMinutes(),
+    next.getUTCSeconds(),
+    next.getUTCMilliseconds()
+  )).getUTCDate();
+  next.setUTCDate(Math.min(sourceDay, lastDay));
   return next;
+}
+
+function addGracePeriod(base: Date): Date {
+  return new Date(base.getTime() + BILLING_GRACE_PERIOD_MS);
+}
+
+export function planSubscriptionTermWindow(params: {
+  now: Date;
+  billingMonths: number;
+  latestTerm?: { endsAt: Date; graceEndsAt: Date } | null;
+  legacyValidUntil?: Date | null;
+}): { startsAt: Date; endsAt: Date; graceEndsAt: Date } {
+  let startsAt = params.now;
+  if (params.latestTerm && params.latestTerm.graceEndsAt.getTime() > params.now.getTime()) {
+    startsAt = params.latestTerm.endsAt;
+  } else if (
+    params.legacyValidUntil
+    && addGracePeriod(params.legacyValidUntil).getTime() > params.now.getTime()
+  ) {
+    startsAt = params.legacyValidUntil;
+  }
+  const endsAt = addBillingMonths(startsAt, params.billingMonths);
+  return { startsAt, endsAt, graceEndsAt: addGracePeriod(endsAt) };
+}
+
+export function buildSubscriptionMonthlyGrantSchedule(startsAt: Date, endsAt: Date): Date[] {
+  const dates: Date[] = [];
+  for (let cycle = 0; cycle < 120; cycle += 1) {
+    const scheduledAt = cycle === 0 ? new Date(startsAt) : addBillingMonths(startsAt, cycle);
+    if (scheduledAt >= endsAt) break;
+    dates.push(scheduledAt);
+  }
+  return dates;
+}
+
+export function resolveSubscriptionTermPhase(params: {
+  startsAt: Date;
+  endsAt: Date;
+  graceEndsAt: Date;
+  now: Date;
+}): "scheduled" | "active" | "grace" | "expired" {
+  if (params.now < params.startsAt) return "scheduled";
+  if (params.now < params.endsAt) return "active";
+  if (params.now < params.graceEndsAt) return "grace";
+  return "expired";
+}
+
+export function cutoffCapacityGrantValidity(
+  currentValidUntil: Date | null,
+  nextTermStartsAt: Date
+): Date {
+  return !currentValidUntil || currentValidUntil > nextTermStartsAt
+    ? nextTermStartsAt
+    : currentValidUntil;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -311,14 +414,25 @@ function normalizeBillingFeatureFlags(value: unknown): BillingFeatureFlags {
   const raw = asRecord(value);
   return {
     billingEnabled: asBoolean(raw.billingEnabled, DEFAULT_BILLING_FEATURE_FLAGS.billingEnabled),
-    billingWebhookEnabled: asBoolean(
-      raw.billingWebhookEnabled,
-      DEFAULT_BILLING_FEATURE_FLAGS.billingWebhookEnabled
-    ),
     aiTokenBillingEnabled: asBoolean(
       raw.aiTokenBillingEnabled,
       DEFAULT_BILLING_FEATURE_FLAGS.aiTokenBillingEnabled
     )
+  };
+}
+
+export function mergeBillingFeatureFlags(
+  current: BillingFeatureFlags,
+  next: Partial<BillingFeatureFlags>
+): BillingFeatureFlags {
+  const raw = asRecord(next);
+  return {
+    billingEnabled: raw.billingEnabled === undefined
+      ? current.billingEnabled
+      : asBoolean(raw.billingEnabled, current.billingEnabled),
+    aiTokenBillingEnabled: raw.aiTokenBillingEnabled === undefined
+      ? current.aiTokenBillingEnabled
+      : asBoolean(raw.aiTokenBillingEnabled, current.aiTokenBillingEnabled)
   };
 }
 
@@ -382,7 +496,7 @@ export async function getBillingFeatureFlagsSettings(): Promise<
 }
 
 export async function updateBillingFeatureFlags(
-  next: BillingFeatureFlags
+  next: Partial<BillingFeatureFlags>
 ): Promise<
   BillingFeatureFlags & {
     source: "db";
@@ -390,7 +504,14 @@ export async function updateBillingFeatureFlags(
     defaults: BillingFeatureFlags;
   }
 > {
-  const normalized = normalizeBillingFeatureFlags(next);
+  const current = await loadBillingFeatureFlags(true);
+  const normalized = mergeBillingFeatureFlags(current.flags, next);
+  if (normalized.billingEnabled && !current.flags.billingEnabled) {
+    const readiness = await getArbitrumUsdcPaymentReadiness();
+    if (!readiness.configured || !readiness.rpc.ready) {
+      throw new Error("payment_config_not_ready");
+    }
+  }
   const row = await db.globalSetting.upsert({
     where: { key: BILLING_FEATURE_FLAGS_KEY },
     create: { key: BILLING_FEATURE_FLAGS_KEY, value: normalized },
@@ -417,12 +538,239 @@ export async function isBillingEnabled(): Promise<boolean> {
   return (await getBillingFeatureFlags()).billingEnabled;
 }
 
-export async function isBillingWebhookEnabled(): Promise<boolean> {
-  return (await getBillingFeatureFlags()).billingWebhookEnabled;
-}
-
 export async function isAiTokenBillingEnabled(): Promise<boolean> {
   return (await getBillingFeatureFlags()).aiTokenBillingEnabled;
+}
+
+export {
+  ARBITRUM_ONE_CHAIN_ID,
+  ARBITRUM_USDC_ADDRESS,
+  ARBITRUM_USDC_DECIMALS,
+  BILLING_PAYMENT_CONFIRMATIONS
+} from "./onchain.js";
+
+export type ArbitrumUsdcPaymentConfiguration = {
+  configured: boolean;
+  chainId: number;
+  tokenAddress: string;
+  tokenDecimals: number;
+  treasuryAddress: string | null;
+  revision: number | null;
+  confirmationsRequired: number;
+  updatedAt: string | null;
+};
+
+export async function getArbitrumUsdcPaymentConfiguration(): Promise<ArbitrumUsdcPaymentConfiguration> {
+  const row = await db.billingPaymentConfiguration.findUnique({
+    where: { id: BILLING_PAYMENT_CONFIGURATION_ID }
+  });
+  let treasuryAddress: string | null = null;
+  try {
+    treasuryAddress = row?.treasuryAddress
+      ? normalizeBillingTreasuryAddress(row.treasuryAddress)
+      : null;
+  } catch {
+    treasuryAddress = null;
+  }
+  const exactNetwork =
+    Number(row?.chainId) === ARBITRUM_ONE_CHAIN_ID
+    && String(row?.tokenAddress ?? "").toLowerCase() === ARBITRUM_USDC_ADDRESS.toLowerCase()
+    && Number(row?.tokenDecimals) === ARBITRUM_USDC_DECIMALS;
+  return {
+    configured: Boolean(treasuryAddress && exactNetwork),
+    chainId: ARBITRUM_ONE_CHAIN_ID,
+    tokenAddress: ARBITRUM_USDC_ADDRESS,
+    tokenDecimals: ARBITRUM_USDC_DECIMALS,
+    treasuryAddress,
+    revision: row ? normalizeInt(row.revision, 1, 1) : null,
+    confirmationsRequired: BILLING_PAYMENT_CONFIRMATIONS,
+    updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : null
+  };
+}
+
+export async function runSerializableBillingConfigTransaction<T>(
+  database: any,
+  work: (tx: any) => Promise<T>
+): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await database.$transaction(work, { isolationLevel: "Serializable" });
+    } catch (error) {
+      lastError = error;
+      const code = String((error as any)?.code ?? "");
+      const message = String((error as any)?.message ?? error).toLowerCase();
+      const retryable =
+        code === "P2034"
+        || code === "P2002"
+        || message.includes("serialization")
+        || message.includes("write conflict");
+      if (!retryable || attempt === 3) throw error;
+    }
+  }
+  throw lastError;
+}
+
+export async function updateArbitrumUsdcPaymentConfiguration(params: {
+  treasuryAddress: string;
+  actorUserId: string;
+  ip?: string | null;
+}): Promise<ArbitrumUsdcPaymentConfiguration> {
+  const treasuryAddress = normalizeBillingTreasuryAddress(params.treasuryAddress);
+  await runSerializableBillingConfigTransaction(db, async (tx: any) => {
+    const current = await tx.billingPaymentConfiguration.findUnique({
+      where: { id: BILLING_PAYMENT_CONFIGURATION_ID }
+    });
+    const isSame =
+      current
+      && String(current.treasuryAddress ?? "").toLowerCase() === treasuryAddress
+      && Number(current.chainId) === ARBITRUM_ONE_CHAIN_ID
+      && String(current.tokenAddress ?? "").toLowerCase() === ARBITRUM_USDC_ADDRESS.toLowerCase()
+      && Number(current.tokenDecimals) === ARBITRUM_USDC_DECIMALS;
+    const revision = isSame ? normalizeInt(current.revision, 1, 1) : normalizeInt(current?.revision, 0, 0) + 1;
+    await tx.billingPaymentConfiguration.upsert({
+      where: { id: BILLING_PAYMENT_CONFIGURATION_ID },
+      create: {
+        id: BILLING_PAYMENT_CONFIGURATION_ID,
+        chainId: ARBITRUM_ONE_CHAIN_ID,
+        tokenAddress: ARBITRUM_USDC_ADDRESS.toLowerCase(),
+        tokenDecimals: ARBITRUM_USDC_DECIMALS,
+        treasuryAddress,
+        revision
+      },
+      update: {
+        chainId: ARBITRUM_ONE_CHAIN_ID,
+        tokenAddress: ARBITRUM_USDC_ADDRESS.toLowerCase(),
+        tokenDecimals: ARBITRUM_USDC_DECIMALS,
+        treasuryAddress,
+        revision
+      }
+    });
+    if (!isSame) {
+      await tx.adminAuditEvent.create({
+        data: {
+          actorUserId: params.actorUserId,
+          action: "billing.payment_configuration.treasury_rotated",
+          targetType: "BillingPaymentConfiguration",
+          targetId: BILLING_PAYMENT_CONFIGURATION_ID,
+          targetLabel: "Arbitrum USDC treasury",
+          ip: params.ip ?? null,
+          metadata: {
+            oldTreasuryAddress: current?.treasuryAddress ?? null,
+            newTreasuryAddress: treasuryAddress,
+            previousRevision: current?.revision ?? null,
+            revision,
+            chainId: ARBITRUM_ONE_CHAIN_ID,
+            tokenAddress: ARBITRUM_USDC_ADDRESS.toLowerCase()
+          }
+        }
+      });
+    }
+  });
+  return getArbitrumUsdcPaymentConfiguration();
+}
+
+export async function getArbitrumUsdcPaymentReadiness(params?: {
+  client?: BillingOnchainClient;
+}): Promise<ArbitrumUsdcPaymentConfiguration & {
+  token: {
+    ready: boolean;
+    hasCode: boolean;
+    decimals: number | null;
+    error: string | null;
+  };
+  rpc: {
+    ready: boolean;
+    lastBlockNumber: string | null;
+    lastCheckedAt: string | null;
+    error: string | null;
+  };
+}> {
+  const config = await getArbitrumUsdcPaymentConfiguration();
+  const checkedAt = new Date();
+  let lastBlockNumber: bigint | null = null;
+  let tokenHasCode = false;
+  let tokenDecimals: number | null = null;
+  let error: string | null = null;
+  try {
+    const client = params?.client ?? createBillingOnchainClient();
+    const inspected = await inspectArbitrumUsdcRpc(client);
+    lastBlockNumber = inspected.blockNumber;
+    tokenHasCode = inspected.tokenHasCode;
+    tokenDecimals = inspected.tokenDecimals;
+  } catch (caught) {
+    error = String((caught as any)?.message ?? caught).slice(0, 300);
+  }
+
+  const row = await db.billingPaymentConfiguration.findUnique({
+    where: { id: BILLING_PAYMENT_CONFIGURATION_ID }
+  });
+  if (row) {
+    await db.billingPaymentConfiguration.update({
+      where: { id: BILLING_PAYMENT_CONFIGURATION_ID },
+      data: {
+        lastRpcBlockNumber: lastBlockNumber,
+        lastRpcCheckAt: checkedAt,
+        lastRpcError: error
+      }
+    });
+  }
+  return {
+    ...config,
+    token: {
+      ready: tokenHasCode && tokenDecimals === ARBITRUM_USDC_DECIMALS && !error,
+      hasCode: tokenHasCode,
+      decimals: tokenDecimals,
+      error
+    },
+    rpc: {
+      ready:
+        config.configured
+        && lastBlockNumber !== null
+        && tokenHasCode
+        && tokenDecimals === ARBITRUM_USDC_DECIMALS
+        && !error,
+      lastBlockNumber: lastBlockNumber?.toString() ?? null,
+      lastCheckedAt: checkedAt.toISOString(),
+      error
+    }
+  };
+}
+
+export async function inspectArbitrumUsdcRpc(
+  client: BillingOnchainClient
+): Promise<{ blockNumber: bigint; tokenHasCode: boolean; tokenDecimals: number }> {
+  const chainId = await client.getChainId();
+  if (chainId !== ARBITRUM_ONE_CHAIN_ID) throw new Error("billing_rpc_wrong_chain");
+  const [blockNumber, bytecode, rawDecimals] = await Promise.all([
+    client.getBlockNumber(),
+    client.getBytecode({ address: ARBITRUM_USDC_ADDRESS.toLowerCase() as `0x${string}` }),
+    client.readContract({
+      address: ARBITRUM_USDC_ADDRESS,
+      abi: [ERC20_DECIMALS_FUNCTION],
+      functionName: "decimals"
+    })
+  ]);
+  const tokenHasCode = typeof bytecode === "string" && bytecode !== "0x";
+  if (!tokenHasCode) throw new Error("billing_usdc_contract_code_missing");
+  const tokenDecimals = Number(rawDecimals);
+  if (tokenDecimals !== ARBITRUM_USDC_DECIMALS) {
+    throw new Error("billing_usdc_decimals_mismatch");
+  }
+  return { blockNumber, tokenHasCode, tokenDecimals };
+}
+
+export async function requireLiveArbitrumBillingBlock(
+  client: BillingOnchainClient
+): Promise<bigint> {
+  try {
+    return (await inspectArbitrumUsdcRpc(client)).blockNumber;
+  } catch (error) {
+    if (String((error as any)?.message ?? error) === "billing_rpc_wrong_chain") {
+      throw new Error("payment_config_not_ready");
+    }
+    throw error;
+  }
 }
 
 function formatPlan(value: unknown): EffectivePlan {
@@ -723,6 +1071,40 @@ async function getFreePlanDefaults(tx: any = db): Promise<{
   };
 }
 
+export function buildPlanPackageLiveSyncWhere(plan: "FREE" | "PRO") {
+  return plan === "FREE"
+    ? { effectivePlan: "FREE" as const }
+    : {
+        effectivePlan: "PRO" as const,
+        // Paid terms own immutable entitlement snapshots. Only termless legacy Pro
+        // subscriptions may continue to mirror the mutable package defaults.
+        terms: { none: {} }
+      };
+}
+
+export async function ensureAiTokenMinimumInTransaction(params: {
+  tx: any;
+  subscriptionId: string;
+  minimum: bigint;
+}): Promise<{ balance: bigint; granted: bigint }> {
+  const minimum = params.minimum > 0n ? params.minimum : 0n;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const row = await params.tx.userSubscription.findUnique({
+      where: { id: params.subscriptionId },
+      select: { aiTokenBalance: true }
+    });
+    const current = toBigInt(row?.aiTokenBalance);
+    if (current >= minimum) return { balance: current, granted: 0n };
+    const granted = minimum - current;
+    const claimed = await params.tx.userSubscription.updateMany({
+      where: { id: params.subscriptionId, aiTokenBalance: current },
+      data: { aiTokenBalance: { increment: granted } }
+    });
+    if (claimed.count === 1) return { balance: minimum, granted };
+  }
+  throw new Error("ai_token_balance_concurrent_update");
+}
+
 async function syncPlanPackageToSubscriptions(pkg: {
   kind: "PLAN" | "ADDON";
   plan: "FREE" | "PRO" | null;
@@ -735,16 +1117,18 @@ async function syncPlanPackageToSubscriptions(pkg: {
   if (pkg.kind !== "PLAN" || !pkg.plan) return;
 
   if (pkg.plan === "FREE") {
+    const freeWhere = buildPlanPackageLiveSyncWhere("FREE");
     const freeMonthlyTokens = toBigInt(pkg.monthlyAiTokens);
     const freeRows = await db.userSubscription.findMany({
-      where: { effectivePlan: "FREE" },
+      where: freeWhere,
       select: { userId: true }
     });
 
     await db.userSubscription.updateMany({
-      where: { effectivePlan: "FREE" },
+      where: freeWhere,
       data: {
         status: "ACTIVE",
+        entitlementSyncPending: true,
         maxRunningBots: normalizeInt(pkg.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0),
         maxRunningPredictionsAi: normalizeNullableInt(
           pkg.maxRunningPredictionsAi,
@@ -764,7 +1148,7 @@ async function syncPlanPackageToSubscriptions(pkg: {
     if (freeMonthlyTokens > 0n) {
       const rows = await db.userSubscription.findMany({
         where: {
-          effectivePlan: "FREE",
+          ...freeWhere,
           aiTokenBalance: {
             lt: freeMonthlyTokens
           }
@@ -776,7 +1160,7 @@ async function syncPlanPackageToSubscriptions(pkg: {
       });
 
       for (const row of rows) {
-        await db.$transaction(async (tx: any) => {
+        await runSerializableBillingConfigTransaction(db, async (tx: any) => {
           const latest = await tx.userSubscription.findUnique({
             where: { id: row.id },
             select: {
@@ -786,28 +1170,20 @@ async function syncPlanPackageToSubscriptions(pkg: {
             }
           });
           if (!latest) return;
-
-          const current = toBigInt(latest.aiTokenBalance);
-          if (current >= freeMonthlyTokens) return;
-
-          const next = freeMonthlyTokens;
-          const granted = next - current;
-
-          await tx.userSubscription.update({
-            where: { id: latest.id },
-            data: {
-              aiTokenBalance: next
-            }
+          const ensured = await ensureAiTokenMinimumInTransaction({
+            tx,
+            subscriptionId: latest.id,
+            minimum: freeMonthlyTokens
           });
 
-          if (granted > 0n) {
+          if (ensured.granted > 0n) {
             await tx.aiTokenLedger.create({
               data: {
                 userId: latest.userId,
                 subscriptionId: latest.id,
                 reason: "MONTHLY_GRANT",
-                deltaTokens: granted,
-                balanceAfter: next,
+                deltaTokens: ensured.granted,
+                balanceAfter: ensured.balance,
                 meta: {
                   source: "free_package_sync",
                   packagePlan: "FREE"
@@ -822,7 +1198,7 @@ async function syncPlanPackageToSubscriptions(pkg: {
     for (const row of freeRows) {
       const userId = typeof row.userId === "string" ? row.userId.trim() : "";
       if (!userId) continue;
-      await syncPrimaryWorkspaceEntitlementsForUser({
+      await syncWorkspaceEntitlementsWithRetryTracking({
         userId,
         effectivePlan: "free"
       });
@@ -830,15 +1206,17 @@ async function syncPlanPackageToSubscriptions(pkg: {
     return;
   }
 
+  const proWhere = buildPlanPackageLiveSyncWhere("PRO");
   const proRows = await db.userSubscription.findMany({
-    where: { effectivePlan: "PRO" },
+    where: proWhere,
     select: { userId: true }
   });
 
   await db.userSubscription.updateMany({
-    where: { effectivePlan: "PRO" },
+    where: proWhere,
     data: {
       status: "ACTIVE",
+      entitlementSyncPending: true,
       maxRunningBots: normalizeInt(pkg.maxRunningBots, 3, 0),
       maxRunningPredictionsAi: normalizeNullableInt(
         pkg.maxRunningPredictionsAi,
@@ -858,7 +1236,7 @@ async function syncPlanPackageToSubscriptions(pkg: {
   for (const row of proRows) {
     const userId = typeof row.userId === "string" ? row.userId.trim() : "";
     if (!userId) continue;
-    await syncPrimaryWorkspaceEntitlementsForUser({
+    await syncWorkspaceEntitlementsWithRetryTracking({
       userId,
       effectivePlan: "pro"
     });
@@ -871,7 +1249,7 @@ export async function setUserToFreePlan(params: {
 }): Promise<{
   userId: string;
   plan: EffectivePlan;
-  status: "active" | "inactive";
+  status: "active" | "grace" | "inactive";
   proValidUntil: string | null;
   maxRunningBots: number;
   maxRunningPredictionsAi: number | null;
@@ -883,12 +1261,9 @@ export async function setUserToFreePlan(params: {
 }> {
   await ensureBillingDefaults();
 
-  await db.$transaction(async (tx: any) => {
+  await runSerializableBillingConfigTransaction(db, async (tx: any) => {
     const defaults = await getFreePlanDefaults(tx);
     const sub = await getOrCreateSubscription(params.userId, tx);
-    const currentBalance = toBigInt(sub.aiTokenBalance);
-    const nextBalance =
-      currentBalance < defaults.monthlyAiTokens ? defaults.monthlyAiTokens : currentBalance;
 
     await tx.userSubscription.update({
       where: { id: sub.id },
@@ -900,20 +1275,24 @@ export async function setUserToFreePlan(params: {
         maxRunningPredictionsAi: defaults.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: defaults.maxRunningPredictionsComposite,
         allowedExchanges: defaults.allowedExchanges,
-        aiTokenBalance: nextBalance,
-        monthlyAiTokensIncluded: defaults.monthlyAiTokens
+        monthlyAiTokensIncluded: defaults.monthlyAiTokens,
+        entitlementSyncPending: true
       }
     });
 
-    const granted = nextBalance - currentBalance;
-    if (granted > 0n) {
+    const ensured = await ensureAiTokenMinimumInTransaction({
+      tx,
+      subscriptionId: sub.id,
+      minimum: defaults.monthlyAiTokens
+    });
+    if (ensured.granted > 0n) {
       await tx.aiTokenLedger.create({
         data: {
           userId: params.userId,
           subscriptionId: sub.id,
           reason: "MONTHLY_GRANT",
-          deltaTokens: granted,
-          balanceAfter: nextBalance,
+          deltaTokens: ensured.granted,
+          balanceAfter: ensured.balance,
           meta: {
             source: "set_user_to_free_plan",
             packageCode: "free"
@@ -924,7 +1303,7 @@ export async function setUserToFreePlan(params: {
   });
 
   if (params.syncWorkspaceEntitlements !== false) {
-    await syncPrimaryWorkspaceEntitlementsForUser({
+    await syncWorkspaceEntitlementsWithRetryTracking({
       userId: params.userId,
       effectivePlan: "free"
     });
@@ -985,10 +1364,51 @@ export async function syncPrimaryWorkspaceEntitlementsForUser(params: {
   });
 }
 
+export async function syncWorkspaceEntitlementsWithRetryTracking(params: {
+  userId: string;
+  effectivePlan: EffectivePlan;
+}): Promise<boolean> {
+  return runTrackedWorkspaceEntitlementSync({
+    database: db,
+    sync: () => syncPrimaryWorkspaceEntitlementsForUser(params),
+    userId: params.userId
+  });
+}
+
+export async function runTrackedWorkspaceEntitlementSync(params: {
+  database: any;
+  sync: () => Promise<void>;
+  userId: string;
+}): Promise<boolean> {
+  try {
+    await params.sync();
+    await params.database.userSubscription.updateMany({
+      where: { userId: params.userId },
+      data: {
+        entitlementSyncPending: false,
+        entitlementSyncAttempts: 0,
+        entitlementSyncLastError: null,
+        entitlementSyncedAt: new Date()
+      }
+    });
+    return true;
+  } catch (error) {
+    await params.database.userSubscription.updateMany({
+      where: { userId: params.userId },
+      data: {
+        entitlementSyncPending: true,
+        entitlementSyncAttempts: { increment: 1 },
+        entitlementSyncLastError: String((error as any)?.message ?? error).slice(0, 500)
+      }
+    });
+    return false;
+  }
+}
+
 export async function resolveEffectivePlanForUser(userId: string): Promise<{
   userId: string;
   plan: EffectivePlan;
-  status: "active" | "inactive";
+  status: "active" | "grace" | "inactive";
   proValidUntil: string | null;
   maxRunningBots: number;
   maxRunningPredictionsAi: number | null;
@@ -999,13 +1419,51 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
   monthlyAiTokensIncluded: bigint;
 }> {
   const now = new Date();
-  const row = await getOrCreateSubscription(userId);
+  let row = await getOrCreateSubscription(userId);
+  let term = await db.subscriptionTerm.findFirst({
+    where: {
+      userId,
+      status: { in: ["ACTIVE", "GRACE"] },
+      startsAt: { lte: now },
+      graceEndsAt: { gt: now },
+      activatedAt: { not: null }
+    },
+    orderBy: { startsAt: "desc" }
+  });
+  const dueTerm = await db.subscriptionTerm.findFirst({
+    where: { userId, status: "SCHEDULED", startsAt: { lte: now } },
+    select: { id: true }
+  });
+  const lifecycleNeeded = Boolean(
+    dueTerm
+    || (term?.status === "ACTIVE" && term.endsAt <= now)
+    || (term?.status === "GRACE" && term.graceEndsAt <= now)
+    || (row.effectivePlan === "PRO" && !term && !isSubscriptionPlanActive(row, now))
+  );
+  if (lifecycleNeeded) {
+    await runSubscriptionLifecycle({ now, limit: 50, userId });
+    row = await getOrCreateSubscription(userId);
+    term = await db.subscriptionTerm.findFirst({
+      where: {
+        userId,
+        status: { in: ["ACTIVE", "GRACE"] },
+        startsAt: { lte: now },
+        graceEndsAt: { gt: now },
+        activatedAt: { not: null }
+      },
+      orderBy: { startsAt: "desc" }
+    });
+  }
 
-  if (isSubscriptionPlanActive(row, now)) {
+  const legacyActiveWithoutTerm = !term && isSubscriptionPlanActive(row, now);
+  if (row.effectivePlan === "PRO" && (term || legacyActiveWithoutTerm)) {
+    const inGrace = term
+      ? term.endsAt <= now
+      : row.proValidUntil instanceof Date && row.proValidUntil <= now;
     return {
       userId,
       plan: "pro",
-      status: "active",
+      status: inGrace ? "grace" : "active",
       proValidUntil: row.proValidUntil ? row.proValidUntil.toISOString() : null,
       maxRunningBots: normalizeInt(row.maxRunningBots, 3, 0),
       maxRunningPredictionsAi: normalizeNullableInt(
@@ -1023,10 +1481,6 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
       aiTokenUsedLifetime: toBigInt(row.aiTokenUsedLifetime),
       monthlyAiTokensIncluded: toBigInt(row.monthlyAiTokensIncluded)
     };
-  }
-
-  if (row.effectivePlan === "PRO") {
-    return setUserToFreePlan({ userId, syncWorkspaceEntitlements: true });
   }
 
   return {
@@ -1298,10 +1752,18 @@ export async function canEnablePredictionSchedule(params: {
   };
 }
 
+export function buildActiveBillingPackageWhere(): Record<string, unknown> {
+  return {
+    isActive: true,
+    priceCents: { gt: 0 },
+    NOT: { kind: "PLAN", plan: "FREE" }
+  };
+}
+
 export async function listActiveBillingPackages(): Promise<any[]> {
   await ensureBillingDefaults();
   return db.billingPackage.findMany({
-    where: { isActive: true },
+    where: buildActiveBillingPackageWhere(),
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
   });
 }
@@ -1329,8 +1791,43 @@ type CheckoutResolvedLine = {
   pkg: any;
 };
 
+export function calculateBillingCartAmountCents(
+  lines: Array<{ lineAmountCents: number }>
+): number {
+  let total = 0n;
+  for (const line of lines) {
+    if (!Number.isSafeInteger(line.lineAmountCents) || line.lineAmountCents < 0) {
+      throw new Error("cart_total_out_of_range");
+    }
+    total += BigInt(line.lineAmountCents);
+    if (total > BigInt(BILLING_ORDER_AMOUNT_CENTS_MAX)) {
+      throw new Error("cart_total_out_of_range");
+    }
+  }
+  return Number(total);
+}
+
+export function requirePayableBillingCartAmountCents(amountCents: number): number {
+  if (amountCents <= 0) throw new Error("cart_zero_amount_not_supported");
+  return amountCents;
+}
+
+export function billingAmountCentsToUsdcRaw(amountCents: number): bigint {
+  const validated = calculateBillingCartAmountCents([{ lineAmountCents: amountCents }]);
+  return BigInt(validated) * 10_000n;
+}
+
 function mapBillingPackageKind(value: unknown): BillingPackageKind {
   return value === "PLAN" ? "plan" : "addon";
+}
+
+export function isBillingPackagePurchasable(pkg: {
+  kind?: unknown;
+  plan?: unknown;
+  priceCents?: unknown;
+}): boolean {
+  return normalizeInt(pkg.priceCents, 0, 0) > 0
+    && !(pkg.kind === "PLAN" && pkg.plan === "FREE");
 }
 
 function buildPackageSnapshot(pkg: any): Record<string, unknown> {
@@ -1363,6 +1860,8 @@ async function fetchBillingOrderWithItems(orderId: string): Promise<any> {
     where: { id: orderId },
     include: {
       pkg: true,
+      onchainPayment: true,
+      subscriptionTerm: true,
       items: {
         include: {
           pkg: {
@@ -1409,7 +1908,8 @@ async function resolveCheckoutLines(params: {
   const packages = await db.billingPackage.findMany({
     where: {
       id: { in: packageIds },
-      isActive: true
+      isActive: true,
+      priceCents: { gt: 0 }
     }
   });
   if (packages.length !== packageIds.length) {
@@ -1424,6 +1924,7 @@ async function resolveCheckoutLines(params: {
   const lines: CheckoutResolvedLine[] = normalizedRaw.map((item) => {
     const pkg = byId.get(item.packageId);
     if (!pkg) throw new Error("cart_item_not_found");
+    if (!isBillingPackagePurchasable(pkg)) throw new Error("cart_free_plan_not_purchasable");
     const kind = mapBillingPackageKind(pkg.kind);
     const addonType = deriveAddonTypeFromPackage(pkg);
     if (kind === "plan" && item.quantity !== 1) {
@@ -1462,116 +1963,184 @@ async function resolveCheckoutLines(params: {
   return lines;
 }
 
+function fingerprintCheckoutLines(lines: CheckoutResolvedLine[]): string {
+  const canonical = lines
+    .map((line) => `${line.packageId}:${line.quantity}`)
+    .sort()
+    .join("|");
+  return crypto.createHash("sha256").update(canonical).digest("hex");
+}
+
+function buildOnchainPaymentResponse(order: any): any | null {
+  const payment = order?.onchainPayment;
+  if (!payment) return null;
+  const txHash = payment.txHash ? String(payment.txHash) : null;
+  const recipientAddress = String(payment.treasuryAddress ?? "");
+  return {
+    chainId: Number(payment.chainId),
+    tokenAddress: String(payment.tokenAddress),
+    tokenDecimals: Number(payment.tokenDecimals),
+    recipientAddress,
+    treasuryAddress: recipientAddress,
+    expectedSenderAddress: String(payment.expectedSenderAddress),
+    amountRaw: toBigInt(payment.expectedAmountRaw).toString(),
+    amountFormatted: formatArbitrumUsdcAmount(toBigInt(payment.expectedAmountRaw)),
+    confirmationsRequired: BILLING_PAYMENT_CONFIRMATIONS,
+    confirmations: normalizeInt(payment.confirmations, 0, 0),
+    txHash,
+    blockNumber: payment.blockNumber == null ? null : toBigInt(payment.blockNumber).toString(),
+    blockHash: payment.blockHash ?? null,
+    expiresAt: order.expiresAt instanceof Date ? order.expiresAt.toISOString() : null,
+    lastError: payment.lastError ?? null,
+    verifiedAt: payment.verifiedAt instanceof Date ? payment.verifiedAt.toISOString() : null,
+    explorerUrl: getArbitrumTransactionExplorerUrl(txHash)
+  };
+}
+
+function buildCheckoutResult(order: any): {
+  order: any;
+  payment: any | null;
+  mode: "onchain" | "instant";
+} {
+  const payment = buildOnchainPaymentResponse(order);
+  return {
+    order,
+    payment,
+    mode: payment ? "onchain" : "instant"
+  };
+}
+
+function buildCheckoutOrderItems(lines: CheckoutResolvedLine[]): any[] {
+  return lines.map((line) => ({
+    packageId: line.packageId,
+    quantity: line.quantity,
+    unitPriceCents: line.unitPriceCents,
+    lineAmountCents: line.lineAmountCents,
+    currency: line.currency,
+    kindSnapshot: line.kind === "plan" ? "PLAN" : "ADDON",
+    packageSnapshot: buildPackageSnapshot(line.pkg)
+  }));
+}
+
+async function expireStalePendingBillingOrders(userId: string, now = new Date()): Promise<number> {
+  const result = await db.billingOrder.updateMany({
+    where: {
+      userId,
+      provider: "ARBITRUM_USDC",
+      status: "PENDING",
+      expiresAt: { lte: now },
+      onchainPayment: { txHash: null }
+    },
+    data: {
+      status: "EXPIRED",
+      paymentStatusRaw: "checkout_expired"
+    }
+  });
+  return result.count;
+}
+
+async function findOpenArbitrumOrderForUser(userId: string, now: Date): Promise<any | null> {
+  await expireStalePendingBillingOrders(userId, now);
+  return db.billingOrder.findFirst({
+    where: {
+      userId,
+      provider: "ARBITRUM_USDC",
+      status: { in: ["PENDING", "CONFIRMING"] }
+    },
+    include: {
+      pkg: true,
+      onchainPayment: true,
+      subscriptionTerm: true,
+      items: {
+        include: { pkg: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+}
+
+export async function createBillingOrderWithTreasurySnapshotCas(params: {
+  database: any;
+  configuration: { treasuryAddress: string; revision: number };
+  rpcCheckedBlock: bigint;
+  scanFromBlock: bigint;
+  orderData: Record<string, unknown>;
+  include: Record<string, unknown>;
+}): Promise<any> {
+  return runSerializableBillingConfigTransaction(params.database, async (tx: any) => {
+    const {
+      expectedSenderAddress,
+      expectedAmountRaw,
+      ...billingOrderData
+    } = params.orderData as Record<string, any>;
+    const guarded = await tx.billingPaymentConfiguration.updateMany({
+      where: {
+        id: BILLING_PAYMENT_CONFIGURATION_ID,
+        chainId: ARBITRUM_ONE_CHAIN_ID,
+        tokenAddress: ARBITRUM_USDC_ADDRESS.toLowerCase(),
+        tokenDecimals: ARBITRUM_USDC_DECIMALS,
+        treasuryAddress: params.configuration.treasuryAddress,
+        revision: params.configuration.revision
+      },
+      data: {
+        lastRpcBlockNumber: params.rpcCheckedBlock,
+        lastRpcCheckAt: new Date(),
+        lastRpcError: null
+      }
+    });
+    if (guarded.count !== 1) throw new Error("billing_payment_configuration_changed");
+    return tx.billingOrder.create({
+      data: {
+        ...billingOrderData,
+        onchainPayment: {
+          create: {
+            chainId: ARBITRUM_ONE_CHAIN_ID,
+            tokenAddress: ARBITRUM_USDC_ADDRESS.toLowerCase(),
+            tokenDecimals: ARBITRUM_USDC_DECIMALS,
+            expectedSenderAddress,
+            treasuryAddress: params.configuration.treasuryAddress,
+            treasuryConfigRevision: params.configuration.revision,
+            expectedAmountRaw,
+            scanFromBlock: params.scanFromBlock
+          }
+        }
+      },
+      include: params.include
+    });
+  });
+}
+
 export async function createBillingCheckout(params: {
   userId: string;
   items: CheckoutCartItemInput[];
-}): Promise<{ order: any; payUrl: string | null; mode: "redirect" | "instant" }> {
+}): Promise<{
+  order: any;
+  payment: any | null;
+  mode: "onchain" | "instant";
+}> {
   if (!(await isBillingEnabled())) throw new Error("billing_disabled");
 
   await ensureBillingDefaults();
-  const lines = await resolveCheckoutLines({
-    userId: params.userId,
-    items: params.items
-  });
+  const lines = await resolveCheckoutLines({ userId: params.userId, items: params.items });
+  const amountCents = requirePayableBillingCartAmountCents(calculateBillingCartAmountCents(lines));
   const planLine = lines.find((line) => line.kind === "plan");
   const anchorPackageId = planLine?.packageId ?? lines[0]?.packageId;
   if (!anchorPackageId) throw new Error("cart_empty");
 
-  const orderId = `UTRADE_${crypto.randomUUID()}`;
-  const amountCents = lines.reduce((sum, line) => sum + line.lineAmountCents, 0);
-  const product =
-    lines.length === 1
-      ? `${lines[0]!.pkg.name} x${lines[0]!.quantity}`
-      : `${lines
-        .slice(0, 3)
-        .map((line) => `${line.pkg.name} x${line.quantity}`)
-        .join(", ")}${lines.length > 3 ? ` +${lines.length - 3} more` : ""}`;
-  const currency = lines[0]?.currency ?? "USD";
-
-  if (amountCents <= 0) {
-    const created = await db.billingOrder.create({
-      data: {
-        provider: "CCPAYMENT",
-        userId: params.userId,
-        packageId: anchorPackageId,
-        status: "PENDING",
-        amountCents,
-        currency,
-        merchantOrderId: orderId,
-        createPayload: {
-          orderId,
-          product,
-          price: formatUsdCents(amountCents),
-          checkoutMode: "internal_zero_amount",
-          items: lines.map((line) => ({
-            packageId: line.packageId,
-            packageCode: String(line.pkg.code ?? ""),
-            packageName: String(line.pkg.name ?? ""),
-            kind: line.kind,
-            addonType: line.addonType,
-            quantity: line.quantity,
-            unitPriceCents: line.unitPriceCents,
-            lineAmountCents: line.lineAmountCents
-          }))
-        },
-        items: {
-          create: lines.map((line) => ({
-            packageId: line.packageId,
-            quantity: line.quantity,
-            unitPriceCents: line.unitPriceCents,
-            lineAmountCents: line.lineAmountCents,
-            currency: line.currency,
-            kindSnapshot: line.kind === "plan" ? "PLAN" : "ADDON",
-            packageSnapshot: buildPackageSnapshot(line.pkg)
-          }))
-        }
-      },
-      include: {
-        pkg: true,
-        items: {
-          include: {
-            pkg: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                kind: true
-              }
-            }
-          },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }]
-        }
-      }
-    });
-
-    await applyPaidOrder(orderId, "internal_zero_amount");
-    const updated = await fetchBillingOrderWithItems(created.id);
-    return {
-      order: updated ?? created,
-      payUrl: null,
-      mode: "instant"
-    };
+  const now = new Date();
+  const cartFingerprint = fingerprintCheckoutLines(lines);
+  const openOrder = await findOpenArbitrumOrderForUser(params.userId, now);
+  if (openOrder) {
+    if (openOrder.cartFingerprint !== cartFingerprint) throw new Error("open_order_cart_mismatch");
+    return buildCheckoutResult(openOrder);
   }
 
-  if (!(await isCcpayConfigured())) throw new Error("ccpay_not_configured");
-
-  const webBaseUrl = await getCcpayWebBaseUrl();
-  const priceFiatId = await getCcpayPriceFiatId();
-  const returnUrl = new URL("/settings/subscription", webBaseUrl);
-  returnUrl.searchParams.set("checkout", "success");
-  returnUrl.searchParams.set("order", orderId);
-
-  const closeUrl = new URL("/settings/subscription", webBaseUrl);
-  closeUrl.searchParams.set("checkout", "cancel");
-  closeUrl.searchParams.set("order", orderId);
-
-  const payload = {
-    orderId,
-    product,
-    price: formatUsdCents(amountCents),
-    priceFiatId,
-    returnUrl: returnUrl.toString(),
-    closeUrl: closeUrl.toString(),
+  const merchantOrderId = `ULIQUID_${crypto.randomUUID()}`;
+  const currency = lines[0]?.currency ?? DEFAULT_BILLING_CURRENCY;
+  const createPayload = {
+    merchantOrderId,
+    checkoutMode: "arbitrum_usdc",
     items: lines.map((line) => ({
       packageId: line.packageId,
       packageCode: String(line.pkg.code ?? ""),
@@ -1584,168 +2153,1086 @@ export async function createBillingCheckout(params: {
     }))
   };
 
-  const created = await db.billingOrder.create({
-    data: {
-      provider: "CCPAYMENT",
+  const user = await db.user.findUnique({
+    where: { id: params.userId },
+    select: { walletAddress: true }
+  });
+  if (!user?.walletAddress) throw new Error("wallet_not_linked");
+  const expectedSenderAddress = normalizeBillingAddress(user.walletAddress, "wallet_not_linked");
+  const expectedAmountRaw = billingAmountCentsToUsdcRaw(amountCents);
+  const expiresAt = new Date(now.getTime() + BILLING_ORDER_TTL_MS);
+  for (let configurationAttempt = 0; configurationAttempt < 3; configurationAttempt += 1) {
+    const config = await getArbitrumUsdcPaymentConfiguration();
+    if (!config.configured || !config.treasuryAddress || !config.revision || !getBillingArbitrumRpcUrl()) {
+      throw new Error("payment_config_not_ready");
+    }
+    if (config.treasuryAddress === expectedSenderAddress) {
+      throw new Error("payment_config_not_ready");
+    }
+    let rpcCheckedBlock: bigint;
+    try {
+      rpcCheckedBlock = await requireLiveArbitrumBillingBlock(createBillingOnchainClient());
+    } catch (error) {
+      if (String((error as any)?.message ?? error) === "payment_config_not_ready") throw error;
+      throw new Error("rpc_unavailable");
+    }
+    // The checked head is already mined before checkout is returned. The first
+    // transaction that can belong to this order must therefore be in a later block.
+    const scanFromBlock = rpcCheckedBlock + 1n;
+
+    try {
+      const created = await createBillingOrderWithTreasurySnapshotCas({
+        database: db,
+        configuration: {
+          treasuryAddress: config.treasuryAddress,
+          revision: config.revision
+        },
+        rpcCheckedBlock,
+        scanFromBlock,
+        orderData: {
+          provider: "ARBITRUM_USDC",
+          userId: params.userId,
+          packageId: anchorPackageId,
+          status: "PENDING",
+          amountCents,
+          currency,
+          merchantOrderId,
+          cartFingerprint,
+          expiresAt,
+          createPayload,
+          items: { create: buildCheckoutOrderItems(lines) },
+          expectedSenderAddress,
+          expectedAmountRaw
+        },
+        include: {
+          pkg: true,
+          onchainPayment: true,
+          subscriptionTerm: true,
+          items: { include: { pkg: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }
+        }
+      });
+      return buildCheckoutResult(created);
+    } catch (error) {
+      const reason = String((error as any)?.message ?? error);
+      if (reason === "billing_payment_configuration_changed") continue;
+      if ((error as any)?.code !== "P2002") throw error;
+      const racedOrder = await findOpenArbitrumOrderForUser(params.userId, now);
+      if (racedOrder?.cartFingerprint === cartFingerprint) return buildCheckoutResult(racedOrder);
+      throw new Error("open_order_cart_mismatch");
+    }
+  }
+  throw new Error("payment_config_not_ready");
+}
+
+export async function getBillingOrderForUser(userId: string, orderId: string): Promise<{
+  order: any;
+  payment: any | null;
+}> {
+  await expireStalePendingBillingOrders(userId);
+  const order = await fetchBillingOrderWithItems(orderId);
+  if (!order || order.userId !== userId) throw new Error("order_not_found");
+  return { order, payment: buildOnchainPaymentResponse(order) };
+}
+
+export async function cancelBillingOrder(params: {
+  userId: string;
+  orderId: string;
+}): Promise<{ order: any; payment: any | null }> {
+  const order = await fetchBillingOrderWithItems(params.orderId);
+  if (!order || order.userId !== params.userId) throw new Error("order_not_found");
+  if (
+    order.provider !== "ARBITRUM_USDC"
+    || order.status !== "PENDING"
+    || order.onchainPayment?.txHash
+  ) {
+    throw new Error("order_not_cancellable");
+  }
+  const updated = await db.billingOrder.updateMany({
+    where: {
+      id: order.id,
       userId: params.userId,
-      packageId: anchorPackageId,
+      provider: "ARBITRUM_USDC",
       status: "PENDING",
-      amountCents,
-      currency,
-      merchantOrderId: orderId,
-      createPayload: payload,
-      items: {
-        create: lines.map((line) => ({
-          packageId: line.packageId,
-          quantity: line.quantity,
-          unitPriceCents: line.unitPriceCents,
-          lineAmountCents: line.lineAmountCents,
-          currency: line.currency,
-          kindSnapshot: line.kind === "plan" ? "PLAN" : "ADDON",
-          packageSnapshot: buildPackageSnapshot(line.pkg)
-        }))
-      }
+      onchainPayment: { txHash: null }
     },
-    include: {
-      pkg: true,
-      items: {
-        include: {
-          pkg: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              kind: true
-            }
-          }
-        },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
-      }
-    }
+    data: { status: "EXPIRED", paymentStatusRaw: "user_cancelled" }
   });
-
-  const rawBody = JSON.stringify(payload);
-  const headers = await makeCcpayHeaders(rawBody);
-  const response = await fetch(`${await getCcpayBaseUrl()}/ccpayment/v2/createInvoiceUrl`, {
-    method: "POST",
-    headers,
-    body: rawBody
-  });
-
-  const body = (await response
-    .json()
-    .catch(() => ({}))) as CcpayCreateInvoiceResponse;
-  const invoiceUrl = body.data?.invoiceUrl;
-  if (!response.ok || body.code !== 10000 || !invoiceUrl) {
-    const providerCode =
-      Number.isFinite(Number(body.code))
-        ? String(Math.trunc(Number(body.code)))
-        : "unknown";
-    await db.billingOrder.update({
-      where: { id: created.id },
-      data: {
-        status: "FAILED",
-        createResponse: body,
-        paymentStatusRaw: `http_${response.status}`
-      }
-    });
-    const providerMessage = extractCcpayProviderMessage(body);
-    console.warn("[billing] ccpayment createInvoiceUrl failed", {
-      orderId,
-      userId: params.userId,
-      packageId: anchorPackageId,
-      httpStatus: response.status,
-      providerCode,
-      providerMessage: providerMessage ?? null
-    });
-    const messageSuffix = providerMessage ? `:provider_msg_${providerMessage}` : "";
-    throw new Error(
-      `ccpayment_error:http_${response.status}:provider_code_${providerCode}${messageSuffix}`
-    );
-  }
-
-  const updated = await db.billingOrder.update({
-    where: { id: created.id },
-    data: {
-      payUrl: String(invoiceUrl),
-      createResponse: body
-    },
-    include: {
-      pkg: true,
-      items: {
-        include: {
-          pkg: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              kind: true
-            }
-          }
-        },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
-      }
-    }
-  });
-
-  return {
-    order: updated,
-    payUrl: String(invoiceUrl),
-    mode: "redirect"
-  };
+  if (updated.count !== 1) throw new Error("order_not_cancellable");
+  return getBillingOrderForUser(params.userId, params.orderId);
 }
 
-function extractCcpayProviderMessage(body: CcpayCreateInvoiceResponse): string | null {
-  const candidates = [
-    body.msg,
-    body.message,
-    body.error,
-    body.data?.msg,
-    body.data?.message,
-    body.data?.error
-  ];
-  for (const item of candidates) {
-    if (typeof item !== "string") continue;
-    const normalized = item.trim().replace(/\s+/g, " ");
-    if (!normalized) continue;
-    return normalized.slice(0, 180);
+export async function submitBillingTransaction(params: {
+  userId: string;
+  orderId: string;
+  txHash: string;
+  client?: BillingOnchainClient;
+}): Promise<{ order: any; payment: any | null }> {
+  const txHash = normalizeBillingTxHash(params.txHash);
+  const order = await fetchBillingOrderWithItems(params.orderId);
+  if (!order || order.userId !== params.userId) throw new Error("order_not_found");
+  if (order.provider !== "ARBITRUM_USDC" || !order.onchainPayment) {
+    throw new Error("order_not_payable");
   }
-  return null;
-}
+  if (order.status === "PAID") {
+    if (String(order.onchainPayment.txHash ?? "").toLowerCase() !== txHash) {
+      throw new Error("transaction_hash_mismatch");
+    }
+    return { order, payment: buildOnchainPaymentResponse(order) };
+  }
+  if (order.status !== "PENDING" && order.status !== "CONFIRMING") {
+    throw new Error("order_not_payable");
+  }
+  const submittedAt = new Date();
+  if (order.status === "PENDING" && order.expiresAt instanceof Date && order.expiresAt <= submittedAt) {
+    const expired = await db.billingOrder.updateMany({
+      where: {
+        id: order.id,
+        status: "PENDING",
+        onchainPayment: { txHash: null }
+      },
+      data: { status: "EXPIRED", paymentStatusRaw: "checkout_expired" }
+    });
+    if (expired.count === 1) throw new Error("order_not_payable");
+  }
+  const currentHash = String(order.onchainPayment.txHash ?? "").toLowerCase();
+  if (currentHash && currentHash !== txHash) throw new Error("transaction_hash_mismatch");
 
-export async function recordWebhookEvent(params: {
-  recordId: string;
-  merchantOrderId: string;
-  payload: unknown;
-}): Promise<"created" | "duplicate"> {
+  const hashOwner = await db.billingOnchainPayment.findUnique({
+    where: { txHash },
+    select: { orderId: true }
+  });
+  if (hashOwner && hashOwner.orderId !== order.id) throw new Error("transaction_hash_in_use");
+
   try {
-    await db.billingWebhookEvent.create({
-      data: {
-        provider: "CCPAYMENT",
-        recordId: params.recordId,
-        merchantOrderId: params.merchantOrderId,
-        payload: params.payload
-      }
+    await db.$transaction(async (tx: any) => {
+      const orderClaim = await tx.billingOrder.updateMany({
+        where: {
+          id: order.id,
+          userId: params.userId,
+          provider: "ARBITRUM_USDC",
+          OR: [
+            { status: "CONFIRMING" },
+            { status: "PENDING", expiresAt: { gt: submittedAt } }
+          ]
+        },
+        data: {
+          status: "CONFIRMING",
+          paymentStatusRaw: "transaction_submitted"
+        }
+      });
+      if (orderClaim.count !== 1) throw new Error("billing_submit_cas_conflict");
+
+      const paymentClaim = await tx.billingOnchainPayment.updateMany({
+        where: {
+          orderId: order.id,
+          OR: [{ txHash: null }, { txHash }]
+        },
+        data: {
+          txHash,
+          lastError: null,
+          nextRetryAt: submittedAt
+        }
+      });
+      if (paymentClaim.count !== 1) throw new Error("billing_submit_hash_conflict");
     });
-    return "created";
   } catch (error) {
-    const code = (error as any)?.code;
-    if (code === "P2002") return "duplicate";
+    if ((error as any)?.code === "P2002") throw new Error("transaction_hash_in_use");
+    const reason = String((error as any)?.message ?? error);
+    if (reason !== "billing_submit_cas_conflict" && reason !== "billing_submit_hash_conflict") {
+      throw error;
+    }
+    const latest = await fetchBillingOrderWithItems(order.id);
+    if (!latest || latest.userId !== params.userId) throw new Error("order_not_found");
+    const latestHash = String(latest.onchainPayment?.txHash ?? "").toLowerCase();
+    if (latestHash && latestHash !== txHash) throw new Error("transaction_hash_mismatch");
+    if (latest.status === "PAID" && latestHash === txHash) {
+      return { order: latest, payment: buildOnchainPaymentResponse(latest) };
+    }
+    if (latest.status !== "CONFIRMING" || latestHash !== txHash) {
+      throw new Error("order_not_payable");
+    }
+  }
+  return reconcileBillingOrderPayment({
+    userId: params.userId,
+    orderId: order.id,
+    client: params.client
+  });
+}
+
+function billingRetryAt(attempts: number, now = new Date()): Date {
+  const delay = Math.min(15 * 60_000, BILLING_RETRY_BASE_MS * (2 ** Math.min(5, attempts)));
+  return new Date(now.getTime() + delay);
+}
+
+export function shouldEscalateMissingBillingTransaction(params: {
+  reason: string;
+  attempts: number;
+  expiresAt: Date | null;
+  now: Date;
+}): boolean {
+  return (
+    params.reason === "transaction_or_receipt_not_available"
+    && params.attempts >= BILLING_MAX_MISSING_TRANSACTION_ATTEMPTS
+    && params.expiresAt instanceof Date
+    && params.expiresAt <= params.now
+  );
+}
+
+export function isWithinLatePaymentRecoveryHorizon(expiresAt: Date | null, now: Date): boolean {
+  return Boolean(
+    expiresAt
+    && expiresAt <= now
+    && expiresAt.getTime() >= now.getTime() - BILLING_LATE_PAYMENT_RECOVERY_MS
+  );
+}
+
+export async function persistBillingVerificationTransition(params: {
+  database: any;
+  orderId: string;
+  txHash: string;
+  expectedVerificationAttempts: number;
+  orderStatus: "CONFIRMING" | "REVIEW_REQUIRED";
+  paymentStatusRaw: string;
+  paymentData: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    return await params.database.$transaction(async (tx: any) => {
+      // Always lock/claim the order first. Submit, cancel, discovery and
+      // verification use the same ordering so terminal states stay monotone.
+      const orderClaim = await tx.billingOrder.updateMany({
+        where: {
+          id: params.orderId,
+          provider: "ARBITRUM_USDC",
+          status: { in: ["PENDING", "CONFIRMING"] }
+        },
+        data: {
+          status: params.orderStatus,
+          paymentStatusRaw: params.paymentStatusRaw
+        }
+      });
+      if (orderClaim.count !== 1) return false;
+
+      const paymentClaim = await tx.billingOnchainPayment.updateMany({
+        where: {
+          orderId: params.orderId,
+          txHash: params.txHash,
+          verificationAttempts: params.expectedVerificationAttempts,
+          verifiedAt: null
+        },
+        data: params.paymentData
+      });
+      if (paymentClaim.count !== 1) throw new Error("billing_verification_cas_lost");
+      return true;
+    });
+  } catch (error) {
+    if (String((error as any)?.message ?? error) === "billing_verification_cas_lost") return false;
     throw error;
   }
 }
 
-export async function markOrderFailed(merchantOrderId: string, statusRaw: string): Promise<void> {
-  const order = await db.billingOrder.findUnique({ where: { merchantOrderId } });
-  if (!order) return;
-  if (order.status === "PAID") return;
-  await db.billingOrder.update({
-    where: { id: order.id },
-    data: {
-      status: statusRaw === "expired" ? "EXPIRED" : "FAILED",
-      paymentStatusRaw: statusRaw
+async function resolveBillingOrderAfterVerificationCasLoss(
+  orderId: string,
+  userId?: string
+): Promise<{ order: any; payment: any | null }> {
+  let latest = await fetchBillingOrderWithItems(orderId);
+  if (!latest || (userId && latest.userId !== userId)) throw new Error("order_not_found");
+  if (shouldResumeVerifiedBillingPayment(latest)) {
+    await finalizeConfirmedBillingOrderWithReviewHandling(
+      latest.id,
+      latest.merchantOrderId,
+      "onchain_confirmed_resume",
+      getVerifiedBillingPaymentTimestamp(latest)!
+    );
+    latest = await fetchBillingOrderWithItems(orderId);
+    if (!latest) throw new Error("order_not_found");
+  }
+  if (latest.status === "REVIEW_REQUIRED") throw new Error("review_required");
+  if (!["PENDING", "CONFIRMING", "PAID"].includes(String(latest.status))) {
+    throw new Error("order_not_payable");
+  }
+  return { order: latest, payment: buildOnchainPaymentResponse(latest) };
+}
+
+export async function reconcileBillingOrderPayment(params: {
+  orderId: string;
+  userId?: string;
+  client?: BillingOnchainClient;
+}): Promise<{ order: any; payment: any | null }> {
+  const order = await fetchBillingOrderWithItems(params.orderId);
+  if (!order || (params.userId && order.userId !== params.userId)) throw new Error("order_not_found");
+  if (order.provider !== "ARBITRUM_USDC" || !order.onchainPayment) {
+    throw new Error("order_not_payable");
+  }
+  if (order.status === "PAID") return { order, payment: buildOnchainPaymentResponse(order) };
+  if (order.status !== "PENDING" && order.status !== "CONFIRMING") {
+    throw new Error(order.status === "REVIEW_REQUIRED" ? "review_required" : "order_not_payable");
+  }
+  const txHash = order.onchainPayment.txHash ? String(order.onchainPayment.txHash) : "";
+  if (!txHash) throw new Error("order_not_payable");
+
+  if (shouldResumeVerifiedBillingPayment(order)) {
+    const verifiedAt = getVerifiedBillingPaymentTimestamp(order)!;
+    await finalizeConfirmedBillingOrderWithReviewHandling(
+      order.id,
+      order.merchantOrderId,
+      "onchain_confirmed_resume",
+      verifiedAt
+    );
+    const resumed = await fetchBillingOrderWithItems(order.id);
+    if (!resumed) throw new Error("order_not_found");
+    return { order: resumed, payment: buildOnchainPaymentResponse(resumed) };
+  }
+
+  const client = params.client ?? createBillingOnchainClient();
+  const result = await verifyArbitrumUsdcTransaction({
+    client,
+    txHash,
+    expectedSenderAddress: String(order.onchainPayment.expectedSenderAddress),
+    recipientAddress: String(order.onchainPayment.treasuryAddress),
+    expectedAmountRaw: toBigInt(order.onchainPayment.expectedAmountRaw),
+    minimumBlockNumber:
+      typeof order.onchainPayment.scanFromBlock === "bigint"
+        ? order.onchainPayment.scanFromBlock
+        : null,
+    tokenAddress: String(order.onchainPayment.tokenAddress),
+    confirmationsRequired: BILLING_PAYMENT_CONFIRMATIONS
+  });
+  const checkedAt = new Date();
+  const nextAttempts = normalizeInt(order.onchainPayment.verificationAttempts, 0, 0) + 1;
+
+  if (result.kind === "retry") {
+    const staleMissingTransaction = shouldEscalateMissingBillingTransaction({
+      reason: result.reason,
+      attempts: nextAttempts,
+      expiresAt: order.expiresAt instanceof Date ? order.expiresAt : null,
+      now: checkedAt
+    });
+    const persisted = await persistBillingVerificationTransition({
+      database: db,
+      orderId: order.id,
+      txHash,
+      expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
+      orderStatus: staleMissingTransaction ? "REVIEW_REQUIRED" : "CONFIRMING",
+      paymentStatusRaw: staleMissingTransaction ? "stale_missing_transaction" : "rpc_retry",
+      paymentData: {
+        verificationAttempts: { increment: 1 },
+        lastCheckedAt: checkedAt,
+        nextRetryAt: staleMissingTransaction ? null : billingRetryAt(nextAttempts, checkedAt),
+        lastError: staleMissingTransaction ? "stale_missing_transaction" : result.reason
+      }
+    });
+    if (!persisted) return resolveBillingOrderAfterVerificationCasLoss(order.id, params.userId);
+    if (staleMissingTransaction) throw new Error("review_required");
+    throw new Error("rpc_unavailable");
+  }
+
+  if (result.kind === "review_required") {
+    const persisted = await persistBillingVerificationTransition({
+      database: db,
+      orderId: order.id,
+      txHash,
+      expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
+      orderStatus: "REVIEW_REQUIRED",
+      paymentStatusRaw: result.reason,
+      paymentData: {
+        verificationAttempts: { increment: 1 },
+        lastCheckedAt: checkedAt,
+        nextRetryAt: null,
+        lastError: result.reason,
+        confirmations: result.confirmations,
+        blockNumber: result.blockNumber,
+        blockHash: result.blockHash
+      }
+    });
+    if (!persisted) return resolveBillingOrderAfterVerificationCasLoss(order.id, params.userId);
+    throw new Error("review_required");
+  }
+
+  const persisted = await persistBillingVerificationTransition({
+    database: db,
+    orderId: order.id,
+    txHash,
+    expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
+    orderStatus: "CONFIRMING",
+    paymentStatusRaw: result.kind === "confirmed" ? "onchain_confirmed" : "confirming",
+    paymentData: {
+      verificationAttempts: { increment: 1 },
+      lastCheckedAt: checkedAt,
+      nextRetryAt: result.kind === "confirming" ? billingRetryAt(0, checkedAt) : null,
+      lastError: null,
+      confirmations: result.confirmations,
+      blockNumber: result.blockNumber,
+      blockHash: result.blockHash,
+      ...(result.kind === "confirmed" ? { verifiedAt: checkedAt } : {})
     }
   });
+  if (!persisted) return resolveBillingOrderAfterVerificationCasLoss(order.id, params.userId);
+
+  if (result.kind === "confirmed") {
+    await finalizeConfirmedBillingOrderWithReviewHandling(
+      order.id,
+      order.merchantOrderId,
+      "onchain_confirmed",
+      checkedAt
+    );
+  }
+  const updated = await fetchBillingOrderWithItems(order.id);
+  if (!updated) throw new Error("order_not_found");
+  return { order: updated, payment: buildOnchainPaymentResponse(updated) };
+}
+
+export async function reconcilePendingBillingPayments(params?: {
+  limit?: number;
+  client?: BillingOnchainClient;
+}): Promise<{ checked: number; paid: number; confirming: number; reviewRequired: number; retry: number }> {
+  const now = new Date();
+  const rows = await db.billingOnchainPayment.findMany({
+    where: {
+      txHash: { not: null },
+      OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+      order: { status: { in: ["PENDING", "CONFIRMING"] } }
+    },
+    select: { orderId: true, verificationAttempts: true },
+    orderBy: [{ nextRetryAt: "asc" }, { createdAt: "asc" }],
+    take: Math.max(1, Math.min(500, params?.limit ?? 100))
+  });
+  const empty = { checked: 0, paid: 0, confirming: 0, reviewRequired: 0, retry: 0 };
+  if (rows.length === 0) return empty;
+  const client = params?.client ?? createBillingOnchainClient();
+  return reconcileBillingPaymentRows({
+    rows,
+    reconcile: (row) => reconcileBillingOrderPayment({ orderId: row.orderId, client }),
+    onUnexpectedError: async (row, error) => {
+      const reason = String((error as any)?.message ?? error).slice(0, 400);
+      const attempts = normalizeInt(row.verificationAttempts, 0, 0) + 1;
+      await db.billingOnchainPayment.updateMany({
+        where: {
+          orderId: row.orderId,
+          verificationAttempts: normalizeInt(row.verificationAttempts, 0, 0),
+          verifiedAt: null,
+          order: { status: { in: ["PENDING", "CONFIRMING"] } }
+        },
+        data: {
+          verificationAttempts: { increment: 1 },
+          nextRetryAt: billingRetryAt(attempts),
+          lastCheckedAt: new Date(),
+          lastError: `reconcile_error:${reason}`
+        }
+      });
+      logger.warn("billing_onchain_order_reconcile_failed", { orderId: row.orderId, error: reason });
+    }
+  });
+}
+
+export async function reconcileBillingPaymentRows(params: {
+  rows: any[];
+  reconcile: (row: any) => Promise<{ order: { status: string } }>;
+  onUnexpectedError: (row: any, error: unknown) => Promise<void>;
+}): Promise<{ checked: number; paid: number; confirming: number; reviewRequired: number; retry: number }> {
+  const summary = { checked: 0, paid: 0, confirming: 0, reviewRequired: 0, retry: 0 };
+  for (const row of params.rows) {
+    summary.checked += 1;
+    try {
+      const result = await params.reconcile(row);
+      if (result.order.status === "PAID") summary.paid += 1;
+      else summary.confirming += 1;
+    } catch (error) {
+      const reason = String((error as any)?.message ?? error);
+      if (reason === "review_required") {
+        summary.reviewRequired += 1;
+      } else if (reason === "rpc_unavailable") {
+        summary.retry += 1;
+      } else {
+        summary.retry += 1;
+        try {
+          await params.onUnexpectedError(row, error);
+        } catch (trackingError) {
+          logger.warn("billing_onchain_order_reconcile_tracking_failed", {
+            orderId: row?.orderId ?? null,
+            error: String((trackingError as any)?.message ?? trackingError)
+          });
+        }
+      }
+    }
+  }
+  return summary;
+}
+
+export function getVerifiedBillingPaymentTimestamp(order: any): Date | null {
+  const verifiedAt = order?.onchainPayment?.verifiedAt;
+  return verifiedAt instanceof Date && Number.isFinite(verifiedAt.getTime())
+    ? verifiedAt
+    : null;
+}
+
+export function shouldResumeVerifiedBillingPayment(order: any): boolean {
+  const blockNumber = order?.onchainPayment?.blockNumber;
+  const scanFromBlock = order?.onchainPayment?.scanFromBlock;
+  const verifiedAt = getVerifiedBillingPaymentTimestamp(order);
+  return Boolean(
+    order?.provider === "ARBITRUM_USDC"
+    && order?.status === "CONFIRMING"
+    && verifiedAt !== null
+    && normalizeInt(order?.onchainPayment?.confirmations, 0, 0) >= BILLING_PAYMENT_CONFIRMATIONS
+    && typeof blockNumber === "bigint"
+    && typeof scanFromBlock === "bigint"
+    && blockNumber >= scanFromBlock
+  );
+}
+
+function safeLowerBillingAddress(value: unknown): string | null {
+  try {
+    return normalizeBillingAddress(value);
+  } catch {
+    return null;
+  }
+}
+
+export function matchBillingDiscoveryTransactionHashes(params: {
+  expectedSenderAddress: string;
+  recipientAddress: string;
+  logs: any[];
+}): string[] {
+  const expectedSender = normalizeBillingAddress(params.expectedSenderAddress);
+  const recipient = normalizeBillingAddress(params.recipientAddress, "invalid_treasury_address");
+  const hashes = new Set<string>();
+  for (const log of params.logs) {
+    const from = safeLowerBillingAddress(log?.args?.from);
+    const to = safeLowerBillingAddress(log?.args?.to);
+    const hash = String(log?.transactionHash ?? "").toLowerCase();
+    if (from === expectedSender && to === recipient && /^0x[0-9a-f]{64}$/.test(hash)) {
+      hashes.add(hash);
+    }
+  }
+  return [...hashes];
+}
+
+export function assignBillingDiscoveryTransactionHashes(params: {
+  payments: Array<{
+    id: string;
+    expectedSenderAddress: string;
+    treasuryAddress: string;
+    scanFromBlock: bigint | null;
+    createdAt?: Date | string | null;
+  }>;
+  logs: any[];
+}): { hashesByPaymentId: Record<string, string[]>; ambiguousPaymentIds: string[] } {
+  const candidatesByRoute = new Map<string, Array<{
+    id: string;
+    scanFromBlock: bigint;
+    createdAtMs: number;
+  }>>();
+  const hashesByPaymentId: Record<string, string[]> = {};
+
+  for (const payment of params.payments) {
+    const id = String(payment.id ?? "");
+    const sender = safeLowerBillingAddress(payment.expectedSenderAddress);
+    const recipient = safeLowerBillingAddress(payment.treasuryAddress);
+    if (!id || !sender || !recipient || typeof payment.scanFromBlock !== "bigint" || payment.scanFromBlock < 0n) {
+      continue;
+    }
+    hashesByPaymentId[id] = [];
+    const route = `${sender}:${recipient}`;
+    const createdAtMs = new Date(payment.createdAt ?? 0).getTime();
+    candidatesByRoute.set(route, [
+      ...(candidatesByRoute.get(route) ?? []),
+      {
+        id,
+        scanFromBlock: payment.scanFromBlock,
+        createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : 0
+      }
+    ]);
+  }
+
+  for (const candidates of candidatesByRoute.values()) {
+    candidates.sort((left, right) => {
+      if (left.scanFromBlock !== right.scanFromBlock) {
+        return left.scanFromBlock < right.scanFromBlock ? -1 : 1;
+      }
+      if (left.createdAtMs !== right.createdAtMs) return left.createdAtMs - right.createdAtMs;
+      return left.id.localeCompare(right.id);
+    });
+  }
+
+  const ownersByHash = new Map<string, Set<string>>();
+  for (const log of params.logs) {
+    const sender = safeLowerBillingAddress(log?.args?.from);
+    const recipient = safeLowerBillingAddress(log?.args?.to);
+    const hash = String(log?.transactionHash ?? "").toLowerCase();
+    const blockNumber = typeof log?.blockNumber === "bigint" ? log.blockNumber : null;
+    if (!sender || !recipient || blockNumber === null || !/^0x[0-9a-f]{64}$/.test(hash)) continue;
+
+    const candidates = candidatesByRoute.get(`${sender}:${recipient}`) ?? [];
+    let owner: (typeof candidates)[number] | null = null;
+    for (const candidate of candidates) {
+      if (candidate.scanFromBlock > blockNumber) break;
+      owner = candidate;
+    }
+    if (!owner) continue;
+    const owners = ownersByHash.get(hash) ?? new Set<string>();
+    owners.add(owner.id);
+    ownersByHash.set(hash, owners);
+  }
+
+  const ambiguousPaymentIds = new Set<string>();
+  for (const [hash, owners] of ownersByHash.entries()) {
+    if (owners.size !== 1) {
+      for (const owner of owners) ambiguousPaymentIds.add(owner);
+      continue;
+    }
+    const [owner] = owners;
+    const current = hashesByPaymentId[owner!] ?? [];
+    if (!current.includes(hash)) current.push(hash);
+    hashesByPaymentId[owner!] = current;
+  }
+
+  return {
+    hashesByPaymentId,
+    ambiguousPaymentIds: [...ambiguousPaymentIds]
+  };
+}
+
+export function getBillingDiscoveryScanRange(params: {
+  latestBlock: bigint;
+  hintedStart: bigint;
+  cursorLastScannedBlock?: bigint | null;
+}): { safeHead: bigint; fromBlock: bigint; toBlock: bigint } | null {
+  const confirmationLag = BigInt(Math.max(0, BILLING_PAYMENT_CONFIRMATIONS - 1));
+  const safeHead = params.latestBlock > confirmationLag
+    ? params.latestBlock - confirmationLag
+    : 0n;
+  if (params.hintedStart > safeHead) return null;
+  if (
+    params.cursorLastScannedBlock !== null
+    && params.cursorLastScannedBlock !== undefined
+    && params.cursorLastScannedBlock >= safeHead
+  ) {
+    return null;
+  }
+  const cursorStart = params.cursorLastScannedBlock === null || params.cursorLastScannedBlock === undefined
+    ? params.hintedStart
+    : params.cursorLastScannedBlock + 1n > BILLING_DISCOVERY_REORG_OVERLAP_BLOCKS
+      ? params.cursorLastScannedBlock + 1n - BILLING_DISCOVERY_REORG_OVERLAP_BLOCKS
+      : 0n;
+  const fromBlock = cursorStart > params.hintedStart ? cursorStart : params.hintedStart;
+  const chunkEnd = fromBlock + BILLING_DISCOVERY_SCAN_CHUNK_BLOCKS - 1n;
+  return {
+    safeHead,
+    fromBlock,
+    toBlock: chunkEnd < safeHead ? chunkEnd : safeHead
+  };
+}
+
+export function billingDiscoveryRetryAt(failureCount: number, now = new Date()): Date {
+  const exponent = Math.max(0, Math.min(10, Math.trunc(failureCount) - 1));
+  const delay = Math.min(BILLING_DISCOVERY_RETRY_MAX_MS, BILLING_RETRY_BASE_MS * (2 ** exponent));
+  return new Date(now.getTime() + delay);
+}
+
+export async function persistBillingDiscoveryTransition(params: {
+  database: any;
+  paymentId: string;
+  orderId: string;
+  expectedOrderStatus: "PENDING" | "EXPIRED";
+  orderStatus: "CONFIRMING" | "REVIEW_REQUIRED";
+  paymentStatusRaw: string;
+  paymentData: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    return await params.database.$transaction(async (tx: any) => {
+      const orderClaim = await tx.billingOrder.updateMany({
+        where: {
+          id: params.orderId,
+          provider: "ARBITRUM_USDC",
+          status: params.expectedOrderStatus
+        },
+        data: {
+          status: params.orderStatus,
+          paymentStatusRaw: params.paymentStatusRaw
+        }
+      });
+      if (orderClaim.count !== 1) return false;
+
+      const paymentClaim = await tx.billingOnchainPayment.updateMany({
+        where: { id: params.paymentId, txHash: null },
+        data: params.paymentData
+      });
+      if (paymentClaim.count !== 1) throw new Error("billing_discovery_cas_lost");
+      return true;
+    });
+  } catch (error) {
+    if (String((error as any)?.message ?? error) === "billing_discovery_cas_lost") return false;
+    throw error;
+  }
+}
+
+export async function persistBillingDiscoveryCandidate(params: {
+  database: any;
+  paymentId: string;
+  orderId: string;
+  expectedOrderStatus: "PENDING" | "EXPIRED";
+  expectedExpiresAt?: Date | null;
+  now: Date;
+  candidate:
+    | { kind: "hash"; txHash: string }
+    | { kind: "review"; reason: string };
+}): Promise<{ applied: boolean; outcome: "discovered" | "review_required" | null }> {
+  let snapshot: { orderStatus: "PENDING" | "EXPIRED"; expiresAt: Date | null } = {
+    orderStatus: params.expectedOrderStatus,
+    expiresAt: params.expectedExpiresAt instanceof Date ? params.expectedExpiresAt : null
+  };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const isLate = snapshot.orderStatus === "EXPIRED"
+      || (snapshot.expiresAt instanceof Date && snapshot.expiresAt <= params.now);
+    const transition = params.candidate.kind === "review"
+      ? {
+          orderStatus: "REVIEW_REQUIRED" as const,
+          paymentStatusRaw: params.candidate.reason,
+          paymentData: {
+            lastError: params.candidate.reason,
+            lastCheckedAt: params.now
+          },
+          outcome: "review_required" as const
+        }
+      : {
+          orderStatus: isLate ? "REVIEW_REQUIRED" as const : "CONFIRMING" as const,
+          paymentStatusRaw: isLate ? "late_payment_discovered" : "transaction_discovered",
+          paymentData: {
+            txHash: params.candidate.txHash,
+            discoveredAt: params.now,
+            nextRetryAt: isLate ? null : params.now,
+            lastError: isLate ? "late_payment_discovered" : null
+          },
+          outcome: isLate ? "review_required" as const : "discovered" as const
+        };
+    const applied = await persistBillingDiscoveryTransition({
+      database: params.database,
+      paymentId: params.paymentId,
+      orderId: params.orderId,
+      expectedOrderStatus: snapshot.orderStatus,
+      orderStatus: transition.orderStatus,
+      paymentStatusRaw: transition.paymentStatusRaw,
+      paymentData: transition.paymentData
+    });
+    if (applied) return { applied: true, outcome: transition.outcome };
+
+    const current = await params.database.billingOnchainPayment.findUnique({
+      where: { id: params.paymentId },
+      select: {
+        orderId: true,
+        txHash: true,
+        order: { select: { id: true, status: true, expiresAt: true } }
+      }
+    });
+    if (
+      current
+      && String(current.orderId) === params.orderId
+      && current.txHash !== null
+    ) {
+      return { applied: false, outcome: null };
+    }
+    if (
+      !current
+      || String(current.orderId) !== params.orderId
+      || (current.order?.status !== "PENDING" && current.order?.status !== "EXPIRED")
+      || current.txHash !== null
+    ) {
+      throw new Error("billing_discovery_scope_unresolved");
+    }
+    snapshot = {
+      orderStatus: current.order.status,
+      expiresAt: current.order.expiresAt instanceof Date ? current.order.expiresAt : null
+    };
+  }
+  throw new Error("billing_discovery_scope_unresolved");
+}
+
+export async function captureBillingDiscoveryScopeAfterHead<T>(params: {
+  getLatestBlock: () => Promise<bigint>;
+  loadScopedPayments: () => Promise<T[]>;
+}): Promise<{ latestBlock: bigint; scopedPayments: T[] }> {
+  const latestBlock = await params.getLatestBlock();
+  const scopedPayments = await params.loadScopedPayments();
+  return { latestBlock, scopedPayments };
+}
+
+export async function assertBillingDiscoveryScopeStableBeforeCursor(params: {
+  database: any;
+  scope: { chainId: number; tokenAddress: string; treasuryAddress: string };
+  recoveryCutoff: Date;
+  rangeToBlock: bigint;
+  snapshotPaymentIds: string[];
+}): Promise<void> {
+  const snapshotIds = new Set(params.snapshotPaymentIds);
+  const current = await params.database.billingOnchainPayment.findMany({
+    where: {
+      txHash: null,
+      chainId: params.scope.chainId,
+      tokenAddress: params.scope.tokenAddress,
+      treasuryAddress: params.scope.treasuryAddress,
+      scanFromBlock: { lte: params.rangeToBlock },
+      order: {
+        status: { in: ["PENDING", "EXPIRED"] },
+        expiresAt: { gte: params.recoveryCutoff }
+      }
+    },
+    select: { id: true }
+  });
+  const unseenIds = current
+    .map((payment: any) => String(payment.id ?? ""))
+    .filter((id: string) => id && !snapshotIds.has(id));
+  if (unseenIds.length > 0) throw new Error("billing_discovery_scope_changed");
+}
+
+export async function discoverMissingBillingTransactions(params?: {
+  limit?: number;
+  client?: BillingOnchainClient;
+}): Promise<{ scannedScopes: number; discovered: number; reviewRequired: number }> {
+  const now = new Date();
+  const recoveryCutoff = new Date(now.getTime() - BILLING_LATE_PAYMENT_RECOVERY_MS);
+  const eligibleOrderWhere = {
+    status: { in: ["PENDING", "EXPIRED"] },
+    expiresAt: { gte: recoveryCutoff }
+  };
+  // Limit seed scopes, not individual payments. A scope cursor may only advance
+  // after every eligible payment in that scope participated in assignment.
+  const paymentSeeds = await db.billingOnchainPayment.findMany({
+    where: {
+      txHash: null,
+      order: eligibleOrderWhere
+    },
+    include: { order: { select: { id: true, status: true, expiresAt: true } } },
+    orderBy: [
+      { lastCheckedAt: { sort: "asc", nulls: "first" } },
+      { createdAt: "asc" }
+    ],
+    take: Math.max(1, Math.min(500, params?.limit ?? 100))
+  });
+  const summary = { scannedScopes: 0, discovered: 0, reviewRequired: 0 };
+  if (paymentSeeds.length === 0) return summary;
+  const groups = new Map<string, any>();
+  for (const payment of paymentSeeds) {
+    const key = `${payment.chainId}:${String(payment.tokenAddress).toLowerCase()}:${String(payment.treasuryAddress).toLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, payment);
+  }
+  const client = params?.client ?? createBillingOnchainClient();
+  const markPaymentsChecked = async (payments: any[]) => {
+    const ids = payments.map((payment) => String(payment.id)).filter(Boolean);
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      await db.billingOnchainPayment.updateMany({
+        where: { id: { in: ids.slice(offset, offset + 500) } },
+        data: { lastCheckedAt: now }
+      });
+    }
+  };
+
+  for (const sample of groups.values()) {
+    const scope = {
+      chainId: Number(sample.chainId),
+      tokenAddress: String(sample.tokenAddress),
+      treasuryAddress: String(sample.treasuryAddress)
+    };
+    const loadScopedPayments = () => db.billingOnchainPayment.findMany({
+      where: {
+        txHash: null,
+        chainId: scope.chainId,
+        tokenAddress: scope.tokenAddress,
+        treasuryAddress: scope.treasuryAddress,
+        order: eligibleOrderWhere
+      },
+      include: { order: { select: { id: true, status: true, expiresAt: true } } },
+      orderBy: [{ scanFromBlock: "asc" }, { createdAt: "asc" }]
+    });
+    let scopedPayments: any[] = [];
+    if (scope.chainId !== ARBITRUM_ONE_CHAIN_ID) {
+      scopedPayments = await loadScopedPayments();
+      await markPaymentsChecked(scopedPayments);
+      continue;
+    }
+    const cursor = await db.billingOnchainScanCursor.findUnique({
+      where: {
+        chainId_tokenAddress_treasuryAddress: scope
+      }
+    });
+    if (cursor?.nextRetryAt instanceof Date && cursor.nextRetryAt > now) {
+      scopedPayments = await loadScopedPayments();
+      await markPaymentsChecked(scopedPayments);
+      continue;
+    }
+    let hintedStart = 0n;
+    try {
+      const captured = await captureBillingDiscoveryScopeAfterHead({
+        getLatestBlock: () => client.getBlockNumber(),
+        loadScopedPayments
+      });
+      const latestBlock = captured.latestBlock;
+      scopedPayments = captured.scopedPayments;
+      if (scopedPayments.length === 0) continue;
+      const scanHints = scopedPayments
+        .map((payment) => payment.scanFromBlock)
+        .filter((value): value is bigint => typeof value === "bigint");
+      if (scanHints.length === 0) {
+        hintedStart = latestBlock > BILLING_DISCOVERY_LOOKBACK_BLOCKS
+          ? latestBlock - BILLING_DISCOVERY_LOOKBACK_BLOCKS
+          : 0n;
+      } else {
+        hintedStart = scanHints.reduce((min, value) => value < min ? value : min);
+      }
+      const range = getBillingDiscoveryScanRange({
+        latestBlock,
+        hintedStart,
+        cursorLastScannedBlock: cursor ? toBigInt(cursor.lastScannedBlock) : null
+      });
+      if (!range) {
+        await markPaymentsChecked(scopedPayments);
+        if (cursor && (cursor.failureCount > 0 || cursor.lastError || cursor.nextRetryAt)) {
+          await db.billingOnchainScanCursor.update({
+            where: { id: cursor.id },
+            data: {
+              failureCount: 0,
+              nextRetryAt: null,
+              lastError: null,
+              lastSuccessfulAt: now
+            }
+          });
+        }
+        continue;
+      }
+      const logs = await client.getLogs({
+        address: scope.tokenAddress,
+        event: ERC20_TRANSFER_EVENT,
+        args: { to: scope.treasuryAddress },
+        fromBlock: range.fromBlock,
+        toBlock: range.toBlock
+      });
+      summary.scannedScopes += 1;
+      const assignments = assignBillingDiscoveryTransactionHashes({
+        payments: scopedPayments.map((payment) => ({
+          id: String(payment.id),
+          expectedSenderAddress: String(payment.expectedSenderAddress),
+          treasuryAddress: String(payment.treasuryAddress),
+          scanFromBlock: typeof payment.scanFromBlock === "bigint" ? payment.scanFromBlock : null,
+          createdAt: payment.createdAt
+        })),
+        logs
+      });
+      const ambiguousPaymentIds = new Set(assignments.ambiguousPaymentIds);
+
+      for (const payment of scopedPayments) {
+        const expectedOrderStatus = payment.order?.status === "EXPIRED" ? "EXPIRED" : "PENDING";
+        const missingScanFromBlock = typeof payment.scanFromBlock !== "bigint";
+        const ambiguousAssignment = ambiguousPaymentIds.has(String(payment.id));
+        const hashes = assignments.hashesByPaymentId[String(payment.id)] ?? [];
+        if (missingScanFromBlock || ambiguousAssignment || hashes.length > 1) {
+          const reason = missingScanFromBlock
+            ? "missing_scan_from_block"
+            : ambiguousAssignment
+              ? "ambiguous_candidate_assignment"
+              : "multiple_candidate_transactions";
+          const persisted = await persistBillingDiscoveryCandidate({
+            database: db,
+            paymentId: String(payment.id),
+            orderId: String(payment.orderId),
+            expectedOrderStatus,
+            expectedExpiresAt: payment.order?.expiresAt ?? null,
+            now,
+            candidate: { kind: "review", reason }
+          });
+          if (persisted.outcome === "review_required") summary.reviewRequired += 1;
+        } else if (hashes.length === 1) {
+          const [txHash] = hashes;
+          try {
+            const persisted = await persistBillingDiscoveryCandidate({
+              database: db,
+              paymentId: String(payment.id),
+              orderId: String(payment.orderId),
+              expectedOrderStatus,
+              expectedExpiresAt: payment.order?.expiresAt ?? null,
+              now,
+              candidate: { kind: "hash", txHash }
+            });
+            if (persisted.outcome === "review_required") summary.reviewRequired += 1;
+            if (persisted.outcome === "discovered") summary.discovered += 1;
+          } catch (error) {
+            if ((error as any)?.code !== "P2002") throw error;
+            const persisted = await persistBillingDiscoveryCandidate({
+              database: db,
+              paymentId: String(payment.id),
+              orderId: String(payment.orderId),
+              expectedOrderStatus,
+              expectedExpiresAt: payment.order?.expiresAt ?? null,
+              now,
+              candidate: { kind: "review", reason: "transaction_hash_in_use" }
+            });
+            if (persisted.outcome === "review_required") summary.reviewRequired += 1;
+          }
+        }
+      }
+
+      await assertBillingDiscoveryScopeStableBeforeCursor({
+        database: db,
+        scope,
+        recoveryCutoff,
+        rangeToBlock: range.toBlock,
+        snapshotPaymentIds: scopedPayments.map((payment) => String(payment.id))
+      });
+      await markPaymentsChecked(scopedPayments);
+
+      await db.billingOnchainScanCursor.upsert({
+        where: { chainId_tokenAddress_treasuryAddress: scope },
+        create: {
+          ...scope,
+          lastScannedBlock: range.toBlock,
+          lastSuccessfulAt: now,
+          failureCount: 0
+        },
+        update: {
+          lastScannedBlock: range.toBlock,
+          lastSuccessfulAt: now,
+          failureCount: 0,
+          nextRetryAt: null,
+          lastError: null
+        }
+      });
+    } catch (error) {
+      try {
+        await markPaymentsChecked(scopedPayments);
+      } catch (trackingError) {
+        logger.warn("billing_onchain_discovery_payment_tracking_failed", {
+          scope,
+          error: String((trackingError as any)?.message ?? trackingError)
+        });
+      }
+      const failureCount = normalizeInt(cursor?.failureCount, 0, 0) + 1;
+      const lastError = String((error as any)?.message ?? error).slice(0, 500);
+      const initialLastScannedBlock = hintedStart > 0n ? hintedStart - 1n : -1n;
+      try {
+        await db.billingOnchainScanCursor.upsert({
+          where: { chainId_tokenAddress_treasuryAddress: scope },
+          create: {
+            ...scope,
+            lastScannedBlock: initialLastScannedBlock,
+            failureCount,
+            nextRetryAt: billingDiscoveryRetryAt(failureCount, now),
+            lastError
+          },
+          update: {
+            failureCount: { increment: 1 },
+            nextRetryAt: billingDiscoveryRetryAt(failureCount, now),
+            lastError
+          }
+        });
+      } catch (cursorError) {
+        logger.warn("billing_onchain_discovery_cursor_update_failed", {
+          scope,
+          error: String((cursorError as any)?.message ?? cursorError)
+        });
+      }
+      logger.warn("billing_onchain_discovery_scope_failed", { scope, failureCount, error: lastError });
+    }
+  }
+  return summary;
 }
 
 type ApplyPackageData = {
@@ -1861,7 +3348,269 @@ function buildApplyOrderLines(order: any): ApplyOrderLine[] {
   ];
 }
 
-export async function applyPaidOrder(merchantOrderId: string, statusRaw: string): Promise<void> {
+function buildTermEntitlementSnapshot(lines: ApplyOrderLine[], plan: ApplyPackageData): Record<string, unknown> {
+  return {
+    plan: plan.plan ?? "PRO",
+    packageId: plan.id,
+    packageCode: plan.code,
+    maxRunningBots: plan.maxRunningBots,
+    maxRunningPredictionsAi: plan.maxRunningPredictionsAi,
+    maxRunningPredictionsComposite: plan.maxRunningPredictionsComposite,
+    allowedExchanges: plan.allowedExchanges,
+    monthlyAiTokens: plan.monthlyAiTokens.toString(),
+    lines: lines.map((line) => ({
+      quantity: line.quantity,
+      package: {
+        id: line.pkg.id,
+        code: line.pkg.code,
+        name: line.pkg.name,
+        kind: line.pkg.publicKind,
+        addonType: line.pkg.addonType,
+        plan: line.pkg.plan,
+        billingMonths: line.pkg.billingMonths,
+        maxRunningBots: line.pkg.maxRunningBots,
+        maxRunningPredictionsAi: line.pkg.maxRunningPredictionsAi,
+        maxRunningPredictionsComposite: line.pkg.maxRunningPredictionsComposite,
+        allowedExchanges: line.pkg.allowedExchanges,
+        monthlyAiTokens: line.pkg.monthlyAiTokens.toString(),
+        aiCredits: line.pkg.aiCredits.toString(),
+        deltaRunningBots: line.pkg.deltaRunningBots,
+        deltaRunningPredictionsAi: line.pkg.deltaRunningPredictionsAi,
+        deltaRunningPredictionsComposite: line.pkg.deltaRunningPredictionsComposite
+      }
+    }))
+  };
+}
+
+function readTermSnapshot(term: any): {
+  plan: "PRO" | "FREE";
+  maxRunningBots: number;
+  maxRunningPredictionsAi: number | null;
+  maxRunningPredictionsComposite: number | null;
+  allowedExchanges: string[];
+  monthlyAiTokens: bigint;
+  lines: ApplyOrderLine[];
+} {
+  const snapshot = asRecord(term?.entitlementSnapshot);
+  const rawLines = Array.isArray(snapshot.lines) ? snapshot.lines : [];
+  const lines: ApplyOrderLine[] = rawLines.map((rawLine: unknown) => {
+    const line = asRecord(rawLine);
+    const pkg = asRecord(line.package);
+    return {
+      quantity: normalizeInt(line.quantity, 1, 1),
+      pkg: normalizeApplyPackageData({
+        snapshot: pkg,
+        pkg: null,
+        kindFallback: pkg.kind === "addon" || pkg.kind === "ADDON" ? "addon" : "plan"
+      })
+    };
+  });
+  return {
+    plan: snapshot.plan === "FREE" ? "FREE" : "PRO",
+    maxRunningBots: normalizeInt(snapshot.maxRunningBots, 3, 0),
+    maxRunningPredictionsAi: normalizeNullableInt(
+      snapshot.maxRunningPredictionsAi,
+      PRO_MAX_RUNNING_PREDICTIONS_AI,
+      0
+    ),
+    maxRunningPredictionsComposite: normalizeNullableInt(
+      snapshot.maxRunningPredictionsComposite,
+      PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE,
+      0
+    ),
+    allowedExchanges: normalizeStringArray(snapshot.allowedExchanges, ["*"]),
+    monthlyAiTokens: toBigInt(snapshot.monthlyAiTokens ?? term?.monthlyAiTokens),
+    lines
+  };
+}
+
+export async function applyAiLedgerCreditInTransaction(params: {
+  tx: any;
+  userId: string;
+  subscriptionId: string;
+  orderId?: string | null;
+  reason: "MONTHLY_GRANT" | "TOPUP";
+  delta: bigint;
+  idempotencyKey: string;
+  meta: Record<string, unknown>;
+}): Promise<void> {
+  if (params.delta <= 0n) return;
+  if (params.delta > BILLING_DB_BIGINT_MAX) throw new Error("ai_token_balance_out_of_range");
+  const duplicate = await params.tx.aiTokenLedger.findUnique({
+    where: { idempotencyKey: params.idempotencyKey },
+    select: { id: true }
+  });
+  if (duplicate) return;
+  const credited = await params.tx.userSubscription.updateMany({
+    where: {
+      id: params.subscriptionId,
+      aiTokenBalance: { lte: BILLING_DB_BIGINT_MAX - params.delta }
+    },
+    data: { aiTokenBalance: { increment: params.delta } }
+  });
+  if (credited.count !== 1) {
+    const current = await params.tx.userSubscription.findUnique({
+      where: { id: params.subscriptionId },
+      select: { aiTokenBalance: true }
+    });
+    if (toBigInt(current?.aiTokenBalance) > BILLING_DB_BIGINT_MAX - params.delta) {
+      throw new Error("ai_token_balance_out_of_range");
+    }
+    throw new Error("ai_token_balance_concurrent_update");
+  }
+  const updated = await params.tx.userSubscription.findUnique({
+    where: { id: params.subscriptionId },
+    select: { aiTokenBalance: true }
+  });
+  const nextBalance = toBigInt(updated?.aiTokenBalance);
+  await params.tx.aiTokenLedger.create({
+    data: {
+      userId: params.userId,
+      subscriptionId: params.subscriptionId,
+      orderId: params.orderId ?? null,
+      reason: params.reason,
+      idempotencyKey: params.idempotencyKey,
+      deltaTokens: params.delta,
+      balanceAfter: nextBalance,
+      meta: params.meta
+    }
+  });
+}
+
+export function isBillingFinalizationReviewError(error: unknown): boolean {
+  const reason = String((error as any)?.message ?? error);
+  return (
+    reason === "paid_plan_required_for_capacity_topup"
+    || reason === "legacy_order_read_only"
+    || reason === "confirmed_order_invalid_cart"
+    || reason === "ai_token_balance_out_of_range"
+    || reason === "term_activation_failed"
+  );
+}
+
+export function resolveBillingOrderFinalizationDecision(status: unknown): "finalize" | "already_paid" {
+  if (status === "PAID") return "already_paid";
+  if (status === "CONFIRMING") return "finalize";
+  if (status === "REVIEW_REQUIRED") throw new Error("review_required");
+  throw new Error("order_not_payable");
+}
+
+export async function runConfirmedBillingFinalization(params: {
+  finalize: () => Promise<void>;
+  markReviewRequired: (reason: string) => Promise<boolean | void>;
+  resolveTerminalStatus?: () => Promise<string | null>;
+}): Promise<void> {
+  try {
+    await params.finalize();
+  } catch (error) {
+    const reason = String((error as any)?.message ?? error);
+    if (reason === "billing_finalization_cas_lost" && params.resolveTerminalStatus) {
+      const terminalStatus = await params.resolveTerminalStatus();
+      if (terminalStatus === "PAID") return;
+      if (terminalStatus === "REVIEW_REQUIRED") throw new Error("review_required");
+    }
+    if (!isBillingFinalizationReviewError(error)) throw error;
+    let marked: boolean | void;
+    try {
+      marked = await params.markReviewRequired(reason);
+    } catch (markError) {
+      if (params.resolveTerminalStatus) {
+        const terminalStatus = await params.resolveTerminalStatus();
+        if (terminalStatus === "PAID") return;
+        if (terminalStatus === "REVIEW_REQUIRED") throw new Error("review_required");
+      }
+      throw markError;
+    }
+    if (marked === false && params.resolveTerminalStatus) {
+      const terminalStatus = await params.resolveTerminalStatus();
+      if (terminalStatus === "PAID") return;
+    }
+    throw new Error("review_required");
+  }
+}
+
+async function finalizeConfirmedBillingOrderWithReviewHandling(
+  orderId: string,
+  merchantOrderId: string,
+  statusRaw: string,
+  paidAt: Date
+): Promise<void> {
+  return runConfirmedBillingFinalization({
+    finalize: () => finalizeConfirmedBillingOrder(merchantOrderId, statusRaw, paidAt),
+    markReviewRequired: async (reason) => {
+      return db.$transaction(async (tx: any) => {
+        const orderClaim = await tx.billingOrder.updateMany({
+          where: { id: orderId, status: "CONFIRMING" },
+          data: {
+            status: "REVIEW_REQUIRED",
+            paymentStatusRaw: `finalization:${reason}`
+          }
+        });
+        if (orderClaim.count !== 1) return false;
+        const paymentClaim = await tx.billingOnchainPayment.updateMany({
+          where: { orderId, verifiedAt: { not: null } },
+          data: {
+            nextRetryAt: null,
+            lastCheckedAt: new Date(),
+            lastError: `finalization:${reason}`
+          }
+        });
+        if (paymentClaim.count !== 1) throw new Error("billing_finalization_review_cas_lost");
+        return true;
+      });
+    },
+    resolveTerminalStatus: async () => {
+      const current = await db.billingOrder.findUnique({
+        where: { id: orderId },
+        select: { status: true }
+      });
+      return current?.status ?? null;
+    }
+  });
+}
+
+export async function resolveCapacityAddonTargetTermInTransaction(params: {
+  tx: any;
+  userId: string;
+  now: Date;
+  activate?: (tx: any, termId: string, now: Date) => Promise<boolean>;
+}): Promise<{ term: any | null; activated: number }> {
+  const dueTerms = await params.tx.subscriptionTerm.findMany({
+    where: {
+      userId: params.userId,
+      status: "SCHEDULED",
+      startsAt: { lte: params.now }
+    },
+    select: { id: true },
+    orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
+    take: 50
+  });
+  const activate = params.activate ?? activateSubscriptionTermInTransaction;
+  let activated = 0;
+  for (const dueTerm of dueTerms) {
+    if (await activate(params.tx, dueTerm.id, params.now)) activated += 1;
+  }
+  const term = await params.tx.subscriptionTerm.findFirst({
+    where: {
+      userId: params.userId,
+      startsAt: { lte: params.now },
+      graceEndsAt: { gt: params.now },
+      status: { in: ["ACTIVE", "GRACE"] }
+    },
+    orderBy: { startsAt: "desc" }
+  });
+  return { term, activated };
+}
+
+export function hasPaidCapacityAddonTarget(activeTerm: unknown, effectivePlan: unknown): boolean {
+  return Boolean(activeTerm) || effectivePlan === "PRO";
+}
+
+async function finalizeConfirmedBillingOrder(
+  merchantOrderId: string,
+  statusRaw: string,
+  paidAt = new Date()
+): Promise<void> {
   const order = await db.billingOrder.findUnique({
     where: { merchantOrderId },
     include: {
@@ -1876,221 +3625,648 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
   });
   if (!order) return;
   if (order.status === "PAID") return;
+  if (order.provider !== "ARBITRUM_USDC") throw new Error("legacy_order_read_only");
+  resolveBillingOrderFinalizationDecision(order.status);
 
   const applyLines = buildApplyOrderLines(order).sort((a, b) => {
     const aRank = a.pkg.kind === "PLAN" ? 0 : 1;
     const bRank = b.pkg.kind === "PLAN" ? 0 : 1;
     return aRank - bRank;
   });
+  if (applyLines.length === 0 || applyLines.some((line) => !line.pkg.id || !line.pkg.code)) {
+    throw new Error("confirmed_order_invalid_cart");
+  }
 
-  const now = new Date();
+  const now = paidAt;
+  let scheduledTermId: string | null = null;
+  let lifecycleRunRequired = false;
+  let forceFree = false;
+  let finalizationCommitted = false;
   await db.$transaction(async (tx: any) => {
+    const currentOrder = await tx.billingOrder.findUnique({
+      where: { id: order.id },
+      select: { status: true }
+    });
+    const decision = resolveBillingOrderFinalizationDecision(currentOrder?.status);
+    if (decision === "already_paid") return;
+    const finalizationClaim = await tx.billingOrder.updateMany({
+      where: { id: order.id, status: "CONFIRMING" },
+      data: { paymentStatusRaw: `finalizing:${statusRaw}` }
+    });
+    if (finalizationClaim.count !== 1) throw new Error("billing_finalization_cas_lost");
     const existingSub = await getOrCreateSubscription(order.userId, tx);
+    const planLine = applyLines.find((line) => line.pkg.publicKind === "plan") ?? null;
 
-    let nextPlan: EffectivePlan = formatPlan(existingSub.effectivePlan);
-    let nextValidUntil = existingSub.proValidUntil as Date | null;
-    let nextStatus = existingSub.status === "ACTIVE" ? "ACTIVE" : "INACTIVE";
-    let nextMaxRunning = normalizeInt(existingSub.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0);
-    let nextMaxRunningPredictionsAi = normalizeNullableInt(
-      existingSub.maxRunningPredictionsAi,
-      FREE_MAX_RUNNING_PREDICTIONS_AI,
-      0
-    );
-    let nextMaxRunningPredictionsComposite = normalizeNullableInt(
-      existingSub.maxRunningPredictionsComposite,
-      FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE,
-      0
-    );
-    let nextAllowedExchanges = normalizeStringArray(existingSub.allowedExchanges, ["*"]);
-    let nextMonthlyTokens = toBigInt(existingSub.monthlyAiTokensIncluded);
-    const currentBalance = toBigInt(existingSub.aiTokenBalance);
-    let balanceCursor = currentBalance;
-    const ledgerEntries: Array<{
-      reason: "MONTHLY_GRANT" | "TOPUP";
-      delta: bigint;
-      balanceAfter: bigint;
-      packageId: string;
-      packageCode: string;
-      quantity: number;
-    }> = [];
-
-    for (const line of applyLines) {
-      const pkg = line.pkg;
-      const quantity = normalizeInt(line.quantity, 1, 1);
-
-      if (pkg.publicKind === "plan") {
-        const packagePlan: EffectivePlan = pkg.plan === "FREE" ? "free" : "pro";
-        nextPlan = packagePlan;
-        nextStatus = "ACTIVE";
-        nextMaxRunning =
-          packagePlan === "pro"
-            ? normalizeInt(pkg.maxRunningBots, 3, 0)
-            : normalizeInt(pkg.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0);
-        nextAllowedExchanges = normalizeStringArray(pkg.allowedExchanges, ["*"]);
-        nextMonthlyTokens = toBigInt(pkg.monthlyAiTokens);
-        nextMaxRunningPredictionsAi =
-          packagePlan === "pro"
-            ? normalizeNullableInt(
-              pkg.maxRunningPredictionsAi,
-              PRO_MAX_RUNNING_PREDICTIONS_AI,
-              0
-            )
-            : normalizeNullableInt(
-              pkg.maxRunningPredictionsAi,
-              FREE_MAX_RUNNING_PREDICTIONS_AI,
-              0
-            );
-        nextMaxRunningPredictionsComposite =
-          packagePlan === "pro"
-            ? normalizeNullableInt(
-              pkg.maxRunningPredictionsComposite,
-              PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE,
-              0
-            )
-            : normalizeNullableInt(
-              pkg.maxRunningPredictionsComposite,
-              FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE,
-              0
-            );
-
-        if (packagePlan === "pro") {
-          const startAt =
-            nextValidUntil instanceof Date && nextValidUntil.getTime() > now.getTime()
-              ? nextValidUntil
-              : now;
-          const monthsToAdd = normalizeInt(pkg.billingMonths, 1, 1) * quantity;
-          nextValidUntil = addMonths(startAt, monthsToAdd);
-          const delta = toBigInt(pkg.monthlyAiTokens) * BigInt(quantity);
-          if (delta !== 0n) {
-            balanceCursor += delta;
-            ledgerEntries.push({
-              reason: "MONTHLY_GRANT",
-              delta,
-              balanceAfter: balanceCursor,
-              packageId: pkg.id,
-              packageCode: pkg.code,
-              quantity
-            });
-          }
-        } else {
-          nextValidUntil = null;
-          const before = balanceCursor;
-          balanceCursor = balanceCursor < nextMonthlyTokens ? nextMonthlyTokens : balanceCursor;
-          const delta = balanceCursor - before;
-          if (delta !== 0n) {
-            ledgerEntries.push({
-              reason: "MONTHLY_GRANT",
-              delta,
-              balanceAfter: balanceCursor,
-              packageId: pkg.id,
-              packageCode: pkg.code,
-              quantity
-            });
-          }
-        }
-        continue;
-      }
-
-      if (pkg.addonType === "ai_credits") {
-        const delta = toBigInt(pkg.aiCredits) * BigInt(quantity);
-        if (delta !== 0n) {
-          balanceCursor += delta;
-          ledgerEntries.push({
-            reason: "TOPUP",
-            delta,
-            balanceAfter: balanceCursor,
-            packageId: pkg.id,
-            packageCode: pkg.code,
-            quantity
-          });
-        }
-        continue;
-      }
-
-      const validUntil =
-        nextPlan === "pro"
-        && nextValidUntil instanceof Date
-        && nextValidUntil.getTime() > now.getTime()
-          ? nextValidUntil
-          : null;
-      if (!validUntil) {
-        throw new Error("paid_plan_required_for_capacity_topup");
-      }
-
-      await tx.subscriptionCapacityGrant.create({
+    if (planLine?.pkg.plan === "FREE") {
+      forceFree = true;
+    } else if (planLine) {
+      const latestTerm = await tx.subscriptionTerm.findFirst({
+        where: { userId: order.userId },
+        orderBy: [{ endsAt: "desc" }, { createdAt: "desc" }]
+      });
+      const months = normalizeInt(planLine.pkg.billingMonths, 1, 1) * normalizeInt(planLine.quantity, 1, 1);
+      const { startsAt, endsAt, graceEndsAt } = planSubscriptionTermWindow({
+        now,
+        billingMonths: months,
+        latestTerm,
+        legacyValidUntil: existingSub.proValidUntil
+      });
+      const term = await tx.subscriptionTerm.create({
         data: {
           userId: order.userId,
           subscriptionId: existingSub.id,
           orderId: order.id,
-          planScope: "PRO",
-          deltaRunningBots: normalizeCapacityDelta(pkg.deltaRunningBots) * quantity,
-          deltaRunningPredictionsAi: normalizeCapacityDelta(pkg.deltaRunningPredictionsAi) * quantity,
-          deltaRunningPredictionsComposite: normalizeCapacityDelta(
-            pkg.deltaRunningPredictionsComposite
-          ) * quantity,
-          validUntil
+          status: "SCHEDULED",
+          startsAt,
+          endsAt,
+          graceEndsAt,
+          entitlementSnapshot: buildTermEntitlementSnapshot(applyLines, planLine.pkg),
+          monthlyAiTokens: planLine.pkg.monthlyAiTokens
         }
       });
+      scheduledTermId = term.id;
+      if (startsAt <= now) {
+        const activated = await activateSubscriptionTermInTransaction(tx, term.id, now);
+        if (!activated) throw new Error("term_activation_failed");
+      }
+      const currentValidUntil = existingSub.proValidUntil instanceof Date ? existingSub.proValidUntil : null;
+      if (!currentValidUntil || endsAt > currentValidUntil) {
+        await tx.userSubscription.update({
+          where: { id: existingSub.id },
+          data: { proValidUntil: endsAt }
+        });
+      }
+    } else {
+      const target = await resolveCapacityAddonTargetTermInTransaction({
+        tx,
+        userId: order.userId,
+        now
+      });
+      const activeTerm = target.term;
+      lifecycleRunRequired = target.activated > 0;
+      const validUntil = activeTerm?.graceEndsAt
+        ?? (existingSub.proValidUntil instanceof Date && addGracePeriod(existingSub.proValidUntil) > now
+          ? addGracePeriod(existingSub.proValidUntil)
+          : null);
+      if (!validUntil || !hasPaidCapacityAddonTarget(activeTerm, existingSub.effectivePlan)) {
+        throw new Error("paid_plan_required_for_capacity_topup");
+      }
+      for (const [index, line] of applyLines.entries()) {
+        const quantity = normalizeInt(line.quantity, 1, 1);
+        if (line.pkg.addonType === "ai_credits") {
+          await applyAiLedgerCreditInTransaction({
+            tx,
+            userId: order.userId,
+            subscriptionId: existingSub.id,
+            orderId: order.id,
+            reason: "TOPUP",
+            delta: line.pkg.aiCredits * BigInt(quantity),
+            idempotencyKey: `order:${order.id}:topup:${index}`,
+            meta: { packageId: line.pkg.id, packageCode: line.pkg.code, quantity, merchantOrderId }
+          });
+          continue;
+        }
+        await tx.subscriptionCapacityGrant.create({
+          data: {
+            userId: order.userId,
+            subscriptionId: existingSub.id,
+            orderId: order.id,
+            termId: activeTerm?.id ?? null,
+            sourceKey: `order:${order.id}:capacity:${index}`,
+            planScope: "PRO",
+            deltaRunningBots: normalizeCapacityDelta(line.pkg.deltaRunningBots) * quantity,
+            deltaRunningPredictionsAi: normalizeCapacityDelta(line.pkg.deltaRunningPredictionsAi) * quantity,
+            deltaRunningPredictionsComposite: normalizeCapacityDelta(
+              line.pkg.deltaRunningPredictionsComposite
+            ) * quantity,
+            validUntil
+          }
+        });
+      }
     }
 
-    const nextBalance = balanceCursor;
-
-    const updatedSub = await tx.userSubscription.update({
-      where: { id: existingSub.id },
-      data: {
-        effectivePlan: nextPlan === "pro" ? "PRO" : "FREE",
-        status: nextStatus,
-        proValidUntil: nextValidUntil,
-        maxRunningBots: nextMaxRunning,
-        maxRunningPredictionsAi: nextMaxRunningPredictionsAi,
-        maxRunningPredictionsComposite: nextMaxRunningPredictionsComposite,
-        allowedExchanges: nextAllowedExchanges,
-        aiTokenBalance: nextBalance,
-        monthlyAiTokensIncluded: nextMonthlyTokens
-      }
-    });
-
-    await tx.billingOrder.update({
-      where: { id: order.id },
+    const paidClaim = await tx.billingOrder.updateMany({
+      where: { id: order.id, status: "CONFIRMING" },
       data: {
         status: "PAID",
         paidAt: now,
         paymentStatusRaw: statusRaw,
-        subscriptionId: updatedSub.id
+        subscriptionId: existingSub.id
+      }
+    });
+    if (paidClaim.count !== 1) throw new Error("billing_finalization_cas_lost");
+    finalizationCommitted = true;
+  });
+
+  if (!finalizationCommitted) return;
+
+  if (forceFree) {
+    await setUserToFreePlan({ userId: order.userId, syncWorkspaceEntitlements: true });
+    return;
+  }
+  if (scheduledTermId || lifecycleRunRequired) {
+    await runSubscriptionLifecycle({ now, limit: 50, userId: order.userId });
+  } else {
+    const resolved = await resolveEffectivePlanForUser(order.userId);
+    await syncWorkspaceEntitlementsWithRetryTracking({
+      userId: order.userId,
+      effectivePlan: resolved.plan
+    });
+  }
+}
+
+export async function activateSubscriptionTermInTransaction(
+  tx: any,
+  termId: string,
+  now: Date
+): Promise<boolean> {
+    const claimed = await tx.subscriptionTerm.updateMany({
+      where: {
+        id: termId,
+        status: "SCHEDULED",
+        activatedAt: null,
+        startsAt: { lte: now }
+      },
+      data: {
+        status: "ACTIVE",
+        activatedAt: now
+      }
+    });
+    if (claimed.count !== 1) return false;
+    const term = await tx.subscriptionTerm.findUnique({ where: { id: termId } });
+    if (!term) return false;
+    const snapshot = readTermSnapshot(term);
+
+    const previousTerms = await tx.subscriptionTerm.findMany({
+      where: {
+        userId: term.userId,
+        id: { not: term.id },
+        startsAt: { lt: term.startsAt },
+        status: { in: ["ACTIVE", "GRACE"] }
+      },
+      select: { id: true }
+    });
+    const previousTermIds = previousTerms.map((row: any) => row.id);
+    if (previousTermIds.length > 0) {
+      await tx.subscriptionTerm.updateMany({
+        where: { id: { in: previousTermIds } },
+        data: { status: "EXPIRED", expiredAt: now }
+      });
+      await tx.subscriptionCapacityGrant.updateMany({
+        where: {
+          termId: { in: previousTermIds },
+          OR: [{ validUntil: null }, { validUntil: { gt: term.startsAt } }]
+        },
+        data: { validUntil: term.startsAt }
+      });
+    }
+
+    await tx.userSubscription.update({
+      where: { id: term.subscriptionId },
+      data: {
+        effectivePlan: snapshot.plan,
+        status: "ACTIVE",
+        maxRunningBots: snapshot.maxRunningBots,
+        maxRunningPredictionsAi: snapshot.maxRunningPredictionsAi,
+        maxRunningPredictionsComposite: snapshot.maxRunningPredictionsComposite,
+        allowedExchanges: snapshot.allowedExchanges,
+        monthlyAiTokensIncluded: snapshot.monthlyAiTokens,
+        entitlementSyncPending: true
       }
     });
 
-    for (const entry of ledgerEntries) {
-      await tx.aiTokenLedger.create({
+    for (const [index, line] of snapshot.lines.entries()) {
+      if (line.pkg.publicKind !== "addon") continue;
+      const quantity = normalizeInt(line.quantity, 1, 1);
+      if (line.pkg.addonType === "ai_credits") {
+        // Token credits are applied by the independently retryable AI-cycle worker.
+        // They must never roll back the paid term or its non-token entitlements.
+        continue;
+      }
+      await tx.subscriptionCapacityGrant.create({
         data: {
-          userId: order.userId,
-          subscriptionId: updatedSub.id,
-          orderId: order.id,
-          reason: entry.reason,
-          deltaTokens: entry.delta,
-          balanceAfter: entry.balanceAfter,
-          meta: {
-            packageId: entry.packageId,
-            packageCode: entry.packageCode,
-            quantity: entry.quantity,
-            merchantOrderId
-          }
+          userId: term.userId,
+          subscriptionId: term.subscriptionId,
+          orderId: term.orderId,
+          termId: term.id,
+          sourceKey: `term:${term.id}:capacity:${index}`,
+          planScope: "PRO",
+          deltaRunningBots: normalizeCapacityDelta(line.pkg.deltaRunningBots) * quantity,
+          deltaRunningPredictionsAi: normalizeCapacityDelta(line.pkg.deltaRunningPredictionsAi) * quantity,
+          deltaRunningPredictionsComposite: normalizeCapacityDelta(
+            line.pkg.deltaRunningPredictionsComposite
+          ) * quantity,
+          validUntil: term.graceEndsAt
         }
       });
     }
-  });
 
-  const resolved = await resolveEffectivePlanForUser(order.userId);
-  await syncPrimaryWorkspaceEntitlementsForUser({
-    userId: order.userId,
-    effectivePlan: resolved.plan
+    await tx.subscriptionTerm.update({
+      where: { id: term.id },
+      data: {
+        aiGrantCyclesApplied: 0,
+        // Persistent due marker: a failed credit transaction rolls back without
+        // advancing this timestamp, so the lifecycle job retries idempotently.
+        nextAiGrantAt: term.startsAt < term.endsAt ? term.startsAt : null
+      }
+    });
+  return true;
+}
+
+async function activateSubscriptionTerm(termId: string, now: Date): Promise<boolean> {
+  return db.$transaction((tx: any) => activateSubscriptionTermInTransaction(tx, termId, now));
+}
+
+export async function applyDueSubscriptionTermAiCycleInTransaction(
+  tx: any,
+  termId: string,
+  now: Date
+): Promise<boolean> {
+  const term = await tx.subscriptionTerm.findUnique({ where: { id: termId } });
+  if (
+    !term
+    || !term.activatedAt
+    || (term.status !== "ACTIVE" && term.status !== "GRACE")
+    || !(term.nextAiGrantAt instanceof Date)
+    || term.nextAiGrantAt > now
+    || term.nextAiGrantAt >= term.endsAt
+  ) {
+    return false;
+  }
+  const cycle = normalizeInt(term.aiGrantCyclesApplied, 0, 0);
+  const nextAiGrantAt = addBillingMonths(term.startsAt, cycle + 1);
+  const claimed = await tx.subscriptionTerm.updateMany({
+    where: {
+      id: term.id,
+      aiGrantCyclesApplied: cycle,
+      nextAiGrantAt: term.nextAiGrantAt
+    },
+    data: {
+      aiGrantCyclesApplied: cycle + 1,
+      nextAiGrantAt: nextAiGrantAt < term.endsAt ? nextAiGrantAt : null
+    }
   });
+  if (claimed.count !== 1) return false;
+
+  if (cycle === 0) {
+    const snapshot = readTermSnapshot(term);
+    for (const [index, line] of snapshot.lines.entries()) {
+      if (line.pkg.publicKind !== "addon" || line.pkg.addonType !== "ai_credits") continue;
+      const quantity = normalizeInt(line.quantity, 1, 1);
+      await applyAiLedgerCreditInTransaction({
+        tx,
+        userId: term.userId,
+        subscriptionId: term.subscriptionId,
+        orderId: term.orderId,
+        reason: "TOPUP",
+        delta: line.pkg.aiCredits * BigInt(quantity),
+        idempotencyKey: `term:${term.id}:topup:${index}`,
+        meta: { termId: term.id, packageId: line.pkg.id, packageCode: line.pkg.code, quantity }
+      });
+    }
+  }
+
+  await applyAiLedgerCreditInTransaction({
+    tx,
+    userId: term.userId,
+    subscriptionId: term.subscriptionId,
+    orderId: term.orderId,
+    reason: "MONTHLY_GRANT",
+    delta: toBigInt(term.monthlyAiTokens),
+    idempotencyKey: `term:${term.id}:monthly:${cycle}`,
+    meta: { termId: term.id, cycle, scheduledAt: term.nextAiGrantAt.toISOString() }
+  });
+  return true;
+}
+
+export async function runDueSubscriptionTermAiCycle(
+  database: any,
+  termId: string,
+  now: Date
+): Promise<boolean> {
+  return database.$transaction((tx: any) => (
+    applyDueSubscriptionTermAiCycleInTransaction(tx, termId, now)
+  ));
+}
+
+async function grantDueMonthlyAiCycles(termId: string, now: Date): Promise<number> {
+  let granted = 0;
+  for (let guard = 0; guard < 36; guard += 1) {
+    const applied = await runDueSubscriptionTermAiCycle(db, termId, now);
+    if (!applied) break;
+    granted += 1;
+  }
+  return granted;
+}
+
+export function buildDueSubscriptionAiGrantOrderBy(): Array<Record<string, "asc">> {
+  return [{ updatedAt: "asc" }, { nextAiGrantAt: "asc" }, { id: "asc" }];
+}
+
+export async function persistSubscriptionAiGrantFailure(params: {
+  database: any;
+  term: { id: string; userId: string; nextAiGrantAt?: Date | null };
+  now: Date;
+  error: unknown;
+}): Promise<void> {
+  const reason = String((params.error as any)?.message ?? params.error).slice(0, 1_000);
+  await params.database.subscriptionTerm.updateMany({
+    where: {
+      id: params.term.id,
+      status: { in: ["ACTIVE", "GRACE"] },
+      nextAiGrantAt: { not: null }
+    },
+    // This is a retry/fairness marker only. The original due cycle and ledger
+    // key remain unchanged, while the failed row moves behind other due rows.
+    data: { updatedAt: params.now }
+  }).catch(() => undefined);
+
+  const alerts = params.database.platformAlert;
+  if (typeof alerts?.findFirst !== "function" || typeof alerts?.create !== "function") return;
+  const existing = await alerts.findFirst({
+    where: {
+      source: BILLING_AI_GRANT_ALERT_SOURCE,
+      type: BILLING_AI_GRANT_ALERT_TYPE,
+      userId: params.term.userId,
+      status: { in: ["open", "acknowledged"] }
+    },
+    orderBy: [{ updatedAt: "desc" }]
+  }).catch(() => null);
+  const data = {
+    severity: "warning",
+    title: "Subscription AI credit requires attention",
+    message: `AI credit cycle for subscription term ${params.term.id} failed: ${reason}`,
+    metadata: {
+      termId: params.term.id,
+      nextAiGrantAt: params.term.nextAiGrantAt?.toISOString() ?? null,
+      failedAt: params.now.toISOString(),
+      reason
+    }
+  };
+  if (existing?.id && typeof alerts.update === "function") {
+    await alerts.update({ where: { id: existing.id }, data }).catch(() => undefined);
+    return;
+  }
+  await alerts.create({
+    data: {
+      ...data,
+      status: "open",
+      type: BILLING_AI_GRANT_ALERT_TYPE,
+      source: BILLING_AI_GRANT_ALERT_SOURCE,
+      userId: params.term.userId
+    }
+  }).catch(() => undefined);
+}
+
+async function resolveSubscriptionAiGrantFailure(database: any, userId: string, now: Date): Promise<void> {
+  if (typeof database.platformAlert?.updateMany !== "function") return;
+  await database.platformAlert.updateMany({
+    where: {
+      source: BILLING_AI_GRANT_ALERT_SOURCE,
+      type: BILLING_AI_GRANT_ALERT_TYPE,
+      userId,
+      status: { in: ["open", "acknowledged"] }
+    },
+    data: {
+      status: "resolved",
+      resolvedAt: now,
+      resolvedByUserId: null
+    }
+  }).catch(() => undefined);
+}
+
+async function synchronizeSubscriptionLifecycleForUser(userId: string, now: Date): Promise<EffectivePlan> {
+  return db.$transaction(async (tx: any) => {
+    const sub = await getOrCreateSubscription(userId, tx);
+    const currentTerm = await tx.subscriptionTerm.findFirst({
+      where: {
+        userId,
+        status: { in: ["ACTIVE", "GRACE"] },
+        startsAt: { lte: now },
+        graceEndsAt: { gt: now },
+        activatedAt: { not: null }
+      },
+      orderBy: { startsAt: "desc" }
+    });
+    if (currentTerm) {
+      const inGrace = currentTerm.endsAt <= now;
+      if (inGrace && currentTerm.status === "ACTIVE") {
+        await tx.subscriptionTerm.updateMany({
+          where: { id: currentTerm.id, status: "ACTIVE", endsAt: { lte: now }, graceEndsAt: { gt: now } },
+          data: { status: "GRACE", graceEnteredAt: currentTerm.graceEnteredAt ?? now }
+        });
+      }
+      const furthest = await tx.subscriptionTerm.findFirst({
+        where: { userId, status: { in: ["SCHEDULED", "ACTIVE", "GRACE"] } },
+        orderBy: { endsAt: "desc" },
+        select: { endsAt: true }
+      });
+      await tx.userSubscription.update({
+        where: { id: sub.id },
+        data: {
+          effectivePlan: "PRO",
+          status: inGrace ? "GRACE" : "ACTIVE",
+          proValidUntil: furthest?.endsAt ?? currentTerm.endsAt,
+          entitlementSyncPending: true
+        }
+      });
+      return "pro";
+    }
+
+    const defaults = await getFreePlanDefaults(tx);
+    await tx.userSubscription.update({
+      where: { id: sub.id },
+      data: {
+        effectivePlan: "FREE",
+        status: "ACTIVE",
+        proValidUntil: null,
+        maxRunningBots: defaults.maxRunningBots,
+        maxRunningPredictionsAi: defaults.maxRunningPredictionsAi,
+        maxRunningPredictionsComposite: defaults.maxRunningPredictionsComposite,
+        allowedExchanges: defaults.allowedExchanges,
+        monthlyAiTokensIncluded: defaults.monthlyAiTokens,
+        entitlementSyncPending: true
+      }
+    });
+    await tx.subscriptionCapacityGrant.updateMany({
+      where: {
+        userId,
+        OR: [{ validUntil: null }, { validUntil: { gt: now } }]
+      },
+      data: { validUntil: now }
+    });
+    return "free";
+  });
+}
+
+export async function runSubscriptionLifecycle(params?: {
+  now?: Date;
+  limit?: number;
+  userId?: string;
+}): Promise<{
+  activated: number;
+  graceEntered: number;
+  expired: number;
+  downgraded: number;
+  monthlyGrants: number;
+}> {
+  const now = params?.now ?? new Date();
+  const limit = Math.max(1, Math.min(2_000, params?.limit ?? 500));
+  const userFilter = params?.userId ? { userId: params.userId } : {};
+  const touchedUsers = new Set<string>();
+  const dueTerms = await db.subscriptionTerm.findMany({
+    where: { ...userFilter, status: "SCHEDULED", startsAt: { lte: now } },
+    select: { id: true, userId: true },
+    orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
+    take: limit
+  });
+  let activated = 0;
+  for (const term of dueTerms) {
+    try {
+      if (await activateSubscriptionTerm(term.id, now)) activated += 1;
+      touchedUsers.add(term.userId);
+    } catch (error) {
+      logger.warn("billing_subscription_term_activation_failed", {
+        termId: term.id,
+        userId: term.userId,
+        error: String((error as any)?.message ?? error)
+      });
+    }
+  }
+
+  const dueMonthlyTerms = await db.subscriptionTerm.findMany({
+    where: {
+      ...userFilter,
+      status: { in: ["ACTIVE", "GRACE"] },
+      nextAiGrantAt: { lte: now }
+    },
+    select: { id: true, userId: true, nextAiGrantAt: true },
+    orderBy: buildDueSubscriptionAiGrantOrderBy(),
+    take: limit
+  });
+  let monthlyGrants = 0;
+  for (const term of dueMonthlyTerms) {
+    try {
+      monthlyGrants += await grantDueMonthlyAiCycles(term.id, now);
+      await resolveSubscriptionAiGrantFailure(db, term.userId, now);
+      touchedUsers.add(term.userId);
+    } catch (error) {
+      await persistSubscriptionAiGrantFailure({ database: db, term, now, error });
+      logger.warn("billing_subscription_monthly_grant_failed", {
+        termId: term.id,
+        userId: term.userId,
+        error: String((error as any)?.message ?? error)
+      });
+    }
+  }
+
+  const graceCandidates = await db.subscriptionTerm.findMany({
+    where: { ...userFilter, status: "ACTIVE", endsAt: { lte: now } },
+    select: { id: true, userId: true },
+    take: limit
+  });
+  let graceEntered = 0;
+  for (const term of graceCandidates) {
+    try {
+      const updated = await db.subscriptionTerm.updateMany({
+        where: { id: term.id, status: "ACTIVE", endsAt: { lte: now }, graceEndsAt: { gt: now } },
+        data: { status: "GRACE", graceEnteredAt: now }
+      });
+      graceEntered += updated.count;
+      touchedUsers.add(term.userId);
+    } catch (error) {
+      logger.warn("billing_subscription_grace_transition_failed", {
+        termId: term.id,
+        userId: term.userId,
+        error: String((error as any)?.message ?? error)
+      });
+    }
+  }
+
+  const expiredCandidates = await db.subscriptionTerm.findMany({
+    where: {
+      ...userFilter,
+      status: { in: ["ACTIVE", "GRACE"] },
+      graceEndsAt: { lte: now }
+    },
+    select: { id: true, userId: true },
+    take: limit
+  });
+  let expired = 0;
+  for (const term of expiredCandidates) {
+    try {
+      const updated = await db.subscriptionTerm.updateMany({
+        where: { id: term.id, status: { in: ["ACTIVE", "GRACE"] }, graceEndsAt: { lte: now } },
+        data: { status: "EXPIRED", expiredAt: now }
+      });
+      expired += updated.count;
+      touchedUsers.add(term.userId);
+    } catch (error) {
+      logger.warn("billing_subscription_expiry_transition_failed", {
+        termId: term.id,
+        userId: term.userId,
+        error: String((error as any)?.message ?? error)
+      });
+    }
+  }
+  if (!params?.userId) {
+    const legacyExpired = await db.userSubscription.findMany({
+      where: {
+        effectivePlan: "PRO",
+        proValidUntil: { lte: new Date(now.getTime() - BILLING_GRACE_PERIOD_MS) },
+        terms: { none: {} }
+      },
+      select: { userId: true },
+      take: limit
+    });
+    for (const row of legacyExpired) touchedUsers.add(row.userId);
+    const entitlementSyncRows = await db.userSubscription.findMany({
+      where: {
+        OR: [
+          { entitlementSyncPending: true },
+          { effectivePlan: "PRO", status: { in: ["ACTIVE", "GRACE"] } }
+        ]
+      },
+      select: { userId: true },
+      orderBy: { updatedAt: "asc" },
+      take: limit
+    });
+    for (const row of entitlementSyncRows) touchedUsers.add(row.userId);
+  }
+  if (params?.userId) touchedUsers.add(params.userId);
+
+  let downgraded = 0;
+  for (const userId of touchedUsers) {
+    try {
+      const before = await db.userSubscription.findUnique({
+        where: { userId },
+        select: { effectivePlan: true }
+      });
+      const plan = await synchronizeSubscriptionLifecycleForUser(userId, now);
+      if (before?.effectivePlan === "PRO" && plan === "free") downgraded += 1;
+      await syncWorkspaceEntitlementsWithRetryTracking({ userId, effectivePlan: plan });
+    } catch (error) {
+      logger.warn("billing_subscription_user_sync_failed", {
+        userId,
+        error: String((error as any)?.message ?? error)
+      });
+    }
+  }
+  return { activated, graceEntered, expired, downgraded, monthlyGrants };
 }
 
 export async function getSubscriptionSummary(userId: string): Promise<{
   plan: EffectivePlan;
-  status: "active" | "inactive";
+  status: "active" | "grace" | "inactive";
   proValidUntil: string | null;
+  graceEndsAt: string | null;
+  scheduledTerm: {
+    id: string;
+    status: string;
+    startsAt: string;
+    endsAt: string;
+    graceEndsAt: string;
+  } | null;
   limits: {
     maxRunningBots: number;
     allowedExchanges: string[];
@@ -2131,14 +4307,18 @@ export async function getSubscriptionSummary(userId: string): Promise<{
   orders: any[];
 }> {
   await ensureBillingDefaults();
+  await expireStalePendingBillingOrders(userId);
   const resolved = await resolveEffectivePlanForUser(userId);
-  const [limits, usage, packages, orders] = await Promise.all([
+  const now = new Date();
+  const [limits, usage, packages, orders, currentTerm, scheduledTerm] = await Promise.all([
     resolveEffectiveQuotaForUser(userId),
     resolveQuotaUsageForUser(userId),
     listActiveBillingPackages(),
     db.billingOrder.findMany({
       where: { userId },
       include: {
+        onchainPayment: true,
+        subscriptionTerm: true,
         pkg: {
           select: {
             id: true,
@@ -2163,6 +4343,19 @@ export async function getSubscriptionSummary(userId: string): Promise<{
       },
       orderBy: { createdAt: "desc" },
       take: 20
+    }),
+    db.subscriptionTerm.findFirst({
+      where: {
+        userId,
+        status: { in: ["ACTIVE", "GRACE"] },
+        startsAt: { lte: now },
+        graceEndsAt: { gt: now }
+      },
+      orderBy: { startsAt: "desc" }
+    }),
+    db.subscriptionTerm.findFirst({
+      where: { userId, status: "SCHEDULED" },
+      orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }]
     })
   ]);
 
@@ -2170,6 +4363,16 @@ export async function getSubscriptionSummary(userId: string): Promise<{
     plan: resolved.plan,
     status: resolved.status,
     proValidUntil: resolved.proValidUntil,
+    graceEndsAt: currentTerm?.graceEndsAt instanceof Date
+      ? currentTerm.graceEndsAt.toISOString()
+      : null,
+    scheduledTerm: scheduledTerm ? {
+      id: String(scheduledTerm.id),
+      status: String(scheduledTerm.status).toLowerCase(),
+      startsAt: scheduledTerm.startsAt.toISOString(),
+      endsAt: scheduledTerm.endsAt.toISOString(),
+      graceEndsAt: scheduledTerm.graceEndsAt.toISOString()
+    } : null,
     limits: {
       maxRunningBots: limits.bots.maxRunning,
       allowedExchanges: resolved.allowedExchanges,
@@ -2217,9 +4420,12 @@ export async function getSubscriptionSummary(userId: string): Promise<{
 }
 
 export async function listSubscriptionOrders(userId: string): Promise<any[]> {
+  await expireStalePendingBillingOrders(userId);
   return db.billingOrder.findMany({
     where: { userId },
     include: {
+      onchainPayment: true,
+      subscriptionTerm: true,
       pkg: {
         select: {
           id: true,
@@ -2344,25 +4550,20 @@ export async function debitAiTokens(params: {
 
   return db.$transaction(async (tx: any) => {
     const sub = await getOrCreateSubscription(params.userId, tx);
-    const currentBalance = toBigInt(sub.aiTokenBalance);
     const debit = BigInt(parsedTokens);
-    if (currentBalance < debit) {
+    const claim = await claimAiTokenDebitInTransaction({
+      tx,
+      subscriptionId: sub.id,
+      debit
+    });
+    if (!claim.claimed) {
       return {
         charged: false,
-        remainingBalance: currentBalance,
+        remainingBalance: claim.remainingBalance,
         reason: "token_exhausted" as const
       };
     }
-    const nextBalance = currentBalance - debit;
-    const usedLifetime = toBigInt(sub.aiTokenUsedLifetime) + debit;
-
-    await tx.userSubscription.update({
-      where: { id: sub.id },
-      data: {
-        aiTokenBalance: nextBalance,
-        aiTokenUsedLifetime: usedLifetime
-      }
-    });
+    const nextBalance = claim.remainingBalance;
 
     await tx.aiTokenLedger.create({
       data: {
@@ -2386,35 +4587,127 @@ export async function debitAiTokens(params: {
   });
 }
 
+export async function claimAiTokenDebitInTransaction(params: {
+  tx: any;
+  subscriptionId: string;
+  debit: bigint;
+}): Promise<{ claimed: boolean; remainingBalance: bigint }> {
+  const charged = await params.tx.userSubscription.updateMany({
+    where: {
+      id: params.subscriptionId,
+      aiTokenBalance: { gte: params.debit }
+    },
+    data: {
+      aiTokenBalance: { decrement: params.debit },
+      aiTokenUsedLifetime: { increment: params.debit }
+    }
+  });
+  const current = await params.tx.userSubscription.findUnique({
+    where: { id: params.subscriptionId },
+    select: { aiTokenBalance: true }
+  });
+  return {
+    claimed: charged.count === 1,
+    remainingBalance: toBigInt(current?.aiTokenBalance)
+  };
+}
+
+export async function applyAiTokenAdminAdjustmentInTransaction(params: {
+  tx: any;
+  subscriptionId: string;
+  delta: bigint;
+}): Promise<{ balance: bigint; appliedDelta: bigint }> {
+  if (params.delta === 0n) {
+    const row = await params.tx.userSubscription.findUnique({
+      where: { id: params.subscriptionId },
+      select: { aiTokenBalance: true }
+    });
+    return { balance: toBigInt(row?.aiTokenBalance), appliedDelta: 0n };
+  }
+
+  if (params.delta > 0n) {
+    const credited = await params.tx.userSubscription.updateMany({
+      where: {
+        id: params.subscriptionId,
+        aiTokenBalance: { lte: BILLING_DB_BIGINT_MAX - params.delta }
+      },
+      data: { aiTokenBalance: { increment: params.delta } }
+    });
+    if (credited.count !== 1) {
+      const row = await params.tx.userSubscription.findUnique({
+        where: { id: params.subscriptionId },
+        select: { aiTokenBalance: true }
+      });
+      if (toBigInt(row?.aiTokenBalance) > BILLING_DB_BIGINT_MAX - params.delta) {
+        throw new Error("ai_token_balance_out_of_range");
+      }
+      throw new Error("ai_token_balance_concurrent_update");
+    }
+    const row = await params.tx.userSubscription.findUnique({
+      where: { id: params.subscriptionId },
+      select: { aiTokenBalance: true }
+    });
+    return { balance: toBigInt(row?.aiTokenBalance), appliedDelta: params.delta };
+  }
+
+  const requestedDebit = -params.delta;
+  const fullDebit = await params.tx.userSubscription.updateMany({
+    where: {
+      id: params.subscriptionId,
+      aiTokenBalance: { gte: requestedDebit }
+    },
+    data: { aiTokenBalance: { decrement: requestedDebit } }
+  });
+  if (fullDebit.count === 1) {
+    const row = await params.tx.userSubscription.findUnique({
+      where: { id: params.subscriptionId },
+      select: { aiTokenBalance: true }
+    });
+    return { balance: toBigInt(row?.aiTokenBalance), appliedDelta: -requestedDebit };
+  }
+
+  // Clamp to zero with compare-and-swap. A concurrent grant/debit changes the
+  // predicate and forces a fresh read, so no balance update is overwritten.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const row = await params.tx.userSubscription.findUnique({
+      where: { id: params.subscriptionId },
+      select: { aiTokenBalance: true }
+    });
+    const current = toBigInt(row?.aiTokenBalance);
+    if (current <= 0n) return { balance: 0n, appliedDelta: 0n };
+    const claimed = await params.tx.userSubscription.updateMany({
+      where: { id: params.subscriptionId, aiTokenBalance: current },
+      data: { aiTokenBalance: { decrement: current } }
+    });
+    if (claimed.count === 1) return { balance: 0n, appliedDelta: -current };
+  }
+  throw new Error("ai_token_balance_concurrent_update");
+}
+
 export async function adjustAiTokenBalanceByAdmin(params: {
   userId: string;
-  deltaTokens: number;
+  deltaTokens: string | bigint | number;
   note?: string;
   actorUserId?: string | null;
 }): Promise<{ balance: bigint }> {
-  const delta = BigInt(Math.trunc(params.deltaTokens));
+  const delta = parseBillingDbBigInt(params.deltaTokens);
 
-  return db.$transaction(async (tx: any) => {
+  return runSerializableBillingConfigTransaction(db, async (tx: any) => {
     const sub = await getOrCreateSubscription(params.userId, tx);
-    const current = toBigInt(sub.aiTokenBalance);
-    const next = current + delta < 0n ? 0n : current + delta;
-    const appliedDelta = next - current;
-
-    const updated = await tx.userSubscription.update({
-      where: { id: sub.id },
-      data: {
-        aiTokenBalance: next
-      }
+    const adjusted = await applyAiTokenAdminAdjustmentInTransaction({
+      tx,
+      subscriptionId: sub.id,
+      delta
     });
 
-    if (appliedDelta !== 0n) {
+    if (adjusted.appliedDelta !== 0n) {
       await tx.aiTokenLedger.create({
         data: {
           userId: params.userId,
           subscriptionId: sub.id,
           reason: "ADMIN_ADJUST",
-          deltaTokens: appliedDelta,
-          balanceAfter: next,
+          deltaTokens: adjusted.appliedDelta,
+          balanceAfter: adjusted.balance,
           meta: {
             note: params.note ?? null,
             actorUserId: params.actorUserId ?? null
@@ -2424,41 +4717,63 @@ export async function adjustAiTokenBalanceByAdmin(params: {
     }
 
     return {
-      balance: toBigInt(updated.aiTokenBalance)
+      balance: adjusted.balance
     };
   });
 }
 
 export async function downgradeExpiredSubscriptions(limit = 500): Promise<number> {
-  const now = new Date();
-  const rows = await db.userSubscription.findMany({
-    where: {
-      effectivePlan: "PRO",
-      proValidUntil: {
-        lte: now
-      }
-    },
-    select: {
-      userId: true
-    },
-    take: Math.max(1, limit)
-  });
+  const result = await runSubscriptionLifecycle({ limit });
+  return result.downgraded;
+}
 
-  if (rows.length === 0) return 0;
+export function resolveBillingPackageTokenAmounts(params: {
+  isPlan: boolean;
+  addonType: BillingAddonType | null;
+  monthlyAiTokens?: string | bigint | number;
+  aiCredits?: string | bigint | number;
+  existing?: { monthlyAiTokens?: unknown; aiCredits?: unknown } | null;
+}): { monthlyAiTokens: bigint; aiCredits: bigint } {
+  return {
+    monthlyAiTokens: params.isPlan
+      ? parseBillingDbBigInt(params.monthlyAiTokens ?? params.existing?.monthlyAiTokens ?? 0n, { min: 0n })
+      : 0n,
+    aiCredits: !params.isPlan && params.addonType === "ai_credits"
+      ? parseBillingDbBigInt(params.aiCredits ?? params.existing?.aiCredits ?? 0n, { min: 0n })
+      : 0n
+  };
+}
 
-  let updated = 0;
-  for (const row of rows) {
-    const userId = typeof row.userId === "string" ? row.userId.trim() : "";
-    if (!userId) continue;
-    await resolveEffectivePlanForUser(userId);
-    await syncPrimaryWorkspaceEntitlementsForUser({
-      userId,
-      effectivePlan: "free"
-    });
-    updated += 1;
+export function validateBillingPackageConfiguration(data: {
+  isActive: boolean;
+  kind: string;
+  plan: string | null;
+  addonType: string | null;
+  priceCents: number;
+  aiCredits: bigint;
+  deltaRunningBots: number;
+  deltaRunningPredictionsAi: number;
+  deltaRunningPredictionsComposite: number;
+}): void {
+  if (!data.isActive) return;
+  if (data.kind !== "PLAN" && data.kind !== "ADDON") throw new Error("package_kind_invalid");
+  if (data.kind === "PLAN") {
+    if (!data.plan) throw new Error("package_plan_required");
+    if (data.plan === "PRO" && data.priceCents < 1) {
+      throw new Error("package_active_price_required");
+    }
+    return;
   }
-
-  return updated;
+  if (data.priceCents < 1) throw new Error("package_active_price_required");
+  if (!data.addonType) throw new Error("package_addon_type_required");
+  const hasValue = data.addonType === "RUNNING_BOTS"
+    ? data.deltaRunningBots > 0
+    : data.addonType === "RUNNING_PREDICTIONS_AI"
+      ? data.deltaRunningPredictionsAi > 0
+      : data.addonType === "RUNNING_PREDICTIONS_COMPOSITE"
+        ? data.deltaRunningPredictionsComposite > 0
+        : data.aiCredits > 0n;
+  if (!hasValue) throw new Error("package_addon_value_required");
 }
 
 export async function upsertBillingPackage(params: {
@@ -2477,8 +4792,8 @@ export async function upsertBillingPackage(params: {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens: number;
-  aiCredits: number;
+  monthlyAiTokens?: string | bigint | number;
+  aiCredits?: string | bigint | number;
   deltaRunningBots: number | null;
   deltaRunningPredictionsAi: number | null;
   deltaRunningPredictionsComposite: number | null;
@@ -2486,6 +4801,23 @@ export async function upsertBillingPackage(params: {
 }): Promise<any> {
   const addonType = normalizeBillingAddonType(params.addonType ?? null);
   const isPlan = params.kind === "plan";
+  const needsExistingTokens = Boolean(params.id) && (
+    (isPlan && params.monthlyAiTokens === undefined)
+    || (!isPlan && addonType === "ai_credits" && params.aiCredits === undefined)
+  );
+  const existingTokens = needsExistingTokens
+    ? await db.billingPackage.findUnique({
+        where: { id: params.id },
+        select: { monthlyAiTokens: true, aiCredits: true }
+      })
+    : null;
+  const tokenAmounts = resolveBillingPackageTokenAmounts({
+    isPlan,
+    addonType,
+    monthlyAiTokens: params.monthlyAiTokens,
+    aiCredits: params.aiCredits,
+    existing: existingTokens
+  });
   const data = {
     code: params.code.trim(),
     name: params.name.trim(),
@@ -2517,8 +4849,8 @@ export async function upsertBillingPackage(params: {
         ? null
         : normalizeInt(params.maxRunningPredictionsComposite, 0, 0),
     allowedExchanges: normalizeStringArray(params.allowedExchanges, ["*"]),
-    monthlyAiTokens: BigInt(Math.max(0, Math.trunc(isPlan ? params.monthlyAiTokens : 0))),
-    aiCredits: BigInt(Math.max(0, Math.trunc(!isPlan && addonType === "ai_credits" ? params.aiCredits : 0))),
+    monthlyAiTokens: tokenAmounts.monthlyAiTokens,
+    aiCredits: tokenAmounts.aiCredits,
     deltaRunningBots:
       !isPlan && addonType === "running_bots" && params.deltaRunningBots !== null
         ? normalizeInt(params.deltaRunningBots, 0, 0)
@@ -2533,6 +4865,7 @@ export async function upsertBillingPackage(params: {
         : 0,
     meta: buildBillingMeta(params.meta, addonType)
   };
+  validateBillingPackageConfiguration(data);
 
   if (params.id) {
     const updated = await db.billingPackage.update({

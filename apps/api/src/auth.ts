@@ -10,6 +10,7 @@ import {
 import { isSuperadminEmail } from "./auth/superadmin.js";
 import {
   CSRF_COOKIE,
+  REAUTH_COOKIE,
   SESSION_COOKIE,
   clearAuthCookieOptions,
   createCsrfToken,
@@ -134,6 +135,7 @@ export async function destroySession(res: Response, token?: string | null) {
   const opts = clearAuthCookieOptions();
   res.clearCookie(SESSION_COOKIE, opts);
   res.clearCookie(CSRF_COOKIE, opts);
+  res.clearCookie(REAUTH_COOKIE, opts);
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {

@@ -16,6 +16,7 @@ import {
 import { getPrimarySuperadminEmail, isSuperadminEmail } from "./auth/superadmin.js";
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
+import { consumeRecentReauth, registerReauthRoutes } from "./auth/reauth.js";
 import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "./legalAcknowledgement.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
 import { sendEmailVerificationOtpEmail, sendReauthOtpEmail, sendSmtpTestEmail, sendSmtpTextEmail } from "./email.js";
@@ -37,6 +38,11 @@ import {
 import { listPluginCatalogForCapabilities } from "./plugins/catalog.js";
 import { registerBillingRoutes } from "./billing/routes.js";
 import {
+  createSubscriptionReminderJob,
+  getSubscriptionNotificationPreference,
+  updateSubscriptionNotificationPreference
+} from "./billing/notifications.js";
+import {
   attachPluginPolicySnapshot,
   validateBotPluginConfigValue
 } from "./plugins/params.js";
@@ -55,30 +61,33 @@ import {
 } from "./capabilities/guard.js";
 import {
   adjustAiTokenBalanceByAdmin,
-  applyPaidOrder,
   canCreateBot as canCreateBotWithQuota,
   canCreatePrediction as canCreatePredictionWithQuota,
   canEnablePredictionSchedule,
+  cancelBillingOrder,
   createBillingCheckout,
   deleteBillingPackage,
-  downgradeExpiredSubscriptions,
+  discoverMissingBillingTransactions,
   ensureBillingDefaults,
+  getArbitrumUsdcPaymentReadiness,
   getBillingFeatureFlagsSettings,
+  getBillingOrderForUser,
   isBillingEnabled,
-  isBillingWebhookEnabled,
   listBillingPackages,
   listSubscriptionOrders,
-  markOrderFailed,
-  recordWebhookEvent,
+  reconcileBillingOrderPayment,
+  reconcilePendingBillingPayments,
   resolveEffectivePlanForUser,
   resolveEffectiveQuotaForUser,
+  runSubscriptionLifecycle,
   setUserToFreePlan,
+  submitBillingTransaction,
   syncPrimaryWorkspaceEntitlementsForUser,
+  updateArbitrumUsdcPaymentConfiguration,
   updateBillingFeatureFlags,
   upsertBillingPackage,
   getSubscriptionSummary
 } from "./billing/service.js";
-import { invalidateCcpayConfigCache, resolveCcpayConfig, verifyCcpayWebhook } from "./billing/ccpayment.js";
 import {
   closeOrchestration,
   cancelBacktestRun,
@@ -372,6 +381,7 @@ import { createVaultOnchainReconciliationJob } from "./jobs/vaultOnchainReconcil
 import { createSystemHealthTelegramJob } from "./jobs/systemHealthTelegramJob.js";
 import { createPlatformAlertCleanupJob } from "./jobs/platformAlertCleanupJob.js";
 import { createHyperliquidApiExpiryReminderJob } from "./jobs/hyperliquidApiExpiryReminderJob.js";
+import { createBillingOnchainJob } from "./jobs/billingOnchainJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerGridVaultRouteGroup } from "./routes/gridVaultRouteGroup.js";
@@ -512,7 +522,6 @@ const externalHealthService = createExternalHealthService({
   resolveOllamaProfileAiApiKey,
   resolveAiProfileApiKey,
   resolveEffectiveFmpApiKey,
-  resolveCcpayConfig,
   fetchFmpEconomicEvents,
   getSaladRuntimeStatus,
   resolveSaladRuntimeConfig
@@ -611,6 +620,21 @@ const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db
       subject,
       text
     })
+});
+const subscriptionReminderJob = createSubscriptionReminderJob(db, {
+  isBillingEnabled,
+  resolveTelegramConfig: async (userId) => resolveTelegramConfig(userId),
+  sendTelegramMessage: async ({ botToken, chatId, text }) =>
+    sendTelegramMessage({ botToken, chatId, text }),
+  sendEmail: async ({ to, subject, text }) => sendSmtpTextEmail({ to, subject, text })
+});
+const billingOnchainJob = createBillingOnchainJob({
+  isBillingEnabled,
+  discoverMissingBillingTransactions: async (limit) =>
+    discoverMissingBillingTransactions({ limit }),
+  reconcilePendingBillingPayments: async (limit) =>
+    reconcilePendingBillingPayments({ limit }),
+  runSubscriptionLifecycle
 });
 
 const app = express();
@@ -1345,17 +1369,7 @@ const adminApiKeysSchema = z.object({
   saladProject: z.string().trim().min(1).max(191).optional(),
   clearSaladProject: z.boolean().default(false),
   saladContainer: z.string().trim().min(1).max(191).optional(),
-  clearSaladContainer: z.boolean().default(false),
-  ccpayAppId: z.string().trim().min(1).max(191).optional(),
-  clearCcpayAppId: z.boolean().default(false),
-  ccpayAppSecret: z.string().trim().min(1).max(500).optional(),
-  clearCcpayAppSecret: z.boolean().default(false),
-  ccpayBaseUrl: z.string().trim().min(8).max(500).optional(),
-  clearCcpayBaseUrl: z.boolean().default(false),
-  ccpayPriceFiatId: z.string().trim().regex(/^\d+$/).max(64).optional(),
-  clearCcpayPriceFiatId: z.boolean().default(false),
-  ccpayWebBaseUrl: z.string().trim().min(8).max(500).optional(),
-  clearCcpayWebBaseUrl: z.boolean().default(false)
+  clearSaladContainer: z.boolean().default(false)
 }).refine(
   (value) =>
     value.clearOpenaiApiKey ||
@@ -1378,19 +1392,9 @@ const adminApiKeysSchema = z.object({
     Boolean(value.saladProject) ||
     value.clearSaladContainer ||
     Boolean(value.saladContainer) ||
-    value.clearCcpayAppId ||
-    Boolean(value.ccpayAppId) ||
-    value.clearCcpayAppSecret ||
-    Boolean(value.ccpayAppSecret) ||
-    value.clearCcpayBaseUrl ||
-    Boolean(value.ccpayBaseUrl) ||
-    value.clearCcpayPriceFiatId ||
-    Boolean(value.ccpayPriceFiatId) ||
-    value.clearCcpayWebBaseUrl ||
-    Boolean(value.ccpayWebBaseUrl) ||
     Boolean(value.aiProvider),
   {
-    message: "Provide AI/FMP/CCPay fields or set a clear flag."
+    message: "Provide AI/FMP fields or set a clear flag."
   }
 );
 
@@ -3422,14 +3426,6 @@ type StoredAiProviderProfiles = {
   vllm: StoredAiProviderProfile;
 };
 
-type StoredCcpaySettings = {
-  appIdEnc: string | null;
-  appSecretEnc: string | null;
-  baseUrl: string | null;
-  priceFiatId: string | null;
-  webBaseUrl: string | null;
-};
-
 type StoredApiKeysSettings = {
   aiApiKeyEnc: string | null;
   openaiApiKeyEnc: string | null;
@@ -3439,7 +3435,6 @@ type StoredApiKeysSettings = {
   aiModel: string | null;
   openaiModel: OpenAiAdminModel | null;
   aiProfiles: StoredAiProviderProfiles;
-  ccpay: StoredCcpaySettings;
 };
 
 type StoredPredictionRefreshSettings = {
@@ -3499,16 +3494,6 @@ function emptyAiProviderProfile(): StoredAiProviderProfile {
   };
 }
 
-function emptyCcpaySettings(): StoredCcpaySettings {
-  return {
-    appIdEnc: null,
-    appSecretEnc: null,
-    baseUrl: null,
-    priceFiatId: null,
-    webBaseUrl: null
-  };
-}
-
 function normalizeProviderForProfile(
   provider: AiProvider | string | null | undefined
 ): EnabledAiProvider {
@@ -3565,60 +3550,6 @@ function parseStoredAiProviderProfile(value: unknown): StoredAiProviderProfile {
     aiBaseUrl,
     aiModel,
     saladRuntime
-  };
-}
-
-function parseStoredCcpaySettings(value: unknown): StoredCcpaySettings {
-  const record = parseJsonObject(value);
-  const nested = parseJsonObject(record.ccpay);
-  const appIdEnc =
-    typeof nested.appIdEnc === "string" && nested.appIdEnc.trim()
-      ? nested.appIdEnc.trim()
-      : typeof record.appIdEnc === "string" && record.appIdEnc.trim()
-        ? record.appIdEnc.trim()
-      : typeof record.ccpayAppIdEnc === "string" && record.ccpayAppIdEnc.trim()
-        ? record.ccpayAppIdEnc.trim()
-        : null;
-  const appSecretEnc =
-    typeof nested.appSecretEnc === "string" && nested.appSecretEnc.trim()
-      ? nested.appSecretEnc.trim()
-      : typeof record.appSecretEnc === "string" && record.appSecretEnc.trim()
-        ? record.appSecretEnc.trim()
-      : typeof record.ccpayAppSecretEnc === "string" && record.ccpayAppSecretEnc.trim()
-        ? record.ccpayAppSecretEnc.trim()
-        : null;
-  const baseUrl =
-    typeof nested.baseUrl === "string" && nested.baseUrl.trim()
-      ? nested.baseUrl.trim().replace(/\/$/, "")
-      : typeof record.baseUrl === "string" && record.baseUrl.trim()
-        ? record.baseUrl.trim().replace(/\/$/, "")
-      : typeof record.ccpayBaseUrl === "string" && record.ccpayBaseUrl.trim()
-        ? record.ccpayBaseUrl.trim().replace(/\/$/, "")
-        : null;
-  const priceFiatIdRaw =
-    typeof nested.priceFiatId === "string" && nested.priceFiatId.trim()
-      ? nested.priceFiatId.trim()
-      : typeof record.priceFiatId === "string" && record.priceFiatId.trim()
-        ? record.priceFiatId.trim()
-      : typeof record.ccpayPriceFiatId === "string" && record.ccpayPriceFiatId.trim()
-        ? record.ccpayPriceFiatId.trim()
-        : null;
-  const priceFiatId = priceFiatIdRaw && /^\d+$/.test(priceFiatIdRaw) ? priceFiatIdRaw : null;
-  const webBaseUrl =
-    typeof nested.webBaseUrl === "string" && nested.webBaseUrl.trim()
-      ? nested.webBaseUrl.trim().replace(/\/$/, "")
-      : typeof record.webBaseUrl === "string" && record.webBaseUrl.trim()
-        ? record.webBaseUrl.trim().replace(/\/$/, "")
-      : typeof record.ccpayWebBaseUrl === "string" && record.ccpayWebBaseUrl.trim()
-        ? record.ccpayWebBaseUrl.trim().replace(/\/$/, "")
-        : null;
-
-  return {
-    appIdEnc,
-    appSecretEnc,
-    baseUrl,
-    priceFiatId,
-    webBaseUrl
   };
 }
 
@@ -3699,7 +3630,6 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
   const parsedOpenAiProfile = parseStoredAiProviderProfile(aiProfilesRecord.openai);
   const parsedOllamaProfile = parseStoredAiProviderProfile(aiProfilesRecord.ollama);
   const parsedVllmProfile = parseStoredAiProviderProfile(aiProfilesRecord.vllm);
-  const parsedCcpay = parseStoredCcpaySettings(record);
   const activeLegacyProvider = normalizeProviderForProfile(aiProvider);
   const openaiModelFromLegacy =
     typeof record.openaiModel === "string" && record.openaiModel.trim()
@@ -3768,10 +3698,6 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
       openai: openaiProfile,
       ollama: ollamaProfile,
       vllm: vllmProfile
-    },
-    ccpay: {
-      ...emptyCcpaySettings(),
-      ...parsedCcpay
     }
   };
 }
@@ -3864,9 +3790,6 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
   const aiApiKeyMasked = maskEncrypted(aiKeyEnc);
   const openAiApiKeyMasked = maskEncrypted(openaiProfile.aiApiKeyEnc ?? value.openaiApiKeyEnc);
   const fmpApiKeyMasked = maskEncrypted(value.fmpApiKeyEnc);
-  const ccpayAppIdMasked = maskEncrypted(value.ccpay.appIdEnc);
-  const ccpayAppSecretMasked = maskEncrypted(value.ccpay.appSecretEnc);
-
   return {
     aiApiKeyMasked,
     hasAiApiKey: Boolean(aiKeyEnc),
@@ -3874,15 +3797,6 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
     hasOpenAiApiKey: Boolean(openaiProfile.aiApiKeyEnc ?? value.openaiApiKeyEnc),
     fmpApiKeyMasked,
     hasFmpApiKey: Boolean(value.fmpApiKeyEnc),
-    ccpay: {
-      appIdMasked: ccpayAppIdMasked,
-      hasAppId: Boolean(value.ccpay.appIdEnc),
-      appSecretMasked: ccpayAppSecretMasked,
-      hasAppSecret: Boolean(value.ccpay.appSecretEnc),
-      baseUrl: value.ccpay.baseUrl,
-      priceFiatId: value.ccpay.priceFiatId,
-      webBaseUrl: value.ccpay.webBaseUrl
-    },
     aiProvider: value.aiProvider,
     aiBaseUrl: selectedProfile.aiBaseUrl ?? value.aiBaseUrl,
     aiModel: selectedProfile.aiModel ?? value.aiModel,
@@ -11001,11 +10915,6 @@ registerSystemRoutes(app, {
   getRuntimeOrchestrationMode,
   isBillingEnabled,
   isLicenseEnforcementEnabled,
-  isBillingWebhookEnabled,
-  verifyCcpayWebhook,
-  recordWebhookEvent,
-  applyPaidOrder,
-  markOrderFailed,
   getQueueMetrics,
   resolvePlanCapabilitiesForUserId,
   listPluginCatalogForCapabilities,
@@ -11047,6 +10956,14 @@ registerAuthRoutes(app, {
   EMAIL_VERIFICATION_OTP_TTL_MIN,
   sendReauthOtpEmail,
   sendEmailVerificationOtpEmail
+});
+
+registerReauthRoutes(app, {
+  db,
+  verifyPassword,
+  generateNumericCode,
+  hashOneTimeCode,
+  sendReauthOtpEmail
 });
 
 function normalizeAiPromptSettingsPayload(
@@ -12023,6 +11940,8 @@ registerSettingsAffiliateRoutes(app, {
 registerBillingRoutes(app, {
   db,
   requireSuperadmin,
+  requirePlatformSuperadmin,
+  consumeRecentReauth,
   getBillingFeatureFlagsSettings,
   updateBillingFeatureFlags,
   listBillingPackages,
@@ -12033,7 +11952,17 @@ registerBillingRoutes(app, {
   adjustAiTokenBalanceByAdmin,
   isBillingEnabled,
   listSubscriptionOrders,
-  createBillingCheckout
+  createBillingCheckout,
+  getBillingOrderForUser,
+  cancelBillingOrder,
+  submitBillingTransaction,
+  reconcileBillingOrderPayment,
+  getSubscriptionNotificationPreference: async (userId) =>
+    getSubscriptionNotificationPreference(db, userId),
+  updateSubscriptionNotificationPreference: async (params) =>
+    updateSubscriptionNotificationPreference(db, params),
+  getArbitrumUsdcPaymentReadiness,
+  updateArbitrumUsdcPaymentConfiguration
 });
 
 registerSettingsRiskRoutes(app, {
@@ -12242,8 +12171,6 @@ registerAdminApiKeyRoutes(app, {
   normalizeProviderForProfile,
   emptySaladRuntimeSettings,
   encryptSecret,
-  resolveCcpayConfig,
-  invalidateCcpayConfigCache,
   invalidateAiApiKeyCache,
   invalidateAiModelCache,
   fetchFmpEconomicEvents,
@@ -13120,27 +13047,6 @@ async function handleUserWsConnection(
 const marketWss = new WebSocketServer({ noServer: true });
 const userWss = new WebSocketServer({ noServer: true });
 
-let billingDowngradeTimer: NodeJS.Timeout | null = null;
-
-function startBillingDowngradeScheduler() {
-  if (billingDowngradeTimer) return;
-  const intervalMs = Math.max(
-    60_000,
-    Number(process.env.BILLING_DOWNGRADE_SYNC_INTERVAL_MS ?? String(60 * 60 * 1000))
-  );
-  billingDowngradeTimer = setInterval(() => {
-    void downgradeExpiredSubscriptions().catch(() => {
-      // ignore scheduler errors
-    });
-  }, intervalMs);
-}
-
-function stopBillingDowngradeScheduler() {
-  if (!billingDowngradeTimer) return;
-  clearInterval(billingDowngradeTimer);
-  billingDowngradeTimer = null;
-}
-
 const port = Number(process.env.API_PORT ?? "4000");
 const listenHost = process.env.API_HOST?.trim() || "::";
 const server = http.createServer(app);
@@ -13162,12 +13068,13 @@ const apiLifecycle = createApiLifecycle({
     { name: "prediction-outcome-eval", start: startPredictionOutcomeEvalScheduler, stop: stopPredictionOutcomeEvalScheduler },
     { name: "prediction-performance-eval", start: startPredictionPerformanceEvalScheduler, stop: stopPredictionPerformanceEvalScheduler },
     { name: "bot-queue-recovery", start: startBotQueueRecoveryScheduler, stop: stopBotQueueRecoveryScheduler },
-    { name: "billing-downgrade", start: startBillingDowngradeScheduler, stop: stopBillingDowngradeScheduler },
+    { name: "billing-onchain", start: () => billingOnchainJob.start(), stop: () => billingOnchainJob.stop() },
     { name: "economic-calendar-refresh", start: () => economicCalendarRefreshJob.start(), stop: () => economicCalendarRefreshJob.stop() },
     { name: "economic-calendar-daily-telegram", start: () => economicCalendarDailyTelegramJob.start(), stop: () => economicCalendarDailyTelegramJob.stop() },
     { name: "system-health-telegram", start: () => systemHealthTelegramJob.start(), stop: () => systemHealthTelegramJob.stop() },
     { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },
     { name: "hyperliquid-api-expiry-reminder", start: () => hyperliquidApiExpiryReminderJob.start(), stop: () => hyperliquidApiExpiryReminderJob.stop() },
+    { name: "subscription-reminder", start: () => subscriptionReminderJob.start(), stop: () => subscriptionReminderJob.stop() },
     { name: "vault-accounting", start: () => vaultAccountingJob.start(), stop: () => vaultAccountingJob.stop() },
     { name: "bot-vault-risk", start: () => botVaultRiskJob.start(), stop: () => botVaultRiskJob.stop() },
     { name: "bot-vault-trading-reconciliation", start: () => botVaultTradingReconciliationJob.start(), stop: () => botVaultTradingReconciliationJob.stop() },

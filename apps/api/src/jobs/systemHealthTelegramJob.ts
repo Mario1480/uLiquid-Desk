@@ -10,7 +10,7 @@ export type StoredSystemHealthState = {
   rawStateStreak?: number;
 };
 
-export type SystemHealthStateStore = Partial<Record<"ai" | "saladRuntime" | "fmp" | "ccpay", StoredSystemHealthState>>;
+export type SystemHealthStateStore = Partial<Record<"ai" | "saladRuntime" | "fmp", StoredSystemHealthState>>;
 
 export type SystemHealthTelegramJobStatus = {
   enabled: boolean;
@@ -49,7 +49,6 @@ type ExternalHealthSnapshotLike = {
   ai: ExternalHealthCheckLike;
   saladRuntime: ExternalHealthCheckLike;
   fmp: ExternalHealthCheckLike;
-  ccpay: ExternalHealthCheckLike;
 };
 
 export type CreateSystemHealthTelegramJobDeps = {
@@ -64,7 +63,7 @@ function parseStoredSystemHealthState(value: unknown): SystemHealthStateStore {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const record = value as Record<string, unknown>;
   const out: SystemHealthStateStore = {};
-  for (const key of ["ai", "saladRuntime", "fmp", "ccpay"] as const) {
+  for (const key of ["ai", "saladRuntime", "fmp"] as const) {
     const raw = record[key];
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const entry = raw as Record<string, unknown>;
@@ -172,8 +171,7 @@ export function createSystemHealthTelegramJob(
       const nextObservedState: ExternalHealthSnapshotLike = {
         ai: snapshot.ai,
         saladRuntime: snapshot.saladRuntime,
-        fmp: snapshot.fmp,
-        ccpay: snapshot.ccpay
+        fmp: snapshot.fmp
       };
       const nextState: SystemHealthStateStore = {};
 
@@ -365,7 +363,7 @@ export function createSystemHealthTelegramJob(
         update: { value: nextState }
       });
 
-      lastCheckCount = 4;
+      lastCheckCount = 3;
       lastHealthyCount = healthyCount;
       lastUnhealthyCount = unhealthyCount;
       lastSkippedCount = skippedCount;

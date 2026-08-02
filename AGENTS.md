@@ -110,7 +110,7 @@ Kernfluss:
 - `apps/api/src/auth`
   Auth, SIWE, Permissions, Superadmin/Admin-Zugriff.
 - `apps/api/src/billing`
-  Billing, Packages, Orders, CCPayment.
+  Billing, Packages, Orders und direkte Arbitrum-USDC-Zahlungen.
 - `apps/api/src/exchange-accounts`
   Exchange Account Verwaltung, Credential Health, Venue-Konfiguration.
 - `apps/api/src/grid`

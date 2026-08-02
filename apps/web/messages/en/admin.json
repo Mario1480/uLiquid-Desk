@@ -1031,23 +1031,6 @@
       "save": "Save FMP key",
       "envOverrideHint": "ENV `FMP_API_KEY` is configured as fallback and is only used when no DB key exists."
     },
-    "ccpay": {
-      "sectionTitle": "CCPayments (Billing)",
-      "statusLabel": "CCPayments status",
-      "storedAppId": "Stored app id",
-      "storedAppSecret": "Stored app secret",
-      "missingConfig": "missing config",
-      "missingFields": "Missing fields",
-      "envOverrideHint": "ENV `CCPAY_*`/`WEB_BASE_URL`/`PANEL_BASE_URL` is configured as fallback and is only used when DB values are missing.",
-      "appIdLabel": "App ID",
-      "appSecretLabel": "App Secret",
-      "baseUrlLabel": "Base URL",
-      "priceFiatIdLabel": "Price Fiat ID",
-      "webBaseUrlLabel": "Web Base URL",
-      "save": "Save CCPay settings",
-      "clearAppId": "Remove App ID",
-      "clearAppSecret": "Remove App Secret"
-    },
     "messages": {
       "accessRequired": "Admin backend access required.",
       "aiKeyRequired": "Please enter an AI API key.",
@@ -1065,12 +1048,7 @@
       "fmpKeyRequired": "Please enter an FMP API key.",
       "fmpKeySaved": "FMP API key saved.",
       "fmpKeyRemoved": "FMP API key removed.",
-      "confirmClearFmp": "Remove the stored FMP API key?",
-      "ccpaySaved": "CCPayments settings saved.",
-      "ccpayAppIdRemoved": "CCPayments App ID removed.",
-      "ccpayAppSecretRemoved": "CCPayments App Secret removed.",
-      "confirmClearCcpayAppId": "Remove the stored CCPayments App ID?",
-      "confirmClearCcpayAppSecret": "Remove the stored CCPayments App Secret?"
+      "confirmClearFmp": "Remove the stored FMP API key?"
     }
   },
   "links": {
@@ -1100,7 +1078,7 @@
     },
     "apiKeys": {
       "title": "API Keys",
-      "description": "Store global AI/FMP/CCPayments keys encrypted in DB."
+      "description": "Store global AI and FMP keys encrypted in DB."
     },
     "vaultExecution": {
       "title": "Vault Execution Mode",
@@ -1161,23 +1139,44 @@
   },
   "billing": {
     "title": "Billing Packages",
-    "description": "Configure plan and AI topup packages used for CCPayments checkout.",
+    "description": "Configure Arbitrum USDC payments, plan packages and AI topups.",
+    "paymentConfig": {
+      "title": "Arbitrum USDC payments",
+      "description": "Set the treasury address for new onchain payments and review RPC readiness.",
+      "ready": "Ready",
+      "notReady": "Not ready",
+      "treasuryAddress": "Treasury address",
+      "treasuryHint": "Recipient address for new USDC payment requests on Arbitrum One.",
+      "confirmTreasuryAddress": "Confirm treasury address",
+      "confirmTreasuryHint": "Enter the exact same address again. A fresh re-authentication is required to change it.",
+      "chain": "Chain ID",
+      "token": "USDC contract",
+      "confirmations": "Confirmations",
+      "revision": "Configuration revision",
+      "lastBlock": "Latest RPC block",
+      "lastChecked": "Last checked",
+      "save": "Save treasury address",
+      "saved": "Payment configuration saved.",
+      "errors": {
+        "invalidAddress": "Enter a valid EVM treasury address.",
+        "confirmationMismatch": "The confirmed treasury address is not an exact match."
+      }
+    },
     "featureFlags": {
       "title": "Billing feature flags",
-      "description": "Control whether billing checkout, webhook processing and AI token billing are active.",
+      "description": "Control whether onchain checkout and AI token billing are active.",
       "source": "Source",
       "updatedAt": "Last updated",
       "never": "never",
       "enabledValue": "Enabled",
       "save": "Save billing settings",
       "saved": "Billing settings saved.",
+      "enableConfirmTitle": "Enable onchain billing?",
+      "enableConfirmDescription": "This opens new paid USDC checkouts. Continue only after the legacy reconciliation, treasury, RPC readiness and canary evidence have been approved. Fresh re-authentication is required next.",
+      "enableConfirmAction": "Enable billing",
       "billingEnabled": {
         "label": "Subscription checkout enabled",
         "hint": "When disabled, users cannot buy/renew subscriptions or topups."
-      },
-      "billingWebhookEnabled": {
-        "label": "CCPayments webhook enabled",
-        "hint": "When disabled, incoming CCPayments webhooks are ignored."
       },
       "aiTokenBillingEnabled": {
         "label": "AI token billing enabled",

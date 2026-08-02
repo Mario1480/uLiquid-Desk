@@ -903,7 +903,7 @@
     },
     "license": {
       "prepared": "Verwalte hier deinen aktiven Plan, Verlängerungen und AI-Token-Topups.",
-      "onceEnabled": "Billing-Änderungen werden nach erfolgreichem CCPayments-Webhook automatisch übernommen.",
+      "onceEnabled": "Billing-Änderungen werden nach bestätigtem Arbitrum-USDC-Zahlungseingang automatisch übernommen.",
       "open": "Abo & Abrechnung öffnen",
       "openLicense": "Lizenzübersicht öffnen",
       "openOrder": "Order / Upgrade öffnen",

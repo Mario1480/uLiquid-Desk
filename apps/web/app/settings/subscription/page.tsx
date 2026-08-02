@@ -10,6 +10,7 @@ import {
   buildLicensePageModel,
   centsToCurrency,
   type BillingOrder,
+  type BillingOrderStatus,
   type AuthMePayload,
   type ServerInfoPayload,
   type SubscriptionPayload
@@ -44,6 +45,18 @@ function renderOrderPackageCell(order: BillingOrder) {
     );
   }
   return <span>{formatOrderPackageLabel(order)}</span>;
+}
+
+function orderStatusKey(status: BillingOrderStatus): string {
+  return status === "review_required" ? "reviewRequired" : status;
+}
+
+function getOrderExplorerUrl(order: BillingOrder): string | null {
+  if (order.onchainPayment?.explorerUrl) return order.onchainPayment.explorerUrl;
+  if (order.explorerUrl) return order.explorerUrl;
+  return order.onchainPayment?.txHash
+    ? `https://arbiscan.io/tx/${order.onchainPayment.txHash}`
+    : null;
 }
 
 export default function SubscriptionPage() {
@@ -120,8 +133,12 @@ export default function SubscriptionPage() {
             <div className="card subscriptionPortalCard">
               <div className="subscriptionCardHead">
                 <div className="subscriptionCardTitle">{t("license.cards.status")}</div>
-                <span className={`subscriptionStatusBadge ${model.status === "active" ? "subscriptionStatusBadgeActive" : "subscriptionStatusBadgeInactive"}`}>
-                  {model.status === "active" ? t("license.states.active") : t("license.states.inactive")}
+                <span className={`subscriptionStatusBadge ${model.status === "active" ? "subscriptionStatusBadgeActive" : model.status === "grace" ? "subscriptionStatusBadgeGrace" : "subscriptionStatusBadgeInactive"}`}>
+                  {model.status === "active"
+                    ? t("license.states.active")
+                    : model.status === "grace"
+                      ? t("license.states.grace")
+                      : t("license.states.inactive")}
                 </span>
               </div>
               <div className="subscriptionPortalFieldRow">
@@ -132,6 +149,25 @@ export default function SubscriptionPage() {
                 <span>{t("license.labels.validUntil")}</span>
                 <span>{formatMaybeDate(model.proValidUntil, locale)}</span>
               </div>
+              {model.graceEndsAt ? (
+                <div className="subscriptionPortalFieldRow">
+                  <span>{t("license.labels.graceEndsAt")}</span>
+                  <span>{formatMaybeDate(model.graceEndsAt, locale)}</span>
+                </div>
+              ) : null}
+              {model.scheduledTerm ? (
+                <div className="subscriptionTermPreview">
+                  <div className="subscriptionOrderIncludedTitle">{t("license.nextTerm.title")}</div>
+                  <div className="subscriptionPortalFieldRow">
+                    <span>{t("license.nextTerm.startsAt")}</span>
+                    <span>{formatMaybeDate(model.scheduledTerm.startsAt, locale)}</span>
+                  </div>
+                  <div className="subscriptionPortalFieldRow">
+                    <span>{t("license.nextTerm.endsAt")}</span>
+                    <span>{formatMaybeDate(model.scheduledTerm.endsAt, locale)}</span>
+                  </div>
+                </div>
+              ) : null}
               {model.fallbackReason ? (
                 <div className="subscriptionPortalWarn">
                   {t("license.fallbackMode", { reason: model.fallbackReason })}
@@ -250,12 +286,22 @@ export default function SubscriptionPage() {
                       <td>{centsToCurrency(order.amountCents, order.currency)}</td>
                       <td>
                         <span className={`subscriptionStatusPill subscriptionStatusPill${order.status}`}>
-                          {order.status.toUpperCase()}
+                          {t(`orders.statuses.${orderStatusKey(order.status)}`)}
                         </span>
                       </td>
                       <td>
-                        {order.status === "pending" && order.payUrl ? (
-                          <a href={order.payUrl} target="_blank" rel="noreferrer">{t("orders.payNow")}</a>
+                        {(order.status === "pending"
+                          || order.status === "confirming"
+                          || order.status === "review_required") && order.onchainPayment ? (
+                          <Link href={`${withLocalePath("/settings/subscription/order", locale)}?order=${encodeURIComponent(order.id)}`}>
+                            {order.status === "review_required"
+                              ? t("orders.reviewPayment")
+                              : t("orders.continuePayment")}
+                          </Link>
+                        ) : order.onchainPayment?.txHash && getOrderExplorerUrl(order) ? (
+                          <a href={getOrderExplorerUrl(order) ?? "#"} target="_blank" rel="noreferrer">
+                            {t("orders.viewTransaction")}
+                          </a>
                         ) : "-"}
                       </td>
                     </tr>

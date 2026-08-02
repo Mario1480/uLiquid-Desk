@@ -26,10 +26,12 @@ enum EffectivePlan {
 enum SubscriptionStatus {
   INACTIVE
   ACTIVE
+  GRACE
 }
 
 enum BillingProvider {
   CCPAYMENT
+  ARBITRUM_USDC
 }
 
 enum BillingPackageKind {
@@ -46,9 +48,37 @@ enum BillingAddonType {
 
 enum BillingOrderStatus {
   PENDING
+  CONFIRMING
   PAID
   FAILED
   EXPIRED
+  REVIEW_REQUIRED
+}
+
+enum SubscriptionTermStatus {
+  SCHEDULED
+  ACTIVE
+  GRACE
+  EXPIRED
+}
+
+enum SubscriptionNotificationChannel {
+  EMAIL
+  TELEGRAM
+  BOTH
+}
+
+enum SubscriptionNotificationDeliveryChannel {
+  EMAIL
+  TELEGRAM
+}
+
+enum SubscriptionNotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  RETRY
+  FAILED
 }
 
 enum AiLedgerReason {
@@ -646,6 +676,8 @@ model User {
   billingOrders                        BillingOrder[]
   aiTokenLedger                        AiTokenLedger[]
   capacityGrants                       SubscriptionCapacityGrant[]
+  subscriptionTerms                    SubscriptionTerm[]
+  subscriptionNotificationPreference   SubscriptionNotificationPreference?
   adminAuditEvents                     AdminAuditEvent[]                     @relation("AdminAuditEventActor")
   platformAlerts                       PlatformAlert[]                       @relation("PlatformAlertUser")
   acknowledgedPlatformAlerts           PlatformAlert[]                       @relation("PlatformAlertAcknowledgedBy")
@@ -815,15 +847,21 @@ model UserSubscription {
   aiTokenBalance                 BigInt             @default(0) @map("ai_token_balance")
   aiTokenUsedLifetime            BigInt             @default(0) @map("ai_token_used_lifetime")
   monthlyAiTokensIncluded        BigInt             @default(0) @map("monthly_ai_tokens_included")
+  entitlementSyncPending         Boolean            @default(false) @map("entitlement_sync_pending")
+  entitlementSyncAttempts        Int                @default(0) @map("entitlement_sync_attempts")
+  entitlementSyncLastError       String?            @map("entitlement_sync_last_error")
+  entitlementSyncedAt            DateTime?          @map("entitlement_synced_at")
   createdAt                      DateTime           @default(now()) @map("created_at")
   updatedAt                      DateTime           @updatedAt @map("updated_at")
 
   orders                  BillingOrder[]
   tokenLedger             AiTokenLedger[]
   capacityGrants          SubscriptionCapacityGrant[]
+  terms                   SubscriptionTerm[]
   licenseOperationalState LicenseOperationalState?
 
   @@index([effectivePlan, proValidUntil], map: "user_subscriptions_plan_valid_until_idx")
+  @@index([entitlementSyncPending, updatedAt], map: "user_subscriptions_entitlement_sync_pending_idx")
   @@map("user_subscriptions")
 }
 
@@ -875,6 +913,7 @@ model BillingOrder {
   payUrl           String?            @map("pay_url")
   externalOrderId  String?            @map("external_order_id")
   paymentStatusRaw String?            @map("payment_status_raw")
+  cartFingerprint  String?            @map("cart_fingerprint")
   paidAt           DateTime?          @map("paid_at")
   expiresAt        DateTime?          @map("expires_at")
   createPayload    Json?              @map("create_payload")
@@ -882,13 +921,142 @@ model BillingOrder {
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
 
-  items          BillingOrderItem[]
-  tokenLedger    AiTokenLedger[]
-  capacityGrants SubscriptionCapacityGrant[]
+  items            BillingOrderItem[]
+  tokenLedger      AiTokenLedger[]
+  capacityGrants   SubscriptionCapacityGrant[]
+  onchainPayment   BillingOnchainPayment?
+  subscriptionTerm SubscriptionTerm?
 
   @@index([userId, createdAt(sort: Desc)], map: "billing_orders_user_created_idx")
   @@index([status, createdAt(sort: Desc)], map: "billing_orders_status_created_idx")
   @@map("billing_orders")
+}
+
+model BillingPaymentConfiguration {
+  id                 String    @id
+  chainId            Int       @map("chain_id")
+  tokenAddress       String    @map("token_address")
+  tokenDecimals      Int       @map("token_decimals")
+  treasuryAddress    String    @map("treasury_address")
+  revision           Int       @default(1)
+  lastRpcBlockNumber BigInt?   @map("last_rpc_block_number")
+  lastRpcCheckAt     DateTime? @map("last_rpc_check_at")
+  lastRpcError       String?   @map("last_rpc_error")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@map("billing_payment_configurations")
+}
+
+model BillingOnchainPayment {
+  id                     String       @id @default(cuid())
+  orderId                String       @unique @map("order_id")
+  order                  BillingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  chainId                Int          @map("chain_id")
+  tokenAddress           String       @map("token_address")
+  tokenDecimals          Int          @map("token_decimals")
+  expectedSenderAddress  String       @map("expected_sender_address")
+  treasuryAddress        String       @map("treasury_address")
+  treasuryConfigRevision Int          @map("treasury_config_revision")
+  expectedAmountRaw      BigInt       @map("expected_amount_raw")
+  txHash                 String?      @unique @map("tx_hash")
+  scanFromBlock          BigInt?      @map("scan_from_block")
+  blockNumber            BigInt?      @map("block_number")
+  blockHash              String?      @map("block_hash")
+  confirmations          Int          @default(0)
+  verificationAttempts   Int          @default(0) @map("verification_attempts")
+  lastCheckedAt          DateTime?    @map("last_checked_at")
+  nextRetryAt            DateTime?    @map("next_retry_at")
+  lastError              String?      @map("last_error")
+  verifiedAt             DateTime?    @map("verified_at")
+  discoveredAt           DateTime?    @map("discovered_at")
+  createdAt              DateTime     @default(now()) @map("created_at")
+  updatedAt              DateTime     @updatedAt @map("updated_at")
+
+  @@index([chainId, tokenAddress, treasuryAddress], map: "billing_onchain_payments_scan_idx")
+  @@index([nextRetryAt, createdAt], map: "billing_onchain_payments_retry_idx")
+  @@map("billing_onchain_payments")
+}
+
+model BillingOnchainScanCursor {
+  id               String    @id @default(cuid())
+  chainId          Int       @map("chain_id")
+  tokenAddress     String    @map("token_address")
+  treasuryAddress  String    @map("treasury_address")
+  lastScannedBlock BigInt    @map("last_scanned_block")
+  lastSuccessfulAt DateTime? @map("last_successful_at")
+  failureCount     Int       @default(0) @map("failure_count")
+  nextRetryAt      DateTime? @map("next_retry_at")
+  lastError        String?   @map("last_error")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@unique([chainId, tokenAddress, treasuryAddress], map: "billing_onchain_scan_cursors_scope_key")
+  @@index([nextRetryAt], map: "billing_onchain_scan_cursors_retry_idx")
+  @@map("billing_onchain_scan_cursors")
+}
+
+model SubscriptionTerm {
+  id                   String                 @id @default(cuid())
+  userId               String                 @map("user_id")
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId       String                 @map("subscription_id")
+  subscription         UserSubscription       @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  orderId              String?                @unique @map("order_id")
+  order                BillingOrder?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  status               SubscriptionTermStatus @default(SCHEDULED)
+  startsAt             DateTime               @map("starts_at")
+  endsAt               DateTime               @map("ends_at")
+  graceEndsAt          DateTime               @map("grace_ends_at")
+  entitlementSnapshot  Json                   @map("entitlement_snapshot")
+  monthlyAiTokens      BigInt                 @default(0) @map("monthly_ai_tokens")
+  nextAiGrantAt        DateTime?              @map("next_ai_grant_at")
+  aiGrantCyclesApplied Int                    @default(0) @map("ai_grant_cycles_applied")
+  activatedAt          DateTime?              @map("activated_at")
+  graceEnteredAt       DateTime?              @map("grace_entered_at")
+  expiredAt            DateTime?              @map("expired_at")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+
+  capacityGrants         SubscriptionCapacityGrant[]
+  notificationDeliveries SubscriptionNotificationDelivery[]
+
+  @@index([userId, startsAt, endsAt], map: "subscription_terms_user_window_idx")
+  @@index([status, startsAt], map: "subscription_terms_status_start_idx")
+  @@index([status, graceEndsAt], map: "subscription_terms_status_grace_idx")
+  @@map("subscription_terms")
+}
+
+model SubscriptionNotificationPreference {
+  id        String                          @id @default(cuid())
+  userId    String                          @unique @map("user_id")
+  user      User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   SubscriptionNotificationChannel
+  locale    String                          @default("en")
+  createdAt DateTime                        @default(now()) @map("created_at")
+  updatedAt DateTime                        @updatedAt @map("updated_at")
+
+  @@map("subscription_notification_preferences")
+}
+
+model SubscriptionNotificationDelivery {
+  id            String                                  @id @default(cuid())
+  termId        String                                  @map("term_id")
+  term          SubscriptionTerm                        @relation(fields: [termId], references: [id], onDelete: Cascade)
+  milestone     String
+  channel       SubscriptionNotificationDeliveryChannel
+  status        SubscriptionNotificationDeliveryStatus  @default(PENDING)
+  attemptCount  Int                                     @default(0) @map("attempt_count")
+  lockedAt      DateTime?                               @map("locked_at")
+  nextAttemptAt DateTime?                               @map("next_attempt_at")
+  sentAt        DateTime?                               @map("sent_at")
+  lastError     String?                                 @map("last_error")
+  createdAt     DateTime                                @default(now()) @map("created_at")
+  updatedAt     DateTime                                @updatedAt @map("updated_at")
+
+  @@unique([termId, milestone, channel], map: "subscription_notification_deliveries_key")
+  @@index([status, nextAttemptAt], map: "subscription_notification_deliveries_retry_idx")
+  @@map("subscription_notification_deliveries")
 }
 
 model BillingOrderItem {
@@ -918,6 +1086,9 @@ model SubscriptionCapacityGrant {
   subscription                     UserSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
   orderId                          String?           @map("order_id")
   order                            BillingOrder?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  termId                           String?           @map("term_id")
+  term                             SubscriptionTerm? @relation(fields: [termId], references: [id], onDelete: SetNull)
+  sourceKey                        String?           @unique @map("source_key")
   planScope                        EffectivePlan?    @map("plan_scope")
   deltaRunningBots                 Int               @default(0) @map("delta_running_bots")
   deltaRunningPredictionsAi        Int               @default(0) @map("delta_running_predictions_ai")
@@ -928,6 +1099,7 @@ model SubscriptionCapacityGrant {
   @@index([userId, validUntil], map: "subscription_capacity_grants_user_valid_idx")
   @@index([subscriptionId], map: "subscription_capacity_grants_subscription_idx")
   @@index([orderId], map: "subscription_capacity_grants_order_idx")
+  @@index([termId], map: "subscription_capacity_grants_term_idx")
   @@map("subscription_capacity_grants")
 }
 
@@ -952,6 +1124,7 @@ model AiTokenLedger {
   orderId        String?           @map("order_id")
   order          BillingOrder?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
   reason         AiLedgerReason
+  idempotencyKey String?           @unique @map("idempotency_key")
   deltaTokens    BigInt            @map("delta_tokens")
   balanceAfter   BigInt            @map("balance_after")
   meta           Json?

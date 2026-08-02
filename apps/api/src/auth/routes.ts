@@ -411,6 +411,7 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
       : null;
     await deps.destroySession(res, token);
     if (session?.userId) {
+      await deps.db.reauthSession.deleteMany({ where: { userId: session.userId } });
       await recordAuthAuditEvent({ req, userId: session.userId, action: "auth.logout", sessionId: session.id });
     }
     clearSiweNonceCookie(res);

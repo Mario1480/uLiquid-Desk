@@ -334,6 +334,35 @@
       "tip": "Fallback: Falls du es noch manuell brauchst, beginnen Telegram-Gruppen-Chat-IDs meist mit <strong>-100</strong>.",
       "chatIdFallback": "Manuelle Chat-ID als Fallback"
     },
+    "subscriptionReminders": {
+      "title": "Abo-Erinnerungen",
+      "description": "Erhalte Hinweise 7, 3 und 1 Tag vor Vertragsende sowie beim Beginn der Karenz und nach dem Wechsel auf Free.",
+      "channel": {
+        "email": {
+          "label": "E-Mail",
+          "hint": "Erinnerungen an deine verifizierte Konto-E-Mail."
+        },
+        "telegram": {
+          "label": "Telegram",
+          "hint": "Erinnerungen an deinen verbundenen privaten Bot-Chat."
+        },
+        "both": {
+          "label": "Beide",
+          "hint": "Erinnerungen parallel per E-Mail und Telegram."
+        }
+      },
+      "language": "Sprache der Abo-Erinnerungen",
+      "languages": {
+        "de": "Deutsch",
+        "en": "Englisch"
+      },
+      "source": {
+        "stored": "Gespeichert",
+        "default": "Automatische Auswahl"
+      },
+      "telegramFallback": "Telegram ist nicht verbunden. Bis zur Verbindung werden Abo-Erinnerungen an die verifizierte E-Mail zugestellt.",
+      "unavailableHint": "Nicht verfügbare Kanäle werden freigeschaltet, sobald die Konto-E-Mail verifiziert beziehungsweise Telegram verbunden ist."
+    },
     "dailyCalendar": {
       "title": "Täglicher Wirtschaftskalender",
       "description": "Sende dir täglich die wichtigsten Events nach deinen Filtern in deinen Telegram-Chat.",
@@ -421,7 +450,8 @@
       },
       "labels": {
         "plan": "Plan",
-        "validUntil": "Gültig bis",
+        "validUntil": "Vertragsende",
+        "graceEndsAt": "Karenz endet",
         "email": "E-Mail",
         "userId": "User-ID",
         "bots": "Bots",
@@ -439,7 +469,13 @@
       },
       "states": {
         "active": "Aktiv",
+        "grace": "Karenz",
         "inactive": "Inaktiv"
+      },
+      "nextTerm": {
+        "title": "Geplante Verlängerung",
+        "startsAt": "Beginnt am",
+        "endsAt": "Endet am"
       },
       "features": {
         "proPlan": "Pro-Plan",
@@ -457,7 +493,7 @@
     },
     "order": {
       "title": "Lizenz bestellen",
-      "subtitle": "Wähle optional einen Plan und separate Add-ons, dann bezahle über CCPayment.",
+      "subtitle": "Wähle einen Plan und Add-ons und bezahle direkt mit nativem USDC auf Arbitrum.",
       "packageLabel": "Paket",
       "noPlanSelected": "Kein Plan ausgewählt",
       "includedTitle": "Inklusive",
@@ -474,32 +510,86 @@
       "summaryTypeCart": "Plan + Kapazitäts-Warenkorb",
       "selectedCapacityUnits": "{count} Add-on-Einheit(en) ausgewählt",
       "clearCapacityAddons": "Add-ons zurücksetzen",
-      "baseMonthly": "Basis monatlich",
-      "addonsMonthly": "Add-ons monatlich",
-      "monthlyTotal": "Monatliche Summe",
-      "totalBilled": "Gesamt berechnet",
+      "addonsRequirePro": "Wähle zuerst einen Pro-Plan oder nutze ein bereits aktives Pro-Abo, um Add-ons hinzuzufügen.",
+      "planPrice": "Planpreis für die gewählte Laufzeit",
+      "addonsPrice": "Add-ons in diesem Checkout",
+      "checkoutTotal": "Gesamtzahlung",
       "monthsSuffix": "Monat(e)",
       "addonOnly": "Nur Add-ons",
       "selectPackageFirst": "Bitte zuerst ein Paket auswählen.",
-      "payWithCrypto": "Mit Krypto bezahlen (CCPayment)",
-      "redirecting": "Weiterleitung...",
+      "payWithUsdc": "Mit USDC auf Arbitrum bezahlen",
+      "creatingPayment": "Zahlung wird vorbereitet...",
+      "statusUpdated": "Zahlungsstatus aktualisiert.",
       "cartHint": "Ein Checkout kann 0/1 Plan und mehrere Add-ons mit Mengen enthalten.",
       "noPlans": "Kein Plan-Paket verfügbar.",
       "noAiTopups": "Kein AI-Topup-Paket verfügbar.",
       "noCapacityAddons": "Keine Kapazitäts-Add-ons verfügbar.",
+      "payment": {
+        "title": "Onchain-Zahlung",
+        "orderId": "Bestellung {id}",
+        "progressLabel": "Zahlungsfortschritt",
+        "amount": "Betrag",
+        "network": "Netzwerk",
+        "recipient": "Empfänger",
+        "expiresAt": "Zahlbar bis",
+        "checkoutWallet": "Für Checkout erwartete Wallet",
+        "linkedWallet": "Verknüpfte Wallet",
+        "connectedWallet": "Verbundene Wallet",
+        "usdcBalance": "USDC-Guthaben",
+        "gasBalance": "ETH für Gas",
+        "missing": "Fehlt",
+        "ready": "Bereit",
+        "wrongNetwork": "Falsches Netzwerk",
+        "connectWallet": "Wallet verbinden",
+        "switchNetwork": "Zu Arbitrum wechseln",
+        "sendPayment": "USDC jetzt senden",
+        "awaitingSignature": "Wallet-Signatur bestätigen...",
+        "checkStatus": "Status prüfen",
+        "checkingStatus": "Status wird geprüft...",
+        "submitAgain": "Transaktion erneut zuordnen",
+        "cancelOrder": "Offene Zahlung abbrechen",
+        "cancelled": "Die offene Zahlung wurde abgebrochen. Du kannst jetzt einen neuen Checkout erstellen.",
+        "openExplorer": "Im Explorer öffnen",
+        "activeOrder": "Offene Zahlung fortsetzen",
+        "walletMismatch": "Verbinde die für diesen Checkout erwartete Wallet {wallet}, um diese Zahlung auszuführen.",
+        "checkoutWalletChanged": "Dieser Checkout ist an {expected} gebunden, aktuell ist aber {linked} mit deinem Konto verknüpft. Verbinde die ursprüngliche Wallet oder brich die offene Zahlung ab und erstelle danach einen neuen Checkout.",
+        "expiredTransactionRecovery": "Die Order ist abgelaufen, aber der bereits gesendete Transaktions-Hash bleibt lokal erhalten. Sende nicht erneut. Öffne die Transaktion im Explorer und prüfe den Status; der Hintergrundabgleich ordnet verspätete Zahlungen der manuellen Prüfung zu.",
+        "manageWallet": "Wallet-Verknüpfung verwalten",
+        "reviewRequired": "Die Zahlung benötigt eine manuelle Prüfung. Es wird keine zweite Aktivierung oder automatische Rückzahlung ausgelöst.",
+        "confirmed": "Die Zahlung wurde onchain bestätigt und das Abo aktualisiert.",
+        "confirmations": "{count} von {required} Bestätigungen",
+        "stages": {
+          "ready": "Bereit",
+          "awaiting_signature": "Signatur",
+          "submitted": "Gesendet",
+          "confirming": "Bestätigungen",
+          "confirmed": "Bestätigt"
+        }
+      },
       "errors": {
-        "checkoutUrlMissing": "Checkout-URL fehlt.",
         "cartEmpty": "Bitte wähle mindestens ein Paket im Warenkorb aus.",
         "invalidCartPayload": "Ungültige Warenkorb-Daten.",
         "cartPlanCountInvalid": "Pro Checkout ist nur ein Plan erlaubt.",
         "cartDuplicatePackage": "Doppelte Pakete im Warenkorb sind nicht erlaubt.",
         "cartItemNotFound": "Eines der ausgewählten Pakete ist nicht verfügbar.",
         "cartQuantityInvalid": "Ungültige Menge. Kapazitäts-Add-ons erlauben Mengen zwischen 1 und 20.",
+        "freePlanNotPurchasable": "Der Free-Plan benötigt keine Zahlung. Wähle stattdessen Pro oder ein Add-on.",
         "cartCapacityRequiresPro": "Kapazitäts-Add-ons benötigen aktives Pro oder einen Pro-Plan im selben Checkout.",
         "proRequiredForTopup": "Für AI-Token-Topups ist ein Pro-Plan erforderlich.",
         "paidPlanRequiredForCapacityTopup": "Für Kapazitäts-Topups ist ein aktiver Paid-Plan erforderlich.",
-        "ccpayNotConfigured": "CCPayments ist noch nicht konfiguriert.",
-        "ccpaymentError": "CCPayments-Checkout fehlgeschlagen."
+        "paymentConfigMissing": "Die Arbitrum-USDC-Zahlung ist noch nicht vollständig konfiguriert.",
+        "openOrderConflict": "Es gibt bereits eine offene Zahlung mit einem anderen Warenkorb. Setze sie fort, brich sie ab oder warte auf den Ablauf.",
+        "walletUnavailable": "Die Wallet-Verbindung ist derzeit nicht verfügbar.",
+        "walletNotLinked": "Verknüpfe zuerst eine Wallet in den Einstellungen.",
+        "walletNotConnected": "Verbinde zuerst deine Wallet.",
+        "walletMismatch": "Die verbundene Wallet stimmt nicht mit deiner verknüpften Wallet überein.",
+        "paymentExpired": "Diese Zahlungsanforderung ist abgelaufen. Erstelle eine neue Bestellung.",
+        "wrongNetwork": "Wechsle vor dem Senden zu Arbitrum One.",
+        "switchNetworkFailed": "Der Wechsel zu Arbitrum ist fehlgeschlagen.",
+        "insufficientUsdc": "Das USDC-Guthaben der verbundenen Wallet reicht nicht aus.",
+        "insufficientGas": "Das ETH-Guthaben reicht voraussichtlich nicht für Gas.",
+        "transactionFailed": "Die USDC-Transaktion konnte nicht gesendet werden.",
+        "submitFailed": "Die Transaktion wurde gesendet, konnte aber noch nicht der Bestellung zugeordnet werden. Ordne sie erneut zu oder prüfe den Status."
       }
     },
     "orders": {
@@ -510,7 +600,17 @@
       "amount": "Betrag",
       "status": "Status",
       "action": "Aktion",
-      "payNow": "Jetzt bezahlen",
+      "continuePayment": "Zahlung fortsetzen",
+      "reviewPayment": "Prüffall öffnen",
+      "viewTransaction": "Transaktion ansehen",
+      "statuses": {
+        "pending": "Ausstehend",
+        "confirming": "Wird bestätigt",
+        "reviewRequired": "Manuelle Prüfung",
+        "paid": "Bezahlt",
+        "failed": "Fehlgeschlagen",
+        "expired": "Abgelaufen"
+      },
       "empty": "Noch keine Bestellungen."
     }
   },

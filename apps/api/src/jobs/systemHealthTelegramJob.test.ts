@@ -10,8 +10,7 @@ function createSnapshot(state: "healthy" | "unhealthy" | "skipped", message: str
   return {
     ai: { state, message, checkedAt },
     saladRuntime: { state: "skipped" as const, message: "Salad skipped", checkedAt },
-    fmp: { state: "skipped" as const, message: "FMP skipped", checkedAt },
-    ccpay: { state: "skipped" as const, message: "CCPay skipped", checkedAt }
+    fmp: { state: "skipped" as const, message: "FMP skipped", checkedAt }
   };
 }
 
@@ -111,6 +110,7 @@ test("systemHealthTelegramJob alerts once on incident and once on recovery", asy
     const status = job.getStatus();
     assert.equal(status.totalCycles, 3);
     assert.equal(status.totalFailedCycles, 0);
+    assert.equal(status.lastCheckCount, 3);
     assert.equal(status.lastTransitionCount, 1);
     assert.equal(status.lastResolvedCount, 1);
   } finally {

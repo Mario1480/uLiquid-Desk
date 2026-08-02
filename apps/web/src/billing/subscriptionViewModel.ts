@@ -30,16 +30,54 @@ export type BillingPackage = {
   deltaRunningPredictionsComposite: number | null;
 };
 
+export type BillingOrderStatus =
+  | "pending"
+  | "confirming"
+  | "review_required"
+  | "paid"
+  | "failed"
+  | "expired";
+
+export type BillingOnchainPayment = {
+  chainId: number;
+  tokenAddress: string;
+  tokenDecimals: number;
+  recipientAddress?: string | null;
+  treasuryAddress?: string | null;
+  amountRaw: string;
+  amountFormatted: string;
+  expectedSenderAddress?: string | null;
+  confirmationsRequired?: number | null;
+  requiredConfirmations?: number | null;
+  expiresAt: string;
+  txHash?: string | null;
+  blockNumber?: string | number | null;
+  confirmations?: number | null;
+  lastError?: string | null;
+  verifiedAt?: string | null;
+  explorerUrl?: string | null;
+};
+
+export type SubscriptionTermSummary = {
+  id: string;
+  status?: string | null;
+  startsAt: string;
+  endsAt: string;
+  graceEndsAt: string;
+};
+
 export type BillingOrder = {
   id: string;
   merchantOrderId: string;
-  status: "pending" | "paid" | "failed" | "expired";
+  status: BillingOrderStatus;
   amountCents: number;
   currency: string;
-  payUrl: string | null;
   paymentStatusRaw: string | null;
   paidAt: string | null;
   createdAt: string | null;
+  expiresAt?: string | null;
+  explorerUrl?: string | null;
+  onchainPayment?: BillingOnchainPayment | null;
   package: {
     id: string;
     code: string;
@@ -67,8 +105,10 @@ export type BillingOrder = {
 export type SubscriptionPayload = {
   billingEnabled: boolean;
   plan: "free" | "pro";
-  status: "active" | "inactive";
+  status: "active" | "grace" | "inactive";
   proValidUntil: string | null;
+  graceEndsAt?: string | null;
+  scheduledTerm?: SubscriptionTermSummary | null;
   fallbackReason?: string | null;
   capabilities?: Record<string, boolean>;
   featureGates?: ProductFeatureGateMap;
@@ -121,9 +161,11 @@ export type AuthMePayload = {
   user?: {
     id: string;
     email: string;
+    walletAddress?: string | null;
   };
   id?: string;
   email?: string;
+  walletAddress?: string | null;
 };
 
 export type ServerInfoPayload = {
@@ -132,8 +174,10 @@ export type ServerInfoPayload = {
 
 export type LicensePageModel = {
   plan: "free" | "pro";
-  status: "active" | "inactive";
+  status: "active" | "grace" | "inactive";
   proValidUntil: string | null;
+  graceEndsAt: string | null;
+  scheduledTerm: SubscriptionTermSummary | null;
   fallbackReason: string | null;
   account: {
     email: string | null;
@@ -191,7 +235,9 @@ function sortPackages(a: BillingPackage, b: BillingPackage): number {
 
 export function buildOrderPageModel(payload: SubscriptionPayload | null): OrderPageModel {
   const all = Array.isArray(payload?.packages) ? payload?.packages : [];
-  const planPackages = all.filter((pkg) => pkg.kind === "plan").sort(sortPackages);
+  const planPackages = all
+    .filter((pkg) => pkg.kind === "plan" && pkg.plan === "pro")
+    .sort(sortPackages);
   const addonPackages = all
     .filter((pkg) => pkg.kind === "addon")
     .sort(sortPackages);
@@ -215,6 +261,8 @@ export function buildLicensePageModel(
     plan: payload.plan,
     status: payload.status,
     proValidUntil: payload.proValidUntil,
+    graceEndsAt: payload.graceEndsAt ?? null,
+    scheduledTerm: payload.scheduledTerm ?? null,
     fallbackReason:
       typeof payload.fallbackReason === "string" && payload.fallbackReason.trim()
         ? payload.fallbackReason

@@ -51,7 +51,6 @@ type AdminSystemResponse = {
   } | null;
   billing: {
     billingEnabled: boolean;
-    billingWebhookEnabled: boolean;
     updatedAt: string | null;
     source: string;
   } | null;
@@ -214,7 +213,6 @@ export default function AdminSystemPage() {
               <div className="adminKeyValueRow"><span>Server IP</span><strong>{data.serverInfo?.serverIpAddress ?? "—"}</strong></div>
               <div className="adminKeyValueRow"><span>Server Info Updated</span><strong>{formatDateTime(data.serverInfo?.updatedAt)}</strong></div>
               <div className="adminKeyValueRow"><span>Billing Enabled</span><strong>{data.billing?.billingEnabled ? "yes" : "no"}</strong></div>
-              <div className="adminKeyValueRow"><span>Webhook Enabled</span><strong>{data.billing?.billingWebhookEnabled ? "yes" : "no"}</strong></div>
             </div>
             <div className="adminSystemSummaryGrid">
               <div className="adminSystemSummaryTile">

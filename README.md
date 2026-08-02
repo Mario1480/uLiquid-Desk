@@ -389,13 +389,10 @@ Prediction Indicator Pack v1 (backend, deterministic from OHLCV):
   - `VWAP_SESSION_CACHE_TTL_MS` (default `120000`)
   - `VWAP_SESSION_GAP_THRESHOLD` (default `0.03`)
 
-Billing / Subscription (CCPayments):
+Billing / Subscription (native USDC on Arbitrum One):
 - Billing feature flags are managed in Admin Backend (`/admin/billing`)
-- `CCPAY_APP_ID`
-- `CCPAY_APP_SECRET`
-- `CCPAY_BASE_URL`
-- `CCPAY_PRICE_FIAT_ID`
-- `WEB_BASE_URL`
+- `BILLING_ARBITRUM_RPC_URL` (required trusted/self-hosted server-side billing RPC in production)
+- `ARBITRUM_RPC_URL` (server-side fallback)
 - `BILLING_PRO_MONTHLY_PRICE_CENTS`
 - `BILLING_PRO_MONTHLY_AI_TOKENS`
 - `BILLING_AI_TOPUP_PRICE_CENTS`

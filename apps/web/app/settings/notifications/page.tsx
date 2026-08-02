@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
+import type { AppLocale } from "../../../i18n/config";
 import {
   formatTelegramLinkExpiry,
   type TelegramLinkStatus
@@ -12,6 +13,15 @@ import { AppIcon } from "../../components/AppIcon";
 
 type CalendarImpact = "low" | "medium" | "high";
 type CalendarTimezoneMode = "device" | "manual";
+type SubscriptionNotificationChannel = "email" | "telegram" | "both";
+
+type SubscriptionNotificationSettings = {
+  channel: SubscriptionNotificationChannel;
+  locale: AppLocale;
+  source?: "stored" | "default";
+  emailAvailable?: boolean;
+  telegramAvailable?: boolean;
+};
 
 type MobilePushToken = {
   id: string;
@@ -95,6 +105,7 @@ function normalizeCurrencies(raw: unknown): string[] {
 export default function NotificationsPage() {
   const t = useTranslations("settings.notifications");
   const tCommon = useTranslations("settings.common");
+  const currentLocale = useLocale() as AppLocale;
   const [browserTimezone, setBrowserTimezone] = useState("UTC");
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -123,10 +134,21 @@ export default function NotificationsPage() {
   const [mobilePush, setMobilePush] = useState<MobilePushStatus | null>(null);
   const [revokingPushId, setRevokingPushId] = useState<string | null>(null);
   const [confirmPushRevokeId, setConfirmPushRevokeId] = useState<string | null>(null);
+  const [subscriptionChannel, setSubscriptionChannel] = useState<SubscriptionNotificationChannel>("email");
+  const [subscriptionLocale, setSubscriptionLocale] = useState<AppLocale>(currentLocale);
+  const [subscriptionNotificationSource, setSubscriptionNotificationSource] = useState<"stored" | "default">("default");
+  const [subscriptionEmailAvailable, setSubscriptionEmailAvailable] = useState(false);
+  const [subscriptionTelegramAvailable, setSubscriptionTelegramAvailable] = useState(false);
 
   const effectiveDailyTimezone = dailyTimezoneMode === "manual"
     ? (dailyTimezoneInput.trim() || browserTimezone)
     : browserTimezone;
+
+  function subscriptionChannelIsAvailable(channel: SubscriptionNotificationChannel): boolean {
+    if (channel === "email") return subscriptionEmailAvailable;
+    if (channel === "telegram") return subscriptionTelegramAvailable;
+    return subscriptionEmailAvailable && subscriptionTelegramAvailable;
+  }
 
   function errMsg(e: any): string {
     if (e instanceof ApiError) {
@@ -152,7 +174,7 @@ export default function NotificationsPage() {
 
   async function loadConfig() {
     try {
-      const [data, pushStatus] = await Promise.all([
+      const [data, pushStatus, subscriptionNotifications] = await Promise.all([
         apiGet<{
         telegramChatId?: string | null;
         telegramBotConfigured?: boolean;
@@ -168,7 +190,10 @@ export default function NotificationsPage() {
             timezone?: string;
           };
         }>("/settings/alerts"),
-        apiGet<MobilePushStatus>("/settings/mobile-push").catch(() => null)
+        apiGet<MobilePushStatus>("/settings/mobile-push").catch(() => null),
+        apiGet<SubscriptionNotificationSettings>(
+          `/settings/subscription/notifications?locale=${encodeURIComponent(currentLocale)}`
+        ).catch(() => undefined)
       ]);
       const resolvedBrowserTimezone = resolveBrowserTimezone();
       setChatId(data.telegramChatId ?? "");
@@ -201,6 +226,44 @@ export default function NotificationsPage() {
       setDailyTimezoneInput(loadedTimezone || resolvedBrowserTimezone);
       setBrowserTimezone(resolvedBrowserTimezone);
       setMobilePush(pushStatus);
+      const loadedChannel = subscriptionNotifications?.channel;
+      const resolvedChannel: SubscriptionNotificationChannel =
+        loadedChannel === "email" || loadedChannel === "telegram" || loadedChannel === "both"
+          ? loadedChannel
+          : data.telegramLink?.status === "connected"
+            ? "telegram"
+            : "email";
+      setSubscriptionChannel(resolvedChannel);
+      setSubscriptionLocale(
+        subscriptionNotifications?.source === "stored"
+          ? subscriptionNotifications.locale
+          : currentLocale
+      );
+      setSubscriptionNotificationSource(subscriptionNotifications?.source === "stored" ? "stored" : "default");
+      const emailAvailable = Boolean(subscriptionNotifications?.emailAvailable);
+      const telegramAvailable = Boolean(
+        subscriptionNotifications?.telegramAvailable
+        ?? (data.telegramLink?.status === "connected")
+      );
+      setSubscriptionEmailAvailable(emailAvailable);
+      setSubscriptionTelegramAvailable(telegramAvailable);
+
+      if (
+        subscriptionNotifications
+        && subscriptionNotifications.source !== "stored"
+        && (resolvedChannel === "email"
+          ? emailAvailable
+          : resolvedChannel === "telegram"
+            ? telegramAvailable
+            : emailAvailable && telegramAvailable)
+      ) {
+        void apiPut<SubscriptionNotificationSettings>("/settings/subscription/notifications", {
+          channel: resolvedChannel,
+          locale: currentLocale
+        }).then(() => setSubscriptionNotificationSource("stored")).catch(() => {
+          // Keep the resolved default in the UI when background preference sync fails.
+        });
+      }
 
       if (loadedTimezoneMode === "device" && loadedTimezone !== resolvedBrowserTimezone) {
         void apiPut("/settings/alerts", {
@@ -239,6 +302,18 @@ export default function NotificationsPage() {
           timezone
         }
       });
+      if (subscriptionChannelIsAvailable(subscriptionChannel)) {
+        const savedSubscriptionNotifications = await apiPut<SubscriptionNotificationSettings>(
+          "/settings/subscription/notifications",
+          {
+            channel: subscriptionChannel,
+            locale: subscriptionLocale
+          }
+        );
+        setSubscriptionNotificationSource("stored");
+        setSubscriptionEmailAvailable(Boolean(savedSubscriptionNotifications.emailAvailable));
+        setSubscriptionTelegramAvailable(Boolean(savedSubscriptionNotifications.telegramAvailable));
+      }
       setDailySendTimeLocal(sendTimeLocal);
       setBrowserTimezone(resolvedBrowserTimezone);
       setDailyTimezoneInput(timezone || resolvedBrowserTimezone);
@@ -273,6 +348,7 @@ export default function NotificationsPage() {
       const wasConnected = linkStatus.status === "connected";
       setLinkStatus(payload);
       setBotUsername(payload.botUsername ?? botUsername);
+      setSubscriptionTelegramAvailable(payload.status === "connected");
       if (!wasConnected && payload.status === "connected") {
         setMsg(t("messages.linked"));
       }
@@ -290,6 +366,7 @@ export default function NotificationsPage() {
       const payload = await apiDelete<TelegramLinkStatus>("/settings/alerts/telegram/link");
       setLinkStatus(payload);
       setChatId("");
+      setSubscriptionTelegramAvailable(false);
       setMsg(t("messages.disconnected"));
     } catch (e) {
       setMsg(errMsg(e));
@@ -420,6 +497,59 @@ export default function NotificationsPage() {
             })}
           </div>
         ) : null}
+        <div className="subscriptionReminderSettings">
+          <div className="settingsSectionHeader">
+            <div>
+              <div className="settingsInlineTitle">{t("subscriptionReminders.title")}</div>
+              <div className="settingsMutedText">{t("subscriptionReminders.description")}</div>
+            </div>
+            <span className="uiStatusBadge uiStatusBadge-info">
+              <AppIcon name="alerts" />
+              {t(`subscriptionReminders.source.${subscriptionNotificationSource}`)}
+            </span>
+          </div>
+          <div className="subscriptionReminderChoiceGrid">
+            {(["email", "telegram", "both"] as SubscriptionNotificationChannel[]).map((channel) => {
+              const unavailable = channel === "email"
+                ? !subscriptionEmailAvailable
+                : channel === "telegram"
+                  ? !subscriptionTelegramAvailable
+                  : !subscriptionEmailAvailable || !subscriptionTelegramAvailable;
+              return (
+                <label className="subscriptionReminderChoice" key={channel} aria-disabled={unavailable}>
+                  <input
+                    type="radio"
+                    name="subscription-notification-channel"
+                    checked={subscriptionChannel === channel}
+                    disabled={unavailable}
+                    onChange={() => setSubscriptionChannel(channel)}
+                  />
+                  <span>
+                    <strong>{t(`subscriptionReminders.channel.${channel}.label`)}</strong>
+                    <small>{t(`subscriptionReminders.channel.${channel}.hint`)}</small>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <label className="adminFormField">
+            <span className="adminFormFieldLabel">{t("subscriptionReminders.language")}</span>
+            <select
+              className="input"
+              value={subscriptionLocale}
+              onChange={(event) => setSubscriptionLocale(event.target.value === "en" ? "en" : "de")}
+            >
+              <option value="de">{t("subscriptionReminders.languages.de")}</option>
+              <option value="en">{t("subscriptionReminders.languages.en")}</option>
+            </select>
+          </label>
+          {subscriptionChannel !== "email" && linkStatus.status !== "connected" ? (
+            <div className="uiNotice uiNotice-warning">{t("subscriptionReminders.telegramFallback")}</div>
+          ) : null}
+          {!subscriptionEmailAvailable || !subscriptionTelegramAvailable ? (
+            <div className="uiNotice uiNotice-info">{t("subscriptionReminders.unavailableHint")}</div>
+          ) : null}
+        </div>
         <div style={{ display: "grid", gap: 10, marginBottom: 10 }}>
           {manualFallbackEnabled ? (
             <label style={{ display: "grid", gap: 6 }}>

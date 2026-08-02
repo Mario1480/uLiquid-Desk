@@ -2092,7 +2092,6 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       billing: billingFlags
         ? {
             billingEnabled: Boolean(billingFlags.flags?.billingEnabled),
-            billingWebhookEnabled: Boolean(billingFlags.flags?.billingWebhookEnabled),
             updatedAt: billingFlags.updatedAt ?? null,
             source: billingFlags.source ?? "none"
           }

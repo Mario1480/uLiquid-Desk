@@ -9,11 +9,6 @@ export type RegisterSystemRoutesDeps = {
   getRuntimeOrchestrationMode(): string;
   isBillingEnabled(): Promise<boolean>;
   isLicenseEnforcementEnabled(): boolean;
-  isBillingWebhookEnabled(): Promise<boolean>;
-  verifyCcpayWebhook(rawBody: string, headers: Record<string, string | string[] | undefined>): Promise<boolean>;
-  recordWebhookEvent(input: { recordId: string; merchantOrderId: string; payload: unknown }): Promise<"created" | "duplicate">;
-  applyPaidOrder(orderId: string, status: string): Promise<void>;
-  markOrderFailed(orderId: string, status: string): Promise<void>;
   getQueueMetrics(): Promise<any>;
   resolvePlanCapabilitiesForUserId(input: { userId: string }): Promise<{ plan: string; capabilities: Record<string, boolean> }>;
   listPluginCatalogForCapabilities(plan: string, capabilities: Record<string, boolean>): any;
@@ -78,70 +73,6 @@ export function registerSystemRoutes(
       enforcement: deps.isLicenseEnforcementEnabled() ? "on" : "off",
       billingEnabled: billingEnabled ? "on" : "off"
     });
-  });
-
-  app.post("/webhooks/ccpayment", async (req, res) => {
-    const ack = () => res.status(200).json({ msg: "Success" });
-
-    if (!(await deps.isBillingWebhookEnabled())) {
-      return res.status(404).json({ error: "billing_webhook_disabled" });
-    }
-
-    const rawBody = typeof (req as any).rawBody === "string"
-      ? (req as any).rawBody
-      : JSON.stringify(req.body ?? {});
-    if (!(await deps.verifyCcpayWebhook(rawBody, req.headers as Record<string, string | string[] | undefined>))) {
-      return res.status(401).json({ error: "invalid_signature" });
-    }
-
-    const payload = (req.body ?? {}) as {
-      type?: string;
-      record_id?: string;
-      pay_status?: string;
-      extend?: { merchant_order_id?: string };
-      msg?: {
-        recordId?: string;
-        orderId?: string;
-        status?: string;
-      };
-    };
-
-    if (payload.type === "ActivateWebhookURL") {
-      return ack();
-    }
-
-    const recordId = String(payload.msg?.recordId ?? payload.record_id ?? "").trim();
-    const merchantOrderId = String(payload.msg?.orderId ?? payload.extend?.merchant_order_id ?? "").trim();
-    const statusRaw = String(payload.pay_status ?? payload.msg?.status ?? "").trim();
-
-    if (!recordId) {
-      return ack();
-    }
-
-    const created = await deps.recordWebhookEvent({
-      recordId,
-      merchantOrderId,
-      payload
-    });
-    if (created === "duplicate") {
-      return ack();
-    }
-
-    if (!merchantOrderId) {
-      return ack();
-    }
-
-    const normalized = statusRaw.toLowerCase();
-    if (normalized === "processing") {
-      return ack();
-    }
-    if (normalized === "success") {
-      await deps.applyPaidOrder(merchantOrderId, statusRaw || "Success");
-      return ack();
-    }
-
-    await deps.markOrderFailed(merchantOrderId, normalized || "failed");
-    return ack();
   });
 
   app.get("/admin/queue/metrics", requireAuth, async (_req, res) => {

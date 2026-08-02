@@ -70,21 +70,6 @@ function createAiHealthDeps(overrides: {
     resolveOllamaProfileAiApiKey: () => ({ apiKey: null, source: "none", decryptError: false }),
     resolveAiProfileApiKey: () => ({ apiKey: "vllm-key", source: "db", decryptError: false }),
     resolveEffectiveFmpApiKey: () => ({ apiKey: null, source: "none", decryptError: false }),
-    resolveCcpayConfig: async () => ({
-      appId: null,
-      appSecret: null,
-      baseUrl: "https://ccpayment.com",
-      priceFiatId: "1033",
-      webBaseUrl: "http://localhost:3000",
-      appIdSource: "none",
-      appSecretSource: "none",
-      baseUrlSource: "default",
-      priceFiatIdSource: "default",
-      webBaseUrlSource: "default",
-      source: "default",
-      decryptError: false,
-      isConfigured: false
-    }),
     fetchFmpEconomicEvents: async () => [],
     getSaladRuntimeStatus: async () => ({ ok: true }),
     resolveSaladRuntimeConfig: () => ({

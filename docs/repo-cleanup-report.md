@@ -20,7 +20,6 @@ The following duplicate source files were removed after comparing them with the 
 - `apps/web/app/admin/page 2.tsx`
 - `apps/web/app/components/AppHeader 2.tsx`
 - `apps/web/lib/web3/config 2.ts`
-- `apps/api/src/billing/ccpayment 2.ts`
 
 ### Tracked generated artifacts
 
@@ -39,7 +38,6 @@ Canonical files retained:
 - `apps/web/app/admin/page.tsx`
 - `apps/web/app/components/AppHeader.tsx`
 - `apps/web/lib/web3/config.ts`
-- `apps/api/src/billing/ccpayment.ts`
 
 ## Branding normalization
 
@@ -63,9 +61,6 @@ These items were intentionally not auto-merged and should be reviewed manually i
   - duplicate appears to be an older/simpler header variant with different branding and fewer current features
 - `apps/web/lib/web3/config 2.ts`
   - duplicate uses older WalletConnect metadata (`uTrade Panel`) and different connector behavior
-- `apps/api/src/billing/ccpayment 2.ts`
-  - duplicate is a simplified env-only CCPay integration; canonical file includes DB-backed secret resolution and caching
-
 Additional legacy naming that remains on purpose:
 
 - `scripts/backup_db.sh` still defaults to `/opt/market-maker/backups`

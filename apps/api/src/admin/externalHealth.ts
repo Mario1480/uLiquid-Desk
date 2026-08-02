@@ -1,6 +1,6 @@
 type ExternalHealthState = "healthy" | "unhealthy" | "skipped";
 
-export type ExternalHealthCheckId = "ai" | "saladRuntime" | "fmp" | "ccpay";
+export type ExternalHealthCheckId = "ai" | "saladRuntime" | "fmp";
 
 export type ExternalHealthCheckResult = {
   id: ExternalHealthCheckId;
@@ -25,28 +25,6 @@ export type AiHealthCheckResponse = {
   provider: string;
   baseUrl: string;
   httpStatus?: number;
-};
-
-export type CcpayHealthCheckResponse = {
-  ok: boolean;
-  status: "ok" | "missing_config" | "error";
-  state: ExternalHealthState;
-  source: string;
-  checkedAt: string;
-  message: string;
-  hasAppId: boolean;
-  hasAppSecret: boolean;
-  baseUrl: string;
-  priceFiatId: string;
-  webBaseUrl: string;
-  sources: {
-    appId: string;
-    appSecret: string;
-    baseUrl: string;
-    priceFiatId: string;
-    webBaseUrl: string;
-  };
-  missingFields: string[];
 };
 
 export type FmpHealthCheckResponse = {
@@ -79,7 +57,6 @@ export type ExternalHealthSnapshot = {
   ai: AiHealthCheckResponse;
   saladRuntime: SaladRuntimeHealthCheckResponse;
   fmp: FmpHealthCheckResponse;
-  ccpay: CcpayHealthCheckResponse;
 };
 
 export type ExternalHealthServiceDeps = {
@@ -93,21 +70,6 @@ export type ExternalHealthServiceDeps = {
   resolveOllamaProfileAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveAiProfileApiKey(settings: any, provider?: string | null): { apiKey: string | null; source: string; decryptError: boolean };
   resolveEffectiveFmpApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
-  resolveCcpayConfig(): Promise<{
-    appId: string | null;
-    appSecret: string | null;
-    baseUrl: string;
-    priceFiatId: string;
-    webBaseUrl: string;
-    appIdSource: string;
-    appSecretSource: string;
-    baseUrlSource: string;
-    priceFiatIdSource: string;
-    webBaseUrlSource: string;
-    source: string;
-    decryptError: boolean;
-    isConfigured: boolean;
-  }>;
   fetchFmpEconomicEvents(params: {
     apiKey: string;
     baseUrl?: string;
@@ -405,81 +367,6 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
     }
   }
 
-  async function checkCcpay(): Promise<CcpayHealthCheckResponse> {
-    const checkedAt = new Date().toISOString();
-    const resolved = await deps.resolveCcpayConfig();
-    const missingFields: string[] = [];
-    if (!resolved.appId) missingFields.push("app_id");
-    if (!resolved.appSecret) missingFields.push("app_secret");
-    if (resolved.decryptError) {
-      return {
-        ok: false,
-        status: "error",
-        state: "skipped",
-        source: resolved.source,
-        checkedAt,
-        message: "Stored CCPay credentials could not be decrypted.",
-        hasAppId: Boolean(resolved.appId),
-        hasAppSecret: Boolean(resolved.appSecret),
-        baseUrl: resolved.baseUrl,
-        priceFiatId: resolved.priceFiatId,
-        webBaseUrl: resolved.webBaseUrl,
-        sources: {
-          appId: resolved.appIdSource,
-          appSecret: resolved.appSecretSource,
-          baseUrl: resolved.baseUrlSource,
-          priceFiatId: resolved.priceFiatIdSource,
-          webBaseUrl: resolved.webBaseUrlSource
-        },
-        missingFields
-      };
-    }
-    if (!resolved.isConfigured) {
-      return {
-        ok: false,
-        status: "missing_config",
-        state: "skipped",
-        source: resolved.source,
-        checkedAt,
-        message: "CCPayments configuration is incomplete.",
-        hasAppId: Boolean(resolved.appId),
-        hasAppSecret: Boolean(resolved.appSecret),
-        baseUrl: resolved.baseUrl,
-        priceFiatId: resolved.priceFiatId,
-        webBaseUrl: resolved.webBaseUrl,
-        sources: {
-          appId: resolved.appIdSource,
-          appSecret: resolved.appSecretSource,
-          baseUrl: resolved.baseUrlSource,
-          priceFiatId: resolved.priceFiatIdSource,
-          webBaseUrl: resolved.webBaseUrlSource
-        },
-        missingFields
-      };
-    }
-    return {
-      ok: true,
-      status: "ok",
-      state: "healthy",
-      source: resolved.source,
-      checkedAt,
-      message: "CCPayments configuration is ready.",
-      hasAppId: true,
-      hasAppSecret: true,
-      baseUrl: resolved.baseUrl,
-      priceFiatId: resolved.priceFiatId,
-      webBaseUrl: resolved.webBaseUrl,
-      sources: {
-        appId: resolved.appIdSource,
-        appSecret: resolved.appSecretSource,
-        baseUrl: resolved.baseUrlSource,
-        priceFiatId: resolved.priceFiatIdSource,
-        webBaseUrl: resolved.webBaseUrlSource
-      },
-      missingFields
-    };
-  }
-
   async function checkFmp(): Promise<FmpHealthCheckResponse> {
     const settings = await loadApiKeySettings(deps);
     const resolved = deps.resolveEffectiveFmpApiKey(settings);
@@ -610,18 +497,16 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
   }
 
   async function checkAll(): Promise<ExternalHealthSnapshot> {
-    const [ai, saladRuntime, fmp, ccpay] = await Promise.all([
+    const [ai, saladRuntime, fmp] = await Promise.all([
       checkAi(),
       checkSaladRuntime(),
-      checkFmp(),
-      checkCcpay()
+      checkFmp()
     ]);
-    return { ai, saladRuntime, fmp, ccpay };
+    return { ai, saladRuntime, fmp };
   }
 
   return {
     checkAi,
-    checkCcpay,
     checkFmp,
     checkSaladRuntime,
     checkAll

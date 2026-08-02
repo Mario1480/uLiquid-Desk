@@ -27,17 +27,7 @@ const adminApiKeysSchema = z.object({
   saladProject: z.string().trim().min(1).max(191).optional(),
   clearSaladProject: z.boolean().default(false),
   saladContainer: z.string().trim().min(1).max(191).optional(),
-  clearSaladContainer: z.boolean().default(false),
-  ccpayAppId: z.string().trim().min(1).max(191).optional(),
-  clearCcpayAppId: z.boolean().default(false),
-  ccpayAppSecret: z.string().trim().min(1).max(500).optional(),
-  clearCcpayAppSecret: z.boolean().default(false),
-  ccpayBaseUrl: z.string().trim().min(8).max(500).optional(),
-  clearCcpayBaseUrl: z.boolean().default(false),
-  ccpayPriceFiatId: z.string().trim().regex(/^\d+$/).max(64).optional(),
-  clearCcpayPriceFiatId: z.boolean().default(false),
-  ccpayWebBaseUrl: z.string().trim().min(8).max(500).optional(),
-  clearCcpayWebBaseUrl: z.boolean().default(false)
+  clearSaladContainer: z.boolean().default(false)
 }).refine(
   (value) =>
     value.clearOpenaiApiKey ||
@@ -60,19 +50,9 @@ const adminApiKeysSchema = z.object({
     Boolean(value.saladProject) ||
     value.clearSaladContainer ||
     Boolean(value.saladContainer) ||
-    value.clearCcpayAppId ||
-    Boolean(value.ccpayAppId) ||
-    value.clearCcpayAppSecret ||
-    Boolean(value.ccpayAppSecret) ||
-    value.clearCcpayBaseUrl ||
-    Boolean(value.ccpayBaseUrl) ||
-    value.clearCcpayPriceFiatId ||
-    Boolean(value.ccpayPriceFiatId) ||
-    value.clearCcpayWebBaseUrl ||
-    Boolean(value.ccpayWebBaseUrl) ||
     Boolean(value.aiProvider),
   {
-    message: "Provide AI/FMP/CCPay fields or set a clear flag."
+    message: "Provide AI/FMP fields or set a clear flag."
   }
 );
 
@@ -102,7 +82,6 @@ export type RegisterAdminApiKeyRoutesDeps = {
   requireSuperadmin(res: express.Response): Promise<boolean>;
   externalHealthService: {
     checkAi(): Promise<any>;
-    checkCcpay(): Promise<any>;
     checkFmp(): Promise<any>;
     checkSaladRuntime(): Promise<any>;
   };
@@ -121,8 +100,6 @@ export type RegisterAdminApiKeyRoutesDeps = {
   normalizeProviderForProfile(provider: unknown): "openai" | "ollama" | "vllm";
   emptySaladRuntimeSettings(): any;
   encryptSecret(value: string): string;
-  resolveCcpayConfig(): Promise<any>;
-  invalidateCcpayConfigCache(): void;
   invalidateAiApiKeyCache(): void;
   invalidateAiModelCache(): void;
   fetchFmpEconomicEvents(params: { apiKey: string; baseUrl?: string; from: string; to: string; signal: AbortSignal }): Promise<any>;
@@ -144,13 +121,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     const settings = deps.parseStoredApiKeysSettings(row?.value);
     const envConfigured = Boolean(process.env.AI_API_KEY?.trim());
     const fmpEnvConfigured = Boolean(process.env.FMP_API_KEY?.trim());
-    const ccpayEnvConfigured = Boolean(
-      process.env.CCPAY_APP_ID?.trim()
-      || process.env.CCPAY_APP_SECRET?.trim()
-      || process.env.CCPAY_BASE_URL?.trim()
-      || process.env.CCPAY_PRICE_FIAT_ID?.trim()
-      || process.env.WEB_BASE_URL?.trim()
-    );
     const effectiveProvider = deps.resolveEffectiveAiProvider(settings);
     const effectiveBaseUrl = deps.resolveEffectiveAiBaseUrl(settings);
     const effectiveModel = deps.resolveEffectiveAiModel(settings);
@@ -160,7 +130,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       updatedAt: row?.updatedAt ?? null,
       envOverride: envConfigured,
       envOverrideFmp: fmpEnvConfigured,
-      envOverrideCcpay: ccpayEnvConfigured,
       effectiveAiProvider: effectiveProvider.provider,
       effectiveAiProviderSource: effectiveProvider.source,
       effectiveAiBaseUrl: effectiveBaseUrl.baseUrl,
@@ -177,11 +146,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
   app.get("/admin/settings/api-keys/status", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     return res.json(await deps.externalHealthService.checkAi());
-  });
-
-  app.get("/admin/settings/api-keys/ccpay-status", requireAuth, async (_req, res) => {
-    if (!(await deps.requireSuperadmin(res))) return;
-    return res.json(await deps.externalHealthService.checkCcpay());
   });
 
   app.get("/admin/settings/api-keys/salad-runtime/status", requireAuth, async (_req, res) => {
@@ -296,15 +260,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       if (saladContainerSpecified) nextSaladRuntime.container = parsed.data.clearSaladContainer ? null : (parsed.data.saladContainer?.trim() || null);
       nextProfiles[currentSaladProviderForProfile].saladRuntime = nextSaladRuntime;
     }
-    const ccpaySpecified = parsed.data.clearCcpayAppId || Boolean(parsed.data.ccpayAppId) || parsed.data.clearCcpayAppSecret || Boolean(parsed.data.ccpayAppSecret) || parsed.data.clearCcpayBaseUrl || parsed.data.ccpayBaseUrl !== undefined || parsed.data.clearCcpayPriceFiatId || parsed.data.ccpayPriceFiatId !== undefined || parsed.data.clearCcpayWebBaseUrl || parsed.data.ccpayWebBaseUrl !== undefined;
-    const currentCcpay = existing.ccpay ?? { appIdEnc: null, appSecretEnc: null, baseUrl: null, priceFiatId: null, webBaseUrl: null };
-    const nextCcpay = { ...currentCcpay };
-    if (parsed.data.clearCcpayAppId || parsed.data.ccpayAppId !== undefined) nextCcpay.appIdEnc = parsed.data.clearCcpayAppId ? null : (parsed.data.ccpayAppId ? deps.encryptSecret(parsed.data.ccpayAppId) : null);
-    if (parsed.data.clearCcpayAppSecret || parsed.data.ccpayAppSecret !== undefined) nextCcpay.appSecretEnc = parsed.data.clearCcpayAppSecret ? null : (parsed.data.ccpayAppSecret ? deps.encryptSecret(parsed.data.ccpayAppSecret) : null);
-    if (parsed.data.clearCcpayBaseUrl || parsed.data.ccpayBaseUrl !== undefined) nextCcpay.baseUrl = parsed.data.clearCcpayBaseUrl ? null : (parsed.data.ccpayBaseUrl?.trim() || null);
-    if (parsed.data.clearCcpayPriceFiatId || parsed.data.ccpayPriceFiatId !== undefined) nextCcpay.priceFiatId = parsed.data.clearCcpayPriceFiatId ? null : (parsed.data.ccpayPriceFiatId?.trim() || null);
-    if (parsed.data.clearCcpayWebBaseUrl || parsed.data.ccpayWebBaseUrl !== undefined) nextCcpay.webBaseUrl = parsed.data.clearCcpayWebBaseUrl ? null : (parsed.data.ccpayWebBaseUrl?.trim() || null);
-
     const nextProvider = parsed.data.aiProvider ?? existing.aiProvider;
     const activeProviderForTopLevel = deps.normalizeProviderForProfile(nextProvider);
     const nextValue = {
@@ -314,8 +269,7 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       openaiModel: parsed.data.clearOpenaiModel ? null : (parsed.data.openaiModel?.trim() || nextProfiles.openai.aiModel || null),
       aiBaseUrl: nextProfiles[activeProviderForTopLevel].aiBaseUrl ?? null,
       aiModel: nextProfiles[activeProviderForTopLevel].aiModel ?? null,
-      aiProfiles: nextProfiles,
-      ccpay: ccpaySpecified ? nextCcpay : existing.ccpay
+      aiProfiles: nextProfiles
     };
 
     const updated = await deps.setGlobalSettingValue(deps.GLOBAL_SETTING_API_KEYS_KEY, nextValue);
@@ -325,14 +279,12 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     const effectiveModel = deps.resolveEffectiveAiModel(settings);
     deps.invalidateAiApiKeyCache();
     deps.invalidateAiModelCache();
-    deps.invalidateCcpayConfigCache();
 
     return res.json({
       ...deps.toPublicApiKeysSettings(settings),
       updatedAt: updated.updatedAt,
       envOverride: Boolean(process.env.AI_API_KEY?.trim()),
       envOverrideFmp: Boolean(process.env.FMP_API_KEY?.trim()),
-      envOverrideCcpay: Boolean(process.env.CCPAY_APP_ID?.trim() || process.env.CCPAY_APP_SECRET?.trim() || process.env.CCPAY_BASE_URL?.trim() || process.env.CCPAY_PRICE_FIAT_ID?.trim() || process.env.WEB_BASE_URL?.trim()),
       effectiveAiProvider: effectiveProvider.provider,
       effectiveAiProviderSource: effectiveProvider.source,
       effectiveAiBaseUrl: effectiveBaseUrl.baseUrl,

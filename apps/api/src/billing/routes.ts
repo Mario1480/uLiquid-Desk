@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type NextFunction } from "express";
 import { z } from "zod";
 import {
   getDefaultPlanCapabilities,
@@ -24,11 +24,49 @@ const billingPackageIdParamSchema = z.object({
   id: z.string().trim().min(1)
 });
 
-const integerStringSchema = z.string().trim().regex(/^-?\d+$/);
-const integerStringOrNumberSchema = z.union([
-  integerStringSchema,
-  z.number().int()
-]).transform((value) => (typeof value === "number" ? String(value) : value));
+const billingOrderIdParamSchema = z.object({
+  id: z.string().trim().min(1).max(191)
+});
+
+const billingTransactionSubmitSchema = z.object({
+  txHash: z.string().trim().regex(/^0x[a-fA-F0-9]{64}$/)
+});
+
+const subscriptionNotificationPreferenceSchema = z.object({
+  channel: z.enum(["email", "telegram", "both"]),
+  locale: z.enum(["de", "en"])
+});
+
+const adminBillingPaymentConfigurationSchema = z.object({
+  treasuryAddress: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/),
+  confirmTreasuryAddress: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/)
+}).superRefine((value, ctx) => {
+  if (value.treasuryAddress !== value.confirmTreasuryAddress) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["confirmTreasuryAddress"],
+      message: "Treasury addresses must match exactly"
+    });
+  }
+});
+
+const BILLING_DB_BIGINT_MIN = -(2n ** 63n);
+const BILLING_DB_BIGINT_MAX = (2n ** 63n) - 1n;
+const canonicalIntegerStringSchema = z.string().trim().regex(/^(?:0|[1-9]\d*|-[1-9]\d*)$/);
+const safeIntegerNumberSchema = z.number().int().refine(Number.isSafeInteger, {
+  message: "Integer number must be within JavaScript's safe range; use a decimal string otherwise"
+});
+const dbBigIntStringOrNumberSchema = z.union([
+  canonicalIntegerStringSchema,
+  safeIntegerNumberSchema
+]).transform((value) => (typeof value === "number" ? String(value) : value)).refine((value) => {
+  const parsed = BigInt(value);
+  return parsed >= BILLING_DB_BIGINT_MIN && parsed <= BILLING_DB_BIGINT_MAX;
+}, { message: "Integer is outside the signed 64-bit database range" });
+const nonNegativeDbBigIntSchema = dbBigIntStringOrNumberSchema.refine(
+  (value) => BigInt(value) >= 0n,
+  { message: "Integer must be non-negative" }
+);
 
 const billingAddonTypeSchema = z.enum([
   "running_bots",
@@ -52,8 +90,8 @@ export const adminBillingPackageSchema = z.object({
   maxRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
   maxRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
   allowedExchanges: z.array(z.string().trim().min(1).max(32)).max(32).optional(),
-  monthlyAiTokens: integerStringOrNumberSchema.optional(),
-  aiCredits: integerStringOrNumberSchema.optional(),
+  monthlyAiTokens: nonNegativeDbBigIntSchema.optional(),
+  aiCredits: nonNegativeDbBigIntSchema.optional(),
   deltaRunningBots: z.number().int().min(0).max(100_000).nullable().optional(),
   deltaRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
   deltaRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
@@ -68,16 +106,33 @@ export const adminBillingPackageSchema = z.object({
   if (value.kind === "plan" && !value.plan) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["plan"], message: "plan is required for plans" });
   }
+  const active = value.isActive !== false;
+  if (active && value.priceCents < 1 && !(value.kind === "plan" && value.plan === "free")) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["priceCents"], message: "active purchasable packages require a positive price" });
+  }
+  if (active && value.kind === "addon") {
+    const entitlement = value.addonType === "ai_credits"
+      ? value.aiCredits === undefined ? null : BigInt(value.aiCredits)
+      : value.addonType === "running_bots"
+        ? value.deltaRunningBots
+        : value.addonType === "running_predictions_ai"
+          ? value.deltaRunningPredictionsAi
+          : value.addonType === "running_predictions_composite"
+            ? value.deltaRunningPredictionsComposite
+            : null;
+    if (entitlement !== null && entitlement !== undefined && entitlement <= 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["addonType"], message: "active add-ons require a positive entitlement" });
+    }
+  }
 });
 
 export const adminBillingAdjustTokensSchema = z.object({
-  deltaTokens: integerStringOrNumberSchema,
+  deltaTokens: dbBigIntStringOrNumberSchema,
   note: z.string().trim().min(1).max(500)
 });
 
 const adminBillingFeatureFlagsSchema = z.object({
   billingEnabled: z.boolean().optional(),
-  billingWebhookEnabled: z.boolean().optional(),
   aiTokenBillingEnabled: z.boolean().optional()
 });
 
@@ -114,17 +169,80 @@ function mapBillingAddonTypeToResponse(pkg: any): "running_bots" | "running_pred
   return null;
 }
 
-function mapSubscriptionOrderForResponse(order: any) {
+function formatRawTokenAmount(value: unknown, decimals: number): string | null {
+  try {
+    const amount = BigInt(String(value));
+    const precision = Math.max(0, Math.min(36, Math.trunc(decimals)));
+    if (precision === 0) return amount.toString();
+    const padded = amount.toString().padStart(precision + 1, "0");
+    const whole = padded.slice(0, -precision) || "0";
+    const fraction = padded.slice(-precision).replace(/0+$/, "");
+    return fraction ? `${whole}.${fraction}` : whole;
+  } catch {
+    return null;
+  }
+}
+
+function toIsoDateString(value: unknown): string | null {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value !== "string" || !value.trim()) return null;
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
+function mapSubscriptionOrderForResponse(input: any) {
+  const order = input?.order ?? input;
+  const payment = order?.onchainPayment || input?.payment
+    ? { ...(order?.onchainPayment ?? {}), ...(input?.payment ?? {}) }
+    : null;
+  const term = order.subscriptionTerm ?? null;
+  const txHash = typeof payment?.txHash === "string" ? payment.txHash : null;
+  const recipientAddress = payment?.treasuryAddress ?? payment?.recipientAddress ?? null;
+  const amountRaw = payment?.expectedAmountRaw ?? payment?.amountRaw;
+  const tokenDecimals = Number(payment?.tokenDecimals ?? 6);
   return {
     id: order.id,
     merchantOrderId: order.merchantOrderId,
     status: String(order.status ?? "PENDING").toLowerCase(),
     amountCents: Number(order.amountCents ?? 0),
     currency: "USD",
-    payUrl: order.payUrl ?? null,
     paymentStatusRaw: order.paymentStatusRaw ?? null,
-    paidAt: order.paidAt instanceof Date ? order.paidAt.toISOString() : null,
-    createdAt: order.createdAt instanceof Date ? order.createdAt.toISOString() : null,
+    paidAt: toIsoDateString(order.paidAt),
+    expiresAt: toIsoDateString(order.expiresAt),
+    createdAt: toIsoDateString(order.createdAt),
+    explorerUrl: payment?.explorerUrl ?? (txHash ? `https://arbiscan.io/tx/${txHash}` : null),
+    onchainPayment: payment ? {
+      chainId: Number(payment.chainId),
+      tokenAddress: payment.tokenAddress,
+      tokenDecimals,
+      expectedSenderAddress: payment.expectedSenderAddress,
+      recipientAddress,
+      treasuryAddress: recipientAddress,
+      treasuryConfigRevision: Number(payment.treasuryConfigRevision ?? 0),
+      amountRaw: String(amountRaw),
+      amountFormatted: payment.amountFormatted ?? formatRawTokenAmount(amountRaw, tokenDecimals),
+      txHash,
+      blockNumber: payment.blockNumber === null || payment.blockNumber === undefined
+        ? null
+        : String(payment.blockNumber),
+      blockHash: payment.blockHash ?? null,
+      confirmations: Number(payment.confirmations ?? 0),
+      confirmationsRequired: Number(payment.confirmationsRequired ?? 12),
+      requiredConfirmations: Number(payment.confirmationsRequired ?? 12),
+      expiresAt: payment.expiresAt ?? (
+        order.expiresAt instanceof Date ? order.expiresAt.toISOString() : order.expiresAt ?? null
+      ),
+      explorerUrl: payment.explorerUrl ?? (txHash ? `https://arbiscan.io/tx/${txHash}` : null),
+      lastCheckedAt: toIsoDateString(payment.lastCheckedAt),
+      lastError: payment.lastError ?? null,
+      verifiedAt: toIsoDateString(payment.verifiedAt)
+    } : null,
+    subscriptionTerm: term ? {
+      id: term.id,
+      status: String(term.status ?? "SCHEDULED").toLowerCase(),
+      startsAt: toIsoDateString(term.startsAt),
+      endsAt: toIsoDateString(term.endsAt),
+      graceEndsAt: toIsoDateString(term.graceEndsAt)
+    } : null,
     package: order.pkg ? {
       id: order.pkg.id,
       code: order.pkg.code,
@@ -215,6 +333,8 @@ function buildBillingDisabledResponse() {
 export type RegisterBillingRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
+  requirePlatformSuperadmin(res: express.Response): Promise<boolean>;
+  consumeRecentReauth: express.RequestHandler;
   getBillingFeatureFlagsSettings(): Promise<any>;
   updateBillingFeatureFlags(payload: Record<string, unknown>): Promise<any>;
   listBillingPackages(): Promise<any[]>;
@@ -224,13 +344,155 @@ export type RegisterBillingRoutesDeps = {
   resolvePlanCapabilitiesForUserId(input: {
     userId: string;
   }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
-  adjustAiTokenBalanceByAdmin(params: { userId: string; deltaTokens: number; note: string; actorUserId: string }): Promise<{ balance: bigint }>;
+  adjustAiTokenBalanceByAdmin(params: { userId: string; deltaTokens: string; note: string; actorUserId: string }): Promise<{ balance: bigint }>;
   isBillingEnabled(): Promise<boolean>;
   listSubscriptionOrders(userId: string): Promise<any[]>;
   createBillingCheckout(params: { userId: string; items: Array<{ packageId: string; quantity: number }> }): Promise<any>;
+  getBillingOrderForUser(userId: string, orderId: string): Promise<any>;
+  cancelBillingOrder(params: { userId: string; orderId: string }): Promise<any>;
+  submitBillingTransaction(params: { userId: string; orderId: string; txHash: string }): Promise<any>;
+  reconcileBillingOrderPayment(params: { userId: string; orderId: string }): Promise<any>;
+  getSubscriptionNotificationPreference(userId: string): Promise<any>;
+  updateSubscriptionNotificationPreference(params: {
+    userId: string;
+    channel: "EMAIL" | "TELEGRAM" | "BOTH";
+    locale: "de" | "en";
+  }): Promise<any>;
+  getArbitrumUsdcPaymentReadiness(): Promise<any>;
+  updateArbitrumUsdcPaymentConfiguration(params: {
+    treasuryAddress: string;
+    actorUserId: string;
+    ip: string | null;
+  }): Promise<any>;
 };
 
+function mapCheckoutPayment(checkout: any) {
+  const payment = checkout?.payment ?? checkout?.order?.onchainPayment ?? null;
+  if (!payment) return null;
+  const recipientAddress = payment.recipientAddress ?? payment.treasuryAddress;
+  return {
+    chainId: Number(payment.chainId),
+    tokenAddress: payment.tokenAddress,
+    tokenDecimals: Number(payment.tokenDecimals),
+    expectedSenderAddress: payment.expectedSenderAddress ?? null,
+    recipientAddress,
+    treasuryAddress: recipientAddress,
+    amountRaw: String(payment.amountRaw ?? payment.expectedAmountRaw),
+    amountFormatted: String(payment.amountFormatted ?? ""),
+    expiresAt:
+      payment.expiresAt instanceof Date
+        ? payment.expiresAt.toISOString()
+        : payment.expiresAt ?? (
+          checkout?.order?.expiresAt instanceof Date
+            ? checkout.order.expiresAt.toISOString()
+            : checkout?.order?.expiresAt ?? null
+        )
+  };
+}
+
+function mapNotificationPreference(value: any) {
+  return {
+    channel: String(value?.channel ?? "EMAIL").toLowerCase(),
+    locale: value?.locale === "en" ? "en" : "de",
+    source: value?.source === "stored" ? "stored" : "default",
+    emailAvailable: Boolean(value?.emailAvailable),
+    telegramAvailable: Boolean(value?.telegramAvailable)
+  };
+}
+
+function mapBillingRouteError(error: unknown): { status: number; body: Record<string, unknown> } {
+  const reason = error instanceof Error ? error.message : String(error);
+  if (
+    reason === "invalid_cart_payload"
+    || reason === "cart_empty"
+    || reason === "cart_plan_count_invalid"
+    || reason === "cart_duplicate_package"
+    || reason === "cart_quantity_invalid"
+    || reason === "cart_total_out_of_range"
+    || reason === "cart_zero_amount_not_supported"
+    || reason === "cart_free_plan_not_purchasable"
+    || reason === "package_active_price_required"
+    || reason === "package_addon_type_required"
+    || reason === "package_addon_value_required"
+    || reason === "package_plan_required"
+    || reason === "invalid_transaction_hash"
+  ) {
+    return { status: 400, body: { error: reason } };
+  }
+  if (reason === "cart_item_not_found" || reason === "package_not_found" || reason === "order_not_found") {
+    return {
+      status: 404,
+      body: { error: reason === "package_not_found" ? "cart_item_not_found" : reason }
+    };
+  }
+  if (
+    reason === "cart_capacity_requires_pro"
+    || reason === "pro_required_for_topup"
+    || reason === "paid_plan_required_for_capacity_topup"
+    || reason === "open_order_cart_mismatch"
+    || reason === "open_order_exists"
+    || reason === "order_not_payable"
+    || reason === "order_expired"
+    || reason === "order_not_cancellable"
+    || reason === "transaction_hash_in_use"
+    || reason === "transaction_hash_mismatch"
+    || reason === "review_required"
+  ) {
+    return { status: 409, body: { error: reason } };
+  }
+  if (reason === "wallet_not_linked" || reason === "wallet_mismatch") {
+    return { status: 422, body: { error: reason } };
+  }
+  if (reason === "notification_email_unavailable" || reason === "notification_telegram_unavailable") {
+    return { status: 422, body: { error: reason } };
+  }
+  if (reason === "billing_disabled" || reason === "payment_config_not_ready" || reason === "billing_payment_not_configured") {
+    return { status: 503, body: { error: reason } };
+  }
+  if (reason === "rpc_unavailable" || reason === "billing_rpc_unavailable") {
+    return { status: 503, body: { error: "rpc_unavailable", retryable: true } };
+  }
+  return { status: 500, body: { error: "billing_request_failed", reason } };
+}
+
 export function registerBillingRoutes(app: express.Express, deps: RegisterBillingRoutesDeps) {
+  const requirePlatformSuperadminMiddleware = async (
+    _req: express.Request,
+    res: express.Response,
+    next: NextFunction
+  ) => {
+    if (!(await deps.requirePlatformSuperadmin(res))) return;
+    next();
+  };
+
+  const validatePaymentConfigurationMiddleware = (
+    req: express.Request,
+    res: express.Response,
+    next: NextFunction
+  ) => {
+    const parsed = adminBillingPaymentConfigurationSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    res.locals.billingPaymentConfigurationPayload = parsed.data;
+    next();
+  };
+
+  const authorizeBillingEnableMiddleware = async (
+    req: express.Request,
+    res: express.Response,
+    next: NextFunction
+  ) => {
+    const parsed = adminBillingFeatureFlagsSchema.safeParse(req.body ?? {});
+    if (!parsed.success || parsed.data.billingEnabled !== true) return next();
+    try {
+      if (!(await deps.requirePlatformSuperadmin(res))) return;
+    } catch {
+      return res.status(503).json({ error: "billing_enable_authorization_unavailable" });
+    }
+    return deps.consumeRecentReauth(req, res, next);
+  };
+
   async function resolveUserIdFromLookup(rawLookup: string): Promise<string | null> {
     const lookup = rawLookup.trim();
     if (!lookup) return null;
@@ -272,15 +534,55 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
     return res.json(settings);
   });
 
-  app.put("/admin/settings/billing", requireAuth, async (req, res) => {
+  app.put("/admin/settings/billing", requireAuth, authorizeBillingEnableMiddleware, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const parsed = adminBillingFeatureFlagsSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
-    const saved = await deps.updateBillingFeatureFlags(parsed.data);
-    return res.json(saved);
+    try {
+      const saved = await deps.updateBillingFeatureFlags(parsed.data);
+      return res.json(saved);
+    } catch (error) {
+      const mapped = mapBillingRouteError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
   });
+
+  app.get("/admin/billing/payment-config", requireAuth, async (_req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
+    const readiness = await deps.getArbitrumUsdcPaymentReadiness();
+    return res.json(readiness);
+  });
+
+  app.put(
+    "/admin/billing/payment-config",
+    requireAuth,
+    requirePlatformSuperadminMiddleware,
+    validatePaymentConfigurationMiddleware,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      const payload = res.locals.billingPaymentConfigurationPayload as z.infer<
+        typeof adminBillingPaymentConfigurationSchema
+      >;
+      const actor = getUserFromLocals(res);
+      try {
+        await deps.updateArbitrumUsdcPaymentConfiguration({
+          treasuryAddress: payload.treasuryAddress,
+          actorUserId: actor.id,
+          ip: typeof req.ip === "string" && req.ip.trim() ? req.ip.trim().slice(0, 191) : null
+        });
+        const readiness = await deps.getArbitrumUsdcPaymentReadiness();
+        return res.json(readiness);
+      } catch (error) {
+        const mapped = mapBillingRouteError(error);
+        if ((error instanceof Error ? error.message : String(error)) === "invalid_treasury_address") {
+          return res.status(400).json({ error: "invalid_treasury_address" });
+        }
+        return res.status(mapped.status).json(mapped.body);
+      }
+    }
+  );
 
   app.get("/admin/billing/packages", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
@@ -321,7 +623,11 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
     try {
-      const saved = await deps.upsertBillingPackage(parsed.data);
+      const saved = await deps.upsertBillingPackage({
+        ...parsed.data,
+        monthlyAiTokens: parsed.data.monthlyAiTokens ?? "0",
+        aiCredits: parsed.data.aiCredits ?? "0"
+      });
       return res.status(201).json({ id: saved.id });
     } catch (error) {
       const code = (error as any)?.code;
@@ -392,7 +698,7 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
     const user = getUserFromLocals(res);
     const result = await deps.adjustAiTokenBalanceByAdmin({
       userId,
-      deltaTokens: Number.parseInt(parsed.data.deltaTokens, 10),
+      deltaTokens: parsed.data.deltaTokens,
       note: parsed.data.note,
       actorUserId: user.id
     });
@@ -405,16 +711,13 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
   app.get("/settings/subscription", requireAuth, async (_req, res) => {
     try {
       const user = getUserFromLocals(res);
-      if (!(await deps.isBillingEnabled())) {
-        return res.json(buildBillingDisabledResponse());
-      }
-
+      const billingEnabled = await deps.isBillingEnabled();
       const summary = await deps.getSubscriptionSummary(user.id);
       const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
         userId: user.id
       });
       return res.json({
-        billingEnabled: true,
+        billingEnabled,
         ...summary,
         capabilities: capabilityContext.capabilities,
         featureGates: resolveProductFeatureGates({
@@ -493,42 +796,123 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
         userId: user.id,
         items: checkoutItems
       });
+      const payment = mapCheckoutPayment(checkout);
       return res.json({
-        payUrl: checkout.payUrl,
         mode: checkout.mode,
         orderId: checkout.order.id,
-        merchantOrderId: checkout.order.merchantOrderId
+        merchantOrderId: checkout.order.merchantOrderId,
+        status: String(checkout.order.status ?? "PENDING").toLowerCase(),
+        expiresAt:
+          checkout.order.expiresAt instanceof Date
+            ? checkout.order.expiresAt.toISOString()
+            : checkout.order.expiresAt ?? null,
+        payment
       });
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      if (
-        reason === "invalid_cart_payload"
-        || reason === "cart_empty"
-        || reason === "cart_plan_count_invalid"
-        || reason === "cart_duplicate_package"
-        || reason === "cart_quantity_invalid"
-      ) {
-        return res.status(400).json({ error: reason });
-      }
-      if (reason === "cart_item_not_found" || reason === "package_not_found") {
-        return res.status(404).json({ error: reason === "package_not_found" ? "cart_item_not_found" : reason });
-      }
-      if (reason === "cart_capacity_requires_pro") {
-        return res.status(409).json({ error: "cart_capacity_requires_pro" });
-      }
-      if (reason === "pro_required_for_topup") {
-        return res.status(409).json({ error: "pro_required_for_topup" });
-      }
-      if (reason === "paid_plan_required_for_capacity_topup") {
-        return res.status(409).json({ error: "paid_plan_required_for_capacity_topup" });
-      }
-      if (reason === "ccpay_not_configured") {
-        return res.status(503).json({ error: "ccpay_not_configured" });
-      }
-      if (reason.startsWith("ccpayment_error")) {
-        return res.status(502).json({ error: "ccpayment_error", reason });
-      }
-      return res.status(502).json({ error: "checkout_failed", reason });
+      const mapped = mapBillingRouteError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/settings/subscription/orders/:id", requireAuth, async (req, res) => {
+    const params = billingOrderIdParamSchema.safeParse(req.params ?? {});
+    if (!params.success) {
+      return res.status(400).json({ error: "invalid_params", details: params.error.flatten() });
+    }
+    try {
+      const user = getUserFromLocals(res);
+      const order = await deps.getBillingOrderForUser(user.id, params.data.id);
+      if (!order) return res.status(404).json({ error: "order_not_found" });
+      return res.json(mapSubscriptionOrderForResponse(order));
+    } catch (error) {
+      const mapped = mapBillingRouteError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/settings/subscription/orders/:id/submit", requireAuth, async (req, res) => {
+    const params = billingOrderIdParamSchema.safeParse(req.params ?? {});
+    const payload = billingTransactionSubmitSchema.safeParse(req.body ?? {});
+    if (!params.success || !payload.success) {
+      const details = !params.success
+        ? params.error.flatten()
+        : !payload.success
+          ? payload.error.flatten()
+          : undefined;
+      return res.status(400).json({
+        error: "invalid_payload",
+        details
+      });
+    }
+    try {
+      const user = getUserFromLocals(res);
+      const order = await deps.submitBillingTransaction({
+        userId: user.id,
+        orderId: params.data.id,
+        txHash: payload.data.txHash
+      });
+      return res.status(202).json(mapSubscriptionOrderForResponse(order));
+    } catch (error) {
+      const mapped = mapBillingRouteError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/settings/subscription/orders/:id/cancel", requireAuth, async (req, res) => {
+    const params = billingOrderIdParamSchema.safeParse(req.params ?? {});
+    if (!params.success) {
+      return res.status(400).json({ error: "invalid_params", details: params.error.flatten() });
+    }
+    try {
+      const user = getUserFromLocals(res);
+      const order = await deps.cancelBillingOrder({ userId: user.id, orderId: params.data.id });
+      return res.json(mapSubscriptionOrderForResponse(order));
+    } catch (error) {
+      const mapped = mapBillingRouteError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/settings/subscription/orders/:id/reconcile", requireAuth, async (req, res) => {
+    const params = billingOrderIdParamSchema.safeParse(req.params ?? {});
+    if (!params.success) {
+      return res.status(400).json({ error: "invalid_params", details: params.error.flatten() });
+    }
+    try {
+      const user = getUserFromLocals(res);
+      const order = await deps.reconcileBillingOrderPayment({
+        userId: user.id,
+        orderId: params.data.id
+      });
+      return res.json(mapSubscriptionOrderForResponse(order));
+    } catch (error) {
+      const mapped = mapBillingRouteError(error);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/settings/subscription/notifications", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const preference = await deps.getSubscriptionNotificationPreference(user.id);
+    return res.json(mapNotificationPreference(preference));
+  });
+
+  app.put("/settings/subscription/notifications", requireAuth, async (req, res) => {
+    const parsed = subscriptionNotificationPreferenceSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const preference = await deps.updateSubscriptionNotificationPreference({
+        userId: user.id,
+        channel: parsed.data.channel.toUpperCase() as "EMAIL" | "TELEGRAM" | "BOTH",
+        locale: parsed.data.locale
+      });
+      return res.json(mapNotificationPreference(preference));
+    } catch (error) {
+      const mapped = mapBillingRouteError(error);
+      return res.status(mapped.status).json(mapped.body);
     }
   });
 }

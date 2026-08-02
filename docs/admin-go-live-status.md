@@ -35,7 +35,6 @@ Die vier Review-Findings sind im Code behoben und API-seitig verifiziert. Der vo
      - `apps/web/app/admin/page 2.tsx`
      - `apps/web/app/admin/exchanges/page 2.tsx`
      - `apps/web/app/admin/vault-operations/page 2.tsx`
-     - `apps/api/src/billing/ccpayment 2.ts`
    - `rg` findet keine Runtime-Imports oder Code-Referenzen auf diese Dateien; nur Dokumentation nennt sie noch.
 
 ## Gepruefte Admin-Flaechen

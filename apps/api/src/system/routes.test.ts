@@ -55,11 +55,6 @@ function createDeps(overrides: Partial<RegisterSystemRoutesDeps> = {}): Register
     getRuntimeOrchestrationMode: () => "poll",
     isBillingEnabled: async () => true,
     isLicenseEnforcementEnabled: () => true,
-    isBillingWebhookEnabled: async () => true,
-    verifyCcpayWebhook: async () => true,
-    recordWebhookEvent: async () => "created",
-    applyPaidOrder: async () => undefined,
-    markOrderFailed: async () => undefined,
     getQueueMetrics: async () => ({}),
     resolvePlanCapabilitiesForUserId: async () => ({ plan: "enterprise", capabilities: {} }),
     listPluginCatalogForCapabilities: () => [],
@@ -111,6 +106,13 @@ test("public system settings omit orchestration internals", async () => {
     tradingEnabled: true,
     readOnlyMode: false
   });
+});
+
+test("legacy CCPayment webhook is not registered", () => {
+  const app = createFakeApp();
+  registerSystemRoutes(app as any, createDeps());
+
+  assert.equal(app.routes.post.has("/webhooks/ccpayment"), false);
 });
 
 test("license state is registered as an authenticated admin route", async () => {

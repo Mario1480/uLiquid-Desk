@@ -13,6 +13,7 @@
     "test:bots-ui": "tsx --test src/bots/controls.test.ts",
     "test:api-base": "tsx --test src/api/base.test.ts",
     "test:grid-catalog": "tsx --test src/grid/catalog.test.ts",
+    "test:billing": "tsx --test src/billing/*.test.ts",
     "test:i18n-routing": "tsx --test src/i18n/localeRouting.test.ts",
     "i18n:check": "tsx src/i18n/integrity.ts"
   },

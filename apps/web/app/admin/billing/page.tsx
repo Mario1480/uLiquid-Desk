@@ -2,7 +2,10 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
+import { isAddress } from "viem";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
+import { normalizeNonNegativeBillingInteger } from "../../../src/billing/adminPackageValues";
+import ReauthDialog from "../../components/ReauthDialog";
 import AdminActionButton from "../_components/AdminActionButton";
 import AdminConfirmDialog from "../_components/AdminConfirmDialog";
 import AdminNotice from "../_components/AdminNotice";
@@ -43,14 +46,28 @@ type BillingPackagesResponse = {
 
 type BillingFeatureFlagsResponse = {
   billingEnabled: boolean;
-  billingWebhookEnabled: boolean;
   aiTokenBillingEnabled: boolean;
   source: "db" | "default";
   updatedAt: string | null;
   defaults: {
     billingEnabled: boolean;
-    billingWebhookEnabled: boolean;
     aiTokenBillingEnabled: boolean;
+  };
+};
+
+type BillingPaymentConfigResponse = {
+  configured: boolean;
+  chainId: number;
+  tokenAddress: string;
+  tokenDecimals: number;
+  treasuryAddress: string | null;
+  revision: number | null;
+  confirmationsRequired: number;
+  rpc: {
+    ready: boolean;
+    lastBlockNumber: string | number | null;
+    lastCheckedAt: string | null;
+    error: string | null;
   };
 };
 
@@ -69,8 +86,8 @@ type PackageDraft = {
   maxRunningPredictionsAi: number | "";
   maxRunningPredictionsComposite: number | "";
   allowedExchanges: string;
-  monthlyAiTokens: number;
-  aiCredits: number;
+  monthlyAiTokens: string;
+  aiCredits: string;
   deltaRunningBots: number | "";
   deltaRunningPredictionsAi: number | "";
   deltaRunningPredictionsComposite: number | "";
@@ -94,8 +111,8 @@ function toDraft(pkg: BillingPackage): PackageDraft {
     maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? "",
     maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? "",
     allowedExchanges: (pkg.allowedExchanges ?? ["*"]).join(","),
-    monthlyAiTokens: Number(pkg.monthlyAiTokens ?? "0"),
-    aiCredits: Number(pkg.aiCredits ?? "0"),
+    monthlyAiTokens: pkg.monthlyAiTokens ?? "0",
+    aiCredits: pkg.aiCredits ?? "0",
     deltaRunningBots: pkg.deltaRunningBots ?? "",
     deltaRunningPredictionsAi: pkg.deltaRunningPredictionsAi ?? "",
     deltaRunningPredictionsComposite: pkg.deltaRunningPredictionsComposite ?? ""
@@ -111,15 +128,15 @@ function emptyDraft(): PackageDraft {
     addonType: "",
     isActive: true,
     sortOrder: 0,
-    priceCents: 0,
+    priceCents: 2900,
     billingMonths: 1,
     plan: "pro",
     maxRunningBots: 3,
     maxRunningPredictionsAi: 3,
     maxRunningPredictionsComposite: 2,
     allowedExchanges: "*",
-    monthlyAiTokens: 1_000_000,
-    aiCredits: 0,
+    monthlyAiTokens: "1000000",
+    aiCredits: "0",
     deltaRunningBots: "",
     deltaRunningPredictionsAi: "",
     deltaRunningPredictionsComposite: ""
@@ -131,12 +148,6 @@ function toNonNegativeInt(value: number | "" | null | undefined): number | null 
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
   return Math.max(0, Math.trunc(parsed));
-}
-
-function toNonNegativeStringInt(value: number): string {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return "0";
-  return String(Math.max(0, Math.trunc(parsed)));
 }
 
 function buildPayload(draft: PackageDraft) {
@@ -164,8 +175,10 @@ function buildPayload(draft: PackageDraft) {
       ? toNonNegativeInt(draft.maxRunningPredictionsComposite)
       : null,
     allowedExchanges: isPlan ? (allowedExchanges.length > 0 ? allowedExchanges : ["*"]) : ["*"],
-    monthlyAiTokens: toNonNegativeStringInt(isPlan ? draft.monthlyAiTokens : 0),
-    aiCredits: toNonNegativeStringInt(!isPlan && addonType === "ai_credits" ? draft.aiCredits : 0),
+    monthlyAiTokens: normalizeNonNegativeBillingInteger(isPlan ? draft.monthlyAiTokens : "0"),
+    aiCredits: normalizeNonNegativeBillingInteger(
+      !isPlan && addonType === "ai_credits" ? draft.aiCredits : "0"
+    ),
     deltaRunningBots:
       !isPlan && addonType === "running_bots"
         ? toNonNegativeInt(draft.deltaRunningBots)
@@ -190,6 +203,12 @@ function errMsg(error: unknown): string {
   return String(error);
 }
 
+function isReauthRequired(error: unknown): boolean {
+  return error instanceof ApiError
+    && error.status === 401
+    && error.payload?.error === "REAUTH_REQUIRED";
+}
+
 export default function AdminBillingPage() {
   const t = useTranslations("admin.billing");
   const tCommon = useTranslations("admin.common");
@@ -204,8 +223,12 @@ export default function AdminBillingPage() {
   const [adjustNote, setAdjustNote] = useState("");
   const [featureFlags, setFeatureFlags] = useState<BillingFeatureFlagsResponse | null>(null);
   const [billingEnabled, setBillingEnabled] = useState(false);
-  const [billingWebhookEnabled, setBillingWebhookEnabled] = useState(true);
   const [aiTokenBillingEnabled, setAiTokenBillingEnabled] = useState(true);
+  const [paymentConfig, setPaymentConfig] = useState<BillingPaymentConfigResponse | null>(null);
+  const [treasuryAddress, setTreasuryAddress] = useState("");
+  const [treasuryAddressConfirmation, setTreasuryAddressConfirmation] = useState("");
+  const [reauthAction, setReauthAction] = useState<"payment-config" | "feature-flags" | null>(null);
+  const [featureFlagsConfirmOpen, setFeatureFlagsConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const canAdjustTokens = Boolean(
     adjustUserLookup.trim()
@@ -217,15 +240,18 @@ export default function AdminBillingPage() {
     setLoading(true);
     setMsg(null);
     try {
-      const [payload, flags] = await Promise.all([
+      const [payload, flags, config] = await Promise.all([
         apiGet<BillingPackagesResponse>("/admin/billing/packages"),
-        apiGet<BillingFeatureFlagsResponse>("/admin/settings/billing")
+        apiGet<BillingFeatureFlagsResponse>("/admin/settings/billing"),
+        apiGet<BillingPaymentConfigResponse>("/admin/billing/payment-config").catch(() => null)
       ]);
       setItems(payload.items ?? []);
       setFeatureFlags(flags);
       setBillingEnabled(Boolean(flags.billingEnabled));
-      setBillingWebhookEnabled(Boolean(flags.billingWebhookEnabled));
       setAiTokenBillingEnabled(Boolean(flags.aiTokenBillingEnabled));
+      setPaymentConfig(config);
+      setTreasuryAddress(config?.treasuryAddress ?? "");
+      setTreasuryAddressConfirmation("");
       const nextDrafts: Record<string, PackageDraft> = {};
       for (const item of payload.items ?? []) {
         nextDrafts[item.id] = toDraft(item);
@@ -313,22 +339,76 @@ export default function AdminBillingPage() {
     }
   }
 
+  async function persistFeatureFlags() {
+    const saved = await apiPut<BillingFeatureFlagsResponse>("/admin/settings/billing", {
+      billingEnabled,
+      aiTokenBillingEnabled
+    });
+    setFeatureFlags(saved);
+    setBillingEnabled(Boolean(saved.billingEnabled));
+    setAiTokenBillingEnabled(Boolean(saved.aiTokenBillingEnabled));
+    setMsg(t("featureFlags.saved"));
+  }
+
   async function saveFeatureFlags() {
+    setFeatureFlagsConfirmOpen(false);
     setSavingId("flags");
     setMsg(null);
     try {
-      const saved = await apiPut<BillingFeatureFlagsResponse>("/admin/settings/billing", {
-        billingEnabled,
-        billingWebhookEnabled,
-        aiTokenBillingEnabled
-      });
-      setFeatureFlags(saved);
-      setBillingEnabled(Boolean(saved.billingEnabled));
-      setBillingWebhookEnabled(Boolean(saved.billingWebhookEnabled));
-      setAiTokenBillingEnabled(Boolean(saved.aiTokenBillingEnabled));
-      setMsg(t("featureFlags.saved"));
+      await persistFeatureFlags();
     } catch (error) {
-      setMsg(errMsg(error));
+      if (isReauthRequired(error)) setReauthAction("feature-flags");
+      else setMsg(errMsg(error));
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  function requestSaveFeatureFlags() {
+    if (billingEnabled && featureFlags?.billingEnabled !== true) {
+      setFeatureFlagsConfirmOpen(true);
+      return;
+    }
+    void saveFeatureFlags();
+  }
+
+  function validateTreasuryInputs(): boolean {
+    const address = treasuryAddress.trim();
+    const confirmation = treasuryAddressConfirmation.trim();
+    if (!isAddress(address)) {
+      setMsg(t("paymentConfig.errors.invalidAddress"));
+      return false;
+    }
+    if (address !== confirmation) {
+      setMsg(t("paymentConfig.errors.confirmationMismatch"));
+      return false;
+    }
+    return true;
+  }
+
+  async function persistPaymentConfig() {
+    const saved = await apiPut<BillingPaymentConfigResponse>("/admin/billing/payment-config", {
+      treasuryAddress: treasuryAddress.trim(),
+      confirmTreasuryAddress: treasuryAddressConfirmation.trim()
+    });
+    setPaymentConfig(saved);
+    setTreasuryAddress(saved.treasuryAddress ?? treasuryAddress.trim());
+    setTreasuryAddressConfirmation("");
+    setMsg(t("paymentConfig.saved"));
+  }
+
+  async function savePaymentConfig() {
+    if (!validateTreasuryInputs()) return;
+    setSavingId("payment-config");
+    setMsg(null);
+    try {
+      await persistPaymentConfig();
+    } catch (error) {
+      if (isReauthRequired(error)) {
+        setReauthAction("payment-config");
+      } else {
+        setMsg(errMsg(error));
+      }
     } finally {
       setSavingId(null);
     }
@@ -343,6 +423,60 @@ export default function AdminBillingPage() {
       />
 
       {msg ? <AdminNotice tone="info">{msg}</AdminNotice> : null}
+
+      <section className="card settingsSection adminInlineForm">
+        <div className="settingsSectionHeader">
+          <div>
+            <h3 className="adminSubsectionTitle">{t("paymentConfig.title")}</h3>
+            <div className="adminSectionDescription">{t("paymentConfig.description")}</div>
+          </div>
+          <span className={`uiStatusBadge ${paymentConfig?.configured && paymentConfig.rpc?.ready ? "uiStatusBadge-success" : "uiStatusBadge-warning"}`}>
+            {paymentConfig?.configured && paymentConfig.rpc?.ready
+              ? t("paymentConfig.ready")
+              : t("paymentConfig.notReady")}
+          </span>
+        </div>
+        <div className="adminChoiceGrid">
+          <FormField label={t("paymentConfig.treasuryAddress")} hint={t("paymentConfig.treasuryHint")}>
+            <input
+              className="input subscriptionMono"
+              value={treasuryAddress}
+              onChange={(event) => setTreasuryAddress(event.target.value)}
+              placeholder="0x..."
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </FormField>
+          <FormField label={t("paymentConfig.confirmTreasuryAddress")} hint={t("paymentConfig.confirmTreasuryHint")}>
+            <input
+              className="input subscriptionMono"
+              value={treasuryAddressConfirmation}
+              onChange={(event) => setTreasuryAddressConfirmation(event.target.value)}
+              placeholder="0x..."
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </FormField>
+        </div>
+        <div className="settingsHubSummary settingsTradingDefaultsSummary">
+          <div className="miniMetric"><span>{t("paymentConfig.chain")}</span><b>{paymentConfig?.chainId ?? 42161}</b></div>
+          <div className="miniMetric"><span>{t("paymentConfig.token")}</span><b className="subscriptionMono">{paymentConfig?.tokenAddress ?? "-"}</b></div>
+          <div className="miniMetric"><span>{t("paymentConfig.confirmations")}</span><b>{paymentConfig?.confirmationsRequired ?? 12}</b></div>
+          <div className="miniMetric"><span>{t("paymentConfig.revision")}</span><b>{paymentConfig?.revision ?? "-"}</b></div>
+          <div className="miniMetric"><span>{t("paymentConfig.lastBlock")}</span><b>{paymentConfig?.rpc?.lastBlockNumber ?? "-"}</b></div>
+          <div className="miniMetric"><span>{t("paymentConfig.lastChecked")}</span><b>{paymentConfig?.rpc?.lastCheckedAt ? new Date(paymentConfig.rpc.lastCheckedAt).toLocaleString() : "-"}</b></div>
+        </div>
+        {paymentConfig?.rpc?.error ? <AdminNotice tone="warning">{paymentConfig.rpc.error}</AdminNotice> : null}
+        <AdminActionButton
+          icon="save"
+          variant="primary"
+          onClick={() => void savePaymentConfig()}
+          loading={savingId === "payment-config"}
+          loadingLabel={tCommon("saving")}
+        >
+          {t("paymentConfig.save")}
+        </AdminActionButton>
+      </section>
 
       <section className="card settingsSection adminInlineForm">
         <div className="settingsSectionHeader">
@@ -362,12 +496,6 @@ export default function AdminBillingPage() {
               {t("featureFlags.enabledValue")}
             </label>
           </FormField>
-          <FormField label={t("featureFlags.billingWebhookEnabled.label")} hint={t("featureFlags.billingWebhookEnabled.hint")}>
-            <label className="adminCheckboxLabel">
-              <input type="checkbox" checked={billingWebhookEnabled} onChange={(e) => setBillingWebhookEnabled(e.target.checked)} />
-              {t("featureFlags.enabledValue")}
-            </label>
-          </FormField>
           <FormField label={t("featureFlags.aiTokenBillingEnabled.label")} hint={t("featureFlags.aiTokenBillingEnabled.hint")}>
             <label className="adminCheckboxLabel">
               <input type="checkbox" checked={aiTokenBillingEnabled} onChange={(e) => setAiTokenBillingEnabled(e.target.checked)} />
@@ -375,7 +503,7 @@ export default function AdminBillingPage() {
             </label>
           </FormField>
         </div>
-        <AdminActionButton icon="save" variant="primary" onClick={saveFeatureFlags} loading={savingId === "flags"} loadingLabel={tCommon("saving")}>
+        <AdminActionButton icon="save" variant="primary" onClick={requestSaveFeatureFlags} loading={savingId === "flags"} loadingLabel={tCommon("saving")}>
           {t("featureFlags.save")}
         </AdminActionButton>
       </section>
@@ -467,6 +595,15 @@ export default function AdminBillingPage() {
         )}
       </section>
       <AdminConfirmDialog
+        open={featureFlagsConfirmOpen}
+        title={t("featureFlags.enableConfirmTitle")}
+        description={t("featureFlags.enableConfirmDescription")}
+        confirmLabel={t("featureFlags.enableConfirmAction")}
+        loading={savingId === "flags"}
+        onCancel={() => setFeatureFlagsConfirmOpen(false)}
+        onConfirm={() => void saveFeatureFlags()}
+      />
+      <AdminConfirmDialog
         open={Boolean(pendingDeleteId)}
         title={t("delete")}
         description={t("confirmDelete")}
@@ -475,6 +612,21 @@ export default function AdminBillingPage() {
         onCancel={() => setPendingDeleteId(null)}
         onConfirm={() => {
           if (pendingDeleteId) void deletePackage(pendingDeleteId);
+        }}
+      />
+      <ReauthDialog
+        open={reauthAction !== null}
+        onClose={() => setReauthAction(null)}
+        onVerified={async () => {
+          const action = reauthAction;
+          if (!action) return;
+          setSavingId(action === "feature-flags" ? "flags" : "payment-config");
+          try {
+            if (action === "feature-flags") await persistFeatureFlags();
+            else await persistPaymentConfig();
+          } finally {
+            setSavingId(null);
+          }
         }}
       />
     </div>
@@ -591,14 +743,14 @@ function PackageForm({
             <input className="input" value={draft.allowedExchanges} placeholder="*" onChange={(e) => setDraft({ ...draft, allowedExchanges: e.target.value })} />
           </FormField>
           <FormField label={t("fields.monthlyAiTokens.label")} hint={t("fields.monthlyAiTokens.hint")}>
-            <input className="input" type="number" value={draft.monthlyAiTokens} placeholder="1000000" onChange={(e) => setDraft({ ...draft, monthlyAiTokens: Number(e.target.value) })} />
+            <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.monthlyAiTokens} placeholder="1000000" onChange={(e) => setDraft({ ...draft, monthlyAiTokens: e.target.value })} />
           </FormField>
         </>
       ) : null}
 
       {!isPlan && draft.addonType === "ai_credits" ? (
         <FormField label={t("fields.aiCredits.label")} hint={t("fields.aiCredits.hint")}>
-          <input className="input" type="number" value={draft.aiCredits} placeholder="250000" onChange={(e) => setDraft({ ...draft, aiCredits: Number(e.target.value) })} />
+          <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.aiCredits} placeholder="250000" onChange={(e) => setDraft({ ...draft, aiCredits: e.target.value })} />
         </FormField>
       ) : null}
 

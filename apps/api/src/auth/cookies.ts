@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 export const SESSION_COOKIE = "mm_session";
 export const CSRF_COOKIE = "mm_csrf";
 export const CSRF_HEADER = "x-csrf-token";
+export const REAUTH_COOKIE = "mm_reauth";
 
 function cookieSecure(): boolean {
   const secureEnv = (process.env.COOKIE_SECURE ?? "").toLowerCase();

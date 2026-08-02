@@ -19,6 +19,7 @@
 * [Admin Console and Settings](admin/admin-console-and-settings.md)
 * [Users, Roles, and Permissions](admin/users-roles-and-permissions.md)
 * [Billing, Licenses, and Notifications](admin/billing-licenses-and-notifications.md)
+* [Arbitrum-USDC Billing Rollout](billing-arbitrum-usdc-rollout.md)
 * [Go-live and Smoke Tests](ops/go-live-and-smoke-tests.md)
 
 ## Support
