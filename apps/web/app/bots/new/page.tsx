@@ -7,6 +7,9 @@ import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import SymbolSearchSelect from "../../../components/SymbolSearchSelect";
+import PredictionCreateWizard, {
+  type PredictionWizardStep
+} from "../../../components/predictions/PredictionCreateWizard";
 import { AppIcon } from "../../components/AppIcon";
 
 type ExchangeAccount = {
@@ -42,6 +45,16 @@ type ExecutionModeValue = "simple" | "dca" | "grid" | "dip_reversion";
 type CopierOrderType = "market" | "limit";
 type CopierSizingType = "fixed_usd" | "equity_pct" | "risk_pct";
 type CopierSignal = "up" | "down" | "neutral";
+type BotWizardStep = "base" | "execution" | "risk" | "review" | "create";
+
+const BOT_WIZARD_STEPS: BotWizardStep[] = ["base", "execution", "risk", "review", "create"];
+const BOT_WIZARD_PREDICTION_STEP: Record<BotWizardStep, PredictionWizardStep> = {
+  base: "market",
+  execution: "analysis",
+  risk: "advanced",
+  review: "review",
+  create: "generate"
+};
 
 type SubscriptionQuotaSnapshot = {
   limits: {
@@ -125,6 +138,7 @@ export default function NewBotPage() {
   const [sources, setSources] = useState<PredictionSource[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const [accountsLoading, setAccountsLoading] = useState(true);
   const [symbols, setSymbols] = useState<SymbolItem[]>([]);
   const [symbolsLoading, setSymbolsLoading] = useState(false);
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
@@ -206,6 +220,7 @@ export default function NewBotPage() {
   const [copierReviewConfirmed, setCopierReviewConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionQuota, setSubscriptionQuota] = useState<SubscriptionQuotaSnapshot | null>(null);
+  const [wizardStep, setWizardStep] = useState<BotWizardStep>("base");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -236,6 +251,8 @@ export default function NewBotPage() {
       } catch (e) {
         if (!mounted) return;
         setError(errMsg(e));
+      } finally {
+        if (mounted) setAccountsLoading(false);
       }
     }
     void loadAccounts();
@@ -361,8 +378,7 @@ export default function NewBotPage() {
     return Boolean(name.trim() && symbol.trim() && exchangeAccountId && !saving && hasRequiredSource && hasRequiredReview);
   }, [name, symbol, exchangeAccountId, saving, strategyKey, sourceStateId, copierReviewConfirmed]);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function createBot() {
     if (!canCreate) return;
 
     if (strategyKey === "prediction_copier" && !sourceStateId) {
@@ -509,20 +525,62 @@ export default function NewBotPage() {
     }
   }
 
-  return (
-    <div className="container botsNewPage" style={{ maxWidth: 980 }}>
-      <div className="card botsSetupShell">
-        <div className="botsSetupHeader">
-          <div className="botsSetupHeaderCopy">
-            <h2 style={{ margin: 0 }}>{t("title")}</h2>
-            <div className="botsSetupSubtitle">{t("subtitle")}</div>
-	          </div>
-	          <Link href={withLocalePath("/bots", locale)} className="btn">
-	            <AppIcon name="back" />
-	            {t("actions.back")}
-	          </Link>
-        </div>
+  function closeWizard() {
+    router.push(withLocalePath("/bots", locale));
+  }
 
+  function nextWizardStep() {
+    setError(null);
+    if (wizardStep === "base" && (!name.trim() || !exchangeAccountId || !symbol.trim())) {
+      setError(t("wizard.validation.baseRequired"));
+      return;
+    }
+    if (wizardStep === "execution" && strategyKey === "prediction_copier" && !sourceStateId) {
+      setError(t("copier.sourceRequired"));
+      return;
+    }
+    if (wizardStep === "review" && strategyKey === "prediction_copier" && !copierReviewConfirmed) {
+      setError(t("wizard.validation.reviewRequired"));
+      return;
+    }
+    const currentIndex = BOT_WIZARD_STEPS.indexOf(wizardStep);
+    setWizardStep(BOT_WIZARD_STEPS[Math.min(currentIndex + 1, BOT_WIZARD_STEPS.length - 1)]);
+  }
+
+  function previousWizardStep() {
+    setError(null);
+    const currentIndex = BOT_WIZARD_STEPS.indexOf(wizardStep);
+    setWizardStep(BOT_WIZARD_STEPS[Math.max(0, currentIndex - 1)]);
+  }
+
+  return (
+    <PredictionCreateWizard
+      open
+      step={BOT_WIZARD_PREDICTION_STEP[wizardStep]}
+      steps={BOT_WIZARD_STEPS.map((step) => t(`wizard.steps.${step}`))}
+      title={t("wizard.title")}
+      description={t("wizard.description")}
+      backLabel={t("wizard.back")}
+      nextLabel={t("wizard.next")}
+      closeLabel={t("wizard.close")}
+      generateLabel={t("actions.createBot")}
+      generatingLabel={t("actions.creating")}
+      canGenerate={canCreate}
+      generating={saving}
+      onBack={previousWizardStep}
+      onNext={nextWizardStep}
+      onClose={closeWizard}
+      onGenerate={() => void createBot()}
+    >
+      <form
+        className="botsSetupForm botsNewWizardForm"
+        data-bot-step={wizardStep}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (wizardStep === "create") void createBot();
+          else nextWizardStep();
+        }}
+      >
         {isPredictionReviewFlow ? (
           <div className="botsSetupReviewNotice" role="status">
             <AppIcon name="preview" />
@@ -535,19 +593,23 @@ export default function NewBotPage() {
 
         {error ? <div className="botsSetupError">{error}</div> : null}
 
-        {accounts.length === 0 ? (
-          <div className="card botsSetupEmpty">
+        {accountsLoading ? (
+          <div className="botsSetupEmpty">
+            <div className="botsSetupEmptyTitle">{t("wizard.loadingAccounts")}</div>
+          </div>
+        ) : accounts.length === 0 ? (
+          <div className="botsSetupEmpty">
             <div className="botsSetupEmptyTitle">{t("noExchangeAccount")}</div>
-	            <div className="botsSetupEmptyHint">{t("noExchangeAccountHint")}</div>
-	            <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
-	              <AppIcon name="settings" />
-	              {t("actions.addExchangeAccount")}
-	            </Link>
+            <div className="botsSetupEmptyHint">{t("noExchangeAccountHint")}</div>
+            <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
+              <AppIcon name="settings" />
+              {t("actions.addExchangeAccount")}
+            </Link>
           </div>
         ) : (
-          <form onSubmit={onSubmit} className="botsSetupForm">
+          <>
             {subscriptionQuota ? (
-              <section className="botsSetupSummaryGrid">
+              <section className="botsSetupSummaryGrid" hidden={wizardStep !== "review"}>
                 <div className="card botsSetupMetricCard">
                   <div className="botsSetupMetricLabel">{t("summary.runningSlots")}</div>
                   <div className="botsSetupMetricValue">{runningBotUsage}/{runningBotLimit}</div>
@@ -577,7 +639,7 @@ export default function NewBotPage() {
               </section>
             ) : null}
 
-            <div className="card botsSetupSection">
+            <div className="card botsSetupSection" hidden={wizardStep !== "base"}>
               <div className="botsSetupSectionHeader">
                 <div className="botsSetupSectionTitle">{t("sections.base")}</div>
                 <div className="botsSetupSectionHint">{t("sections.baseHint")}</div>
@@ -645,14 +707,18 @@ export default function NewBotPage() {
             </div>
 
             {strategyKey !== "prediction_copier" ? (
-              <div className="card botsSetupSection">
+              <div className="card botsSetupSection" hidden={wizardStep !== "execution" && wizardStep !== "risk"}>
                 <div className="botsSetupSectionHeader">
-                  <div className="botsSetupSectionTitle">{t("sections.execution")}</div>
-                  <div className="botsSetupSectionHint">{t("sections.executionHint")}</div>
+                  <div className="botsSetupSectionTitle">
+                    {wizardStep === "risk" ? t("sections.risk") : t("sections.execution")}
+                  </div>
+                  <div className="botsSetupSectionHint">
+                    {wizardStep === "risk" ? t("sections.riskHint") : t("sections.executionHint")}
+                  </div>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-                  <label style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "execution"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.executionMode")}</span>
                     <select className="input" value={executionMode} onChange={(e) => setExecutionMode(e.target.value as ExecutionModeValue)}>
                       <option value="simple">{t("options.executionSimple")}</option>
@@ -661,33 +727,33 @@ export default function NewBotPage() {
                       <option value="dip_reversion">{t("options.executionDipReversion")}</option>
                     </select>
                   </label>
-                  <label style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxDailyExecutions")}</span>
                     <input className="input" type="number" min={1} max={10000} value={commonMaxDailyExecutions} onChange={(e) => setCommonMaxDailyExecutions(Number(e.target.value || 200))} />
                   </label>
-                  <label style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.cooldownSecAfterExecution")}</span>
                     <input className="input" type="number" min={0} max={86400} value={commonCooldownSecAfterExecution} onChange={(e) => setCommonCooldownSecAfterExecution(Number(e.target.value || 0))} />
                   </label>
-                  <label style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxOpenPositions")}</span>
                     <input className="input" type="number" min={1} max={100} value={commonMaxOpenPositions} onChange={(e) => setCommonMaxOpenPositions(Number(e.target.value || 1))} />
                   </label>
-                  <label style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxNotionalPerSymbol")}</span>
                     <input className="input" type="number" min={0} step="0.01" value={commonMaxNotionalPerSymbolUsd} onChange={(e) => setCommonMaxNotionalPerSymbolUsd(e.target.value)} />
                   </label>
-                  <label style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxNotionalTotal")}</span>
                     <input className="input" type="number" min={0} step="0.01" value={commonMaxTotalNotionalUsd} onChange={(e) => setCommonMaxTotalNotionalUsd(e.target.value)} />
                   </label>
-                  <label className="botsNewCheckField">
+                  <label className="botsNewCheckField" hidden={wizardStep !== "risk"}>
                     <span className="botsNewCheckFieldLabel">{t("fields.enforceReduceOnlyOnClose")}</span>
                     <input className="botsNewCheckInput" type="checkbox" checked={commonEnforceReduceOnlyOnClose} onChange={(e) => setCommonEnforceReduceOnlyOnClose(e.target.checked)} />
                   </label>
                 </div>
 
-                {executionMode === "simple" ? (
+                {executionMode === "simple" && wizardStep === "execution" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.orderType")}</span>
@@ -703,7 +769,7 @@ export default function NewBotPage() {
                   </div>
                 ) : null}
 
-                {executionMode === "dca" ? (
+                {executionMode === "dca" && wizardStep === "execution" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxEntries")}</span><input className="input" type="number" min={1} max={20} value={dcaMaxEntries} onChange={(e) => setDcaMaxEntries(Number(e.target.value || 1))} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stepPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={dcaStepPct} onChange={(e) => setDcaStepPct(Number(e.target.value || 0))} /></label>
@@ -724,7 +790,7 @@ export default function NewBotPage() {
                   </div>
                 ) : null}
 
-                {executionMode === "grid" ? (
+                {executionMode === "grid" && wizardStep === "execution" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.levelsPerSide")}</span><input className="input" type="number" min={1} max={40} value={gridLevelsPerSide} onChange={(e) => setGridLevelsPerSide(Number(e.target.value || 1))} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.gridSpacingPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={gridSpacingPct} onChange={(e) => setGridSpacingPct(Number(e.target.value || 0))} /></label>
@@ -735,7 +801,7 @@ export default function NewBotPage() {
                   </div>
                 ) : null}
 
-                {executionMode === "dip_reversion" ? (
+                {executionMode === "dip_reversion" && wizardStep === "execution" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.dipTriggerPct")}</span><input className="input" type="number" min={0.1} step="0.1" value={dipTriggerPct} onChange={(e) => setDipTriggerPct(Number(e.target.value || 0))} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.recoveryTakeProfitPct")}</span><input className="input" type="number" min={0.1} step="0.1" value={dipRecoveryTakeProfitPct} onChange={(e) => setDipRecoveryTakeProfitPct(Number(e.target.value || 0))} /></label>
@@ -749,7 +815,7 @@ export default function NewBotPage() {
 
             {strategyKey === "prediction_copier" ? (
               <>
-                <div className="card botsSetupSection">
+                <div className="card botsSetupSection" hidden={wizardStep !== "review"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("copier.guidedReviewTitle")}</div>
                     <div className="botsSetupSectionHint">{t("copier.guidedReviewHint")}</div>
@@ -761,7 +827,7 @@ export default function NewBotPage() {
                   </ol>
                 </div>
 
-                <div className="card botsSetupSection">
+                <div className="card botsSetupSection" hidden={wizardStep !== "execution"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("sections.copier")}</div>
                     <div className="botsSetupSectionHint">{t("sections.copierHint")}</div>
@@ -850,7 +916,7 @@ export default function NewBotPage() {
                   </div>
                 </div>
 
-                <div className="card botsSetupSection">
+                <div className="card botsSetupSection" hidden={wizardStep !== "risk"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("sections.risk")}</div>
                     <div className="botsSetupSectionHint">{t("sections.riskHint")}</div>
@@ -876,7 +942,7 @@ export default function NewBotPage() {
                   </div>
                 </div>
 
-                <div className="card botsSetupSection">
+                <div className="card botsSetupSection" hidden={wizardStep !== "risk"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("sections.filters")}</div>
                     <div className="botsSetupSectionHint">{t("sections.filtersHint")}</div>
@@ -922,7 +988,7 @@ export default function NewBotPage() {
                   </div>
                 </div>
 
-                <div className="card botsSetupSection botsCopierFinalReview">
+                <div className="card botsSetupSection botsCopierFinalReview" hidden={wizardStep !== "review"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("copier.finalReviewTitle")}</div>
                     <div className="botsSetupSectionHint">{t("copier.finalReviewHint")}</div>
@@ -949,19 +1015,16 @@ export default function NewBotPage() {
               </>
             ) : null}
 
-	            <div className="botsSetupActionRow">
-	              <Link href={withLocalePath("/bots", locale)} className="btn">
-	                <AppIcon name="back" />
-	                {t("actions.back")}
-	              </Link>
-	              <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
-	                <AppIcon name="create" />
-	                {saving ? t("actions.creating") : t("actions.createBot")}
-	              </button>
+            <div className="predictionWizardGenerate botsNewWizardReady" hidden={wizardStep !== "create"}>
+              <AppIcon name="bots" />
+              <div>
+                <strong>{t("wizard.readyTitle")}</strong>
+                <p>{t("wizard.readyDescription")}</p>
+              </div>
             </div>
-          </form>
+          </>
         )}
-      </div>
-    </div>
+      </form>
+    </PredictionCreateWizard>
   );
 }

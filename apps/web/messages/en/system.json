@@ -55,6 +55,27 @@
     "subtitle": "Configure one execution path, review the runtime setup, and create the bot in a ready-to-start state.",
     "noExchangeAccount": "No exchange account found.",
     "noExchangeAccountHint": "Add an eligible execution account first. The bot can only run on accounts that support the selected runtime.",
+    "wizard": {
+      "title": "Create Bot",
+      "description": "Configure the bot step by step and review every setting before creation.",
+      "loadingAccounts": "Loading exchange accounts...",
+      "back": "Back",
+      "next": "Next",
+      "close": "Close",
+      "steps": {
+        "base": "Base",
+        "execution": "Execution",
+        "risk": "Risk & limits",
+        "review": "Review",
+        "create": "Create"
+      },
+      "readyTitle": "Ready to create",
+      "readyDescription": "The bot is saved in a stopped state first. No order is placed and no automation is activated until you start it afterwards.",
+      "validation": {
+        "baseRequired": "Select a name, exchange account, and symbol before continuing.",
+        "reviewRequired": "Confirm the complete Prediction Copier review before continuing."
+      }
+    },
     "fields": {
       "name": "Name",
       "symbol": "Symbol",

@@ -55,6 +55,27 @@
     "subtitle": "Lege einen Ausführungspfad fest, prüfe das Runtime-Setup und erstelle den Bot in einem startbereiten Zustand.",
     "noExchangeAccount": "Kein Exchange-Konto gefunden.",
     "noExchangeAccountHint": "Lege zuerst ein passendes Execution-Konto an. Der Bot kann nur auf Konten laufen, die die gewählte Runtime unterstützen.",
+    "wizard": {
+      "title": "Bot erstellen",
+      "description": "Konfiguriere den Bot schrittweise und prüfe alle Einstellungen vor dem Erstellen.",
+      "loadingAccounts": "Exchange-Konten werden geladen...",
+      "back": "Zurück",
+      "next": "Weiter",
+      "close": "Schließen",
+      "steps": {
+        "base": "Basis",
+        "execution": "Ausführung",
+        "risk": "Risiko & Limits",
+        "review": "Prüfen",
+        "create": "Erstellen"
+      },
+      "readyTitle": "Bereit zum Erstellen",
+      "readyDescription": "Der Bot wird zunächst gestoppt gespeichert. Es wird keine Order ausgelöst und keine Automation ohne deinen anschließenden Start aktiviert.",
+      "validation": {
+        "baseRequired": "Bitte Name, Exchange-Konto und Symbol vollständig auswählen.",
+        "reviewRequired": "Bitte bestätige zuerst die vollständige Prediction-Copier-Prüfung."
+      }
+    },
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
