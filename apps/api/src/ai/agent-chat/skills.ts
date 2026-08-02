@@ -305,8 +305,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
     function: {
       name,
       description,
-      parameters: { type: "object", additionalProperties: false, properties, required },
-      strict: true
+      parameters: { type: "object", additionalProperties: false, properties, required }
     }
   };
 }

@@ -13,6 +13,15 @@ test("agent registry exposes only read-only, namespaced skills", () => {
   assert.equal(getAgentSkillByToolName("place_order"), null);
 });
 
+test("agent tool schemas preserve optional arguments without strict provider validation", () => {
+  const skills = listAgentSkillDescriptors();
+  assert.equal(skills.every((skill) => skill.toolDefinition.function.strict !== true), true);
+
+  const ohlcv = getAgentSkillByToolName("market_get_ohlcv");
+  assert.ok(ohlcv);
+  assert.deepEqual(ohlcv.toolDefinition.function.parameters.required, ["interval"]);
+});
+
 test("recursive redaction removes credentials from tool summaries", () => {
   const value = redactAiSafetySecrets({ nested: { apiSecret: "secret-value", authorization: "Bearer abcdefghijklmnop" } }) as any;
   assert.equal(value.nested.apiSecret, "[REDACTED]");
