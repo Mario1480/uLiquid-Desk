@@ -54,7 +54,7 @@ Jede aggregierte Response enthält:
 
 ```ts
 {
-  data: ..., 
+  data: ...,
   meta: {
     generatedAt: string;
     providerStates: ProviderState[];
