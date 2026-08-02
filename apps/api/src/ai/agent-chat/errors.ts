@@ -15,7 +15,7 @@ export class AgentChatError extends Error {
   constructor(
     readonly code: AgentChatErrorCode,
     readonly status: number,
-    message = code
+    message: string = code
   ) {
     super(message);
     this.name = "AgentChatError";

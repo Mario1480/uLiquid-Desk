@@ -278,7 +278,13 @@ async function loadPerpPositions(context: AgentSkillExecutionContext, symbol?: s
   const account = await requireOwnedSelectedAccount(context);
   if (context.marketType !== "perp") throw new AgentChatError("agent_chat_venue_unsupported", 400, "Position reads currently require a perp context.");
   if (account.exchange === "paper") {
-    return { account, positions: await listPaperPositions(account.id, symbol) };
+    const resolved = await resolveMarketDataTradingAccount(context.userId, account.id);
+    const reader = createPerpMarketDataClient(resolved.marketDataAccount);
+    try {
+      return { account, positions: await listPaperPositions(resolved.selectedAccount, reader, symbol) };
+    } finally {
+      await reader.close().catch(() => undefined);
+    }
   }
   const tradingAccount = await resolveTradingAccount(context.userId, account.id);
   const adapter = createPerpExecutionAdapter(tradingAccount);
@@ -352,7 +358,12 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     toolDefinition: tool("market_get_orderbook", "Load a bounded normalized cross-venue order book.", { ...marketCommon, limit: { type: "integer", minimum: 5, maximum: 100 } }),
     async execute(context, input) {
       const args = orderbookArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
-      const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, (client) => client.getDepth(symbol, args.limit)) });
+      const result = await withPublicVenue<unknown>({
+        context,
+        requested: args.venue,
+        marketType,
+        read: (venue) => readMarketClient<unknown>(venue, marketType, async (client) => client.getDepth(symbol, args.limit))
+      });
       const depth = result.data as { bids: unknown[]; asks: unknown[]; ts?: string | number | null };
       return ok("market.get_orderbook", { symbol, marketType, bids: depth.bids.slice(0, args.limit), asks: depth.asks.slice(0, args.limit) }, { venue: result.resolution.sourceVenue, provider: result.resolution.sourceVenue, observedAt: depth.ts ? new Date(Number(depth.ts)).toISOString() : nowIso(), fallbackUsed: result.resolution.fallbackUsed });
     }
@@ -425,7 +436,15 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     toolDefinition: tool("portfolio_get_open_orders", "Load read-only open orders from the server-bound selected account.", { accountRef: { type: "string", enum: ["selected"] }, symbol: { type: "string" } }),
     async execute(context, input) {
       const args = portfolioArgsSchema.parse(input); const account = await requireOwnedSelectedAccount(context); let orders;
-      if (account.exchange === "paper") orders = await listPaperOpenOrders(account.id, args.symbol ? normalizeSymbol(args.symbol) : undefined);
+      if (account.exchange === "paper") {
+        const resolved = await resolveMarketDataTradingAccount(context.userId, account.id);
+        const reader = createPerpMarketDataClient(resolved.marketDataAccount);
+        try {
+          orders = await listPaperOpenOrders(resolved.selectedAccount, reader, args.symbol ? normalizeSymbol(args.symbol) : undefined);
+        } finally {
+          await reader.close().catch(() => undefined);
+        }
+      }
       else { const tradingAccount = await resolveTradingAccount(context.userId, account.id); const adapter = createPerpExecutionAdapter(tradingAccount); try { orders = await listOpenOrders(adapter, args.symbol ? normalizeSymbol(args.symbol) : undefined); } finally { await adapter.close?.().catch(() => undefined); } }
       return ok("portfolio.get_open_orders", { accountLabel: account.label, venue: account.exchange, orders: orders.slice(0, 50).map(({ raw: _raw, ...order }: any) => order) }, { venue: account.exchange, provider: "user_exchange_account", observedAt: nowIso() });
     }
