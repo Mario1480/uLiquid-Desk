@@ -713,6 +713,9 @@ model User {
   dashboardPerformanceAccountSnapshots DashboardPerformanceAccountSnapshot[]
   aiPromptTemplates                    UserAiPromptTemplate[]
   aiTraceLogs                          AiTraceLog[]
+  aiAgentProfiles                     AiAgentProfile[]
+  aiAgentConversations                AiAgentConversation[]
+  aiAgentRuns                         AiAgentRun[]
   subscription                         UserSubscription?
   billingOrders                        BillingOrder[]
   aiTokenLedger                        AiTokenLedger[]
@@ -2576,4 +2579,113 @@ model AiTraceLog {
   @@index([symbol, timeframe, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)], map: "ai_trace_logs_user_id_created_at_idx")
   @@map("ai_trace_logs")
+}
+
+model AiAgentProfile {
+  id                        String   @id @default(cuid())
+  userId                    String?  @map("user_id")
+  user                      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                      String
+  description               String?
+  baseProfileKey            String   @map("base_profile_key")
+  enabledSkillIds           String[] @default([]) @map("enabled_skill_ids")
+  allowedExchangeAccountIds String[] @default([]) @map("allowed_exchange_account_ids")
+  preferredVenue            String   @default("auto") @map("preferred_venue")
+  preferredMarketType       String?  @map("preferred_market_type")
+  actionLevel               String   @default("public_data") @map("action_level")
+  version                   Int      @default(1)
+  isDefault                 Boolean  @default(false) @map("is_default")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  conversations AiAgentConversation[]
+
+  @@unique([userId, name])
+  @@index([userId, updatedAt(sort: Desc)])
+  @@map("ai_agent_profiles")
+}
+
+model AiAgentConversation {
+  id                        String   @id @default(cuid())
+  userId                    String   @map("user_id")
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId                 String?  @map("profile_id")
+  profile                   AiAgentProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  profileKey                String   @default("market_analyst") @map("profile_key")
+  title                     String
+  status                    String   @default("active")
+  selectedVenue             String   @default("auto") @map("selected_venue")
+  selectedExchangeAccountId String?  @map("selected_exchange_account_id")
+  marketType                String?  @map("market_type")
+  symbol                    String?
+  summary                   String?
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+  lastMessageAt             DateTime @default(now()) @map("last_message_at")
+
+  messages AiAgentMessage[]
+  runs     AiAgentRun[]
+
+  @@index([userId, lastMessageAt(sort: Desc)])
+  @@map("ai_agent_conversations")
+}
+
+model AiAgentMessage {
+  id             String   @id @default(cuid())
+  conversationId String   @map("conversation_id")
+  conversation   AiAgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  blocks         Json?
+  sourceRefs     Json?    @map("source_refs")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([conversationId, createdAt])
+  @@map("ai_agent_messages")
+}
+
+model AiAgentRun {
+  id               String   @id @default(cuid())
+  conversationId   String   @map("conversation_id")
+  conversation     AiAgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId           String   @map("user_id")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scope            String
+  status           String
+  profileSnapshot  Json     @map("profile_snapshot")
+  contextSnapshot  Json     @map("context_snapshot")
+  provider         String?
+  model            String?
+  toolIterations   Int      @default(0) @map("tool_iterations")
+  toolCallCount    Int      @default(0) @map("tool_call_count")
+  usageTotalTokens Int?     @map("usage_total_tokens")
+  latencyMs        Int?     @map("latency_ms")
+  errorCode        String?  @map("error_code")
+  createdAt        DateTime @default(now()) @map("created_at")
+  completedAt      DateTime? @map("completed_at")
+
+  toolCalls AiAgentToolCall[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([conversationId, createdAt])
+  @@map("ai_agent_runs")
+}
+
+model AiAgentToolCall {
+  id                String   @id @default(cuid())
+  runId             String   @map("run_id")
+  run               AiAgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  toolName          String   @map("tool_name")
+  status            String
+  venue             String?
+  exchangeAccountId String?  @map("exchange_account_id")
+  argumentsSummary  Json?    @map("arguments_summary")
+  resultSummary     Json?    @map("result_summary")
+  durationMs        Int?     @map("duration_ms")
+  errorCode         String?  @map("error_code")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([runId, createdAt])
+  @@index([toolName, createdAt(sort: Desc)])
+  @@map("ai_agent_tool_calls")
 }

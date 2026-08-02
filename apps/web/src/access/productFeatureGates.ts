@@ -1,5 +1,6 @@
 export const PRODUCT_FEATURE_KEYS = [
   "ai_predictions",
+  "ai_agent_chat",
   "local_strategies",
   "composite_strategies",
   "grid_bots",
@@ -43,6 +44,7 @@ export function anyStrategyProductFeatureAllowed(
 
 export function titleForProductFeature(feature: ProductFeatureKey): string {
   if (feature === "ai_predictions") return "AI predictions";
+  if (feature === "ai_agent_chat") return "AI Agent Chat";
   if (feature === "local_strategies") return "Local strategies";
   if (feature === "composite_strategies") return "Composite strategies";
   if (feature === "grid_bots") return "Grid bots";

@@ -220,11 +220,13 @@ export default function AppSidebar({
 
   const navigationGroups = useMemo<SidebarGroup[]>(() => {
     const deskItems: SidebarItem[] = [];
+    const aiItems: SidebarItem[] = [];
     const automationItems: SidebarItem[] = [];
     const capitalItems: SidebarItem[] = [];
     const operationsItems: SidebarItem[] = [];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
     const aiPredictionsEnabled = isProductFeatureAllowed(featureGates, "ai_predictions") || hasPlatformAdminAccess;
+    const aiAgentEnabled = isProductFeatureAllowed(featureGates, "ai_agent_chat") || hasPlatformAdminAccess;
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     deskItems.push({
@@ -267,8 +269,18 @@ export default function AppSidebar({
       });
     }
 
+    if (aiAgentEnabled) {
+      aiItems.push({
+        key: "agent-chat",
+        label: tNav("agentChat"),
+        href: hrefFor("/agent-chat"),
+        icon: "ai",
+        active: pathnameWithoutLocale.startsWith("/agent-chat")
+      });
+    }
+
     if (visibility.predictionsDashboard) {
-      automationItems.push({
+      aiItems.push({
         key: "predictions",
         label: tNav("predictions"),
         href: hrefFor("/predictions"),
@@ -278,7 +290,7 @@ export default function AppSidebar({
     }
 
     if (visibility.strategy && aiPredictionsEnabled) {
-      automationItems.push({
+      aiItems.push({
         key: "prediction-builder",
         label: tNav("predictionBuilder"),
         href: hrefFor("/strategies"),
@@ -367,6 +379,7 @@ export default function AppSidebar({
 
     return [
       { key: "desk", title: tSidebar("deskTitle"), items: deskItems },
+      { key: "ai", title: tSidebar("aiTitle"), items: aiItems },
       { key: "automation", title: tSidebar("automationTitle"), items: automationItems },
       { key: "capital", title: tSidebar("capitalTitle"), items: capitalItems },
       { key: "operations", title: tSidebar("operationsTitle"), items: operationsItems }

@@ -1183,6 +1183,7 @@
       "refresh": "Analyse aktualisieren",
       "analyzing": "Analyse läuft...",
       "manualReview": "Position manuell prüfen",
+      "deepAnalyze": "Im Agent Chat analysieren",
       "settingsLabel": "Benachrichtigungseinstellungen des Position Copilot",
       "notificationMode": "Benachrichtigungen",
       "inApp": "In-App",

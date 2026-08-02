@@ -17,7 +17,11 @@ import {
   isLiveTableFailureBlocking
 } from "../../src/trade/liveDataReadiness";
 import { estimateLiquidationPrices } from "../../src/trade/liquidationEstimate";
-import { POSITION_COPILOT_MANUAL_REVIEW_HREF } from "../../src/trade/positionCopilot";
+import {
+  buildPositionCopilotAgentChatPrefill,
+  POSITION_COPILOT_AGENT_CHAT_PREFILL_KEY,
+  POSITION_COPILOT_MANUAL_REVIEW_HREF
+} from "../../src/trade/positionCopilot";
 import {
   DEFAULT_CHART_PREFERENCES,
   type ChartEngine,
@@ -2954,9 +2958,23 @@ function TradePageContent() {
                   <AppIcon name="refresh" />
                   {copilotLoading ? t("copilot.analyzing") : t("copilot.refresh")}
                 </button>
-                <Link className="btn" href={POSITION_COPILOT_MANUAL_REVIEW_HREF}>
-                  <AppIcon name="positions" />
-                  {t("copilot.manualReview")}
+                <Link
+                  className="btn"
+                  href={POSITION_COPILOT_MANUAL_REVIEW_HREF}
+                  onClick={() => {
+                    if (!selectedAccount || !copilotPosition) return;
+                    window.sessionStorage.setItem(
+                      POSITION_COPILOT_AGENT_CHAT_PREFILL_KEY,
+                      JSON.stringify(buildPositionCopilotAgentChatPrefill({
+                        exchangeAccountId: selectedAccount.id,
+                        symbol: copilotPosition.symbol,
+                        marketType: isSpotMode ? "spot" : "perp"
+                      }))
+                    );
+                  }}
+                >
+                  <AppIcon name="ai" />
+                  {t("copilot.deepAnalyze")}
                 </Link>
               </div>
             </div>

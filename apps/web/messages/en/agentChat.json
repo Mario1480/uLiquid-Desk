@@ -1,0 +1,96 @@
+{
+  "title": "AI Agent Chat",
+  "description": "Cross-venue market and position analysis with transparent, read-only skills.",
+  "readOnlyMvp": "Read-only MVP",
+  "assistant": "Assistant",
+  "you": "You",
+  "sources": "{count} sources",
+  "context": {
+    "ariaLabel": "Agent context",
+    "profile": "Profile",
+    "venue": "Venue",
+    "account": "Exchange account",
+    "selectAccount": "Select an account",
+    "marketType": "Market",
+    "symbol": "Symbol",
+    "noSymbol": "No symbol"
+  },
+  "access": {
+    "publicData": "Public data",
+    "readOnly": "Read only"
+  },
+  "actions": {
+    "newChat": "New chat",
+    "archive": "Archive conversation",
+    "close": "Close"
+  },
+  "history": {
+    "title": "Conversations",
+    "empty": "No conversations yet."
+  },
+  "conversation": {
+    "title": "Agent conversation"
+  },
+  "profiles": {
+    "marketAnalystDescription": "Cross-venue market, intelligence, and prediction analysis using public data.",
+    "positionCopilotDescription": "Read-only account analysis with deterministic position-risk checks."
+  },
+  "blocks": {
+    "prediction": "Prediction",
+    "position": "Position",
+    "divergence": "Divergence"
+  },
+  "skills": {
+    "button": "Skills ({count})",
+    "title": "Skills & permissions",
+    "enabled": "Enabled skills",
+    "categoryDescriptions": {
+      "market": "Reads normalized public market data.",
+      "intelligence": "Reads approved news and event sources.",
+      "prediction": "Reads uLiquid prediction data.",
+      "portfolio": "Reads the explicitly selected account.",
+      "risk": "Runs deterministic position-risk checks.",
+      "draft": "Creates drafts only; unavailable in this MVP."
+    }
+  },
+  "permissions": {
+    "title": "Permissions",
+    "actionLevel": "Action level",
+    "accounts": "Available accounts",
+    "execution": "Execution",
+    "executionNone": "None",
+    "notice": "The agent can analyze data only. It cannot place orders, change positions, transfer funds, or modify automation."
+  },
+  "activity": {
+    "title": "Agent activity",
+    "running": "The agent is checking approved sources…",
+    "empty": "Tool calls and sources will appear here.",
+    "internal": "uLiquid service",
+    "fallback": "fallback marked"
+  },
+  "composer": {
+    "placeholder": "Ask about a market, prediction, event, or selected position…",
+    "hint": "Enter to send · Shift+Enter for a new line",
+    "send": "Send",
+    "sending": "Analyzing…"
+  },
+  "empty": {
+    "title": "Start a grounded analysis",
+    "description": "Select context and ask the agent to combine approved read-only sources.",
+    "marketPrompt1": "Analyze BTC on 1h and 4h with funding.",
+    "marketPrompt2": "What has changed in open interest and market structure?",
+    "marketPrompt3": "Which high-impact US events matter today?",
+    "positionPrompt1": "Review my selected position.",
+    "positionPrompt2": "Explain the current liquidation and drawdown risk.",
+    "positionPrompt3": "Compare the position with my latest prediction."
+  },
+  "states": {
+    "loading": "Loading Agent Chat…",
+    "analyzing": "Analyzing approved sources…",
+    "errorTitle": "Agent Chat could not complete the request.",
+    "disabledTitle": "Agent Chat is disabled",
+    "disabled": "The server-side feature gate is currently closed.",
+    "stale": "stale",
+    "degraded": "degraded"
+  }
+}

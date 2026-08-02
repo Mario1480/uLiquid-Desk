@@ -120,6 +120,7 @@ import {
 import { registerManualTradingMarketDataRoutes } from "./manual-trading/routes-market-data.js";
 import { registerManualTradingExecutionRoutes } from "./manual-trading/routes-execution.js";
 import { registerPositionCopilotRoutes } from "./position-copilot/routes.js";
+import { registerAgentChatRoutes } from "./ai/agent-chat/routes.js";
 import { registerExchangeAccountRoutes } from "./exchange-accounts/routes.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { registerMobileDashboardRoutes } from "./mobile/routes.js";
@@ -11863,6 +11864,14 @@ registerPositionCopilotRoutes(app, {
   db,
   callAiChat,
   dispatchPositionCopilotNotification
+});
+
+registerAgentChatRoutes(app, {
+  db,
+  callAiChat,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  hasAdminAccess: async (user) => isSuperadminEmail(user.email) || hasAdminBackendAccess(user)
 });
 
 registerManualTradingExecutionRoutes(app, {

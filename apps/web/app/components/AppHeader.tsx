@@ -234,6 +234,7 @@ export default function AppHeader({
     ];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
     const aiPredictionsEnabled = isProductFeatureAllowed(featureGates, "ai_predictions") || hasPlatformAdminAccess;
+    const aiAgentEnabled = isProductFeatureAllowed(featureGates, "ai_agent_chat") || hasPlatformAdminAccess;
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     if (visibility.tradingDesk) {
@@ -247,6 +248,9 @@ export default function AppHeader({
     }
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
+    }
+    if (aiAgentEnabled) {
+      items.push({ key: "agent-chat", label: tNav("agentChat"), href: withLocalePath("/agent-chat", locale) });
     }
     if (visibility.strategy && aiPredictionsEnabled) {
       items.push({ key: "prediction-builder", label: tNav("predictionBuilder"), href: withLocalePath("/strategies", locale) });

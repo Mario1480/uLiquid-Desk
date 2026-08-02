@@ -1183,6 +1183,7 @@
       "refresh": "Refresh analysis",
       "analyzing": "Analyzing...",
       "manualReview": "Manual position review",
+      "deepAnalyze": "Analyze in Agent Chat",
       "settingsLabel": "Position Copilot notification settings",
       "notificationMode": "Notifications",
       "inApp": "In-app",

@@ -32,6 +32,9 @@ const PRO_TRUE: CapabilityKey[] = [
   "strategy.kind.futures_grid",
   "strategy.model.advanced",
   "product.ai_predictions",
+  "product.ai_agent_chat",
+  "product.ai_agent_account_reads",
+  "product.ai_agent_custom_profiles",
   "product.composite_strategies",
   "product.grid_bots",
   "product.vaults"

@@ -64,6 +64,7 @@ function iconForSegment(segment: string): BreadcrumbIconKey {
   if (normalized === "bots") return "bots";
   if (normalized === "grid") return "grid";
   if (normalized === "predictions") return "predictions";
+  if (normalized === "agent-chat") return "ai";
   if (normalized === "calendar") return "calendar";
   if (normalized === "news") return "news";
   if (normalized === "accounts") return "accounts";
@@ -92,6 +93,7 @@ export default function AppBreadcrumbs() {
       bots: { label: tNav("bots"), icon: "bots" as BreadcrumbIconKey },
       gridBots: { label: tNav("gridBots"), icon: "grid" as BreadcrumbIconKey },
       predictions: { label: tNav("predictions"), icon: "predictions" as BreadcrumbIconKey },
+      agentChat: { label: tNav("agentChat"), icon: "ai" as BreadcrumbIconKey },
       predictionBuilder: { label: tNav("predictionBuilder"), icon: "strategies" as BreadcrumbIconKey },
       calendar: { label: tNav("calendar"), icon: "calendar" as BreadcrumbIconKey },
       news: { label: tNav("news"), icon: "news" as BreadcrumbIconKey },
@@ -193,6 +195,10 @@ export default function AppBreadcrumbs() {
       {
         test: /^\/trade$/,
         items: [{ label: root.trade.label, path: "/trade", icon: root.trade.icon }]
+      },
+      {
+        test: /^\/agent-chat$/,
+        items: [{ label: root.agentChat.label, path: "/agent-chat", icon: root.agentChat.icon }]
       },
       {
         test: /^\/predictions$/,

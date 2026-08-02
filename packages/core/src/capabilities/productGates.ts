@@ -11,6 +11,7 @@ import type {
 
 export const PRODUCT_FEATURE_KEYS = [
   "ai_predictions",
+  "ai_agent_chat",
   "local_strategies",
   "composite_strategies",
   "grid_bots",
@@ -37,6 +38,11 @@ const PRODUCT_FEATURE_DEFINITIONS: Record<ProductFeatureKey, ProductFeatureDefin
     key: "ai_predictions",
     capability: "product.ai_predictions",
     title: "AI predictions"
+  },
+  ai_agent_chat: {
+    key: "ai_agent_chat",
+    capability: "product.ai_agent_chat",
+    title: "AI Agent Chat"
   },
   local_strategies: {
     key: "local_strategies",

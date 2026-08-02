@@ -10,7 +10,7 @@ import {
 
 test("product feature registry maps each feature to a capability", () => {
   const items = listProductFeatureDefinitions();
-  assert.equal(items.length, 7);
+  assert.equal(items.length, 8);
   assert.equal(capabilityForProductFeature("vaults"), "product.vaults");
   assert.equal(requiredPlanForProductFeature("grid_bots"), "pro");
 });
@@ -24,6 +24,7 @@ test("free plan exposes only conservative product modules", () => {
   assert.equal(gates.paper_trading.allowed, true);
   assert.equal(gates.admin_advanced.allowed, true);
   assert.equal(gates.ai_predictions.allowed, false);
+  assert.equal(gates.ai_agent_chat.allowed, false);
   assert.equal(gates.composite_strategies.allowed, false);
   assert.equal(gates.grid_bots.allowed, false);
   assert.equal(gates.vaults.allowed, false);
@@ -35,6 +36,7 @@ test("pro plan enables advanced trading product modules", () => {
     capabilities: getDefaultPlanCapabilities("pro")
   });
   assert.equal(gates.ai_predictions.allowed, true);
+  assert.equal(gates.ai_agent_chat.allowed, true);
   assert.equal(gates.local_strategies.allowed, true);
   assert.equal(gates.composite_strategies.allowed, true);
   assert.equal(gates.grid_bots.allowed, true);

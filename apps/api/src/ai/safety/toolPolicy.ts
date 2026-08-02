@@ -1,4 +1,9 @@
-export type AiAgentScope = "market_analysis" | "prediction_builder" | "position_monitoring";
+export type AiAgentScope =
+  | "market_analysis"
+  | "prediction_builder"
+  | "position_monitoring"
+  | "agent_market"
+  | "agent_position";
 
 export const MARKET_ANALYSIS_CALLABLE_TOOLS = [
   "get_ohlcv",
@@ -17,6 +22,28 @@ export const PREDICTION_BUILDER_WORKFLOW_TOOLS = [
 
 export const POSITION_MONITORING_WORKFLOW_TOOLS = ["draft_notification"] as const;
 
+export const AGENT_MARKET_CALLABLE_TOOLS = [
+  "market.get_ohlcv",
+  "market.get_indicators",
+  "market.get_ticker",
+  "market.get_orderbook",
+  "market.get_funding_rate",
+  "market.get_open_interest",
+  "market.get_contract_info",
+  "intelligence.get_news",
+  "intelligence.get_economic_events",
+  "predictions.get_recent",
+  "predictions.get_performance_summary"
+] as const;
+
+export const AGENT_POSITION_CALLABLE_TOOLS = [
+  ...AGENT_MARKET_CALLABLE_TOOLS,
+  "portfolio.get_positions",
+  "portfolio.get_balance_summary",
+  "portfolio.get_open_orders",
+  "risk.analyze_position_snapshot"
+] as const;
+
 export const AI_FORBIDDEN_EXECUTION_TOOLS = [
   "place_order",
   "submit_order",
@@ -32,7 +59,9 @@ export const AI_FORBIDDEN_EXECUTION_TOOLS = [
   "transfer_wallet_funds",
   "write_vault",
   "write_admin_settings",
-  "manage_api_keys"
+  "manage_api_keys",
+  "create_action_draft",
+  "execute_action_draft"
 ] as const;
 
 export type AiAgentPolicy = {
@@ -71,6 +100,30 @@ const POLICIES: Record<AiAgentScope, AiAgentPolicy> = {
     dataAccess: ["user_owned_position_snapshot", "market_context", "notification_draft"],
     maxToolIterations: 0,
     maxOutputTokens: 650,
+    sideEffectsAllowed: false
+  },
+  agent_market: {
+    scope: "agent_market",
+    callableTools: AGENT_MARKET_CALLABLE_TOOLS,
+    workflowTools: [],
+    dataAccess: ["public_market_data", "market_intelligence", "prediction_history"],
+    maxToolIterations: 4,
+    maxOutputTokens: 2200,
+    sideEffectsAllowed: false
+  },
+  agent_position: {
+    scope: "agent_position",
+    callableTools: AGENT_POSITION_CALLABLE_TOOLS,
+    workflowTools: [],
+    dataAccess: [
+      "public_market_data",
+      "market_intelligence",
+      "prediction_history",
+      "selected_user_exchange_account",
+      "deterministic_position_risk"
+    ],
+    maxToolIterations: 4,
+    maxOutputTokens: 2200,
     sideEffectsAllowed: false
   }
 };

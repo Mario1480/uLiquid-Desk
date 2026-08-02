@@ -1,0 +1,96 @@
+{
+  "title": "AI Agent Chat",
+  "description": "Börsenübergreifende Markt- und Positionsanalyse mit transparenten Read-only-Skills.",
+  "readOnlyMvp": "Read-only MVP",
+  "assistant": "Assistent",
+  "you": "Du",
+  "sources": "{count} Quellen",
+  "context": {
+    "ariaLabel": "Agent-Kontext",
+    "profile": "Profil",
+    "venue": "Börse",
+    "account": "Exchange Account",
+    "selectAccount": "Account auswählen",
+    "marketType": "Markt",
+    "symbol": "Symbol",
+    "noSymbol": "Kein Symbol"
+  },
+  "access": {
+    "publicData": "Öffentliche Daten",
+    "readOnly": "Nur lesen"
+  },
+  "actions": {
+    "newChat": "Neuer Chat",
+    "archive": "Conversation archivieren",
+    "close": "Schließen"
+  },
+  "history": {
+    "title": "Conversations",
+    "empty": "Noch keine Conversations."
+  },
+  "conversation": {
+    "title": "Agent-Conversation"
+  },
+  "profiles": {
+    "marketAnalystDescription": "Börsenübergreifende Markt-, Intelligence- und Prediction-Analyse mit öffentlichen Daten.",
+    "positionCopilotDescription": "Read-only-Accountanalyse mit deterministischen Positionsrisiko-Prüfungen."
+  },
+  "blocks": {
+    "prediction": "Prediction",
+    "position": "Position",
+    "divergence": "Abweichung"
+  },
+  "skills": {
+    "button": "Skills ({count})",
+    "title": "Skills & Berechtigungen",
+    "enabled": "Aktive Skills",
+    "categoryDescriptions": {
+      "market": "Liest normalisierte öffentliche Marktdaten.",
+      "intelligence": "Liest freigegebene Nachrichten- und Terminquellen.",
+      "prediction": "Liest uLiquid-Prediction-Daten.",
+      "portfolio": "Liest den ausdrücklich ausgewählten Account.",
+      "risk": "Führt deterministische Positionsrisiko-Prüfungen aus.",
+      "draft": "Erstellt nur Entwürfe; in diesem MVP nicht verfügbar."
+    }
+  },
+  "permissions": {
+    "title": "Berechtigungen",
+    "actionLevel": "Aktionsstufe",
+    "accounts": "Verfügbare Accounts",
+    "execution": "Ausführung",
+    "executionNone": "Keine",
+    "notice": "Der Agent darf Daten nur analysieren. Er kann keine Orders platzieren, Positionen ändern, Geld übertragen oder Automationen konfigurieren."
+  },
+  "activity": {
+    "title": "Agent Activity",
+    "running": "Der Agent prüft freigegebene Quellen…",
+    "empty": "Tool-Aufrufe und Quellen erscheinen hier.",
+    "internal": "uLiquid Service",
+    "fallback": "Fallback markiert"
+  },
+  "composer": {
+    "placeholder": "Frage nach einem Markt, einer Prediction, einem Termin oder der ausgewählten Position…",
+    "hint": "Enter zum Senden · Shift+Enter für neue Zeile",
+    "send": "Senden",
+    "sending": "Analysiere…"
+  },
+  "empty": {
+    "title": "Starte eine datenbasierte Analyse",
+    "description": "Wähle den Kontext und lass den Agenten freigegebene Read-only-Quellen kombinieren.",
+    "marketPrompt1": "Analysiere BTC auf 1h und 4h mit Funding.",
+    "marketPrompt2": "Was hat sich bei Open Interest und Marktstruktur verändert?",
+    "marketPrompt3": "Welche wichtigen US-Termine sind heute relevant?",
+    "positionPrompt1": "Prüfe meine ausgewählte Position.",
+    "positionPrompt2": "Erkläre das aktuelle Liquidations- und Drawdown-Risiko.",
+    "positionPrompt3": "Vergleiche die Position mit meiner letzten Prediction."
+  },
+  "states": {
+    "loading": "Lade Agent Chat…",
+    "analyzing": "Analysiere freigegebene Quellen…",
+    "errorTitle": "Agent Chat konnte die Anfrage nicht abschließen.",
+    "disabledTitle": "Agent Chat ist deaktiviert",
+    "disabled": "Das serverseitige Feature Gate ist derzeit geschlossen.",
+    "stale": "veraltet",
+    "degraded": "eingeschränkt"
+  }
+}
