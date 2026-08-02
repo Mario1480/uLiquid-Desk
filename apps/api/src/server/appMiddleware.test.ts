@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE } from "../auth/cookies.js";
-import { enforceSessionCsrf } from "./appMiddleware.js";
+import { enforceSessionCsrf, resolveRequestTimeoutMs } from "./appMiddleware.js";
 
 function createReq(params: {
   method: string;
@@ -113,4 +113,26 @@ test("enforceSessionCsrf ignores unauthenticated unsafe requests such as signed 
 
   assert.equal(nextCalled, true);
   assert.equal(res.statusCode, 200);
+});
+
+test("resolveRequestTimeoutMs reserves a longer window for agent chat messages", () => {
+  assert.equal(
+    resolveRequestTimeoutMs(
+      { method: "POST", path: "/api/agent-chat/conversations/conversation-id/messages" },
+      {}
+    ),
+    120_000
+  );
+  assert.equal(resolveRequestTimeoutMs({ method: "GET", path: "/health" }, {}), 30_000);
+});
+
+test("resolveRequestTimeoutMs honors bounded request timeout overrides", () => {
+  assert.equal(
+    resolveRequestTimeoutMs(
+      { method: "POST", path: "/api/agent-chat/conversations/conversation-id/messages" },
+      { API_REQUEST_TIMEOUT_MS: "45000", API_AGENT_CHAT_REQUEST_TIMEOUT_MS: "150000" }
+    ),
+    150_000
+  );
+  assert.equal(resolveRequestTimeoutMs({ method: "GET", path: "/health" }, { API_REQUEST_TIMEOUT_MS: "invalid" }), 30_000);
 });

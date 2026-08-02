@@ -17,6 +17,7 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? "30");
 const CSRF_MAX_AGE_MS = CSRF_TTL_DAYS * 24 * 60 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_AGENT_CHAT_REQUEST_TIMEOUT_MS = 120_000;
 
 function resolveCorsOrigins(): string[] {
   const origins = (process.env.CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS)
@@ -103,11 +104,27 @@ export function enforceSessionCsrf(req: express.Request, res: express.Response, 
   res.status(403).json({ error: "invalid_csrf_token" });
 }
 
-export function requestTimeoutMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
-  const timeoutMs = Math.max(
-    1_000,
-    Number(process.env.API_REQUEST_TIMEOUT_MS ?? String(DEFAULT_REQUEST_TIMEOUT_MS))
+function readRequestTimeoutMs(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(1_000, Math.trunc(parsed)) : fallback;
+}
+
+export function resolveRequestTimeoutMs(
+  req: Pick<express.Request, "method" | "path">,
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  const defaultTimeoutMs = readRequestTimeoutMs(env.API_REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS);
+  const isAgentChatMessage = req.method.toUpperCase() === "POST"
+    && /^\/api\/agent-chat\/conversations\/[^/]+\/messages\/?$/.test(req.path);
+  if (!isAgentChatMessage) return defaultTimeoutMs;
+  return Math.max(
+    defaultTimeoutMs,
+    readRequestTimeoutMs(env.API_AGENT_CHAT_REQUEST_TIMEOUT_MS, DEFAULT_AGENT_CHAT_REQUEST_TIMEOUT_MS)
   );
+}
+
+export function requestTimeoutMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const timeoutMs = resolveRequestTimeoutMs(req);
   const timer = setTimeout(() => {
     if (res.headersSent || res.writableEnded) return;
     res.status(504).json({

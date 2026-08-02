@@ -24,6 +24,13 @@ export class AgentChatError extends Error {
 
 export function toAgentChatError(error: unknown): AgentChatError {
   if (error instanceof AgentChatError) return error;
+  if (error instanceof Error && error.name === "AbortError") {
+    return new AgentChatError(
+      "agent_chat_provider_unavailable",
+      503,
+      "The AI provider timed out. Please try again."
+    );
+  }
   const message = error instanceof Error ? error.message : String(error ?? "unknown");
   if (message.includes("budget")) return new AgentChatError("agent_chat_tool_budget_exceeded", 429);
   if (message.includes("provider") || message.includes("ai_api_key") || message.includes("ai_model")) {

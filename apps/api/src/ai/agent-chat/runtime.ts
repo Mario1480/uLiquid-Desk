@@ -34,11 +34,21 @@ type RunAgentChatParams = {
   history: Array<{ role: string; content: string }>;
 };
 
+const DEFAULT_AGENT_RUN_TIMEOUT_MS = 90_000;
+const MIN_AGENT_RUN_TIMEOUT_MS = 30_000;
+const MAX_AGENT_RUN_TIMEOUT_MS = 180_000;
+
+export function resolveAgentRunTimeoutMs(value = process.env.AI_AGENT_CHAT_TIMEOUT_MS): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_AGENT_RUN_TIMEOUT_MS;
+  return Math.min(MAX_AGENT_RUN_TIMEOUT_MS, Math.max(MIN_AGENT_RUN_TIMEOUT_MS, Math.trunc(parsed)));
+}
+
 const DEFAULT_BUDGET = {
   maxToolIterations: 4,
   maxToolCalls: 12,
   maxCallsPerSkill: 2,
-  timeoutMs: 20_000,
+  timeoutMs: resolveAgentRunTimeoutMs(),
   maxOutputTokens: 2_200
 } as const;
 

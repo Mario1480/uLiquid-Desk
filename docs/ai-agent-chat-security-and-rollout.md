@@ -12,6 +12,7 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 - `AI_AGENT_ACCOUNT_READS_ENABLED` controls private portfolio skills.
 - `AI_AGENT_CUSTOM_PROFILES_ENABLED` controls user profile overrides.
 - `AI_AGENT_TRADE_DRAFTS_ENABLED` remains off. The read-only runtime rejects draft and execution action levels even when configuration is incorrect.
+- `AI_AGENT_CHAT_TIMEOUT_MS` controls the complete agent run window and defaults to 90 seconds. `API_AGENT_CHAT_REQUEST_TIMEOUT_MS` defaults to 120 seconds so the HTTP layer remains open longer than the run budget.
 - Product capabilities `product.ai_agent_chat`, `product.ai_agent_account_reads` and `product.ai_agent_custom_profiles` are evaluated on every request. Admin preview bypasses the product license only; it does not bypass the environment master gate.
 
 ## Enforced boundaries
@@ -22,7 +23,7 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 - Account reads never fall back to another venue. Public market reads may fall back only when the requested venue is `auto`; the result and activity record mark that fallback.
 - Position risk uses `buildPositionCopilotSnapshot` and `buildDeterministicPositionAnalysis`. No nested AI call is made and deterministic warnings cannot be removed by a tool.
 - User text, market intelligence and tool results are wrapped as untrusted data. Tool arguments, results, errors and audit summaries pass through recursive secret redaction.
-- Per-user request limits, one concurrent run per user, four tool iterations, twelve calls, two calls per skill, a 20-second run timeout and bounded payloads constrain cost and resource abuse.
+- Per-user request limits, one concurrent run per user, four tool iterations, twelve calls, two calls per skill, a bounded 30-180 second run timeout (90 seconds by default) and bounded payloads constrain cost and resource abuse.
 
 ## Persistence and retention
 
