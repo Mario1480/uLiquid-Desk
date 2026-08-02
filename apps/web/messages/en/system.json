@@ -1124,6 +1124,51 @@
       "positions": "Positions",
       "openOrders": "Open Orders"
     },
+    "copilot": {
+      "title": "Position Copilot",
+      "readOnly": "Read-only",
+      "hint": "Explains the selected spot or perpetual position without changing orders, protection levels, leverage or copier rules.",
+      "refresh": "Refresh analysis",
+      "analyzing": "Analyzing...",
+      "manualReview": "Manual position review",
+      "settingsLabel": "Position Copilot notification settings",
+      "notificationMode": "Notifications",
+      "inApp": "In-app",
+      "telegram": "Telegram",
+      "modes": {
+        "criticalOnly": "Critical only",
+        "importantChanges": "Important changes",
+        "periodicSummary": "Periodic summary",
+        "off": "Off"
+      },
+      "risk": {
+        "low": "Low risk",
+        "medium": "Medium risk",
+        "high": "High risk",
+        "critical": "Critical risk"
+      },
+      "thesis": "Thesis: {status}",
+      "thesisStatus": {
+        "intact": "intact",
+        "weakened": "weakened",
+        "invalidated": "invalidated",
+        "unknown": "unknown"
+      },
+      "dataQuality": "Data: {state}",
+      "quality": {
+        "complete": "complete",
+        "degraded": "degraded"
+      },
+      "openedByCopier": "Opened by Prediction Copier",
+      "riskFactors": "Risk factors",
+      "events": "Relevant changes",
+      "noRiskFactors": "No elevated factor is visible in the current snapshot.",
+      "noEvents": "No relevant change is visible in the current snapshot.",
+      "noExecution": "The Copilot cannot trade or modify this position. Review every decision in the manual position controls.",
+      "empty": "There is no open position to analyze in the active account.",
+      "ready": "{symbol} is ready for a read-only analysis.",
+      "error": "Position Copilot could not be refreshed ({error})."
+    },
     "positions": {
       "hint": "Open positions in the active account.",
       "symbol": "Symbol",

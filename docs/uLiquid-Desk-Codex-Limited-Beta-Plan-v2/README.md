@@ -44,6 +44,22 @@ Der Prediction Copier ist im Limited-Beta-Scope freigegeben. Er gilt als geteste
 8. `08-quality-testing-observability.md`
 9. `09-beta-release-checklist.md`
 
+## Fortschritt
+
+Stand: 2026-08-02
+
+- [ ] `01-limited-beta-launch-mode.md` – auf Wunsch von Mario zunächst zurückgestellt; muss vor Beta-Freigabe und vor `08`/`09` nachgeholt werden.
+- [x] `02-ai-predictions-ui-ux.md` – Predictions UI/UX umgesetzt.
+- [x] `03-ai-prediction-builder-chat.md` – AI Prediction Builder Chat umgesetzt.
+- [x] `04-prediction-copier.md` – Prediction Copier mit Review-, Aktivierungs- und Execution-Sicherheitsgrenzen umgesetzt.
+- [x] `05-position-copilot.md` – read-only Position Copilot für Spot/Perpetual inklusive Triggern, Dedupe, Audit und Benachrichtigungseinstellungen umgesetzt. Nachweis: `docs/tasks/2026-08-02-position-copilot-limited-beta.md`.
+- [x] `06-ai-safety-and-tool-boundaries.md` – getrennte AI-Registries, zentrale Tool-Policy, Prompt-/Output-Guards, Secret-Redaction und deterministische Copier-Grenze umgesetzt. Nachweis: `docs/tasks/2026-08-02-ai-safety-tool-boundaries.md`.
+- [ ] `07-architecture-refactoring.md` – nächster Arbeitsschritt.
+- [ ] `08-quality-testing-observability.md`
+- [ ] `09-beta-release-checklist.md`
+
+Die Häkchen dokumentieren den Implementierungsstand dieses Arbeitspakets. Eine Beta-Freigabe ist damit ausdrücklich noch nicht erteilt; dafür bleiben insbesondere `01`, `07`, `08` und `09` offen.
+
 ## Arbeitsregeln für alle Codex-Agenten
 
 - Vor Änderungen zuerst bestehende Implementierung, Tests und Dokumentation lesen.

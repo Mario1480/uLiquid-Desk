@@ -7,10 +7,16 @@ import {
   type EnabledAiProvider
 } from "./provider.js";
 import {
-  AI_AGENT_TOOL_DEFINITIONS,
   MAX_TOOL_ITERATIONS,
-  executeAiTool
+  executeAiToolForAgent,
+  getAiToolDefinitionsForAgent
 } from "./tools/index.js";
+import {
+  assertAiOutputWithinBoundary,
+  buildAiAgentSystemMessage,
+  resolveAiAgentRuntimeLimits,
+  wrapUntrustedAiPayload
+} from "./safety/toolPolicy.js";
 
 const AGENT_MAX_TEXT_CHARS = 2000;
 
@@ -429,19 +435,25 @@ export function mapDecisionToSignal(decision: AgentSignal["decision"]): "up" | "
 }
 
 export async function runSignalAgent(input: RunSignalAgentInput): Promise<RunSignalAgentResult> {
+  const agentScope = "market_analysis" as const;
   const signalProfile = normalizeSignalProfile(input.profile);
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: input.systemMessage
+      content: buildAiAgentSystemMessage(agentScope, input.systemMessage)
     },
     {
       role: "user",
-      content: JSON.stringify(input.userPayload)
+      content: JSON.stringify(wrapUntrustedAiPayload(input.userPayload))
     }
   ];
 
-  const maxIterations = Math.max(1, input.maxToolIterations ?? MAX_TOOL_ITERATIONS);
+  const runtimeLimits = resolveAiAgentRuntimeLimits(agentScope, {
+    maxToolIterations: input.maxToolIterations ?? MAX_TOOL_ITERATIONS,
+    maxOutputTokens: input.maxTokens
+  });
+  const maxIterations = Math.max(1, runtimeLimits.maxToolIterations);
+  const maxOutputTokens = runtimeLimits.maxOutputTokens;
   let iteration = 0;
   let finalFormatRetries = 0;
   let usageTotalTokens: number | null = null;
@@ -450,11 +462,11 @@ export async function runSignalAgent(input: RunSignalAgentInput): Promise<RunSig
     const result = await callAiChat(messages, {
       model: input.model,
       timeoutMs: input.timeoutMs,
-      maxTokens: input.maxTokens,
+      maxTokens: maxOutputTokens,
       temperature: 0,
       billingUserId: input.billingUserId ?? null,
       billingScope: input.billingScope ?? "prediction_explainer_agent",
-      tools: AI_AGENT_TOOL_DEFINITIONS,
+      tools: getAiToolDefinitionsForAgent(agentScope),
       toolChoice: "auto",
       responseFormat: {
         type: "json_schema",
@@ -471,6 +483,7 @@ export async function runSignalAgent(input: RunSignalAgentInput): Promise<RunSig
     if (result.toolCalls.length === 0) {
       try {
         const parsed = parseFirstJsonObject(result.content);
+        assertAiOutputWithinBoundary(agentScope, parsed);
         const signal = validateAgentSignal(parsed, signalProfile);
         return {
           signal,
@@ -530,7 +543,7 @@ export async function runSignalAgent(input: RunSignalAgentInput): Promise<RunSig
       const startedAt = Date.now();
       let toolPayload: unknown;
       try {
-        toolPayload = await executeAiTool(toolCall.name, toolCall.argumentsText);
+        toolPayload = await executeAiToolForAgent(agentScope, toolCall.name, toolCall.argumentsText);
       } catch (error) {
         toolPayload = {
           ok: false,

@@ -312,6 +312,51 @@ test("decision enters on fresh up signal when flat", () => {
   }
 });
 
+test("decision rejects a cross-user prediction even when all market gates pass", () => {
+  const decision = evaluatePredictionCopierDecision({
+    config: makeConfig(),
+    expectedUserId: "user_1",
+    expectedAccountId: "acc_1",
+    now: new Date("2026-02-12T12:01:00.000Z"),
+    prediction: makePrediction({ userId: "user_2" }),
+    predictionHash: "cross_user_hash",
+    state: makeState(),
+    openPosition: null,
+    openTradeCount: 0,
+    openPositionsCount: 0,
+    totalNotionalUsd: 0,
+    symbolNotionalUsd: 0,
+    candidateNotionalUsd: 100,
+    dailyTradeCount: 0
+  });
+  assert.deepEqual(decision, { action: "skip", reason: "prediction_owner_mismatch" });
+});
+
+test("AI-shaped prediction metadata cannot override deterministic notional risk gates", () => {
+  const prediction = {
+    ...makePrediction(),
+    riskGateOverride: { allow: true },
+    requestedAction: "place_order"
+  } as PredictionGateState;
+  const decision = evaluatePredictionCopierDecision({
+    config: makeConfig(),
+    expectedUserId: "user_1",
+    expectedAccountId: "acc_1",
+    now: new Date("2026-02-12T12:01:00.000Z"),
+    prediction,
+    predictionHash: "ai_override_hash",
+    state: makeState(),
+    openPosition: null,
+    openTradeCount: 0,
+    openPositionsCount: 0,
+    totalNotionalUsd: 1_450,
+    symbolNotionalUsd: 450,
+    candidateNotionalUsd: 100,
+    dailyTradeCount: 0
+  });
+  assert.deepEqual(decision, { action: "skip", reason: "symbol_notional_cap_reached" });
+});
+
 test("decision blocks and signals auto-pause after the daily loss limit", () => {
   const decision = evaluatePredictionCopierDecision({
     config: makeConfig({

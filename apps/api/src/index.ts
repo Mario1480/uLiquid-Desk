@@ -119,6 +119,7 @@ import {
 } from "./manual-trading/support.js";
 import { registerManualTradingMarketDataRoutes } from "./manual-trading/routes-market-data.js";
 import { registerManualTradingExecutionRoutes } from "./manual-trading/routes-execution.js";
+import { registerPositionCopilotRoutes } from "./position-copilot/routes.js";
 import { registerExchangeAccountRoutes } from "./exchange-accounts/routes.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { registerMobileDashboardRoutes } from "./mobile/routes.js";
@@ -155,6 +156,7 @@ import { recoverRunningBotJobs } from "./bot-run-recovery.js";
 import {
   AI_PROVIDER_OPTIONS,
   OPENAI_ADMIN_MODEL_OPTIONS,
+  callAiChat,
   getAiModel,
   getAiModelAsync,
   invalidateAiApiKeyCache,
@@ -497,6 +499,7 @@ import {
   dispatchAgentLowHypeNotification,
   dispatchManualTradingErrorNotification,
   dispatchMarketAnalysisUpdateNotification,
+  dispatchPositionCopilotNotification,
   dispatchPredictionOutcomeNotification,
   dispatchTradablePredictionNotification
 } from "./plugins/notificationHost.js";
@@ -11805,6 +11808,12 @@ registerManualTradingMarketDataRoutes(app, {
   filterGridBotOrdersForDesk,
   countVisibleDeskPositions,
   splitCanonicalSymbol
+});
+
+registerPositionCopilotRoutes(app, {
+  db,
+  callAiChat,
+  dispatchPositionCopilotNotification
 });
 
 registerManualTradingExecutionRoutes(app, {

@@ -3,6 +3,11 @@ import { logger } from "../../logger.js";
 import type { Timeframe } from "../../market/timeframe.js";
 import type { ChatToolDefinition } from "../provider.js";
 import {
+  assertAiToolAllowed,
+  getAiAgentPolicy,
+  type AiAgentScope
+} from "../safety/toolPolicy.js";
+import {
   getBinanceIndicators,
   getBinanceOhlcv,
   getBinanceOrderbook,
@@ -10,24 +15,38 @@ import {
   type BinanceMarketType
 } from "./binance.js";
 
-export const MAX_TOOL_ITERATIONS = Math.max(
+function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+export const MAX_TOOL_ITERATIONS = boundedNumber(
+  process.env.AI_AGENT_MAX_TOOL_ITERATIONS,
+  3,
   1,
-  Number(process.env.AI_AGENT_MAX_TOOL_ITERATIONS ?? "3")
+  3
 );
 
-const TOOL_TIMEOUT_MS = Math.max(
+const TOOL_TIMEOUT_MS = boundedNumber(
+  process.env.AI_TOOL_TIMEOUT_MS ?? process.env.AI_TIMEOUT_MS,
+  8000,
   1000,
-  Number(process.env.AI_TOOL_TIMEOUT_MS ?? process.env.AI_TIMEOUT_MS ?? "8000")
+  30_000
 );
 
-const TOOL_CACHE_TTL_MS = Math.max(
+const TOOL_CACHE_TTL_MS = boundedNumber(
+  process.env.AI_TOOL_CACHE_TTL_MS,
+  3000,
   0,
-  Number(process.env.AI_TOOL_CACHE_TTL_MS ?? "3000")
+  60_000
 );
 
-const TOOL_RATE_LIMIT_PER_MIN = Math.max(
+const TOOL_RATE_LIMIT_PER_MIN = boundedNumber(
+  process.env.AI_TOOL_RATE_LIMIT_PER_MIN,
+  120,
   1,
-  Number(process.env.AI_TOOL_RATE_LIMIT_PER_MIN ?? "120")
+  300
 );
 
 type ToolName = "get_ohlcv" | "get_indicators" | "get_ticker" | "get_orderbook";
@@ -174,6 +193,11 @@ export const AI_AGENT_TOOL_DEFINITIONS: ChatToolDefinition[] = [
   }
 ];
 
+export function getAiToolDefinitionsForAgent(scope: AiAgentScope): ChatToolDefinition[] {
+  const allowed = new Set(getAiAgentPolicy(scope).callableTools);
+  return AI_AGENT_TOOL_DEFINITIONS.filter((tool) => allowed.has(tool.function.name));
+}
+
 async function executeToolInternal(name: ToolName, args: unknown): Promise<unknown> {
   if (name === "get_ohlcv") {
     const parsed = ohlcvArgsSchema.parse(args);
@@ -225,9 +249,18 @@ export function isAllowedToolName(value: string): value is ToolName {
 }
 
 export async function executeAiTool(name: string, argumentsText: string): Promise<unknown> {
+  return executeAiToolForAgent("market_analysis", name, argumentsText);
+}
+
+export async function executeAiToolForAgent(
+  scope: AiAgentScope,
+  name: string,
+  argumentsText: string
+): Promise<unknown> {
   if (!isAllowedToolName(name)) {
     throw new Error(`ai_tool_not_allowed:${name}`);
   }
+  assertAiToolAllowed(scope, name);
 
   const now = nowMs();
   pruneRateWindow(now);

@@ -1,12 +1,8 @@
+import { PREDICTION_BUILDER_WORKFLOW_TOOLS } from "./safety/toolPolicy.js";
+
 export const PREDICTION_TEMPLATE_DRAFT_SCHEMA_VERSION = "prediction-template-draft/v1" as const;
 
-export const PREDICTION_BUILDER_ALLOWED_TOOLS = [
-  "create_template_draft",
-  "update_template_draft",
-  "validate_template_draft",
-  "explain_template_field",
-  "request_preview"
-] as const;
+export const PREDICTION_BUILDER_ALLOWED_TOOLS = PREDICTION_BUILDER_WORKFLOW_TOOLS;
 
 export type PredictionBuilderToolName = (typeof PREDICTION_BUILDER_ALLOWED_TOOLS)[number];
 export type PredictionDraftTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";

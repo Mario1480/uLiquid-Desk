@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPost, getApiBaseUrl } from "../../lib/api";
+import { useLocale, useTranslations } from "next-intl";
+import { ApiError, apiGet, apiPost, apiPut, getApiBaseUrl } from "../../lib/api";
 import {
   buildTradeDeskPrefillPayload,
   parseTradeDeskPrefill,
@@ -17,6 +17,7 @@ import {
   isLiveTableFailureBlocking
 } from "../../src/trade/liveDataReadiness";
 import { estimateLiquidationPrices } from "../../src/trade/liquidationEstimate";
+import { POSITION_COPILOT_MANUAL_REVIEW_HREF } from "../../src/trade/positionCopilot";
 import {
   DEFAULT_CHART_PREFERENCES,
   type ChartEngine,
@@ -104,6 +105,54 @@ type PositionItem = {
   pnlPct: number | null;
   takeProfitPrice: number | null;
   stopLossPrice: number | null;
+};
+
+type PositionCopilotMode = "critical_only" | "important_changes" | "periodic_summary" | "off";
+
+type PositionCopilotSettings = {
+  version: 1;
+  mode: PositionCopilotMode;
+  inAppEnabled: boolean;
+  telegramEnabled: boolean;
+  cooldownMinutes: number;
+  periodicMinutes: number;
+};
+
+type PositionCopilotFinding = {
+  code: string;
+  severity: "low" | "medium" | "high" | "critical";
+  message: string;
+};
+
+type PositionCopilotAnalysis = {
+  snapshotHash: string;
+  riskLevel: "low" | "medium" | "high" | "critical";
+  thesisStatus: "intact" | "weakened" | "invalidated" | "unknown";
+  summary: string;
+  riskFactors: PositionCopilotFinding[];
+  events: PositionCopilotFinding[];
+  dataQuality: {
+    state: "complete" | "degraded";
+    missingFields: string[];
+    observedAt: string;
+  };
+  openedByPredictionCopier: boolean;
+  readOnly: true;
+  generatedAt: string;
+};
+
+type PositionCopilotResponse = {
+  skipped: boolean;
+  reason?: string;
+  analysis?: PositionCopilotAnalysis;
+  settings: PositionCopilotSettings;
+  metadata?: {
+    cacheHit: boolean;
+    fallbackUsed: boolean;
+    rateLimited: boolean;
+    fallbackReason: string | null;
+    notification: { sent: boolean; reason: string };
+  };
 };
 
 type OpenOrderItem = {
@@ -641,6 +690,7 @@ function decodeBase64UrlJson(value: string): unknown | null {
 
 function TradePageContent() {
   const t = useTranslations("system.trade");
+  const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const apiBase = getApiBaseUrl();
@@ -665,7 +715,13 @@ function TradePageContent() {
 
   const [summary, setSummary] = useState<AccountSummary | null>(null);
   const [positions, setPositions] = useState<PositionItem[]>([]);
+  const [positionsDataDegraded, setPositionsDataDegraded] = useState(false);
   const [openOrders, setOpenOrders] = useState<OpenOrderItem[]>([]);
+  const [copilotSettings, setCopilotSettings] = useState<PositionCopilotSettings | null>(null);
+  const [copilotAnalysis, setCopilotAnalysis] = useState<PositionCopilotAnalysis | null>(null);
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
+  const [copilotSettingsSaving, setCopilotSettingsSaving] = useState(false);
 
   const [ticker, setTicker] = useState<TickerState | null>(null);
 
@@ -707,6 +763,8 @@ function TradePageContent() {
   const liveRefreshInFlightRef = useRef<Promise<{ partialFailures: string[] }> | null>(null);
   const liveRefreshBackoffUntilRef = useRef(0);
   const liveTableReadyRef = useRef(createLiveTableReadiness());
+  const lastCopilotEventKeyRef = useRef<string | null>(null);
+  const copilotRequestSequenceRef = useRef(0);
 
   const selectedAccount = useMemo(
     () => accounts.find((row) => row.id === selectedAccountId) ?? null,
@@ -779,11 +837,148 @@ function TradePageContent() {
       stopLossPrice: row.stopLossPrice
     };
   }, [positions, selectedPositionKey, selectedSymbol]);
+  const copilotPosition = useMemo<PositionItem | null>(() => {
+    const selected = selectedPositionKey
+      ? positions.find((item, index) => getPositionRowKey(item, index) === selectedPositionKey)
+      : null;
+    return selected
+      ?? positions.find((item) => normalizeDeskSymbol(item.symbol) === normalizeDeskSymbol(selectedSymbol))
+      ?? positions[0]
+      ?? null;
+  }, [positions, selectedPositionKey, selectedSymbol]);
+  const copilotSnapshotKey = useMemo(() => copilotPosition && selectedAccountId
+    ? JSON.stringify({
+        exchangeAccountId: selectedAccountId,
+        marketType,
+        symbol: normalizeDeskSymbol(copilotPosition.symbol),
+        side: copilotPosition.side,
+        size: copilotPosition.size,
+        entryPrice: copilotPosition.entryPrice,
+        leverage: copilotPosition.leverage,
+        liquidationRiskBucket: copilotPosition.liquidationDistancePct === null
+          ? null
+          : Math.floor(copilotPosition.liquidationDistancePct / 2),
+        pnlRiskBucket: copilotPosition.pnlPct === null ? null : Math.floor(copilotPosition.pnlPct),
+        stopLossPrice: copilotPosition.stopLossPrice,
+        takeProfitPrice: copilotPosition.takeProfitPrice,
+        dataDegraded: positionsDataDegraded
+      })
+    : null, [copilotPosition, marketType, positionsDataDegraded, selectedAccountId]);
   const numericLeverage = useMemo(() => {
     const value = Number(leverage);
     return Number.isFinite(value) && value > 0 ? value : null;
   }, [leverage]);
   const effectiveLeverage = isSpotMode ? 1 : numericLeverage;
+
+  const analyzeWithPositionCopilot = useCallback(async (
+    trigger: "manual" | "event" | "periodic",
+    options?: { silent?: boolean }
+  ) => {
+    if (!copilotPosition || !selectedAccountId) return;
+    const requestSequence = ++copilotRequestSequenceRef.current;
+    if (!options?.silent) setCopilotLoading(true);
+    setCopilotError(null);
+    try {
+      const observedAt = summary?.updatedAt && Number.isFinite(Date.parse(summary.updatedAt))
+        ? new Date(summary.updatedAt).toISOString()
+        : new Date().toISOString();
+      const response = await apiPost<PositionCopilotResponse>("/api/position-copilot/analyze", {
+        trigger,
+        language: locale.toLowerCase().startsWith("de") ? "de" : "en",
+        snapshot: {
+          exchangeAccountId: selectedAccountId,
+          marketType,
+          symbol: copilotPosition.symbol,
+          side: copilotPosition.side,
+          size: copilotPosition.size,
+          entryPrice: copilotPosition.entryPrice,
+          markPrice: copilotPosition.markPrice,
+          unrealizedPnlUsd: copilotPosition.unrealizedPnl,
+          leverage: copilotPosition.leverage,
+          marginMode: copilotPosition.marginMode,
+          marginUsd: copilotPosition.marginUsd,
+          notionalUsd: copilotPosition.notionalUsd,
+          liquidationPrice: copilotPosition.liquidationPrice,
+          liquidationDistancePct: copilotPosition.liquidationDistancePct,
+          roePct: copilotPosition.roePct,
+          pnlPct: copilotPosition.pnlPct,
+          stopLossPrice: copilotPosition.stopLossPrice,
+          takeProfitPrice: copilotPosition.takeProfitPrice,
+          dataDegraded: positionsDataDegraded || Boolean(summary?.degraded),
+          observedAt
+        }
+      });
+      if (requestSequence === copilotRequestSequenceRef.current) {
+        if (response.analysis) setCopilotAnalysis(response.analysis);
+        if (response.settings) setCopilotSettings(response.settings);
+      }
+    } catch (error) {
+      if (!options?.silent) setCopilotError(errMsg(error));
+    } finally {
+      if (!options?.silent) setCopilotLoading(false);
+    }
+  }, [copilotPosition, locale, marketType, positionsDataDegraded, selectedAccountId, summary?.degraded, summary?.updatedAt]);
+
+  useEffect(() => {
+    copilotRequestSequenceRef.current += 1;
+    setCopilotAnalysis(null);
+  }, [marketType, selectedAccountId, copilotPosition?.side, copilotPosition?.symbol]);
+
+  const updateCopilotSettings = useCallback(async (patch: Partial<PositionCopilotSettings>) => {
+    if (!copilotSettings) return;
+    const next = { ...copilotSettings, ...patch };
+    setCopilotSettings(next);
+    setCopilotSettingsSaving(true);
+    setCopilotError(null);
+    try {
+      const saved = await apiPut<PositionCopilotSettings>("/api/position-copilot/settings", {
+        mode: next.mode,
+        inAppEnabled: next.inAppEnabled,
+        telegramEnabled: next.telegramEnabled,
+        cooldownMinutes: next.cooldownMinutes,
+        periodicMinutes: next.periodicMinutes
+      });
+      setCopilotSettings(saved);
+    } catch (error) {
+      setCopilotSettings(copilotSettings);
+      setCopilotError(errMsg(error));
+    } finally {
+      setCopilotSettingsSaving(false);
+    }
+  }, [copilotSettings]);
+
+  useEffect(() => {
+    let disposed = false;
+    apiGet<PositionCopilotSettings>("/api/position-copilot/settings")
+      .then((settings) => {
+        if (!disposed) setCopilotSettings(settings);
+      })
+      .catch((error) => {
+        if (!disposed) setCopilotError(errMsg(error));
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!copilotSnapshotKey || !copilotSettings || copilotSettings.mode === "off") return;
+    if (!copilotSettings.inAppEnabled && !copilotSettings.telegramEnabled) return;
+    if (lastCopilotEventKeyRef.current === copilotSnapshotKey) return;
+    lastCopilotEventKeyRef.current = copilotSnapshotKey;
+    const timer = window.setTimeout(() => {
+      void analyzeWithPositionCopilot("event", { silent: true });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [analyzeWithPositionCopilot, copilotSettings, copilotSnapshotKey]);
+
+  useEffect(() => {
+    if (!copilotSettings || copilotSettings.mode !== "periodic_summary" || !copilotPosition) return;
+    const timer = window.setInterval(() => {
+      void analyzeWithPositionCopilot("periodic", { silent: true });
+    }, copilotSettings.periodicMinutes * 60_000);
+    return () => window.clearInterval(timer);
+  }, [analyzeWithPositionCopilot, copilotPosition, copilotSettings]);
 
   const refPrice = useMemo(() => {
     const value = ticker?.mark ?? ticker?.last ?? null;
@@ -1162,6 +1357,7 @@ function TradePageContent() {
     }
 
     const positionsDegraded = payload.positions?.degraded === true;
+    setPositionsDataDegraded(positionsDegraded);
     const positionItems = normalizeDeskPositions(payload.positions?.items ?? []);
     startTransition(() => {
       setPositions((prev) => {
@@ -2739,8 +2935,107 @@ function TradePageContent() {
             </article>
           </section>
 
-          {!isSpotMode ? (
-            <section className="card tradeDeskSection">
+          <section className="card tradeDeskSection tradeCopilot" aria-labelledby="position-copilot-title">
+            <div className="tradeDeskSectionHeader tradeCopilotHeader">
+              <div>
+                <div className="tradeDeskSectionTitle" id="position-copilot-title">
+                  {t("copilot.title")}
+                  <span className="tradeCopilotReadOnly"><AppIcon name="risk" /> {t("copilot.readOnly")}</span>
+                </div>
+                <div className="tradeDeskSectionHint">{t("copilot.hint")}</div>
+              </div>
+              <div className="tradeCopilotActions">
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={!copilotPosition || copilotLoading}
+                  onClick={() => void analyzeWithPositionCopilot("manual")}
+                >
+                  <AppIcon name="refresh" />
+                  {copilotLoading ? t("copilot.analyzing") : t("copilot.refresh")}
+                </button>
+                <Link className="btn" href={POSITION_COPILOT_MANUAL_REVIEW_HREF}>
+                  <AppIcon name="positions" />
+                  {t("copilot.manualReview")}
+                </Link>
+              </div>
+            </div>
+
+            <div className="tradeCopilotSettings" aria-label={t("copilot.settingsLabel")}>
+              <label>
+                <span>{t("copilot.notificationMode")}</span>
+                <select
+                  className="select"
+                  value={copilotSettings?.mode ?? "important_changes"}
+                  disabled={!copilotSettings || copilotSettingsSaving}
+                  onChange={(event) => void updateCopilotSettings({ mode: event.target.value as PositionCopilotMode })}
+                >
+                  <option value="critical_only">{t("copilot.modes.criticalOnly")}</option>
+                  <option value="important_changes">{t("copilot.modes.importantChanges")}</option>
+                  <option value="periodic_summary">{t("copilot.modes.periodicSummary")}</option>
+                  <option value="off">{t("copilot.modes.off")}</option>
+                </select>
+              </label>
+              <label className="tradeCopilotToggle">
+                <input
+                  type="checkbox"
+                  checked={copilotSettings?.inAppEnabled ?? true}
+                  disabled={!copilotSettings || copilotSettingsSaving}
+                  onChange={(event) => void updateCopilotSettings({ inAppEnabled: event.target.checked })}
+                />
+                {t("copilot.inApp")}
+              </label>
+              <label className="tradeCopilotToggle">
+                <input
+                  type="checkbox"
+                  checked={copilotSettings?.telegramEnabled ?? false}
+                  disabled={!copilotSettings || copilotSettingsSaving}
+                  onChange={(event) => void updateCopilotSettings({ telegramEnabled: event.target.checked })}
+                />
+                {t("copilot.telegram")}
+              </label>
+            </div>
+
+            {copilotError ? <div className="tradeCopilotError">{t("copilot.error", { error: copilotError })}</div> : null}
+            {!copilotPosition ? (
+              <div className="tradeCopilotEmpty">{t("copilot.empty")}</div>
+            ) : copilotAnalysis ? (
+              <div className="tradeCopilotBody">
+                <div className="tradeCopilotSummary">
+                  <div className="tradeCopilotMeta">
+                    <span className={`tradeCopilotRisk tradeCopilotRisk-${copilotAnalysis.riskLevel}`}>
+                      {t(`copilot.risk.${copilotAnalysis.riskLevel}`)}
+                    </span>
+                    <span>{t("copilot.thesis", { status: t(`copilot.thesisStatus.${copilotAnalysis.thesisStatus}`) })}</span>
+                    <span className={copilotAnalysis.dataQuality.state === "degraded" ? "tradeCopilotQualityDegraded" : ""}>
+                      {t("copilot.dataQuality", { state: t(`copilot.quality.${copilotAnalysis.dataQuality.state}`) })}
+                    </span>
+                    {copilotAnalysis.openedByPredictionCopier ? <span>{t("copilot.openedByCopier")}</span> : null}
+                  </div>
+                  <p>{copilotAnalysis.summary}</p>
+                </div>
+                <div className="tradeCopilotFindings">
+                  <div>
+                    <strong>{t("copilot.riskFactors")}</strong>
+                    {copilotAnalysis.riskFactors.length > 0 ? (
+                      <ul>{copilotAnalysis.riskFactors.map((finding) => <li key={`${finding.code}:${finding.message}`}>{finding.message}</li>)}</ul>
+                    ) : <p>{t("copilot.noRiskFactors")}</p>}
+                  </div>
+                  <div>
+                    <strong>{t("copilot.events")}</strong>
+                    {copilotAnalysis.events.length > 0 ? (
+                      <ul>{copilotAnalysis.events.map((event) => <li key={`${event.code}:${event.message}`}>{event.message}</li>)}</ul>
+                    ) : <p>{t("copilot.noEvents")}</p>}
+                  </div>
+                </div>
+                <div className="tradeCopilotFootnote">{t("copilot.noExecution")}</div>
+              </div>
+            ) : (
+              <div className="tradeCopilotEmpty">{t("copilot.ready", { symbol: copilotPosition.symbol })}</div>
+            )}
+          </section>
+
+            <section className="card tradeDeskSection" id="trade-positions">
             <div className="tradeDeskSectionHeader">
               <div>
                 <div className="tradeDeskSectionTitle">{t("sections.positions")}</div>
@@ -3097,7 +3392,6 @@ function TradePageContent() {
               )}
             </div>
             </section>
-          ) : null}
 
           <section className="card tradeDeskSection">
             <div className="tradeDeskSectionHeader">

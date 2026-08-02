@@ -1,5 +1,6 @@
 import { prisma } from "@mm/db";
 import { logger } from "../logger.js";
+import { redactAiSafetySecrets } from "./safety/toolPolicy.js";
 
 const db = prisma as any;
 
@@ -203,6 +204,8 @@ export async function recordAiTraceLog(input: AiTraceLogRecordInput): Promise<vo
   if (!settings.enabled) return;
 
   try {
+    const redactedSystemMessage = redactAiSafetySecrets(input.systemMessage ?? null);
+    const redactedRawResponse = redactAiSafetySecrets(input.rawResponse ?? null);
     await db.aiTraceLog.create({
       data: {
         userId: truncateText(input.userId ?? null, 191),
@@ -214,10 +217,16 @@ export async function recordAiTraceLog(input: AiTraceLogRecordInput): Promise<vo
         timeframe: truncateText(input.timeframe ?? null, 16),
         promptTemplateId: truncateText(input.promptTemplateId ?? null, 120),
         promptTemplateName: truncateText(input.promptTemplateName ?? null, 255),
-        systemMessage: truncateText(input.systemMessage ?? null, settings.maxSystemMessageChars),
-        userPayload: truncateJson(input.userPayload ?? null, settings.maxUserPayloadChars),
-        rawResponse: truncateText(input.rawResponse ?? null, settings.maxRawResponseChars),
-        parsedResponse: truncateJson(input.parsedResponse ?? null, settings.maxUserPayloadChars),
+        systemMessage: truncateText(
+          typeof redactedSystemMessage === "string" ? redactedSystemMessage : null,
+          settings.maxSystemMessageChars
+        ),
+        userPayload: truncateJson(redactAiSafetySecrets(input.userPayload ?? null), settings.maxUserPayloadChars),
+        rawResponse: truncateText(
+          typeof redactedRawResponse === "string" ? redactedRawResponse : null,
+          settings.maxRawResponseChars
+        ),
+        parsedResponse: truncateJson(redactAiSafetySecrets(input.parsedResponse ?? null), settings.maxUserPayloadChars),
         success: Boolean(input.success),
         error: truncateText(input.error ?? null, 2000),
         fallbackUsed: Boolean(input.fallbackUsed),

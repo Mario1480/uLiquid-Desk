@@ -12,6 +12,11 @@ import {
   type AiPromptTemplate,
   type AiPromptTimeframe
 } from "./promptSettings.js";
+import {
+  assertAiOutputWithinBoundary,
+  buildAiAgentSystemMessage,
+  getAiAgentPolicy
+} from "./safety/toolPolicy.js";
 
 export const PROMPT_GENERATOR_MAX_PROMPT_CHARS = 8000;
 
@@ -22,14 +27,24 @@ const PROMPT_GENERATOR_AI_TIMEOUT_MS = Math.max(
   Number(process.env.AI_PROMPT_GENERATOR_TIMEOUT_MS ?? process.env.AI_TIMEOUT_MS ?? "12000")
 );
 
-const PROMPT_GENERATOR_AI_MAX_TOKENS = Math.max(
+function boundedTokenBudget(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+const PROMPT_GENERATOR_AI_MAX_TOKENS = boundedTokenBudget(
+  process.env.AI_PROMPT_GENERATOR_MAX_TOKENS,
+  700,
   250,
-  Number(process.env.AI_PROMPT_GENERATOR_MAX_TOKENS ?? "700")
+  1800
 );
 
-const PROMPT_BUILDER_CHAT_MAX_TOKENS = Math.max(
+const PROMPT_BUILDER_CHAT_MAX_TOKENS = boundedTokenBudget(
+  process.env.AI_PROMPT_BUILDER_CHAT_MAX_TOKENS,
+  1000,
   350,
-  Number(process.env.AI_PROMPT_BUILDER_CHAT_MAX_TOKENS ?? "1000")
+  1800
 );
 
 type CallAiFn = (prompt: string, options?: CallAiOptions) => Promise<string>;
@@ -421,6 +436,7 @@ export async function generatePromptBuilderChat(
   input: GeneratePromptBuilderChatInput
 ): Promise<GeneratePromptBuilderChatResult> {
   const model = await getAiModelAsync();
+  const agentPolicy = getAiAgentPolicy("prediction_builder");
   const locale = input.locale === "de" ? "de" : "en";
   const messages = sanitizePromptBuilderChatMessages(input.messages);
   const fallbackDescription = buildPromptBuilderBrief({
@@ -488,12 +504,14 @@ export async function generatePromptBuilderChat(
 
   try {
     const aiText = await callAiFn(prompt, {
-      systemMessage:
-        "You are a careful quantitative trading prompt engineer. Return strict JSON only.",
+      systemMessage: buildAiAgentSystemMessage(
+        "prediction_builder",
+        "You are a careful quantitative trading prompt engineer. Return strict JSON only."
+      ),
       model,
       temperature: 0.25,
       timeoutMs: PROMPT_GENERATOR_AI_TIMEOUT_MS,
-      maxTokens: PROMPT_BUILDER_CHAT_MAX_TOKENS,
+      maxTokens: Math.min(PROMPT_BUILDER_CHAT_MAX_TOKENS, agentPolicy.maxOutputTokens),
       billingUserId: input.billingUserId ?? null,
       billingScope: "prompt_builder_chat"
     });
@@ -503,6 +521,7 @@ export async function generatePromptBuilderChat(
       timeframes: input.timeframes
     });
     if (parsed) {
+      assertAiOutputWithinBoundary("prediction_builder", parsed);
       return {
         ...parsed,
         mode: "ai",

@@ -10,6 +10,7 @@ import {
   predictionBuilderSafetyEnvelope,
   validatePredictionTemplateDraft
 } from "../ai/predictionTemplateDraft.js";
+import { assertAiToolAllowed } from "../ai/safety/toolPolicy.js";
 
 const localStrategyIdParamSchema = z.object({
   id: z.string().trim().min(1)
@@ -573,13 +574,15 @@ export function registerStrategyWriteRoutes(
       availableIndicators.map((item: any) => item.key)
     );
     const safety = predictionBuilderSafetyEnvelope();
+    const proposedToolName = currentDraft.revision <= 1 && !currentDraft.analysisGoal
+      ? "create_template_draft"
+      : "update_template_draft";
+    assertAiToolAllowed("prediction_builder", proposedToolName, "workflow");
 
     return res.json({
       assistantMessage: chat.assistantMessage,
       toolCall: {
-        name: currentDraft.revision <= 1 && !currentDraft.analysisGoal
-          ? "create_template_draft"
-          : "update_template_draft",
+        name: proposedToolName,
         arguments: { draft: proposedDraft }
       },
       proposedDraft,
@@ -602,6 +605,7 @@ export function registerStrategyWriteRoutes(
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
+    assertAiToolAllowed("prediction_builder", parsed.data.toolName, "workflow");
     const draft = createPredictionTemplateDraft(parsed.data.draft);
     const availableIndicatorKeys = deps.getAiPromptIndicatorOptionsPublic().map((item: any) => String(item.key ?? ""));
     const validation = validatePredictionTemplateDraft(draft, availableIndicatorKeys);

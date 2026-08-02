@@ -1124,6 +1124,51 @@
       "positions": "Positionen",
       "openOrders": "Offene Orders"
     },
+    "copilot": {
+      "title": "Position Copilot",
+      "readOnly": "Nur Analyse",
+      "hint": "Erklärt die ausgewählte Spot- oder Perpetual-Position, ohne Orders, Schutzmarken, Hebel oder Copier-Regeln zu verändern.",
+      "refresh": "Analyse aktualisieren",
+      "analyzing": "Analyse läuft...",
+      "manualReview": "Position manuell prüfen",
+      "settingsLabel": "Benachrichtigungseinstellungen des Position Copilot",
+      "notificationMode": "Benachrichtigungen",
+      "inApp": "In-App",
+      "telegram": "Telegram",
+      "modes": {
+        "criticalOnly": "Nur kritisch",
+        "importantChanges": "Wichtige Änderungen",
+        "periodicSummary": "Regelmäßige Übersicht",
+        "off": "Aus"
+      },
+      "risk": {
+        "low": "Niedriges Risiko",
+        "medium": "Mittleres Risiko",
+        "high": "Hohes Risiko",
+        "critical": "Kritisches Risiko"
+      },
+      "thesis": "These: {status}",
+      "thesisStatus": {
+        "intact": "intakt",
+        "weakened": "geschwächt",
+        "invalidated": "widerlegt",
+        "unknown": "unklar"
+      },
+      "dataQuality": "Daten: {state}",
+      "quality": {
+        "complete": "vollständig",
+        "degraded": "eingeschränkt"
+      },
+      "openedByCopier": "Vom Prediction Copier eröffnet",
+      "riskFactors": "Risikofaktoren",
+      "events": "Relevante Änderungen",
+      "noRiskFactors": "Im aktuellen Snapshot ist kein erhöhtes Risiko sichtbar.",
+      "noEvents": "Im aktuellen Snapshot ist keine relevante Änderung sichtbar.",
+      "noExecution": "Der Copilot kann weder handeln noch die Position verändern. Prüfe jede Entscheidung in den manuellen Positionskontrollen.",
+      "empty": "Im aktiven Konto gibt es keine offene Position zur Analyse.",
+      "ready": "{symbol} ist für eine reine Analyse bereit.",
+      "error": "Der Position Copilot konnte nicht aktualisiert werden ({error})."
+    },
     "positions": {
       "hint": "Offene Positionen im aktiven Account.",
       "symbol": "Symbol",

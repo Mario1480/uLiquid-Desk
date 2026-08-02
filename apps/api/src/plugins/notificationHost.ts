@@ -22,6 +22,7 @@ import {
 import { writeNotificationDeliveryAudit } from "./notificationAudit.js";
 import { buildPluginPolicySnapshot } from "./policy.js";
 import {
+  TELEGRAM_NOTIFICATION_PLUGIN_ID,
   telegramNotificationPlugin
 } from "./notifications/telegramNotificationPlugin.js";
 import {
@@ -721,6 +722,16 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     await dispatchApiEvent("manual_trading.error", payload, options);
   }
 
+  async function dispatchPositionCopilotNotification(
+    payload: ApiNotificationPayloadMap["position.pnl_move"],
+    options: DispatchOptions = {}
+  ): Promise<void> {
+    await dispatchApiEvent("position.pnl_move", payload, {
+      ...options,
+      pluginIds: options.pluginIds ?? [TELEGRAM_NOTIFICATION_PLUGIN_ID]
+    });
+  }
+
   async function dispatchAgentLowHypeNotification(
     payload: ApiNotificationPayloadMap["vault.agent_low_hype"],
     options: DispatchOptions = {}
@@ -733,6 +744,7 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     dispatchTradablePredictionNotification,
     dispatchMarketAnalysisUpdateNotification,
     dispatchPredictionOutcomeNotification,
+    dispatchPositionCopilotNotification,
     dispatchManualTradingErrorNotification,
     dispatchAgentLowHypeNotification
   };
@@ -768,6 +780,13 @@ export async function dispatchManualTradingErrorNotification(
   options: DispatchOptions = {}
 ): Promise<void> {
   await defaultNotificationHost.dispatchManualTradingErrorNotification(payload, options);
+}
+
+export async function dispatchPositionCopilotNotification(
+  payload: ApiNotificationPayloadMap["position.pnl_move"],
+  options: DispatchOptions = {}
+): Promise<void> {
+  await defaultNotificationHost.dispatchPositionCopilotNotification(payload, options);
 }
 
 export async function dispatchAgentLowHypeNotification(

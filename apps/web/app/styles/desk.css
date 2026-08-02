@@ -1086,6 +1086,124 @@
   color: var(--muted);
 }
 
+.tradeCopilot {
+  border-color: rgba(56, 189, 248, 0.24);
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.08), rgba(15, 23, 42, 0.12));
+}
+
+.tradeCopilotHeader {
+  align-items: flex-start;
+}
+
+.tradeCopilotReadOnly,
+.tradeCopilotRisk,
+.tradeCopilotMeta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tradeCopilotReadOnly {
+  margin-left: 8px;
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.3);
+  vertical-align: 2px;
+}
+
+.tradeCopilotActions,
+.tradeCopilotMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.tradeCopilotSettings {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 9px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.tradeCopilotSettings > label:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: min(260px, 100%);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tradeCopilotToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tradeCopilotBody {
+  display: grid;
+  gap: 10px;
+  padding-top: 11px;
+}
+
+.tradeCopilotSummary p,
+.tradeCopilotFindings p,
+.tradeCopilotFindings ul {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tradeCopilotFindings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.tradeCopilotFindings ul {
+  padding-left: 18px;
+}
+
+.tradeCopilotRisk-low {
+  color: #86efac !important;
+  border-color: rgba(34, 197, 94, 0.34) !important;
+}
+
+.tradeCopilotRisk-medium {
+  color: #fde68a !important;
+  border-color: rgba(245, 158, 11, 0.34) !important;
+}
+
+.tradeCopilotRisk-high,
+.tradeCopilotRisk-critical,
+.tradeCopilotQualityDegraded {
+  color: #fca5a5 !important;
+  border-color: rgba(239, 68, 68, 0.34) !important;
+}
+
+.tradeCopilotFootnote,
+.tradeCopilotEmpty,
+.tradeCopilotError {
+  padding-top: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tradeCopilotError {
+  color: #fca5a5;
+}
+
 .tradeDeskContextGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -3510,6 +3628,17 @@
     grid-template-columns: 1fr;
   }
   .tradeOrderTopRow {
+    grid-template-columns: 1fr;
+  }
+  .tradeCopilotActions,
+  .tradeCopilotActions .btn,
+  .tradeCopilotSettings > label:first-child {
+    width: 100%;
+  }
+  .tradeCopilotActions .btn {
+    justify-content: center;
+  }
+  .tradeCopilotFindings {
     grid-template-columns: 1fr;
   }
 }

@@ -126,6 +126,8 @@ export type PredictionCopierDecision =
 
 export type PredictionCopierEvalInput = {
   config: PredictionCopierConfig;
+  expectedUserId?: string;
+  expectedAccountId?: string;
   now: Date;
   prediction: PredictionGateState | null;
   predictionHash: string | null;
@@ -534,6 +536,12 @@ export function evaluatePredictionCopierDecision(input: PredictionCopierEvalInpu
   } = input;
 
   if (!prediction) return { action: "skip", reason: "missing_prediction_state" };
+  if (input.expectedUserId && prediction.userId !== input.expectedUserId) {
+    return { action: "skip", reason: "prediction_owner_mismatch" };
+  }
+  if (input.expectedAccountId && prediction.accountId !== input.expectedAccountId) {
+    return { action: "skip", reason: "prediction_account_mismatch" };
+  }
 
   if (
     config.risk.dailyLossLimitUsd !== null
@@ -1300,6 +1308,8 @@ export async function preparePredictionCopierTick(
 
   const decision = evaluatePredictionCopierDecision({
     config,
+    expectedUserId: bot.userId,
+    expectedAccountId: bot.exchangeAccountId,
     now,
     prediction,
     predictionHash,

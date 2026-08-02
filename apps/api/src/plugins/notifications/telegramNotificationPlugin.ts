@@ -22,6 +22,7 @@ export const telegramNotificationPlugin: ApiNotificationPlugin = {
     return event.type === "prediction.tradable"
       || event.type === "prediction.market_analysis_update"
       || event.type === "prediction.outcome"
+      || event.type === "position.pnl_move"
       || event.type === "vault.agent_low_hype";
   },
   async send(event, ctx) {
@@ -52,6 +53,37 @@ export const telegramNotificationPlugin: ApiNotificationPlugin = {
         providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
         reason: sent ? "prediction_outcome_dispatched" : "prediction_outcome_send_failed",
         retryable: !sent,
+        latencyMs: 0
+      };
+    }
+
+    if (event.type === "position.pnl_move") {
+      const botToken = String(ctx.destinationConfig.telegram.botToken ?? "").trim();
+      const chatId = String(ctx.destinationConfig.telegram.chatId ?? "").trim();
+      if (!botToken || !chatId) {
+        return {
+          status: "skipped",
+          providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+          reason: "telegram_not_configured",
+          retryable: false,
+          latencyMs: 0
+        };
+      }
+      await sendTelegramMessage({
+        botToken,
+        chatId,
+        text: [
+          event.payload.title,
+          event.payload.symbol ? `Symbol: ${event.payload.symbol}` : null,
+          `Risk: ${event.payload.severity ?? "info"}`,
+          event.payload.message,
+          "Read-only: review the live position in uLiquid Desk."
+        ].filter(Boolean).join("\n")
+      });
+      return {
+        status: "sent",
+        providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+        reason: "position_copilot_dispatched",
         latencyMs: 0
       };
     }
