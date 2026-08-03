@@ -73,7 +73,56 @@ test("Responses provider maps chat tool calls and tool outputs", async () => {
     assert.equal(requestBody.input[0].type, "function_call");
     assert.equal(requestBody.input[1].type, "function_call_output");
     assert.equal(requestBody.tools[0].name, "market_get");
+    assert.equal(requestBody.tools[0].strict, false);
     assert.equal(result.toolCalls[0].id, "call_2");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Responses provider preserves explicitly strict function schemas", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody: any = null;
+  globalThis.fetch = (async (_url: any, init: any) => {
+    requestBody = JSON.parse(String(init.body));
+    return new Response(JSON.stringify({
+      id: "resp_strict_tool",
+      status: "completed",
+      model: "gpt-5.6-terra",
+      service_tier: "default",
+      output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }],
+      usage: {
+        input_tokens: 10,
+        input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 },
+        output_tokens: 5,
+        output_tokens_details: { reasoning_tokens: 0 }
+      }
+    }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    await callOpenAiResponses({
+      apiKey: "test-key",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5.6-terra",
+      messages: [{ role: "user", content: "Hello" }],
+      tools: [{
+        type: "function",
+        function: {
+          name: "strict_tool",
+          strict: true,
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            properties: { symbol: { type: "string" } },
+            required: ["symbol"]
+          }
+        }
+      }],
+      toolChoice: "auto",
+      maxOutputTokens: 200,
+      signal: new AbortController().signal
+    });
+    assert.equal(requestBody.tools[0].strict, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

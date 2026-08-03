@@ -50,7 +50,7 @@ function responseTools(tools: ChatToolDefinition[] | undefined): unknown[] | und
     name: tool.function.name,
     description: tool.function.description,
     parameters: tool.function.parameters,
-    strict: tool.function.strict ?? true
+    strict: tool.function.strict ?? false
   }));
 }
 
