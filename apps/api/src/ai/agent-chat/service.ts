@@ -210,7 +210,27 @@ export class AgentChatService {
 
   async getActivity(user: { id: string; email: string }, runId: string) {
     const { access } = await this.featureAccess(user); assertAgentChatAccess(access);
-    const run = await this.deps.db.aiAgentRun.findFirst({ where: { id: runId, userId: user.id }, include: { toolCalls: { orderBy: { createdAt: "asc" } } } });
+    const run = await this.deps.db.aiAgentRun.findFirst({
+      where: { id: runId, userId: user.id },
+      select: {
+        id: true,
+        status: true,
+        provider: true,
+        model: true,
+        latencyMs: true,
+        toolCalls: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            toolName: true,
+            status: true,
+            venue: true,
+            durationMs: true,
+            resultSummary: true
+          }
+        }
+      }
+    });
     if (!run) throw new AgentChatError("agent_chat_conversation_not_found", 404);
     return run;
   }

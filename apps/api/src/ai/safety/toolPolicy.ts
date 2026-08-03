@@ -270,6 +270,7 @@ function redactSecretText(value: string): string {
 export function redactAiSafetySecrets(value: unknown, depth = 0): unknown {
   if (depth > 16) return "[TRUNCATED]";
   if (typeof value === "string") return redactSecretText(value);
+  if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.slice(0, 500).map((item) => redactAiSafetySecrets(item, depth + 1));
   if (!value || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};

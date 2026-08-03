@@ -72,6 +72,7 @@ test("forbidden execution fields fail closed during output validation", () => {
 test("AI log redaction removes nested credentials and bearer tokens", () => {
   const redacted = redactAiSafetySecrets({
     apiKey: "live-key",
+    exactInteger: 9007199254740993n,
     nested: {
       passphrase: "wallet-pass",
       note: "Authorization: Bearer abcdefghijklmnop apiKey=second-secret-value",
@@ -83,4 +84,6 @@ test("AI log redaction removes nested credentials and bearer tokens", () => {
   assert.doesNotMatch(redacted.nested.note, /abcdefghijklmnop/);
   assert.doesNotMatch(redacted.nested.note, /second-secret-value/);
   assert.equal(redacted.nested.safe, "BTCUSDT");
+  assert.equal(redacted.exactInteger, "9007199254740993");
+  assert.doesNotThrow(() => JSON.stringify(redacted));
 });
