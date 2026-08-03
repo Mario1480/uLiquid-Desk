@@ -86,6 +86,12 @@ fi
 echo "==> Syncing env file with templates"
 "${ROOT_DIR}/scripts/sync_env_files.sh" --target "${ENV_FILE}" --root "${ROOT_DIR}"
 
+# Position Copilot account reads are part of the current read-only release.
+# The explicit shell value wins over an older persisted .env.prod value. An
+# operator can still close the gate for a rollback by exporting false.
+export AI_AGENT_ACCOUNT_READS_ENABLED="${AI_AGENT_ACCOUNT_READS_ENABLED:-true}"
+echo "==> Agent account reads: ${AI_AGENT_ACCOUNT_READS_ENABLED}"
+
 if [[ "${#TARGET_SERVICES[@]}" -gt 0 ]]; then
   mapfile -t AVAILABLE_SERVICES < <(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --services)
   for service in "${TARGET_SERVICES[@]}"; do

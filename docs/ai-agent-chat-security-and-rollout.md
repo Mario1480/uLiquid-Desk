@@ -9,7 +9,7 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 ## Server gates
 
 - `AI_AGENT_CHAT_ENABLED` is the master gate and defaults to off in production.
-- `AI_AGENT_ACCOUNT_READS_ENABLED` controls private portfolio skills.
+- `AI_AGENT_ACCOUNT_READS_ENABLED` controls private portfolio skills. Production deploys now default it to `true`; an operator can explicitly export `false` for rollback.
 - `AI_AGENT_CUSTOM_PROFILES_ENABLED` controls user profile overrides.
 - `AI_AGENT_TRADE_DRAFTS_ENABLED` remains off. The read-only runtime rejects draft and execution action levels even when configuration is incorrect.
 - `AI_AGENT_CHAT_TIMEOUT_MS` controls the complete agent run window and defaults to 90 seconds. `API_AGENT_CHAT_REQUEST_TIMEOUT_MS` defaults to 120 seconds so the HTTP layer remains open longer than the run budget.
@@ -36,13 +36,15 @@ The persisted run and tool-call models expose status, provider/model, latency, t
 ## Rollout
 
 1. Internal: enable only `AI_AGENT_CHAT_ENABLED`, use Market Analyst, and verify Binance, Hyperliquid and Bitget public reads.
-2. Limited Beta: enable account reads for an explicit allowlist/capability cohort and validate ownership denial, stale data and provider degradation.
+2. Limited Beta: account reads are enabled for admins and plans with `product.ai_agent_account_reads`; validate ownership denial, stale data and provider degradation.
 3. General read-only: enable custom profiles after activity, cost and error-rate review.
 4. Trade drafts: not part of this release; requires a separate security review and Mario's explicit approval.
 
 ## Rollback
 
 Set `AI_AGENT_CHAT_ENABLED=false` and restart API/web services through the normal deployment procedure. Do not roll back the additive migration solely to disable the feature. Existing conversations remain stored while API and navigation access are closed. Prediction Builder, Predictions, Prediction Copier, Trading Desk, wallets, vaults and billing do not depend on the Agent Chat tables.
+
+To close only private account reads while keeping Market Analyst available, deploy the API with `AI_AGENT_ACCOUNT_READS_ENABLED=false ./scripts/deploy_prod.sh api`.
 
 ## Known first-release constraints
 
