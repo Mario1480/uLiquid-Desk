@@ -2,6 +2,39 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentChatService } from "./service.js";
 
+test("conversation history excludes archived conversations", async () => {
+  let query: any = null;
+  const rows = [{ id: "conversation-active", status: "active", lastMessageAt: new Date("2026-08-03T13:30:00.000Z") }];
+  const service = new AgentChatService({
+    db: {
+      aiAgentConversation: {
+        findMany: async (value: unknown) => {
+          query = value;
+          return rows;
+        }
+      }
+    },
+    callAiChat: async () => { throw new Error("not_used"); },
+    resolvePlanCapabilitiesForUserId: async () => ({ plan: "pro", capabilities: {} as any }),
+    isCapabilityAllowed: () => false,
+    hasAdminAccess: async () => true
+  });
+
+  const result = await service.listConversations(
+    { id: "user-1", email: "admin@example.com" },
+    "2026-08-03T14:00:00.000Z"
+  );
+
+  assert.deepEqual(result, { items: rows, nextCursor: null });
+  assert.deepEqual(query.where, {
+    userId: "user-1",
+    status: "active",
+    lastMessageAt: { lt: new Date("2026-08-03T14:00:00.000Z") }
+  });
+  assert.deepEqual(query.orderBy, { lastMessageAt: "desc" });
+  assert.equal(query.take, 30);
+});
+
 test("agent activity selects only JSON-safe fields", async () => {
   let query: any = null;
   const activity = {

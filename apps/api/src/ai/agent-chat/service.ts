@@ -125,7 +125,7 @@ export class AgentChatService {
 
   async listConversations(user: { id: string; email: string }, cursor?: string) {
     const { access } = await this.featureAccess(user); assertAgentChatAccess(access);
-    const rows = await this.deps.db.aiAgentConversation.findMany({ where: { userId: user.id, ...(cursor ? { lastMessageAt: { lt: new Date(cursor) } } : {}) }, orderBy: { lastMessageAt: "desc" }, take: 30 });
+    const rows = await this.deps.db.aiAgentConversation.findMany({ where: { userId: user.id, status: "active", ...(cursor ? { lastMessageAt: { lt: new Date(cursor) } } : {}) }, orderBy: { lastMessageAt: "desc" }, take: 30 });
     return { items: rows, nextCursor: rows.length === 30 ? rows.at(-1)?.lastMessageAt?.toISOString?.() ?? null : null };
   }
 
