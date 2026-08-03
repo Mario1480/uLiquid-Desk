@@ -90,7 +90,7 @@ export const adminBillingPackageSchema = z.object({
   maxRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
   maxRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
   allowedExchanges: z.array(z.string().trim().min(1).max(32)).max(32).optional(),
-  monthlyAiTokens: nonNegativeDbBigIntSchema.optional(),
+  monthlyAiCredits: nonNegativeDbBigIntSchema.optional(),
   aiCredits: nonNegativeDbBigIntSchema.optional(),
   deltaRunningBots: z.number().int().min(0).max(100_000).nullable().optional(),
   deltaRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
@@ -126,14 +126,14 @@ export const adminBillingPackageSchema = z.object({
   }
 });
 
-export const adminBillingAdjustTokensSchema = z.object({
-  deltaTokens: dbBigIntStringOrNumberSchema,
+export const adminBillingAdjustCreditsSchema = z.object({
+  deltaCredits: dbBigIntStringOrNumberSchema,
   note: z.string().trim().min(1).max(500)
 });
 
 const adminBillingFeatureFlagsSchema = z.object({
   billingEnabled: z.boolean().optional(),
-  aiTokenBillingEnabled: z.boolean().optional()
+  aiCreditBillingEnabled: z.boolean().optional()
 });
 
 function mapBillingPackageKindToResponse(kind: unknown): "plan" | "addon" {
@@ -320,9 +320,9 @@ function buildBillingDisabledResponse() {
       }
     },
     ai: {
-      tokenBalance: "0",
-      tokenUsedLifetime: "0",
-      monthlyIncluded: "0",
+      creditBalance: "0",
+      creditsUsedLifetime: "0",
+      monthlyIncludedCredits: "0",
       billingEnabled: false
     },
     packages: [],
@@ -344,7 +344,7 @@ export type RegisterBillingRoutesDeps = {
   resolvePlanCapabilitiesForUserId(input: {
     userId: string;
   }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
-  adjustAiTokenBalanceByAdmin(params: { userId: string; deltaTokens: string; note: string; actorUserId: string }): Promise<{ balance: bigint }>;
+  adjustAiCreditBalanceByAdmin(params: { userId: string; deltaCredits: string; note: string; actorUserId: string }): Promise<{ balance: bigint }>;
   isBillingEnabled(): Promise<boolean>;
   listSubscriptionOrders(userId: string): Promise<any[]>;
   createBillingCheckout(params: { userId: string; items: Array<{ packageId: string; quantity: number }> }): Promise<any>;
@@ -604,7 +604,7 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
         maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
         maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
         allowedExchanges: Array.isArray(pkg.allowedExchanges) ? pkg.allowedExchanges : ["*"],
-        monthlyAiTokens: typeof pkg.monthlyAiTokens === "bigint" ? pkg.monthlyAiTokens.toString() : String(pkg.monthlyAiTokens ?? "0"),
+        monthlyAiCredits: typeof pkg.monthlyAiCredits === "bigint" ? pkg.monthlyAiCredits.toString() : String(pkg.monthlyAiCredits ?? "0"),
         aiCredits: typeof pkg.aiCredits === "bigint" ? pkg.aiCredits.toString() : String(pkg.aiCredits ?? "0"),
         deltaRunningBots: pkg.deltaRunningBots ?? null,
         deltaRunningPredictionsAi: pkg.deltaRunningPredictionsAi ?? null,
@@ -625,7 +625,7 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
     try {
       const saved = await deps.upsertBillingPackage({
         ...parsed.data,
-        monthlyAiTokens: parsed.data.monthlyAiTokens ?? "0",
+        monthlyAiCredits: parsed.data.monthlyAiCredits ?? "0",
         aiCredits: parsed.data.aiCredits ?? "0"
       });
       return res.status(201).json({ id: saved.id });
@@ -685,20 +685,20 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
     return res.json(summary);
   });
 
-  app.post("/admin/billing/users/:id/tokens/adjust", requireAuth, async (req, res) => {
+  app.post("/admin/billing/users/:id/credits/adjust", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const lookup = String(req.params?.id ?? "").trim();
     if (!lookup) return res.status(400).json({ error: "invalid_params" });
     const userId = await resolveUserIdFromLookup(lookup);
     if (!userId) return res.status(404).json({ error: "user_not_found" });
-    const parsed = adminBillingAdjustTokensSchema.safeParse(req.body ?? {});
+    const parsed = adminBillingAdjustCreditsSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
     const user = getUserFromLocals(res);
-    const result = await deps.adjustAiTokenBalanceByAdmin({
+    const result = await deps.adjustAiCreditBalanceByAdmin({
       userId,
-      deltaTokens: parsed.data.deltaTokens,
+      deltaCredits: parsed.data.deltaCredits,
       note: parsed.data.note,
       actorUserId: user.id
     });
@@ -740,10 +740,10 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
           maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
           maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
           allowedExchanges: Array.isArray(pkg.allowedExchanges) ? pkg.allowedExchanges : ["*"],
-          monthlyAiTokens:
-            typeof pkg.monthlyAiTokens === "bigint"
-              ? pkg.monthlyAiTokens.toString()
-              : String(pkg.monthlyAiTokens ?? "0"),
+          monthlyAiCredits:
+            typeof pkg.monthlyAiCredits === "bigint"
+              ? pkg.monthlyAiCredits.toString()
+              : String(pkg.monthlyAiCredits ?? "0"),
           aiCredits:
             typeof pkg.aiCredits === "bigint"
               ? pkg.aiCredits.toString()

@@ -189,14 +189,14 @@ export default function AdminApiKeysPage() {
   const [effectiveAiProviderSource, setEffectiveAiProviderSource] = useState<"db" | "env" | "default">("default");
   const [effectiveAiBaseUrl, setEffectiveAiBaseUrl] = useState<string>("https://api.openai.com/v1");
   const [effectiveAiBaseUrlSource, setEffectiveAiBaseUrlSource] = useState<"db" | "env" | "default">("default");
-  const [effectiveAiModel, setEffectiveAiModel] = useState<string>("gpt-4o-mini");
+  const [effectiveAiModel, setEffectiveAiModel] = useState<string>("gpt-5.6-luna");
   const [effectiveAiModelSource, setEffectiveAiModelSource] = useState<"db" | "env" | "default">("default");
-  const [providerOptions, setProviderOptions] = useState<string[]>(["openai", "ollama", "vllm", "disabled"]);
+  const [providerOptions, setProviderOptions] = useState<string[]>(["openai"]);
   const [modelOptions, setModelOptions] = useState<string[]>([
     "gpt-5-nano",
-    "gpt-5-mini",
-    "gpt-4.1-nano",
-    "gpt-4o-mini"
+    "gpt-5.6-luna",
+    "gpt-5.6-terra",
+    "gpt-5.6-sol"
   ]);
 
   const [fmpApiKey, setFmpApiKey] = useState("");
@@ -299,19 +299,19 @@ export default function AdminApiKeysPage() {
     setEffectiveAiProviderSource(res.effectiveAiProviderSource ?? "default");
     setEffectiveAiBaseUrl(res.effectiveAiBaseUrl ?? "https://api.openai.com/v1");
     setEffectiveAiBaseUrlSource(res.effectiveAiBaseUrlSource ?? "default");
-    setEffectiveAiModel(res.effectiveAiModel ?? res.effectiveOpenaiModel ?? "gpt-4o-mini");
+    setEffectiveAiModel(res.effectiveAiModel ?? res.effectiveOpenaiModel ?? "gpt-5.6-luna");
     setEffectiveAiModelSource(res.effectiveAiModelSource ?? res.effectiveOpenaiModelSource ?? "default");
 
     setModelOptions(
       Array.isArray(res.modelOptions) && res.modelOptions.length > 0
         ? res.modelOptions
-        : ["gpt-5-nano", "gpt-5-mini", "gpt-4.1-nano", "gpt-4o-mini"]
+        : ["gpt-5-nano", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
     );
 
     setProviderOptions(
       Array.isArray(res.providerOptions) && res.providerOptions.length > 0
         ? res.providerOptions
-        : ["openai", "ollama", "vllm", "disabled"]
+        : ["openai"]
     );
   }
 
@@ -600,7 +600,7 @@ export default function AdminApiKeysPage() {
       && saladRuntimeConfig.apiBaseUrl.trim() !== DEFAULT_SALAD_API_BASE_URL
     )
   );
-  const showSaladRuntimeSection = aiProvider === "ollama" || aiProvider === "vllm" || hasSaladRuntimeConfig;
+  const showSaladRuntimeSection = false;
   const saladStatusBadgeClass =
     saladRuntimeStatus?.state === "running" || saladRuntimeStatus?.state === "healthy"
       ? "badgeOk"
@@ -760,7 +760,7 @@ export default function AdminApiKeysPage() {
               <input
                 className="input"
                 type="text"
-                placeholder="https://api.openai.com/v1 / http://salad-vllm-proxy:8089/v1"
+                placeholder="https://api.openai.com/v1"
                 value={aiBaseUrl}
                 onChange={(e) => setAiBaseUrl(e.target.value)}
               />
@@ -806,7 +806,7 @@ export default function AdminApiKeysPage() {
               <input
                 className="input"
                 type="password"
-                placeholder="sk-... / ollama / vllm"
+                placeholder="sk-..."
                 value={aiApiKey}
                 onChange={(e) => setAiApiKey(e.target.value)}
               />

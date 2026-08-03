@@ -2,6 +2,27 @@
   "title": "AI Agent Chat",
   "description": "Cross-venue market and position analysis with transparent, read-only skills.",
   "readOnlyMvp": "Read-only MVP",
+  "credits": {
+    "available": "{value} AI Credits",
+    "lastRun": "Last analysis:",
+    "charged": "{value} AI Credits used",
+    "remaining": "{value} AI Credits remaining",
+    "usedSkills": "Skill categories",
+    "skillCategories": {
+      "market": "Market",
+      "intelligence": "Intelligence",
+      "prediction": "Predictions",
+      "portfolio": "Portfolio",
+      "risk": "Risk",
+      "draft": "Draft"
+    },
+    "classes": {
+      "utility": "Utility",
+      "standard": "Standard analysis",
+      "analysis": "Advanced analysis",
+      "deep": "Deep analysis"
+    }
+  },
   "assistant": "Assistant",
   "you": "You",
   "sources": "{count} sources",
@@ -36,9 +57,21 @@
     "positionCopilotDescription": "Read-only account analysis with deterministic position-risk checks."
   },
   "blocks": {
+    "summary": "Summary",
+    "keyMetrics": "Key metrics",
+    "riskFindings": "Risk findings",
+    "scenarios": "Scenarios",
+    "comparison": "Prediction comparison",
+    "sourceList": "Sources",
     "prediction": "Prediction",
     "position": "Position",
-    "divergence": "Divergence"
+    "divergence": "Divergence",
+    "riskLevels": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical"
+    }
   },
   "skills": {
     "button": "Skills ({count})",

@@ -139,7 +139,7 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       effectiveOpenaiModel: effectiveModel.model,
       effectiveOpenaiModelSource: effectiveModel.source,
       modelOptions: [...deps.OPENAI_ADMIN_MODEL_OPTIONS],
-      providerOptions: [...deps.AI_PROVIDER_OPTIONS, "disabled"]
+      providerOptions: ["openai"]
     });
   });
 

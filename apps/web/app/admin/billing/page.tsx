@@ -33,7 +33,7 @@ type BillingPackage = {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens: string;
+  monthlyAiCredits: string;
   aiCredits: string;
   deltaRunningBots: number | null;
   deltaRunningPredictionsAi: number | null;
@@ -46,12 +46,12 @@ type BillingPackagesResponse = {
 
 type BillingFeatureFlagsResponse = {
   billingEnabled: boolean;
-  aiTokenBillingEnabled: boolean;
+  aiCreditBillingEnabled: boolean;
   source: "db" | "default";
   updatedAt: string | null;
   defaults: {
     billingEnabled: boolean;
-    aiTokenBillingEnabled: boolean;
+    aiCreditBillingEnabled: boolean;
   };
 };
 
@@ -86,7 +86,7 @@ type PackageDraft = {
   maxRunningPredictionsAi: number | "";
   maxRunningPredictionsComposite: number | "";
   allowedExchanges: string;
-  monthlyAiTokens: string;
+  monthlyAiCredits: string;
   aiCredits: string;
   deltaRunningBots: number | "";
   deltaRunningPredictionsAi: number | "";
@@ -111,7 +111,7 @@ function toDraft(pkg: BillingPackage): PackageDraft {
     maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? "",
     maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? "",
     allowedExchanges: (pkg.allowedExchanges ?? ["*"]).join(","),
-    monthlyAiTokens: pkg.monthlyAiTokens ?? "0",
+    monthlyAiCredits: pkg.monthlyAiCredits ?? "0",
     aiCredits: pkg.aiCredits ?? "0",
     deltaRunningBots: pkg.deltaRunningBots ?? "",
     deltaRunningPredictionsAi: pkg.deltaRunningPredictionsAi ?? "",
@@ -135,7 +135,7 @@ function emptyDraft(): PackageDraft {
     maxRunningPredictionsAi: 3,
     maxRunningPredictionsComposite: 2,
     allowedExchanges: "*",
-    monthlyAiTokens: "1000000",
+    monthlyAiCredits: "1000000",
     aiCredits: "0",
     deltaRunningBots: "",
     deltaRunningPredictionsAi: "",
@@ -175,7 +175,7 @@ function buildPayload(draft: PackageDraft) {
       ? toNonNegativeInt(draft.maxRunningPredictionsComposite)
       : null,
     allowedExchanges: isPlan ? (allowedExchanges.length > 0 ? allowedExchanges : ["*"]) : ["*"],
-    monthlyAiTokens: normalizeNonNegativeBillingInteger(isPlan ? draft.monthlyAiTokens : "0"),
+    monthlyAiCredits: normalizeNonNegativeBillingInteger(isPlan ? draft.monthlyAiCredits : "0"),
     aiCredits: normalizeNonNegativeBillingInteger(
       !isPlan && addonType === "ai_credits" ? draft.aiCredits : "0"
     ),
@@ -223,14 +223,14 @@ export default function AdminBillingPage() {
   const [adjustNote, setAdjustNote] = useState("");
   const [featureFlags, setFeatureFlags] = useState<BillingFeatureFlagsResponse | null>(null);
   const [billingEnabled, setBillingEnabled] = useState(false);
-  const [aiTokenBillingEnabled, setAiTokenBillingEnabled] = useState(true);
+  const [aiCreditBillingEnabled, setAiCreditBillingEnabled] = useState(true);
   const [paymentConfig, setPaymentConfig] = useState<BillingPaymentConfigResponse | null>(null);
   const [treasuryAddress, setTreasuryAddress] = useState("");
   const [treasuryAddressConfirmation, setTreasuryAddressConfirmation] = useState("");
   const [reauthAction, setReauthAction] = useState<"payment-config" | "feature-flags" | null>(null);
   const [featureFlagsConfirmOpen, setFeatureFlagsConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const canAdjustTokens = Boolean(
+  const canAdjustCredits = Boolean(
     adjustUserLookup.trim()
       && INTEGER_DELTA_PATTERN.test(adjustDelta.trim())
       && adjustNote.trim()
@@ -248,7 +248,7 @@ export default function AdminBillingPage() {
       setItems(payload.items ?? []);
       setFeatureFlags(flags);
       setBillingEnabled(Boolean(flags.billingEnabled));
-      setAiTokenBillingEnabled(Boolean(flags.aiTokenBillingEnabled));
+      setAiCreditBillingEnabled(Boolean(flags.aiCreditBillingEnabled));
       setPaymentConfig(config);
       setTreasuryAddress(config?.treasuryAddress ?? "");
       setTreasuryAddressConfirmation("");
@@ -314,19 +314,19 @@ export default function AdminBillingPage() {
     }
   }
 
-  async function adjustTokens() {
+  async function adjustCredits() {
     const userLookup = adjustUserLookup.trim();
-    const deltaTokens = adjustDelta.trim();
+    const deltaCredits = adjustDelta.trim();
     const note = adjustNote.trim();
-    if (!userLookup || !INTEGER_DELTA_PATTERN.test(deltaTokens) || !note) {
+    if (!userLookup || !INTEGER_DELTA_PATTERN.test(deltaCredits) || !note) {
       setMsg(t("adjustInvalid"));
       return;
     }
     setSavingId("adjust");
     setMsg(null);
     try {
-      await apiPost(`/admin/billing/users/${encodeURIComponent(userLookup)}/tokens/adjust`, {
-        deltaTokens,
+      await apiPost(`/admin/billing/users/${encodeURIComponent(userLookup)}/credits/adjust`, {
+        deltaCredits,
         note
       });
       setMsg(t("adjusted"));
@@ -342,11 +342,11 @@ export default function AdminBillingPage() {
   async function persistFeatureFlags() {
     const saved = await apiPut<BillingFeatureFlagsResponse>("/admin/settings/billing", {
       billingEnabled,
-      aiTokenBillingEnabled
+      aiCreditBillingEnabled
     });
     setFeatureFlags(saved);
     setBillingEnabled(Boolean(saved.billingEnabled));
-    setAiTokenBillingEnabled(Boolean(saved.aiTokenBillingEnabled));
+    setAiCreditBillingEnabled(Boolean(saved.aiCreditBillingEnabled));
     setMsg(t("featureFlags.saved"));
   }
 
@@ -496,9 +496,9 @@ export default function AdminBillingPage() {
               {t("featureFlags.enabledValue")}
             </label>
           </FormField>
-          <FormField label={t("featureFlags.aiTokenBillingEnabled.label")} hint={t("featureFlags.aiTokenBillingEnabled.hint")}>
+          <FormField label={t("featureFlags.aiCreditBillingEnabled.label")} hint={t("featureFlags.aiCreditBillingEnabled.hint")}>
             <label className="adminCheckboxLabel">
-              <input type="checkbox" checked={aiTokenBillingEnabled} onChange={(e) => setAiTokenBillingEnabled(e.target.checked)} />
+              <input type="checkbox" checked={aiCreditBillingEnabled} onChange={(e) => setAiCreditBillingEnabled(e.target.checked)} />
               {t("featureFlags.enabledValue")}
             </label>
           </FormField>
@@ -527,8 +527,8 @@ export default function AdminBillingPage() {
       <section className="card settingsSection adminInlineForm">
         <div className="settingsSectionHeader">
           <div>
-            <h3 className="adminSubsectionTitle">{t("tokenAdjustTitle")}</h3>
-            <div className="adminSectionDescription">{t("tokenAdjustHelp")}</div>
+            <h3 className="adminSubsectionTitle">{t("creditAdjustTitle")}</h3>
+            <div className="adminSectionDescription">{t("creditAdjustHelp")}</div>
           </div>
         </div>
         <div className="adminChoiceGrid">
@@ -540,7 +540,7 @@ export default function AdminBillingPage() {
               onChange={(e) => setAdjustUserLookup(e.target.value)}
             />
           </FormField>
-          <FormField label={t("deltaTokens")} hint={t("deltaTokensHint")}>
+          <FormField label={t("deltaCredits")} hint={t("deltaCreditsHint")}>
             <input
               className="input"
               placeholder="0"
@@ -556,7 +556,7 @@ export default function AdminBillingPage() {
               onChange={(e) => setAdjustNote(e.target.value)}
             />
           </FormField>
-          <AdminActionButton icon="balance" variant="primary" onClick={adjustTokens} disabled={!canAdjustTokens} loading={savingId === "adjust"} loadingLabel={tCommon("saving")}>
+          <AdminActionButton icon="balance" variant="primary" onClick={adjustCredits} disabled={!canAdjustCredits} loading={savingId === "adjust"} loadingLabel={tCommon("saving")}>
             {t("adjust")}
           </AdminActionButton>
         </div>
@@ -742,8 +742,8 @@ function PackageForm({
           <FormField label={t("fields.allowedExchanges.label")} hint={t("fields.allowedExchanges.hint")}>
             <input className="input" value={draft.allowedExchanges} placeholder="*" onChange={(e) => setDraft({ ...draft, allowedExchanges: e.target.value })} />
           </FormField>
-          <FormField label={t("fields.monthlyAiTokens.label")} hint={t("fields.monthlyAiTokens.hint")}>
-            <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.monthlyAiTokens} placeholder="1000000" onChange={(e) => setDraft({ ...draft, monthlyAiTokens: e.target.value })} />
+          <FormField label={t("fields.monthlyAiCredits.label")} hint={t("fields.monthlyAiCredits.hint")}>
+            <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.monthlyAiCredits} placeholder="1000000" onChange={(e) => setDraft({ ...draft, monthlyAiCredits: e.target.value })} />
           </FormField>
         </>
       ) : null}

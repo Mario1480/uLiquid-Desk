@@ -66,7 +66,7 @@ async function main() {
           email: user.email,
           plan: resolved.plan,
           status: resolved.status,
-          aiTokenBalance: resolved.aiTokenBalance.toString()
+          aiCreditBalance: resolved.aiCreditBalance.toString()
         });
       } else {
         // eslint-disable-next-line no-console

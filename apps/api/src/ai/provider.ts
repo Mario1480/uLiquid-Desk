@@ -1,8 +1,20 @@
+import { createHash, randomUUID } from "node:crypto";
 import { validateSafeOutboundUrl } from "@mm/core";
 import { prisma } from "@mm/db";
 import { decryptSecret } from "../secret-crypto.js";
 import { logger } from "../logger.js";
-import { checkAiTokenAccess, debitAiTokens } from "../billing/service.js";
+import {
+  estimateAiRunReservation,
+  isAiCreditBillingEnabledForDatabase,
+  markAiReservationForReconciliation,
+  recordAiUsage,
+  releaseAiReservation,
+  reserveAiCredits,
+  settleAiRun
+} from "./credits/creditService.js";
+import { routeOpenAiModel, type AiRoutingDecision, type AiRoutingProfile } from "./credits/modelRouter.js";
+import { callOpenAiResponses } from "./credits/responsesProvider.js";
+import type { AiTokenUsage } from "./credits/pricing.js";
 
 type OpenAiErrorPayload = {
   error?: {
@@ -51,6 +63,9 @@ export type AiUsageTokens = {
   promptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
+  cachedInputTokens?: number | null;
+  cacheWriteTokens?: number | null;
+  reasoningTokens?: number | null;
 };
 
 export type AiCallResolvedMeta = {
@@ -67,7 +82,7 @@ export type AiProviderSource = "db" | "env" | "default";
 export type AiBaseUrlSource = "db" | "env" | "default";
 export type AiModelSource = "db" | "env" | "default";
 
-export const AI_PROVIDER_OPTIONS = ["openai", "ollama", "vllm"] as const;
+export const AI_PROVIDER_OPTIONS = ["openai"] as const;
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
@@ -85,13 +100,13 @@ const AI_DB_MODEL_CACHE_TTL_MS =
 
 export const OPENAI_ADMIN_MODEL_OPTIONS = [
   "gpt-5-nano",
-  "gpt-5-mini",
-  "gpt-4.1-nano",
-  "gpt-4o-mini"
+  "gpt-5.6-luna",
+  "gpt-5.6-terra",
+  "gpt-5.6-sol"
 ] as const;
 export type OpenAiAdminModel = (typeof OPENAI_ADMIN_MODEL_OPTIONS)[number];
 
-const OPENAI_DEFAULT_MODEL: OpenAiAdminModel = "gpt-4o-mini";
+const OPENAI_DEFAULT_MODEL: OpenAiAdminModel = "gpt-5.6-luna";
 const OLLAMA_DEFAULT_MODEL = "qwen3:8b";
 const OLLAMA_MIN_MAX_TOKENS = (() => {
   const parsed = Number(process.env.AI_OLLAMA_MIN_MAX_TOKENS ?? "900");
@@ -177,6 +192,12 @@ export type CallAiChatOptions = {
     };
   };
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  idempotencyKey?: string;
+  aiRunContext?: {
+    runId: string;
+    callIndex: number;
+    routing: AiRoutingDecision;
+  };
 };
 
 export type AiToolCall = {
@@ -192,6 +213,9 @@ export type AiChatResult = {
   model: string;
   provider: EnabledAiProvider;
   finishReason: string | null;
+  responseId?: string | null;
+  requestId?: string | null;
+  serviceTier?: string | null;
 };
 
 type AiCallResult = {
@@ -219,7 +243,7 @@ export function isSelfHostedAiProvider(provider: AiProvider | string | null | un
   return provider === "ollama" || provider === "vllm";
 }
 
-export function shouldChargeAiTokens(provider: EnabledAiProvider): boolean {
+export function shouldChargeAiCredits(provider: EnabledAiProvider): boolean {
   return provider === "openai";
 }
 
@@ -397,8 +421,6 @@ export function parseStoredAiSettings(value: unknown): DbAiSettings {
     aiProviderRaw === "disabled" || aiProviderRaw === "off" || aiProviderRaw === "none"
       ? "disabled"
       : (normalizeAiProvider(aiProviderRaw) ?? null);
-  const activeProvider = normalizeProviderForStoredProfile(aiProvider);
-
   const legacyAiApiKey = decryptStoredSecret(record.aiApiKeyEnc);
   const legacyOpenAiApiKey = decryptStoredSecret(record.openaiApiKeyEnc);
   const legacyAiModel =
@@ -411,32 +433,17 @@ export function parseStoredAiSettings(value: unknown): DbAiSettings {
       ? (record.aiProfiles as Record<string, unknown>)
       : {};
   const openaiProfile = parseStoredAiProviderSnapshot(aiProfiles.openai);
-  const ollamaProfile = parseStoredAiProviderSnapshot(aiProfiles.ollama);
-  const vllmProfile = parseStoredAiProviderSnapshot(aiProfiles.vllm);
-
-  const selectedProfile =
-    activeProvider === "ollama"
-      ? {
-          aiApiKey: ollamaProfile.aiApiKey ?? legacyAiApiKey,
-          aiModel: ollamaProfile.aiModel ?? legacyAiModel,
-          aiBaseUrl: ollamaProfile.aiBaseUrl ?? legacyAiBaseUrl
-        }
-      : activeProvider === "vllm"
-        ? {
-            aiApiKey: vllmProfile.aiApiKey ?? legacyAiApiKey,
-            aiModel: vllmProfile.aiModel ?? legacyAiModel,
-            aiBaseUrl: vllmProfile.aiBaseUrl ?? legacyAiBaseUrl
-          }
-        : {
-            aiApiKey: openaiProfile.aiApiKey ?? legacyOpenAiApiKey ?? legacyAiApiKey,
-            aiModel: openaiProfile.aiModel ?? legacyAiModel,
-            aiBaseUrl: openaiProfile.aiBaseUrl ?? legacyAiBaseUrl
-          };
+  const useLegacyOpenAiFields = aiProvider === null || aiProvider === "openai" || aiProvider === "disabled";
+  const selectedProfile = {
+    aiApiKey: openaiProfile.aiApiKey ?? (useLegacyOpenAiFields ? legacyOpenAiApiKey ?? legacyAiApiKey : null),
+    aiModel: openaiProfile.aiModel ?? (useLegacyOpenAiFields ? legacyAiModel : null),
+    aiBaseUrl: openaiProfile.aiBaseUrl ?? (useLegacyOpenAiFields ? legacyAiBaseUrl : null)
+  };
 
   return {
     aiApiKey: selectedProfile.aiApiKey,
     aiModel: selectedProfile.aiModel,
-    aiProvider,
+    aiProvider: aiProvider === "disabled" ? "disabled" : "openai",
     aiBaseUrl: selectedProfile.aiBaseUrl
   };
 }
@@ -496,22 +503,8 @@ export async function resolveAiProviderWithSource(): Promise<{
   provider: AiProvider;
   source: AiProviderSource;
 }> {
-  const dbSettings = await resolveDbAiSettings();
-  if (dbSettings.aiProvider) {
-    return {
-      provider: dbSettings.aiProvider,
-      source: "db"
-    };
-  }
-
-  const envRaw = toNonEmptyString(process.env.AI_PROVIDER);
-  if (envRaw) {
-    return {
-      provider: resolveProvider(envRaw),
-      source: "env"
-    };
-  }
-
+  // This product path is intentionally OpenAI-only. Historical stored values
+  // remain readable during rollout, but cannot redirect paid AI requests.
   return {
     provider: "openai",
     source: "default"
@@ -701,6 +694,51 @@ function resolveFallbackModel(primaryModel: string): string | null {
   return fallback && fallback !== primaryModel ? fallback : null;
 }
 
+function routingProfileForScope(scope: string): AiRoutingProfile {
+  if (/position|copilot/i.test(scope)) return "position_copilot";
+  if (/prediction|strategy|prompt_generator/i.test(scope)) return "prediction_builder";
+  if (/trade|order|draft/i.test(scope)) return "trading_assistant";
+  return "market_analyst";
+}
+
+function expectedInputTokens(messages: ChatMessage[]): number {
+  const characters = messages.reduce((sum, message) => {
+    const toolCharacters = (message.tool_calls ?? []).reduce(
+      (toolSum, toolCall) => toolSum + toolCall.function.name.length + toolCall.function.arguments.length,
+      0
+    );
+    return sum + message.content.length + toolCharacters;
+  }, 0);
+  return Math.max(1_000, Math.ceil(characters / 4) + 2_000);
+}
+
+function safeInteger(value: bigint): number {
+  return value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value);
+}
+
+function publicUsage(usage: AiTokenUsage): AiUsageTokens {
+  return {
+    promptTokens: safeInteger(usage.inputTokens),
+    completionTokens: safeInteger(usage.outputTokens),
+    totalTokens: safeInteger(usage.inputTokens + usage.outputTokens),
+    cachedInputTokens: safeInteger(usage.cachedInputTokens),
+    cacheWriteTokens: safeInteger(usage.cacheWriteTokens),
+    reasoningTokens: safeInteger(usage.reasoningTokens)
+  };
+}
+
+function hashedSafetyIdentifier(userId: string | null): string | undefined {
+  return userId
+    ? createHash("sha256").update(`uliquid:${userId}`).digest("hex")
+    : undefined;
+}
+
+function failureNeedsReconciliation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const row = error as { responseId?: unknown; usage?: unknown };
+  return Boolean(row.responseId || row.usage);
+}
+
 async function callChatCompletions(params: {
   provider: EnabledAiProvider;
   apiKey: string;
@@ -862,18 +900,19 @@ export async function callAiChat(
   messages: ChatMessage[],
   options: CallAiChatOptions = {}
 ): Promise<AiChatResult> {
-  const providerResolved = await resolveAiProviderWithSource();
-  if (providerResolved.provider === "disabled") throw new Error("ai_provider_disabled");
-
-  const provider: EnabledAiProvider = providerResolved.provider;
+  const provider: EnabledAiProvider = "openai";
   const key = await resolveAiApiKey(provider);
-  if (!key && (provider === "openai" || provider === "vllm")) throw new Error("ai_api_key_missing");
+  if (!key) throw new Error("ai_api_key_missing");
 
   const baseUrlResolved = await resolveAiBaseUrlWithSource();
-  const model = options.model ?? (await getAiModelAsync());
-  if (!toNonEmptyString(model)) throw new Error("ai_model_missing");
-  let fallbackUsed = false;
-  let fallbackReason: string | null = null;
+  const safeBaseUrl = await validateAiProviderBaseUrl(provider, baseUrlResolved.baseUrl);
+  if (!safeBaseUrl.ok) {
+    throw Object.assign(new Error("ai_provider_unavailable"), {
+      status: 503,
+      code: "unsafe_ai_base_url",
+      reason: safeBaseUrl.reason
+    });
+  }
 
   const timeoutMs = Number(options.timeoutMs ?? process.env.AI_TIMEOUT_MS ?? "15000");
   const controller = new AbortController();
@@ -884,108 +923,160 @@ export async function callAiChat(
     typeof options.billingUserId === "string" && options.billingUserId.trim()
       ? options.billingUserId.trim()
       : null;
+  const billingScope = options.billingScope?.trim() || "ai_call";
+  const routing = options.aiRunContext?.routing ?? routeOpenAiModel({
+    scope: billingScope,
+    profile: routingProfileForScope(billingScope),
+    requestedSymbols: 1,
+    requestedAccounts: 1,
+    enabledSkills: (options.tools ?? []).map((tool) => tool.function.name),
+    createsTradingDraft: /trade|order|draft/i.test(billingScope),
+    expectedInputTokens: expectedInputTokens(messages),
+    allowDeep: process.env.AI_DEEP_ANALYSIS_ENABLED === "true"
+  });
+  const model = routing.model;
+  const billingEnabled = Boolean(billingUserId && await isAiCreditBillingEnabledForDatabase(db));
+  const runId = options.aiRunContext?.runId ?? (billingEnabled ? randomUUID() : null);
+  const callIndex = options.aiRunContext?.callIndex ?? 0;
+  let standaloneRunId: string | null = null;
+  let standaloneReservationCreated = false;
 
-  if (billingUserId && shouldChargeAiTokens(provider)) {
-    const access = await checkAiTokenAccess(billingUserId);
-    if (!access.allowed && access.reason !== "billing_disabled") {
-      if (access.reason === "pro_required") throw new Error("ai_billing_requires_pro");
-      if (access.reason === "token_exhausted") throw new Error("ai_token_balance_exhausted");
-      throw new Error("ai_billing_blocked");
-    }
+  if (billingEnabled && billingUserId && runId && !options.aiRunContext) {
+    standaloneRunId = runId;
+    const reservation = await estimateAiRunReservation({
+      database: db,
+      routing,
+      expectedInputTokens: expectedInputTokens(messages)
+    });
+    const idempotencyKey = options.idempotencyKey ?? `ai-call:${billingUserId}:${randomUUID()}`;
+    await db.aiAgentRun.create({
+      data: {
+        id: runId,
+        userId: billingUserId,
+        scope: billingScope,
+        status: "running",
+        profileSnapshot: { profile: routingProfileForScope(billingScope) },
+        contextSnapshot: {
+          promptCharacters: messages.reduce((sum, row) => sum + row.content.length, 0)
+        },
+        provider: "openai",
+        model,
+        modelClass: routing.modelClass,
+        routingDecision: routing,
+        idempotencyKey
+      }
+    });
+    await reserveAiCredits({
+      database: db,
+      userId: billingUserId,
+      agentRunId: runId,
+      credits: reservation.credits,
+      idempotencyKey: `${idempotencyKey}:reserve`
+    });
+    standaloneReservationCreated = true;
   }
 
   try {
-    let result: AiCallResult;
-    try {
-      result = await callChatCompletions({
-        provider,
-        apiKey: key ?? "",
-        baseUrl: baseUrlResolved.baseUrl,
-        model,
-        messages,
-        temperature: options.temperature,
-        maxTokens: options.maxTokens,
-        tools: options.tools,
-        toolChoice: options.toolChoice,
-        responseFormat: options.responseFormat,
-        reasoningEffort: options.reasoningEffort,
-        signal: controller.signal
-      });
-    } catch (primaryError) {
-      const fallbackModel = isOpenAiGpt5Model(provider, model)
-        ? resolveFallbackModel(model)
-        : null;
-      if (!fallbackModel) {
-        throw primaryError;
-      }
-      fallbackUsed = true;
-      fallbackReason = String(primaryError);
-      logger.warn("ai_provider_model_fallback_triggered", {
-        provider,
-        primary_model: model,
-        fallback_model: fallbackModel,
-        reason: String(primaryError)
-      });
-      result = await callChatCompletions({
-        provider,
-        apiKey: key ?? "",
-        baseUrl: baseUrlResolved.baseUrl,
-        model: fallbackModel,
-        messages,
-        temperature: options.temperature,
-        maxTokens: options.maxTokens,
-        tools: options.tools,
-        toolChoice: options.toolChoice,
-        responseFormat: options.responseFormat,
-        reasoningEffort: options.reasoningEffort,
-        signal: controller.signal
-      });
-    }
+    const result = await callOpenAiResponses({
+      apiKey: key,
+      baseUrl: safeBaseUrl.baseUrl,
+      model,
+      messages,
+      maxOutputTokens: Math.min(options.maxTokens ?? routing.maxOutputTokens, routing.maxOutputTokens),
+      reasoningEffort: options.reasoningEffort ?? routing.reasoningEffort,
+      tools: options.tools,
+      toolChoice: options.toolChoice,
+      responseFormat: options.responseFormat,
+      signal: controller.signal,
+      safetyIdentifier: hashedSafetyIdentifier(billingUserId)
+    });
+    const usage = publicUsage(result.usage);
 
-    if (billingUserId && shouldChargeAiTokens(provider)) {
-      const tokenDebit =
-        result.usage.totalTokens
-        ?? ((result.usage.promptTokens ?? 0) + (result.usage.completionTokens ?? 0));
-      const debit = await debitAiTokens({
-        userId: billingUserId,
-        tokens: tokenDebit,
-        scope: options.billingScope ?? "ai_call",
-        meta: {
-          model: result.modelUsed,
-          provider,
-          promptChars: messages.reduce((sum, row) => sum + row.content.length, 0)
-        }
+    if (billingEnabled && runId) {
+      await recordAiUsage({
+        database: db,
+        agentRunId: runId,
+        callIndex,
+        routing,
+        usage: result.usage,
+        responseId: result.responseId,
+        requestId: result.requestId,
+        serviceTier: result.serviceTier,
+        latencyMs: Date.now() - startedAt
       });
-      if (!debit.charged && debit.reason !== "billing_disabled" && tokenDebit > 0) {
-        if (debit.reason === "pro_required") throw new Error("ai_billing_requires_pro");
-        if (debit.reason === "token_exhausted") throw new Error("ai_token_balance_exhausted");
-        throw new Error("ai_billing_debit_failed");
+      if (standaloneRunId) {
+        const settled = await settleAiRun({ database: db, agentRunId: standaloneRunId });
+        await db.aiAgentRun.update({
+          where: { id: standaloneRunId },
+          data: {
+            status: "completed",
+            completedAt: new Date(),
+            latencyMs: Date.now() - startedAt,
+            usageTotalTokens: usage.totalTokens,
+            chargedCredits: settled?.chargedCredits ?? 0n
+          }
+        });
       }
     }
 
     if (options.onUsage) {
-      options.onUsage(result.usage);
+      options.onUsage(usage);
     }
     if (options.onResolved) {
       options.onResolved({
         provider,
         requestedModel: model,
-        modelUsed: result.modelUsed,
-        fallbackUsed,
-        fallbackReason
+        modelUsed: result.model,
+        fallbackUsed: false,
+        fallbackReason: null
       });
     }
 
     return {
-      content: readMessageContent(result.message),
-      toolCalls: readToolCalls(result.message),
-      usage: result.usage,
-      model: result.modelUsed,
+      content: result.content,
+      toolCalls: result.toolCalls,
+      usage,
+      model: result.model,
       provider,
-      finishReason: result.finishReason
+      finishReason: result.finishReason,
+      responseId: result.responseId,
+      requestId: result.requestId,
+      serviceTier: result.serviceTier
     };
   } catch (error) {
     const isAbort = error instanceof Error && error.name === "AbortError";
+    if (billingEnabled && options.aiRunContext && failureNeedsReconciliation(error)) {
+      await markAiReservationForReconciliation({
+        database: db,
+        agentRunId: options.aiRunContext.runId,
+        reason: isAbort ? "provider_timeout_after_dispatch" : "provider_usage_ambiguous"
+      }).catch(() => undefined);
+    }
+    if (standaloneRunId && standaloneReservationCreated) {
+      const reconciliationRequired = failureNeedsReconciliation(error);
+      if (reconciliationRequired) {
+        await markAiReservationForReconciliation({
+          database: db,
+          agentRunId: standaloneRunId,
+          reason: isAbort ? "provider_timeout_after_dispatch" : "provider_usage_ambiguous"
+        });
+      } else {
+        await releaseAiReservation({
+          database: db,
+          agentRunId: standaloneRunId,
+          reason: isAbort ? "provider_timeout_without_usage" : "provider_failed_without_usage"
+        });
+      }
+      await db.aiAgentRun.update({
+        where: { id: standaloneRunId },
+        data: {
+          status: reconciliationRequired ? "reconciliation_required" : "failed",
+          errorCode: String(error).slice(0, 191),
+          completedAt: new Date(),
+          latencyMs: Date.now() - startedAt
+        }
+      }).catch(() => undefined);
+    }
     logger.warn("ai_provider_call_failed", {
       ai_provider: provider,
       ai_base_url: baseUrlResolved.baseUrl,

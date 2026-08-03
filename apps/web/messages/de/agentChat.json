@@ -2,6 +2,27 @@
   "title": "AI Agent Chat",
   "description": "Börsenübergreifende Markt- und Positionsanalyse mit transparenten Read-only-Skills.",
   "readOnlyMvp": "Read-only MVP",
+  "credits": {
+    "available": "{value} AI Credits",
+    "lastRun": "Letzte Analyse:",
+    "charged": "{value} AI Credits verbraucht",
+    "remaining": "{value} AI Credits verbleibend",
+    "usedSkills": "Skill-Kategorien",
+    "skillCategories": {
+      "market": "Markt",
+      "intelligence": "Intelligence",
+      "prediction": "Predictions",
+      "portfolio": "Portfolio",
+      "risk": "Risiko",
+      "draft": "Entwurf"
+    },
+    "classes": {
+      "utility": "Utility",
+      "standard": "Standardanalyse",
+      "analysis": "Erweiterte Analyse",
+      "deep": "Tiefenanalyse"
+    }
+  },
   "assistant": "Assistent",
   "you": "Du",
   "sources": "{count} Quellen",
@@ -36,9 +57,21 @@
     "positionCopilotDescription": "Read-only-Accountanalyse mit deterministischen Positionsrisiko-Prüfungen."
   },
   "blocks": {
+    "summary": "Zusammenfassung",
+    "keyMetrics": "Kennzahlen",
+    "riskFindings": "Risikohinweise",
+    "scenarios": "Szenarien",
+    "comparison": "Prediction-Vergleich",
+    "sourceList": "Quellen",
     "prediction": "Prediction",
     "position": "Position",
-    "divergence": "Abweichung"
+    "divergence": "Abweichung",
+    "riskLevels": {
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "critical": "Kritisch"
+    }
   },
   "skills": {
     "button": "Skills ({count})",

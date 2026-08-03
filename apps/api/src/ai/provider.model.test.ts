@@ -5,7 +5,7 @@ import {
   isSelfHostedAiProvider,
   normalizeAiProvider,
   resolveAiModelFromConfig,
-  shouldChargeAiTokens
+  shouldChargeAiCredits
 } from "./provider.js";
 
 test("hasUsableAiChatMessageOutput rejects empty completions and accepts text or tool calls", () => {
@@ -21,19 +21,19 @@ test("hasUsableAiChatMessageOutput rejects empty completions and accepts text or
 
 test("resolveAiModelFromConfig prefers db model over env model", () => {
   const resolved = resolveAiModelFromConfig({
-    dbModel: "gpt-5-mini",
-    envModel: "gpt-4o-mini"
+    dbModel: "gpt-5.6-terra",
+    envModel: "gpt-5.6-luna"
   });
-  assert.equal(resolved.model, "gpt-5-mini");
+  assert.equal(resolved.model, "gpt-5.6-terra");
   assert.equal(resolved.source, "db");
 });
 
 test("resolveAiModelFromConfig falls back to env model when db model is missing", () => {
   const resolved = resolveAiModelFromConfig({
     dbModel: null,
-    envModel: "gpt-4.1-nano"
+    envModel: "gpt-5.6-sol"
   });
-  assert.equal(resolved.model, "gpt-4.1-nano");
+  assert.equal(resolved.model, "gpt-5.6-sol");
   assert.equal(resolved.source, "env");
 });
 
@@ -42,7 +42,7 @@ test("resolveAiModelFromConfig falls back to default when db and env are missing
     dbModel: null,
     envModel: null
   });
-  assert.equal(resolved.model, "gpt-4o-mini");
+  assert.equal(resolved.model, "gpt-5.6-luna");
   assert.equal(resolved.source, "default");
 });
 
@@ -60,7 +60,7 @@ test("resolveAiModelFromConfig ignores invalid env model and uses default", () =
     dbModel: null,
     envModel: "gpt-4o"
   });
-  assert.equal(resolved.model, "gpt-4o-mini");
+  assert.equal(resolved.model, "gpt-5.6-luna");
   assert.equal(resolved.source, "default");
 });
 
@@ -111,8 +111,8 @@ test("normalizeAiProvider accepts vllm and self-hosted helper includes vllm", ()
   assert.equal(isSelfHostedAiProvider("openai"), false);
 });
 
-test("shouldChargeAiTokens only charges token billing for openai", () => {
-  assert.equal(shouldChargeAiTokens("openai"), true);
-  assert.equal(shouldChargeAiTokens("ollama"), false);
-  assert.equal(shouldChargeAiTokens("vllm"), false);
+test("shouldChargeAiCredits only charges token billing for openai", () => {
+  assert.equal(shouldChargeAiCredits("openai"), true);
+  assert.equal(shouldChargeAiCredits("ollama"), false);
+  assert.equal(shouldChargeAiCredits("vllm"), false);
 });

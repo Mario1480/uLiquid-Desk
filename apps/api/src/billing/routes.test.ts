@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  adminBillingAdjustTokensSchema,
+  adminBillingAdjustCreditsSchema,
   adminBillingPackageSchema,
   registerBillingRoutes
 } from "./routes.js";
 
-test("adminBillingPackageSchema accepts plan token fields as numbers or strings", () => {
+test("adminBillingPackageSchema accepts plan credit fields as numbers or strings", () => {
   const basePayload = {
     code: "free",
     name: "Free",
@@ -17,21 +17,21 @@ test("adminBillingPackageSchema accepts plan token fields as numbers or strings"
   const parsedNumbers = adminBillingPackageSchema.safeParse({
     ...basePayload,
     plan: "free",
-    monthlyAiTokens: 1000
+    monthlyAiCredits: 1000
   });
   assert.equal(parsedNumbers.success, true);
   if (parsedNumbers.success) {
-    assert.equal(parsedNumbers.data.monthlyAiTokens, "1000");
+    assert.equal(parsedNumbers.data.monthlyAiCredits, "1000");
   }
 
   const parsedStrings = adminBillingPackageSchema.safeParse({
     ...basePayload,
     plan: "free",
-    monthlyAiTokens: "1000"
+    monthlyAiCredits: "1000"
   });
   assert.equal(parsedStrings.success, true);
   if (parsedStrings.success) {
-    assert.equal(parsedStrings.data.monthlyAiTokens, "1000");
+    assert.equal(parsedStrings.data.monthlyAiCredits, "1000");
   }
 });
 
@@ -50,7 +50,7 @@ test("adminBillingPackageSchema accepts add-on credit fields as numbers or strin
   }
 });
 
-test("adminBillingPackageSchema keeps legacy package token fields optional", () => {
+test("adminBillingPackageSchema keeps package credit fields optional", () => {
   assert.equal(adminBillingPackageSchema.safeParse({
     code: "pro_legacy",
     name: "Pro Legacy",
@@ -93,45 +93,45 @@ test("adminBillingPackageSchema rejects active zero-price and no-op add-ons", ()
   }).success, true);
 });
 
-test("adminBillingAdjustTokensSchema accepts token delta as string or number", () => {
-  const parsedString = adminBillingAdjustTokensSchema.safeParse({
-    deltaTokens: "-2500",
+test("adminBillingAdjustCreditsSchema accepts credit delta as string or number", () => {
+  const parsedString = adminBillingAdjustCreditsSchema.safeParse({
+    deltaCredits: "-2500",
     note: "refund correction"
   });
   assert.equal(parsedString.success, true);
   if (parsedString.success) {
-    assert.equal(parsedString.data.deltaTokens, "-2500");
+    assert.equal(parsedString.data.deltaCredits, "-2500");
   }
 
-  const parsedNumber = adminBillingAdjustTokensSchema.safeParse({
-    deltaTokens: 2500,
+  const parsedNumber = adminBillingAdjustCreditsSchema.safeParse({
+    deltaCredits: 2500,
     note: "support top-up"
   });
   assert.equal(parsedNumber.success, true);
   if (parsedNumber.success) {
-    assert.equal(parsedNumber.data.deltaTokens, "2500");
+    assert.equal(parsedNumber.data.deltaCredits, "2500");
   }
 
-  const exactBeyondSafeInteger = adminBillingAdjustTokensSchema.safeParse({
-    deltaTokens: "9007199254740993",
+  const exactBeyondSafeInteger = adminBillingAdjustCreditsSchema.safeParse({
+    deltaCredits: "9007199254740993",
     note: "large exact correction"
   });
   assert.equal(exactBeyondSafeInteger.success, true);
   if (exactBeyondSafeInteger.success) {
-    assert.equal(exactBeyondSafeInteger.data.deltaTokens, "9007199254740993");
+    assert.equal(exactBeyondSafeInteger.data.deltaCredits, "9007199254740993");
   }
 });
 
 test("billing bigint schemas reject non-canonical, unsafe and out-of-range values", () => {
-  for (const deltaTokens of ["9223372036854775808", "-9223372036854775809", "1e3", "1.5", "01", 9007199254740992]) {
-    assert.equal(adminBillingAdjustTokensSchema.safeParse({ deltaTokens, note: "invalid" }).success, false);
+  for (const deltaCredits of ["9223372036854775808", "-9223372036854775809", "1e3", "1.5", "01", 9007199254740992]) {
+    assert.equal(adminBillingAdjustCreditsSchema.safeParse({ deltaCredits, note: "invalid" }).success, false);
   }
-  assert.equal(adminBillingAdjustTokensSchema.safeParse({
-    deltaTokens: "9223372036854775807",
+  assert.equal(adminBillingAdjustCreditsSchema.safeParse({
+    deltaCredits: "9223372036854775807",
     note: "max"
   }).success, true);
-  assert.equal(adminBillingAdjustTokensSchema.safeParse({
-    deltaTokens: "-9223372036854775808",
+  assert.equal(adminBillingAdjustCreditsSchema.safeParse({
+    deltaCredits: "-9223372036854775808",
     note: "min"
   }).success, true);
 
@@ -141,10 +141,10 @@ test("billing bigint schemas reject non-canonical, unsafe and out-of-range value
     kind: "plan",
     plan: "pro",
     priceCents: 2900,
-    monthlyAiTokens: "9007199254740993"
+    monthlyAiCredits: "9007199254740993"
   });
   assert.equal(pkg.success, true);
-  if (pkg.success) assert.equal(pkg.data.monthlyAiTokens, "9007199254740993");
+  if (pkg.success) assert.equal(pkg.data.monthlyAiCredits, "9007199254740993");
 });
 
 test("adminBillingPackageSchema requires addonType for add-ons", () => {
@@ -209,7 +209,7 @@ function createRouteDeps(overrides: Record<string, unknown> = {}) {
     deleteBillingPackage: async () => undefined,
     getSubscriptionSummary: async () => ({ packages: [], orders: [] }),
     resolvePlanCapabilitiesForUserId: async () => ({ plan: "free", capabilities: {} }),
-    adjustAiTokenBalanceByAdmin: async () => ({ balance: 0n }),
+    adjustAiCreditBalanceByAdmin: async () => ({ balance: 0n }),
     isBillingEnabled: async () => true,
     listSubscriptionOrders: async () => [],
     createBillingCheckout: async () => { throw new Error("not_implemented"); },
@@ -311,7 +311,7 @@ test("admin package create defaults omitted token values while update preserves 
   const createRes = createMockRes();
   await lastHandler(app, "post", "/admin/billing/packages")({ body }, createRes);
   assert.equal(createRes.statusCode, 201);
-  assert.equal(payloads[0].monthlyAiTokens, "0");
+  assert.equal(payloads[0].monthlyAiCredits, "0");
   assert.equal(payloads[0].aiCredits, "0");
 
   const updateRes = createMockRes();
@@ -321,7 +321,7 @@ test("admin package create defaults omitted token values while update preserves 
   );
   assert.equal(updateRes.statusCode, 200);
   assert.equal(payloads[1].id, "pkg_existing");
-  assert.equal(Object.prototype.hasOwnProperty.call(payloads[1], "monthlyAiTokens"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(payloads[1], "monthlyAiCredits"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(payloads[1], "aiCredits"), false);
 });
 

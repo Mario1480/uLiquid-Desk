@@ -47,7 +47,7 @@ export function registerAgentChatRoutes(app: Express, deps: AgentChatServiceDeps
   });
   app.post("/api/agent-chat/conversations/:id/messages", requireAuth, async (req, res) => {
     const parsed = createMessageSchema.safeParse(req.body ?? {}); if (!parsed.success) return res.status(400).json({ error: "agent_chat_message_invalid", details: parsed.error.flatten() });
-    try { return res.status(201).json(await service.sendMessage(getUserFromLocals(res), idParam(req), parsed.data.content, parsed.data.locale)); } catch (error) { return sendError(res, error); }
+    try { return res.status(201).json(await service.sendMessage(getUserFromLocals(res), idParam(req), parsed.data.content, parsed.data.locale, parsed.data.idempotencyKey)); } catch (error) { return sendError(res, error); }
   });
   app.get("/api/agent-chat/runs/:id/activity", requireAuth, async (req, res) => {
     try { return res.json(await service.getActivity(getUserFromLocals(res), idParam(req))); } catch (error) { return sendError(res, error); }

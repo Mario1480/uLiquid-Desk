@@ -12,7 +12,8 @@ import type {
   AgentConversation,
   AgentMessage,
   AgentProfile,
-  AgentProfilesResponse
+  AgentProfilesResponse,
+  AgentSkill
 } from "../../src/agent-chat/contracts";
 import { canSendAgentMessage, enabledSkillsForProfile } from "../../src/agent-chat/viewModel";
 import AgentActivityPanel from "./AgentActivityPanel";
@@ -32,6 +33,12 @@ const DEFAULT_CONTEXT: AgentContextDraft = {
 };
 
 export const AGENT_CHAT_POSITION_PREFILL_KEY = "uliquid.agentChat.positionPrefill.v1";
+
+type AiCreditSummary = {
+  available: string;
+  reserved: string;
+  warningLevel: "none" | "low_20" | "low_10" | "exhausted";
+};
 
 function contextFromConversation(conversation: AgentConversation): AgentContextDraft {
   return {
@@ -64,6 +71,9 @@ export default function AgentChatShell() {
   const [error, setError] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [creditSummary, setCreditSummary] = useState<AiCreditSummary | null>(null);
+  const [lastModelClass, setLastModelClass] = useState<string | null>(null);
+  const [lastRunReceipt, setLastRunReceipt] = useState<{ chargedCredits: string; remainingCredits: string | null; skillCategories: AgentSkill["category"][] } | null>(null);
 
   const profiles = profilesPayload?.profiles ?? [];
   const skills = profilesPayload?.skills ?? [];
@@ -89,13 +99,15 @@ export default function AgentChatShell() {
     async function load() {
       setLoading(true);
       try {
-        const [profileData, history] = await Promise.all([
+        const [profileData, history, credits] = await Promise.all([
           apiGet<AgentProfilesResponse>("/api/agent-chat/profiles"),
-          apiGet<{ items: AgentConversation[] }>("/api/agent-chat/conversations")
+          apiGet<{ items: AgentConversation[] }>("/api/agent-chat/conversations"),
+          apiGet<AiCreditSummary>("/api/billing/ai-credits").catch(() => null)
         ]);
         if (!mounted) return;
         setProfilesPayload(profileData);
         setConversations(history.items);
+        setCreditSummary(credits);
         let prefill: Partial<AgentContextDraft> | null = null;
         try {
           const raw = window.sessionStorage.getItem(AGENT_CHAT_POSITION_PREFILL_KEY);
@@ -125,6 +137,7 @@ export default function AgentChatShell() {
     setContext(DEFAULT_CONTEXT);
     setComposer("");
     setError(null);
+    setLastRunReceipt(null);
   }
 
   async function ensureConversation(): Promise<AgentConversation> {
@@ -149,11 +162,20 @@ export default function AgentChatShell() {
     setComposer("");
     try {
       const conversation = await ensureConversation();
-      const response = await apiPost<AgentChatResponse>(`/api/agent-chat/conversations/${encodeURIComponent(conversation.id)}/messages`, { content, locale });
+      const response = await apiPost<AgentChatResponse>(`/api/agent-chat/conversations/${encodeURIComponent(conversation.id)}/messages`, {
+        content,
+        locale,
+        idempotencyKey: crypto.randomUUID()
+      });
       const assistant: AgentMessage = { id: response.messageId, role: "assistant", content: response.content, blocks: response.blocks, sourceRefs: response.citations, createdAt: new Date().toISOString() };
       setMessages((current) => [...current.filter((message) => message.id !== optimistic.id), { ...optimistic, id: `user:${response.messageId}` }, assistant]);
       const runActivity = await apiGet<AgentActivity>(`/api/agent-chat/runs/${encodeURIComponent(response.run.id)}/activity`);
       setActivity(runActivity);
+      setLastModelClass(response.run.modelClass);
+      setLastRunReceipt({ chargedCredits: response.run.chargedCredits, remainingCredits: response.run.remainingCredits, skillCategories: response.run.skillCategories });
+      if (response.run.remainingCredits !== null) {
+        setCreditSummary((current) => current ? { ...current, available: response.run.remainingCredits as string } : current);
+      }
       setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessageAt: new Date().toISOString(), symbol: context.symbol, selectedVenue: context.selectedVenue } : item).sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)));
     } catch (sendError) {
       setMessages((current) => current.filter((message) => message.id !== optimistic.id));
@@ -181,7 +203,14 @@ export default function AgentChatShell() {
 
   return (
     <main className="uiPage agentChatPage">
-      <PageHeader title={t("title")} description={t("description")} actions={<><span className="badge agentChatReadOnlyBadge"><AppIcon name="shield" />{t("readOnlyMvp")}</span><button type="button" className="btn btnPrimary" onClick={newChat}><AppIcon name="create" />{t("actions.newChat")}</button></>} />
+      <PageHeader title={t("title")} description={t("description")} actions={<><span className={`badge agentChatCreditBadge agentChatCreditBadge-${creditSummary?.warningLevel ?? "none"}`}><AppIcon name="billing" />{t("credits.available", { value: creditSummary?.available ?? "-" })}</span>{lastModelClass ? <span className="badge agentChatAnalysisBadge">{t(`credits.classes.${lastModelClass}`)}</span> : null}<span className="badge agentChatReadOnlyBadge"><AppIcon name="shield" />{t("readOnlyMvp")}</span><button type="button" className="btn btnPrimary" onClick={newChat}><AppIcon name="create" />{t("actions.newChat")}</button></>} />
+      {lastRunReceipt ? (
+        <div className="agentChatRunReceipt" role="status">
+          <span><strong>{t("credits.lastRun")}</strong> {t("credits.charged", { value: lastRunReceipt.chargedCredits })}</span>
+          <span>{t("credits.remaining", { value: lastRunReceipt.remainingCredits ?? "-" })}</span>
+          {lastRunReceipt.skillCategories.length > 0 ? <span>{t("credits.usedSkills")}: {lastRunReceipt.skillCategories.map((category) => t(`credits.skillCategories.${category}`)).join(", ")}</span> : null}
+        </div>
+      ) : null}
       {error ? <Notice tone="danger"><strong>{t("states.errorTitle")}</strong><span>{error}</span></Notice> : null}
       {profilesPayload && !profilesPayload.featureAccess.chat ? <Notice tone="warning"><strong>{t("states.disabledTitle")}</strong><span>{t("states.disabled")}</span></Notice> : null}
       <AgentContextBar context={context} profiles={profiles} accounts={accounts} activeProfile={activeProfile} skillCount={enabledSkills.length} disabled={sending || loading} onChange={(patch) => setContext((current) => ({ ...current, ...patch }))} onOpenSkills={() => setSkillsOpen(true)} />

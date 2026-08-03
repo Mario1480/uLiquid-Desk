@@ -23,7 +23,7 @@ export type BillingPackage = {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens: string;
+  monthlyAiCredits: string;
   aiCredits: string;
   deltaRunningBots: number | null;
   deltaRunningPredictionsAi: number | null;
@@ -148,9 +148,9 @@ export type SubscriptionPayload = {
     };
   };
   ai: {
-    tokenBalance: string;
-    tokenUsedLifetime: string;
-    monthlyIncluded: string;
+    creditBalance: string;
+    creditsUsedLifetime: string;
+    monthlyIncludedCredits: string;
     billingEnabled: boolean;
   };
   packages: BillingPackage[];
@@ -297,9 +297,9 @@ export function buildLicensePageModel(
       exchanges: payload.limits.allowedExchanges
     },
     ai: {
-      balance: payload.ai.tokenBalance,
-      monthlyIncluded: payload.ai.monthlyIncluded,
-      usedLifetime: payload.ai.tokenUsedLifetime
+      balance: payload.ai.creditBalance,
+      monthlyIncluded: payload.ai.monthlyIncludedCredits,
+      usedLifetime: payload.ai.creditsUsedLifetime
     },
     features: {
       proPlan: payload.plan === "pro",

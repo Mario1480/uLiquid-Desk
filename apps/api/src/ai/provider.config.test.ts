@@ -17,7 +17,7 @@ async function withPrivateAiBaseUrlEnvCleared<T>(fn: () => Promise<T>): Promise<
   }
 }
 
-test("parseStoredAiSettings reads nested ollama profile for active ollama provider", () => {
+test("parseStoredAiSettings ignores nested ollama profile and fixes provider to OpenAI", () => {
   const settings = parseStoredAiSettings({
     aiProvider: "ollama",
     aiProfiles: {
@@ -28,22 +28,22 @@ test("parseStoredAiSettings reads nested ollama profile for active ollama provid
     }
   });
 
-  assert.equal(settings.aiProvider, "ollama");
+  assert.equal(settings.aiProvider, "openai");
   assert.equal(settings.aiApiKey, null);
-  assert.equal(settings.aiBaseUrl, "http://salad-proxy:8088/v1");
-  assert.equal(settings.aiModel, "qwen3:30b");
+  assert.equal(settings.aiBaseUrl, null);
+  assert.equal(settings.aiModel, null);
 });
 
-test("parseStoredAiSettings falls back to legacy top-level values when nested provider values are absent", () => {
+test("parseStoredAiSettings does not reinterpret legacy self-hosted fields as OpenAI", () => {
   const settings = parseStoredAiSettings({
     aiProvider: "ollama",
     aiBaseUrl: "http://salad-proxy:8088/v1",
     aiModel: "qwen3:30b"
   });
 
-  assert.equal(settings.aiProvider, "ollama");
-  assert.equal(settings.aiBaseUrl, "http://salad-proxy:8088/v1");
-  assert.equal(settings.aiModel, "qwen3:30b");
+  assert.equal(settings.aiProvider, "openai");
+  assert.equal(settings.aiBaseUrl, null);
+  assert.equal(settings.aiModel, null);
 });
 
 test("parseStoredAiSettings prefers nested openai profile when active provider is openai", () => {
@@ -54,7 +54,7 @@ test("parseStoredAiSettings prefers nested openai profile when active provider i
     aiProfiles: {
       openai: {
         aiBaseUrl: "https://api.openai.com/v1",
-        aiModel: "gpt-5-mini"
+        aiModel: "gpt-5.6-terra"
       },
       ollama: {
         aiBaseUrl: "http://salad-proxy:8088/v1",
@@ -65,10 +65,10 @@ test("parseStoredAiSettings prefers nested openai profile when active provider i
 
   assert.equal(settings.aiProvider, "openai");
   assert.equal(settings.aiBaseUrl, "https://api.openai.com/v1");
-  assert.equal(settings.aiModel, "gpt-5-mini");
+  assert.equal(settings.aiModel, "gpt-5.6-terra");
 });
 
-test("parseStoredAiSettings reads nested vllm profile for active vllm provider", () => {
+test("parseStoredAiSettings ignores nested vllm profile and fixes provider to OpenAI", () => {
   const settings = parseStoredAiSettings({
     aiProvider: "vllm",
     aiBaseUrl: "http://legacy-ignored.invalid/v1",
@@ -85,9 +85,9 @@ test("parseStoredAiSettings reads nested vllm profile for active vllm provider",
     }
   });
 
-  assert.equal(settings.aiProvider, "vllm");
-  assert.equal(settings.aiBaseUrl, "http://salad-vllm-proxy:8089/v1");
-  assert.equal(settings.aiModel, "Qwen/Qwen2.5-32B-Instruct");
+  assert.equal(settings.aiProvider, "openai");
+  assert.equal(settings.aiBaseUrl, null);
+  assert.equal(settings.aiModel, null);
 });
 
 test("validateAiProviderBaseUrl blocks unsafe OpenAI-compatible production targets", async () => {

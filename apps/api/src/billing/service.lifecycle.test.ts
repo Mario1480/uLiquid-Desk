@@ -7,7 +7,7 @@ import {
   BILLING_DB_BIGINT_MAX,
   activateSubscriptionTermInTransaction,
   assertBillingDiscoveryScopeStableBeforeCursor,
-  applyAiTokenAdminAdjustmentInTransaction,
+  applyAiCreditAdminAdjustmentInTransaction,
   applyAiLedgerCreditInTransaction,
   billingAmountCentsToUsdcRaw,
   billingDiscoveryRetryAt,
@@ -17,10 +17,9 @@ import {
   buildSubscriptionMonthlyGrantSchedule,
   calculateBillingCartAmountCents,
   captureBillingDiscoveryScopeAfterHead,
-  claimAiTokenDebitInTransaction,
   createBillingOrderWithTreasurySnapshotCas,
   cutoffCapacityGrantValidity,
-  ensureAiTokenMinimumInTransaction,
+  ensureAiCreditMinimumInTransaction,
   getVerifiedBillingPaymentTimestamp,
   getBillingDiscoveryScanRange,
   inspectArbitrumUsdcRpc,
@@ -40,7 +39,7 @@ import {
   reconcileBillingPaymentRows,
   requirePayableBillingCartAmountCents,
   resolveBillingOrderFinalizationDecision,
-  resolveBillingPackageTokenAmounts,
+  resolveBillingPackageCreditAmounts,
   resolveCapacityAddonTargetTermInTransaction,
   runConfirmedBillingFinalization,
   runDueSubscriptionTermAiCycle,
@@ -405,7 +404,7 @@ test("parallel distinct grants use atomic increments and preserve both credits",
   let balance = 100n;
   const ledger = new Map<string, unknown>();
   const tx = {
-    aiTokenLedger: {
+    aiCreditLedger: {
       async findUnique({ where }: any) {
         return ledger.has(where.idempotencyKey) ? { id: where.idempotencyKey } : null;
       },
@@ -417,12 +416,12 @@ test("parallel distinct grants use atomic increments and preserve both credits",
     userSubscription: {
       async updateMany({ where, data }: any) {
         await Promise.resolve();
-        if (where.aiTokenBalance?.lte !== undefined && balance > BigInt(where.aiTokenBalance.lte)) return { count: 0 };
-        balance += BigInt(data.aiTokenBalance.increment);
+        if (where.aiCreditBalance?.lte !== undefined && balance > BigInt(where.aiCreditBalance.lte)) return { count: 0 };
+        balance += BigInt(data.aiCreditBalance.increment);
         return { count: 1 };
       },
       async findUnique() {
-        return { aiTokenBalance: balance };
+        return { aiCreditBalance: balance };
       }
     }
   };
@@ -454,17 +453,17 @@ test("AI credits fail atomically before signed 64-bit balance overflow", async (
   let balance = BILLING_DB_BIGINT_MAX - 5n;
   let ledgerWrites = 0;
   const tx = {
-    aiTokenLedger: {
+    aiCreditLedger: {
       async findUnique() { return null; },
       async create() { ledgerWrites += 1; }
     },
     userSubscription: {
       async updateMany({ where, data }: any) {
-        if (balance > BigInt(where.aiTokenBalance.lte)) return { count: 0 };
-        balance += BigInt(data.aiTokenBalance.increment);
+        if (balance > BigInt(where.aiCreditBalance.lte)) return { count: 0 };
+        balance += BigInt(data.aiCreditBalance.increment);
         return { count: 1 };
       },
-      async findUnique() { return { aiTokenBalance: balance }; }
+      async findUnique() { return { aiCreditBalance: balance }; }
     }
   };
   await assert.rejects(applyAiLedgerCreditInTransaction({
@@ -475,36 +474,9 @@ test("AI credits fail atomically before signed 64-bit balance overflow", async (
     delta: 10n,
     idempotencyKey: "overflow",
     meta: {}
-  }), /ai_token_balance_out_of_range/);
+  }), /ai_credit_balance_out_of_range/);
   assert.equal(balance, BILLING_DB_BIGINT_MAX - 5n);
   assert.equal(ledgerWrites, 0);
-});
-
-test("parallel debits atomically prevent an overdraw", async () => {
-  let balance = 10n;
-  let used = 0n;
-  const tx = {
-    userSubscription: {
-      async updateMany({ where, data }: any) {
-        await Promise.resolve();
-        const requested = BigInt(where.aiTokenBalance.gte);
-        if (balance < requested) return { count: 0 };
-        balance -= BigInt(data.aiTokenBalance.decrement);
-        used += BigInt(data.aiTokenUsedLifetime.increment);
-        return { count: 1 };
-      },
-      async findUnique() {
-        return { aiTokenBalance: balance };
-      }
-    }
-  };
-  const results = await Promise.all([
-    claimAiTokenDebitInTransaction({ tx, subscriptionId: "sub_1", debit: 7n }),
-    claimAiTokenDebitInTransaction({ tx, subscriptionId: "sub_1", debit: 7n })
-  ]);
-  assert.equal(results.filter((result) => result.claimed).length, 1);
-  assert.equal(balance, 3n);
-  assert.equal(used, 7n);
 });
 
 test("checkout requires a live Arbitrum chain and safe scan-start block", async () => {
@@ -690,30 +662,30 @@ test("admin adjustments and free minimum grants use atomic balance operations", 
   let balance = 100n;
   const ledger = new Map<string, any>();
   const tx = {
-    aiTokenLedger: {
+    aiCreditLedger: {
       async findUnique({ where }: any) { return ledger.has(where.idempotencyKey) ? { id: "duplicate" } : null; },
       async create({ data }: any) { ledger.set(data.idempotencyKey, data); return data; }
     },
     userSubscription: {
-      async findUnique() { return { aiTokenBalance: balance }; },
+      async findUnique() { return { aiCreditBalance: balance }; },
       async update({ data }: any) {
         await Promise.resolve();
-        balance += BigInt(data.aiTokenBalance.increment);
-        return { aiTokenBalance: balance };
+        balance += BigInt(data.aiCreditBalance.increment);
+        return { aiCreditBalance: balance };
       },
       async updateMany({ where, data }: any) {
         await Promise.resolve();
-        if (where.aiTokenBalance?.gte !== undefined && balance < BigInt(where.aiTokenBalance.gte)) return { count: 0 };
-        if (where.aiTokenBalance?.lte !== undefined && balance > BigInt(where.aiTokenBalance.lte)) return { count: 0 };
-        if (typeof where.aiTokenBalance === "bigint" && balance !== where.aiTokenBalance) return { count: 0 };
-        if (data.aiTokenBalance.decrement !== undefined) balance -= BigInt(data.aiTokenBalance.decrement);
-        if (data.aiTokenBalance.increment !== undefined) balance += BigInt(data.aiTokenBalance.increment);
+        if (where.aiCreditBalance?.gte !== undefined && balance < BigInt(where.aiCreditBalance.gte)) return { count: 0 };
+        if (where.aiCreditBalance?.lte !== undefined && balance > BigInt(where.aiCreditBalance.lte)) return { count: 0 };
+        if (typeof where.aiCreditBalance === "bigint" && balance !== where.aiCreditBalance) return { count: 0 };
+        if (data.aiCreditBalance.decrement !== undefined) balance -= BigInt(data.aiCreditBalance.decrement);
+        if (data.aiCreditBalance.increment !== undefined) balance += BigInt(data.aiCreditBalance.increment);
         return { count: 1 };
       }
     }
   };
   const [admin] = await Promise.all([
-    applyAiTokenAdminAdjustmentInTransaction({ tx, subscriptionId: "sub_1", delta: -80n }),
+    applyAiCreditAdminAdjustmentInTransaction({ tx, subscriptionId: "sub_1", delta: -80n }),
     applyAiLedgerCreditInTransaction({
       tx,
       userId: "user_1",
@@ -727,7 +699,7 @@ test("admin adjustments and free minimum grants use atomic balance operations", 
   assert.equal(admin.appliedDelta, -80n);
   assert.equal(balance, 50n);
 
-  const exactLargeAdjustment = await applyAiTokenAdminAdjustmentInTransaction({
+  const exactLargeAdjustment = await applyAiCreditAdminAdjustmentInTransaction({
     tx,
     subscriptionId: "sub_1",
     delta: 9_007_199_254_740_993n
@@ -736,7 +708,7 @@ test("admin adjustments and free minimum grants use atomic balance operations", 
   assert.equal(balance, 9_007_199_254_741_043n);
 
   balance = 20n;
-  const minimum = await ensureAiTokenMinimumInTransaction({ tx, subscriptionId: "sub_1", minimum: 100n });
+  const minimum = await ensureAiCreditMinimumInTransaction({ tx, subscriptionId: "sub_1", minimum: 100n });
   assert.equal(minimum.granted, 80n);
   assert.equal(balance, 100n);
 });
@@ -770,7 +742,7 @@ test("term activation persists entitlements before independently retrying AI cre
       maxRunningPredictionsAi: 3,
       maxRunningPredictionsComposite: 2,
       allowedExchanges: ["*"] ,
-      monthlyAiTokens: "10",
+      monthlyAiCredits: "10",
       lines: [
         {
           quantity: 1,
@@ -779,7 +751,7 @@ test("term activation persists entitlements before independently retrying AI cre
             code: "pro",
             kind: "plan",
             plan: "PRO",
-            monthlyAiTokens: "10"
+            monthlyAiCredits: "10"
           }
         },
         {
@@ -811,10 +783,10 @@ test("term activation persists entitlements before independently retrying AI cre
 
   assert.equal(await activateSubscriptionTermInTransaction(tx, term.id, startsAt), true);
   assert.equal(subscriptionData.effectivePlan, "PRO");
-  assert.equal(subscriptionData.monthlyAiTokensIncluded, 10n);
+  assert.equal(subscriptionData.monthlyAiCreditsIncluded, 10n);
   assert.equal(aiScheduleData.aiGrantCyclesApplied, 0);
   assert.equal(aiScheduleData.nextAiGrantAt.toISOString(), startsAt.toISOString());
-  assert.equal("aiTokenLedger" in tx, false);
+  assert.equal("aiCreditLedger" in tx, false);
 });
 
 test("a failed AI cycle rolls back its due marker and retries both scheduled credits idempotently", async () => {
@@ -832,10 +804,10 @@ test("a failed AI cycle rolls back its due marker and retries both scheduled cre
       activatedAt: startsAt,
       nextAiGrantAt: startsAt,
       aiGrantCyclesApplied: 0,
-      monthlyAiTokens: 10n,
+      monthlyAiCredits: 10n,
       entitlementSnapshot: {
         plan: "PRO",
-        monthlyAiTokens: "10",
+        monthlyAiCredits: "10",
         lines: [{
           quantity: 1,
           package: {
@@ -881,13 +853,13 @@ test("a failed AI cycle rolls back its due marker and retries both scheduled cre
         },
         userSubscription: {
           async updateMany({ where, data }: any) {
-            if (working.balance > BigInt(where.aiTokenBalance.lte)) return { count: 0 };
-            working.balance += BigInt(data.aiTokenBalance.increment);
+            if (working.balance > BigInt(where.aiCreditBalance.lte)) return { count: 0 };
+            working.balance += BigInt(data.aiCreditBalance.increment);
             return { count: 1 };
           },
-          async findUnique() { return { aiTokenBalance: working.balance }; }
+          async findUnique() { return { aiCreditBalance: working.balance }; }
         },
-        aiTokenLedger: {
+        aiCreditLedger: {
           async findUnique({ where }: any) {
             return working.ledger.has(where.idempotencyKey) ? { id: where.idempotencyKey } : null;
           },
@@ -907,7 +879,7 @@ test("a failed AI cycle rolls back its due marker and retries both scheduled cre
 
   await assert.rejects(
     runDueSubscriptionTermAiCycle(database, state.term.id, startsAt),
-    /ai_token_balance_out_of_range/
+    /ai_credit_balance_out_of_range/
   );
   assert.equal(state.term.aiGrantCyclesApplied, 0);
   assert.equal(state.term.nextAiGrantAt?.toISOString(), startsAt.toISOString());
@@ -946,14 +918,14 @@ test("failed AI grant rows rotate fairly and persist an operator-visible alert",
     },
     term: { id: "term_poison", userId: "user_1", nextAiGrantAt: dueAt },
     now,
-    error: new Error("ai_token_balance_out_of_range")
+    error: new Error("ai_credit_balance_out_of_range")
   });
   assert.deepEqual(retryData, { updatedAt: now });
   assert.equal(alertData.type, "subscription_ai_credit_failed");
   assert.equal(alertData.source, "billing_subscription_lifecycle");
   assert.equal(alertData.userId, "user_1");
   assert.equal(alertData.metadata.nextAiGrantAt, dueAt.toISOString());
-  assert.match(alertData.metadata.reason, /ai_token_balance_out_of_range/);
+  assert.match(alertData.metadata.reason, /ai_credit_balance_out_of_range/);
 });
 
 test("an overdue paid term is activated before a capacity add-on selects its target", async () => {
@@ -1010,25 +982,25 @@ test("billing finalization only claims confirming orders and treats a concurrent
   assert.equal(reviewAttempts, 0);
 });
 
-test("optional admin package token fields default on create and preserve existing values on update", () => {
-  assert.deepEqual(resolveBillingPackageTokenAmounts({
+test("optional admin package credit fields default on create and preserve existing values on update", () => {
+  assert.deepEqual(resolveBillingPackageCreditAmounts({
     isPlan: true,
     addonType: null
-  }), { monthlyAiTokens: 0n, aiCredits: 0n });
-  assert.deepEqual(resolveBillingPackageTokenAmounts({
+  }), { monthlyAiCredits: 0n, aiCredits: 0n });
+  assert.deepEqual(resolveBillingPackageCreditAmounts({
     isPlan: false,
     addonType: "ai_credits"
-  }), { monthlyAiTokens: 0n, aiCredits: 0n });
-  assert.deepEqual(resolveBillingPackageTokenAmounts({
+  }), { monthlyAiCredits: 0n, aiCredits: 0n });
+  assert.deepEqual(resolveBillingPackageCreditAmounts({
     isPlan: true,
     addonType: null,
-    existing: { monthlyAiTokens: 123n, aiCredits: 999n }
-  }), { monthlyAiTokens: 123n, aiCredits: 0n });
-  assert.deepEqual(resolveBillingPackageTokenAmounts({
+    existing: { monthlyAiCredits: 123n, aiCredits: 999n }
+  }), { monthlyAiCredits: 123n, aiCredits: 0n });
+  assert.deepEqual(resolveBillingPackageCreditAmounts({
     isPlan: false,
     addonType: "ai_credits",
-    existing: { monthlyAiTokens: 999n, aiCredits: 456n }
-  }), { monthlyAiTokens: 0n, aiCredits: 456n });
+    existing: { monthlyAiCredits: 999n, aiCredits: 456n }
+  }), { monthlyAiCredits: 0n, aiCredits: 456n });
 });
 
 test("discovery retries a PENDING to EXPIRED CAS race for hash and ambiguity candidates", async (t) => {
@@ -1152,17 +1124,17 @@ test("discovery retries a PENDING to EXPIRED CAS race for hash and ambiguity can
 
 test("partial billing feature updates preserve unspecified current flags", () => {
   assert.deepEqual(mergeBillingFeatureFlags(
-    { billingEnabled: true, aiTokenBillingEnabled: false },
+    { billingEnabled: true, aiCreditBillingEnabled: false },
     { billingEnabled: false }
-  ), { billingEnabled: false, aiTokenBillingEnabled: false });
+  ), { billingEnabled: false, aiCreditBillingEnabled: false });
   assert.deepEqual(mergeBillingFeatureFlags(
-    { billingEnabled: true, aiTokenBillingEnabled: false },
-    { aiTokenBillingEnabled: true }
-  ), { billingEnabled: true, aiTokenBillingEnabled: true });
+    { billingEnabled: true, aiCreditBillingEnabled: false },
+    { aiCreditBillingEnabled: true }
+  ), { billingEnabled: true, aiCreditBillingEnabled: true });
   assert.deepEqual(mergeBillingFeatureFlags(
-    { billingEnabled: true, aiTokenBillingEnabled: false },
+    { billingEnabled: true, aiCreditBillingEnabled: false },
     {}
-  ), { billingEnabled: true, aiTokenBillingEnabled: false });
+  ), { billingEnabled: true, aiCreditBillingEnabled: false });
 });
 
 test("active paid packages require a positive price and a meaningful add-on value", () => {

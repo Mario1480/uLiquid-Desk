@@ -35,17 +35,17 @@ export type BillingOrderStatus =
   | "failed"
   | "expired"
   | "review_required";
-export type AiLedgerReason = "monthly_grant" | "topup" | "usage_debit" | "admin_adjust";
+export type AiLedgerReason = "monthly_grant" | "topup" | "usage_reserve" | "usage_settle" | "usage_release" | "usage_refund" | "admin_adjust" | "promo_grant";
 export type BillingFeatureFlags = {
   billingEnabled: boolean;
-  aiTokenBillingEnabled: boolean;
+  aiCreditBillingEnabled: boolean;
 };
 
 const BILLING_FEATURE_FLAGS_KEY = "admin.billingFeatureFlags.v1";
 const BILLING_FEATURE_FLAGS_CACHE_MS = 5_000;
 const DEFAULT_BILLING_FEATURE_FLAGS: BillingFeatureFlags = {
   billingEnabled: false,
-  aiTokenBillingEnabled: true
+  aiCreditBillingEnabled: true
 };
 
 const FREE_MAX_RUNNING_BOTS = 1;
@@ -414,9 +414,9 @@ function normalizeBillingFeatureFlags(value: unknown): BillingFeatureFlags {
   const raw = asRecord(value);
   return {
     billingEnabled: asBoolean(raw.billingEnabled, DEFAULT_BILLING_FEATURE_FLAGS.billingEnabled),
-    aiTokenBillingEnabled: asBoolean(
-      raw.aiTokenBillingEnabled,
-      DEFAULT_BILLING_FEATURE_FLAGS.aiTokenBillingEnabled
+    aiCreditBillingEnabled: asBoolean(
+      raw.aiCreditBillingEnabled,
+      DEFAULT_BILLING_FEATURE_FLAGS.aiCreditBillingEnabled
     )
   };
 }
@@ -430,9 +430,9 @@ export function mergeBillingFeatureFlags(
     billingEnabled: raw.billingEnabled === undefined
       ? current.billingEnabled
       : asBoolean(raw.billingEnabled, current.billingEnabled),
-    aiTokenBillingEnabled: raw.aiTokenBillingEnabled === undefined
-      ? current.aiTokenBillingEnabled
-      : asBoolean(raw.aiTokenBillingEnabled, current.aiTokenBillingEnabled)
+    aiCreditBillingEnabled: raw.aiCreditBillingEnabled === undefined
+      ? current.aiCreditBillingEnabled
+      : asBoolean(raw.aiCreditBillingEnabled, current.aiCreditBillingEnabled)
   };
 }
 
@@ -538,8 +538,8 @@ export async function isBillingEnabled(): Promise<boolean> {
   return (await getBillingFeatureFlags()).billingEnabled;
 }
 
-export async function isAiTokenBillingEnabled(): Promise<boolean> {
-  return (await getBillingFeatureFlags()).aiTokenBillingEnabled;
+export async function isAiCreditBillingEnabled(): Promise<boolean> {
+  return (await getBillingFeatureFlags()).aiCreditBillingEnabled;
 }
 
 export {
@@ -781,17 +781,15 @@ function toStrategyPlan(value: EffectivePlan): "free" | "pro" {
   return value === "pro" ? "pro" : "free";
 }
 
-function getDefaultMonthlyTokens(): bigint {
-  return toBigInt(process.env.BILLING_PRO_MONTHLY_AI_TOKENS ?? "1000000");
+function getDefaultMonthlyCredits(): bigint {
+  return toBigInt(process.env.BILLING_PRO_MONTHLY_AI_CREDITS ?? "10000");
 }
 
 export async function ensureBillingDefaults(): Promise<void> {
   if (!db.billingPackage || typeof db.billingPackage.upsert !== "function") return;
 
   const proMonthlyPriceCents = normalizeInt(process.env.BILLING_PRO_MONTHLY_PRICE_CENTS ?? "2900", 2900);
-  const topupPriceCents = normalizeInt(process.env.BILLING_AI_TOPUP_PRICE_CENTS ?? "900", 900);
-  const topupTokens = toBigInt(process.env.BILLING_AI_TOPUP_TOKENS ?? "250000");
-  const proMonthlyTokens = getDefaultMonthlyTokens();
+  const proMonthlyCredits = getDefaultMonthlyCredits();
   const entitlementTopupPriceCents = normalizeInt(
     process.env.BILLING_ENTITLEMENT_TOPUP_PRICE_CENTS ?? "1500",
     1500
@@ -827,7 +825,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       maxRunningPredictionsAi: FREE_MAX_RUNNING_PREDICTIONS_AI,
       maxRunningPredictionsComposite: FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE,
       allowedExchanges: [...FREE_ALLOWED_EXCHANGES],
-      monthlyAiTokens: 0n,
+      monthlyAiCredits: 0n,
       aiCredits: 0n,
       deltaRunningBots: null,
       deltaRunningPredictionsAi: null,
@@ -837,7 +835,7 @@ export async function ensureBillingDefaults(): Promise<void> {
 
   await db.billingPackage.upsert({
     where: { code: "pro_monthly" },
-    update: {},
+    update: { monthlyAiCredits: proMonthlyCredits },
     create: {
       code: "pro_monthly",
       name: "Pro Monthly",
@@ -860,7 +858,7 @@ export async function ensureBillingDefaults(): Promise<void> {
         PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE
       ),
       allowedExchanges: ["*"],
-      monthlyAiTokens: proMonthlyTokens,
+      monthlyAiCredits: proMonthlyCredits,
       aiCredits: 0n,
       deltaRunningBots: null,
       deltaRunningPredictionsAi: null,
@@ -870,24 +868,24 @@ export async function ensureBillingDefaults(): Promise<void> {
 
   await db.billingPackage.upsert({
     where: { code: "ai_topup_250k" },
-    update: {},
+    update: { isActive: false, aiCredits: 0n },
     create: {
       code: "ai_topup_250k",
       name: "AI Topup 250k",
-      description: "Additional AI tokens",
+      description: "Legacy AI credit package (inactive)",
       kind: "ADDON",
       addonType: "AI_CREDITS",
-      isActive: true,
+      isActive: false,
       sortOrder: 20,
-      priceCents: topupPriceCents,
+      priceCents: 0,
       billingMonths: 1,
       plan: null,
       maxRunningBots: null,
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
       allowedExchanges: ["*"],
-      monthlyAiTokens: 0n,
-      aiCredits: topupTokens,
+      monthlyAiCredits: 0n,
+      aiCredits: 0n,
       deltaRunningBots: null,
       deltaRunningPredictionsAi: null,
       deltaRunningPredictionsComposite: null,
@@ -896,6 +894,49 @@ export async function ensureBillingDefaults(): Promise<void> {
       }
     }
   });
+
+  for (const topup of [
+    { code: "ai_topup_10k", name: "10,000 AI Credits", credits: 10_000n, priceCents: 1_000, sortOrder: 20 },
+    { code: "ai_topup_25k", name: "25,000 AI Credits", credits: 25_000n, priceCents: 2_500, sortOrder: 21 },
+    { code: "ai_topup_50k", name: "50,000 AI Credits", credits: 50_000n, priceCents: 5_000, sortOrder: 22 },
+    { code: "ai_topup_100k", name: "100,000 AI Credits", credits: 100_000n, priceCents: 10_000, sortOrder: 23 }
+  ]) {
+    await db.billingPackage.upsert({
+      where: { code: topup.code },
+      update: {
+        name: topup.name,
+        description: "Prepaid AI Credits for cost-based OpenAI usage",
+        addonType: "AI_CREDITS",
+        isActive: true,
+        sortOrder: topup.sortOrder,
+        priceCents: topup.priceCents,
+        aiCredits: topup.credits,
+        meta: { billingAddonType: "ai_credits" }
+      },
+      create: {
+        code: topup.code,
+        name: topup.name,
+        description: "Prepaid AI Credits for cost-based OpenAI usage",
+        kind: "ADDON",
+        addonType: "AI_CREDITS",
+        isActive: true,
+        sortOrder: topup.sortOrder,
+        priceCents: topup.priceCents,
+        billingMonths: 1,
+        plan: null,
+        maxRunningBots: null,
+        maxRunningPredictionsAi: null,
+        maxRunningPredictionsComposite: null,
+        allowedExchanges: ["*"],
+        monthlyAiCredits: 0n,
+        aiCredits: topup.credits,
+        deltaRunningBots: null,
+        deltaRunningPredictionsAi: null,
+        deltaRunningPredictionsComposite: null,
+        meta: { billingAddonType: "ai_credits" }
+      }
+    });
+  }
 
   await db.billingPackage.upsert({
     where: { code: "capacity_topup_starter" },
@@ -917,7 +958,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
       allowedExchanges: ["*"],
-      monthlyAiTokens: 0n,
+      monthlyAiCredits: 0n,
       aiCredits: 0n,
       deltaRunningBots: 1,
       deltaRunningPredictionsAi: 1,
@@ -946,7 +987,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
       allowedExchanges: ["*"],
-      monthlyAiTokens: 0n,
+      monthlyAiCredits: 0n,
       aiCredits: 0n,
       deltaRunningBots: 1,
       deltaRunningPredictionsAi: 0,
@@ -975,7 +1016,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
       allowedExchanges: ["*"],
-      monthlyAiTokens: 0n,
+      monthlyAiCredits: 0n,
       aiCredits: 0n,
       deltaRunningBots: 0,
       deltaRunningPredictionsAi: 1,
@@ -1004,7 +1045,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
       allowedExchanges: ["*"],
-      monthlyAiTokens: 0n,
+      monthlyAiCredits: 0n,
       aiCredits: 0n,
       deltaRunningBots: 0,
       deltaRunningPredictionsAi: 0,
@@ -1029,9 +1070,9 @@ async function getOrCreateSubscription(userId: string, tx: any = db): Promise<an
       maxRunningPredictionsAi: freeDefaults.maxRunningPredictionsAi,
       maxRunningPredictionsComposite: freeDefaults.maxRunningPredictionsComposite,
       allowedExchanges: freeDefaults.allowedExchanges,
-      aiTokenBalance: freeDefaults.monthlyAiTokens,
-      aiTokenUsedLifetime: 0n,
-      monthlyAiTokensIncluded: freeDefaults.monthlyAiTokens
+      aiCreditBalance: freeDefaults.monthlyAiCredits,
+      aiCreditsUsedLifetime: 0n,
+      monthlyAiCreditsIncluded: freeDefaults.monthlyAiCredits
     }
   });
 }
@@ -1041,7 +1082,7 @@ async function getFreePlanDefaults(tx: any = db): Promise<{
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens: bigint;
+  monthlyAiCredits: bigint;
 }> {
   const pkg = await tx.billingPackage.findUnique({
     where: { code: "free" },
@@ -1050,7 +1091,7 @@ async function getFreePlanDefaults(tx: any = db): Promise<{
       maxRunningPredictionsAi: true,
       maxRunningPredictionsComposite: true,
       allowedExchanges: true,
-      monthlyAiTokens: true
+      monthlyAiCredits: true
     }
   });
 
@@ -1067,7 +1108,7 @@ async function getFreePlanDefaults(tx: any = db): Promise<{
       0
     ),
     allowedExchanges: normalizeStringArray(pkg?.allowedExchanges, [...FREE_ALLOWED_EXCHANGES]),
-    monthlyAiTokens: toBigInt(pkg?.monthlyAiTokens)
+    monthlyAiCredits: toBigInt(pkg?.monthlyAiCredits)
   };
 }
 
@@ -1082,7 +1123,7 @@ export function buildPlanPackageLiveSyncWhere(plan: "FREE" | "PRO") {
       };
 }
 
-export async function ensureAiTokenMinimumInTransaction(params: {
+export async function ensureAiCreditMinimumInTransaction(params: {
   tx: any;
   subscriptionId: string;
   minimum: bigint;
@@ -1091,18 +1132,18 @@ export async function ensureAiTokenMinimumInTransaction(params: {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const row = await params.tx.userSubscription.findUnique({
       where: { id: params.subscriptionId },
-      select: { aiTokenBalance: true }
+      select: { aiCreditBalance: true }
     });
-    const current = toBigInt(row?.aiTokenBalance);
+    const current = toBigInt(row?.aiCreditBalance);
     if (current >= minimum) return { balance: current, granted: 0n };
     const granted = minimum - current;
     const claimed = await params.tx.userSubscription.updateMany({
-      where: { id: params.subscriptionId, aiTokenBalance: current },
-      data: { aiTokenBalance: { increment: granted } }
+      where: { id: params.subscriptionId, aiCreditBalance: current },
+      data: { aiCreditBalance: { increment: granted } }
     });
     if (claimed.count === 1) return { balance: minimum, granted };
   }
-  throw new Error("ai_token_balance_concurrent_update");
+  throw new Error("ai_credit_balance_concurrent_update");
 }
 
 async function syncPlanPackageToSubscriptions(pkg: {
@@ -1112,13 +1153,13 @@ async function syncPlanPackageToSubscriptions(pkg: {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens: bigint;
+  monthlyAiCredits: bigint;
 }): Promise<void> {
   if (pkg.kind !== "PLAN" || !pkg.plan) return;
 
   if (pkg.plan === "FREE") {
     const freeWhere = buildPlanPackageLiveSyncWhere("FREE");
-    const freeMonthlyTokens = toBigInt(pkg.monthlyAiTokens);
+    const freeMonthlyCredits = toBigInt(pkg.monthlyAiCredits);
     const freeRows = await db.userSubscription.findMany({
       where: freeWhere,
       select: { userId: true }
@@ -1141,16 +1182,16 @@ async function syncPlanPackageToSubscriptions(pkg: {
           0
         ),
         allowedExchanges: normalizeStringArray(pkg.allowedExchanges, [...FREE_ALLOWED_EXCHANGES]),
-        monthlyAiTokensIncluded: freeMonthlyTokens
+        monthlyAiCreditsIncluded: freeMonthlyCredits
       }
     });
 
-    if (freeMonthlyTokens > 0n) {
+    if (freeMonthlyCredits > 0n) {
       const rows = await db.userSubscription.findMany({
         where: {
           ...freeWhere,
-          aiTokenBalance: {
-            lt: freeMonthlyTokens
+          aiCreditBalance: {
+            lt: freeMonthlyCredits
           }
         },
         select: {
@@ -1166,24 +1207,24 @@ async function syncPlanPackageToSubscriptions(pkg: {
             select: {
               id: true,
               userId: true,
-              aiTokenBalance: true
+              aiCreditBalance: true
             }
           });
           if (!latest) return;
-          const ensured = await ensureAiTokenMinimumInTransaction({
+          const ensured = await ensureAiCreditMinimumInTransaction({
             tx,
             subscriptionId: latest.id,
-            minimum: freeMonthlyTokens
+            minimum: freeMonthlyCredits
           });
 
           if (ensured.granted > 0n) {
-            await tx.aiTokenLedger.create({
+            await tx.aiCreditLedger.create({
               data: {
                 userId: latest.userId,
                 subscriptionId: latest.id,
                 reason: "MONTHLY_GRANT",
-                deltaTokens: ensured.granted,
-                balanceAfter: ensured.balance,
+                deltaCredits: ensured.granted,
+                balanceAfterCredits: ensured.balance,
                 meta: {
                   source: "free_package_sync",
                   packagePlan: "FREE"
@@ -1229,7 +1270,7 @@ async function syncPlanPackageToSubscriptions(pkg: {
         0
       ),
       allowedExchanges: normalizeStringArray(pkg.allowedExchanges, ["*"]),
-      monthlyAiTokensIncluded: toBigInt(pkg.monthlyAiTokens)
+      monthlyAiCreditsIncluded: toBigInt(pkg.monthlyAiCredits)
     }
   });
 
@@ -1255,9 +1296,9 @@ export async function setUserToFreePlan(params: {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  aiTokenBalance: bigint;
-  aiTokenUsedLifetime: bigint;
-  monthlyAiTokensIncluded: bigint;
+  aiCreditBalance: bigint;
+  aiCreditsUsedLifetime: bigint;
+  monthlyAiCreditsIncluded: bigint;
 }> {
   await ensureBillingDefaults();
 
@@ -1275,24 +1316,24 @@ export async function setUserToFreePlan(params: {
         maxRunningPredictionsAi: defaults.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: defaults.maxRunningPredictionsComposite,
         allowedExchanges: defaults.allowedExchanges,
-        monthlyAiTokensIncluded: defaults.monthlyAiTokens,
+        monthlyAiCreditsIncluded: defaults.monthlyAiCredits,
         entitlementSyncPending: true
       }
     });
 
-    const ensured = await ensureAiTokenMinimumInTransaction({
+    const ensured = await ensureAiCreditMinimumInTransaction({
       tx,
       subscriptionId: sub.id,
-      minimum: defaults.monthlyAiTokens
+      minimum: defaults.monthlyAiCredits
     });
     if (ensured.granted > 0n) {
-      await tx.aiTokenLedger.create({
+      await tx.aiCreditLedger.create({
         data: {
           userId: params.userId,
           subscriptionId: sub.id,
           reason: "MONTHLY_GRANT",
-          deltaTokens: ensured.granted,
-          balanceAfter: ensured.balance,
+          deltaCredits: ensured.granted,
+          balanceAfterCredits: ensured.balance,
           meta: {
             source: "set_user_to_free_plan",
             packageCode: "free"
@@ -1330,9 +1371,9 @@ export async function syncPrimaryWorkspaceEntitlementsForUser(params: {
   const isPro = plan === "pro";
   const sub = await db.userSubscription.findUnique({
     where: { userId: params.userId },
-    select: { monthlyAiTokensIncluded: true }
+    select: { monthlyAiCreditsIncluded: true }
   });
-  const freeAiIncluded = !isPro && toBigInt(sub?.monthlyAiTokensIncluded) > 0n;
+  const freeAiIncluded = !isPro && toBigInt(sub?.monthlyAiCreditsIncluded) > 0n;
   const allowAdvancedStrategies = isPro || freeAiIncluded;
   const allowedStrategyKinds: Array<"local" | "ai" | "composite"> = isPro
     ? ["local", "ai", "composite"]
@@ -1414,9 +1455,9 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  aiTokenBalance: bigint;
-  aiTokenUsedLifetime: bigint;
-  monthlyAiTokensIncluded: bigint;
+  aiCreditBalance: bigint;
+  aiCreditsUsedLifetime: bigint;
+  monthlyAiCreditsIncluded: bigint;
 }> {
   const now = new Date();
   let row = await getOrCreateSubscription(userId);
@@ -1477,9 +1518,9 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
         0
       ),
       allowedExchanges: normalizeStringArray(row.allowedExchanges, ["*"]),
-      aiTokenBalance: toBigInt(row.aiTokenBalance),
-      aiTokenUsedLifetime: toBigInt(row.aiTokenUsedLifetime),
-      monthlyAiTokensIncluded: toBigInt(row.monthlyAiTokensIncluded)
+      aiCreditBalance: toBigInt(row.aiCreditBalance),
+      aiCreditsUsedLifetime: toBigInt(row.aiCreditsUsedLifetime),
+      monthlyAiCreditsIncluded: toBigInt(row.monthlyAiCreditsIncluded)
     };
   }
 
@@ -1500,9 +1541,9 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
       0
     ),
     allowedExchanges: normalizeStringArray(row.allowedExchanges, [...FREE_ALLOWED_EXCHANGES]),
-    aiTokenBalance: toBigInt(row.aiTokenBalance),
-    aiTokenUsedLifetime: toBigInt(row.aiTokenUsedLifetime),
-    monthlyAiTokensIncluded: toBigInt(row.monthlyAiTokensIncluded)
+    aiCreditBalance: toBigInt(row.aiCreditBalance),
+    aiCreditsUsedLifetime: toBigInt(row.aiCreditsUsedLifetime),
+    monthlyAiCreditsIncluded: toBigInt(row.monthlyAiCreditsIncluded)
   };
 }
 
@@ -1845,7 +1886,7 @@ function buildPackageSnapshot(pkg: any): Record<string, unknown> {
     maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
     maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
     allowedExchanges: normalizeStringArray(pkg.allowedExchanges, ["*"]),
-    monthlyAiTokens: toBigInt(pkg.monthlyAiTokens).toString(),
+    monthlyAiCredits: toBigInt(pkg.monthlyAiCredits).toString(),
     aiCredits: toBigInt(pkg.aiCredits).toString(),
     deltaRunningBots: pkg.deltaRunningBots ?? null,
     deltaRunningPredictionsAi: pkg.deltaRunningPredictionsAi ?? null,
@@ -3248,7 +3289,7 @@ type ApplyPackageData = {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens: bigint;
+  monthlyAiCredits: bigint;
   aiCredits: bigint;
   deltaRunningBots: number | null;
   deltaRunningPredictionsAi: number | null;
@@ -3299,7 +3340,7 @@ function normalizeApplyPackageData(params: {
       0
     ),
     allowedExchanges: normalizeStringArray(read("allowedExchanges"), ["*"]),
-    monthlyAiTokens: toBigInt(read("monthlyAiTokens")),
+    monthlyAiCredits: toBigInt(read("monthlyAiCredits")),
     aiCredits: toBigInt(read("aiCredits")),
     deltaRunningBots: normalizeNullableInt(
       read("deltaRunningBots"),
@@ -3357,7 +3398,7 @@ function buildTermEntitlementSnapshot(lines: ApplyOrderLine[], plan: ApplyPackag
     maxRunningPredictionsAi: plan.maxRunningPredictionsAi,
     maxRunningPredictionsComposite: plan.maxRunningPredictionsComposite,
     allowedExchanges: plan.allowedExchanges,
-    monthlyAiTokens: plan.monthlyAiTokens.toString(),
+    monthlyAiCredits: plan.monthlyAiCredits.toString(),
     lines: lines.map((line) => ({
       quantity: line.quantity,
       package: {
@@ -3372,7 +3413,7 @@ function buildTermEntitlementSnapshot(lines: ApplyOrderLine[], plan: ApplyPackag
         maxRunningPredictionsAi: line.pkg.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: line.pkg.maxRunningPredictionsComposite,
         allowedExchanges: line.pkg.allowedExchanges,
-        monthlyAiTokens: line.pkg.monthlyAiTokens.toString(),
+        monthlyAiCredits: line.pkg.monthlyAiCredits.toString(),
         aiCredits: line.pkg.aiCredits.toString(),
         deltaRunningBots: line.pkg.deltaRunningBots,
         deltaRunningPredictionsAi: line.pkg.deltaRunningPredictionsAi,
@@ -3388,7 +3429,7 @@ function readTermSnapshot(term: any): {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens: bigint;
+  monthlyAiCredits: bigint;
   lines: ApplyOrderLine[];
 } {
   const snapshot = asRecord(term?.entitlementSnapshot);
@@ -3419,7 +3460,7 @@ function readTermSnapshot(term: any): {
       0
     ),
     allowedExchanges: normalizeStringArray(snapshot.allowedExchanges, ["*"]),
-    monthlyAiTokens: toBigInt(snapshot.monthlyAiTokens ?? term?.monthlyAiTokens),
+    monthlyAiCredits: toBigInt(snapshot.monthlyAiCredits ?? term?.monthlyAiCredits),
     lines
   };
 }
@@ -3435,8 +3476,8 @@ export async function applyAiLedgerCreditInTransaction(params: {
   meta: Record<string, unknown>;
 }): Promise<void> {
   if (params.delta <= 0n) return;
-  if (params.delta > BILLING_DB_BIGINT_MAX) throw new Error("ai_token_balance_out_of_range");
-  const duplicate = await params.tx.aiTokenLedger.findUnique({
+  if (params.delta > BILLING_DB_BIGINT_MAX) throw new Error("ai_credit_balance_out_of_range");
+  const duplicate = await params.tx.aiCreditLedger.findUnique({
     where: { idempotencyKey: params.idempotencyKey },
     select: { id: true }
   });
@@ -3444,34 +3485,34 @@ export async function applyAiLedgerCreditInTransaction(params: {
   const credited = await params.tx.userSubscription.updateMany({
     where: {
       id: params.subscriptionId,
-      aiTokenBalance: { lte: BILLING_DB_BIGINT_MAX - params.delta }
+      aiCreditBalance: { lte: BILLING_DB_BIGINT_MAX - params.delta }
     },
-    data: { aiTokenBalance: { increment: params.delta } }
+    data: { aiCreditBalance: { increment: params.delta } }
   });
   if (credited.count !== 1) {
     const current = await params.tx.userSubscription.findUnique({
       where: { id: params.subscriptionId },
-      select: { aiTokenBalance: true }
+      select: { aiCreditBalance: true }
     });
-    if (toBigInt(current?.aiTokenBalance) > BILLING_DB_BIGINT_MAX - params.delta) {
-      throw new Error("ai_token_balance_out_of_range");
+    if (toBigInt(current?.aiCreditBalance) > BILLING_DB_BIGINT_MAX - params.delta) {
+      throw new Error("ai_credit_balance_out_of_range");
     }
-    throw new Error("ai_token_balance_concurrent_update");
+    throw new Error("ai_credit_balance_concurrent_update");
   }
   const updated = await params.tx.userSubscription.findUnique({
     where: { id: params.subscriptionId },
-    select: { aiTokenBalance: true }
+    select: { aiCreditBalance: true }
   });
-  const nextBalance = toBigInt(updated?.aiTokenBalance);
-  await params.tx.aiTokenLedger.create({
+  const nextBalance = toBigInt(updated?.aiCreditBalance);
+  await params.tx.aiCreditLedger.create({
     data: {
       userId: params.userId,
       subscriptionId: params.subscriptionId,
       orderId: params.orderId ?? null,
       reason: params.reason,
       idempotencyKey: params.idempotencyKey,
-      deltaTokens: params.delta,
-      balanceAfter: nextBalance,
+      deltaCredits: params.delta,
+      balanceAfterCredits: nextBalance,
       meta: params.meta
     }
   });
@@ -3483,7 +3524,7 @@ export function isBillingFinalizationReviewError(error: unknown): boolean {
     reason === "paid_plan_required_for_capacity_topup"
     || reason === "legacy_order_read_only"
     || reason === "confirmed_order_invalid_cart"
-    || reason === "ai_token_balance_out_of_range"
+    || reason === "ai_credit_balance_out_of_range"
     || reason === "term_activation_failed"
   );
 }
@@ -3681,7 +3722,7 @@ async function finalizeConfirmedBillingOrder(
           endsAt,
           graceEndsAt,
           entitlementSnapshot: buildTermEntitlementSnapshot(applyLines, planLine.pkg),
-          monthlyAiTokens: planLine.pkg.monthlyAiTokens
+          monthlyAiCredits: planLine.pkg.monthlyAiCredits
         }
       });
       scheduledTermId = term.id;
@@ -3830,7 +3871,7 @@ export async function activateSubscriptionTermInTransaction(
         maxRunningPredictionsAi: snapshot.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: snapshot.maxRunningPredictionsComposite,
         allowedExchanges: snapshot.allowedExchanges,
-        monthlyAiTokensIncluded: snapshot.monthlyAiTokens,
+        monthlyAiCreditsIncluded: snapshot.monthlyAiCredits,
         entitlementSyncPending: true
       }
     });
@@ -3932,7 +3973,7 @@ export async function applyDueSubscriptionTermAiCycleInTransaction(
     subscriptionId: term.subscriptionId,
     orderId: term.orderId,
     reason: "MONTHLY_GRANT",
-    delta: toBigInt(term.monthlyAiTokens),
+    delta: toBigInt(term.monthlyAiCredits),
     idempotencyKey: `term:${term.id}:monthly:${cycle}`,
     meta: { termId: term.id, cycle, scheduledAt: term.nextAiGrantAt.toISOString() }
   });
@@ -4084,7 +4125,7 @@ async function synchronizeSubscriptionLifecycleForUser(userId: string, now: Date
         maxRunningPredictionsAi: defaults.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: defaults.maxRunningPredictionsComposite,
         allowedExchanges: defaults.allowedExchanges,
-        monthlyAiTokensIncluded: defaults.monthlyAiTokens,
+        monthlyAiCreditsIncluded: defaults.monthlyAiCredits,
         entitlementSyncPending: true
       }
     });
@@ -4302,7 +4343,7 @@ export async function getSubscriptionSummary(userId: string): Promise<{
       };
     };
   };
-  ai: { tokenBalance: string; tokenUsedLifetime: string; monthlyIncluded: string; billingEnabled: boolean };
+  ai: { creditBalance: string; creditsUsedLifetime: string; monthlyIncludedCredits: string; billingEnabled: boolean };
   packages: any[];
   orders: any[];
 }> {
@@ -4409,10 +4450,10 @@ export async function getSubscriptionSummary(userId: string): Promise<{
       }
     },
     ai: {
-      tokenBalance: resolved.aiTokenBalance.toString(),
-      tokenUsedLifetime: resolved.aiTokenUsedLifetime.toString(),
-      monthlyIncluded: resolved.monthlyAiTokensIncluded.toString(),
-      billingEnabled: await isAiTokenBillingEnabled()
+      creditBalance: resolved.aiCreditBalance.toString(),
+      creditsUsedLifetime: resolved.aiCreditsUsedLifetime.toString(),
+      monthlyIncludedCredits: resolved.monthlyAiCreditsIncluded.toString(),
+      billingEnabled: await isAiCreditBillingEnabled()
     },
     packages,
     orders
@@ -4470,149 +4511,7 @@ export async function getEntitlementsForBotStart(
   };
 }
 
-export async function checkAiTokenAccess(userId: string): Promise<{
-  allowed: boolean;
-  reason: "ok" | "billing_disabled" | "pro_required" | "token_exhausted";
-  balance: bigint;
-  plan: EffectivePlan;
-}> {
-  if (!(await isAiTokenBillingEnabled())) {
-    return {
-      allowed: true,
-      reason: "billing_disabled",
-      balance: 0n,
-      plan: "free"
-    };
-  }
-
-  const resolved = await resolveEffectivePlanForUser(userId);
-  const freeHasIncludedTokens =
-    resolved.plan === "free" && toBigInt(resolved.monthlyAiTokensIncluded) > 0n;
-  if (resolved.plan !== "pro" && !freeHasIncludedTokens) {
-    return {
-      allowed: false,
-      reason: "pro_required",
-      balance: resolved.aiTokenBalance,
-      plan: resolved.plan
-    };
-  }
-  if (resolved.aiTokenBalance <= 0n) {
-    return {
-      allowed: false,
-      reason: "token_exhausted",
-      balance: resolved.aiTokenBalance,
-      plan: resolved.plan
-    };
-  }
-  return {
-    allowed: true,
-    reason: "ok",
-    balance: resolved.aiTokenBalance,
-    plan: resolved.plan
-  };
-}
-
-export async function debitAiTokens(params: {
-  userId: string;
-  tokens: number;
-  scope: string;
-  meta?: Record<string, unknown>;
-}): Promise<{
-  charged: boolean;
-  remainingBalance: bigint;
-  reason: "ok" | "billing_disabled" | "pro_required" | "token_exhausted";
-}> {
-  const parsedTokens = normalizeInt(params.tokens, 0, 0);
-  if (!(await isAiTokenBillingEnabled())) {
-    return {
-      charged: false,
-      remainingBalance: 0n,
-      reason: "billing_disabled"
-    };
-  }
-
-  const access = await checkAiTokenAccess(params.userId);
-  if (!access.allowed) {
-    return {
-      charged: false,
-      remainingBalance: access.balance,
-      reason: access.reason
-    };
-  }
-
-  if (parsedTokens <= 0) {
-    return {
-      charged: false,
-      remainingBalance: access.balance,
-      reason: "ok"
-    };
-  }
-
-  return db.$transaction(async (tx: any) => {
-    const sub = await getOrCreateSubscription(params.userId, tx);
-    const debit = BigInt(parsedTokens);
-    const claim = await claimAiTokenDebitInTransaction({
-      tx,
-      subscriptionId: sub.id,
-      debit
-    });
-    if (!claim.claimed) {
-      return {
-        charged: false,
-        remainingBalance: claim.remainingBalance,
-        reason: "token_exhausted" as const
-      };
-    }
-    const nextBalance = claim.remainingBalance;
-
-    await tx.aiTokenLedger.create({
-      data: {
-        userId: params.userId,
-        subscriptionId: sub.id,
-        reason: "USAGE_DEBIT",
-        deltaTokens: -debit,
-        balanceAfter: nextBalance,
-        meta: {
-          scope: params.scope,
-          ...(params.meta ?? {})
-        }
-      }
-    });
-
-    return {
-      charged: true,
-      remainingBalance: nextBalance,
-      reason: "ok" as const
-    };
-  });
-}
-
-export async function claimAiTokenDebitInTransaction(params: {
-  tx: any;
-  subscriptionId: string;
-  debit: bigint;
-}): Promise<{ claimed: boolean; remainingBalance: bigint }> {
-  const charged = await params.tx.userSubscription.updateMany({
-    where: {
-      id: params.subscriptionId,
-      aiTokenBalance: { gte: params.debit }
-    },
-    data: {
-      aiTokenBalance: { decrement: params.debit },
-      aiTokenUsedLifetime: { increment: params.debit }
-    }
-  });
-  const current = await params.tx.userSubscription.findUnique({
-    where: { id: params.subscriptionId },
-    select: { aiTokenBalance: true }
-  });
-  return {
-    claimed: charged.count === 1,
-    remainingBalance: toBigInt(current?.aiTokenBalance)
-  };
-}
-
-export async function applyAiTokenAdminAdjustmentInTransaction(params: {
+export async function applyAiCreditAdminAdjustmentInTransaction(params: {
   tx: any;
   subscriptionId: string;
   delta: bigint;
@@ -4620,50 +4519,50 @@ export async function applyAiTokenAdminAdjustmentInTransaction(params: {
   if (params.delta === 0n) {
     const row = await params.tx.userSubscription.findUnique({
       where: { id: params.subscriptionId },
-      select: { aiTokenBalance: true }
+      select: { aiCreditBalance: true }
     });
-    return { balance: toBigInt(row?.aiTokenBalance), appliedDelta: 0n };
+    return { balance: toBigInt(row?.aiCreditBalance), appliedDelta: 0n };
   }
 
   if (params.delta > 0n) {
     const credited = await params.tx.userSubscription.updateMany({
       where: {
         id: params.subscriptionId,
-        aiTokenBalance: { lte: BILLING_DB_BIGINT_MAX - params.delta }
+        aiCreditBalance: { lte: BILLING_DB_BIGINT_MAX - params.delta }
       },
-      data: { aiTokenBalance: { increment: params.delta } }
+      data: { aiCreditBalance: { increment: params.delta } }
     });
     if (credited.count !== 1) {
       const row = await params.tx.userSubscription.findUnique({
         where: { id: params.subscriptionId },
-        select: { aiTokenBalance: true }
+        select: { aiCreditBalance: true }
       });
-      if (toBigInt(row?.aiTokenBalance) > BILLING_DB_BIGINT_MAX - params.delta) {
-        throw new Error("ai_token_balance_out_of_range");
+      if (toBigInt(row?.aiCreditBalance) > BILLING_DB_BIGINT_MAX - params.delta) {
+        throw new Error("ai_credit_balance_out_of_range");
       }
-      throw new Error("ai_token_balance_concurrent_update");
+      throw new Error("ai_credit_balance_concurrent_update");
     }
     const row = await params.tx.userSubscription.findUnique({
       where: { id: params.subscriptionId },
-      select: { aiTokenBalance: true }
+      select: { aiCreditBalance: true }
     });
-    return { balance: toBigInt(row?.aiTokenBalance), appliedDelta: params.delta };
+    return { balance: toBigInt(row?.aiCreditBalance), appliedDelta: params.delta };
   }
 
   const requestedDebit = -params.delta;
   const fullDebit = await params.tx.userSubscription.updateMany({
     where: {
       id: params.subscriptionId,
-      aiTokenBalance: { gte: requestedDebit }
+      aiCreditBalance: { gte: requestedDebit }
     },
-    data: { aiTokenBalance: { decrement: requestedDebit } }
+    data: { aiCreditBalance: { decrement: requestedDebit } }
   });
   if (fullDebit.count === 1) {
     const row = await params.tx.userSubscription.findUnique({
       where: { id: params.subscriptionId },
-      select: { aiTokenBalance: true }
+      select: { aiCreditBalance: true }
     });
-    return { balance: toBigInt(row?.aiTokenBalance), appliedDelta: -requestedDebit };
+    return { balance: toBigInt(row?.aiCreditBalance), appliedDelta: -requestedDebit };
   }
 
   // Clamp to zero with compare-and-swap. A concurrent grant/debit changes the
@@ -4671,43 +4570,43 @@ export async function applyAiTokenAdminAdjustmentInTransaction(params: {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const row = await params.tx.userSubscription.findUnique({
       where: { id: params.subscriptionId },
-      select: { aiTokenBalance: true }
+      select: { aiCreditBalance: true }
     });
-    const current = toBigInt(row?.aiTokenBalance);
+    const current = toBigInt(row?.aiCreditBalance);
     if (current <= 0n) return { balance: 0n, appliedDelta: 0n };
     const claimed = await params.tx.userSubscription.updateMany({
-      where: { id: params.subscriptionId, aiTokenBalance: current },
-      data: { aiTokenBalance: { decrement: current } }
+      where: { id: params.subscriptionId, aiCreditBalance: current },
+      data: { aiCreditBalance: { decrement: current } }
     });
     if (claimed.count === 1) return { balance: 0n, appliedDelta: -current };
   }
-  throw new Error("ai_token_balance_concurrent_update");
+  throw new Error("ai_credit_balance_concurrent_update");
 }
 
-export async function adjustAiTokenBalanceByAdmin(params: {
+export async function adjustAiCreditBalanceByAdmin(params: {
   userId: string;
-  deltaTokens: string | bigint | number;
+  deltaCredits: string | bigint | number;
   note?: string;
   actorUserId?: string | null;
 }): Promise<{ balance: bigint }> {
-  const delta = parseBillingDbBigInt(params.deltaTokens);
+  const delta = parseBillingDbBigInt(params.deltaCredits);
 
   return runSerializableBillingConfigTransaction(db, async (tx: any) => {
     const sub = await getOrCreateSubscription(params.userId, tx);
-    const adjusted = await applyAiTokenAdminAdjustmentInTransaction({
+    const adjusted = await applyAiCreditAdminAdjustmentInTransaction({
       tx,
       subscriptionId: sub.id,
       delta
     });
 
     if (adjusted.appliedDelta !== 0n) {
-      await tx.aiTokenLedger.create({
+      await tx.aiCreditLedger.create({
         data: {
           userId: params.userId,
           subscriptionId: sub.id,
           reason: "ADMIN_ADJUST",
-          deltaTokens: adjusted.appliedDelta,
-          balanceAfter: adjusted.balance,
+          deltaCredits: adjusted.appliedDelta,
+          balanceAfterCredits: adjusted.balance,
           meta: {
             note: params.note ?? null,
             actorUserId: params.actorUserId ?? null
@@ -4727,16 +4626,16 @@ export async function downgradeExpiredSubscriptions(limit = 500): Promise<number
   return result.downgraded;
 }
 
-export function resolveBillingPackageTokenAmounts(params: {
+export function resolveBillingPackageCreditAmounts(params: {
   isPlan: boolean;
   addonType: BillingAddonType | null;
-  monthlyAiTokens?: string | bigint | number;
+  monthlyAiCredits?: string | bigint | number;
   aiCredits?: string | bigint | number;
-  existing?: { monthlyAiTokens?: unknown; aiCredits?: unknown } | null;
-}): { monthlyAiTokens: bigint; aiCredits: bigint } {
+  existing?: { monthlyAiCredits?: unknown; aiCredits?: unknown } | null;
+}): { monthlyAiCredits: bigint; aiCredits: bigint } {
   return {
-    monthlyAiTokens: params.isPlan
-      ? parseBillingDbBigInt(params.monthlyAiTokens ?? params.existing?.monthlyAiTokens ?? 0n, { min: 0n })
+    monthlyAiCredits: params.isPlan
+      ? parseBillingDbBigInt(params.monthlyAiCredits ?? params.existing?.monthlyAiCredits ?? 0n, { min: 0n })
       : 0n,
     aiCredits: !params.isPlan && params.addonType === "ai_credits"
       ? parseBillingDbBigInt(params.aiCredits ?? params.existing?.aiCredits ?? 0n, { min: 0n })
@@ -4792,7 +4691,7 @@ export async function upsertBillingPackage(params: {
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
   allowedExchanges: string[];
-  monthlyAiTokens?: string | bigint | number;
+  monthlyAiCredits?: string | bigint | number;
   aiCredits?: string | bigint | number;
   deltaRunningBots: number | null;
   deltaRunningPredictionsAi: number | null;
@@ -4802,19 +4701,19 @@ export async function upsertBillingPackage(params: {
   const addonType = normalizeBillingAddonType(params.addonType ?? null);
   const isPlan = params.kind === "plan";
   const needsExistingTokens = Boolean(params.id) && (
-    (isPlan && params.monthlyAiTokens === undefined)
+    (isPlan && params.monthlyAiCredits === undefined)
     || (!isPlan && addonType === "ai_credits" && params.aiCredits === undefined)
   );
   const existingTokens = needsExistingTokens
     ? await db.billingPackage.findUnique({
         where: { id: params.id },
-        select: { monthlyAiTokens: true, aiCredits: true }
+        select: { monthlyAiCredits: true, aiCredits: true }
       })
     : null;
-  const tokenAmounts = resolveBillingPackageTokenAmounts({
+  const creditAmounts = resolveBillingPackageCreditAmounts({
     isPlan,
     addonType,
-    monthlyAiTokens: params.monthlyAiTokens,
+    monthlyAiCredits: params.monthlyAiCredits,
     aiCredits: params.aiCredits,
     existing: existingTokens
   });
@@ -4849,8 +4748,8 @@ export async function upsertBillingPackage(params: {
         ? null
         : normalizeInt(params.maxRunningPredictionsComposite, 0, 0),
     allowedExchanges: normalizeStringArray(params.allowedExchanges, ["*"]),
-    monthlyAiTokens: tokenAmounts.monthlyAiTokens,
-    aiCredits: tokenAmounts.aiCredits,
+    monthlyAiCredits: creditAmounts.monthlyAiCredits,
+    aiCredits: creditAmounts.aiCredits,
     deltaRunningBots:
       !isPlan && addonType === "running_bots" && params.deltaRunningBots !== null
         ? normalizeInt(params.deltaRunningBots, 0, 0)

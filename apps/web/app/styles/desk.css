@@ -26,6 +26,39 @@
   color: var(--color-success, #55d6a5);
 }
 
+.agentChatCreditBadge,
+.agentChatAnalysisBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.agentChatCreditBadge-low_20,
+.agentChatCreditBadge-low_10 {
+  color: var(--color-warning, #f7c66b);
+}
+
+.agentChatCreditBadge-exhausted {
+  color: var(--color-danger, #ff6b7a);
+}
+
+.agentChatRunReceipt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 9px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in srgb, var(--ui-surface-panel) 88%, var(--accent) 12%);
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+.agentChatRunReceipt strong {
+  color: var(--ui-text);
+}
+
 .agentChatContextBar {
   display: flex;
   align-items: flex-end;
@@ -291,6 +324,23 @@
   background: rgba(2, 10, 20, 0.3);
 }
 
+.agentChatBlockTitle {
+  min-height: 22px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agentChatBlockTitle > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agentChatBlockTitle svg {
+  color: #79b6ff;
+}
+
 .agentChatBlock p,
 .agentChatBlock ul,
 .agentChatBlock dl {
@@ -320,11 +370,18 @@
   padding: 7px;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(137, 165, 198, 0.08);
 }
 
 .agentChatMetric span {
   color: var(--muted);
   font-size: 11px;
+}
+
+.agentChatMetric b {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .agentChatMetric-positive b { color: #55d6a5; }

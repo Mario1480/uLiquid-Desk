@@ -26,7 +26,8 @@ export const patchConversationSchema = z.object({
 
 export const createMessageSchema = z.object({
   content: z.string().trim().min(1).max(8_000),
-  locale: z.enum(["de", "en"]).default("en")
+  locale: z.enum(["de", "en"]).default("en"),
+  idempotencyKey: z.string().uuid()
 }).strict();
 
 export const profileMutationSchema = z.object({

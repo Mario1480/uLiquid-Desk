@@ -119,9 +119,13 @@ export type AgentChatResponse = {
     id: string;
     provider: string | null;
     model: string | null;
+    modelClass: string;
     toolIterations: number;
     toolCalls: number;
     latencyMs: number;
     degraded: boolean;
+    chargedCredits: string;
+    remainingCredits: string | null;
+    skillCategories: Array<"market" | "intelligence" | "prediction" | "portfolio" | "risk" | "draft">;
   };
 };

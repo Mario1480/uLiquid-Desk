@@ -600,7 +600,7 @@ export function registerSettingsCoreRoutes(
             maxRunningBots: 0,
             maxRunningPredictionsAi: 0,
             maxRunningPredictionsComposite: 0,
-            aiTokenBalance: 0
+            aiCreditBalance: 0
           }
         }).catch(() => ({ count: 0 })),
         tx.affiliateProfile.updateMany({

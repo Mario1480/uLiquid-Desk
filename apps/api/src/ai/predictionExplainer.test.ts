@@ -1189,7 +1189,7 @@ test("preview adds ollama 4h runtime hints for long-form explanation", async () 
   }
 });
 
-test("preview applies self-hosted vllm runtime budget and hints", async () => {
+test("preview ignores self-hosted provider env and remains on fixed OpenAI runtime", async () => {
   const previousProvider = process.env.AI_PROVIDER;
   const previousModel = process.env.AI_MODEL;
   process.env.AI_PROVIDER = "vllm";
@@ -1224,10 +1224,9 @@ test("preview applies self-hosted vllm runtime budget and hints", async () => {
       }
     );
 
-    assert.equal(preview.aiProvider, "vllm");
-    assert.equal(preview.runtimeProfile.explanationMinSentences > 0, true);
-    assert.equal(preview.systemMessage.includes("self-hosted OpenAI-compatible models"), true);
-    assert.equal(preview.payloadBudgetMetrics.maxPayloadBytes, 8 * 1024);
+    assert.equal(preview.aiProvider, "openai");
+    assert.equal(preview.systemMessage.includes("self-hosted OpenAI-compatible models"), false);
+    assert.equal(preview.payloadBudgetMetrics.maxPayloadBytes > 8 * 1024, true);
   } finally {
     if (previousProvider === undefined) delete process.env.AI_PROVIDER;
     else process.env.AI_PROVIDER = previousProvider;
@@ -1322,7 +1321,7 @@ test("4h market analysis enforces neutral aiPrediction", async () => {
   assert.equal(output.aiPrediction.expectedMovePct, 0);
 });
 
-test("ollama 4h quality gate triggers one explanation expansion retry", async () => {
+test("legacy ollama env cannot trigger a provider-specific expansion retry", async () => {
   const previousProvider = process.env.AI_PROVIDER;
   const previousOllamaMode = process.env.AI_SIGNAL_ENGINE_OLLAMA;
   process.env.AI_PROVIDER = "ollama";
@@ -1381,8 +1380,8 @@ test("ollama 4h quality gate triggers one explanation expansion retry", async ()
       }
     );
 
-    assert.equal(calls, 2);
-    assert.equal(output.explanation.length >= 200, true);
+    assert.equal(calls, 1);
+    assert.equal(output.explanation, "Bearish momentum.");
   } finally {
     if (previousProvider === undefined) delete process.env.AI_PROVIDER;
     else process.env.AI_PROVIDER = previousProvider;

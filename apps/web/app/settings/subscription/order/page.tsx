@@ -752,7 +752,7 @@ function SubscriptionOrderPageContent() {
                   <div>{t("order.includedBots", { running: selectedPlanPackage.maxRunningBots ?? 0 })}</div>
                   <div>{t("order.includedPredictionsAi", { running: selectedPlanPackage.maxRunningPredictionsAi ?? 0 })}</div>
                   <div>{t("order.includedPredictionsComposite", { running: selectedPlanPackage.maxRunningPredictionsComposite ?? 0 })}</div>
-                  <div>{t("order.includedAiTokens", { tokens: selectedPlanPackage.monthlyAiTokens })}</div>
+                  <div>{t("order.includedAiTokens", { tokens: selectedPlanPackage.monthlyAiCredits })}</div>
                 </div>
               ) : null}
             </div>

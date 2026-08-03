@@ -60,7 +60,7 @@ import {
   sendCapabilityDenied
 } from "./capabilities/guard.js";
 import {
-  adjustAiTokenBalanceByAdmin,
+  adjustAiCreditBalanceByAdmin,
   canCreateBot as canCreateBotWithQuota,
   canCreatePrediction as canCreatePredictionWithQuota,
   canEnablePredictionSchedule,
@@ -121,6 +121,7 @@ import { registerManualTradingMarketDataRoutes } from "./manual-trading/routes-m
 import { registerManualTradingExecutionRoutes } from "./manual-trading/routes-execution.js";
 import { registerPositionCopilotRoutes } from "./position-copilot/routes.js";
 import { registerAgentChatRoutes } from "./ai/agent-chat/routes.js";
+import { registerAiCreditRoutes } from "./ai/credits/routes.js";
 import { registerExchangeAccountRoutes } from "./exchange-accounts/routes.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { registerMobileDashboardRoutes } from "./mobile/routes.js";
@@ -386,6 +387,7 @@ import { createSystemHealthTelegramJob } from "./jobs/systemHealthTelegramJob.js
 import { createPlatformAlertCleanupJob } from "./jobs/platformAlertCleanupJob.js";
 import { createHyperliquidApiExpiryReminderJob } from "./jobs/hyperliquidApiExpiryReminderJob.js";
 import { createBillingOnchainJob } from "./jobs/billingOnchainJob.js";
+import { createAiCreditReconciliationJob } from "./jobs/aiCreditReconciliationJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerMarketIntelligenceRoutes } from "./routes/market-intelligence.js";
@@ -644,6 +646,7 @@ const billingOnchainJob = createBillingOnchainJob({
     reconcilePendingBillingPayments({ limit }),
   runSubscriptionLifecycle
 });
+const aiCreditReconciliationJob = createAiCreditReconciliationJob(db);
 
 const app = express();
 configureApiBaseMiddleware(app);
@@ -11874,6 +11877,12 @@ registerAgentChatRoutes(app, {
   hasAdminAccess: async (user) => isSuperadminEmail(user.email) || hasAdminBackendAccess(user)
 });
 
+registerAiCreditRoutes(app, {
+  db,
+  requireSuperadmin,
+  recordAdminAuditEvent
+});
+
 registerManualTradingExecutionRoutes(app, {
   getTradingSettings,
   resolveMarketDataTradingAccount,
@@ -12025,7 +12034,7 @@ registerBillingRoutes(app, {
   deleteBillingPackage,
   getSubscriptionSummary,
   resolvePlanCapabilitiesForUserId,
-  adjustAiTokenBalanceByAdmin,
+  adjustAiCreditBalanceByAdmin,
   isBillingEnabled,
   listSubscriptionOrders,
   createBillingCheckout,
@@ -13145,6 +13154,7 @@ const apiLifecycle = createApiLifecycle({
     { name: "prediction-performance-eval", start: startPredictionPerformanceEvalScheduler, stop: stopPredictionPerformanceEvalScheduler },
     { name: "bot-queue-recovery", start: startBotQueueRecoveryScheduler, stop: stopBotQueueRecoveryScheduler },
     { name: "billing-onchain", start: () => billingOnchainJob.start(), stop: () => billingOnchainJob.stop() },
+    { name: "ai-credit-reconciliation", start: () => aiCreditReconciliationJob.start(), stop: () => aiCreditReconciliationJob.stop() },
     { name: "market-intelligence-refresh", start: () => marketIntelligenceRefreshJob.start(), stop: () => marketIntelligenceRefreshJob.stop() },
     { name: "economic-calendar-daily-telegram", start: () => economicCalendarDailyTelegramJob.start(), stop: () => economicCalendarDailyTelegramJob.stop() },
     { name: "system-health-telegram", start: () => systemHealthTelegramJob.start(), stop: () => systemHealthTelegramJob.stop() },

@@ -17,7 +17,7 @@ const PRO_DEFAULTS = {
   maxRunningBots: 3,
   allowedExchanges: ["*"],
   billingMonths: 1,
-  monthlyAiTokens: 1_000_000n
+  monthlyAiCredits: 1_000_000n
 };
 
 function printUsage(): void {
@@ -136,20 +136,20 @@ async function main() {
   if (plan === "free") {
     const freeRunning = toPositiveInt(freePkg?.maxRunningBots, FREE_DEFAULTS.maxRunningBots);
     const freeExchanges = normalizeStringArray(freePkg?.allowedExchanges, FREE_DEFAULTS.allowedExchanges);
-    const freeMonthlyIncluded = toBigInt(freePkg?.monthlyAiTokens);
+    const freeMonthlyIncluded = toBigInt(freePkg?.monthlyAiCredits);
 
     await prisma.$transaction(async (tx) => {
       const existing = await tx.userSubscription.findUnique({
         where: { userId: user.id },
         select: {
           id: true,
-          aiTokenBalance: true,
-          aiTokenUsedLifetime: true
+          aiCreditBalance: true,
+          aiCreditsUsedLifetime: true
         }
       });
-      const balance = toBigInt(existing?.aiTokenBalance);
+      const balance = toBigInt(existing?.aiCreditBalance);
       const nextBalance = balance < freeMonthlyIncluded ? freeMonthlyIncluded : balance;
-      const usedLifetime = toBigInt(existing?.aiTokenUsedLifetime);
+      const usedLifetime = toBigInt(existing?.aiCreditsUsedLifetime);
 
       const updated = await tx.userSubscription.upsert({
         where: { userId: user.id },
@@ -160,9 +160,9 @@ async function main() {
           proValidUntil: null,
           maxRunningBots: freeRunning,
           allowedExchanges: freeExchanges,
-          aiTokenBalance: nextBalance,
-          aiTokenUsedLifetime: usedLifetime,
-          monthlyAiTokensIncluded: freeMonthlyIncluded
+          aiCreditBalance: nextBalance,
+          aiCreditsUsedLifetime: usedLifetime,
+          monthlyAiCreditsIncluded: freeMonthlyIncluded
         },
         update: {
           effectivePlan: "FREE",
@@ -170,20 +170,20 @@ async function main() {
           proValidUntil: null,
           maxRunningBots: freeRunning,
           allowedExchanges: freeExchanges,
-          aiTokenBalance: nextBalance,
-          monthlyAiTokensIncluded: freeMonthlyIncluded
+          aiCreditBalance: nextBalance,
+          monthlyAiCreditsIncluded: freeMonthlyIncluded
         }
       });
 
       const grant = nextBalance - balance;
       if (grant > 0n) {
-        await tx.aiTokenLedger.create({
+        await tx.aiCreditLedger.create({
           data: {
             userId: user.id,
             subscriptionId: updated.id,
             reason: "MONTHLY_GRANT",
-            deltaTokens: grant,
-            balanceAfter: nextBalance,
+            deltaCredits: grant,
+            balanceAfterCredits: nextBalance,
             meta: {
               source: "set-user-plan-script",
               packageCode: "free",
@@ -196,7 +196,7 @@ async function main() {
   } else {
     const proRunning = toPositiveInt(proPkg?.maxRunningBots, PRO_DEFAULTS.maxRunningBots);
     const proExchanges = normalizeStringArray(proPkg?.allowedExchanges, PRO_DEFAULTS.allowedExchanges);
-    const monthlyIncluded = toBigInt(proPkg?.monthlyAiTokens, PRO_DEFAULTS.monthlyAiTokens);
+    const monthlyIncluded = toBigInt(proPkg?.monthlyAiCredits, PRO_DEFAULTS.monthlyAiCredits);
     const defaultMonths = toPositiveInt(proPkg?.billingMonths, PRO_DEFAULTS.billingMonths);
     const months = toPositiveInt(readArg("--months"), defaultMonths);
     const tokenGrant = toNonNegativeBigInt(readArg("--token-grant"), monthlyIncluded);
@@ -208,13 +208,13 @@ async function main() {
         select: {
           id: true,
           proValidUntil: true,
-          aiTokenBalance: true,
-          aiTokenUsedLifetime: true
+          aiCreditBalance: true,
+          aiCreditsUsedLifetime: true
         }
       });
 
-      const currentBalance = toBigInt(existing?.aiTokenBalance);
-      const usedLifetime = toBigInt(existing?.aiTokenUsedLifetime);
+      const currentBalance = toBigInt(existing?.aiCreditBalance);
+      const usedLifetime = toBigInt(existing?.aiCreditsUsedLifetime);
       const startAt =
         existing?.proValidUntil instanceof Date && existing.proValidUntil.getTime() > now.getTime()
           ? existing.proValidUntil
@@ -231,9 +231,9 @@ async function main() {
           proValidUntil: nextValidUntil,
           maxRunningBots: proRunning,
           allowedExchanges: proExchanges,
-          aiTokenBalance: nextBalance,
-          aiTokenUsedLifetime: usedLifetime,
-          monthlyAiTokensIncluded: monthlyIncluded
+          aiCreditBalance: nextBalance,
+          aiCreditsUsedLifetime: usedLifetime,
+          monthlyAiCreditsIncluded: monthlyIncluded
         },
         update: {
           effectivePlan: "PRO",
@@ -241,19 +241,19 @@ async function main() {
           proValidUntil: nextValidUntil,
           maxRunningBots: proRunning,
           allowedExchanges: proExchanges,
-          aiTokenBalance: nextBalance,
-          monthlyAiTokensIncluded: monthlyIncluded
+          aiCreditBalance: nextBalance,
+          monthlyAiCreditsIncluded: monthlyIncluded
         }
       });
 
       if (tokenGrant > 0n) {
-        await tx.aiTokenLedger.create({
+        await tx.aiCreditLedger.create({
           data: {
             userId: user.id,
             subscriptionId: updated.id,
             reason: "ADMIN_ADJUST",
-            deltaTokens: tokenGrant,
-            balanceAfter: nextBalance,
+            deltaCredits: tokenGrant,
+            balanceAfterCredits: nextBalance,
             meta: {
               source: "set-user-plan-script",
               email: user.email,
@@ -303,8 +303,8 @@ async function main() {
     proValidUntil: resolved.proValidUntil,
     maxRunningBots: resolved.maxRunningBots,
     allowedExchanges: resolved.allowedExchanges,
-    aiTokenBalance: resolved.aiTokenBalance.toString(),
-    monthlyAiTokensIncluded: resolved.monthlyAiTokensIncluded.toString(),
+    aiCreditBalance: resolved.aiCreditBalance.toString(),
+    monthlyAiCreditsIncluded: resolved.monthlyAiCreditsIncluded.toString(),
     workspaceId: primaryMembership?.workspaceId ?? null,
     entitlementPlan: entitlement?.plan ?? null,
     entitlementKinds: entitlement?.allowedStrategyKinds ?? [],

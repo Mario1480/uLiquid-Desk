@@ -1037,7 +1037,7 @@
       }
     },
     "license": {
-      "prepared": "Manage your active plan, renewals and AI token topups here.",
+      "prepared": "Manage your active plan, renewals and AI credit topups here.",
       "onceEnabled": "Billing updates are applied automatically after the Arbitrum USDC payment is confirmed onchain.",
       "open": "Open subscription & billing",
       "openLicense": "Open license overview",

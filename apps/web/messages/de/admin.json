@@ -1156,7 +1156,7 @@
     },
     "billing": {
       "title": "Billing",
-      "description": "Abo-Pakete, Bot-Kapazitäten, Prediction-Limits und manuelle AI-Token-Korrekturen verwalten."
+      "description": "Abo-Pakete, Bot-Kapazitäten, Prediction-Limits und manuelle AI-Credit-Korrekturen verwalten."
     }
   },
   "billing": {
@@ -1186,7 +1186,7 @@
     },
     "featureFlags": {
       "title": "Billing-Feature-Flags",
-      "description": "Steuert, ob der Onchain-Checkout und AI-Token-Billing aktiv sind.",
+      "description": "Steuert, ob der Onchain-Checkout und die AI-Credit-Abrechnung aktiv sind.",
       "source": "Quelle",
       "updatedAt": "Zuletzt aktualisiert",
       "never": "nie",
@@ -1200,9 +1200,9 @@
         "label": "Subscription-Checkout aktiv",
         "hint": "Wenn deaktiviert, können User kein Abo/Topup kaufen oder verlängern."
       },
-      "aiTokenBillingEnabled": {
-        "label": "AI-Token-Billing aktiv",
-        "hint": "Wenn deaktiviert, werden AI-Token-Gating und Abbuchung übersprungen."
+      "aiCreditBillingEnabled": {
+        "label": "AI-Credit-Abrechnung aktiv",
+        "hint": "Wenn aktiviert, werden OpenAI-Kosten reserviert und mit vorausbezahlten AI Credits verrechnet."
       }
     },
     "createTitle": "Paket erstellen",
@@ -1213,19 +1213,19 @@
     "delete": "Paket löschen",
     "confirmDelete": "Dieses Paket löschen?",
     "refresh": "Aktualisieren",
-    "tokenAdjustTitle": "Manuelle AI-Token-Anpassung",
-    "tokenAdjustHelp": "Passe das Token-Wallet eines Users manuell an (z. B. für Refunds oder Korrekturen). Du kannst User-ID oder E-Mail verwenden.",
+    "creditAdjustTitle": "Manuelle AI-Credit-Anpassung",
+    "creditAdjustHelp": "Passe das AI-Credit-Guthaben eines Users manuell an, etwa für Erstattungen oder Korrekturen. Du kannst User-ID oder E-Mail verwenden.",
     "userId": "User-ID oder E-Mail",
     "userIdHint": "Ziel-User über interne ID oder Login-E-Mail.",
     "userIdPlaceholder": "z. B. clx123... oder user@example.com",
-    "deltaTokens": "Token-Differenz (+/-)",
-    "deltaTokensHint": "Positiv erhöht Tokens, negativ zieht Tokens ab.",
+    "deltaCredits": "AI-Credit-Anpassung (+/-)",
+    "deltaCreditsHint": "Positive Werte fügen AI Credits hinzu, negative ziehen sie ab.",
     "note": "Notiz",
     "noteHint": "Wird zur Nachvollziehbarkeit in den Ledger-Metadaten gespeichert.",
     "notePlaceholder": "Grund für diese manuelle Anpassung",
     "adjust": "Anpassung anwenden",
-    "adjustInvalid": "Gib einen User, eine ganze Token-Differenz und eine Notiz ein.",
-    "adjusted": "Token-Guthaben angepasst.",
+    "adjustInvalid": "Gib einen User, eine ganzzahlige AI-Credit-Differenz und eine Notiz ein.",
+    "adjusted": "AI-Credit-Guthaben angepasst.",
     "saved": "Paket gespeichert.",
     "deleted": "Paket gelöscht.",
     "fields": {
@@ -1292,9 +1292,9 @@
         "label": "Erlaubte Exchanges",
         "hint": "Kommagetrennte Liste. Mit * sind alle Exchanges erlaubt."
       },
-      "monthlyAiTokens": {
-        "label": "Monatliche AI-Tokens",
-        "hint": "Token-Gutschrift bei erfolgreicher Plan-Zahlung."
+      "monthlyAiCredits": {
+        "label": "Monatliche AI Credits",
+        "hint": "AI-Credit-Gutschrift bei erfolgreicher Plan-Zahlung."
       },
       "aiCredits": {
         "label": "AI-Credits",

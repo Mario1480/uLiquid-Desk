@@ -1037,7 +1037,7 @@
       }
     },
     "license": {
-      "prepared": "Verwalte hier deinen aktiven Plan, Verlängerungen und AI-Token-Topups.",
+      "prepared": "Verwalte hier deinen aktiven Plan, Verlängerungen und AI-Credit-Topups.",
       "onceEnabled": "Billing-Änderungen werden nach bestätigtem Arbitrum-USDC-Zahlungseingang automatisch übernommen.",
       "open": "Abo & Abrechnung öffnen",
       "openLicense": "Lizenzübersicht öffnen",

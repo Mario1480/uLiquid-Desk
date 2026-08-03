@@ -1,5 +1,6 @@
 import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import type { AiChatResult, CallAiChatOptions, ChatMessage } from "../provider.js";
+import { normalizeStoredAgentMessages } from "./answer.js";
 import { AgentChatError } from "./errors.js";
 import { assertProfileSkillsAllowed, BUILTIN_AGENT_PROFILES, resolveBuiltinAgentProfile } from "./profiles.js";
 import { assertAgentChatAccess, assertProfileAccess, resolveAgentChatFeatureAccess, type AgentChatFeatureAccess } from "./policy.js";
@@ -138,7 +139,7 @@ export class AgentChatService {
     const { access } = await this.featureAccess(user); assertAgentChatAccess(access);
     const conversation = await this.deps.db.aiAgentConversation.findFirst({ where: { id, userId: user.id }, include: { messages: { orderBy: { createdAt: "asc" }, take: 100 } } });
     if (!conversation) throw new AgentChatError("agent_chat_conversation_not_found", 404);
-    return conversation;
+    return { ...conversation, messages: normalizeStoredAgentMessages(conversation.messages ?? []) };
   }
 
   async updateConversation(user: { id: string; email: string }, id: string, patch: any) {
@@ -154,8 +155,42 @@ export class AgentChatService {
     return this.updateConversation(user, id, { status: "archived" });
   }
 
-  async sendMessage(user: { id: string; email: string }, conversationId: string, content: string, locale: "de" | "en") {
+  async sendMessage(user: { id: string; email: string }, conversationId: string, content: string, locale: "de" | "en", idempotencyKey: string) {
     const { access } = await this.featureAccess(user); assertAgentChatAccess(access);
+    const existingRun = await this.deps.db.aiAgentRun.findUnique({ where: { idempotencyKey } });
+    if (existingRun) {
+      if (existingRun.userId !== user.id || existingRun.conversationId !== conversationId) {
+        throw new AgentChatError("agent_chat_message_invalid", 409, "Idempotency key already belongs to another request.");
+      }
+      if (existingRun.status !== "completed") {
+        throw new AgentChatError("agent_chat_run_in_progress", 409);
+      }
+      const existingMessage = await this.deps.db.aiAgentMessage.findFirst({
+        where: { conversationId, role: "assistant", createdAt: { gte: existingRun.createdAt } },
+        orderBy: { createdAt: "asc" }
+      });
+      if (!existingMessage) throw new AgentChatError("agent_chat_run_in_progress", 409);
+      const subscription = await this.deps.db.userSubscription.findUnique({ where: { userId: user.id }, select: { aiCreditBalance: true } });
+      return {
+        messageId: existingMessage.id,
+        content: existingMessage.content,
+        blocks: existingMessage.blocks ?? [],
+        citations: existingMessage.sourceRefs ?? [],
+        run: {
+          id: existingRun.id,
+          provider: existingRun.provider,
+          model: existingRun.model,
+          modelClass: existingRun.modelClass ?? "standard",
+          toolIterations: existingRun.toolIterations,
+          toolCalls: existingRun.toolCallCount,
+          latencyMs: existingRun.latencyMs ?? 0,
+          degraded: false,
+          chargedCredits: String(existingRun.chargedCredits ?? 0),
+          remainingCredits: subscription ? String(subscription.aiCreditBalance ?? 0) : null,
+          skillCategories: []
+        }
+      };
+    }
     const now = Date.now(); const recent = (requestTimesByUser.get(user.id) ?? []).filter((ts) => ts > now - 60_000);
     if (recent.length >= 10) throw new AgentChatError("agent_chat_tool_budget_exceeded", 429, "Agent chat rate limit exceeded.");
     if (activeUsers.has(user.id)) throw new AgentChatError("agent_chat_run_in_progress", 409);
@@ -167,7 +202,7 @@ export class AgentChatService {
       const history = await this.deps.db.aiAgentMessage.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "desc" }, take: 10, select: { role: true, content: true } });
       await this.deps.db.aiAgentMessage.create({ data: { conversationId: conversation.id, role: "user", content } });
       await this.deps.db.aiAgentConversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
-      return await runAgentChat({ db: this.deps.db, callAiChat: this.deps.callAiChat, userId: user.id, conversation, profile, locale, userMessage: content, history: history.reverse() });
+      return await runAgentChat({ db: this.deps.db, callAiChat: this.deps.callAiChat, userId: user.id, conversation, profile, locale, userMessage: content, idempotencyKey, history: history.reverse() });
     } finally {
       activeUsers.delete(user.id);
     }

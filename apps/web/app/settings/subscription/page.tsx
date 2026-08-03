@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet } from "../../../lib/api";
+import { ApiError, apiGet, apiPatch } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { AppIcon } from "../../components/AppIcon";
 import {
@@ -21,6 +21,11 @@ function formatMaybeDate(value: string | null, locale: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString(locale);
+}
+
+function formatApiError(error: unknown): string {
+  if (error instanceof ApiError) return String(error.payload?.message ?? error.payload?.error ?? error.message);
+  return error instanceof Error ? error.message : String(error);
 }
 
 function formatOrderPackageLabel(order: BillingOrder): string {
@@ -59,6 +64,28 @@ function getOrderExplorerUrl(order: BillingOrder): string | null {
     : null;
 }
 
+type AiCreditSummary = {
+  available: string;
+  reserved: string;
+  usedToday: string;
+  usedThisMonth: string;
+  dailyLimit: string | null;
+  monthlyLimit: string | null;
+  maxRunCredits: string | null;
+  warningLevel: "none" | "low_20" | "low_10" | "exhausted";
+  topups: Array<{ id: string; code: string; name: string; priceCents: number; aiCredits: string }>;
+};
+
+type AiCreditUsageItem = {
+  id: string;
+  scope: string;
+  status: string;
+  modelClass: string | null;
+  chargedCredits: string;
+  modelCallCount: number;
+  createdAt: string;
+};
+
 export default function SubscriptionPage() {
   const t = useTranslations("settings.subscription");
   const tCommon = useTranslations("settings.common");
@@ -68,6 +95,12 @@ export default function SubscriptionPage() {
   const [payload, setPayload] = useState<SubscriptionPayload | null>(null);
   const [me, setMe] = useState<AuthMePayload | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfoPayload | null>(null);
+  const [aiCredits, setAiCredits] = useState<AiCreditSummary | null>(null);
+  const [aiUsage, setAiUsage] = useState<AiCreditUsageItem[]>([]);
+  const [dailyLimit, setDailyLimit] = useState("");
+  const [monthlyLimit, setMonthlyLimit] = useState("");
+  const [maxRunCredits, setMaxRunCredits] = useState("");
+  const [savingCreditLimits, setSavingCreditLimits] = useState(false);
 
   const model = useMemo(
     () => buildLicensePageModel(payload, me, serverInfo),
@@ -78,10 +111,12 @@ export default function SubscriptionPage() {
     setLoading(true);
     setMessage(null);
     try {
-      const [subscriptionResult, meResult, serverInfoResult] = await Promise.allSettled([
+      const [subscriptionResult, meResult, serverInfoResult, aiCreditsResult, aiUsageResult] = await Promise.allSettled([
         apiGet<SubscriptionPayload>("/settings/subscription"),
         apiGet<AuthMePayload>("/auth/me"),
-        apiGet<ServerInfoPayload>("/settings/server-info")
+        apiGet<ServerInfoPayload>("/settings/server-info"),
+        apiGet<AiCreditSummary>("/api/billing/ai-credits"),
+        apiGet<{ items: AiCreditUsageItem[] }>("/api/billing/ai-credits/usage?limit=20")
       ]);
 
       if (subscriptionResult.status === "fulfilled") {
@@ -107,6 +142,15 @@ export default function SubscriptionPage() {
       } else {
         setServerInfo(null);
       }
+      if (aiCreditsResult.status === "fulfilled") {
+        setAiCredits(aiCreditsResult.value);
+        setDailyLimit(aiCreditsResult.value.dailyLimit ?? "");
+        setMonthlyLimit(aiCreditsResult.value.monthlyLimit ?? "");
+        setMaxRunCredits(aiCreditsResult.value.maxRunCredits ?? "");
+      } else {
+        setAiCredits(null);
+      }
+      setAiUsage(aiUsageResult.status === "fulfilled" ? aiUsageResult.value.items : []);
     } finally {
       setLoading(false);
     }
@@ -115,6 +159,24 @@ export default function SubscriptionPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  async function saveCreditLimits() {
+    setSavingCreditLimits(true);
+    setMessage(null);
+    try {
+      await apiPatch("/api/billing/ai-credits/limits", {
+        dailyLimitCredits: dailyLimit.trim() || null,
+        monthlyLimitCredits: monthlyLimit.trim() || null,
+        maxRunCredits: maxRunCredits.trim() || null
+      });
+      await load();
+      setMessage(t("credits.limitsSaved"));
+    } catch (error) {
+      setMessage(formatApiError(error));
+    } finally {
+      setSavingCreditLimits(false);
+    }
+  }
 
   return (
     <div className="subscriptionPortalWrap">
@@ -234,7 +296,11 @@ export default function SubscriptionPage() {
               <div className="subscriptionCardTitle">{t("license.cards.aiWallet")}</div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiBalance")}</span>
-                <span>{model.ai.balance}</span>
+                <span>{aiCredits?.available ?? model.ai.balance}</span>
+              </div>
+              <div className="subscriptionPortalFieldRow">
+                <span>{t("license.labels.aiReserved")}</span>
+                <span>{aiCredits?.reserved ?? "0"}</span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiMonthlyIncluded")}</span>
@@ -243,6 +309,14 @@ export default function SubscriptionPage() {
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiUsedLifetime")}</span>
                 <span>{model.ai.usedLifetime}</span>
+              </div>
+              <div className="subscriptionPortalFieldRow">
+                <span>{t("license.labels.aiUsedToday")}</span>
+                <span>{aiCredits?.usedToday ?? "0"}</span>
+              </div>
+              <div className="subscriptionPortalFieldRow">
+                <span>{t("license.labels.aiUsedMonth")}</span>
+                <span>{aiCredits?.usedThisMonth ?? "0"}</span>
               </div>
             </div>
 
@@ -256,6 +330,79 @@ export default function SubscriptionPage() {
 	                <AppIcon name="billing" />
 	                {t("license.openOrderPage")}
 	              </Link>
+            </div>
+          </div>
+
+          {aiCredits && aiCredits.warningLevel !== "none" ? (
+            <div className="subscriptionPortalWarn">
+              {t(`credits.warnings.${aiCredits.warningLevel}`)}
+            </div>
+          ) : null}
+
+          <div className="card subscriptionPortalUpgradeCard">
+            <div>
+              <div className="subscriptionCardTitle">{t("credits.limitsTitle")}</div>
+              <div className="subscriptionPortalMuted">{t("credits.limitsDescription")}</div>
+            </div>
+            <div className="subscriptionCreditLimitFields">
+              <label>
+                <span>{t("credits.dailyLimit")}</span>
+                <input className="input" inputMode="numeric" pattern="[0-9]*" value={dailyLimit} onChange={(event) => setDailyLimit(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
+              </label>
+              <label>
+                <span>{t("credits.monthlyLimit")}</span>
+                <input className="input" inputMode="numeric" pattern="[0-9]*" value={monthlyLimit} onChange={(event) => setMonthlyLimit(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
+              </label>
+              <label>
+                <span>{t("credits.maxRun")}</span>
+                <input className="input" inputMode="numeric" pattern="[0-9]*" value={maxRunCredits} onChange={(event) => setMaxRunCredits(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
+              </label>
+              <button className="btn btnPrimary" type="button" disabled={savingCreditLimits} onClick={() => void saveCreditLimits()}>
+                <AppIcon name="save" />
+                {savingCreditLimits ? t("credits.saving") : t("credits.saveLimits")}
+              </button>
+            </div>
+          </div>
+
+          <div className="card subscriptionPortalOrdersCard">
+            <div className="subscriptionCardHead">
+              <div>
+                <div className="subscriptionCardTitle">{t("credits.usageTitle")}</div>
+                <div className="subscriptionPortalMuted">{t("credits.usageDescription")}</div>
+              </div>
+              <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn">
+                <AppIcon name="billing" />
+                {t("credits.buyTopup")}
+              </Link>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="table subscriptionOrdersTable">
+                <thead>
+                  <tr>
+                    <th>{t("credits.createdAt")}</th>
+                    <th>{t("credits.scope")}</th>
+                    <th>{t("credits.analysisClass")}</th>
+                    <th>{t("credits.calls")}</th>
+                    <th>{t("credits.charged")}</th>
+                    <th>{t("credits.status")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiUsage.map((item) => (
+                    <tr key={item.id}>
+                      <td>{formatMaybeDate(item.createdAt, locale)}</td>
+                      <td>{item.scope}</td>
+                      <td>{item.modelClass ?? "-"}</td>
+                      <td>{item.modelCallCount}</td>
+                      <td>{item.chargedCredits}</td>
+                      <td>{item.status}</td>
+                    </tr>
+                  ))}
+                  {aiUsage.length === 0 ? (
+                    <tr><td colSpan={6} className="subscriptionPortalMuted">{t("credits.usageEmpty")}</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
             </div>
           </div>
 

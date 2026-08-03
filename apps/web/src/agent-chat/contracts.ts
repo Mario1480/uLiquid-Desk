@@ -69,7 +69,7 @@ export type AgentChatResponse = {
   content: string;
   blocks: AgentUiBlock[];
   citations: AgentSourceRef[];
-  run: { id: string; provider: string | null; model: string | null; toolIterations: number; toolCalls: number; latencyMs: number; degraded: boolean };
+  run: { id: string; provider: string | null; model: string | null; modelClass: string; toolIterations: number; toolCalls: number; latencyMs: number; degraded: boolean; chargedCredits: string; remainingCredits: string | null; skillCategories: AgentSkill["category"][] };
 };
 
 export type AgentActivity = {

@@ -84,8 +84,27 @@ enum SubscriptionNotificationDeliveryStatus {
 enum AiLedgerReason {
   MONTHLY_GRANT
   TOPUP
-  USAGE_DEBIT
+  USAGE_RESERVE
+  USAGE_SETTLE
+  USAGE_RELEASE
+  USAGE_REFUND
   ADMIN_ADJUST
+  PROMO_GRANT
+}
+
+enum AiCreditReservationStatus {
+  ACTIVE
+  SETTLED
+  RELEASED
+  EXPIRED
+  FAILED
+  RECONCILIATION_REQUIRED
+}
+
+enum AiUsageRecordStatus {
+  COMPLETED
+  FAILED
+  RECONCILIATION_REQUIRED
 }
 
 enum GridBotMode {
@@ -718,7 +737,8 @@ model User {
   aiAgentRuns                         AiAgentRun[]
   subscription                         UserSubscription?
   billingOrders                        BillingOrder[]
-  aiTokenLedger                        AiTokenLedger[]
+  aiCreditLedger                       AiCreditLedger[]
+  aiCreditReservations                 AiCreditReservation[]
   capacityGrants                       SubscriptionCapacityGrant[]
   subscriptionTerms                    SubscriptionTerm[]
   subscriptionNotificationPreference   SubscriptionNotificationPreference?
@@ -888,9 +908,13 @@ model UserSubscription {
   maxRunningPredictionsAi        Int?               @map("max_running_predictions_ai")
   maxRunningPredictionsComposite Int?               @map("max_running_predictions_composite")
   allowedExchanges               String[]           @default(["*"]) @map("allowed_exchanges")
-  aiTokenBalance                 BigInt             @default(0) @map("ai_token_balance")
-  aiTokenUsedLifetime            BigInt             @default(0) @map("ai_token_used_lifetime")
-  monthlyAiTokensIncluded        BigInt             @default(0) @map("monthly_ai_tokens_included")
+  aiCreditBalance                BigInt             @default(0) @map("ai_credit_balance")
+  aiCreditsReserved              BigInt             @default(0) @map("ai_credits_reserved")
+  aiCreditsUsedLifetime          BigInt             @default(0) @map("ai_credits_used_lifetime")
+  monthlyAiCreditsIncluded       BigInt             @default(0) @map("monthly_ai_credits_included")
+  aiDailyLimitCredits            BigInt?            @map("ai_daily_limit_credits")
+  aiMonthlyLimitCredits          BigInt?            @map("ai_monthly_limit_credits")
+  aiMaxRunCredits                BigInt?            @map("ai_max_run_credits")
   entitlementSyncPending         Boolean            @default(false) @map("entitlement_sync_pending")
   entitlementSyncAttempts        Int                @default(0) @map("entitlement_sync_attempts")
   entitlementSyncLastError       String?            @map("entitlement_sync_last_error")
@@ -899,7 +923,8 @@ model UserSubscription {
   updatedAt                      DateTime           @updatedAt @map("updated_at")
 
   orders                  BillingOrder[]
-  tokenLedger             AiTokenLedger[]
+  creditLedger            AiCreditLedger[]
+  creditReservations      AiCreditReservation[]
   capacityGrants          SubscriptionCapacityGrant[]
   terms                   SubscriptionTerm[]
   licenseOperationalState LicenseOperationalState?
@@ -925,7 +950,7 @@ model BillingPackage {
   maxRunningPredictionsAi          Int?               @map("max_running_predictions_ai")
   maxRunningPredictionsComposite   Int?               @map("max_running_predictions_composite")
   allowedExchanges                 String[]           @default(["*"]) @map("allowed_exchanges")
-  monthlyAiTokens                  BigInt             @default(0) @map("monthly_ai_tokens")
+  monthlyAiCredits                 BigInt             @default(0) @map("monthly_ai_credits")
   aiCredits                        BigInt             @default(0) @map("ai_credits")
   deltaRunningBots                 Int?               @map("delta_running_bots")
   deltaRunningPredictionsAi        Int?               @map("delta_running_predictions_ai")
@@ -966,7 +991,7 @@ model BillingOrder {
   updatedAt        DateTime           @updatedAt @map("updated_at")
 
   items            BillingOrderItem[]
-  tokenLedger      AiTokenLedger[]
+  creditLedger     AiCreditLedger[]
   capacityGrants   SubscriptionCapacityGrant[]
   onchainPayment   BillingOnchainPayment?
   subscriptionTerm SubscriptionTerm?
@@ -1053,7 +1078,7 @@ model SubscriptionTerm {
   endsAt               DateTime               @map("ends_at")
   graceEndsAt          DateTime               @map("grace_ends_at")
   entitlementSnapshot  Json                   @map("entitlement_snapshot")
-  monthlyAiTokens      BigInt                 @default(0) @map("monthly_ai_tokens")
+  monthlyAiCredits     BigInt                 @default(0) @map("monthly_ai_credits")
   nextAiGrantAt        DateTime?              @map("next_ai_grant_at")
   aiGrantCyclesApplied Int                    @default(0) @map("ai_grant_cycles_applied")
   activatedAt          DateTime?              @map("activated_at")
@@ -1159,24 +1184,124 @@ model BillingWebhookEvent {
   @@map("billing_webhook_events")
 }
 
-model AiTokenLedger {
-  id             String            @id @default(cuid())
-  userId         String            @map("user_id")
-  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptionId String?           @map("subscription_id")
-  subscription   UserSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  orderId        String?           @map("order_id")
-  order          BillingOrder?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  reason         AiLedgerReason
-  idempotencyKey String?           @unique @map("idempotency_key")
-  deltaTokens    BigInt            @map("delta_tokens")
-  balanceAfter   BigInt            @map("balance_after")
-  meta           Json?
-  createdAt      DateTime          @default(now()) @map("created_at")
+model AiCreditLedger {
+  id                    String               @id @default(cuid())
+  userId                String               @map("user_id")
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId        String?              @map("subscription_id")
+  subscription          UserSubscription?    @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  orderId               String?              @map("order_id")
+  order                 BillingOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  agentRunId            String?              @map("agent_run_id")
+  agentRun              AiAgentRun?          @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  reservationId         String?              @map("reservation_id")
+  reservation           AiCreditReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  pricingRevisionId     String?              @map("pricing_revision_id")
+  pricingRevision       AiModelPricing?       @relation(fields: [pricingRevisionId], references: [id], onDelete: Restrict)
+  reason                AiLedgerReason
+  idempotencyKey        String?              @unique @map("idempotency_key")
+  deltaCredits          BigInt               @map("delta_credits")
+  balanceAfterCredits   BigInt               @map("balance_after_credits")
+  reservedAfterCredits  BigInt               @default(0) @map("reserved_after_credits")
+  providerCostMicrousd  BigInt?              @map("provider_cost_microusd")
+  retailCostMicrousd    BigInt?              @map("retail_cost_microusd")
+  meta                  Json?
+  createdAt             DateTime             @default(now()) @map("created_at")
 
-  @@index([userId, createdAt(sort: Desc)], map: "ai_token_ledger_user_created_idx")
-  @@index([reason, createdAt(sort: Desc)], map: "ai_token_ledger_reason_created_idx")
-  @@map("ai_token_ledger")
+  @@index([userId, createdAt(sort: Desc)], map: "ai_credit_ledger_user_created_idx")
+  @@index([reason, createdAt(sort: Desc)], map: "ai_credit_ledger_reason_created_idx")
+  @@index([agentRunId], map: "ai_credit_ledger_agent_run_idx")
+  @@index([reservationId], map: "ai_credit_ledger_reservation_idx")
+  @@map("ai_credit_ledger")
+}
+
+model AiModelPricing {
+  id                              String   @id @default(cuid())
+  provider                        String
+  model                           String
+  serviceTier                     String   @default("default") @map("service_tier")
+  processingRegion                String   @default("global") @map("processing_region")
+  inputMicrousdPerMillion         BigInt   @map("input_microusd_per_million")
+  cachedInputMicrousdPerMillion   BigInt   @map("cached_input_microusd_per_million")
+  cacheWriteMicrousdPerMillion    BigInt?  @map("cache_write_microusd_per_million")
+  outputMicrousdPerMillion        BigInt   @map("output_microusd_per_million")
+  longContextThresholdTokens      Int?     @map("long_context_threshold_tokens")
+  longInputMultiplierBps          Int?     @map("long_input_multiplier_bps")
+  longOutputMultiplierBps         Int?     @map("long_output_multiplier_bps")
+  markupBps                       Int
+  revision                        Int
+  effectiveFrom                   DateTime @map("effective_from")
+  effectiveUntil                  DateTime? @map("effective_until")
+  isActive                        Boolean  @default(true) @map("is_active")
+  createdAt                       DateTime @default(now()) @map("created_at")
+  updatedAt                       DateTime @updatedAt @map("updated_at")
+
+  usageRecords AiUsageRecord[]
+  ledgerEntries AiCreditLedger[]
+
+  @@unique([provider, model, serviceTier, processingRegion, revision], map: "ai_model_pricing_revision_key")
+  @@index([provider, model, serviceTier, processingRegion, effectiveFrom], map: "ai_model_pricing_effective_idx")
+  @@index([isActive, effectiveFrom, effectiveUntil], map: "ai_model_pricing_active_window_idx")
+  @@map("ai_model_pricing")
+}
+
+model AiCreditReservation {
+  id                    String                    @id @default(cuid())
+  userId                String                    @map("user_id")
+  user                  User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId        String                    @map("subscription_id")
+  subscription          UserSubscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  agentRunId            String                    @unique @map("agent_run_id")
+  agentRun              AiAgentRun                @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  status                AiCreditReservationStatus @default(ACTIVE)
+  reservedCredits       BigInt                    @map("reserved_credits")
+  settledCredits        BigInt                    @default(0) @map("settled_credits")
+  idempotencyKey        String                    @unique @map("idempotency_key")
+  expiresAt             DateTime                  @map("expires_at")
+  settledAt             DateTime?                 @map("settled_at")
+  releasedAt            DateTime?                 @map("released_at")
+  reconciliationReason  String?                   @map("reconciliation_reason")
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  updatedAt             DateTime                  @updatedAt @map("updated_at")
+
+  ledgerEntries AiCreditLedger[]
+
+  @@index([userId, status, expiresAt], map: "ai_credit_reservations_user_status_expiry_idx")
+  @@index([status, expiresAt], map: "ai_credit_reservations_status_expiry_idx")
+  @@map("ai_credit_reservations")
+}
+
+model AiUsageRecord {
+  id                         String              @id @default(cuid())
+  agentRunId                 String              @map("agent_run_id")
+  agentRun                   AiAgentRun          @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  callIndex                  Int                 @map("call_index")
+  provider                   String
+  model                      String
+  modelClass                 String              @map("model_class")
+  serviceTier                String              @default("default") @map("service_tier")
+  processingRegion           String              @default("global") @map("processing_region")
+  responseId                 String?             @unique @map("response_id")
+  requestId                  String?             @map("request_id")
+  inputTokens                BigInt              @default(0) @map("input_tokens")
+  cachedInputTokens          BigInt              @default(0) @map("cached_input_tokens")
+  cacheWriteTokens           BigInt              @default(0) @map("cache_write_tokens")
+  outputTokens               BigInt              @default(0) @map("output_tokens")
+  reasoningTokens            BigInt              @default(0) @map("reasoning_tokens")
+  providerCostMicrousd       BigInt              @default(0) @map("provider_cost_microusd")
+  retailCostMicrousd         BigInt              @default(0) @map("retail_cost_microusd")
+  pricingRevisionId          String              @map("pricing_revision_id")
+  pricingRevision            AiModelPricing      @relation(fields: [pricingRevisionId], references: [id], onDelete: Restrict)
+  pricingSnapshot            Json                @map("pricing_snapshot")
+  status                     AiUsageRecordStatus @default(COMPLETED)
+  errorCode                  String?             @map("error_code")
+  latencyMs                  Int?                @map("latency_ms")
+  createdAt                  DateTime            @default(now()) @map("created_at")
+
+  @@unique([agentRunId, callIndex], map: "ai_usage_records_run_call_key")
+  @@index([provider, model, createdAt(sort: Desc)], map: "ai_usage_records_provider_model_created_idx")
+  @@index([status, createdAt(sort: Desc)], map: "ai_usage_records_status_created_idx")
+  @@map("ai_usage_records")
 }
 
 model DashboardPerformanceSnapshot {
@@ -2572,12 +2697,15 @@ model AiTraceLog {
   cacheHit           Boolean  @default(false) @map("cache_hit")
   rateLimited        Boolean  @default(false) @map("rate_limited")
   latencyMs          Int?     @map("latency_ms")
+  agentRunId         String?  @map("agent_run_id")
+  agentRun           AiAgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
   createdAt          DateTime @default(now()) @map("created_at")
 
   @@index([createdAt(sort: Desc)])
   @@index([scope, createdAt(sort: Desc)])
   @@index([symbol, timeframe, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)], map: "ai_trace_logs_user_id_created_at_idx")
+  @@index([agentRunId], map: "ai_trace_logs_agent_run_idx")
   @@map("ai_trace_logs")
 }
 
@@ -2646,8 +2774,8 @@ model AiAgentMessage {
 
 model AiAgentRun {
   id               String   @id @default(cuid())
-  conversationId   String   @map("conversation_id")
-  conversation     AiAgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId   String?  @map("conversation_id")
+  conversation     AiAgentConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   userId           String   @map("user_id")
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   scope            String
@@ -2656,6 +2784,14 @@ model AiAgentRun {
   contextSnapshot  Json     @map("context_snapshot")
   provider         String?
   model            String?
+  modelClass       String?  @map("model_class")
+  routingDecision  Json?    @map("routing_decision")
+  reservedCredits  BigInt   @default(0) @map("reserved_credits")
+  chargedCredits   BigInt   @default(0) @map("charged_credits")
+  providerCostMicrousd BigInt @default(0) @map("provider_cost_microusd")
+  retailCostMicrousd BigInt @default(0) @map("retail_cost_microusd")
+  modelCallCount   Int      @default(0) @map("model_call_count")
+  idempotencyKey   String?  @unique @map("idempotency_key")
   toolIterations   Int      @default(0) @map("tool_iterations")
   toolCallCount    Int      @default(0) @map("tool_call_count")
   usageTotalTokens Int?     @map("usage_total_tokens")
@@ -2664,7 +2800,11 @@ model AiAgentRun {
   createdAt        DateTime @default(now()) @map("created_at")
   completedAt      DateTime? @map("completed_at")
 
-  toolCalls AiAgentToolCall[]
+  toolCalls    AiAgentToolCall[]
+  usageRecords AiUsageRecord[]
+  reservation  AiCreditReservation?
+  ledgerEntries AiCreditLedger[]
+  traceLogs     AiTraceLog[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([conversationId, createdAt])

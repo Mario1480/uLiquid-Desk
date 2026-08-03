@@ -1156,7 +1156,7 @@
     },
     "billing": {
       "title": "Billing",
-      "description": "Manage subscription packages, bot capacity, prediction limits and manual AI token adjustments."
+      "description": "Manage subscription packages, bot capacity, prediction limits and manual AI Credit adjustments."
     }
   },
   "billing": {
@@ -1186,7 +1186,7 @@
     },
     "featureFlags": {
       "title": "Billing feature flags",
-      "description": "Control whether onchain checkout and AI token billing are active.",
+      "description": "Control whether onchain checkout and AI Credit billing are active.",
       "source": "Source",
       "updatedAt": "Last updated",
       "never": "never",
@@ -1200,9 +1200,9 @@
         "label": "Subscription checkout enabled",
         "hint": "When disabled, users cannot buy/renew subscriptions or topups."
       },
-      "aiTokenBillingEnabled": {
-        "label": "AI token billing enabled",
-        "hint": "When disabled, AI token gating/debits are bypassed."
+      "aiCreditBillingEnabled": {
+        "label": "AI Credit billing enabled",
+        "hint": "When enabled, OpenAI costs are reserved and settled against prepaid AI Credits."
       }
     },
     "createTitle": "Create package",
@@ -1213,19 +1213,19 @@
     "delete": "Delete package",
     "confirmDelete": "Delete this package?",
     "refresh": "Refresh",
-    "tokenAdjustTitle": "Manual AI token adjustment",
-    "tokenAdjustHelp": "Adjust a user's token wallet manually (for refunds, support cases, or corrections). You can use user ID or email.",
+    "creditAdjustTitle": "Manual AI Credit adjustment",
+    "creditAdjustHelp": "Adjust a user's AI Credit balance manually for refunds, support cases, or corrections. You can use user ID or email.",
     "userId": "User ID or email",
     "userIdHint": "Target user lookup (internal ID or login email).",
     "userIdPlaceholder": "e.g. clx123... or user@example.com",
-    "deltaTokens": "Delta tokens (+/-)",
-    "deltaTokensHint": "Positive adds tokens, negative removes tokens.",
+    "deltaCredits": "AI Credit adjustment (+/-)",
+    "deltaCreditsHint": "Positive adds AI Credits, negative removes AI Credits.",
     "note": "Note",
     "noteHint": "Stored in ledger metadata for audit tracing.",
     "notePlaceholder": "Reason for this manual adjustment",
     "adjust": "Apply adjustment",
-    "adjustInvalid": "Enter a user, an integer token delta and a note.",
-    "adjusted": "Token balance adjusted.",
+    "adjustInvalid": "Enter a user, an integer AI Credit delta and a note.",
+    "adjusted": "AI Credit balance adjusted.",
     "saved": "Package saved.",
     "deleted": "Package deleted.",
     "fields": {
@@ -1292,9 +1292,9 @@
         "label": "Allowed exchanges",
         "hint": "Comma-separated list. Use * to allow all exchanges."
       },
-      "monthlyAiTokens": {
-        "label": "Monthly AI tokens",
-        "hint": "Token grant added when this plan payment is processed."
+      "monthlyAiCredits": {
+        "label": "Monthly AI Credits",
+        "hint": "AI Credit grant added when this plan payment is processed."
       },
       "aiCredits": {
         "label": "AI credits",

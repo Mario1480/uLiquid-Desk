@@ -21,16 +21,19 @@ export function resolveAgentChatFeatureAccess(params: {
   isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
 }): AgentChatFeatureAccess {
   const masterEnabled = readFlag("AI_AGENT_CHAT_ENABLED", true);
+  const routerEnabled = readFlag("AI_MODEL_ROUTER_V1", true);
+  const responsesEnabled = readFlag("AI_RESPONSES_API_AGENT", true);
+  const agentEnabled = masterEnabled && routerEnabled && responsesEnabled;
   const capability = (key: CapabilityKey) => params.isCapabilityAllowed(params.capabilities, key);
   return {
-    chat: masterEnabled && (params.isAdmin || capability("product.ai_agent_chat")),
-    accountReads: masterEnabled
+    chat: agentEnabled && (params.isAdmin || capability("product.ai_agent_chat")),
+    accountReads: agentEnabled
       && readFlag("AI_AGENT_ACCOUNT_READS_ENABLED", true)
       && (params.isAdmin || capability("product.ai_agent_account_reads")),
-    customProfiles: masterEnabled
+    customProfiles: agentEnabled
       && readFlag("AI_AGENT_CUSTOM_PROFILES_ENABLED", true)
       && (params.isAdmin || capability("product.ai_agent_custom_profiles")),
-    tradeDrafts: masterEnabled
+    tradeDrafts: agentEnabled
       && readFlag("AI_AGENT_TRADE_DRAFTS_ENABLED", false)
       && capability("product.ai_agent_trade_drafts")
   };
