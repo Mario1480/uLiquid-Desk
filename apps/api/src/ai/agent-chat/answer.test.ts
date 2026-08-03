@@ -65,3 +65,27 @@ test("rehydrates previously stored raw JSON without mutating plain messages", ()
   assert.equal(Array.isArray(rows[0].blocks), true);
   assert.equal(rows[1].content, "Analyze BTC");
 });
+
+test("repairs a missing risk detail key and normalizes unsupported metric tones", () => {
+  const malformed = '{"content":"BTC ist bärisch bis neutral.","blocks":['
+    + '{"type":"key_metrics","title":"BTC Daily","items":['
+    + '{"label":"Preis","value":"62.726 USD","tone":"negative"}]},'
+    + '{"type":"scenario_table","title":"Szenarien","columns":["Szenario","Lesart"],"rows":[["Bärisch","Unter SMA20"]]},'
+    + '{"type":"risk_findings","title":"Risiko","riskLevel":"high","items":['
+    + '{"title":"Volatilität","detail":"ATR ist erhöht."},'
+    + '{"title":"Kein Trendwechsel","RSI bleibt unter 50."}]},'
+    + '{"type":"source_list","title":"Quellen","sources":["Unverified source text"]}'
+    + '],"citations":[]}';
+
+  const parsed = parseAgentAnswer(malformed, "de");
+
+  assert.equal(parsed.content, "BTC ist bärisch bis neutral.");
+  assert.deepEqual(parsed.blocks.map((block) => block.type), ["key_metrics", "scenario_table", "risk_findings"]);
+  const metrics = parsed.blocks[0];
+  assert.equal(metrics.type, "key_metrics");
+  if (metrics.type === "key_metrics") assert.equal(metrics.items[0]?.tone, "warning");
+  const risks = parsed.blocks[2];
+  assert.equal(risks.type, "risk_findings");
+  if (risks.type === "risk_findings") assert.equal(risks.items[1]?.detail, "RSI bleibt unter 50.");
+  assert.deepEqual(parsed.citations, []);
+});

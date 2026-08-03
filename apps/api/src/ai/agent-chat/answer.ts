@@ -8,6 +8,7 @@ export type ParsedAgentAnswer = {
 };
 
 const RISK_LEVELS = new Set(["low", "medium", "high", "critical"]);
+const METRIC_TONES = new Set(["neutral", "positive", "warning", "critical"]);
 const METRIC_IGNORED_KEYS = new Set([
   "context",
   "detected",
@@ -36,6 +37,15 @@ function boundedText(value: unknown, max: number): string | null {
 
 function stripJsonFence(value: string): string {
   return value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+}
+
+function repairKnownAgentJson(value: string): string {
+  return value
+    .replace(
+      /("title"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*)("(?:\\.|[^"\\])*")(\s*})/g,
+      '$1"detail":$2$3'
+    )
+    .replace(/,\s*([}\]])/g, "$1");
 }
 
 function humanize(value: string): string {
@@ -117,6 +127,26 @@ function normalizeRiskLevel(value: unknown): "low" | "medium" | "high" | "critic
   return RISK_LEVELS.has(level) ? level as "low" | "medium" | "high" | "critical" : "medium";
 }
 
+function normalizeMetricTone(value: unknown): "neutral" | "positive" | "warning" | "critical" | undefined {
+  const tone = String(value ?? "").trim().toLowerCase();
+  if (METRIC_TONES.has(tone)) return tone as "neutral" | "positive" | "warning" | "critical";
+  if (["negative", "bearish", "caution"].includes(tone)) return "warning";
+  if (["danger", "error", "severe"].includes(tone)) return "critical";
+  return undefined;
+}
+
+function normalizeMetricItems(value: unknown): Extract<AgentUiBlock, { type: "key_metrics" }>["items"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const row = toRecord(item);
+    const label = boundedText(row?.label, 100);
+    const metricValue = boundedText(row?.value, 160);
+    if (!label || !metricValue) return [];
+    const tone = normalizeMetricTone(row?.tone);
+    return [{ label, value: metricValue, ...(tone ? { tone } : {}) }];
+  }).slice(0, 12);
+}
+
 function normalizeSourceRef(value: unknown): AgentSourceRef | null {
   const parsed = agentSourceRefSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
@@ -137,6 +167,10 @@ function normalizeLegacyBlock(value: unknown): AgentUiBlock | null {
     if (canonicalItems) {
       const parsed = agentUiBlockSchema.safeParse({ type, title, items: canonicalItems });
       if (parsed.success && parsed.data.type === "key_metrics") return parsed.data;
+      const normalizedItems = normalizeMetricItems(canonicalItems);
+      if (normalizedItems.length > 0) {
+        return { type: "key_metrics", ...(title ? { title } : {}), items: normalizedItems };
+      }
     }
     const items = collectMetricItems(block.content);
     return items.length > 0 ? { type: "key_metrics", ...(title ? { title } : {}), items } : null;
@@ -197,9 +231,18 @@ export function parseAgentAnswer(rawContent: string, locale: "de" | "en" = "en")
   if (!text) throw new Error("agent_chat_empty_answer");
 
   let json: unknown;
-  try {
-    json = JSON.parse(stripJsonFence(text));
-  } catch {
+  const stripped = stripJsonFence(text);
+  let parsed = false;
+  for (const candidate of [...new Set([stripped, repairKnownAgentJson(stripped)])]) {
+    try {
+      json = JSON.parse(candidate);
+      parsed = true;
+      break;
+    } catch {
+      // Try the next bounded repair candidate.
+    }
+  }
+  if (!parsed) {
     return { content: text.slice(0, 12_000), blocks: [], citations: [] };
   }
 

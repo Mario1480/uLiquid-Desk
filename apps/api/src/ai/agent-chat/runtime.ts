@@ -62,6 +62,24 @@ const DEFAULT_BUDGET = {
   maxOutputTokens: 2_200
 } as const;
 
+export const AGENT_CHAT_RESPONSE_FORMAT: NonNullable<CallAiChatOptions["responseFormat"]> = {
+  type: "json_schema",
+  json_schema: {
+    name: "agent_chat_answer",
+    strict: false,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        content: { type: "string", maxLength: 12_000 },
+        blocks: { type: "array", maxItems: 12, items: { type: "object" } },
+        citations: { type: "array", maxItems: 20, items: { type: "object" } }
+      },
+      required: ["content", "blocks", "citations"]
+    }
+  }
+};
+
 function parseArguments(text: string): unknown {
   try {
     return text.trim() ? JSON.parse(text) : {};
@@ -81,7 +99,7 @@ function buildSystemMessage(profile: ResolvedAgentProfile, locale: "de" | "en", 
     "Preserve deterministic risk warnings and never lower their severity.",
     "The final response must be a JSON object with the top-level fields content (string), blocks (array) and citations (array).",
     "Never use a generic content field inside a block.",
-    "summary blocks use {type, title?, text}; key_metrics use {type, title?, items:[{label,value,tone?}]}; risk_findings use {type, title?, riskLevel, items:[{title,detail}]}; scenario_table uses {type,title?,columns,rows}; prediction_comparison uses {type,title?,prediction,position,divergence}; source_list uses {type,title?,sources}.",
+    "summary blocks use {type, title?, text}; key_metrics use {type, title?, items:[{label,value,tone?}]} where tone is only neutral, positive, warning or critical; risk_findings use {type, title?, riskLevel, items:[{title,detail}]}; scenario_table uses {type,title?,columns,rows}; prediction_comparison uses {type,title?,prediction,position,divergence}; source_list uses {type,title?,sources}.",
     "Keep blocks concise and omit blocks that do not validate."
   ].join("\n"));
 }
@@ -236,6 +254,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
       const result = await params.callAiChat(messages, {
         tools,
         toolChoice: tools.length > 0 ? "auto" : "none",
+        responseFormat: AGENT_CHAT_RESPONSE_FORMAT,
         maxTokens: Math.min(DEFAULT_BUDGET.maxOutputTokens, routing.maxOutputTokens),
         timeoutMs: Math.max(1_000, DEFAULT_BUDGET.timeoutMs - (Date.now() - startedAt)),
         temperature: 0.2,

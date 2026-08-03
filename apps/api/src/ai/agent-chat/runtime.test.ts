@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { toAgentChatError } from "./errors.js";
-import { resolveAgentRunTimeoutMs } from "./runtime.js";
+import { AGENT_CHAT_RESPONSE_FORMAT, resolveAgentRunTimeoutMs } from "./runtime.js";
 
 test("agent chat run timeout leaves enough time for provider and tool iterations", () => {
   assert.equal(resolveAgentRunTimeoutMs(undefined), 90_000);
@@ -9,6 +9,16 @@ test("agent chat run timeout leaves enough time for provider and tool iterations
   assert.equal(resolveAgentRunTimeoutMs("1000"), 30_000);
   assert.equal(resolveAgentRunTimeoutMs("999999"), 180_000);
   assert.equal(resolveAgentRunTimeoutMs("invalid"), 90_000);
+});
+
+test("agent chat requests a JSON object envelope from the Responses API", () => {
+  assert.equal(AGENT_CHAT_RESPONSE_FORMAT.type, "json_schema");
+  assert.equal(AGENT_CHAT_RESPONSE_FORMAT.json_schema.name, "agent_chat_answer");
+  assert.equal(AGENT_CHAT_RESPONSE_FORMAT.json_schema.strict, false);
+  assert.deepEqual(
+    (AGENT_CHAT_RESPONSE_FORMAT.json_schema.schema as any).required,
+    ["content", "blocks", "citations"]
+  );
 });
 
 test("provider aborts are returned as stable agent chat timeout errors", () => {
