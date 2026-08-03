@@ -200,6 +200,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
         maxTokens: DEFAULT_BUDGET.maxOutputTokens,
         timeoutMs: Math.max(1_000, DEFAULT_BUDGET.timeoutMs - (Date.now() - startedAt)),
         temperature: 0.2,
+        reasoningEffort: "low",
         billingUserId: params.userId,
         billingScope: "ai_agent_chat"
       });

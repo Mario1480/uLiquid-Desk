@@ -33,6 +33,13 @@ export function toAgentChatError(error: unknown): AgentChatError {
   }
   const message = error instanceof Error ? error.message : String(error ?? "unknown");
   if (message.includes("budget")) return new AgentChatError("agent_chat_tool_budget_exceeded", 429);
+  if (message.includes("ai_empty_response")) {
+    return new AgentChatError(
+      "agent_chat_provider_unavailable",
+      503,
+      "The AI provider returned no usable answer. Please try again."
+    );
+  }
   if (message.includes("provider") || message.includes("ai_api_key") || message.includes("ai_model")) {
     return new AgentChatError("agent_chat_provider_unavailable", 503);
   }

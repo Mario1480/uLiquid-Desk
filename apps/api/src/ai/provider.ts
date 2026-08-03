@@ -176,6 +176,7 @@ export type CallAiChatOptions = {
       schema: Record<string, unknown>;
     };
   };
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
 };
 
 export type AiToolCall = {
@@ -670,6 +671,12 @@ function readToolCalls(message: ChatCompletionMessage | null | undefined): AiToo
   return out;
 }
 
+export function hasUsableAiChatMessageOutput(message: unknown): boolean {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return false;
+  const normalized = message as ChatCompletionMessage;
+  return readMessageContent(normalized).length > 0 || readToolCalls(normalized).length > 0;
+}
+
 function isOpenAiGpt5Model(provider: EnabledAiProvider, model: string): boolean {
   return provider === "openai" && model.startsWith("gpt-5");
 }
@@ -712,6 +719,7 @@ async function callChatCompletions(params: {
       schema: Record<string, unknown>;
     };
   };
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
   signal: AbortSignal;
 }): Promise<AiCallResult> {
   const requestedMaxTokensRaw = params.maxTokens ?? 220;
@@ -724,6 +732,9 @@ async function callChatCompletions(params: {
   const temperatureParam = isOpenAiGpt5Model(params.provider, params.model)
     ? {}
     : { temperature: params.temperature ?? 0.1 };
+  const reasoningEffortParam = isOpenAiGpt5Model(params.provider, params.model) && params.reasoningEffort
+    ? { reasoning_effort: params.reasoningEffort }
+    : {};
 
   const safeBaseUrl = await validateAiProviderBaseUrl(params.provider, params.baseUrl);
   if (!safeBaseUrl.ok) {
@@ -739,6 +750,7 @@ async function callChatCompletions(params: {
     model: params.model,
     ...temperatureParam,
     ...completionTokensParam,
+    ...reasoningEffortParam,
     messages: params.messages,
     stream: false
   };
@@ -826,17 +838,23 @@ async function callChatCompletions(params: {
             content: textFromTopLevel
           }
         : null);
-  if (!message) {
-    throw new Error("ai_empty_response");
+  const finishReason = typeof (payload as any)?.choices?.[0]?.finish_reason === "string"
+    ? String((payload as any).choices[0].finish_reason)
+    : null;
+  if (!message || !hasUsableAiChatMessageOutput(message)) {
+    const usage = readChatUsage(payload);
+    const details = [
+      finishReason ? `finish_reason:${finishReason}` : null,
+      usage.completionTokens !== null ? `completion_tokens:${usage.completionTokens}` : null
+    ].filter(Boolean).join(",");
+    throw new Error(details ? `ai_empty_response:${details}` : "ai_empty_response");
   }
 
   return {
     usage: readChatUsage(payload),
     message,
     modelUsed: params.model,
-    finishReason: typeof (payload as any)?.choices?.[0]?.finish_reason === "string"
-      ? String((payload as any).choices[0].finish_reason)
-      : null
+    finishReason
   };
 }
 
@@ -890,6 +908,7 @@ export async function callAiChat(
         tools: options.tools,
         toolChoice: options.toolChoice,
         responseFormat: options.responseFormat,
+        reasoningEffort: options.reasoningEffort,
         signal: controller.signal
       });
     } catch (primaryError) {
@@ -918,6 +937,7 @@ export async function callAiChat(
         tools: options.tools,
         toolChoice: options.toolChoice,
         responseFormat: options.responseFormat,
+        reasoningEffort: options.reasoningEffort,
         signal: controller.signal
       });
     }

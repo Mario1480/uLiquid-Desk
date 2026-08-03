@@ -1,11 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  hasUsableAiChatMessageOutput,
   isSelfHostedAiProvider,
   normalizeAiProvider,
   resolveAiModelFromConfig,
   shouldChargeAiTokens
 } from "./provider.js";
+
+test("hasUsableAiChatMessageOutput rejects empty completions and accepts text or tool calls", () => {
+  assert.equal(hasUsableAiChatMessageOutput({ role: "assistant", content: null }), false);
+  assert.equal(hasUsableAiChatMessageOutput({ role: "assistant", content: "  " }), false);
+  assert.equal(hasUsableAiChatMessageOutput({ role: "assistant", content: "analysis ready" }), true);
+  assert.equal(hasUsableAiChatMessageOutput({
+    role: "assistant",
+    content: null,
+    tool_calls: [{ id: "call-1", type: "function", function: { name: "market_get_quote", arguments: "{}" } }]
+  }), true);
+});
 
 test("resolveAiModelFromConfig prefers db model over env model", () => {
   const resolved = resolveAiModelFromConfig({

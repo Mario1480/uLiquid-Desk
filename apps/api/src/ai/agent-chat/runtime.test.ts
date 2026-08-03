@@ -19,3 +19,10 @@ test("provider aborts are returned as stable agent chat timeout errors", () => {
   assert.equal(normalized.status, 503);
   assert.equal(normalized.message, "The AI provider timed out. Please try again.");
 });
+
+test("empty provider responses are returned as stable retryable provider errors", () => {
+  const normalized = toAgentChatError(new Error("ai_empty_response:finish_reason:length,completion_tokens:2200"));
+  assert.equal(normalized.code, "agent_chat_provider_unavailable");
+  assert.equal(normalized.status, 503);
+  assert.equal(normalized.message, "The AI provider returned no usable answer. Please try again.");
+});
