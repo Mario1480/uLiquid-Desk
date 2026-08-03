@@ -651,7 +651,7 @@
       "search": "Suche",
       "searchFallback": "Suche-Fallback aktiv",
       "fetchedAt": "Geladen",
-      "partial": "Teil-Feed (eine Quelle nicht verfügbar)"
+      "partial": "Teilweise News-Abdeckung (mindestens eine News-Quelle nicht verfügbar)"
     },
     "feed": {
       "crypto": "Crypto",
@@ -671,7 +671,7 @@
       "24h": "24 Stunden",
       "7d": "7 Tage"
     },
-    "overviewTitle": "Heutige Übersicht",
+    "overviewTitle": "Übersicht für den gewählten Zeitraum",
     "risk": "Gesamtrisiko",
     "tone": "Marktton",
     "providers": "Gesunde Quellen",
@@ -687,7 +687,7 @@
     "noUpcoming": "Keine High-Impact-Events in diesem Horizont.",
     "createPrediction": "Prediction erstellen",
     "openNews": "Quellen-Feed öffnen",
-    "dataIncomplete": "Daten unvollständig: Mindestens ein Provider ist beeinträchtigt, veraltet oder nicht verfügbar.",
+    "dataIncomplete": "Teilweise Quellenabdeckung: Verfügbare quellenbasierte Daten werden angezeigt; mindestens ein Provider ist beeinträchtigt, veraltet oder nicht verfügbar.",
     "loadError": "Market Intelligence konnte nicht geladen werden",
     "loading": "Market Intelligence wird geladen...",
     "empty": "Keine quellenbasierten Markttreiber verfügbar."

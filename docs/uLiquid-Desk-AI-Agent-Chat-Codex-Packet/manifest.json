@@ -1,0 +1,21 @@
+{
+  "name": "uLiquid Desk AI Agent Chat Codex Packet",
+  "version": "1.0.0",
+  "createdAt": "2026-08-02",
+  "sourceSnapshot": "uLiquid-Desk-main.zip",
+  "mvp": [
+    "Market Analyst",
+    "Position Copilot",
+    "Agent Activity",
+    "Skill and permission selection"
+  ],
+  "excludedFromMvp": [
+    "Autonomous execution",
+    "Wallet tools",
+    "Vault tools",
+    "Prediction Copier configuration",
+    "Trade drafts"
+  ],
+  "recommendedStart": "README.md",
+  "masterPrompt": "CODEX-MASTER-PROMPT.md"
+}

@@ -4,6 +4,16 @@ import net from "node:net";
 const DEFAULT_MAX_BYTES = 1_000_000;
 const DEFAULT_TIMEOUT_MS = 8_000;
 const DEFAULT_REDIRECT_LIMIT = 3;
+const LEGACY_DEFAULT_USER_AGENT = "uLiquid-Desk-MarketIntelligence/1.0";
+const DEFAULT_USER_AGENT = `${LEGACY_DEFAULT_USER_AGENT} (+https://desk.uliquid.vip; support@uliquid.vip)`;
+
+export function resolveFeedUserAgent(value = process.env.RSS_USER_AGENT): string {
+  const configured = String(value ?? "").trim();
+  const resolved = !configured || configured === LEGACY_DEFAULT_USER_AGENT
+    ? DEFAULT_USER_AGENT
+    : configured;
+  return resolved.slice(0, 240);
+}
 
 function isPrivateIpv4(ip: string): boolean {
   const parts = ip.split(".").map(Number);
@@ -119,7 +129,7 @@ export async function fetchBoundedFeed(params: {
         signal: controller.signal,
         headers: {
           Accept: "application/rss+xml, application/atom+xml, application/json, application/xml, text/xml, text/calendar;q=0.9, */*;q=0.1",
-          "User-Agent": String(process.env.RSS_USER_AGENT ?? "uLiquid-Desk-MarketIntelligence/1.0").slice(0, 240)
+          "User-Agent": resolveFeedUserAgent()
         }
       });
       if ([301, 302, 303, 307, 308].includes(response.status)) {

@@ -1,0 +1,51 @@
+[
+  {
+    "provider": "openai",
+    "model": "gpt-5-nano",
+    "inputMicrousdPerMillion": "50000",
+    "cachedInputMicrousdPerMillion": "5000",
+    "outputMicrousdPerMillion": "400000",
+    "cacheWriteMultiplierBps": 10000,
+    "markupBps": 25000,
+    "revision": 1
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "inputMicrousdPerMillion": "200000",
+    "cachedInputMicrousdPerMillion": "20000",
+    "outputMicrousdPerMillion": "1200000",
+    "cacheWriteMultiplierBps": 12500,
+    "longContextThresholdTokens": 272000,
+    "longInputMultiplierBps": 20000,
+    "longOutputMultiplierBps": 15000,
+    "markupBps": 22000,
+    "revision": 1
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "inputMicrousdPerMillion": "2000000",
+    "cachedInputMicrousdPerMillion": "200000",
+    "outputMicrousdPerMillion": "12000000",
+    "cacheWriteMultiplierBps": 12500,
+    "longContextThresholdTokens": 272000,
+    "longInputMultiplierBps": 20000,
+    "longOutputMultiplierBps": 15000,
+    "markupBps": 21000,
+    "revision": 1
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "inputMicrousdPerMillion": "5000000",
+    "cachedInputMicrousdPerMillion": "500000",
+    "outputMicrousdPerMillion": "30000000",
+    "cacheWriteMultiplierBps": 12500,
+    "longContextThresholdTokens": 272000,
+    "longInputMultiplierBps": 20000,
+    "longOutputMultiplierBps": 15000,
+    "markupBps": 20000,
+    "revision": 1
+  }
+]

@@ -512,11 +512,11 @@ export class MarketIntelligenceService {
     const cursorIndex = input.cursor ? filtered.findIndex((item) => item.id === input.cursor) + 1 : 0;
     const start = input.cursor ? Math.max(0, cursorIndex) : (page - 1) * limit;
     const data = filtered.slice(start, start + limit);
-    const states = (await this.getProviderStates()).filter((state) => state.providerType === "news");
+    const states = await this.getProviderStates();
     const warnings = states.filter((state) => state.state === "degraded" || state.state === "unavailable").map((state) => `${state.providerId}: ${state.message ?? state.state}`);
     const meta = {
       generatedAt: new Date().toISOString(),
-      providerStates: states,
+      providerStates: states.filter((state) => state.providerType === "news"),
       degraded: warnings.length > 0 || rows.length === 0,
       warnings,
       page,

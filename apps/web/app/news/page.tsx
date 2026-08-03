@@ -79,8 +79,8 @@ export default function NewsPage() {
   const [limit, setLimit] = useState(20);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [from, setFrom] = useState(() => toDateInput(addDays(new Date(), -1)));
-  const [to, setTo] = useState(() => toDateInput(addDays(new Date(), 1)));
+  const [from, setFrom] = useState(() => toDateInput(addDays(new Date(), -7)));
+  const [to, setTo] = useState(() => toDateInput(new Date()));
   const [items, setItems] = useState<NewsItem[]>([]);
   const [meta, setMeta] = useState<NewsResponse["meta"] | null>(null);
   const [loading, setLoading] = useState(true);

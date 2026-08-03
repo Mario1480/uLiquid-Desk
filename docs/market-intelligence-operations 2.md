@@ -90,7 +90,7 @@ NEWS_QUERY_CACHE_TTL_SEC=60
 NEWS_STALE_TTL_SEC=1800
 NEWS_STALE_AFTER_SEC=1800
 NEWS_RETENTION_DAYS=90
-RSS_USER_AGENT=uLiquid-Desk-MarketIntelligence/1.0 (+https://desk.uliquid.vip; support@uliquid.vip)
+RSS_USER_AGENT=uLiquid-Desk-MarketIntelligence/1.0
 ```
 
 `AI_MARKET_SUMMARY_ENABLED=false` keeps summaries deterministic and avoids AI

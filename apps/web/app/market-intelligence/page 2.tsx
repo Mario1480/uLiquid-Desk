@@ -65,7 +65,7 @@ function stateBadgeClass(state: ProviderState["state"]): string {
 export default function MarketIntelligencePage() {
   const t = useTranslations("system.marketIntelligence");
   const locale = useLocale() as AppLocale;
-  const [horizon, setHorizon] = useState<Horizon>("7d");
+  const [horizon, setHorizon] = useState<Horizon>("24h");
   const [payload, setPayload] = useState<MarketSummaryResponse | null>(null);
   const [providers, setProviders] = useState<ProviderState[]>([]);
   const [loading, setLoading] = useState(true);

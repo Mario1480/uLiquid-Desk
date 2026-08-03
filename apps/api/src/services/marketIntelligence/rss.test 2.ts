@@ -5,7 +5,7 @@ import { normalizedNewsDedupKey } from "./normalization/index.js";
 import { RssNewsProvider } from "./providers/rss/RssNewsProvider.js";
 import { parseRssOrAtom } from "./providers/rss/parser.js";
 import type { RssSourceConfig } from "./providers/rss/sourceRegistry.js";
-import { isPublicIpAddress, resolveFeedUserAgent, validateFeedUrl } from "./providers/rss/security.js";
+import { isPublicIpAddress, validateFeedUrl } from "./providers/rss/security.js";
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 
@@ -34,14 +34,6 @@ test("feed URL validation blocks SSRF targets and non-HTTPS URLs", () => {
   assert.equal(isPublicIpAddress("127.0.0.1"), false);
   assert.equal(isPublicIpAddress("10.2.3.4"), false);
   assert.equal(isPublicIpAddress("1.1.1.1"), true);
-});
-
-test("feed user agent upgrades the legacy default with public contact information", () => {
-  assert.equal(
-    resolveFeedUserAgent("uLiquid-Desk-MarketIntelligence/1.0"),
-    "uLiquid-Desk-MarketIntelligence/1.0 (+https://desk.uliquid.vip; support@uliquid.vip)"
-  );
-  assert.equal(resolveFeedUserAgent("custom-feed-reader/2.0"), "custom-feed-reader/2.0");
 });
 
 test("dedup keys collapse tracking variants in the same time bucket", () => {

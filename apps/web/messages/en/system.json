@@ -651,7 +651,7 @@
       "search": "Search",
       "searchFallback": "Search fallback active",
       "fetchedAt": "Fetched",
-      "partial": "Partial feed (one source unavailable)"
+      "partial": "Partial news coverage (at least one news source unavailable)"
     },
     "feed": {
       "crypto": "Crypto",
@@ -671,7 +671,7 @@
       "24h": "24 hours",
       "7d": "7 days"
     },
-    "overviewTitle": "Today overview",
+    "overviewTitle": "Selected horizon overview",
     "risk": "Overall risk",
     "tone": "Market tone",
     "providers": "Healthy sources",
@@ -687,7 +687,7 @@
     "noUpcoming": "No high-impact events in this horizon.",
     "createPrediction": "Create prediction",
     "openNews": "Open source feed",
-    "dataIncomplete": "Data incomplete: one or more providers are degraded, stale, or unavailable.",
+    "dataIncomplete": "Partial source coverage: available source-backed data is shown; one or more providers are degraded, stale, or unavailable.",
     "loadError": "Market intelligence could not be loaded",
     "loading": "Loading market intelligence...",
     "empty": "No source-backed market drivers are available."
