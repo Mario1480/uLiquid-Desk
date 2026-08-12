@@ -143,6 +143,47 @@ test("start-link and status endpoints expose pending Telegram link session", asy
   assert.equal(getRes.body?.status, "pending");
 });
 
+test("send-now endpoint delivers the calendar and records delivery metadata", async () => {
+  const app = createFakeApp();
+  const db = createTelegramTestDb({
+    users: [{ id: "user_1", telegramChatId: "-100123" }]
+  });
+  let savedPatch: Record<string, unknown> | null = null;
+  const deps = createDeps(db) as any;
+  deps.getDailyEconomicCalendarSettingsForUser = async () => ({
+    enabled: true,
+    currencies: ["USD"],
+    impacts: ["high"],
+    sendTimeLocal: "08:00",
+    timezoneMode: "manual",
+    timezone: "Europe/Berlin",
+    lastSentLocalDate: null,
+    lastSentAt: null
+  });
+  deps.updateDailyEconomicCalendarSettingsForUser = async ({ patch }: any) => {
+    savedPatch = patch;
+    return {
+      ...(await deps.getDailyEconomicCalendarSettingsForUser()),
+      ...patch
+    };
+  };
+  deps.sendDailyEconomicCalendarDigestForUser = async () => ({
+    sent: true,
+    eventCount: 3,
+    localDate: "2026-08-12"
+  });
+  registerSettingsCoreRoutes(app as any, deps);
+
+  const handler = getFinalHandler(app, "post", "/settings/alerts/economic-calendar/send-now");
+  const res = createMockRes();
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.eventCount, 3);
+  assert.equal(savedPatch?.lastSentLocalDate, "2026-08-12");
+  assert.equal(typeof savedPatch?.lastSentAt, "string");
+});
+
 test("disconnect route clears connected Telegram chat and pending sessions", async () => {
   const app = createFakeApp();
   const db = createTelegramTestDb({

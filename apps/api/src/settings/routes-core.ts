@@ -17,7 +17,11 @@ import {
   resolveTelegramBotUsername,
   resolveTelegramLinkTtlMinutes
 } from "../telegram/linking.js";
-import { resolveTelegramConfig, sendTelegramMessage } from "../telegram/notifications.js";
+import {
+  resolveTelegramConfig,
+  sendDailyEconomicCalendarDigestForUser,
+  sendTelegramMessage
+} from "../telegram/notifications.js";
 import { isApnsConfigured as defaultIsApnsConfigured } from "../plugins/notifications/apnsNotificationPlugin.js";
 
 const alertsSettingsSchema = z.object({
@@ -179,6 +183,7 @@ export type RegisterSettingsCoreRoutesDeps = {
   computeRemaining(limit: number | null, usage: number): number | null;
   resolveTelegramConfig?: typeof resolveTelegramConfig;
   sendTelegramMessage?: typeof sendTelegramMessage;
+  sendDailyEconomicCalendarDigestForUser?: typeof sendDailyEconomicCalendarDigestForUser;
   isApnsConfigured?: typeof defaultIsApnsConfigured;
 };
 
@@ -188,6 +193,8 @@ export function registerSettingsCoreRoutes(
 ) {
   const resolveTelegramConfigFn = deps.resolveTelegramConfig ?? resolveTelegramConfig;
   const sendTelegramMessageFn = deps.sendTelegramMessage ?? sendTelegramMessage;
+  const sendDailyEconomicCalendarDigestForUserFn =
+    deps.sendDailyEconomicCalendarDigestForUser ?? sendDailyEconomicCalendarDigestForUser;
   const isApnsConfiguredFn = deps.isApnsConfigured ?? defaultIsApnsConfigured;
   const buildAlertsResponse = async (params: {
     userId: string;
@@ -866,6 +873,44 @@ export function registerSettingsCoreRoutes(
     } catch (error) {
       return res.status(502).json({
         error: "telegram_send_failed",
+        details: String(error)
+      });
+    }
+  });
+
+  app.post("/settings/alerts/economic-calendar/send-now", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const settings = await deps.getDailyEconomicCalendarSettingsForUser(user.id);
+    const now = new Date();
+    try {
+      const sent = await sendDailyEconomicCalendarDigestForUserFn({
+        userId: user.id,
+        settings,
+        now,
+        dbClient: deps.db
+      });
+      if (!sent.sent) {
+        return res.status(400).json({
+          error: sent.reason ?? "telegram_not_configured",
+          details: "Telegram bot token must be configured and your account must be linked to Telegram."
+        });
+      }
+      const updated = await deps.updateDailyEconomicCalendarSettingsForUser({
+        userId: user.id,
+        patch: {
+          lastSentLocalDate: sent.localDate,
+          lastSentAt: now.toISOString()
+        }
+      });
+      return res.json({
+        ok: true,
+        eventCount: sent.eventCount,
+        localDate: sent.localDate,
+        dailyEconomicCalendar: deps.toDailyEconomicCalendarSettingsResponse(updated)
+      });
+    } catch (error) {
+      return res.status(502).json({
+        error: "economic_calendar_telegram_send_failed",
         details: String(error)
       });
     }

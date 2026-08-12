@@ -1,6 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyNewsRiskToFeatureSnapshot, evaluateNewsRiskForSymbol } from "./index.js";
+import { applyNewsRiskToFeatureSnapshot, evaluateNewsRiskForSymbol, listEconomicEvents } from "./index.js";
+
+test("listEconomicEvents preserves unavailable release values as null", async () => {
+  const events = await listEconomicEvents({
+    db: {
+      economicCalendarConfig: { upsert: async () => ({}) },
+      economicEvent: {
+        findMany: async () => [{
+          id: "evt_1",
+          sourceId: "official:evt_1",
+          ts: new Date("2026-08-12T12:30:00.000Z"),
+          country: "US",
+          currency: "USD",
+          title: "Consumer Price Index",
+          impact: "high",
+          forecast: null,
+          previous: null,
+          actual: null,
+          source: "official"
+        }]
+      }
+    },
+    from: "2026-08-12",
+    to: "2026-08-12"
+  });
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.forecast, null);
+  assert.equal(events[0]?.previous, null);
+  assert.equal(events[0]?.actual, null);
+});
 
 test("applyNewsRiskToFeatureSnapshot sets newsRisk + tag", () => {
   const next = applyNewsRiskToFeatureSnapshot(

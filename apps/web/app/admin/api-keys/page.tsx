@@ -60,8 +60,6 @@ type ApiKeysSettingsResponse = {
   aiModel?: string | null;
   openaiApiKeyMasked?: string | null;
   hasOpenAiApiKey?: boolean;
-  fmpApiKeyMasked: string | null;
-  hasFmpApiKey: boolean;
   openaiModel?: string | null;
   effectiveAiProvider?: AiProvider;
   effectiveAiProviderSource?: "db" | "env" | "default";
@@ -75,12 +73,11 @@ type ApiKeysSettingsResponse = {
   providerOptions?: string[];
   updatedAt: string | null;
   envOverride: boolean;
-  envOverrideFmp: boolean;
 };
 
 type AiProvider = "openai" | "ollama" | "vllm" | "disabled";
 type AiProfileProvider = Exclude<AiProvider, "disabled">;
-type ConfirmAction = "clearAi" | "clearFmp" | "stopSalad";
+type ConfirmAction = "clearAi" | "stopSalad";
 type AiProviderProfileState = {
   aiBaseUrl: string;
   aiModel: string;
@@ -199,16 +196,10 @@ export default function AdminApiKeysPage() {
     "gpt-5.6-sol"
   ]);
 
-  const [fmpApiKey, setFmpApiKey] = useState("");
-  const [fmpApiKeyMasked, setFmpApiKeyMasked] = useState<string | null>(null);
-  const [hasFmpApiKey, setHasFmpApiKey] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [envOverride, setEnvOverride] = useState(false);
-  const [envOverrideFmp, setEnvOverrideFmp] = useState(false);
   const [healthLoading, setHealthLoading] = useState(false);
   const [health, setHealth] = useState<ApiKeyHealthResponse | null>(null);
-  const [fmpHealthLoading, setFmpHealthLoading] = useState(false);
-  const [fmpHealth, setFmpHealth] = useState<ApiKeyHealthResponse | null>(null);
   const [saladRuntimeConfig, setSaladRuntimeConfig] = useState<{
     apiBaseUrl: string;
     organization: string;
@@ -285,11 +276,8 @@ export default function AdminApiKeysPage() {
 
     setAiApiKeyMasked(resolvedAiApiKeyMasked);
     setHasAiApiKey(resolvedHasAiApiKey);
-    setFmpApiKeyMasked(res.fmpApiKeyMasked ?? null);
-    setHasFmpApiKey(Boolean(res.hasFmpApiKey));
     setUpdatedAt(res.updatedAt ?? null);
     setEnvOverride(Boolean(res.envOverride));
-    setEnvOverrideFmp(Boolean(res.envOverrideFmp));
 
     setAiProvider(selectedProvider);
     setAiBaseUrl(res.aiBaseUrl ?? selectedProfile.aiBaseUrl ?? "");
@@ -333,24 +321,6 @@ export default function AdminApiKeysPage() {
     }
   }
 
-  async function loadFmpHealthStatus() {
-    setFmpHealthLoading(true);
-    try {
-      const res = await apiGet<ApiKeyHealthResponse>("/admin/settings/api-keys/fmp-status");
-      setFmpHealth(res);
-    } catch (e) {
-      setFmpHealth({
-        ok: false,
-        status: "error",
-        source: "none",
-        checkedAt: new Date().toISOString(),
-        message: errMsg(e)
-      });
-    } finally {
-      setFmpHealthLoading(false);
-    }
-  }
-
   async function loadSaladRuntimeStatus() {
     setSaladActionLoading("status");
     try {
@@ -383,10 +353,8 @@ export default function AdminApiKeysPage() {
       const res = await apiGet<ApiKeysSettingsResponse>("/admin/settings/api-keys");
       applyApiKeysSettings(res);
       setAiApiKey("");
-      setFmpApiKey("");
       setSaladRuntimeStatus(null);
       await loadHealthStatus();
-      await loadFmpHealthStatus();
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -494,44 +462,6 @@ export default function AdminApiKeysPage() {
     }
   }
 
-  async function saveFmpKey() {
-    const trimmed = fmpApiKey.trim();
-    if (!trimmed) {
-      setError(t("messages.fmpKeyRequired"));
-      return;
-    }
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await apiPut<ApiKeysSettingsResponse>("/admin/settings/api-keys", {
-        fmpApiKey: trimmed,
-        clearFmpApiKey: false
-      });
-      setFmpApiKey("");
-      applyApiKeysSettings(res);
-      setNotice(t("messages.fmpKeySaved"));
-      await loadFmpHealthStatus();
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }
-
-  async function clearFmpKey() {
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await apiPut<ApiKeysSettingsResponse>("/admin/settings/api-keys", {
-        clearFmpApiKey: true
-      });
-      setFmpApiKey("");
-      applyApiKeysSettings(res);
-      setNotice(t("messages.fmpKeyRemoved"));
-      await loadFmpHealthStatus();
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }
-
   async function saveSaladRuntimeConfig() {
     setError(null);
     setNotice(null);
@@ -619,11 +549,6 @@ export default function AdminApiKeysPage() {
           description: t("messages.confirmClearAi"),
           confirmLabel: t("removeStoredKey")
         },
-        clearFmp: {
-          title: t("removeStoredKey"),
-          description: t("messages.confirmClearFmp"),
-          confirmLabel: t("removeStoredKey")
-        },
         stopSalad: {
           title: t("ai.saladRuntime.stop"),
           description: t("messages.confirmStopSaladRuntime"),
@@ -636,7 +561,6 @@ export default function AdminApiKeysPage() {
     const action = pendingConfirm;
     setPendingConfirm(null);
     if (action === "clearAi") await clearAiKey();
-    if (action === "clearFmp") await clearFmpKey();
     if (action === "stopSalad") await stopSaladRuntime();
   }
 
@@ -965,72 +889,6 @@ export default function AdminApiKeysPage() {
                 </div>
               </section>
             ) : null}
-          </section>
-
-          <section className="card settingsSection">
-            <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{t("fmp.sectionTitle")}</h3>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-              {t("storedKey")}: {hasFmpApiKey ? t("yes") : t("no")}
-              {fmpApiKeyMasked ? ` · ${fmpApiKeyMasked}` : ""}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-              {t("lastUpdated")}: {updatedAt ? new Date(updatedAt).toLocaleString() : t("never")}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-              <span
-                className={`badge ${
-                  fmpHealth?.status === "ok"
-                    ? "badgeOk"
-                    : fmpHealth?.status === "missing_key"
-                      ? "badgeWarn"
-                      : "badgeDanger"
-                }`}
-                title={fmpHealth?.message ?? t("statusNotChecked")}
-              >
-                {t("fmp.statusLabel")}: {" "}
-                {fmpHealthLoading
-                  ? t("checking")
-                  : fmpHealth?.status === "ok"
-                    ? "OK"
-                    : fmpHealth?.status === "missing_key"
-                      ? t("missingKey")
-                      : t("errorStatus")}
-              </span>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                {t("source")}: {fmpHealth?.source ?? (envOverrideFmp ? "env" : hasFmpApiKey ? "db" : "none")}
-                {typeof fmpHealth?.latencyMs === "number" ? ` · ${fmpHealth.latencyMs}ms` : ""}
-                {fmpHealth?.checkedAt ? ` · ${t("checked")} ${new Date(fmpHealth.checkedAt).toLocaleString()}` : ""}
-              </span>
-              <AdminActionButton icon="refresh" type="button" onClick={() => void loadFmpHealthStatus()} loading={fmpHealthLoading}>
-                {fmpHealthLoading ? t("checkingButton") : t("refreshStatus")}
-              </AdminActionButton>
-            </div>
-            {fmpHealth?.message ? (
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{fmpHealth.message}</div>
-            ) : null}
-            {envOverrideFmp ? (
-              <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 10 }}>{t("fmp.envOverrideHint")}</div>
-            ) : null}
-            <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fmp.newKey")}</span>
-              <input
-                className="input"
-                type="password"
-                placeholder="fmp_..."
-                value={fmpApiKey}
-                onChange={(e) => setFmpApiKey(e.target.value)}
-              />
-            </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <AdminActionButton icon="key" variant="primary" onClick={() => void saveFmpKey()}>
-                {t("fmp.save")}
-              </AdminActionButton>
-              <AdminActionButton icon="delete" variant="danger" onClick={() => setPendingConfirm("clearFmp")} disabled={!hasFmpApiKey}>
-                {t("removeStoredKey")}
-              </AdminActionButton>
-            </div>
           </section>
 
         </>

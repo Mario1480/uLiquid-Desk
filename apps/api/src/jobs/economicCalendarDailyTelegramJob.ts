@@ -27,9 +27,13 @@ export type EconomicCalendarDailyTelegramStatus = {
   lastDeliveredCount: number;
   lastFailedCount: number;
   lastSkippedNoTelegramCount: number;
+  lastDeliveredAt: string | null;
 };
 
-export function createEconomicCalendarDailyTelegramJob(db: any) {
+export function createEconomicCalendarDailyTelegramJob(db: any, deps: {
+  sendDigest?: typeof sendDailyEconomicCalendarDigestForUser;
+} = {}) {
+  const sendDigest = deps.sendDigest ?? sendDailyEconomicCalendarDigestForUser;
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let lastStartedAt: Date | null = null;
@@ -41,6 +45,7 @@ export function createEconomicCalendarDailyTelegramJob(db: any) {
   let lastDeliveredCount = 0;
   let lastFailedCount = 0;
   let lastSkippedNoTelegramCount = 0;
+  let lastDeliveredAt: Date | null = null;
 
   async function runCycle(reason: "startup" | "scheduled" | "manual" = "scheduled") {
     if (!ECON_DAILY_TELEGRAM_ENABLED) return;
@@ -79,7 +84,7 @@ export function createEconomicCalendarDailyTelegramJob(db: any) {
         dueCount += 1;
 
         try {
-          const sent = await sendDailyEconomicCalendarDigestForUser({
+          const sent = await sendDigest({
             userId,
             settings,
             now,
@@ -100,6 +105,7 @@ export function createEconomicCalendarDailyTelegramJob(db: any) {
             create: { key: row.key, value: updated }
           });
           deliveredCount += 1;
+          lastDeliveredAt = now;
         } catch (error) {
           failedCount += 1;
           logger.warn("economic_calendar_daily_telegram_user_failed", {
@@ -165,7 +171,8 @@ export function createEconomicCalendarDailyTelegramJob(db: any) {
       lastDueCount,
       lastDeliveredCount,
       lastFailedCount,
-      lastSkippedNoTelegramCount
+      lastSkippedNoTelegramCount,
+      lastDeliveredAt: lastDeliveredAt ? lastDeliveredAt.toISOString() : null
     };
   }
 

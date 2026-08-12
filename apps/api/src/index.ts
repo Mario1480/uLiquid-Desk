@@ -7564,6 +7564,8 @@ function toDailyEconomicCalendarSettingsResponse(settings: DailyEconomicCalendar
   sendTimeLocal: string;
   timezoneMode: "device" | "manual";
   timezone: string;
+  lastSentLocalDate: string | null;
+  lastSentAt: string | null;
 } {
   return {
     enabled: settings.enabled,
@@ -7571,7 +7573,9 @@ function toDailyEconomicCalendarSettingsResponse(settings: DailyEconomicCalendar
     impacts: settings.impacts,
     sendTimeLocal: settings.sendTimeLocal,
     timezoneMode: settings.timezoneMode,
-    timezone: settings.timezone
+    timezone: settings.timezone,
+    lastSentLocalDate: settings.lastSentLocalDate,
+    lastSentAt: settings.lastSentAt
   };
 }
 
@@ -10983,6 +10987,8 @@ registerSystemRoutes(app, {
   botVaultTradingReconciliationJob,
   vaultOnchainIndexerJob,
   vaultOnchainReconciliationJob,
+  marketIntelligenceRefreshJob,
+  economicCalendarDailyTelegramJob,
   requireSuperadmin
 });
 

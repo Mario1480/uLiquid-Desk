@@ -63,6 +63,8 @@ function createDeps(overrides: Partial<RegisterSystemRoutesDeps> = {}): Register
     botVaultTradingReconciliationJob: job,
     vaultOnchainIndexerJob: job,
     vaultOnchainReconciliationJob: job,
+    marketIntelligenceRefreshJob: job,
+    economicCalendarDailyTelegramJob: job,
     requireSuperadmin: async () => true,
     ...overrides
   };
@@ -93,6 +95,8 @@ test("admin health details stay behind auth middleware", async () => {
   assert.equal(res.body?.service, "api");
   assert.equal(res.body?.vaultExecutionMode, "live");
   assert.deepEqual(res.body?.jobs?.vaultAccounting, { ok: true });
+  assert.deepEqual(res.body?.jobs?.marketIntelligenceRefresh, { ok: true });
+  assert.deepEqual(res.body?.jobs?.economicCalendarDailyTelegram, { ok: true });
 });
 
 test("public system settings omit orchestration internals", async () => {

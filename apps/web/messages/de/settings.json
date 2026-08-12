@@ -373,6 +373,10 @@
       "timezoneManual": "Zeitzone manuell auswählen",
       "timezoneDetected": "Aktive Zeitzone",
       "timezoneManualPlaceholder": "z. B. Europe/Berlin",
+      "lastSent": "Letzte erfolgreiche Zustellung",
+      "neverSent": "Noch keine Zustellung gespeichert",
+      "sendNow": "Kalender jetzt senden",
+      "sentNow": "Wirtschaftskalender an Telegram gesendet ({count} Events).",
       "currencies": "Währungen",
       "impacts": "Auswirkungen",
       "impact": {

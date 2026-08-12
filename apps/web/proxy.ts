@@ -39,6 +39,7 @@ const PLATFORM_ADMIN_CORE_PATHS = [
   "/admin/runners",
   "/admin/audit",
   "/admin/statistics",
+  "/admin/providers",
   "/admin/system"
 ] as const;
 

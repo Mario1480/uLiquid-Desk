@@ -17,6 +17,8 @@ export type RegisterSystemRoutesDeps = {
   botVaultTradingReconciliationJob: { getStatus(): unknown };
   vaultOnchainIndexerJob: { getStatus(): unknown };
   vaultOnchainReconciliationJob: { getStatus(): unknown };
+  marketIntelligenceRefreshJob: { getStatus(): unknown };
+  economicCalendarDailyTelegramJob: { getStatus(): unknown };
   requireSuperadmin(res: express.Response): Promise<boolean>;
 };
 
@@ -37,7 +39,9 @@ async function buildHealthDetails(deps: RegisterSystemRoutesDeps) {
       botVaultRisk: deps.botVaultRiskJob.getStatus(),
       botVaultTradingReconciliation: deps.botVaultTradingReconciliationJob.getStatus(),
       vaultOnchainIndexer: deps.vaultOnchainIndexerJob.getStatus(),
-      vaultOnchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus()
+      vaultOnchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus(),
+      marketIntelligenceRefresh: deps.marketIntelligenceRefreshJob.getStatus(),
+      economicCalendarDailyTelegram: deps.economicCalendarDailyTelegramJob.getStatus()
     }
   };
 }

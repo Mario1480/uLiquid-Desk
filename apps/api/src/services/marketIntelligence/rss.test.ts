@@ -5,6 +5,7 @@ import { normalizedNewsDedupKey } from "./normalization/index.js";
 import { RssNewsProvider } from "./providers/rss/RssNewsProvider.js";
 import { parseRssOrAtom } from "./providers/rss/parser.js";
 import type { RssSourceConfig } from "./providers/rss/sourceRegistry.js";
+import { loadRssSourceRegistry } from "./providers/rss/sourceRegistry.js";
 import { isPublicIpAddress, resolveFeedUserAgent, validateFeedUrl } from "./providers/rss/security.js";
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
@@ -42,6 +43,21 @@ test("feed user agent upgrades the legacy default with public contact informatio
     "uLiquid-Desk-MarketIntelligence/1.0 (+https://desk.uliquid.vip; support@uliquid.vip)"
   );
   assert.equal(resolveFeedUserAgent("custom-feed-reader/2.0"), "custom-feed-reader/2.0");
+});
+
+test("default RSS registry includes the reviewed macro and digital-asset regulators", () => {
+  const sources = loadRssSourceRegistry({ RSS_SOURCE_REGISTRY_JSON: "" } as NodeJS.ProcessEnv);
+  const ids = new Set(sources.map((source) => source.id));
+  assert.equal(sources.length, 9);
+  assert.equal(ids.has("federal-reserve-press"), true);
+  assert.equal(ids.has("sec-speeches-statements"), true);
+  assert.equal(ids.has("cftc-press-releases"), true);
+  assert.equal(ids.has("bis-press-releases"), true);
+  assert.equal(ids.has("ethereum-foundation-blog"), true);
+  assert.equal(ids.has("kraken-blog"), true);
+  assert.equal(sources.every((source) => source.usageStatus === "approved"), true);
+  assert.equal(sources.find((source) => source.id === "cftc-press-releases")?.enabled, false);
+  assert.equal(sources.filter((source) => source.enabled).length, 8);
 });
 
 test("dedup keys collapse tracking variants in the same time bucket", () => {

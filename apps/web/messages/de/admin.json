@@ -20,6 +20,19 @@
     "refreshStarted": "Provider-Refresh abgeschlossen.",
     "enable": "Aktivieren",
     "disable": "Deaktivieren",
+    "automation": {
+      "title": "Automationsstatus",
+      "description": "Laufzeitstatus für Provider-Refreshes und den täglichen Telegram-Wirtschaftskalender.",
+      "refreshJob": "Provider-Refresh-Job",
+      "lastNewsCount": "News im letzten Refresh",
+      "lastEventCount": "Events im letzten Refresh",
+      "telegramJob": "Täglicher Telegram-Job",
+      "lastTelegramDelivery": "Letzte Telegram-Zustellung",
+      "lastTelegramCycle": "Zugestellt / fällig (letzter Lauf)",
+      "enabled": "Aktiv",
+      "disabled": "Inaktiv",
+      "unknown": "Unbekannt"
+    },
     "columns": {
       "provider": "Provider",
       "state": "Status",
@@ -1046,13 +1059,6 @@
         }
       }
     },
-    "fmp": {
-      "sectionTitle": "FMP-Key (Wirtschaftskalender)",
-      "statusLabel": "FMP-Status",
-      "newKey": "Neuer FMP-API-Key",
-      "save": "FMP-Key speichern",
-      "envOverrideHint": "ENV `FMP_API_KEY` ist als Fallback gesetzt und wird nur genutzt, wenn kein DB-Key vorhanden ist."
-    },
     "messages": {
       "accessRequired": "Admin-Backend-Zugriff erforderlich.",
       "aiKeyRequired": "Bitte einen AI-API-Key eingeben.",
@@ -1066,11 +1072,7 @@
       "saladRuntimeStarted": "Salad-Container Start ausgelöst.",
       "saladRuntimeStopped": "Salad-Container Stop ausgelöst.",
       "confirmStopSaladRuntime": "Salad-Container wirklich stoppen?",
-      "confirmClearAi": "Gespeicherten AI-API-Key entfernen?",
-      "fmpKeyRequired": "Bitte einen FMP-API-Key eingeben.",
-      "fmpKeySaved": "FMP-API-Key gespeichert.",
-      "fmpKeyRemoved": "FMP-API-Key entfernt.",
-      "confirmClearFmp": "Gespeicherten FMP-API-Key entfernen?"
+      "confirmClearAi": "Gespeicherten AI-API-Key entfernen?"
     }
   },
   "links": {
@@ -1100,7 +1102,7 @@
     },
     "apiKeys": {
       "title": "API Keys",
-      "description": "Globale AI- und FMP-Keys verschlüsselt speichern."
+      "description": "Globale Zugangsdaten für AI-Provider verschlüsselt speichern."
     },
     "vaultExecution": {
       "title": "Vault Execution Mode",

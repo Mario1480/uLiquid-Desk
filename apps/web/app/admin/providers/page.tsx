@@ -22,6 +22,28 @@ type ProviderState = {
   circuitState?: string;
 };
 
+type ProviderJobStatus = {
+  marketIntelligenceRefresh?: {
+    enabled?: boolean;
+    lastFinishedAt?: string | null;
+    lastNewsCount?: number;
+    lastEventCount?: number;
+    lastDegraded?: boolean;
+    lastError?: string | null;
+  };
+  economicCalendarDailyTelegram?: {
+    enabled?: boolean;
+    lastFinishedAt?: string | null;
+    lastDeliveredAt?: string | null;
+    lastCandidateCount?: number;
+    lastDueCount?: number;
+    lastDeliveredCount?: number;
+    lastFailedCount?: number;
+    lastSkippedNoTelegramCount?: number;
+    lastError?: string | null;
+  };
+};
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
   return error instanceof Error ? error.message : String(error);
@@ -34,13 +56,18 @@ export default function AdminProvidersPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<ProviderJobStatus | null>(null);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiGet<{ items?: ProviderState[] }>("/admin/market-intelligence/providers");
+      const [response, health] = await Promise.all([
+        apiGet<{ items?: ProviderState[] }>("/admin/market-intelligence/providers"),
+        apiGet<{ jobs?: ProviderJobStatus }>("/admin/health/details").catch(() => null)
+      ]);
       setItems(Array.isArray(response.items) ? response.items : []);
+      setJobs(health?.jobs ?? null);
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {
@@ -89,6 +116,54 @@ export default function AdminProvidersPage() {
       />
       {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
       {notice ? <AdminNotice tone="success">{notice}</AdminNotice> : null}
+
+      <section className="settingsSection">
+        <div className="settingsSectionHeader">
+          <div>
+            <h2>{t("automation.title")}</h2>
+            <p>{t("automation.description")}</p>
+          </div>
+        </div>
+        <div className="settingsHubSummary settingsTradingDefaultsSummary">
+          <div className="miniMetric">
+            <span>{t("automation.refreshJob")}</span>
+            <b>{jobs?.marketIntelligenceRefresh?.enabled === undefined
+              ? t("automation.unknown")
+              : jobs.marketIntelligenceRefresh.enabled ? t("automation.enabled") : t("automation.disabled")}</b>
+          </div>
+          <div className="miniMetric">
+            <span>{t("automation.lastNewsCount")}</span>
+            <b>{jobs?.marketIntelligenceRefresh?.lastNewsCount ?? "–"}</b>
+          </div>
+          <div className="miniMetric">
+            <span>{t("automation.lastEventCount")}</span>
+            <b>{jobs?.marketIntelligenceRefresh?.lastEventCount ?? "–"}</b>
+          </div>
+          <div className="miniMetric">
+            <span>{t("automation.telegramJob")}</span>
+            <b>{jobs?.economicCalendarDailyTelegram?.enabled === undefined
+              ? t("automation.unknown")
+              : jobs.economicCalendarDailyTelegram.enabled ? t("automation.enabled") : t("automation.disabled")}</b>
+          </div>
+          <div className="miniMetric">
+            <span>{t("automation.lastTelegramDelivery")}</span>
+            <b>{jobs?.economicCalendarDailyTelegram?.lastDeliveredAt
+              ? new Date(jobs.economicCalendarDailyTelegram.lastDeliveredAt).toLocaleString()
+              : "–"}</b>
+          </div>
+          <div className="miniMetric">
+            <span>{t("automation.lastTelegramCycle")}</span>
+            <b>{jobs?.economicCalendarDailyTelegram
+              ? `${jobs.economicCalendarDailyTelegram.lastDeliveredCount ?? 0}/${jobs.economicCalendarDailyTelegram.lastDueCount ?? 0}`
+              : "–"}</b>
+          </div>
+        </div>
+        {jobs?.marketIntelligenceRefresh?.lastError || jobs?.economicCalendarDailyTelegram?.lastError ? (
+          <AdminNotice tone="danger">
+            {jobs.marketIntelligenceRefresh?.lastError ?? jobs.economicCalendarDailyTelegram?.lastError}
+          </AdminNotice>
+        ) : null}
+      </section>
 
       <section className="settingsSection">
         <div className="adminProviderToolbar">

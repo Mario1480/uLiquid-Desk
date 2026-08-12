@@ -95,6 +95,12 @@ function normalizeImpact(value: unknown): EconomicImpact {
   return "low";
 }
 
+function toOptionalFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeCurrenciesCsv(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const tokens = String(value)
@@ -152,9 +158,9 @@ function toEventView(event: {
     currency: String(event.currency).toUpperCase(),
     title: String(event.title),
     impact: normalizeImpact(event.impact),
-    forecast: Number.isFinite(Number(event.forecast)) ? Number(event.forecast) : null,
-    previous: Number.isFinite(Number(event.previous)) ? Number(event.previous) : null,
-    actual: Number.isFinite(Number(event.actual)) ? Number(event.actual) : null,
+    forecast: toOptionalFiniteNumber(event.forecast),
+    previous: toOptionalFiniteNumber(event.previous),
+    actual: toOptionalFiniteNumber(event.actual),
     source: String(event.source || "unknown"),
     ...(event.sourceName ? { sourceName: String(event.sourceName) } : {}),
     ...(event.sourceUrl ? { sourceUrl: String(event.sourceUrl) } : {}),
@@ -596,9 +602,9 @@ export async function getEconomicCalendarNextSummary(params: {
     currency: String(row.currency ?? currency).toUpperCase(),
     title: String(row.title ?? ""),
     impact: normalizeImpact(row.impact),
-    forecast: Number.isFinite(Number(row.forecast)) ? Number(row.forecast) : null,
-    previous: Number.isFinite(Number(row.previous)) ? Number(row.previous) : null,
-    actual: Number.isFinite(Number(row.actual)) ? Number(row.actual) : null,
+    forecast: toOptionalFiniteNumber(row.forecast),
+    previous: toOptionalFiniteNumber(row.previous),
+    actual: toOptionalFiniteNumber(row.actual),
     source: String(row.source ?? "unknown"),
     sourceName: row.sourceName ? String(row.sourceName) : undefined,
     sourceUrl: row.sourceUrl ? String(row.sourceUrl) : null,

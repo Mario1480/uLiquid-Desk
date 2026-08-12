@@ -37,9 +37,15 @@ tool.
 
 | Source | Transport | Use | Terms status |
 | --- | --- | --- | --- |
-| Federal Reserve monetary-policy feed | RSS | Macro and policy news | `approved`, reviewed 2026-08-02 |
+| Federal Reserve all-press feed | RSS | Macro, policy and regulatory news | `approved`, reviewed 2026-08-12 |
+| Federal Reserve speeches feed | RSS | Macro and policy context | `approved`, reviewed 2026-08-12 |
 | European Central Bank press feed | RSS/Atom | Macro and policy news | `approved`, reviewed 2026-08-02 |
 | U.S. SEC press-release feed | RSS | Regulatory news | `approved`, reviewed 2026-08-02 |
+| U.S. SEC speeches and statements feed | RSS | Regulatory and digital-asset context | `approved`, reviewed 2026-08-12 |
+| U.S. CFTC general press-release feed | RSS | Derivatives and digital-asset regulation | `approved`, disabled while automated requests receive HTTP 403 |
+| Bank for International Settlements press feed | RSS | Global macro, banking and stablecoin context | `approved`, reviewed 2026-08-12 |
+| Ethereum Foundation Blog | Atom/RSS | Protocol, ecosystem and security updates | `approved`, reviewed 2026-08-12 |
+| Kraken Blog | RSS | Exchange, institutional and crypto-market updates | `approved`, reviewed 2026-08-12 |
 | U.S. BLS public release calendar | ICS plus curated official outage fallback | CPI, PPI and employment schedules | official public schedule |
 | Eurostat euro-indicator calendar | JSON | Euro-area CPI and GDP schedules | official public schedule |
 | Federal Reserve FOMC calendar | curated official dates | FOMC schedules | official public schedule |
@@ -84,6 +90,8 @@ Operational tuning:
 ```env
 MARKET_INTELLIGENCE_POLL_SECONDS=60
 RSS_NEWS_REFRESH_MINUTES=10
+ECON_DAILY_TELEGRAM_ENABLED=true
+ECON_DAILY_TELEGRAM_INTERVAL_SECONDS=60
 OFFICIAL_CALENDAR_REFRESH_MINUTES=360
 OFFICIAL_CALENDAR_RELEASE_DAY_REFRESH_MINUTES=15
 NEWS_QUERY_CACHE_TTL_SEC=60
@@ -108,7 +116,8 @@ billing/provider configuration first.
 - `PUT /admin/market-intelligence/providers/:providerId`
 - `POST /admin/market-intelligence/refresh`
 - User UI: `/market-intelligence`
-- Admin UI: `/admin/providers`
+- Admin UI: `/admin/providers` (includes refresh and daily Telegram job status)
+- User notification UI: manual economic-calendar Telegram send plus the last successful delivery timestamp
 
 Provider enable/disable and usage-status changes are superadmin-only and written
 to the admin audit trail. A manual resync is also audited.

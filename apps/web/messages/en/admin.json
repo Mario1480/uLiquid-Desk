@@ -20,6 +20,19 @@
     "refreshStarted": "Provider refresh completed.",
     "enable": "Enable",
     "disable": "Disable",
+    "automation": {
+      "title": "Automation status",
+      "description": "Runtime status for provider refreshes and the daily Telegram calendar digest.",
+      "refreshJob": "Provider refresh job",
+      "lastNewsCount": "News in last refresh",
+      "lastEventCount": "Events in last refresh",
+      "telegramJob": "Daily Telegram job",
+      "lastTelegramDelivery": "Last Telegram delivery",
+      "lastTelegramCycle": "Delivered / due (last cycle)",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "unknown": "Unknown"
+    },
     "columns": {
       "provider": "Provider",
       "state": "State",
@@ -1046,13 +1059,6 @@
         }
       }
     },
-    "fmp": {
-      "sectionTitle": "FMP Key (Economic Calendar)",
-      "statusLabel": "FMP status",
-      "newKey": "New FMP API key",
-      "save": "Save FMP key",
-      "envOverrideHint": "ENV `FMP_API_KEY` is configured as fallback and is only used when no DB key exists."
-    },
     "messages": {
       "accessRequired": "Admin backend access required.",
       "aiKeyRequired": "Please enter an AI API key.",
@@ -1066,11 +1072,7 @@
       "saladRuntimeStarted": "Salad container start requested.",
       "saladRuntimeStopped": "Salad container stop requested.",
       "confirmStopSaladRuntime": "Do you want to stop the Salad container?",
-      "confirmClearAi": "Remove the stored AI API key?",
-      "fmpKeyRequired": "Please enter an FMP API key.",
-      "fmpKeySaved": "FMP API key saved.",
-      "fmpKeyRemoved": "FMP API key removed.",
-      "confirmClearFmp": "Remove the stored FMP API key?"
+      "confirmClearAi": "Remove the stored AI API key?"
     }
   },
   "links": {
@@ -1100,7 +1102,7 @@
     },
     "apiKeys": {
       "title": "API Keys",
-      "description": "Store global AI and FMP keys encrypted in DB."
+      "description": "Store global AI provider credentials encrypted in DB."
     },
     "vaultExecution": {
       "title": "Vault Execution Mode",

@@ -60,6 +60,10 @@ export class RssNewsProvider implements NewsProvider {
       };
       return { providerId: this.id, data: [], warnings: [], latencyMs: 0, fetchedAt, degraded: false };
     }
+    const perSourceLimit = Math.min(
+      100,
+      Math.max(20, Math.ceil((input.limit ?? 200) / sources.length))
+    );
 
     const settled = await Promise.allSettled(sources.map(async (source) => {
       const sourceStartedAt = Date.now();
@@ -71,7 +75,7 @@ export class RssNewsProvider implements NewsProvider {
           allowedHosts: [...new Set([feedHost, homepageHost])],
           signal: input.signal
         });
-        const parsed = parseRssOrAtom(response.body, Math.min(500, Math.max(20, input.limit ?? 200)));
+        const parsed = parseRssOrAtom(response.body, perSourceLimit);
         const items = parsed.map((item): NewsItem => {
           const canonicalUrl = canonicalizeUrl(item.url) ?? item.url;
           const combinedText = `${item.title} ${item.summary ?? ""}`;

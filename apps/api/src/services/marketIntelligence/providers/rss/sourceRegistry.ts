@@ -15,15 +15,27 @@ export type RssSourceConfig = {
 
 const DEFAULT_SOURCES: RssSourceConfig[] = [
   {
-    id: "federal-reserve-monetary-policy",
-    name: "Federal Reserve – Monetary Policy",
-    feedUrl: "https://www.federalreserve.gov/feeds/press_monetary.xml",
+    id: "federal-reserve-press",
+    name: "Federal Reserve Board",
+    feedUrl: "https://www.federalreserve.gov/feeds/press_all.xml",
     homepageUrl: "https://www.federalreserve.gov/feeds/feeds.htm",
     enabled: true,
     categories: ["macro", "institutional"],
     defaultLanguage: "en",
     fetchIntervalMinutes: 10,
-    termsReviewedAt: "2026-08-02",
+    termsReviewedAt: "2026-08-12",
+    usageStatus: "approved"
+  },
+  {
+    id: "federal-reserve-speeches",
+    name: "Federal Reserve Board",
+    feedUrl: "https://www.federalreserve.gov/feeds/speeches.xml",
+    homepageUrl: "https://www.federalreserve.gov/feeds/feeds.htm",
+    enabled: true,
+    categories: ["macro", "institutional"],
+    defaultLanguage: "en",
+    fetchIntervalMinutes: 15,
+    termsReviewedAt: "2026-08-12",
     usageStatus: "approved"
   },
   {
@@ -48,6 +60,66 @@ const DEFAULT_SOURCES: RssSourceConfig[] = [
     defaultLanguage: "en",
     fetchIntervalMinutes: 15,
     termsReviewedAt: "2026-08-02",
+    usageStatus: "approved"
+  },
+  {
+    id: "sec-speeches-statements",
+    name: "U.S. Securities and Exchange Commission",
+    feedUrl: "https://www.sec.gov/news/speeches-statements.rss",
+    homepageUrl: "https://www.sec.gov/newsroom/speeches-statements",
+    enabled: true,
+    categories: ["regulation", "institutional", "crypto_market"],
+    defaultLanguage: "en",
+    fetchIntervalMinutes: 15,
+    termsReviewedAt: "2026-08-12",
+    usageStatus: "approved"
+  },
+  {
+    id: "cftc-press-releases",
+    name: "U.S. Commodity Futures Trading Commission",
+    feedUrl: "https://www.cftc.gov/RSS/RSSGP/rssgp.xml",
+    homepageUrl: "https://www.cftc.gov/RSS/index.htm",
+    enabled: false,
+    categories: ["regulation", "institutional", "crypto_market"],
+    defaultLanguage: "en",
+    fetchIntervalMinutes: 15,
+    termsReviewedAt: "2026-08-12",
+    usageStatus: "approved"
+  },
+  {
+    id: "bis-press-releases",
+    name: "Bank for International Settlements",
+    feedUrl: "https://www.bis.org/doclist/all_pressrels.rss",
+    homepageUrl: "https://www.bis.org/rss/index.htm",
+    enabled: true,
+    categories: ["macro", "institutional", "stablecoin"],
+    defaultLanguage: "en",
+    fetchIntervalMinutes: 30,
+    termsReviewedAt: "2026-08-12",
+    usageStatus: "approved"
+  },
+  {
+    id: "ethereum-foundation-blog",
+    name: "Ethereum Foundation Blog",
+    feedUrl: "https://blog.ethereum.org/feed.xml",
+    homepageUrl: "https://blog.ethereum.org/",
+    enabled: true,
+    categories: ["crypto_market", "protocol", "security_incident"],
+    defaultLanguage: "en",
+    fetchIntervalMinutes: 30,
+    termsReviewedAt: "2026-08-12",
+    usageStatus: "approved"
+  },
+  {
+    id: "kraken-blog",
+    name: "Kraken Blog",
+    feedUrl: "https://blog.kraken.com/feed",
+    homepageUrl: "https://blog.kraken.com/",
+    enabled: true,
+    categories: ["crypto_market", "exchange", "institutional"],
+    defaultLanguage: "en",
+    fetchIntervalMinutes: 30,
+    termsReviewedAt: "2026-08-12",
     usageStatus: "approved"
   }
 ];

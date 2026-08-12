@@ -108,6 +108,7 @@ export default function NotificationsPage() {
   const currentLocale = useLocale() as AppLocale;
   const [browserTimezone, setBrowserTimezone] = useState("UTC");
   const [sending, setSending] = useState(false);
+  const [sendingCalendar, setSendingCalendar] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [chatId, setChatId] = useState("");
   const [tokenConfigured, setTokenConfigured] = useState(false);
@@ -131,6 +132,7 @@ export default function NotificationsPage() {
   const [dailySendTimeLocal, setDailySendTimeLocal] = useState("08:00");
   const [dailyTimezoneMode, setDailyTimezoneMode] = useState<CalendarTimezoneMode>("device");
   const [dailyTimezoneInput, setDailyTimezoneInput] = useState("UTC");
+  const [dailyLastSentAt, setDailyLastSentAt] = useState<string | null>(null);
   const [mobilePush, setMobilePush] = useState<MobilePushStatus | null>(null);
   const [revokingPushId, setRevokingPushId] = useState<string | null>(null);
   const [confirmPushRevokeId, setConfirmPushRevokeId] = useState<string | null>(null);
@@ -172,6 +174,23 @@ export default function NotificationsPage() {
     }
   }
 
+  async function sendCalendarNow() {
+    setSendingCalendar(true);
+    setMsg(null);
+    try {
+      const response = await apiPost<{
+        eventCount?: number;
+        dailyEconomicCalendar?: { lastSentAt?: string | null };
+      }>("/settings/alerts/economic-calendar/send-now");
+      setDailyLastSentAt(response.dailyEconomicCalendar?.lastSentAt ?? new Date().toISOString());
+      setMsg(t("dailyCalendar.sentNow", { count: response.eventCount ?? 0 }));
+    } catch (e) {
+      setMsg(errMsg(e));
+    } finally {
+      setSendingCalendar(false);
+    }
+  }
+
   async function loadConfig() {
     try {
       const [data, pushStatus, subscriptionNotifications] = await Promise.all([
@@ -187,8 +206,10 @@ export default function NotificationsPage() {
           impacts?: CalendarImpact[];
           sendTimeLocal?: string;
           timezoneMode?: CalendarTimezoneMode;
-            timezone?: string;
-          };
+          timezone?: string;
+          lastSentLocalDate?: string | null;
+          lastSentAt?: string | null;
+        };
         }>("/settings/alerts"),
         apiGet<MobilePushStatus>("/settings/mobile-push").catch(() => null),
         apiGet<SubscriptionNotificationSettings>(
@@ -224,6 +245,7 @@ export default function NotificationsPage() {
         : "";
       setDailyTimezoneMode(loadedTimezoneMode);
       setDailyTimezoneInput(loadedTimezone || resolvedBrowserTimezone);
+      setDailyLastSentAt(data.dailyEconomicCalendar?.lastSentAt ?? null);
       setBrowserTimezone(resolvedBrowserTimezone);
       setMobilePush(pushStatus);
       const loadedChannel = subscriptionNotifications?.channel;
@@ -567,6 +589,11 @@ export default function NotificationsPage() {
             <div style={{ color: "var(--muted)", fontSize: 12 }}>
               {t("dailyCalendar.description")}
             </div>
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>
+              {t("dailyCalendar.lastSent")}: {dailyLastSentAt
+                ? new Date(dailyLastSentAt).toLocaleString()
+                : t("dailyCalendar.neverSent")}
+            </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
               <input
                 type="checkbox"
@@ -732,15 +759,19 @@ export default function NotificationsPage() {
             )}
           </div>
         </div>
-	        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-	          <button className="btn btnPrimary" onClick={saveConfig} disabled={saving}>
-	            <AppIcon name="save" />
-	            {saving ? tCommon("saving") : tCommon("saveSettings")}
-	          </button>
-	          <button className="btn" onClick={sendTest} disabled={sending}>
-	            <AppIcon name="send" />
-	            {sending ? t("messages.sending") : t("messages.sendTest")}
-	          </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <button className="btn btnPrimary" onClick={saveConfig} disabled={saving}>
+            <AppIcon name="save" />
+            {saving ? tCommon("saving") : tCommon("saveSettings")}
+          </button>
+          <button className="btn" onClick={sendTest} disabled={sending}>
+            <AppIcon name="send" />
+            {sending ? t("messages.sending") : t("messages.sendTest")}
+          </button>
+          <button className="btn" onClick={sendCalendarNow} disabled={sendingCalendar}>
+            <AppIcon name="calendar" />
+            {sendingCalendar ? t("messages.sending") : t("dailyCalendar.sendNow")}
+          </button>
         </div>
         {msg ? (
           <div style={{ marginTop: 10, color: "var(--muted)" }}>{msg}</div>
