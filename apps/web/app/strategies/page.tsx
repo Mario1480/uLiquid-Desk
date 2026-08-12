@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ApiError, apiDelete, apiGet, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import AdminConfirmDialog from "../admin/_components/AdminConfirmDialog";
 import { AppIcon } from "../components/AppIcon";
 
 type StrategyIndicatorOption = {
@@ -121,6 +122,7 @@ type PredictionDraftProposal = {
 
 const STRATEGY_TIMEFRAME_OPTIONS = ["5m", "15m", "1h", "4h", "1d"] as const;
 type StrategyTimeframe = (typeof STRATEGY_TIMEFRAME_OPTIONS)[number];
+type StrategyBuilderStep = 1 | 2 | 3;
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -147,10 +149,11 @@ export default function StrategiesPage() {
   const [strategyFeatureEnabled, setStrategyFeatureEnabled] = useState(false);
   const [strategyPrompts, setStrategyPrompts] = useState<StrategyPromptTemplate[]>([]);
   const [strategyIndicators, setStrategyIndicators] = useState<StrategyIndicatorOption[]>([]);
-  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [strategyLoading, setStrategyLoading] = useState(true);
   const [strategyGenerating, setStrategyGenerating] = useState(false);
   const [strategySaving, setStrategySaving] = useState(false);
   const [strategyDeletingId, setStrategyDeletingId] = useState<string | null>(null);
+  const [strategyDeletePendingId, setStrategyDeletePendingId] = useState<string | null>(null);
   const [strategyEditingId, setStrategyEditingId] = useState<string | null>(null);
   const [strategyName, setStrategyName] = useState("");
   const [strategyDescription, setStrategyDescription] = useState("");
@@ -163,7 +166,6 @@ export default function StrategiesPage() {
   const [strategySlTpSource, setStrategySlTpSource] = useState<"local" | "ai" | "hybrid">("local");
   const [strategyNewsRiskMode, setStrategyNewsRiskMode] = useState<"off" | "block">("off");
   const [strategyOhlcvBars, setStrategyOhlcvBars] = useState("100");
-  const [strategyPreviewOpen, setStrategyPreviewOpen] = useState(false);
   const [strategyPreviewPromptText, setStrategyPreviewPromptText] = useState("");
   const [strategyPreviewMeta, setStrategyPreviewMeta] = useState<StrategyPromptGenerationMeta | null>(null);
   const [strategyLastSavedPromptText, setStrategyLastSavedPromptText] = useState("");
@@ -186,6 +188,39 @@ export default function StrategiesPage() {
   const [strategyDraftValidation, setStrategyDraftValidation] = useState<PredictionTemplateDraftValidation | null>(null);
   const [strategyDraftHistory, setStrategyDraftHistory] = useState<PredictionTemplateDraft[]>([]);
   const [strategyPreviewSafety, setStrategyPreviewSafety] = useState<PredictionBuilderSafety | null>(null);
+  const [strategyBuilderStep, setStrategyBuilderStep] = useState<StrategyBuilderStep>(1);
+  const [strategyIndicatorSearch, setStrategyIndicatorSearch] = useState("");
+
+  const selectedStrategyIndicators = useMemo(() => {
+    const selected = new Set(strategyIndicatorKeys);
+    return strategyIndicators.filter((item) => selected.has(item.key));
+  }, [strategyIndicatorKeys, strategyIndicators]);
+
+  const groupedStrategyIndicators = useMemo(() => {
+    const query = strategyIndicatorSearch.trim().toLocaleLowerCase(locale);
+    const groups = new Map<string, StrategyIndicatorOption[]>();
+    for (const item of strategyIndicators) {
+      if (query && !`${item.label} ${item.description} ${item.group}`.toLocaleLowerCase(locale).includes(query)) {
+        continue;
+      }
+      const group = item.group.trim() || tMain("strategy.builder.indicatorOther");
+      groups.set(group, [...(groups.get(group) ?? []), item]);
+    }
+    return [...groups.entries()];
+  }, [locale, strategyIndicatorSearch, strategyIndicators, tMain]);
+
+  const strategyCompletionItems = [
+    Boolean(strategyName.trim()),
+    Boolean(strategyDescription.trim()),
+    strategyTimeframes.length > 0,
+    Boolean(strategyRunTimeframe),
+    Boolean(strategyHorizonValue),
+    strategyPromptMode === "market_analysis" || Boolean(strategyLongRule.trim()),
+    strategyPromptMode === "market_analysis" || Boolean(strategyShortRule.trim()),
+    Boolean(strategyNoTradeRule.trim()),
+    strategyIndicatorKeys.length > 0
+  ];
+  const strategyCompletionCount = strategyCompletionItems.filter(Boolean).length;
 
   function toggleStrategyIndicator(key: string) {
     setStrategyIndicatorKeys((prev) =>
@@ -349,7 +384,6 @@ export default function StrategiesPage() {
     setStrategySlTpSource("local");
     setStrategyNewsRiskMode("off");
     setStrategyOhlcvBars("100");
-    setStrategyPreviewOpen(false);
     setStrategyPreviewPromptText("");
     setStrategyPreviewMeta(null);
     setStrategyDraftRevision(1);
@@ -365,6 +399,8 @@ export default function StrategiesPage() {
     setStrategyDraftValidation(null);
     setStrategyDraftHistory([]);
     setStrategyPreviewSafety(null);
+    setStrategyBuilderStep(1);
+    setStrategyIndicatorSearch("");
   }
 
   function editStrategyPrompt(item: StrategyPromptTemplate) {
@@ -389,7 +425,6 @@ export default function StrategiesPage() {
     setStrategyOhlcvBars(String(item.ohlcvBars));
     setStrategyPreviewPromptText(item.promptText);
     setStrategyPreviewMeta(null);
-    setStrategyPreviewOpen(false);
     setStrategyDraftRevision(1);
     setStrategyLongRule(mode === "market_analysis" ? item.promptText : `Apply the saved template's long conditions: ${item.name}`);
     setStrategyShortRule(mode === "market_analysis" ? item.promptText : `Apply the saved template's short conditions: ${item.name}`);
@@ -399,6 +434,7 @@ export default function StrategiesPage() {
     setStrategyDraftHistory([]);
     setStrategyLastSavedPromptText("");
     setStrategyLastSavedMeta(null);
+    setStrategyBuilderStep(1);
     setError(null);
     setNotice(tMain("strategy.messages.editLoaded", { name: item.name }));
   }
@@ -444,7 +480,7 @@ export default function StrategiesPage() {
       setStrategyPreviewMeta(payload.generationMeta ?? null);
       setStrategyDraftValidation(payload.validation ?? null);
       setStrategyPreviewSafety(payload.safety ?? null);
-      setStrategyPreviewOpen(true);
+      setStrategyBuilderStep(3);
       setNotice(
         tMain("strategy.messages.previewGenerated", {
           mode: payload.generationMeta?.mode ?? "fallback",
@@ -492,8 +528,6 @@ export default function StrategiesPage() {
       setStrategyPreviewSafety(payload.safety ?? null);
       if (editingId) {
         resetStrategyPromptEditor();
-      } else {
-        setStrategyPreviewOpen(false);
       }
       setNotice(
         editingId
@@ -511,13 +545,7 @@ export default function StrategiesPage() {
     }
   }
 
-  async function updateStrategyPromptFromEditor() {
-    if (!strategyEditingId) return;
-    await generateStrategyPreview();
-  }
-
   async function deleteStrategyPrompt(id: string) {
-    if (!window.confirm(tMain("strategy.messages.confirmDelete"))) return;
     setStrategyDeletingId(id);
     setError(null);
     setNotice(null);
@@ -625,6 +653,7 @@ export default function StrategiesPage() {
         content: tMain("strategy.chat.aiUnavailable")
       };
       setStrategyChatMessages([...nextMessages, assistantMessage]);
+      setStrategyDescription(buildStrategyDescriptionFromChat(nextMessages));
       setError(errMsg(e));
     } finally {
       setStrategyChatSending(false);
@@ -634,6 +663,21 @@ export default function StrategiesPage() {
   function syncStrategyDescriptionFromChat() {
     setStrategyDescription(buildStrategyDescriptionFromChat(strategyChatMessages));
     setNotice(tMain("strategy.chat.synced"));
+    setError(null);
+  }
+
+  function continueToStrategyRules() {
+    const nextDescription = strategyDescription.trim() || buildStrategyDescriptionFromChat(strategyChatMessages);
+    if (!strategyName.trim()) {
+      setError(tMain("strategy.messages.promptNameRequired"));
+      return;
+    }
+    if (!nextDescription.trim()) {
+      setError(tMain("strategy.messages.strategyRequired"));
+      return;
+    }
+    setStrategyDescription(nextDescription);
+    setStrategyBuilderStep(2);
     setError(null);
   }
 
@@ -664,218 +708,255 @@ export default function StrategiesPage() {
   }, [locale]);
 
   return (
-    <div className="page">
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+    <div className="uiPage predictionBuilderPage">
+      <header className="uiPageHeader predictionBuilderPageHeader">
         <div>
-          <h2 style={{ marginTop: 0 }}>{tMain("strategy.pageTitle")}</h2>
-          <p className="settingsSectionMeta" style={{ marginTop: -6 }}>
-            {tMain("strategy.pageSubtitle")}
-          </p>
+          <div className="predictionBuilderBreadcrumb">
+            <Link href={withLocalePath("/predictions", locale)}>{tMain("strategy.backToPredictionsShort")}</Link>
+            <AppIcon name="chevronRight" />
+            <span>{tMain("strategy.pageTitle")}</span>
+          </div>
+          <h2>{tMain("strategy.pageTitle")}</h2>
+          <p>{tMain("strategy.pageSubtitle")}</p>
         </div>
-        <Link className="btn" href={withLocalePath("/predictions", locale)}>
-          <AppIcon name="back" />
-          {tMain("strategy.backToPredictions")}
-        </Link>
-      </div>
+        {strategyEditingId ? (
+          <button className="btn" type="button" onClick={cancelStrategyPromptEdit} disabled={strategySaving}>
+            <AppIcon name="cancel" />
+            {tMain("actions.cancel")}
+          </button>
+        ) : null}
+      </header>
 
-      {error ? <div className="errorBox">{error}</div> : null}
-      {notice ? <div className="noticeBox">{notice}</div> : null}
+      {error ? <div className="errorBox" role="alert">{error}</div> : null}
+      {notice ? <div className="noticeBox" role="status">{notice}</div> : null}
 
-      <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupStrategy">
-        <div className="settingsSectionHeader">
-          <h3 style={{ margin: 0 }}>{tMain("sections.aiStrategy")}</h3>
-          <div className="settingsSectionMeta">{tMain("strategy.description")}</div>
-        </div>
-
-        {!strategyFeatureEnabled && !strategyLoading ? (
+      {!strategyFeatureEnabled && !strategyLoading ? (
+        <section className="uiSection">
           <div className="settingsMutedText">{tMain("strategy.featureDisabled")}</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            <div className="settingsInlineTitle">{tMain("strategy.ownPromptsTitle")}</div>
-            {strategyLoading ? (
-              <div className="settingsMutedText">{tCommon("loading")}</div>
-            ) : strategyPrompts.length === 0 ? (
-              <div className="settingsMutedText">{tMain("strategy.noPrompts")}</div>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {strategyPrompts.map((item) => {
-                  const mode = resolveStrategyPromptMode(item);
-                  return (
-                    <div key={item.id} className="card" style={{ padding: 10, display: "grid", gap: 6 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                        <strong>{item.name}</strong>
-                        <span className="settingsMutedText">
-                          {new Date(item.updatedAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="settingsMutedText">
-                        {tMain("strategy.promptMode")}: {mode === "market_analysis" ? tMain("strategy.promptModeAnalysis") : tMain("strategy.promptModeTrading")}
-                        {" · "}
-                        {tMain("strategy.timeframesLabel")}: {item.timeframes.join(", ") || tMain("strategy.none")}
-                        {" · "}
-                        {tMain("strategy.runTimeframeLabel")}: {item.runTimeframe ?? tMain("strategy.none")}
-                      </div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          className="btn"
-                          type="button"
-                          disabled={strategySaving || strategyGenerating || strategyDeletingId === item.id}
-                          onClick={() => editStrategyPrompt(item)}
-                        >
-                          <AppIcon name="edit" />
-                          {strategyEditingId === item.id ? tMain("strategy.editing") : tMain("actions.edit")}
-                        </button>
-                        <button
-                          className="btn"
-                          type="button"
-                          disabled={strategyDeletingId === item.id || strategySaving}
-                          onClick={() => void deleteStrategyPrompt(item.id)}
-                        >
-                          <AppIcon name="delete" />
-                          {strategyDeletingId === item.id ? tCommon("deleting") : tMain("actions.delete")}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="settingsAccordionDivider" />
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <div className="settingsInlineTitle">
-                {strategyEditingId ? tMain("strategy.editorTitle") : tMain("strategy.generatorTitle")}
-              </div>
-              {strategyEditingId ? (
-                <button className="btn" type="button" onClick={cancelStrategyPromptEdit} disabled={strategySaving}>
-                  <AppIcon name="cancel" />
-                  {tMain("actions.cancel")}
-                </button>
-              ) : null}
-            </div>
-
-            <div className="settingsBuilderStateStrip" aria-label={tMain("strategy.builder.statesLabel")}>
-              <span className="badge">{tMain("strategy.builder.conversationDraft")}</span>
-              <span className="badge">{tMain("strategy.builder.structuredDraft")} · v1 r{strategyDraftRevision}</span>
-              <span className={`badge ${strategyPreviewOpen || strategyPreviewPromptText ? "badgeOk" : ""}`}>
-                {tMain("strategy.builder.previewResult")}
+        </section>
+      ) : (
+        <>
+          <nav className="predictionBuilderStepper" aria-label={tMain("strategy.builder.stepsLabel")}>
+            <button
+              className={strategyBuilderStep === 1 ? "predictionBuilderStep predictionBuilderStepActive" : "predictionBuilderStep"}
+              type="button"
+              aria-current={strategyBuilderStep === 1 ? "step" : undefined}
+              onClick={() => setStrategyBuilderStep(1)}
+            >
+              <span className="predictionBuilderStepNumber">
+                {strategyBuilderStep > 1 ? <AppIcon name="check" /> : "1"}
               </span>
-              <span className={`badge ${strategyLastSavedPromptText || strategyEditingId ? "badgeOk" : ""}`}>
-                {tMain("strategy.builder.savedTemplate")}
+              <span>
+                <strong>{tMain("strategy.builder.ideaStep")}</strong>
+                <small>{tMain("strategy.builder.ideaStepHint")}</small>
               </span>
-              {strategyPrompts.some((item) => item.isPublic) ? (
-                <span className="badge badgeOk">{tMain("strategy.builder.publishedTemplate")}</span>
-              ) : null}
-            </div>
+            </button>
+            <button
+              className={strategyBuilderStep === 2 ? "predictionBuilderStep predictionBuilderStepActive" : "predictionBuilderStep"}
+              type="button"
+              aria-current={strategyBuilderStep === 2 ? "step" : undefined}
+              disabled={!strategyName.trim() || !strategyDescription.trim()}
+              onClick={() => setStrategyBuilderStep(2)}
+            >
+              <span className="predictionBuilderStepNumber">
+                {strategyBuilderStep > 2 ? <AppIcon name="check" /> : "2"}
+              </span>
+              <span>
+                <strong>{tMain("strategy.builder.rulesStep")}</strong>
+                <small>{tMain("strategy.builder.rulesStepHint")}</small>
+              </span>
+            </button>
+            <button
+              className={strategyBuilderStep === 3 ? "predictionBuilderStep predictionBuilderStepActive" : "predictionBuilderStep"}
+              type="button"
+              aria-current={strategyBuilderStep === 3 ? "step" : undefined}
+              disabled={!strategyPreviewPromptText}
+              onClick={() => setStrategyBuilderStep(3)}
+            >
+              <span className="predictionBuilderStepNumber">3</span>
+              <span>
+                <strong>{tMain("strategy.builder.reviewStep")}</strong>
+                <small>{tMain("strategy.builder.reviewStepHint")}</small>
+              </span>
+            </button>
+          </nav>
 
-            <div className="settingsPromptBuilder">
-              <div className="settingsPromptChatPanel">
-                <div className="settingsPromptChatHeader">
-                  <div>
-                    <div className="settingsInlineTitle">{tMain("strategy.chat.title")}</div>
-                    <div className="settingsMutedText">{tMain("strategy.chat.subtitle")}</div>
-                  </div>
-                  <span className="badge">
-                    {strategyChatSending
-                      ? tMain("strategy.chat.thinking")
-                      : strategyChatMeta
-                        ? tMain("strategy.chat.statusWithModel", {
-                          mode: strategyChatMeta.mode,
-                          model: strategyChatMeta.model
-                        })
-                        : tMain("strategy.chat.status")}
-                  </span>
-                </div>
-                <div className="settingsPromptChatMessages" aria-live="polite">
-                  {strategyChatMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`settingsPromptChatBubble settingsPromptChatBubble-${message.role}`}
-                    >
-                      <span className="settingsPromptChatRole">
-                        {message.role === "user"
-                          ? tMain("strategy.chat.userLabel")
-                          : tMain("strategy.chat.assistantLabel")}
+          <details className="predictionTemplateLibrary">
+            <summary>
+              <span>
+                <AppIcon name="template" />
+                <strong>{tMain("strategy.builder.templatesSummary", { count: strategyPrompts.length })}</strong>
+              </span>
+              <AppIcon name="chevronDown" />
+            </summary>
+            <div className="predictionTemplateList">
+              {strategyLoading ? (
+                <div className="settingsMutedText">{tCommon("loading")}</div>
+              ) : strategyPrompts.length === 0 ? (
+                <div className="settingsMutedText">{tMain("strategy.noPrompts")}</div>
+              ) : strategyPrompts.map((item) => {
+                const mode = resolveStrategyPromptMode(item);
+                return (
+                  <div className="predictionTemplateRow" key={item.id}>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span>
+                        {mode === "market_analysis" ? tMain("strategy.promptModeAnalysis") : tMain("strategy.promptModeTrading")}
+                        {" · "}
+                        {item.timeframes.join(", ") || tMain("strategy.none")}
+                        {" · "}
+                        {new Date(item.updatedAt).toLocaleDateString(locale)}
                       </span>
-                      <span>{message.content}</span>
                     </div>
-                  ))}
-                </div>
-                <div className="settingsPromptStarterRow">
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={strategyChatSending}
-                    onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterTrendText"))}
-                  >
-                    {tMain("strategy.chat.starterTrend")}
-                  </button>
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={strategyChatSending}
-                    onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterBreakoutText"))}
-                  >
-                    {tMain("strategy.chat.starterBreakout")}
-                  </button>
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={strategyChatSending}
-                    onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterRiskText"))}
-                  >
-                    {tMain("strategy.chat.starterRisk")}
-                  </button>
-                </div>
-                <div className="settingsPromptChatInputRow">
-                  <textarea
-                    className="input settingsPromptChatInput"
-                    rows={3}
-                    maxLength={1200}
-                    value={strategyChatInput}
-                    onChange={(event) => setStrategyChatInput(event.target.value)}
-                    placeholder={tMain("strategy.chat.placeholder")}
-                    disabled={strategyChatSending}
-                  />
-                  <button
-                    className="btn btnPrimary"
-                    type="button"
-                    disabled={strategyChatSending || !strategyChatInput.trim()}
-                    onClick={() => void submitStrategyChatMessage()}
-                  >
-                    <AppIcon name="send" />
-                    {strategyChatSending ? tMain("strategy.chat.thinking") : tMain("strategy.chat.send")}
-                  </button>
-                </div>
-                <div className="settingsPromptChatActions">
-                  <button className="btn" type="button" onClick={syncStrategyDescriptionFromChat}>
-                    <AppIcon name="transfer" />
-                    {tMain("strategy.chat.sync")}
-                  </button>
-                  <button className="btn" type="button" onClick={resetStrategyChat}>
-                    <AppIcon name="reset" />
-                    {tMain("strategy.chat.reset")}
-                  </button>
-                </div>
-              </div>
-              <aside className="settingsPredictionDraftPanel">
-                <div className="settingsPromptChatHeader">
-                  <div>
-                    <div className="settingsInlineTitle">{tMain("strategy.builder.draftTitle")}</div>
-                    <div className="settingsMutedText">{tMain("strategy.builder.draftSubtitle")}</div>
+                    <div className="predictionTemplateActions">
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={strategySaving || strategyGenerating || strategyDeletingId === item.id}
+                        onClick={() => editStrategyPrompt(item)}
+                      >
+                        <AppIcon name="edit" />
+                        {tMain("actions.edit")}
+                      </button>
+                      <button
+                        className="btn btnDangerGhost"
+                        type="button"
+                        disabled={strategyDeletingId === item.id || strategySaving}
+                        onClick={() => setStrategyDeletePendingId(item.id)}
+                      >
+                        <AppIcon name="delete" />
+                        {strategyDeletingId === item.id ? tCommon("deleting") : tMain("actions.delete")}
+                      </button>
+                    </div>
                   </div>
-                  <span className="badge">v1 · r{strategyDraftRevision}</span>
-                </div>
+                );
+              })}
+            </div>
+          </details>
 
-                {strategyDraftProposal ? (
-                  <div className="settingsDraftDiff" aria-live="polite">
-                    <div className="settingsDraftDiffHeader">
-                      <strong>{tMain("strategy.builder.diffTitle")}</strong>
-                      <span className="badge">{strategyDraftProposal.toolName}</span>
+          {strategyBuilderStep === 1 ? (
+            <>
+              <div className="predictionBuilderIdeaLayout">
+                <section className="uiSection predictionBuilderAssistant">
+                  <div className="uiSectionHeader">
+                    <div>
+                      <h3>{tMain("strategy.builder.describeTitle")}</h3>
+                      <p>{tMain("strategy.builder.describeHint")}</p>
                     </div>
-                    {strategyDraftProposal.diff.length > 0 ? (
+                    <span className="badge">
+                      {strategyChatSending ? tMain("strategy.chat.thinking") : tMain("strategy.chat.status")}
+                    </span>
+                  </div>
+
+                  <label className="settingsField">
+                    <span className="settingsFieldLabel">{tMain("strategy.promptName")}</span>
+                    <input
+                      className="input"
+                      value={strategyName}
+                      maxLength={64}
+                      onChange={(event) => setStrategyName(event.target.value)}
+                      placeholder={tMain("strategy.promptNamePlaceholder")}
+                    />
+                  </label>
+
+                  <fieldset className="predictionBuilderSegmentField">
+                    <legend>{tMain("strategy.builder.strategyType")}</legend>
+                    <div className="predictionBuilderSegmented">
+                      <button
+                        type="button"
+                        aria-pressed={strategyPromptMode === "trading_explainer"}
+                        className={strategyPromptMode === "trading_explainer" ? "predictionBuilderSegmentActive" : ""}
+                        onClick={() => handleStrategyPromptModeChange("trading_explainer")}
+                      >
+                        {tMain("strategy.builder.tradingSetup")}
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={strategyPromptMode === "market_analysis"}
+                        className={strategyPromptMode === "market_analysis" ? "predictionBuilderSegmentActive" : ""}
+                        onClick={() => handleStrategyPromptModeChange("market_analysis")}
+                      >
+                        {tMain("strategy.promptModeAnalysis")}
+                      </button>
+                    </div>
+                  </fieldset>
+
+                  <div className="predictionBuilderAssistantLabel">
+                    <div>
+                      <strong>{tMain("strategy.chat.title")}</strong>
+                      <span>{tMain("strategy.builder.assistantHint")}</span>
+                    </div>
+                    {strategyChatMeta ? <span className="badge">{strategyChatMeta.model}</span> : null}
+                  </div>
+
+                  <div className="settingsPromptChatMessages predictionBuilderChatMessages" aria-live="polite">
+                    {strategyChatMessages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={"settingsPromptChatBubble settingsPromptChatBubble-" + message.role}
+                      >
+                        <span className="settingsPromptChatRole">
+                          {message.role === "user" ? tMain("strategy.chat.userLabel") : tMain("strategy.chat.assistantLabel")}
+                        </span>
+                        <span>{message.content}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="settingsPromptStarterRow">
+                    <button className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterTrendText"))}>
+                      {tMain("strategy.chat.starterTrend")}
+                    </button>
+                    <button className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterBreakoutText"))}>
+                      {tMain("strategy.chat.starterBreakout")}
+                    </button>
+                    <button className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterRiskText"))}>
+                      {tMain("strategy.chat.starterRisk")}
+                    </button>
+                  </div>
+
+                  <div className="settingsPromptChatInputRow predictionBuilderChatComposer">
+                    <textarea
+                      className="input settingsPromptChatInput"
+                      rows={4}
+                      maxLength={1200}
+                      value={strategyChatInput}
+                      onChange={(event) => setStrategyChatInput(event.target.value)}
+                      placeholder={tMain("strategy.chat.placeholder")}
+                      disabled={strategyChatSending}
+                    />
+                    <button
+                      className="btn btnPrimary"
+                      type="button"
+                      disabled={strategyChatSending || !strategyChatInput.trim()}
+                      onClick={() => void submitStrategyChatMessage()}
+                    >
+                      <AppIcon name="send" />
+                      {strategyChatSending ? tMain("strategy.chat.thinking") : tMain("strategy.builder.sendToAi")}
+                    </button>
+                  </div>
+                </section>
+
+                <aside className="uiSection predictionBuilderLiveBrief">
+                  <div className="uiSectionHeader">
+                    <div>
+                      <h3>{tMain("strategy.builder.liveBriefTitle")}</h3>
+                      <p>{tMain("strategy.builder.liveBriefHint")}</p>
+                    </div>
+                    <span className="predictionBuilderSavedState">
+                      <AppIcon name="check" />
+                      {tMain("strategy.builder.draftState", { revision: strategyDraftRevision })}
+                    </span>
+                  </div>
+
+                  {strategyDraftProposal ? (
+                    <div className="settingsDraftDiff" aria-live="polite">
+                      <div className="settingsDraftDiffHeader">
+                        <strong>{tMain("strategy.builder.diffTitle")}</strong>
+                        <span className="badge">{strategyDraftProposal.diff.length}</span>
+                      </div>
                       <div className="settingsDraftDiffList">
-                        {strategyDraftProposal.diff.map((change) => (
+                        {strategyDraftProposal.diff.slice(0, 5).map((change) => (
                           <div className="settingsDraftDiffRow" key={change.path}>
                             <code>{change.path}</code>
                             <span className="settingsDraftDiffBefore">{String(change.before ?? "—")}</span>
@@ -884,409 +965,507 @@ export default function StrategiesPage() {
                           </div>
                         ))}
                       </div>
-                    ) : <div className="settingsMutedText">{tMain("strategy.builder.noDiff")}</div>}
-                    <div className="settingsPromptChatActions">
-                      <button className="btn btnPrimary" type="button" onClick={acceptStrategyDraftProposal}>
-                        <AppIcon name="check" />
-                        {tMain("strategy.builder.acceptDiff")}
-                      </button>
-                      <button className="btn" type="button" onClick={rejectStrategyDraftProposal}>
-                        <AppIcon name="cancel" />
-                        {tMain("strategy.builder.rejectDiff")}
-                      </button>
+                      <div className="settingsPromptChatActions">
+                        <button className="btn btnPrimary" type="button" onClick={acceptStrategyDraftProposal}>
+                          <AppIcon name="check" />
+                          {tMain("strategy.builder.acceptDiff")}
+                        </button>
+                        <button className="btn" type="button" onClick={rejectStrategyDraftProposal}>
+                          <AppIcon name="cancel" />
+                          {tMain("strategy.builder.rejectDiff")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <dl className="predictionBuilderBriefList">
+                    <div>
+                      <dt>{tMain("strategy.builder.analysisGoal")}</dt>
+                      <dd>{strategyDescription.trim() || tMain("strategy.builder.briefEmpty")}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.marketContextTitle")}</dt>
+                      <dd>
+                        {strategyTimeframes.length > 0 ? strategyTimeframes.join(", ") : tMain("strategy.builder.notDefined")}
+                        {" · "}
+                        {strategyHorizonValue} {tMain("strategy.builder." + strategyHorizonUnit)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.directionPreference")}</dt>
+                      <dd>
+                        {strategyPromptMode === "market_analysis"
+                          ? tMain("strategy.directionEither")
+                          : tMain("strategy.direction" + (strategyDirectionPreference === "either" ? "Either" : strategyDirectionPreference === "long" ? "Long" : "Short"))}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.rulesTitle")}</dt>
+                      <dd>{strategyNoTradeRule.trim() || tMain("strategy.builder.rulesPending")}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.selectedIndicators")}</dt>
+                      <dd className="predictionBuilderChipRow">
+                        {selectedStrategyIndicators.length > 0
+                          ? selectedStrategyIndicators.map((item) => <span className="predictionBuilderChip" key={item.key}>{item.label}</span>)
+                          : <span>{tMain("strategy.builder.noIndicators")}</span>}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {strategyDraftHistory.length > 0 ? (
+                    <button className="btn predictionBuilderUndo" type="button" onClick={undoStrategyDraftChange}>
+                      <AppIcon name="restore" />
+                      {tMain("strategy.builder.undo")}
+                    </button>
+                  ) : null}
+                </aside>
+              </div>
+
+              <footer className="predictionBuilderActionBar">
+                <div className="predictionBuilderSafety">
+                  <AppIcon name="shield" />
+                  <span>{tMain("strategy.builder.safetyShort")}</span>
+                </div>
+                <div className="predictionBuilderActionButtons">
+                  <button className="btn" type="button" onClick={syncStrategyDescriptionFromChat}>
+                    <AppIcon name="refresh" />
+                    {tMain("strategy.builder.updateDraft")}
+                  </button>
+                  <button className="btn btnPrimary" type="button" onClick={continueToStrategyRules}>
+                    {tMain("strategy.builder.continueRules")}
+                    <AppIcon name="chevronRight" />
+                  </button>
+                </div>
+              </footer>
+            </>
+          ) : null}
+
+          {strategyBuilderStep === 2 ? (
+            <>
+              <div className="predictionBuilderConfigLayout">
+                <main className="uiSection predictionBuilderConfigMain">
+                  <section className="predictionBuilderConfigSection">
+                    <div className="predictionBuilderConfigHeading">
+                      <AppIcon name="performance" />
+                      <div>
+                        <h3>{tMain("strategy.builder.marketContextTitle")}</h3>
+                        <p>{tMain("strategy.builder.marketContextHint")}</p>
+                      </div>
+                    </div>
+                    <div className="predictionBuilderContextGrid">
+                      <fieldset className="predictionBuilderTimeframes">
+                        <legend>{tMain("strategy.timeframes")}</legend>
+                        <div className="predictionBuilderChoiceRow">
+                          {STRATEGY_TIMEFRAME_OPTIONS.map((timeframe) => (
+                            <label className={strategyTimeframes.includes(timeframe) ? "predictionBuilderChoice predictionBuilderChoiceActive" : "predictionBuilderChoice"} key={timeframe}>
+                              <input
+                                type="checkbox"
+                                checked={strategyTimeframes.includes(timeframe)}
+                                onChange={() => toggleStrategyTimeframe(timeframe)}
+                              />
+                              {timeframe}
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                      <label className="settingsField">
+                        <span className="settingsFieldLabel">{tMain("strategy.runTimeframe")}</span>
+                        <select className="input" value={strategyRunTimeframe} onChange={(event) => setStrategyRunTimeframe(event.target.value as "" | StrategyTimeframe)} disabled={strategyTimeframes.length === 0}>
+                          {strategyTimeframes.length === 0 ? <option value="">{tMain("strategy.noTimeframeLock")}</option> : null}
+                          {strategyTimeframes.map((timeframe) => <option value={timeframe} key={timeframe}>{timeframe}</option>)}
+                        </select>
+                      </label>
+                      <div className="predictionBuilderHorizonField">
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.builder.horizon")}</span>
+                          <input className="input" type="number" min={1} value={strategyHorizonValue} onChange={(event) => setStrategyHorizonValue(event.target.value)} />
+                        </label>
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.builder.horizonUnit")}</span>
+                          <select className="input" value={strategyHorizonUnit} onChange={(event) => setStrategyHorizonUnit(event.target.value as "minutes" | "hours" | "days")}>
+                            <option value="minutes">{tMain("strategy.builder.minutes")}</option>
+                            <option value="hours">{tMain("strategy.builder.hours")}</option>
+                            <option value="days">{tMain("strategy.builder.days")}</option>
+                          </select>
+                        </label>
+                      </div>
+                      {strategyPromptMode === "trading_explainer" ? (
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.directionPreference")}</span>
+                          <select className="input" value={strategyDirectionPreference} onChange={(event) => setStrategyDirectionPreference(event.target.value as "long" | "short" | "either")}>
+                            <option value="either">{tMain("strategy.directionEither")}</option>
+                            <option value="long">{tMain("strategy.directionLong")}</option>
+                            <option value="short">{tMain("strategy.directionShort")}</option>
+                          </select>
+                        </label>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className="predictionBuilderConfigSection">
+                    <div className="predictionBuilderConfigHeading">
+                      <AppIcon name="strategies" />
+                      <div>
+                        <h3>{tMain("strategy.builder.rulesTitle")}</h3>
+                        <p>{tMain("strategy.builder.rulesHint")}</p>
+                      </div>
+                    </div>
+                    <div className="predictionBuilderRuleGrid">
+                      <label className="settingsField">
+                        <span className="settingsFieldLabel">{tMain("strategy.builder.longRule")}</span>
+                        <textarea className="input" rows={3} maxLength={2000} value={strategyLongRule} onChange={(event) => setStrategyLongRule(event.target.value)} />
+                      </label>
+                      <label className="settingsField">
+                        <span className="settingsFieldLabel">{tMain("strategy.builder.shortRule")}</span>
+                        <textarea className="input" rows={3} maxLength={2000} value={strategyShortRule} onChange={(event) => setStrategyShortRule(event.target.value)} />
+                      </label>
+                      <label className="settingsField predictionBuilderRuleWide">
+                        <span className="settingsFieldLabel">{tMain("strategy.builder.noTradeRule")}</span>
+                        <textarea className="input" rows={3} maxLength={2000} value={strategyNoTradeRule} onChange={(event) => setStrategyNoTradeRule(event.target.value)} />
+                      </label>
+                    </div>
+                  </section>
+
+                  {strategyPromptMode === "trading_explainer" ? (
+                    <section className="predictionBuilderConfigSection">
+                      <div className="predictionBuilderConfigHeading">
+                        <AppIcon name="risk" />
+                        <div>
+                          <h3>{tMain("strategy.builder.riskTitle")}</h3>
+                          <p>{tMain("strategy.builder.riskHint")}</p>
+                        </div>
+                      </div>
+                      <div className="predictionBuilderRiskGrid">
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.builder.entryLevel")}</span>
+                          <input className="input" inputMode="decimal" value={strategyEntryLevel} onChange={(event) => setStrategyEntryLevel(event.target.value)} />
+                        </label>
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.builder.invalidationLevel")}</span>
+                          <input className="input" inputMode="decimal" value={strategyInvalidationLevel} onChange={(event) => setStrategyInvalidationLevel(event.target.value)} />
+                        </label>
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.builder.targetLevels")}</span>
+                          <input className="input" value={strategyTargetLevels} onChange={(event) => setStrategyTargetLevels(event.target.value)} placeholder="105, 110" />
+                        </label>
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.confidenceTargetPct")}</span>
+                          <input className="input" type="number" min={0} max={100} step={1} value={strategyConfidenceTargetPct} onChange={(event) => setStrategyConfidenceTargetPct(event.target.value)} />
+                        </label>
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.newsRiskMode")}</span>
+                          <select className="input" value={strategyNewsRiskMode} onChange={(event) => setStrategyNewsRiskMode(event.target.value as "off" | "block")}>
+                            <option value="off">{tMain("strategy.newsRiskModeOff")}</option>
+                            <option value="block">{tMain("strategy.newsRiskModeBlock")}</option>
+                          </select>
+                        </label>
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("strategy.slTpSource")}</span>
+                          <select className="input" value={strategySlTpSource} onChange={(event) => setStrategySlTpSource(event.target.value as "local" | "ai" | "hybrid")}>
+                            <option value="local">{tMain("strategy.slTpSourceLocal")}</option>
+                            <option value="ai">{tMain("strategy.slTpSourceAi")}</option>
+                            <option value="hybrid">{tMain("strategy.slTpSourceHybrid")}</option>
+                          </select>
+                        </label>
+                      </div>
+                    </section>
+                  ) : null}
+
+                  <section className="predictionBuilderConfigSection">
+                    <div className="predictionBuilderConfigHeading">
+                      <AppIcon name="filter" />
+                      <div>
+                        <h3>{tMain("strategy.builder.indicatorsTitle")}</h3>
+                        <p>{tMain("strategy.builder.indicatorsHint")}</p>
+                      </div>
+                      <span className="badge">{tMain("strategy.builder.selectedCount", { count: strategyIndicatorKeys.length })}</span>
+                    </div>
+                    <div className="predictionBuilderIndicatorToolbar">
+                      <label className="predictionBuilderIndicatorSearch">
+                        <AppIcon name="search" />
+                        <input
+                          className="input"
+                          type="search"
+                          value={strategyIndicatorSearch}
+                          onChange={(event) => setStrategyIndicatorSearch(event.target.value)}
+                          placeholder={tMain("strategy.builder.indicatorSearch")}
+                        />
+                      </label>
+                      <div className="predictionBuilderChipRow">
+                        {selectedStrategyIndicators.map((item) => (
+                          <button className="predictionBuilderChip predictionBuilderChipRemove" type="button" onClick={() => toggleStrategyIndicator(item.key)} key={item.key}>
+                            {item.label}
+                            <AppIcon name="close" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="predictionBuilderIndicatorGroups">
+                      {groupedStrategyIndicators.length === 0 ? (
+                        <div className="settingsMutedText">{tMain("strategy.builder.noIndicatorMatches")}</div>
+                      ) : groupedStrategyIndicators.map(([group, items], index) => (
+                        <details className="predictionBuilderIndicatorGroup" key={group} open={Boolean(strategyIndicatorSearch.trim()) || index === 0}>
+                          <summary>
+                            <span>{group}</span>
+                            <span>
+                              <span className="badge">{items.length}</span>
+                              <AppIcon name="chevronDown" />
+                            </span>
+                          </summary>
+                          <div className="predictionBuilderIndicatorOptions">
+                            {items.map((item) => (
+                              <label className={strategyIndicatorKeys.includes(item.key) ? "predictionBuilderIndicatorOption predictionBuilderIndicatorOptionActive" : "predictionBuilderIndicatorOption"} key={item.key}>
+                                <input type="checkbox" checked={strategyIndicatorKeys.includes(item.key)} onChange={() => toggleStrategyIndicator(item.key)} />
+                                <span>
+                                  <strong>{item.label}</strong>
+                                  <small>{item.description}</small>
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  </section>
+
+                  <details className="predictionBuilderAdvanced">
+                    <summary>
+                      <span>
+                        <AppIcon name="settings" />
+                        <span>
+                          <strong>{tMain("strategy.builder.advancedTitle")}</strong>
+                          <small>{tMain("strategy.builder.advancedHint")}</small>
+                        </span>
+                      </span>
+                      <AppIcon name="chevronDown" />
+                    </summary>
+                    <label className="settingsField">
+                      <span className="settingsFieldLabel">{tMain("strategy.ohlcvBars")}</span>
+                      <input className="input" type="number" min={20} max={500} step={1} value={strategyOhlcvBars} onChange={(event) => setStrategyOhlcvBars(event.target.value)} />
+                    </label>
+                  </details>
+                </main>
+
+                <aside className="uiSection predictionBuilderOverview">
+                  <div className="uiSectionHeader">
+                    <div>
+                      <h3>{tMain("strategy.builder.overviewTitle")}</h3>
+                      <p>{strategyName || tMain("strategy.promptNamePlaceholder")}</p>
+                    </div>
+                    <span className="badge">v1 · r{strategyDraftRevision}</span>
+                  </div>
+                  <div className="predictionBuilderOverviewSummary">
+                    <span>{strategyDescription.trim() || tMain("strategy.builder.briefEmpty")}</span>
+                  </div>
+                  <div className="predictionBuilderCompleteness">
+                    <div>
+                      <span>{tMain("strategy.builder.completeness")}</span>
+                      <strong>{tMain("strategy.builder.completenessValue", { complete: strategyCompletionCount, total: strategyCompletionItems.length })}</strong>
+                    </div>
+                    <progress value={strategyCompletionCount} max={strategyCompletionItems.length} />
+                  </div>
+                  {strategyCompletionCount < strategyCompletionItems.length ? (
+                    <div className="uiNotice uiNotice-warning predictionBuilderOverviewNotice">
+                      <AppIcon name="alerts" />
+                      <span>{tMain("strategy.builder.incompleteHint")}</span>
+                    </div>
+                  ) : (
+                    <div className="uiNotice uiNotice-success predictionBuilderOverviewNotice">
+                      <AppIcon name="check" />
+                      <span>{tMain("strategy.builder.completeHint")}</span>
+                    </div>
+                  )}
+                  {strategyDraftValidation && strategyDraftValidation.issues.length > 0 ? (
+                    <div className="settingsDraftValidationError">
+                      <strong>{tMain("strategy.builder.invalidDraft")}</strong>
+                      <ul>{strategyDraftValidation.issues.map((issue) => <li key={issue.path + issue.code}>{issue.message}</li>)}</ul>
+                    </div>
+                  ) : null}
+                  <button className="btn predictionBuilderRefineButton" type="button" onClick={() => setStrategyBuilderStep(1)}>
+                    <AppIcon name="ai" />
+                    {tMain("strategy.builder.refineWithAi")}
+                  </button>
+                  <span className="settingsMutedText">{tMain("strategy.builder.updatedNow")}</span>
+                </aside>
+              </div>
+
+              <footer className="predictionBuilderActionBar">
+                <button className="btn" type="button" onClick={() => setStrategyBuilderStep(1)}>
+                  <AppIcon name="back" />
+                  {tMain("strategy.builder.backToIdea")}
+                </button>
+                <div className="predictionBuilderSafety">
+                  <AppIcon name="shield" />
+                  <span>{tMain("strategy.builder.safetyShort")}</span>
+                </div>
+                <button className="btn btnPrimary" type="button" disabled={strategyGenerating} onClick={() => void generateStrategyPreview()}>
+                  <AppIcon name="preview" />
+                  {strategyGenerating ? tMain("strategy.previewGenerating") : tMain("strategy.builder.reviewPreview")}
+                </button>
+              </footer>
+            </>
+          ) : null}
+
+          {strategyBuilderStep === 3 ? (
+            <>
+              <div className="predictionBuilderReviewLayout">
+                <main className="uiSection predictionBuilderReview">
+                  <div className="uiSectionHeader">
+                    <div>
+                      <h3>{tMain("strategy.builder.reviewTitle")}</h3>
+                      <p>{tMain("strategy.builder.reviewHint")}</p>
                     </div>
                   </div>
-                ) : null}
 
-                <div className="settingsTwoColGrid">
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.builder.horizon")}</span>
-                    <input className="input" type="number" min={1} value={strategyHorizonValue} onChange={(event) => setStrategyHorizonValue(event.target.value)} />
-                  </label>
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.builder.horizonUnit")}</span>
-                    <select className="input" value={strategyHorizonUnit} onChange={(event) => setStrategyHorizonUnit(event.target.value as "minutes" | "hours" | "days")}>
-                      <option value="minutes">{tMain("strategy.builder.minutes")}</option>
-                      <option value="hours">{tMain("strategy.builder.hours")}</option>
-                      <option value="days">{tMain("strategy.builder.days")}</option>
-                    </select>
-                  </label>
-                </div>
-                <label className="settingsField">
-                  <span className="settingsFieldLabel">{tMain("strategy.builder.longRule")}</span>
-                  <textarea className="input" rows={2} maxLength={2000} value={strategyLongRule} onChange={(event) => setStrategyLongRule(event.target.value)} />
-                </label>
-                <label className="settingsField">
-                  <span className="settingsFieldLabel">{tMain("strategy.builder.shortRule")}</span>
-                  <textarea className="input" rows={2} maxLength={2000} value={strategyShortRule} onChange={(event) => setStrategyShortRule(event.target.value)} />
-                </label>
-                <label className="settingsField">
-                  <span className="settingsFieldLabel">{tMain("strategy.builder.noTradeRule")}</span>
-                  <textarea className="input" rows={2} maxLength={2000} value={strategyNoTradeRule} onChange={(event) => setStrategyNoTradeRule(event.target.value)} />
-                </label>
-                <div className="settingsThreeColGrid">
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.builder.entryLevel")}</span>
-                    <input className="input" inputMode="decimal" value={strategyEntryLevel} onChange={(event) => setStrategyEntryLevel(event.target.value)} />
-                  </label>
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.builder.invalidationLevel")}</span>
-                    <input className="input" inputMode="decimal" value={strategyInvalidationLevel} onChange={(event) => setStrategyInvalidationLevel(event.target.value)} />
-                  </label>
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.builder.targetLevels")}</span>
-                    <input className="input" value={strategyTargetLevels} onChange={(event) => setStrategyTargetLevels(event.target.value)} placeholder="105, 110" />
-                  </label>
-                </div>
-
-                {strategyDraftValidation ? (
-                  <div className={strategyDraftValidation.valid ? "settingsDraftValidationOk" : "settingsDraftValidationError"}>
-                    <strong>{strategyDraftValidation.valid ? tMain("strategy.builder.validDraft") : tMain("strategy.builder.invalidDraft")}</strong>
-                    {strategyDraftValidation.issues.length > 0 ? (
-                      <ul>
-                        {strategyDraftValidation.issues.map((issue) => <li key={`${issue.path}-${issue.code}`}>{issue.message}</li>)}
-                      </ul>
-                    ) : null}
+                  <div className={strategyDraftValidation?.valid === false ? "predictionBuilderValidation predictionBuilderValidationError" : "predictionBuilderValidation predictionBuilderValidationOk"} role="status">
+                    <AppIcon name={strategyDraftValidation?.valid === false ? "alerts" : "check"} />
+                    <div>
+                      <strong>{strategyDraftValidation?.valid === false ? tMain("strategy.builder.needsWorkTitle") : tMain("strategy.builder.readyTitle")}</strong>
+                      <span>{strategyDraftValidation?.valid === false ? tMain("strategy.builder.needsWorkHint") : tMain("strategy.builder.readyHint")}</span>
+                    </div>
                   </div>
-                ) : null}
 
-                <div className="settingsPromptChatActions">
-                  <button className="btn" type="button" disabled={strategyDraftHistory.length === 0} onClick={undoStrategyDraftChange}>
-                    <AppIcon name="restore" />
-                    {tMain("strategy.builder.undo")}
-                  </button>
-                </div>
-                <div className="settingsBuilderSafetyNote">
-                  <AppIcon name="shield" />
-                  <span>{tMain("strategy.builder.safetyBoundary")}</span>
-                </div>
-              </aside>
-            </div>
+                  {strategyDraftValidation && strategyDraftValidation.issues.length > 0 ? (
+                    <div className="settingsDraftValidationError">
+                      <ul>{strategyDraftValidation.issues.map((issue) => <li key={issue.path + issue.code}>{issue.message}</li>)}</ul>
+                    </div>
+                  ) : null}
 
-            <label className="settingsField">
-              <span className="settingsFieldLabel">{tMain("strategy.promptName")}</span>
-              <input
-                className="input"
-                value={strategyName}
-                maxLength={64}
-                onChange={(event) => setStrategyName(event.target.value)}
-                placeholder={tMain("strategy.promptNamePlaceholder")}
-              />
-            </label>
-            <label className="settingsField">
-              <span className="settingsFieldLabel">{tMain("strategy.strategyDescription")}</span>
-              <textarea
-                className="input"
-                rows={6}
-                maxLength={8000}
-                value={strategyDescription}
-                onChange={(event) => setStrategyDescription(event.target.value)}
-                placeholder={tMain("strategy.strategyPlaceholder")}
-              />
-            </label>
+                  <dl className="predictionBuilderReviewList">
+                    <div>
+                      <dt>{tMain("strategy.builder.strategyName")}</dt>
+                      <dd>{strategyName}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.strategyType")}</dt>
+                      <dd>{strategyPromptMode === "market_analysis" ? tMain("strategy.promptModeAnalysis") : tMain("strategy.builder.tradingSetup")}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.analysisGoal")}</dt>
+                      <dd>{strategyDescription}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.marketContextTitle")}</dt>
+                      <dd>
+                        {strategyTimeframes.join(", ")} · {tMain("strategy.runTimeframe")}: {strategyRunTimeframe || tMain("strategy.none")} · {strategyHorizonValue} {tMain("strategy.builder." + strategyHorizonUnit)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.longSetup")}</dt>
+                      <dd>{strategyLongRule || tMain("strategy.builder.notDefined")}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.shortSetup")}</dt>
+                      <dd>{strategyShortRule || tMain("strategy.builder.notDefined")}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.noTradeConditions")}</dt>
+                      <dd>{strategyNoTradeRule || tMain("strategy.builder.notDefined")}</dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.riskTitle")}</dt>
+                      <dd>
+                        {tMain("strategy.builder.invalidationLevel")}: {strategyInvalidationLevel || "—"} · {tMain("strategy.builder.targetLevels")}: {strategyTargetLevels || "—"} · {strategyConfidenceTargetPct}%
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{tMain("strategy.builder.selectedIndicators")}</dt>
+                      <dd className="predictionBuilderChipRow">
+                        {selectedStrategyIndicators.length > 0
+                          ? selectedStrategyIndicators.map((item) => <span className="predictionBuilderChip" key={item.key}>{item.label}</span>)
+                          : tMain("strategy.builder.noIndicators")}
+                      </dd>
+                    </div>
+                  </dl>
 
-            {strategyEditingId ? (
-              <label className="settingsField">
-                <span className="settingsFieldLabel">{tMain("strategy.promptText")}</span>
-                <textarea
-                  className="input"
-                  rows={12}
-                  maxLength={8000}
-                  value={strategyPreviewPromptText}
-                  onChange={(event) => setStrategyPreviewPromptText(event.target.value)}
-                  placeholder={tMain("strategy.promptTextPlaceholder")}
-                />
-                <span className="settingsMutedText">{tMain("strategy.promptTextHint")}</span>
-              </label>
-            ) : null}
+                  <details className="predictionBuilderGeneratedPrompt">
+                    <summary>
+                      <span>
+                        <AppIcon name="preview" />
+                        <strong>{tMain("strategy.builder.generatedPrompt")}</strong>
+                      </span>
+                      <span>
+                        {tMain("strategy.builder.advancedLabel")}
+                        <AppIcon name="chevronDown" />
+                      </span>
+                    </summary>
+                    <textarea className="input" rows={16} maxLength={8000} value={strategyPreviewPromptText} onChange={(event) => setStrategyPreviewPromptText(event.target.value)} />
+                    {strategyPreviewMeta ? <span className="settingsMutedText">{tMain("strategy.previewHint", { mode: strategyPreviewMeta.mode, model: strategyPreviewMeta.model })}</span> : null}
+                  </details>
+                </main>
 
-            <label className="settingsField">
-              <span className="settingsFieldLabel">{tMain("strategy.promptMode")}</span>
-              <select
-                className="input"
-                value={strategyPromptMode}
-                onChange={(event) => handleStrategyPromptModeChange(event.target.value as PromptMode)}
-              >
-                <option value="trading_explainer">{tMain("strategy.promptModeTrading")}</option>
-                <option value="market_analysis">{tMain("strategy.promptModeAnalysis")}</option>
-              </select>
-              <span className="settingsMutedText">
-                {strategyPromptMode === "market_analysis"
-                  ? tMain("strategy.analysisAutoDefaultsHint")
-                  : tMain("strategy.promptModeHint")}
-              </span>
-            </label>
-
-            <div className="settingsTwoColGrid">
-              <label className="settingsField">
-                <span className="settingsFieldLabel">{tMain("strategy.timeframes")}</span>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                  {STRATEGY_TIMEFRAME_OPTIONS.map((tf) => (
-                    <label key={`strategy-tf-${tf}`} className="inlineCheck">
-                      <input
-                        type="checkbox"
-                        checked={strategyTimeframes.includes(tf)}
-                        onChange={() => toggleStrategyTimeframe(tf)}
-                      />
-                      {tf}
-                    </label>
-                  ))}
-                </div>
-              </label>
-              <label className="settingsField">
-                <span className="settingsFieldLabel">{tMain("strategy.runTimeframe")}</span>
-                <select
-                  className="input"
-                  value={strategyRunTimeframe}
-                  onChange={(event) => setStrategyRunTimeframe(event.target.value as "" | StrategyTimeframe)}
-                  disabled={strategyTimeframes.length === 0}
-                >
-                  {strategyTimeframes.length === 0 ? <option value="">{tMain("strategy.noTimeframeLock")}</option> : null}
-                  {strategyTimeframes.map((tf) => (
-                    <option key={`strategy-run-${tf}`} value={tf}>{tf}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="settingsTwoColGrid">
-              {strategyPromptMode === "trading_explainer" ? (
-                <>
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.directionPreference")}</span>
-                    <select
-                      className="input"
-                      value={strategyDirectionPreference}
-                      onChange={(event) => setStrategyDirectionPreference(event.target.value as "long" | "short" | "either")}
-                    >
-                      <option value="either">{tMain("strategy.directionEither")}</option>
-                      <option value="long">{tMain("strategy.directionLong")}</option>
-                      <option value="short">{tMain("strategy.directionShort")}</option>
-                    </select>
-                  </label>
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.confidenceTargetPct")}</span>
-                    <input
-                      className="input"
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={strategyConfidenceTargetPct}
-                      onChange={(event) => setStrategyConfidenceTargetPct(event.target.value)}
-                    />
-                  </label>
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.slTpSource")}</span>
-                    <select
-                      className="input"
-                      value={strategySlTpSource}
-                      onChange={(event) => setStrategySlTpSource(event.target.value as "local" | "ai" | "hybrid")}
-                    >
-                      <option value="local">{tMain("strategy.slTpSourceLocal")}</option>
-                      <option value="ai">{tMain("strategy.slTpSourceAi")}</option>
-                      <option value="hybrid">{tMain("strategy.slTpSourceHybrid")}</option>
-                    </select>
-                  </label>
-                  <label className="settingsField">
-                    <span className="settingsFieldLabel">{tMain("strategy.newsRiskMode")}</span>
-                    <select
-                      className="input"
-                      value={strategyNewsRiskMode}
-                      onChange={(event) => setStrategyNewsRiskMode(event.target.value as "off" | "block")}
-                    >
-                      <option value="off">{tMain("strategy.newsRiskModeOff")}</option>
-                      <option value="block">{tMain("strategy.newsRiskModeBlock")}</option>
-                    </select>
-                  </label>
-                </>
-              ) : null}
-              <label className="settingsField">
-                <span className="settingsFieldLabel">{tMain("strategy.ohlcvBars")}</span>
-                <input
-                  className="input"
-                  type="number"
-                  min={20}
-                  max={500}
-                  step={1}
-                  value={strategyOhlcvBars}
-                  onChange={(event) => setStrategyOhlcvBars(event.target.value)}
-                />
-              </label>
-            </div>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => setStrategyIndicatorKeys(strategyIndicators.map((item) => item.key))}
-              >
-                <AppIcon name="check" />
-                {tMain("strategy.selectAllIndicators")}
-              </button>
-              <button className="btn" type="button" onClick={() => setStrategyIndicatorKeys([])}>
-                <AppIcon name="remove" />
-                {tMain("strategy.clearIndicators")}
-              </button>
-            </div>
-            <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
-              {strategyIndicators.map((item) => (
-                <label
-                  key={`strategy-ind-${item.key}`}
-                  className="inlineCheck"
-                  style={{
-                    border: "1px solid rgba(255, 193, 7, 0.2)",
-                    borderRadius: 8,
-                    padding: "8px 10px",
-                    alignItems: "flex-start",
-                    gap: 8
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={strategyIndicatorKeys.includes(item.key)}
-                    onChange={() => toggleStrategyIndicator(item.key)}
-                    style={{ marginTop: 2 }}
-                  />
-                  <span style={{ display: "grid", gap: 2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>{item.label}</span>
-                    <span className="settingsMutedText">{item.description}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                className={`btn ${strategyEditingId ? "" : "btnPrimary"}`}
-                type="button"
-                disabled={strategyGenerating || strategySaving}
-                onClick={() => void generateStrategyPreview()}
-              >
-                <AppIcon name="preview" />
-                {strategyGenerating ? tMain("strategy.previewGenerating") : tMain("strategy.generatePreview")}
-              </button>
-              {strategyEditingId ? (
-                <>
+                <aside className="uiSection predictionBuilderSavePanel">
+                  <h3>{tMain("strategy.builder.beforeSaving")}</h3>
+                  <ul className="predictionBuilderChecklist">
+                    <li><AppIcon name="check" /><span><strong>{tMain("strategy.builder.rulesChecked")}</strong><small>{tMain("strategy.builder.rulesCheckedHint")}</small></span></li>
+                    <li><AppIcon name="check" /><span><strong>{tMain("strategy.builder.riskDefined")}</strong><small>{tMain("strategy.builder.riskDefinedHint")}</small></span></li>
+                    <li><AppIcon name="check" /><span><strong>{tMain("strategy.builder.noExecution")}</strong><small>{tMain("strategy.builder.noExecutionHint")}</small></span></li>
+                  </ul>
+                  <dl className="predictionBuilderSaveMeta">
+                    <div><dt>{tMain("strategy.builder.strategyName")}</dt><dd>{strategyName}</dd></div>
+                    <div><dt>{tMain("strategy.runTimeframe")}</dt><dd>{strategyRunTimeframe || "—"}</dd></div>
+                    <div><dt>{tMain("strategy.builder.horizon")}</dt><dd>{strategyHorizonValue} {tMain("strategy.builder." + strategyHorizonUnit)}</dd></div>
+                    <div><dt>{tMain("strategy.builder.selectedIndicators")}</dt><dd>{strategyIndicatorKeys.length}</dd></div>
+                  </dl>
+                  <div className="uiNotice uiNotice-info predictionBuilderSaveNotice">
+                    <AppIcon name="shield" />
+                    <span>{strategyPreviewSafety ? tMain("strategy.builder.previewSafetyVerified") : tMain("strategy.builder.privateTemplateNotice")}</span>
+                  </div>
                   <button
-                    className="btn btnPrimary"
+                    className="btn btnPrimary predictionBuilderSaveButton"
                     type="button"
-                    disabled={strategyGenerating || strategySaving}
-                    onClick={() => void updateStrategyPromptFromEditor()}
+                    disabled={strategySaving || !strategyPreviewPromptText.trim() || strategyDraftValidation?.valid === false}
+                    onClick={() => void saveStrategyFromPreview()}
                   >
                     <AppIcon name="save" />
-                    {strategySaving ? tMain("strategy.updateSaving") : tMain("strategy.updatePrompt")}
+                    {strategySaving ? tMain("strategy.previewSaving") : strategyEditingId ? tMain("strategy.builder.confirmUpdate") : tMain("strategy.builder.saveTemplate")}
                   </button>
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={strategySaving}
-                    onClick={cancelStrategyPromptEdit}
-                  >
-                    <AppIcon name="cancel" />
-                    {tMain("actions.cancel")}
+                  <button className="predictionBuilderTextButton" type="button" onClick={() => setStrategyBuilderStep(2)} disabled={strategySaving}>
+                    {tMain("strategy.builder.backAndEdit")}
                   </button>
-                </>
-              ) : null}
-            </div>
-
-            {strategyLastSavedPromptText ? (
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="settingsMutedText">
-                  {strategyLastSavedMeta
-                    ? tMain("strategy.resultMeta", {
-                      mode: strategyLastSavedMeta.mode,
-                      model: strategyLastSavedMeta.model
-                    })
-                    : ""}
-                </div>
-                <textarea className="input" rows={12} readOnly value={strategyLastSavedPromptText} />
-                <div className="settingsBuilderSafetyNote">
-                  <AppIcon name="shield" />
-                  <span>{tMain("strategy.builder.savedWithoutCopier")}</span>
-                </div>
-                <Link className="btn" href={withLocalePath("/bots/new?review=1&strategy=prediction_copier", locale)}>
-                  <AppIcon name="external" />
-                  {tMain("strategy.builder.openCopierReview")}
-                </Link>
+                  <span className="predictionBuilderDestination">
+                    <AppIcon name="template" />
+                    {tMain("strategy.builder.savedDestination")}
+                  </span>
+                  {strategyLastSavedPromptText ? (
+                    <div className="predictionBuilderSavedResult" role="status">
+                      <AppIcon name="check" />
+                      <div>
+                        <strong>{tMain("strategy.builder.savedTemplateSuccess")}</strong>
+                        <span>{strategyLastSavedMeta ? tMain("strategy.resultMeta", { mode: strategyLastSavedMeta.mode, model: strategyLastSavedMeta.model }) : ""}</span>
+                      </div>
+                      <Link className="btn" href={withLocalePath("/bots/new?review=1&strategy=prediction_copier", locale)}>
+                        <AppIcon name="external" />
+                        {tMain("strategy.builder.openCopierReview")}
+                      </Link>
+                    </div>
+                  ) : null}
+                </aside>
               </div>
-            ) : null}
-          </div>
-        )}
-      </section>
 
-      {strategyPreviewOpen ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 60,
-            padding: 16
-          }}
-          onClick={() => {
-            if (!strategySaving) setStrategyPreviewOpen(false);
-          }}
-        >
-          <div
-            className="card"
-            style={{ width: "min(1000px, 95vw)", maxHeight: "90vh", display: "grid", gap: 10, padding: 16 }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{tMain("strategy.previewTitle")}</h3>
-            </div>
-            <div className="settingsMutedText">
-              {strategyPreviewMeta
-                ? tMain("strategy.previewHint", {
-                  mode: strategyPreviewMeta.mode,
-                  model: strategyPreviewMeta.model
-                })
-                : tMain("strategy.previewHint", { mode: "fallback", model: "n/a" })}
-            </div>
-            <div className="settingsBuilderSafetyNote">
-              <AppIcon name="shield" />
-              <span>
-                {strategyPreviewSafety
-                  ? tMain("strategy.builder.previewSafetyVerified")
-                  : tMain("strategy.builder.previewSafety")}
-              </span>
-            </div>
-            <textarea
-              className="input"
-              rows={18}
-              maxLength={8000}
-              value={strategyPreviewPromptText}
-              onChange={(event) => setStrategyPreviewPromptText(event.target.value)}
-            />
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button
-                className="btn"
-                type="button"
-                disabled={strategySaving}
-                onClick={() => setStrategyPreviewOpen(false)}
-              >
-                <AppIcon name="cancel" />
-                {tMain("strategy.previewCancel")}
-              </button>
-              <button
-                className="btn btnPrimary"
-                type="button"
-                disabled={strategySaving}
-                onClick={() => void saveStrategyFromPreview()}
-              >
-                <AppIcon name="save" />
-                {strategySaving
-                  ? tMain("strategy.previewSaving")
-                  : (strategyEditingId ? tMain("strategy.builder.confirmUpdate") : tMain("strategy.builder.confirmSave"))}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+              <div className="predictionBuilderSafety predictionBuilderReviewSafety">
+                <AppIcon name="shield" />
+                <span>{tMain("strategy.builder.safetyShort")}</span>
+              </div>
+            </>
+          ) : null}
+        </>
+      )}
+
+      <AdminConfirmDialog
+        open={Boolean(strategyDeletePendingId)}
+        title={tMain("strategy.builder.deleteTitle")}
+        description={tMain("strategy.messages.confirmDelete")}
+        confirmLabel={tMain("actions.delete")}
+        cancelLabel={tMain("actions.cancel")}
+        onCancel={() => setStrategyDeletePendingId(null)}
+        onConfirm={() => {
+          const id = strategyDeletePendingId;
+          setStrategyDeletePendingId(null);
+          if (id) void deleteStrategyPrompt(id);
+        }}
+      />
     </div>
   );
 }

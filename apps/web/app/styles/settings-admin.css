@@ -3167,3 +3167,817 @@ a.settingsHubCard:focus-visible {
     padding: 10px 12px;
   }
 }
+
+/* Prediction Builder guided workspace */
+.predictionBuilderPage {
+  max-width: 1500px;
+}
+.predictionBuilderPageHeader {
+  align-items: start;
+}
+.predictionBuilderPageHeader h2,
+.predictionBuilderPageHeader p,
+.predictionBuilderPageHeader .predictionBuilderBreadcrumb {
+  margin: 0;
+}
+.predictionBuilderPageHeader h2 {
+  margin-top: 7px;
+  font-size: clamp(24px, 2vw, 32px);
+  line-height: 1.1;
+}
+.predictionBuilderPageHeader p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.predictionBuilderBreadcrumb {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionBuilderBreadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.predictionBuilderBreadcrumb a:hover,
+.predictionBuilderBreadcrumb a:focus-visible {
+  color: var(--color-accent);
+}
+.predictionBuilderBreadcrumb svg {
+  width: 13px;
+  height: 13px;
+}
+.predictionBuilderStepper {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-panel);
+  background: rgba(10, 23, 39, 0.82);
+}
+.predictionBuilderStep {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  min-height: 72px;
+  padding: 12px 18px;
+  border: 0;
+  border-right: 1px solid var(--app-shell-line);
+  color: var(--muted);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.predictionBuilderStep:last-child {
+  border-right: 0;
+}
+.predictionBuilderStep::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: transparent;
+}
+.predictionBuilderStep:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.predictionBuilderStepActive {
+  color: var(--text);
+  background: rgba(69, 152, 247, 0.06);
+}
+.predictionBuilderStepActive::after {
+  background: var(--color-brand-primary);
+}
+.predictionBuilderStepNumber {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(148, 163, 184, 0.16);
+}
+.predictionBuilderStepActive .predictionBuilderStepNumber,
+.predictionBuilderStep:not(:disabled):has(.predictionBuilderStepNumber svg) .predictionBuilderStepNumber {
+  background: var(--color-brand-primary);
+}
+.predictionBuilderStepNumber svg {
+  width: 15px;
+  height: 15px;
+}
+.predictionBuilderStep > span:last-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.predictionBuilderStep strong {
+  color: inherit;
+  font-size: 14px;
+}
+.predictionBuilderStep small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionTemplateLibrary,
+.predictionBuilderAdvanced,
+.predictionBuilderGeneratedPrompt {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: rgba(10, 23, 39, 0.7);
+}
+.predictionTemplateLibrary > summary,
+.predictionBuilderAdvanced > summary,
+.predictionBuilderGeneratedPrompt > summary,
+.predictionBuilderIndicatorGroup > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  list-style: none;
+  cursor: pointer;
+}
+.predictionTemplateLibrary summary::-webkit-details-marker,
+.predictionBuilderAdvanced summary::-webkit-details-marker,
+.predictionBuilderGeneratedPrompt summary::-webkit-details-marker,
+.predictionBuilderIndicatorGroup summary::-webkit-details-marker {
+  display: none;
+}
+.predictionTemplateLibrary > summary > span,
+.predictionBuilderAdvanced > summary > span,
+.predictionBuilderGeneratedPrompt > summary > span,
+.predictionBuilderIndicatorGroup > summary > span {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+}
+.predictionTemplateLibrary[open] > summary > svg,
+.predictionBuilderAdvanced[open] > summary > svg,
+.predictionBuilderGeneratedPrompt[open] > summary > span:last-child > svg,
+.predictionBuilderIndicatorGroup[open] > summary > span:last-child > svg {
+  transform: rotate(180deg);
+}
+.predictionTemplateList {
+  display: grid;
+  padding: 0 14px 12px;
+}
+.predictionTemplateRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  min-width: 0;
+  padding: 11px 0;
+  border-top: 1px solid var(--app-shell-line);
+}
+.predictionTemplateRow > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.predictionTemplateRow > div:first-child span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionTemplateActions,
+.predictionBuilderActionButtons,
+.predictionBuilderChoiceRow,
+.predictionBuilderChipRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.btnDangerGhost {
+  color: #fecaca;
+}
+.predictionBuilderIdeaLayout,
+.predictionBuilderConfigLayout,
+.predictionBuilderReviewLayout {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+}
+.predictionBuilderIdeaLayout {
+  grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
+}
+.predictionBuilderConfigLayout {
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 0.3fr);
+}
+.predictionBuilderReviewLayout {
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 0.34fr);
+}
+.predictionBuilderAssistant,
+.predictionBuilderLiveBrief,
+.predictionBuilderConfigMain,
+.predictionBuilderOverview,
+.predictionBuilderReview,
+.predictionBuilderSavePanel {
+  min-width: 0;
+}
+.predictionBuilderAssistant,
+.predictionBuilderLiveBrief,
+.predictionBuilderOverview,
+.predictionBuilderSavePanel {
+  display: grid;
+  gap: 12px;
+}
+.predictionBuilderAssistant .uiSectionHeader h3,
+.predictionBuilderLiveBrief .uiSectionHeader h3,
+.predictionBuilderOverview .uiSectionHeader h3,
+.predictionBuilderReview .uiSectionHeader h3,
+.predictionBuilderSavePanel h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.predictionBuilderAssistant .uiSectionHeader p,
+.predictionBuilderLiveBrief .uiSectionHeader p,
+.predictionBuilderOverview .uiSectionHeader p,
+.predictionBuilderReview .uiSectionHeader p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.predictionBuilderSegmentField,
+.predictionBuilderTimeframes {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+.predictionBuilderSegmentField legend,
+.predictionBuilderTimeframes legend {
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.predictionBuilderSegmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: rgba(3, 8, 20, 0.3);
+}
+.predictionBuilderSegmented button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  background: transparent;
+  cursor: pointer;
+}
+.predictionBuilderSegmented .predictionBuilderSegmentActive {
+  border-color: rgba(69, 152, 247, 0.48);
+  color: var(--color-accent);
+  background: rgba(69, 152, 247, 0.13);
+}
+.predictionBuilderAssistantLabel {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+.predictionBuilderAssistantLabel > div {
+  display: grid;
+  gap: 3px;
+}
+.predictionBuilderAssistantLabel span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionBuilderChatMessages {
+  min-height: 170px;
+  max-height: 340px;
+}
+.predictionBuilderChatComposer .btn {
+  min-height: 42px;
+}
+.predictionBuilderSavedState,
+.predictionBuilderDestination {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.predictionBuilderSavedState svg {
+  color: var(--ui-tone-success);
+}
+.predictionBuilderBriefList,
+.predictionBuilderReviewList,
+.predictionBuilderSaveMeta {
+  margin: 0;
+}
+.predictionBuilderBriefList > div,
+.predictionBuilderReviewList > div,
+.predictionBuilderSaveMeta > div {
+  display: grid;
+  gap: 7px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--app-shell-line);
+}
+.predictionBuilderBriefList > div:first-child,
+.predictionBuilderReviewList > div:first-child {
+  padding-top: 0;
+}
+.predictionBuilderBriefList dt,
+.predictionBuilderReviewList dt,
+.predictionBuilderSaveMeta dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionBuilderBriefList dd,
+.predictionBuilderReviewList dd,
+.predictionBuilderSaveMeta dd {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.predictionBuilderUndo {
+  justify-self: start;
+}
+.predictionBuilderActionBar {
+  position: sticky;
+  z-index: 4;
+  bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-panel);
+  background: rgba(8, 19, 33, 0.94);
+  box-shadow: var(--shadow-elevated);
+  backdrop-filter: blur(16px);
+}
+.predictionBuilderSafety {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionBuilderSafety svg {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+.predictionBuilderConfigMain {
+  display: grid;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.predictionBuilderConfigSection {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--app-shell-line);
+}
+.predictionBuilderConfigSection:last-of-type {
+  border-bottom: 0;
+}
+.predictionBuilderConfigHeading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 13px;
+}
+.predictionBuilderConfigHeading > svg {
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+.predictionBuilderConfigHeading h3,
+.predictionBuilderConfigHeading p {
+  margin: 0;
+}
+.predictionBuilderConfigHeading h3 {
+  font-size: 15px;
+}
+.predictionBuilderConfigHeading p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionBuilderContextGrid {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.2fr) repeat(3, minmax(140px, 0.72fr));
+  gap: 10px;
+  align-items: end;
+}
+.predictionBuilderHorizonField {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.45fr) minmax(100px, 0.75fr);
+  gap: 6px;
+}
+.predictionBuilderChoice {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 46px;
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--ui-surface-control);
+  cursor: pointer;
+}
+.predictionBuilderChoice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.predictionBuilderChoiceActive {
+  border-color: rgba(69, 152, 247, 0.52);
+  color: #dbeafe;
+  background: rgba(69, 152, 247, 0.16);
+}
+.predictionBuilderChoice:has(input:focus-visible) {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+.predictionBuilderRuleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.predictionBuilderRuleWide {
+  grid-column: 1 / -1;
+}
+.predictionBuilderRiskGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.predictionBuilderIndicatorToolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.5fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.predictionBuilderIndicatorSearch {
+  position: relative;
+  display: block;
+}
+.predictionBuilderIndicatorSearch svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 12px;
+  width: 16px;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+.predictionBuilderIndicatorSearch .input {
+  padding-left: 36px;
+}
+.predictionBuilderChip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  background: rgba(69, 152, 247, 0.08);
+}
+.predictionBuilderChipRemove {
+  cursor: pointer;
+}
+.predictionBuilderChipRemove svg {
+  width: 13px;
+  height: 13px;
+}
+.predictionBuilderIndicatorGroups {
+  border-top: 1px solid var(--app-shell-line);
+}
+.predictionBuilderIndicatorGroup {
+  border-bottom: 1px solid var(--app-shell-line);
+}
+.predictionBuilderIndicatorGroup > summary {
+  padding-inline: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.predictionBuilderIndicatorOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 8px 10px;
+}
+.predictionBuilderIndicatorOption {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.018);
+  cursor: pointer;
+}
+.predictionBuilderIndicatorOptionActive {
+  border-color: rgba(69, 152, 247, 0.42);
+  background: rgba(69, 152, 247, 0.08);
+}
+.predictionBuilderIndicatorOption > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.predictionBuilderIndicatorOption strong {
+  font-size: 12px;
+}
+.predictionBuilderIndicatorOption small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.predictionBuilderAdvanced {
+  margin: 12px 0 16px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.predictionBuilderAdvanced > summary > span > span {
+  display: grid;
+  gap: 2px;
+}
+.predictionBuilderAdvanced small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.predictionBuilderAdvanced > .settingsField {
+  max-width: 320px;
+  padding: 0 14px 14px;
+}
+.predictionBuilderOverview,
+.predictionBuilderSavePanel {
+  position: sticky;
+  top: 92px;
+}
+.predictionBuilderOverviewSummary {
+  max-height: 180px;
+  overflow: auto;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.predictionBuilderCompleteness {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--app-shell-line);
+}
+.predictionBuilderCompleteness > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.predictionBuilderCompleteness strong {
+  color: var(--text);
+}
+.predictionBuilderCompleteness progress {
+  width: 100%;
+  height: 5px;
+  border: 0;
+  accent-color: var(--color-brand-primary);
+}
+.predictionBuilderOverviewNotice,
+.predictionBuilderSaveNotice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+}
+.predictionBuilderRefineButton {
+  width: 100%;
+  justify-content: center;
+}
+.predictionBuilderValidation {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: var(--ui-radius-control);
+}
+.predictionBuilderValidation > div {
+  display: grid;
+  gap: 3px;
+}
+.predictionBuilderValidation strong {
+  font-size: 13px;
+}
+.predictionBuilderValidation span {
+  font-size: 12px;
+}
+.predictionBuilderValidationOk {
+  border-color: rgba(34, 197, 94, 0.42);
+  color: #d8ffe4;
+  background: rgba(34, 197, 94, 0.07);
+}
+.predictionBuilderValidationError {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fee2e2;
+  background: rgba(239, 68, 68, 0.07);
+}
+.predictionBuilderReviewList > div {
+  grid-template-columns: minmax(130px, 0.24fr) minmax(0, 1fr);
+  gap: 20px;
+}
+.predictionBuilderGeneratedPrompt {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.predictionBuilderGeneratedPrompt > summary > span:last-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+.predictionBuilderGeneratedPrompt textarea {
+  width: calc(100% - 28px);
+  margin: 0 14px 8px;
+}
+.predictionBuilderGeneratedPrompt > .settingsMutedText {
+  display: block;
+  padding: 0 14px 14px;
+}
+.predictionBuilderSavePanel {
+  align-content: start;
+}
+.predictionBuilderChecklist {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0;
+  margin: 0;
+  border-block: 1px solid var(--app-shell-line);
+  list-style: none;
+}
+.predictionBuilderChecklist li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.predictionBuilderChecklist li > svg {
+  flex: 0 0 auto;
+  color: var(--ui-tone-success);
+}
+.predictionBuilderChecklist li > span {
+  display: grid;
+  gap: 2px;
+}
+.predictionBuilderChecklist strong {
+  font-size: 13px;
+}
+.predictionBuilderChecklist small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.predictionBuilderSaveMeta > div {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px 0;
+}
+.predictionBuilderSaveMeta dd {
+  color: var(--text);
+  text-align: right;
+}
+.predictionBuilderSaveButton {
+  width: 100%;
+  min-height: 46px;
+  justify-content: center;
+  font-size: 14px;
+}
+.predictionBuilderTextButton {
+  justify-self: center;
+  border: 0;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+  cursor: pointer;
+}
+.predictionBuilderTextButton:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 3px;
+}
+.predictionBuilderDestination {
+  align-items: flex-start;
+  line-height: 1.45;
+}
+.predictionBuilderSavedResult {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--app-shell-line);
+  color: #d8ffe4;
+}
+.predictionBuilderSavedResult > div {
+  display: grid;
+  gap: 3px;
+}
+.predictionBuilderSavedResult span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.predictionBuilderSavedResult .btn {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+.predictionBuilderReviewSafety {
+  min-height: 50px;
+  padding: 10px 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: rgba(10, 23, 39, 0.7);
+}
+
+@media (max-width: 1100px) {
+  .predictionBuilderIdeaLayout,
+  .predictionBuilderConfigLayout,
+  .predictionBuilderReviewLayout {
+    grid-template-columns: 1fr;
+  }
+  .predictionBuilderOverview,
+  .predictionBuilderSavePanel {
+    position: static;
+  }
+  .predictionBuilderContextGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .predictionBuilderStepper {
+    grid-template-columns: 1fr;
+  }
+  .predictionBuilderStep {
+    min-height: 58px;
+    border-right: 0;
+    border-bottom: 1px solid var(--app-shell-line);
+  }
+  .predictionBuilderStep:last-child {
+    border-bottom: 0;
+  }
+  .predictionTemplateRow,
+  .predictionBuilderActionBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .predictionTemplateActions,
+  .predictionBuilderActionButtons {
+    width: 100%;
+  }
+  .predictionTemplateActions .btn,
+  .predictionBuilderActionButtons .btn,
+  .predictionBuilderActionBar > .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .predictionBuilderActionBar {
+    bottom: 8px;
+  }
+  .predictionBuilderContextGrid,
+  .predictionBuilderRuleGrid,
+  .predictionBuilderRiskGrid,
+  .predictionBuilderIndicatorToolbar,
+  .predictionBuilderIndicatorOptions,
+  .predictionBuilderReviewList > div {
+    grid-template-columns: 1fr;
+  }
+  .predictionBuilderRuleWide {
+    grid-column: auto;
+  }
+  .predictionBuilderReviewList > div {
+    gap: 5px;
+  }
+}
