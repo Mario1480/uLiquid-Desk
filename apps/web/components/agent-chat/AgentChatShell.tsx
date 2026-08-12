@@ -15,7 +15,7 @@ import type {
   AgentProfilesResponse,
   AgentSkill
 } from "../../src/agent-chat/contracts";
-import { canSendAgentMessage, enabledSkillsForProfile } from "../../src/agent-chat/viewModel";
+import { canSendAgentMessage, enabledSkillsForProfile, requiresSelectedExchangeAccount } from "../../src/agent-chat/viewModel";
 import AgentActivityPanel from "./AgentActivityPanel";
 import AgentComposer from "./AgentComposer";
 import AgentContextBar from "./AgentContextBar";
@@ -47,7 +47,7 @@ function contextFromConversation(conversation: AgentConversation): AgentContextD
     selectedVenue: conversation.selectedVenue,
     selectedExchangeAccountId: conversation.selectedExchangeAccountId,
     marketType: conversation.marketType === "spot" ? "spot" : "perp",
-    symbol: conversation.symbol ?? "BTCUSDT"
+    symbol: conversation.symbol ?? (conversation.profileKey === "market_analyst" ? "BTCUSDT" : null)
   };
 }
 
@@ -200,6 +200,12 @@ export default function AgentChatShell() {
     ? [t("empty.positionPrompt1"), t("empty.positionPrompt2"), t("empty.positionPrompt3")]
     : [t("empty.marketPrompt1"), t("empty.marketPrompt2"), t("empty.marketPrompt3")];
   const sendDisabled = !canSendAgentMessage({ content: composer, loading: sending, profile: activeProfile, selectedExchangeAccountId: context.selectedExchangeAccountId });
+  const accountSelectionRequired = requiresSelectedExchangeAccount(activeProfile, context.selectedExchangeAccountId);
+  const sendDisabledReason = accountSelectionRequired
+    ? accounts.length > 0
+      ? t("composer.selectAccountToSend")
+      : t("composer.connectAccountToSend")
+    : null;
 
   return (
     <main className="uiPage agentChatPage">
@@ -230,7 +236,7 @@ export default function AgentChatShell() {
             ))}
             {sending ? <div className="agentChatThinking" aria-live="polite"><span className="agentChatSpinner" />{t("states.analyzing")}</div> : null}
           </div>
-          <AgentComposer value={composer} loading={sending} disabled={sendDisabled} onChange={setComposer} onSend={() => void sendMessage()} onShowActivity={() => setActivityOpen(true)} />
+          <AgentComposer value={composer} loading={sending} disabled={sendDisabled} disabledReason={sendDisabledReason} onChange={setComposer} onSend={() => void sendMessage()} onShowActivity={() => setActivityOpen(true)} />
         </section>
         <div className={activityOpen ? "agentChatActivityMobileOpen" : ""}><AgentActivityPanel activity={activity} loading={sending} onClose={() => setActivityOpen(false)} /></div>
       </div>

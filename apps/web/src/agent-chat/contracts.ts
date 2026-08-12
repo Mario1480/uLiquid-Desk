@@ -87,5 +87,5 @@ export type AgentContextDraft = {
   selectedVenue: AgentVenue;
   selectedExchangeAccountId: string | null;
   marketType: AgentMarketType;
-  symbol: string;
+  symbol: string | null;
 };

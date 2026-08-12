@@ -32,8 +32,11 @@
     "venue": "Börse",
     "account": "Exchange Account",
     "selectAccount": "Account auswählen",
+    "required": "Erforderlich",
     "marketType": "Markt",
     "symbol": "Symbol",
+    "symbolFilter": "Symbolfilter (optional)",
+    "allPositions": "Alle Positionen",
     "noSymbol": "Kein Symbol"
   },
   "access": {
@@ -104,6 +107,8 @@
   "composer": {
     "placeholder": "Frage nach einem Markt, einer Prediction, einem Termin oder der ausgewählten Position…",
     "hint": "Enter zum Senden · Shift+Enter für neue Zeile",
+    "selectAccountToSend": "Wähle oben einen Exchange Account aus, um den Position Copilot zu aktivieren.",
+    "connectAccountToSend": "Verbinde zuerst einen Exchange Account, um den Position Copilot zu verwenden.",
     "send": "Senden",
     "sending": "Analysiere…"
   },
@@ -113,7 +118,7 @@
     "marketPrompt1": "Analysiere BTC auf 1h und 4h mit Funding.",
     "marketPrompt2": "Was hat sich bei Open Interest und Marktstruktur verändert?",
     "marketPrompt3": "Welche wichtigen US-Termine sind heute relevant?",
-    "positionPrompt1": "Prüfe meine ausgewählte Position.",
+    "positionPrompt1": "Analysiere alle meine offenen Positionen.",
     "positionPrompt2": "Erkläre das aktuelle Liquidations- und Drawdown-Risiko.",
     "positionPrompt3": "Vergleiche die Position mit meiner letzten Prediction."
   },

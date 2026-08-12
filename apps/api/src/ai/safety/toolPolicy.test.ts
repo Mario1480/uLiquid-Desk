@@ -20,6 +20,7 @@ test("each AI agent receives only its separated registry", () => {
   assert.deepEqual(getAiAgentPolicy("position_monitoring").callableTools, []);
   assert.equal(isAiToolAllowed("prediction_builder", "request_preview", "workflow"), true);
   assert.equal(isAiToolAllowed("position_monitoring", "draft_notification", "workflow"), true);
+  assert.equal(isAiToolAllowed("agent_position", "risk.analyze_portfolio"), true);
 });
 
 test("runtime budgets clamp oversized and invalid caller values", () => {

@@ -18,7 +18,11 @@ export function orderedActivityItems(activity: AgentActivity | null) {
   return activity?.toolCalls ?? [];
 }
 
+export function requiresSelectedExchangeAccount(profile: AgentProfile | null, selectedExchangeAccountId: string | null): boolean {
+  return profile?.actionLevel === "account_read" && !selectedExchangeAccountId;
+}
+
 export function canSendAgentMessage(params: { content: string; loading: boolean; profile: AgentProfile | null; selectedExchangeAccountId: string | null }): boolean {
   if (params.loading || !params.content.trim() || !params.profile) return false;
-  return params.profile.actionLevel !== "account_read" || Boolean(params.selectedExchangeAccountId);
+  return !requiresSelectedExchangeAccount(params.profile, params.selectedExchangeAccountId);
 }

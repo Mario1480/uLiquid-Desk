@@ -10,7 +10,7 @@ export const conversationContextSchema = z.object({
   selectedVenue: agentVenueSchema.default("auto"),
   selectedExchangeAccountId: z.string().trim().min(1).max(191).nullable().default(null),
   marketType: agentMarketTypeSchema.nullable().default("perp"),
-  symbol: z.string().trim().min(2).max(32).nullable().default("BTCUSDT")
+  symbol: z.string().trim().min(2).max(32).nullable().default(null)
 }).strict();
 
 export const createConversationSchema = z.object({

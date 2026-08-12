@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { toAgentChatError } from "./errors.js";
-import { AGENT_CHAT_RESPONSE_FORMAT, resolveAgentRunTimeoutMs } from "./runtime.js";
+import { resolveBuiltinAgentProfile } from "./profiles.js";
+import { AGENT_CHAT_RESPONSE_FORMAT, buildSystemMessage, resolveAgentRunTimeoutMs } from "./runtime.js";
 
 test("agent chat run timeout leaves enough time for provider and tool iterations", () => {
   assert.equal(resolveAgentRunTimeoutMs(undefined), 90_000);
@@ -19,6 +20,12 @@ test("agent chat requests a JSON object envelope from the Responses API", () => 
     (AGENT_CHAT_RESPONSE_FORMAT.json_schema.schema as any).required,
     ["content", "blocks", "citations"]
   );
+});
+
+test("position copilot does not require a symbol for full portfolio analysis", () => {
+  const message = buildSystemMessage(resolveBuiltinAgentProfile("position_copilot"), "en", "agent_position");
+  assert.match(message, /symbol is optional/i);
+  assert.match(message, /risk_analyze_portfolio without a symbol/i);
 });
 
 test("provider aborts are returned as stable agent chat timeout errors", () => {

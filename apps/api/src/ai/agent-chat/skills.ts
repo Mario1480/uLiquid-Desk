@@ -49,6 +49,7 @@ const orderbookArgsSchema = marketArgsSchema.extend({ limit: z.number().int().mi
 const intelligenceArgsSchema = z.object({ symbol: symbolSchema.optional(), horizon: z.enum(["intraday", "24h", "7d"]).default("24h") }).strict();
 const predictionArgsSchema = z.object({ symbol: symbolSchema.optional(), limit: z.number().int().min(1).max(20).default(10) }).strict();
 const portfolioArgsSchema = z.object({ accountRef: z.literal("selected").default("selected"), symbol: symbolSchema.optional() }).strict();
+const portfolioRiskArgsSchema = z.object({ accountRef: z.literal("selected").default("selected") }).strict();
 const riskArgsSchema = z.object({ positionRef: z.string().trim().min(1).max(191).default("selected") }).strict();
 
 type VenueResolution = { requestedVenue: AgentVenue; sourceVenue: Exclude<AgentVenue, "auto">; fallbackUsed: boolean; fallbackReason?: string };
@@ -415,11 +416,28 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
   }),
   descriptor({
     id: "portfolio.get_positions", title: "Positions", description: "Read-only selected-account positions.", category: "portfolio", accessLevel: "account_read", maxCallsPerRun: 2, timeoutMs: 10_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioArgsSchema,
-    toolDefinition: tool("portfolio_get_positions", "Load read-only positions from the server-bound selected account.", { accountRef: { type: "string", enum: ["selected"] }, symbol: { type: "string" } }),
+    toolDefinition: tool("portfolio_get_positions", "Load read-only positions from the server-bound selected account. Omit symbol to load every open position.", { accountRef: { type: "string", enum: ["selected"] }, symbol: { type: "string" } }),
     async execute(context, input) {
       const args = portfolioArgsSchema.parse(input); const loaded = await loadPerpPositions(context, args.symbol ? normalizeSymbol(args.symbol) : undefined);
       const positions = loaded.positions.slice(0, 50).map((position, index) => { const positionRef = index === 0 ? "selected" : `position:${createHash("sha256").update(`${context.runId}:${index}`).digest("hex").slice(0, 16)}`; context.positionRefs.set(positionRef, position); if (index === 0) context.positionRefs.set("selected", position); return { positionRef, ...position }; });
       return ok("portfolio.get_positions", { accountLabel: loaded.account.label, venue: loaded.account.exchange, positions }, { venue: loaded.account.exchange, provider: "user_exchange_account", observedAt: nowIso(), degraded: false });
+    }
+  }),
+  descriptor({
+    id: "risk.analyze_portfolio", title: "Portfolio risk", description: "Deterministic read-only risk analysis for every open position in the selected account.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 1, timeoutMs: 12_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioRiskArgsSchema,
+    toolDefinition: tool("risk_analyze_portfolio", "Analyze all open positions in the server-bound selected account. This tool never requires a symbol.", { accountRef: { type: "string", enum: ["selected"] } }),
+    async execute(context, input) {
+      portfolioRiskArgsSchema.parse(input);
+      const loaded = await loadPerpPositions(context);
+      const positions = loaded.positions.slice(0, 50).map((position, index) => {
+        const positionRef = index === 0 ? "selected" : `position:${createHash("sha256").update(`${context.runId}:${index}`).digest("hex").slice(0, 16)}`;
+        context.positionRefs.set(positionRef, position);
+        if (index === 0) context.positionRefs.set("selected", position);
+        const snapshot = buildPositionCopilotSnapshot({ ...position, exchangeAccountId: loaded.account.id, exchange: loaded.account.exchange, marketType: "perp", unrealizedPnlUsd: position.unrealizedPnl, dataDegraded: false, observedAt: nowIso(), openedByPredictionCopier: false });
+        const { exchangeAccountId: _exchangeAccountId, ...readOnlySnapshot } = snapshot;
+        return { positionRef, snapshot: readOnlySnapshot, analysis: buildDeterministicPositionAnalysis(snapshot, new Date(), context.locale) };
+      });
+      return ok("risk.analyze_portfolio", { accountLabel: loaded.account.label, venue: loaded.account.exchange, positionCount: positions.length, positions }, { venue: loaded.account.exchange, provider: "position_copilot_deterministic", observedAt: nowIso(), degraded: positions.some((position) => position.analysis.dataQuality.state === "degraded") });
     }
   }),
   descriptor({

@@ -20,6 +20,11 @@ test("agent tool schemas preserve optional arguments without strict provider val
   const ohlcv = getAgentSkillByToolName("market_get_ohlcv");
   assert.ok(ohlcv);
   assert.deepEqual(ohlcv.toolDefinition.function.parameters.required, ["interval"]);
+
+  const portfolio = getAgentSkillByToolName("risk_analyze_portfolio");
+  assert.ok(portfolio);
+  assert.deepEqual(portfolio.toolDefinition.function.parameters.required, []);
+  assert.match(portfolio.toolDefinition.function.description, /never requires a symbol/i);
 });
 
 test("recursive redaction removes credentials from tool summaries", () => {

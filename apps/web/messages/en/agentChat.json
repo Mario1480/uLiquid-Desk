@@ -32,8 +32,11 @@
     "venue": "Venue",
     "account": "Exchange account",
     "selectAccount": "Select an account",
+    "required": "Required",
     "marketType": "Market",
     "symbol": "Symbol",
+    "symbolFilter": "Symbol filter (optional)",
+    "allPositions": "All positions",
     "noSymbol": "No symbol"
   },
   "access": {
@@ -104,6 +107,8 @@
   "composer": {
     "placeholder": "Ask about a market, prediction, event, or selected position…",
     "hint": "Enter to send · Shift+Enter for a new line",
+    "selectAccountToSend": "Select an exchange account above to enable Position Copilot.",
+    "connectAccountToSend": "Connect an exchange account before using Position Copilot.",
     "send": "Send",
     "sending": "Analyzing…"
   },
@@ -113,7 +118,7 @@
     "marketPrompt1": "Analyze BTC on 1h and 4h with funding.",
     "marketPrompt2": "What has changed in open interest and market structure?",
     "marketPrompt3": "Which high-impact US events matter today?",
-    "positionPrompt1": "Review my selected position.",
+    "positionPrompt1": "Analyze all my open positions.",
     "positionPrompt2": "Explain the current liquidation and drawdown risk.",
     "positionPrompt3": "Compare the position with my latest prediction."
   },

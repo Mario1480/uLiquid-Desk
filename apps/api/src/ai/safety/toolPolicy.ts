@@ -41,6 +41,7 @@ export const AGENT_POSITION_CALLABLE_TOOLS = [
   "portfolio.get_positions",
   "portfolio.get_balance_summary",
   "portfolio.get_open_orders",
+  "risk.analyze_portfolio",
   "risk.analyze_position_snapshot"
 ] as const;
 
