@@ -176,3 +176,55 @@ test("economic calendar clamps oversized limits to the server maximum", async ()
   assert.equal(observedTake, 1001);
   assert.equal(res.body?.meta?.limit, 1000);
 });
+
+test("economic calendar migrates legacy narrow preferences to the complete default view", async () => {
+  const app = createFakeApp();
+  registerEconomicCalendarRoutes(app as any, {
+    db: {
+      globalSetting: {
+        async findUnique() {
+          return {
+            value: { currencies: ["USD"], impacts: ["high"] },
+            updatedAt: new Date("2026-08-01T00:00:00.000Z")
+          };
+        }
+      }
+    },
+    requireSuperadmin: async () => true
+  });
+  const handler = getFinalHandler(app, "/economic-calendar/preferences");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.version, 2);
+  assert.deepEqual(res.body?.impacts, ["high", "medium", "low"]);
+  assert.deepEqual(res.body?.currencies, ["USD", "EUR"]);
+});
+
+test("economic calendar preserves versioned user filter preferences", async () => {
+  const app = createFakeApp();
+  registerEconomicCalendarRoutes(app as any, {
+    db: {
+      globalSetting: {
+        async findUnique() {
+          return {
+            value: { version: 2, currencies: ["EUR"], impacts: ["medium", "low"] },
+            updatedAt: new Date("2026-08-01T00:00:00.000Z")
+          };
+        }
+      }
+    },
+    requireSuperadmin: async () => true
+  });
+  const handler = getFinalHandler(app, "/economic-calendar/preferences");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.version, 2);
+  assert.deepEqual(res.body?.impacts, ["medium", "low"]);
+  assert.deepEqual(res.body?.currencies, ["EUR"]);
+});

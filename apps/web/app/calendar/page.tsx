@@ -41,21 +41,17 @@ type NextSummary = {
 type CalendarPreferencesResponse = {
   currencies?: string[];
   impacts?: CalendarImpact[];
+  version?: number;
   updatedAt?: string | null;
 };
 
 const IMPACT_ORDER: CalendarImpact[] = ["high", "medium", "low"];
 const CALENDAR_CURRENCIES = [
   { code: "USD", flag: "🇺🇸" },
-  { code: "EUR", flag: "🇪🇺" },
-  { code: "GBP", flag: "🇬🇧" },
-  { code: "JPY", flag: "🇯🇵" },
-  { code: "CHF", flag: "🇨🇭" },
-  { code: "CAD", flag: "🇨🇦" },
-  { code: "AUD", flag: "🇦🇺" },
-  { code: "NZD", flag: "🇳🇿" },
-  { code: "CNY", flag: "🇨🇳" }
+  { code: "EUR", flag: "🇪🇺" }
 ] as const;
+const DEFAULT_CALENDAR_CURRENCIES = CALENDAR_CURRENCIES.map((entry) => entry.code);
+const DEFAULT_CALENDAR_IMPACTS: CalendarImpact[] = [...IMPACT_ORDER];
 
 function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
@@ -94,30 +90,60 @@ function impactClass(impact: CalendarImpact): string {
   return "calendarImpactBadgeLow";
 }
 
+function eventTime(event: EconomicEvent | null): number {
+  if (!event) return Number.POSITIVE_INFINITY;
+  const value = new Date(event.ts).getTime();
+  return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+}
+
+function mergeNextSummaries(summaries: NextSummary[]): NextSummary | null {
+  if (summaries.length === 0) return null;
+  const active = summaries
+    .filter((summary) => summary.blackoutActive && summary.activeWindow)
+    .sort((left, right) => eventTime(left.activeWindow?.event ?? null) - eventTime(right.activeWindow?.event ?? null))[0];
+  const next = summaries
+    .filter((summary) => summary.nextEvent)
+    .sort((left, right) => eventTime(left.nextEvent) - eventTime(right.nextEvent))[0];
+  const base = active ?? next ?? summaries[0];
+  const degraded = summaries.some((summary) => summary.degraded === true);
+  const degradedReason = summaries
+    .map((summary) => summary.degradedReason)
+    .find((reason): reason is string => Boolean(reason));
+  return {
+    ...base,
+    currency: active?.currency ?? next?.currency ?? summaries.map((summary) => summary.currency).join("/"),
+    blackoutActive: Boolean(active),
+    activeWindow: active?.activeWindow ?? null,
+    nextEvent: next?.nextEvent ?? null,
+    degraded,
+    degradedReason: degradedReason ?? null
+  };
+}
+
 function normalizeImpacts(raw: unknown): CalendarImpact[] {
-  if (!Array.isArray(raw)) return ["high"];
+  if (!Array.isArray(raw)) return [...DEFAULT_CALENDAR_IMPACTS];
   const parsed = raw
     .map((entry) => String(entry).trim().toLowerCase())
     .filter((entry): entry is CalendarImpact => (
       entry === "low" || entry === "medium" || entry === "high"
     ));
-  if (parsed.length === 0) return ["high"];
+  if (parsed.length === 0) return [...DEFAULT_CALENDAR_IMPACTS];
   return IMPACT_ORDER.filter((entry) => parsed.includes(entry));
 }
 
 function normalizeCurrencies(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return ["USD"];
+  if (!Array.isArray(raw)) return [...DEFAULT_CALENDAR_CURRENCIES];
   const parsed = raw
     .map((entry) => String(entry).trim().toUpperCase())
     .filter((entry) => /^[A-Z0-9]{2,10}$/.test(entry));
-  if (parsed.length === 0) return ["USD"];
+  if (parsed.length === 0) return [...DEFAULT_CALENDAR_CURRENCIES];
 
   const available: string[] = CALENDAR_CURRENCIES.map((entry) => entry.code);
   const merged = Array.from(new Set(parsed));
   const known = available.filter((code) => merged.includes(code));
   const unknown = merged.filter((code) => !available.includes(code));
   const ordered = [...known, ...unknown];
-  return ordered.length > 0 ? ordered : ["USD"];
+  return ordered.length > 0 ? ordered : [...DEFAULT_CALENDAR_CURRENCIES];
 }
 
 function dateRangeFromTab(tab: Exclude<CalendarDayTab, "custom">): { from: string; to: string } {
@@ -145,8 +171,8 @@ export default function CalendarPage() {
   const dateLocale = locale === "de" ? "de-DE" : "en-GB";
 
   const initialRange = useMemo(() => dateRangeFromTab("next3d"), []);
-  const [currencies, setCurrencies] = useState<string[]>(["USD"]);
-  const [impacts, setImpacts] = useState<CalendarImpact[]>(["high"]);
+  const [currencies, setCurrencies] = useState<string[]>([...DEFAULT_CALENDAR_CURRENCIES]);
+  const [impacts, setImpacts] = useState<CalendarImpact[]>([...DEFAULT_CALENDAR_IMPACTS]);
   const [dayTab, setDayTab] = useState<CalendarDayTab>("next3d");
   const [searchQuery, setSearchQuery] = useState("");
   const [from, setFrom] = useState(initialRange.from);
@@ -170,8 +196,6 @@ export default function CalendarPage() {
     if (sortedImpacts.includes("medium")) return "medium";
     return "low";
   }, [sortedImpacts]);
-
-  const summaryCurrency = selectedCurrencies[0] ?? "USD";
 
   function toggleCurrency(nextCurrency: string) {
     const normalized = nextCurrency.trim().toUpperCase();
@@ -219,17 +243,19 @@ export default function CalendarPage() {
     try {
       const impactList = sortedImpacts.join(",");
       const currencyList = selectedCurrencies.join(",");
-      const [eventsResp, nextResp] = await Promise.all([
+      const [eventsResp, nextResponses] = await Promise.all([
         apiGet<{ events: EconomicEvent[]; meta?: { limit?: number; truncated?: boolean; from?: string; to?: string } }>(
           `/economic-calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&impacts=${encodeURIComponent(impactList)}&currencies=${encodeURIComponent(currencyList)}&limit=500`
         ),
-        apiGet<NextSummary>(
-          `/economic-calendar/next?currency=${encodeURIComponent(summaryCurrency)}&impact=${summaryImpact}`
-        )
+        Promise.all(selectedCurrencies.map((currency) => (
+          apiGet<NextSummary>(
+            `/economic-calendar/next?currency=${encodeURIComponent(currency)}&impact=${summaryImpact}`
+          )
+        )))
       ]);
 
       setEvents(Array.isArray(eventsResp.events) ? eventsResp.events : []);
-      setNextSummary(nextResp);
+      setNextSummary(mergeNextSummaries(nextResponses));
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -359,6 +385,18 @@ export default function CalendarPage() {
           <label className="calendarFilterField calendarFilterFieldCurrency">
             <div className="calendarProFilterLabel">{t("filters.currency")}</div>
             <div className="calendarCurrencyToggleRow">
+              <button
+                type="button"
+                className={`badge calendarCurrencyToggle ${
+                  selectedCurrencies.length === CALENDAR_CURRENCIES.length
+                    ? "calendarProImpactToggleActive"
+                    : "calendarProImpactToggleInactive"
+                }`}
+                onClick={() => setCurrencies([...DEFAULT_CALENDAR_CURRENCIES])}
+                aria-pressed={selectedCurrencies.length === CALENDAR_CURRENCIES.length}
+              >
+                <span className="calendarCurrencyToggleCode">{t("filters.all")}</span>
+              </button>
               {CALENDAR_CURRENCIES.map((entry) => (
                 <button
                   key={entry.code}
@@ -381,6 +419,18 @@ export default function CalendarPage() {
           <label className="calendarFilterField">
             <div className="calendarProFilterLabel">{t("filters.impact")}</div>
             <div className="calendarImpactToggleRow">
+              <button
+                type="button"
+                className={`badge ${
+                  sortedImpacts.length === IMPACT_ORDER.length
+                    ? "calendarProImpactToggleActive"
+                    : "calendarProImpactToggleInactive"
+                }`}
+                onClick={() => setImpacts([...DEFAULT_CALENDAR_IMPACTS])}
+                aria-pressed={sortedImpacts.length === IMPACT_ORDER.length}
+              >
+                {t("filters.all")}
+              </button>
               {IMPACT_ORDER.map((entry) => {
                 const active = impacts.includes(entry);
                 return (

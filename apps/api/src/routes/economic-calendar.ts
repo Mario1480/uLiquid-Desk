@@ -11,8 +11,9 @@ import {
 
 const impactSchema = z.enum(["low", "medium", "high"]);
 const CALENDAR_PREFERENCES_KEY_PREFIX = "economic_calendar_preferences:";
-const DEFAULT_CALENDAR_CURRENCIES = ["USD"];
-const DEFAULT_CALENDAR_IMPACTS: ("low" | "medium" | "high")[] = ["high"];
+const CALENDAR_PREFERENCES_VERSION = 2;
+const DEFAULT_CALENDAR_CURRENCIES = ["USD", "EUR"];
+const DEFAULT_CALENDAR_IMPACTS: ("low" | "medium" | "high")[] = ["high", "medium", "low"];
 const CALENDAR_DEFAULT_LIMIT = 500;
 const CALENDAR_MAX_LIMIT = 1000;
 const CALENDAR_MAX_RANGE_DAYS = 31;
@@ -119,13 +120,22 @@ function normalizeCalendarCurrencies(raw: unknown): string[] {
 function parseStoredCalendarPreferences(value: unknown): {
   currencies: string[];
   impacts: ("low" | "medium" | "high")[];
+  version: number;
 } {
   const raw = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+  if (Number(raw.version) !== CALENDAR_PREFERENCES_VERSION) {
+    return {
+      currencies: [...DEFAULT_CALENDAR_CURRENCIES],
+      impacts: [...DEFAULT_CALENDAR_IMPACTS],
+      version: CALENDAR_PREFERENCES_VERSION
+    };
+  }
   return {
     currencies: normalizeCalendarCurrencies(raw.currencies),
-    impacts: normalizeCalendarImpacts(raw.impacts)
+    impacts: normalizeCalendarImpacts(raw.impacts),
+    version: CALENDAR_PREFERENCES_VERSION
   };
 }
 
@@ -229,7 +239,8 @@ export function registerEconomicCalendarRoutes(
         impacts:
           parsed.data.impacts !== undefined
             ? normalizeCalendarImpacts(parsed.data.impacts)
-            : current.impacts
+            : current.impacts,
+        version: CALENDAR_PREFERENCES_VERSION
       };
 
       const saved = await deps.db.globalSetting.upsert({

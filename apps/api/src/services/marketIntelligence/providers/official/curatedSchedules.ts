@@ -66,6 +66,7 @@ function usReleaseSeed(params: {
   scheduledAt: string;
   sourceName: string;
   sourceUrl: string;
+  importance?: "low" | "medium" | "high";
 }): CuratedSeed {
   return {
     sourceKey: `${params.key}:${params.period}`,
@@ -76,7 +77,7 @@ function usReleaseSeed(params: {
     category: params.category,
     title: params.title,
     scheduledAt: params.scheduledAt,
-    importance: "high",
+    importance: params.importance ?? "high",
     period: params.period,
     originalTimezone: "America/New_York",
     timeConfidence: "exact"
@@ -271,7 +272,8 @@ function weeklyInitialClaimsSeeds(from: Date, to: Date): CuratedSeed[] {
         period: occurrence,
         scheduledAt: zonedLocalTimeToUtc({ year, month, day, hour: 8, minute: 30 }, "America/New_York").toISOString(),
         sourceName: "U.S. Department of Labor",
-        sourceUrl: DOL_SOURCE
+        sourceUrl: DOL_SOURCE,
+        importance: "medium"
       }));
     }
     cursor.setUTCDate(cursor.getUTCDate() + 1);

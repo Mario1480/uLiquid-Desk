@@ -48,7 +48,10 @@ zeitabhängigen Rollout-Gates bleiben separat nachzuweisen.
 - [x] **3 – Offizieller Wirtschaftskalender:** Alle MVP-Events werden über
   BLS/Eurostat oder explizit kuratierte FOMC-, ECB-, BEA-, Census- und
   DOL-Schedules erzeugt. UTC, DST, stabile Event-Identitäten, BLS-Ausfallpfad
-  und getrennte Revisionen sind berücksichtigt.
+  und getrennte Revisionen sind berücksichtigt. Seit der Nachbesserung vom
+  13.08.2026 werden außerdem alle offiziellen Eurostat-Euroindikatoren als
+  High/Medium/Low übernommen; Kalender-Defaults und alte Präferenzen öffnen
+  USA und Eurozone mit allen Relevanzstufen.
 - [x] **4 – Data Service, Cache und API:** Interner Service, Postgres-Persistenz,
   Stale-Cache, Circuit Breaker, Refresh-Job und kompatible News-/Kalenderrouten
   sind implementiert.

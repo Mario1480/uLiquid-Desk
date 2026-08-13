@@ -570,8 +570,9 @@
   },
   "calendar": {
     "title": "Wirtschaftskalender",
-    "subtitle": "Makro-Events mit hoher Relevanz und Blackout-Status.",
+    "subtitle": "Makro-Events aus den USA und der Eurozone in allen Relevanzstufen mit Blackout-Status.",
     "filters": {
+      "all": "Alle",
       "currency": "Währung",
       "impact": "Auswirkung",
       "from": "Von",

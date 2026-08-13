@@ -13,6 +13,12 @@ type EurostatCalendarRecord = {
   preliminary?: unknown;
 };
 
+type EurostatEventKind = {
+  key: string;
+  category: string;
+  importance: "low" | "medium" | "high";
+};
+
 export function buildEurostatCalendarUrl(from: string, to: string): string {
   const url = new URL(EUROSTAT_CALENDAR_ENDPOINT);
   url.searchParams.set("start", from);
@@ -21,11 +27,37 @@ export function buildEurostatCalendarUrl(from: string, to: string): string {
   return url.toString();
 }
 
-function eventKind(record: EurostatCalendarRecord): "eu_cpi" | "eu_gdp" | null {
+function eventKind(record: EurostatCalendarRecord): EurostatEventKind {
   const text = `${String(record.title ?? "")} ${String(record.datasetCodes ?? "")}`.toLowerCase();
-  if (/inflation|hicp|consumer price/.test(text)) return "eu_cpi";
-  if (/\bgdp\b|gross domestic product|namq_10_gdp/.test(text)) return "eu_gdp";
-  return null;
+  if (/inflation|hicp|consumer price/.test(text)) {
+    return { key: "eu_cpi", category: "inflation", importance: "high" };
+  }
+  if (/\bgdp\b|gross domestic product|namq_10_gdp/.test(text)) {
+    return { key: "eu_gdp", category: "growth", importance: "high" };
+  }
+  if (/unemployment|employment/.test(text)) {
+    return { key: "eu_labor", category: "labor", importance: "medium" };
+  }
+  if (/industrial production|production in construction/.test(text)) {
+    return {
+      key: /construction/.test(text) ? "eu_construction" : "eu_industrial_production",
+      category: "production",
+      importance: /construction/.test(text) ? "low" : "medium"
+    };
+  }
+  if (/retail trade|retail sales/.test(text)) {
+    return { key: "eu_retail_trade", category: "consumption", importance: "medium" };
+  }
+  if (/international trade|trade in goods/.test(text)) {
+    return { key: "eu_international_trade", category: "trade", importance: "medium" };
+  }
+  if (/interest rate|bond yield/.test(text)) {
+    return { key: "eu_market_rates", category: "rates", importance: "low" };
+  }
+  if (/government (debt|deficit)|public debt/.test(text)) {
+    return { key: "eu_government_finance", category: "government_finance", importance: "medium" };
+  }
+  return { key: "eu_euro_indicator", category: "economic_release", importance: "low" };
 }
 
 export function parseEurostatCalendarJson(body: string, fetchedAt = new Date().toISOString()): EconomicEvent[] {
@@ -44,20 +76,20 @@ export function parseEurostatCalendarJson(body: string, fetchedAt = new Date().t
     const kind = eventKind(record);
     const recordId = String(record.recordid ?? "").trim();
     const scheduledAt = String(record.start ?? "").trim();
+    const title = String(record.title ?? "").trim().slice(0, 240);
     const timestamp = new Date(scheduledAt);
-    if (!kind || !recordId || !Number.isFinite(timestamp.getTime())) continue;
-    const isCpi = kind === "eu_cpi";
+    if (!recordId || !title || !Number.isFinite(timestamp.getTime())) continue;
     events.push({
-      id: stableHash(`eurostat|${recordId}|${kind}`).slice(0, 40),
+      id: stableHash(`eurostat|${recordId}|${kind.key}`).slice(0, 40),
       provider: "official",
       sourceName: "Eurostat",
       sourceUrl: EUROSTAT_CALENDAR_SOURCE,
       country: "EU",
       currency: "EUR",
-      category: isCpi ? "inflation" : "growth",
-      title: isCpi ? "Euro Area Consumer Price Index (CPI)" : "Euro Area Gross Domestic Product (GDP)",
+      category: kind.category,
+      title,
       scheduledAt: timestamp.toISOString(),
-      importance: "high",
+      importance: kind.importance,
       status: "scheduled",
       ...(record.period ? { period: String(record.period).slice(0, 120) } : {}),
       fetchedAt,

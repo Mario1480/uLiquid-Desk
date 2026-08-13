@@ -1,6 +1,6 @@
 # Market Intelligence: Provider Architecture and Operations
 
-Last updated: 2026-08-02
+Last updated: 2026-08-13
 
 ## Purpose
 
@@ -47,7 +47,7 @@ tool.
 | Ethereum Foundation Blog | Atom/RSS | Protocol, ecosystem and security updates | `approved`, reviewed 2026-08-12 |
 | Kraken Blog | RSS | Exchange, institutional and crypto-market updates | `approved`, reviewed 2026-08-12 |
 | U.S. BLS public release calendar | ICS plus curated official outage fallback | CPI, PPI and employment schedules | official public schedule |
-| Eurostat euro-indicator calendar | JSON | Euro-area CPI and GDP schedules | official public schedule |
+| Eurostat euro-indicator calendar | JSON | Euro-area inflation, GDP, labor, production, trade, rates and other euro-indicator schedules | official public schedule |
 | Federal Reserve FOMC calendar | curated official dates | FOMC schedules | official public schedule |
 | ECB Governing Council calendar | curated official dates | ECB decision schedules | official public schedule |
 | U.S. BEA release schedule | curated official dates | GDP, PCE and Core PCE schedules | official public schedule |
@@ -116,6 +116,7 @@ billing/provider configuration first.
 - `PUT /admin/market-intelligence/providers/:providerId`
 - `POST /admin/market-intelligence/refresh`
 - User UI: `/market-intelligence`
+- Economic Calendar UI: defaults to both supported regions (`USD`, `EUR`) and all impact levels, merges the next-event/blackout summary across selected regions, and migrates legacy single-region preferences once to preference version 2
 - Admin UI: `/admin/providers` (includes refresh and daily Telegram job status)
 - User notification UI: manual economic-calendar Telegram send plus the last successful delivery timestamp
 
@@ -136,6 +137,13 @@ not the scheduled timestamp. Corrected release times therefore update the same
 database row. Review the BEA, Census, FOMC and ECB date lists when those agencies
 publish a new annual schedule; emergency changes can be supplied through the
 server-only `ECONOMIC_CURATED_SCHEDULE_JSON` override.
+
+The active official-calendar MVP covers the United States and Euro Area. The
+UI only exposes `USD` and `EUR` until reviewed Bank of England, Bank of Japan,
+Canada, Australia or other national schedule adapters are implemented. Eurostat
+euro-indicator records are classified into high, medium and low importance;
+unknown official euro-indicator titles remain visible as low impact instead of
+being silently discarded.
 
 Before staging:
 

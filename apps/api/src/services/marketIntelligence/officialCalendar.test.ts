@@ -103,15 +103,18 @@ test("curated occurrence identity remains stable when a release time moves", () 
   }
 });
 
-test("Eurostat release calendar maps HICP and GDP with stable record identities", () => {
+test("Eurostat release calendar maps high, medium and low events with stable record identities", () => {
   const body = JSON.stringify([
     { recordid: "hicp-1", start: "2026-08-19T11:00Z", period: "July 2026", title: "Inflation (HICP)", datasetCodes: "prc_hicp_aind" },
     { recordid: "gdp-1", start: "2026-08-14T11:00Z", period: "Q2/2026", title: "Flash estimate GDP and employment - EU and euro area", datasetCodes: "namq_10_gdp" },
-    { recordid: "other-1", start: "2026-08-13T11:00Z", title: "Industrial production" }
+    { recordid: "industry-1", start: "2026-08-13T11:00Z", title: "Industrial production" },
+    { recordid: "rates-1", start: "2026-08-13T11:00Z", title: "Interest rates (3 months)" }
   ]);
   const events = parseEurostatCalendarJson(body, "2026-08-02T00:00:00.000Z");
-  assert.equal(events.length, 2);
-  assert.deepEqual(events.map((event) => event.category).sort(), ["growth", "inflation"]);
+  assert.equal(events.length, 4);
+  assert.deepEqual(new Set(events.map((event) => event.importance)), new Set(["high", "medium", "low"]));
+  assert.equal(events.find((event) => event.title === "Industrial production")?.category, "production");
+  assert.equal(events.find((event) => event.title === "Interest rates (3 months)")?.category, "rates");
   assert.ok(events.every((event) => event.sourceName === "Eurostat" && event.currency === "EUR"));
   assert.equal(
     parseEurostatCalendarJson(body, "2026-08-03T00:00:00.000Z").find((event) => event.category === "inflation")?.id,

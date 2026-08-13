@@ -110,7 +110,7 @@ export const ECONOMIC_EVENT_DEFINITIONS: EconomicEventDefinition[] = [
     country: "US",
     currency: "USD",
     category: "labor",
-    defaultImportance: "high",
+    defaultImportance: "medium",
     officialSource: "U.S. Department of Labor",
     scheduleStrategy: "curated_official_schedule",
     timezone: "America/New_York",

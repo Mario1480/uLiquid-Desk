@@ -570,8 +570,9 @@
   },
   "calendar": {
     "title": "Economic Calendar",
-    "subtitle": "High-impact macro events and blackout status.",
+    "subtitle": "U.S. and Euro Area macro events across all impact levels and blackout status.",
     "filters": {
+      "all": "All",
       "currency": "Currency",
       "impact": "Impact",
       "from": "From",
