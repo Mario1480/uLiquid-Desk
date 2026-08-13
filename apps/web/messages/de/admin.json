@@ -1026,6 +1026,30 @@
       "modelPlaceholder": "Modellname eingeben",
       "modelSave": "Modell speichern",
       "modelReset": "Modell zurücksetzen",
+      "modelRouting": {
+        "title": "OpenAI-Modellstufen",
+        "description": "Der Router wählt die Stufe automatisch. Hier legst du fest, welches OpenAI-Modell pro Stufe verwendet wird; neue Modellnamen können direkt eingegeben werden. Für neue Modelle muss vor der Aktivierung ein passender AI-Credits-Preis hinterlegt sein.",
+        "save": "Modellstufen speichern",
+        "reset": "Auf Standards zurücksetzen",
+        "classes": {
+          "utility": {
+            "title": "Utility",
+            "description": "Kurze Extraktionen, Titel, Tags und einfache Klassifikationen."
+          },
+          "standard": {
+            "title": "Standardanalyse",
+            "description": "Normale Chats und einfache Markt- oder Positionsanalysen."
+          },
+          "analysis": {
+            "title": "Erweiterte Analyse",
+            "description": "Mehrere Datenquellen, Portfolio- und Risikoanalysen."
+          },
+          "deep": {
+            "title": "Tiefenanalyse",
+            "description": "Komplexe Strategiearbeit und bestätigungspflichtige Deep-Workflows."
+          }
+        }
+      },
       "currentProvider": "Aktiver effektiver Provider",
       "currentBaseUrl": "Aktive effektive Base URL",
       "currentModel": "Aktiv verwendetes Modell",
@@ -1067,6 +1091,9 @@
       "aiModelRequired": "Bitte ein AI-Modell eingeben.",
       "aiModelSaved": "AI-Modell gespeichert.",
       "aiModelReset": "AI-Modell auf ENV/Standard-Fallback zurückgesetzt.",
+      "aiModelRoutingRequired": "Bitte für jede Modellstufe einen Modellnamen eingeben.",
+      "aiModelRoutingSaved": "OpenAI-Modellstufen gespeichert.",
+      "aiModelRoutingReset": "OpenAI-Modellstufen auf die Router-Standards zurückgesetzt.",
       "aiProviderSaved": "AI-Provider/Base-URL gespeichert.",
       "saladRuntimeSaved": "Salad-Runtime-Konfiguration gespeichert.",
       "saladRuntimeStarted": "Salad-Container Start ausgelöst.",

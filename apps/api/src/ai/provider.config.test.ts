@@ -68,6 +68,29 @@ test("parseStoredAiSettings prefers nested openai profile when active provider i
   assert.equal(settings.aiModel, "gpt-5.6-terra");
 });
 
+test("parseStoredAiSettings preserves configured OpenAI models per analysis tier", () => {
+  const settings = parseStoredAiSettings({
+    aiProvider: "openai",
+    aiProfiles: {
+      openai: {
+        aiModelRouting: {
+          utility: "gpt-next-utility",
+          standard: "gpt-next-standard",
+          analysis: "gpt-next-analysis",
+          deep: "gpt-next-deep"
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(settings.aiModelRouting, {
+    utility: "gpt-next-utility",
+    standard: "gpt-next-standard",
+    analysis: "gpt-next-analysis",
+    deep: "gpt-next-deep"
+  });
+});
+
 test("parseStoredAiSettings ignores nested vllm profile and fixes provider to OpenAI", () => {
   const settings = parseStoredAiSettings({
     aiProvider: "vllm",

@@ -37,7 +37,7 @@ test("conversation history excludes archived conversations", async () => {
 
 test("agent activity selects only JSON-safe fields", async () => {
   let query: any = null;
-  const activity = {
+  const storedActivity = {
     id: "run-1",
     status: "completed",
     provider: "openai",
@@ -45,12 +45,18 @@ test("agent activity selects only JSON-safe fields", async () => {
     latencyMs: 1234,
     toolCalls: []
   };
+  const publicActivity = {
+    id: storedActivity.id,
+    status: storedActivity.status,
+    latencyMs: storedActivity.latencyMs,
+    toolCalls: storedActivity.toolCalls
+  };
   const service = new AgentChatService({
     db: {
       aiAgentRun: {
         findFirst: async (value: unknown) => {
           query = value;
-          return activity;
+          return publicActivity;
         }
       }
     },
@@ -62,9 +68,11 @@ test("agent activity selects only JSON-safe fields", async () => {
 
   const result = await service.getActivity({ id: "user-1", email: "admin@example.com" }, "run-1");
 
-  assert.deepEqual(result, activity);
+  assert.deepEqual(result, publicActivity);
   assert.deepEqual(query.where, { id: "run-1", userId: "user-1" });
   assert.equal(query.include, undefined);
-  assert.deepEqual(Object.keys(query.select).sort(), ["id", "latencyMs", "model", "provider", "status", "toolCalls"]);
+  assert.deepEqual(Object.keys(query.select).sort(), ["id", "latencyMs", "status", "toolCalls"]);
+  assert.equal("model" in result, false);
+  assert.equal("provider" in result, false);
   assert.doesNotThrow(() => JSON.stringify(result));
 });

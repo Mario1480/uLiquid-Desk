@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../../auth.js";
 import { estimateAiRunReservation, getAiCreditSummary } from "./creditService.js";
 import { routeOpenAiModel } from "./modelRouter.js";
+import { resolveOpenAiModelRoutingWithSource } from "../provider.js";
 
 const estimateSchema = z.object({
   scope: z.string().trim().min(1).max(120),
@@ -22,7 +23,7 @@ const limitsSchema = z.object({
 }).strict();
 
 const pricingSchema = z.object({
-  model: z.enum(["gpt-5-nano", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]),
+  model: z.string().trim().min(1).max(120),
   inputMicrousdPerMillion: z.string().regex(/^\d+$/),
   cachedInputMicrousdPerMillion: z.string().regex(/^\d+$/),
   cacheWriteMicrousdPerMillion: z.string().regex(/^\d+$/).nullable().default(null),
@@ -125,6 +126,7 @@ export function registerAiCreditRoutes(app: Express, deps: {
   app.post("/api/ai/runs/estimate", requireAuth, async (req, res) => {
     const parsed = estimateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    const configuredModelRouting = await resolveOpenAiModelRoutingWithSource();
     const routing = routeOpenAiModel({
       scope: parsed.data.scope,
       profile: parsed.data.profile,
@@ -134,7 +136,7 @@ export function registerAiCreditRoutes(app: Express, deps: {
       createsTradingDraft: parsed.data.createsTradingDraft,
       expectedInputTokens: parsed.data.expectedInputTokens,
       allowDeep: process.env.AI_DEEP_ANALYSIS_ENABLED === "true"
-    });
+    }, configuredModelRouting.models);
     const estimate = await estimateAiRunReservation({
       database: deps.db,
       routing,

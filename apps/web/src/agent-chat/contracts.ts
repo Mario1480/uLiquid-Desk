@@ -69,14 +69,12 @@ export type AgentChatResponse = {
   content: string;
   blocks: AgentUiBlock[];
   citations: AgentSourceRef[];
-  run: { id: string; provider: string | null; model: string | null; modelClass: string; toolIterations: number; toolCalls: number; latencyMs: number; degraded: boolean; chargedCredits: string; remainingCredits: string | null; skillCategories: AgentSkill["category"][] };
+  run: { id: string; modelClass: string; toolIterations: number; toolCalls: number; latencyMs: number; degraded: boolean; chargedCredits: string; remainingCredits: string | null; skillCategories: AgentSkill["category"][] };
 };
 
 export type AgentActivity = {
   id: string;
   status: string;
-  provider: string | null;
-  model: string | null;
   latencyMs: number | null;
   toolCalls: Array<{ id: string; toolName: string; status: "loading" | "success" | "degraded" | "failed" | "blocked"; venue: string | null; durationMs: number | null; resultSummary?: { observedAt?: string; stale?: boolean; degraded?: boolean; fallbackUsed?: boolean } | null }>;
 };

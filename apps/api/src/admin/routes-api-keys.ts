@@ -5,6 +5,12 @@ import { logger } from "../logger.js";
 
 const openAiModelSchema = z.enum(["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano"]);
 const aiProviderSchema = z.enum(["openai", "ollama", "vllm", "disabled"]);
+const aiModelRoutingSchema = z.object({
+  utility: z.string().trim().min(1).max(120),
+  standard: z.string().trim().min(1).max(120),
+  analysis: z.string().trim().min(1).max(120),
+  deep: z.string().trim().min(1).max(120)
+}).strict();
 
 const adminApiKeysSchema = z.object({
   aiProvider: aiProviderSchema.optional(),
@@ -20,6 +26,8 @@ const adminApiKeysSchema = z.object({
   clearFmpApiKey: z.boolean().default(false),
   openaiModel: openAiModelSchema.optional(),
   clearOpenaiModel: z.boolean().default(false),
+  openaiModelRouting: aiModelRoutingSchema.optional(),
+  clearOpenaiModelRouting: z.boolean().default(false),
   saladApiBaseUrl: z.string().trim().min(8).max(500).optional(),
   clearSaladApiBaseUrl: z.boolean().default(false),
   saladOrganization: z.string().trim().min(1).max(191).optional(),
@@ -36,6 +44,8 @@ const adminApiKeysSchema = z.object({
     Boolean(value.fmpApiKey) ||
     value.clearOpenaiModel ||
     Boolean(value.openaiModel) ||
+    value.clearOpenaiModelRouting ||
+    Boolean(value.openaiModelRouting) ||
     value.clearAiApiKey ||
     Boolean(value.aiApiKey) ||
     value.clearAiModel ||
@@ -93,6 +103,7 @@ export type RegisterAdminApiKeyRoutesDeps = {
   resolveEffectiveAiProvider(settings: any): { provider: string; source: string };
   resolveEffectiveAiBaseUrl(settings: any): { baseUrl: string; source: string };
   resolveEffectiveAiModel(settings: any): { model: string; source: string };
+  resolveEffectiveAiModelRouting(settings: any): { models: Record<string, string>; sources: Record<string, string> };
   resolveEffectiveAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveOllamaProfileAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveAiProfileApiKey(settings: any, provider?: string | null): { apiKey: string | null; source: string; decryptError: boolean };
@@ -108,6 +119,7 @@ export type RegisterAdminApiKeyRoutesDeps = {
   startSaladContainer(config: any, apiKey: string): Promise<any>;
   stopSaladContainer(config: any, apiKey: string): Promise<any>;
   OPENAI_ADMIN_MODEL_OPTIONS: readonly string[];
+  DEFAULT_AI_MODEL_ROUTING: Record<string, string>;
   AI_PROVIDER_OPTIONS: readonly string[];
 };
 
@@ -124,6 +136,7 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     const effectiveProvider = deps.resolveEffectiveAiProvider(settings);
     const effectiveBaseUrl = deps.resolveEffectiveAiBaseUrl(settings);
     const effectiveModel = deps.resolveEffectiveAiModel(settings);
+    const effectiveModelRouting = deps.resolveEffectiveAiModelRouting(settings);
 
     return res.json({
       ...deps.toPublicApiKeysSettings(settings),
@@ -138,6 +151,9 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       effectiveAiModelSource: effectiveModel.source,
       effectiveOpenaiModel: effectiveModel.model,
       effectiveOpenaiModelSource: effectiveModel.source,
+      effectiveOpenaiModelRouting: effectiveModelRouting.models,
+      effectiveOpenaiModelRoutingSources: effectiveModelRouting.sources,
+      defaultOpenaiModelRouting: deps.DEFAULT_AI_MODEL_ROUTING,
       modelOptions: [...deps.OPENAI_ADMIN_MODEL_OPTIONS],
       providerOptions: ["openai"]
     });
@@ -245,6 +261,11 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     if (openAiModelSpecified) {
       nextProfiles.openai.aiModel = parsed.data.clearOpenaiModel ? null : (parsed.data.openaiModel?.trim() || null);
     }
+    if (parsed.data.clearOpenaiModelRouting || parsed.data.openaiModelRouting) {
+      nextProfiles.openai.aiModelRouting = parsed.data.clearOpenaiModelRouting
+        ? {}
+        : { ...parsed.data.openaiModelRouting };
+    }
     const saladRuntimeSpecified = parsed.data.clearSaladApiBaseUrl || parsed.data.saladApiBaseUrl !== undefined || parsed.data.clearSaladOrganization || parsed.data.saladOrganization !== undefined || parsed.data.clearSaladProject || parsed.data.saladProject !== undefined || parsed.data.clearSaladContainer || parsed.data.saladContainer !== undefined;
     if (saladRuntimeSpecified) {
       const currentSaladProviderForProfile = currentProviderForProfile === "vllm" ? "vllm" : "ollama";
@@ -277,6 +298,7 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     const effectiveProvider = deps.resolveEffectiveAiProvider(settings);
     const effectiveBaseUrl = deps.resolveEffectiveAiBaseUrl(settings);
     const effectiveModel = deps.resolveEffectiveAiModel(settings);
+    const effectiveModelRouting = deps.resolveEffectiveAiModelRouting(settings);
     deps.invalidateAiApiKeyCache();
     deps.invalidateAiModelCache();
 
@@ -293,6 +315,9 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       effectiveAiModelSource: effectiveModel.source,
       effectiveOpenaiModel: effectiveModel.model,
       effectiveOpenaiModelSource: effectiveModel.source,
+      effectiveOpenaiModelRouting: effectiveModelRouting.models,
+      effectiveOpenaiModelRoutingSources: effectiveModelRouting.sources,
+      defaultOpenaiModelRouting: deps.DEFAULT_AI_MODEL_ROUTING,
       modelOptions: [...deps.OPENAI_ADMIN_MODEL_OPTIONS],
       providerOptions: [...deps.AI_PROVIDER_OPTIONS, "disabled"]
     });

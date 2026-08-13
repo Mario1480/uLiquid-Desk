@@ -57,4 +57,6 @@ test("router keeps simple chat on Luna, complex analysis on Terra and gated deep
   assert.equal(routeOpenAiModel({ ...base, requestedSymbols: 2 }).model, "gpt-5.6-terra");
   assert.equal(routeOpenAiModel({ ...base, profile: "prediction_builder", scope: "strategy_generate", allowDeep: false }).model, "gpt-5.6-terra");
   assert.equal(routeOpenAiModel({ ...base, profile: "prediction_builder", scope: "strategy_generate", allowDeep: true }).model, "gpt-5.6-sol");
+  assert.equal(routeOpenAiModel(base, { standard: "gpt-next-standard" }).model, "gpt-next-standard");
+  assert.equal(routeOpenAiModel({ ...base, requestedSymbols: 2 }, { analysis: "gpt-next-analysis" }).model, "gpt-next-analysis");
 });

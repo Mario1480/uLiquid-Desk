@@ -1109,6 +1109,41 @@
   font-size: 12px;
   color: var(--muted);
 }
+
+.adminAiModelRouting {
+  margin: 16px 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.adminAiModelRouting .settingsSectionHeader {
+  margin-bottom: 12px;
+}
+
+.adminAiModelRouting .settingsSectionHeader h4,
+.adminAiModelRouting .settingsSectionHeader p {
+  margin: 0;
+}
+
+.adminAiModelRouting .settingsSectionHeader p,
+.adminAiModelRouting .settingsField small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.adminAiModelRoutingLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.adminAiModelRoutingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
 .settingsAccountList {
   display: grid;
   gap: 8px;

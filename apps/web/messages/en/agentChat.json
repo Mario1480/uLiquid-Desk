@@ -79,7 +79,25 @@
   "skills": {
     "button": "Skills ({count})",
     "title": "Skills & permissions",
-    "enabled": "Enabled skills",
+    "enabled": "Active analysis tools",
+    "names": {
+      "market_get_ohlcv": "Price History",
+      "market_get_indicators": "Technical Indicators",
+      "market_get_ticker": "Live Market Price",
+      "market_get_orderbook": "Order Book",
+      "market_get_funding_rate": "Funding Rate",
+      "market_get_open_interest": "Open Interest",
+      "market_get_contract_info": "Contract Details",
+      "intelligence_get_news": "Market News",
+      "intelligence_get_economic_events": "Economic Events",
+      "predictions_get_recent": "Recent Predictions",
+      "predictions_get_performance_summary": "Prediction Performance",
+      "portfolio_get_positions": "Open Positions",
+      "portfolio_get_balance_summary": "Balance & Margin",
+      "portfolio_get_open_orders": "Open Orders",
+      "risk_analyze_portfolio": "Portfolio Risk Analysis",
+      "risk_analyze_position_snapshot": "Position Risk Analysis"
+    },
     "categoryDescriptions": {
       "market": "Reads normalized public market data.",
       "intelligence": "Reads approved news and event sources.",
@@ -91,10 +109,10 @@
   },
   "permissions": {
     "title": "Permissions",
-    "actionLevel": "Action level",
-    "accounts": "Available accounts",
-    "execution": "Execution",
-    "executionNone": "None",
+    "actionLevel": "Data access",
+    "accounts": "Authorized accounts",
+    "execution": "Trading actions",
+    "executionNone": "Disabled",
     "notice": "The agent can analyze data only. It cannot place orders, change positions, transfer funds, or modify automation."
   },
   "activity": {
@@ -102,7 +120,8 @@
     "running": "The agent is checking approved sources…",
     "empty": "Tool calls and sources will appear here.",
     "internal": "uLiquid service",
-    "fallback": "fallback marked"
+    "fallback": "fallback marked",
+    "completed": "Analysis completed"
   },
   "composer": {
     "placeholder": "Ask about a market, prediction, event, or selected position…",

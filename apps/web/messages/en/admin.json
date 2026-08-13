@@ -1026,6 +1026,30 @@
       "modelPlaceholder": "Enter model name",
       "modelSave": "Save model",
       "modelReset": "Reset model",
+      "modelRouting": {
+        "title": "OpenAI model tiers",
+        "description": "The router selects the tier automatically. Configure the OpenAI model used by each tier here; new model names can be entered directly. Before activation, new models need a matching AI Credits pricing entry.",
+        "save": "Save model tiers",
+        "reset": "Reset to defaults",
+        "classes": {
+          "utility": {
+            "title": "Utility",
+            "description": "Short extractions, titles, tags, and simple classifications."
+          },
+          "standard": {
+            "title": "Standard analysis",
+            "description": "Regular chats and simple market or position analysis."
+          },
+          "analysis": {
+            "title": "Advanced analysis",
+            "description": "Multiple data sources, portfolio, and risk analysis."
+          },
+          "deep": {
+            "title": "Deep analysis",
+            "description": "Complex strategy work and confirmation-gated deep workflows."
+          }
+        }
+      },
       "currentProvider": "Current effective provider",
       "currentBaseUrl": "Current effective base URL",
       "currentModel": "Current effective model",
@@ -1067,6 +1091,9 @@
       "aiModelRequired": "Please enter an AI model.",
       "aiModelSaved": "AI model saved.",
       "aiModelReset": "AI model reset to ENV/default fallback.",
+      "aiModelRoutingRequired": "Enter a model name for every model tier.",
+      "aiModelRoutingSaved": "OpenAI model tiers saved.",
+      "aiModelRoutingReset": "OpenAI model tiers reset to the router defaults.",
       "aiProviderSaved": "AI provider/base URL saved.",
       "saladRuntimeSaved": "Salad runtime configuration saved.",
       "saladRuntimeStarted": "Salad container start requested.",

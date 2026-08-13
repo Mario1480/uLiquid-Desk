@@ -170,6 +170,12 @@ import {
   type OpenAiAdminModel
 } from "./ai/provider.js";
 import {
+  DEFAULT_AI_MODEL_ROUTING,
+  normalizeAiModelRouting,
+  type AiModelClass,
+  type AiModelRouting
+} from "./ai/credits/modelRouter.js";
+import {
   getSaladRuntimeStatus,
   resolveSaladRuntimeConfig,
   startSaladContainer,
@@ -3437,6 +3443,7 @@ type StoredAiProviderProfile = {
   aiApiKeyEnc: string | null;
   aiBaseUrl: string | null;
   aiModel: string | null;
+  aiModelRouting: Partial<AiModelRouting>;
   saladRuntime: StoredSaladRuntimeSettings;
 };
 
@@ -3510,6 +3517,7 @@ function emptyAiProviderProfile(): StoredAiProviderProfile {
     aiApiKeyEnc: null,
     aiBaseUrl: null,
     aiModel: null,
+    aiModelRouting: {},
     saladRuntime: emptySaladRuntimeSettings()
   };
 }
@@ -3564,11 +3572,18 @@ function parseStoredAiProviderProfile(value: unknown): StoredAiProviderProfile {
     typeof record.aiModel === "string" && record.aiModel.trim()
       ? record.aiModel.trim()
       : null;
+  const aiModelRoutingRecord = parseJsonObject(record.aiModelRouting);
+  const aiModelRouting: Partial<AiModelRouting> = {};
+  for (const modelClass of ["utility", "standard", "analysis", "deep"] as const) {
+    const model = typeof aiModelRoutingRecord[modelClass] === "string" ? aiModelRoutingRecord[modelClass].trim() : "";
+    if (model) aiModelRouting[modelClass] = model.slice(0, 120);
+  }
   const saladRuntime = parseStoredSaladRuntimeSettings(record.saladRuntime);
   return {
     aiApiKeyEnc,
     aiBaseUrl,
     aiModel,
+    aiModelRouting,
     saladRuntime
   };
 }
@@ -3668,6 +3683,7 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
       parsedOpenAiProfile.aiModel
       ?? openaiModelFromLegacy
       ?? (activeLegacyProvider === "openai" ? aiModel : null),
+    aiModelRouting: parsedOpenAiProfile.aiModelRouting,
     saladRuntime: parsedOpenAiProfile.saladRuntime
   };
   const ollamaProfile: StoredAiProviderProfile = {
@@ -3680,6 +3696,7 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
     aiModel:
       parsedOllamaProfile.aiModel
       ?? (activeLegacyProvider === "ollama" ? aiModel : null),
+    aiModelRouting: {},
     saladRuntime: parsedOllamaProfile.saladRuntime
   };
   const vllmProfile: StoredAiProviderProfile = {
@@ -3692,6 +3709,7 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
     aiModel:
       parsedVllmProfile.aiModel
       ?? (activeLegacyProvider === "vllm" ? aiModel : null),
+    aiModelRouting: {},
     saladRuntime: parsedVllmProfile.saladRuntime
   };
   const effectiveProviderForTopLevel = normalizeProviderForProfile(aiProvider);
@@ -3825,6 +3843,7 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
       openai: {
         aiBaseUrl: openaiProfile.aiBaseUrl,
         aiModel: openaiProfile.aiModel,
+        aiModelRouting: openaiProfile.aiModelRouting,
         aiApiKeyMasked: openAiApiKeyMasked,
         hasAiApiKey: Boolean(openaiProfile.aiApiKeyEnc ?? value.openaiApiKeyEnc),
         saladRuntime: {
@@ -3837,6 +3856,7 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
       ollama: {
         aiBaseUrl: ollamaProfile.aiBaseUrl,
         aiModel: ollamaProfile.aiModel,
+        aiModelRouting: {},
         aiApiKeyMasked: maskEncrypted(ollamaProfile.aiApiKeyEnc),
         hasAiApiKey: Boolean(ollamaProfile.aiApiKeyEnc),
         saladRuntime: {
@@ -3849,6 +3869,7 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
       vllm: {
         aiBaseUrl: vllmProfile.aiBaseUrl,
         aiModel: vllmProfile.aiModel,
+        aiModelRouting: {},
         aiApiKeyMasked: maskEncrypted(vllmProfile.aiApiKeyEnc),
         hasAiApiKey: Boolean(vllmProfile.aiApiKeyEnc),
         saladRuntime: {
@@ -3919,6 +3940,22 @@ function resolveEffectiveAiModel(settings: StoredApiKeysSettings): {
   return {
     model: resolved.model,
     source: resolved.source
+  };
+}
+
+function resolveEffectiveAiModelRouting(settings: StoredApiKeysSettings): {
+  models: AiModelRouting;
+  sources: Record<AiModelClass, "db" | "default">;
+} {
+  const configured = settings.aiProfiles.openai.aiModelRouting;
+  return {
+    models: normalizeAiModelRouting(configured),
+    sources: {
+      utility: configured.utility ? "db" : "default",
+      standard: configured.standard ? "db" : "default",
+      analysis: configured.analysis ? "db" : "default",
+      deep: configured.deep ? "db" : "default"
+    }
   };
 }
 
@@ -12255,6 +12292,7 @@ registerAdminApiKeyRoutes(app, {
   resolveEffectiveAiProvider,
   resolveEffectiveAiBaseUrl,
   resolveEffectiveAiModel,
+  resolveEffectiveAiModelRouting,
   resolveEffectiveAiApiKey,
   resolveOllamaProfileAiApiKey,
   resolveAiProfileApiKey,
@@ -12270,6 +12308,7 @@ registerAdminApiKeyRoutes(app, {
   startSaladContainer,
   stopSaladContainer,
   OPENAI_ADMIN_MODEL_OPTIONS,
+  DEFAULT_AI_MODEL_ROUTING,
   AI_PROVIDER_OPTIONS
 });
 

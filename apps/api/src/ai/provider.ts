@@ -12,7 +12,14 @@ import {
   reserveAiCredits,
   settleAiRun
 } from "./credits/creditService.js";
-import { routeOpenAiModel, type AiRoutingDecision, type AiRoutingProfile } from "./credits/modelRouter.js";
+import {
+  normalizeAiModelRouting,
+  routeOpenAiModel,
+  type AiModelClass,
+  type AiModelRouting,
+  type AiRoutingDecision,
+  type AiRoutingProfile
+} from "./credits/modelRouter.js";
 import { callOpenAiResponses } from "./credits/responsesProvider.js";
 import type { AiTokenUsage } from "./credits/pricing.js";
 
@@ -126,13 +133,26 @@ type DbAiSettings = {
   aiModel: string | null;
   aiProvider: AiProvider | null;
   aiBaseUrl: string | null;
+  aiModelRouting: Partial<AiModelRouting>;
 };
 
 type StoredAiProviderSnapshot = {
   aiApiKey: string | null;
   aiModel: string | null;
   aiBaseUrl: string | null;
+  aiModelRouting: Partial<AiModelRouting>;
 };
+
+function parseStoredAiModelRouting(value: unknown): Partial<AiModelRouting> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const result: Partial<AiModelRouting> = {};
+  for (const modelClass of ["utility", "standard", "analysis", "deep"] as const) {
+    const model = typeof record[modelClass] === "string" ? record[modelClass].trim() : "";
+    if (model) result[modelClass] = model.slice(0, 120);
+  }
+  return result;
+}
 
 export type CallAiOptions = {
   systemMessage?: string;
@@ -389,7 +409,8 @@ function parseStoredAiProviderSnapshot(value: unknown): StoredAiProviderSnapshot
     return {
       aiApiKey: null,
       aiModel: null,
-      aiBaseUrl: null
+      aiBaseUrl: null,
+      aiModelRouting: {}
     };
   }
 
@@ -401,7 +422,8 @@ function parseStoredAiProviderSnapshot(value: unknown): StoredAiProviderSnapshot
     aiModel:
       toNonEmptyString(record.aiModel)
       ?? toNonEmptyString(record.openaiModel),
-    aiBaseUrl: toNonEmptyString(record.aiBaseUrl)
+    aiBaseUrl: toNonEmptyString(record.aiBaseUrl),
+    aiModelRouting: parseStoredAiModelRouting(record.aiModelRouting)
   };
 }
 
@@ -411,7 +433,8 @@ export function parseStoredAiSettings(value: unknown): DbAiSettings {
       aiApiKey: null,
       aiModel: null,
       aiProvider: null,
-      aiBaseUrl: null
+      aiBaseUrl: null,
+      aiModelRouting: {}
     };
   }
 
@@ -444,7 +467,8 @@ export function parseStoredAiSettings(value: unknown): DbAiSettings {
     aiApiKey: selectedProfile.aiApiKey,
     aiModel: selectedProfile.aiModel,
     aiProvider: aiProvider === "disabled" ? "disabled" : "openai",
-    aiBaseUrl: selectedProfile.aiBaseUrl
+    aiBaseUrl: selectedProfile.aiBaseUrl,
+    aiModelRouting: openaiProfile.aiModelRouting
   };
 }
 
@@ -474,7 +498,8 @@ async function resolveDbAiSettings(): Promise<DbAiSettings> {
           aiApiKey: null,
           aiModel: null,
           aiProvider: null,
-          aiBaseUrl: null
+          aiBaseUrl: null,
+          aiModelRouting: {}
         } satisfies DbAiSettings;
       } finally {
         dbAiSettingsInFlight = null;
@@ -547,6 +572,23 @@ export async function resolveAiModelWithSource(): Promise<{
 export async function getAiModelAsync(): Promise<string> {
   const resolved = await resolveAiModelWithSource();
   return resolved.model;
+}
+
+export async function resolveOpenAiModelRoutingWithSource(): Promise<{
+  models: AiModelRouting;
+  sources: Record<AiModelClass, "db" | "default">;
+}> {
+  const dbSettings = await resolveDbAiSettings();
+  const models = normalizeAiModelRouting(dbSettings.aiModelRouting);
+  return {
+    models,
+    sources: {
+      utility: dbSettings.aiModelRouting.utility ? "db" : "default",
+      standard: dbSettings.aiModelRouting.standard ? "db" : "default",
+      analysis: dbSettings.aiModelRouting.analysis ? "db" : "default",
+      deep: dbSettings.aiModelRouting.deep ? "db" : "default"
+    }
+  };
 }
 
 export function getAiModel(): string {
@@ -924,6 +966,7 @@ export async function callAiChat(
       ? options.billingUserId.trim()
       : null;
   const billingScope = options.billingScope?.trim() || "ai_call";
+  const configuredModelRouting = await resolveOpenAiModelRoutingWithSource();
   const routing = options.aiRunContext?.routing ?? routeOpenAiModel({
     scope: billingScope,
     profile: routingProfileForScope(billingScope),
@@ -933,7 +976,7 @@ export async function callAiChat(
     createsTradingDraft: /trade|order|draft/i.test(billingScope),
     expectedInputTokens: expectedInputTokens(messages),
     allowDeep: process.env.AI_DEEP_ANALYSIS_ENABLED === "true"
-  });
+  }, configuredModelRouting.models);
   const model = routing.model;
   const billingEnabled = Boolean(billingUserId && await isAiCreditBillingEnabledForDatabase(db));
   const runId = options.aiRunContext?.runId ?? (billingEnabled ? randomUUID() : null);

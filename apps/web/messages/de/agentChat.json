@@ -79,7 +79,25 @@
   "skills": {
     "button": "Skills ({count})",
     "title": "Skills & Berechtigungen",
-    "enabled": "Aktive Skills",
+    "enabled": "Aktive Analysefunktionen",
+    "names": {
+      "market_get_ohlcv": "Kursverlauf",
+      "market_get_indicators": "Technische Indikatoren",
+      "market_get_ticker": "Aktueller Marktpreis",
+      "market_get_orderbook": "Orderbuch",
+      "market_get_funding_rate": "Funding Rate",
+      "market_get_open_interest": "Open Interest",
+      "market_get_contract_info": "Kontraktdetails",
+      "intelligence_get_news": "Marktnachrichten",
+      "intelligence_get_economic_events": "Wirtschaftstermine",
+      "predictions_get_recent": "Aktuelle Prognosen",
+      "predictions_get_performance_summary": "Prognose-Performance",
+      "portfolio_get_positions": "Offene Positionen",
+      "portfolio_get_balance_summary": "Kontostand & Margin",
+      "portfolio_get_open_orders": "Offene Orders",
+      "risk_analyze_portfolio": "Portfolio-Risikoanalyse",
+      "risk_analyze_position_snapshot": "Positions-Risikoanalyse"
+    },
     "categoryDescriptions": {
       "market": "Liest normalisierte öffentliche Marktdaten.",
       "intelligence": "Liest freigegebene Nachrichten- und Terminquellen.",
@@ -91,10 +109,10 @@
   },
   "permissions": {
     "title": "Berechtigungen",
-    "actionLevel": "Aktionsstufe",
-    "accounts": "Verfügbare Accounts",
-    "execution": "Ausführung",
-    "executionNone": "Keine",
+    "actionLevel": "Datenzugriff",
+    "accounts": "Freigegebene Accounts",
+    "execution": "Handelsaktionen",
+    "executionNone": "Deaktiviert",
     "notice": "Der Agent darf Daten nur analysieren. Er kann keine Orders platzieren, Positionen ändern, Geld übertragen oder Automationen konfigurieren."
   },
   "activity": {
@@ -102,7 +120,8 @@
     "running": "Der Agent prüft freigegebene Quellen…",
     "empty": "Tool-Aufrufe und Quellen erscheinen hier.",
     "internal": "uLiquid Service",
-    "fallback": "Fallback markiert"
+    "fallback": "Fallback markiert",
+    "completed": "Analyse abgeschlossen"
   },
   "composer": {
     "placeholder": "Frage nach einem Markt, einer Prediction, einem Termin oder der ausgewählten Position…",

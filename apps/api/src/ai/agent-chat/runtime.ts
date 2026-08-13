@@ -1,4 +1,4 @@
-import type { AiChatResult, CallAiChatOptions, ChatMessage } from "../provider.js";
+import { resolveOpenAiModelRoutingWithSource, type AiChatResult, type CallAiChatOptions, type ChatMessage } from "../provider.js";
 import {
   estimateAiRunReservation,
   isAiCreditBillingEnabledForDatabase,
@@ -142,6 +142,7 @@ function sourceRefsForTool(toolId: string, result: any): AgentSourceRef[] {
 export async function runAgentChat(params: RunAgentChatParams): Promise<AgentChatResponse> {
   const startedAt = Date.now();
   const scope: AiAgentScope = params.profile.actionLevel === "account_read" ? "agent_position" : "agent_market";
+  const configuredModelRouting = await resolveOpenAiModelRoutingWithSource();
   const expectedInputTokens = Math.max(
     1_000,
     Math.ceil((params.userMessage.length + params.history.reduce((sum, row) => sum + row.content.length, 0)) / 4) + 2_000
@@ -155,7 +156,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
     createsTradingDraft: false,
     expectedInputTokens,
     allowDeep: process.env.AI_DEEP_ANALYSIS_ENABLED === "true"
-  });
+  }, configuredModelRouting.models);
   const billingEnabled = await isAiCreditBillingEnabledForDatabase(params.db);
   const estimate = billingEnabled
     ? await estimateAiRunReservation({ database: params.db, routing, expectedInputTokens })
@@ -373,7 +374,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
       params.db.aiAgentConversation.update({ where: { id: params.conversation.id }, data: { lastMessageAt: new Date() } }),
       params.db.aiTraceLog.create({ data: { agentRunId: run.id, userId: params.userId, scope: "agent_chat", provider, model, symbol: params.conversation.symbol, marketType: executionContext.marketType, userPayload: { conversationId: params.conversation.id, profileKey: params.profile.baseProfileKey }, parsedResponse: { runId: run.id, toolCalls, degraded, citationCount: citations.length }, success: true, fallbackUsed: citations.some((source) => source.degraded), latencyMs } }).catch(() => undefined)
     ]);
-    return { messageId: assistantMessage.id, content: answer.content, blocks, citations, run: { id: run.id, provider, model, modelClass: routing.modelClass, toolIterations, toolCalls, latencyMs, degraded, chargedCredits: chargedCredits.toString(), remainingCredits: remainingCredits?.toString() ?? null, skillCategories: [...usedSkillCategories] } };
+    return { messageId: assistantMessage.id, content: answer.content, blocks, citations, run: { id: run.id, modelClass: routing.modelClass, toolIterations, toolCalls, latencyMs, degraded, chargedCredits: chargedCredits.toString(), remainingCredits: remainingCredits?.toString() ?? null, skillCategories: [...usedSkillCategories] } };
   } catch (error) {
     const normalized = toAgentChatError(error);
     const latencyMs = Date.now() - startedAt;

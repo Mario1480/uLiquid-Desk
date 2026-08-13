@@ -178,8 +178,6 @@ export class AgentChatService {
         citations: existingMessage.sourceRefs ?? [],
         run: {
           id: existingRun.id,
-          provider: existingRun.provider,
-          model: existingRun.model,
           modelClass: existingRun.modelClass ?? "standard",
           toolIterations: existingRun.toolIterations,
           toolCalls: existingRun.toolCallCount,
@@ -215,8 +213,6 @@ export class AgentChatService {
       select: {
         id: true,
         status: true,
-        provider: true,
-        model: true,
         latencyMs: true,
         toolCalls: {
           orderBy: { createdAt: "asc" },

@@ -14,6 +14,16 @@ function errMsg(e: unknown): string {
   return String(e);
 }
 
+type AiModelClass = "utility" | "standard" | "analysis" | "deep";
+type AiModelRouting = Record<AiModelClass, string>;
+const AI_MODEL_CLASSES: readonly AiModelClass[] = ["utility", "standard", "analysis", "deep"];
+const DEFAULT_AI_MODEL_ROUTING: AiModelRouting = {
+  utility: "gpt-5-nano",
+  standard: "gpt-5.6-luna",
+  analysis: "gpt-5.6-terra",
+  deep: "gpt-5.6-sol"
+};
+
 type ApiKeysSettingsResponse = {
   aiProfiles?: {
     openai?: {
@@ -69,6 +79,9 @@ type ApiKeysSettingsResponse = {
   effectiveAiModelSource?: "db" | "env" | "default";
   effectiveOpenaiModel?: string;
   effectiveOpenaiModelSource?: "db" | "env" | "default";
+  effectiveOpenaiModelRouting?: AiModelRouting;
+  effectiveOpenaiModelRoutingSources?: Record<AiModelClass, "db" | "default">;
+  defaultOpenaiModelRouting?: AiModelRouting;
   modelOptions: string[];
   providerOptions?: string[];
   updatedAt: string | null;
@@ -195,6 +208,13 @@ export default function AdminApiKeysPage() {
     "gpt-5.6-terra",
     "gpt-5.6-sol"
   ]);
+  const [openAiModelRouting, setOpenAiModelRouting] = useState<AiModelRouting>(DEFAULT_AI_MODEL_ROUTING);
+  const [openAiModelRoutingSources, setOpenAiModelRoutingSources] = useState<Record<AiModelClass, "db" | "default">>({
+    utility: "default",
+    standard: "default",
+    analysis: "default",
+    deep: "default"
+  });
 
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [envOverride, setEnvOverride] = useState(false);
@@ -289,6 +309,13 @@ export default function AdminApiKeysPage() {
     setEffectiveAiBaseUrlSource(res.effectiveAiBaseUrlSource ?? "default");
     setEffectiveAiModel(res.effectiveAiModel ?? res.effectiveOpenaiModel ?? "gpt-5.6-luna");
     setEffectiveAiModelSource(res.effectiveAiModelSource ?? res.effectiveOpenaiModelSource ?? "default");
+    setOpenAiModelRouting(res.effectiveOpenaiModelRouting ?? res.defaultOpenaiModelRouting ?? DEFAULT_AI_MODEL_ROUTING);
+    setOpenAiModelRoutingSources(res.effectiveOpenaiModelRoutingSources ?? {
+      utility: "default",
+      standard: "default",
+      analysis: "default",
+      deep: "default"
+    });
 
     setModelOptions(
       Array.isArray(res.modelOptions) && res.modelOptions.length > 0
@@ -457,6 +484,42 @@ export default function AdminApiKeysPage() {
       applyApiKeysSettings(res);
       setNotice(t("messages.aiModelReset"));
       await loadHealthStatus();
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }
+
+  async function saveOpenAiModelRouting() {
+    if (AI_MODEL_CLASSES.some((modelClass) => !openAiModelRouting[modelClass].trim())) {
+      setError(t("messages.aiModelRoutingRequired"));
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiPut<ApiKeysSettingsResponse>("/admin/settings/api-keys", {
+        aiProvider: "openai",
+        openaiModelRouting: Object.fromEntries(
+          AI_MODEL_CLASSES.map((modelClass) => [modelClass, openAiModelRouting[modelClass].trim()])
+        )
+      });
+      applyApiKeysSettings(res);
+      setNotice(t("messages.aiModelRoutingSaved"));
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }
+
+  async function resetOpenAiModelRouting() {
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiPut<ApiKeysSettingsResponse>("/admin/settings/api-keys", {
+        aiProvider: "openai",
+        clearOpenaiModelRouting: true
+      });
+      applyApiKeysSettings(res);
+      setNotice(t("messages.aiModelRoutingReset"));
     } catch (e) {
       setError(errMsg(e));
     }
@@ -642,14 +705,6 @@ export default function AdminApiKeysPage() {
               </span>
             </div>
 
-            <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.currentModel")}</span>
-              <div>{health?.model ?? effectiveAiModel}</div>
-              <span className={`badge ${effectiveAiModelSource === "env" ? "badgeWarn" : effectiveAiModelSource === "db" ? "badgeOk" : "badge"}`}>
-                {effectiveAiModelSource.toUpperCase()}
-              </span>
-            </div>
-
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.providerLabel")}</span>
               <select
@@ -696,30 +751,60 @@ export default function AdminApiKeysPage() {
               </AdminActionButton>
             </div>
 
-            <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.modelLabel")}</span>
-              <input
-                className="input"
-                type="text"
-                value={aiModel}
-                onChange={(e) => setAiModel(e.target.value)}
-                list="ai-model-presets"
-                placeholder={t("ai.modelPlaceholder")}
-              />
-              <datalist id="ai-model-presets">
-                {modelOptions.map((model) => <option key={model} value={model} />)}
-              </datalist>
-            </label>
+            <datalist id="ai-model-presets">
+              {modelOptions.map((model) => <option key={model} value={model} />)}
+            </datalist>
 
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{t("ai.modelOptionsHint")}</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-              <AdminActionButton icon="save" variant="primary" onClick={() => void saveAiModel()}>
-                {t("ai.modelSave")}
-              </AdminActionButton>
-              <AdminActionButton icon="reset" onClick={() => void resetAiModel()}>
-                {t("ai.modelReset")}
-              </AdminActionButton>
-            </div>
+            {aiProvider === "openai" ? (
+              <section className="adminAiModelRouting">
+                <div className="settingsSectionHeader">
+                  <div>
+                    <h4>{t("ai.modelRouting.title")}</h4>
+                    <p>{t("ai.modelRouting.description")}</p>
+                  </div>
+                </div>
+                <div className="settingsTwoColGrid">
+                  {AI_MODEL_CLASSES.map((modelClass) => (
+                    <label className="settingsField" key={modelClass}>
+                      <span className="settingsFieldLabel adminAiModelRoutingLabel">
+                        <span>{t(`ai.modelRouting.classes.${modelClass}.title`)}</span>
+                        <span className={`badge ${openAiModelRoutingSources[modelClass] === "db" ? "badgeOk" : "badge"}`}>
+                          {openAiModelRoutingSources[modelClass].toUpperCase()}
+                        </span>
+                      </span>
+                      <input
+                        className="input"
+                        type="text"
+                        value={openAiModelRouting[modelClass]}
+                        onChange={(event) => setOpenAiModelRouting((current) => ({ ...current, [modelClass]: event.target.value }))}
+                        list="ai-model-presets"
+                        placeholder={t("ai.modelPlaceholder")}
+                      />
+                      <small>{t(`ai.modelRouting.classes.${modelClass}.description`)}</small>
+                    </label>
+                  ))}
+                </div>
+                <div className="adminAiModelRoutingActions">
+                  <AdminActionButton icon="save" variant="primary" onClick={() => void saveOpenAiModelRouting()}>
+                    {t("ai.modelRouting.save")}
+                  </AdminActionButton>
+                  <AdminActionButton icon="reset" onClick={() => void resetOpenAiModelRouting()}>
+                    {t("ai.modelRouting.reset")}
+                  </AdminActionButton>
+                </div>
+              </section>
+            ) : (
+              <>
+                <label className="settingsField">
+                  <span className="settingsFieldLabel">{t("ai.modelLabel")}</span>
+                  <input className="input" type="text" value={aiModel} onChange={(event) => setAiModel(event.target.value)} list="ai-model-presets" placeholder={t("ai.modelPlaceholder")} />
+                </label>
+                <div className="adminAiModelRoutingActions">
+                  <AdminActionButton icon="save" variant="primary" onClick={() => void saveAiModel()}>{t("ai.modelSave")}</AdminActionButton>
+                  <AdminActionButton icon="reset" onClick={() => void resetAiModel()}>{t("ai.modelReset")}</AdminActionButton>
+                </div>
+              </>
+            )}
 
             {envOverride ? (
               <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 10 }}>{t("ai.envOverrideHint")}</div>

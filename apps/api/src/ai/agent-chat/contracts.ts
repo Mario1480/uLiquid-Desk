@@ -117,8 +117,6 @@ export type AgentChatResponse = {
   citations: AgentSourceRef[];
   run: {
     id: string;
-    provider: string | null;
-    model: string | null;
     modelClass: string;
     toolIterations: number;
     toolCalls: number;
