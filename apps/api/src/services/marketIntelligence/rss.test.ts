@@ -6,7 +6,7 @@ import { RssNewsProvider } from "./providers/rss/RssNewsProvider.js";
 import { parseRssOrAtom } from "./providers/rss/parser.js";
 import type { RssSourceConfig } from "./providers/rss/sourceRegistry.js";
 import { loadRssSourceRegistry } from "./providers/rss/sourceRegistry.js";
-import { isPublicIpAddress, resolveFeedUserAgent, validateFeedUrl } from "./providers/rss/security.js";
+import { assertPublicDns, isPublicIpAddress, resolveFeedUserAgent, validateFeedUrl } from "./providers/rss/security.js";
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 
@@ -43,6 +43,20 @@ test("feed user agent upgrades the legacy default with public contact informatio
     "uLiquid-Desk-MarketIntelligence/1.0 (+https://desk.uliquid.vip; support@uliquid.vip)"
   );
   assert.equal(resolveFeedUserAgent("custom-feed-reader/2.0"), "custom-feed-reader/2.0");
+});
+
+test("public DNS validation retries one transient resolver failure", async () => {
+  let attempts = 0;
+  await assertPublicDns("feed.example.test", async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error("temporary DNS failure") as Error & { code: string };
+      error.code = "EAI_AGAIN";
+      throw error;
+    }
+    return [{ address: "1.1.1.1", family: 4 }];
+  }, 0);
+  assert.equal(attempts, 2);
 });
 
 test("default RSS registry includes the reviewed macro and digital-asset regulators", () => {

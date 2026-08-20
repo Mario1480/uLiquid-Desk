@@ -7,7 +7,7 @@ import {
   curatedBlsFallbackEvents,
   curatedEconomicEvents
 } from "./providers/official/curatedSchedules.js";
-import { mergeEconomicScheduleAndReleases } from "./providers/official/OfficialEconomicCalendarProvider.js";
+import { OfficialEconomicCalendarProvider, mergeEconomicScheduleAndReleases } from "./providers/official/OfficialEconomicCalendarProvider.js";
 import { parseEurostatCalendarJson } from "./providers/official/eurostat.js";
 import { parseIcsCalendar, zonedLocalTimeToUtc } from "./providers/official/ics.js";
 
@@ -137,4 +137,24 @@ test("curated BLS outage fallback preserves the same stable period identity", ()
     "Unemployment Rate"
   ]));
   assert.ok(events.every((event) => event.period && event.sourceName === "U.S. Bureau of Labor Statistics"));
+});
+
+test("curated BLS fallback keeps official calendar healthy when Eurostat is available", async () => {
+  const provider = new OfficialEconomicCalendarProvider(async ({ url }) => {
+    if (url.includes("bls.gov")) throw new Error("rss_http_403");
+    return {
+      body: JSON.stringify([{ recordid: "eu-1", start: "2026-09-01T09:00Z", title: "Industrial production" }]),
+      finalUrl: url,
+      contentType: "application/json"
+    };
+  });
+  const result = await provider.fetchEvents({
+    from: "2026-08-01T00:00:00.000Z",
+    to: "2026-11-01T00:00:00.000Z"
+  });
+  const health = await provider.health();
+  assert.equal(result.degraded, false);
+  assert.equal(health.state, "healthy");
+  assert.match(health.message ?? "", /BLS curated fallback active/);
+  assert.ok(result.warnings.some((warning) => warning.code === "official_bls_schedule_unavailable"));
 });

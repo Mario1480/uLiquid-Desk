@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { NewsItem } from "./contracts/news.js";
+import type { EconomicEvent } from "./contracts/economicCalendar.js";
 import { StaleWhileRevalidateCache, ProviderCircuitBreaker } from "./cache.js";
 import { MarketIntelligenceService } from "./service.js";
 import { generateGroundedMarketSummary } from "./summary.js";
@@ -116,4 +117,30 @@ test("grounded summary handles missing, conflicting, and stale inputs without fa
   });
   assert.equal(stale.meta.degraded, true);
   assert.equal(stale.summary.uncertainties.some((entry) => entry.includes("stale")), true);
+});
+
+test("grounded summary includes medium-impact economic events in market context", async () => {
+  const event: EconomicEvent = {
+    id: "initial-claims-1",
+    provider: "official",
+    sourceName: "U.S. Department of Labor",
+    sourceUrl: "https://www.dol.gov/",
+    country: "US",
+    currency: "USD",
+    category: "labor",
+    title: "Initial Jobless Claims",
+    scheduledAt: "2026-08-27T12:30:00.000Z",
+    importance: "medium",
+    status: "scheduled",
+    fetchedAt: "2026-08-20T08:00:00.000Z"
+  };
+  const result = await generateGroundedMarketSummary({
+    news: [],
+    events: [event],
+    horizon: "7d",
+    now: new Date("2026-08-20T14:00:00.000Z")
+  });
+  assert.equal(result.summary.highlights[0]?.headline, event.title);
+  assert.equal(result.summary.highlights[0]?.importance, "medium");
+  assert.equal(result.summary.upcomingRisks[0]?.label, event.title);
 });

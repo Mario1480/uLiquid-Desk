@@ -4,6 +4,7 @@ import net from "node:net";
 const DEFAULT_MAX_BYTES = 1_000_000;
 const DEFAULT_TIMEOUT_MS = 8_000;
 const DEFAULT_REDIRECT_LIMIT = 3;
+const DEFAULT_DNS_RETRY_DELAY_MS = 150;
 const LEGACY_DEFAULT_USER_AGENT = "uLiquid-Desk-MarketIntelligence/1.0";
 const DEFAULT_USER_AGENT = `${LEGACY_DEFAULT_USER_AGENT} (+https://desk.uliquid.vip; support@uliquid.vip)`;
 
@@ -70,8 +71,34 @@ export function validateFeedUrl(value: string, allowedHosts: string[]): URL {
   return url;
 }
 
-async function assertPublicDns(hostname: string): Promise<void> {
-  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+type DnsLookupAll = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
+
+async function defaultDnsLookupAll(hostname: string): Promise<Array<{ address: string; family: number }>> {
+  return dns.lookup(hostname, { all: true, verbatim: true });
+}
+
+function isTransientDnsError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && String((error as { code?: unknown }).code).toUpperCase() === "EAI_AGAIN";
+}
+
+export async function assertPublicDns(
+  hostname: string,
+  lookupAll: DnsLookupAll = defaultDnsLookupAll,
+  retryDelayMs = DEFAULT_DNS_RETRY_DELAY_MS
+): Promise<void> {
+  let addresses: Array<{ address: string; family: number }> = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      addresses = await lookupAll(hostname);
+      break;
+    } catch (error) {
+      if (attempt === 1 || !isTransientDnsError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, retryDelayMs)));
+    }
+  }
   if (addresses.length === 0 || addresses.some((entry) => !isPublicIpAddress(entry.address))) {
     throw new Error("rss_private_address_blocked");
   }
@@ -111,6 +138,8 @@ export async function fetchBoundedFeed(params: {
   timeoutMs?: number;
   redirectLimit?: number;
   fetchImpl?: typeof fetch;
+  dnsLookupAll?: DnsLookupAll;
+  dnsRetryDelayMs?: number;
   skipDnsValidation?: boolean;
 }): Promise<{ body: string; finalUrl: string; contentType: string }> {
   const fetchImpl = params.fetchImpl ?? fetch;
@@ -122,7 +151,9 @@ export async function fetchBoundedFeed(params: {
     let current = validateFeedUrl(params.url, params.allowedHosts);
     const redirectLimit = params.redirectLimit ?? DEFAULT_REDIRECT_LIMIT;
     for (let redirect = 0; redirect <= redirectLimit; redirect += 1) {
-      if (!params.skipDnsValidation) await assertPublicDns(current.hostname);
+      if (!params.skipDnsValidation) {
+        await assertPublicDns(current.hostname, params.dnsLookupAll, params.dnsRetryDelayMs);
+      }
       const response = await fetchImpl(current, {
         method: "GET",
         redirect: "manual",

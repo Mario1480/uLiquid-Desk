@@ -601,7 +601,12 @@ export class MarketIntelligenceService {
     const horizonMs = horizon === "intraday" ? 12 * 60 * 60 * 1000 : horizon === "7d" ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
     const [newsResult, events, states] = await Promise.all([
       this.getNews({ limit: 50, from: new Date(now.getTime() - horizonMs).toISOString(), to: now.toISOString() }),
-      this.getEconomicEvents({ from: now.toISOString(), to: new Date(now.getTime() + horizonMs).toISOString(), importance: ["high"], limit: 20 }),
+      this.getEconomicEvents({
+        from: now.toISOString(),
+        to: new Date(now.getTime() + horizonMs).toISOString(),
+        importance: ["high", "medium"],
+        limit: 50
+      }),
       this.getProviderStates()
     ]);
     const requestedSymbol = String(input.symbol ?? "").trim().toUpperCase();
@@ -684,7 +689,7 @@ export class MarketIntelligenceService {
         publishedAt: item.publishedAt,
         categories: item.categories
       })),
-      upcomingHighImpactEvents: context.events.slice(0, 5).map((event) => ({
+      upcomingHighImpactEvents: context.events.filter((event) => event.importance === "high").slice(0, 5).map((event) => ({
         id: event.id,
         title: event.title,
         scheduledAt: event.scheduledAt,

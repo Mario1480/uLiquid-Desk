@@ -32,6 +32,7 @@ export class OfficialEconomicCalendarProvider implements EconomicCalendarProvide
     const warnings: ProviderWarning[] = [];
     let scheduled = curatedEconomicEvents({ from: input.from, to: input.to, fetchedAt });
     let blsSucceeded = false;
+    let blsFallbackCount = 0;
     let eurostatSucceeded = false;
     const blsTask = async () => {
       const response = await this.fetcher({
@@ -85,7 +86,9 @@ export class OfficialEconomicCalendarProvider implements EconomicCalendarProvide
         retryable: true,
         sourceId: "bls"
       });
-      scheduled.push(...curatedBlsFallbackEvents({ from: input.from, to: input.to, fetchedAt }));
+      const fallbackEvents = curatedBlsFallbackEvents({ from: input.from, to: input.to, fetchedAt });
+      blsFallbackCount = fallbackEvents.length;
+      scheduled.push(...fallbackEvents);
     }
     if (sourceResults[1].status === "rejected") {
       warnings.push({
@@ -105,14 +108,15 @@ export class OfficialEconomicCalendarProvider implements EconomicCalendarProvide
       byId.set(event.id, event);
     }
     scheduled = [...byId.values()].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
-    const degraded = !blsSucceeded || !eurostatSucceeded;
+    const blsCoverageAvailable = blsSucceeded || blsFallbackCount > 0;
+    const degraded = !blsCoverageAvailable || !eurostatSucceeded;
     this.lastHealth = {
       providerId: this.id,
       state: scheduled.length === 0 && degraded ? "unavailable" : degraded ? "degraded" : "healthy",
       checkedAt: fetchedAt,
       ...(scheduled.length > 0 ? { lastSuccessAt: fetchedAt } : {}),
       latencyMs: Date.now() - startedAt,
-      message: `${scheduled.length} official or curated events available; BLS ${blsSucceeded ? "healthy" : "unavailable"}, Eurostat ${eurostatSucceeded ? "healthy" : "unavailable"}.`
+      message: `${scheduled.length} official or curated events available; BLS ${blsSucceeded ? "healthy" : blsFallbackCount > 0 ? `curated fallback active (${blsFallbackCount} events)` : "unavailable"}, Eurostat ${eurostatSucceeded ? "healthy" : "unavailable"}.`
     };
     return {
       providerId: this.id,

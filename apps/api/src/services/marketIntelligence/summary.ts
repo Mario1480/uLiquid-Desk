@@ -62,6 +62,11 @@ function deterministicSummary(params: {
 }): MarketSummary {
   const nowMs = params.now.getTime();
   const highEvents = params.events.filter((event) => event.importance === "high");
+  const relevantEvents = params.events.filter((event) => event.importance === "high" || event.importance === "medium");
+  const prioritizedEvents = [...relevantEvents].sort((a, b) => {
+    const importanceDelta = Number(b.importance === "high") - Number(a.importance === "high");
+    return importanceDelta || a.scheduledAt.localeCompare(b.scheduledAt);
+  });
   const highWithin24h = highEvents.some((event) => {
     const delta = new Date(event.scheduledAt).getTime() - nowMs;
     return delta >= -60 * 60 * 1000 && delta <= 24 * 60 * 60 * 1000;
@@ -84,7 +89,7 @@ function deterministicSummary(params: {
         : sentiments[0] === "positive"
           ? "bullish" as const
           : "neutral" as const;
-  const eventHighlights = highEvents.slice(0, 2).map((event) => ({
+  const eventHighlights = prioritizedEvents.slice(0, 2).map((event) => ({
     type: "macro" as const,
     importance: event.importance,
     headline: event.title,
@@ -107,14 +112,14 @@ function deterministicSummary(params: {
     overallRisk,
     sentiment,
     highlights: [...eventHighlights, ...newsHighlights],
-    upcomingRisks: highEvents.slice(0, 8).map((event) => ({
+    upcomingRisks: relevantEvents.slice(0, 8).map((event) => ({
       label: event.title,
       scheduledAt: event.scheduledAt,
       sourceIds: [sourceIdForEvent(event)]
     })),
     uncertainties: [
       ...(params.degraded ? ["One or more market-data providers are degraded or unavailable."] : []),
-      ...(highEvents.some((event) => event.forecast === undefined)
+      ...(relevantEvents.some((event) => event.forecast === undefined)
         ? ["Official sources do not provide a licensed consensus forecast for every event."]
         : []),
       ...params.warnings.slice(0, 5)
