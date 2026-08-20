@@ -2605,6 +2605,235 @@ a.settingsHubCard:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 8px;
 }
+.billingAdminConfigGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 12px;
+  align-items: start;
+}
+.billingPaymentMetrics,
+.billingPackageStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.billingPaymentMetrics .miniMetric,
+.billingPackageStats .miniMetric {
+  min-width: 0;
+}
+.billingPaymentMetrics .miniMetric b {
+  overflow-wrap: anywhere;
+}
+.billingSectionAction {
+  justify-self: start;
+}
+.billingFeatureToggleList {
+  display: grid;
+  border-block: 1px solid var(--ui-border);
+}
+.billingFeatureToggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+  cursor: pointer;
+}
+.billingFeatureToggle + .billingFeatureToggle {
+  border-top: 1px solid var(--ui-border);
+}
+.billingFeatureToggle > span {
+  display: grid;
+  gap: 3px;
+}
+.billingFeatureToggle strong {
+  font-size: 13px;
+}
+.billingFeatureToggle small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.billingFeatureToggle input {
+  width: 17px;
+  height: 17px;
+}
+.billingPackagesSection,
+.billingPackageGroups,
+.billingPackageGroup,
+.billingPackageList,
+.billingPackageTools,
+.billingPackageToolBody,
+.billingPackageForm,
+.billingPackageEditor {
+  display: grid;
+  gap: 14px;
+}
+.billingPackageStats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.billingPackageGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ui-border);
+}
+.billingPackageGroupHeader h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.billingPackageCard {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: rgba(255, 255, 255, 0.022);
+}
+.billingPackageCardOpen {
+  border-color: var(--ui-border-strong);
+  background: rgba(96, 165, 250, 0.035);
+}
+.billingPackageSummaryRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(360px, 1.4fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 14px;
+}
+.billingPackageIdentity {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.billingPackageBadges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.billingPackageIdentity h5 {
+  margin: 1px 0 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.billingPackageIdentity code {
+  color: var(--muted);
+  font-size: 11px;
+}
+.billingPackageFacts {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+}
+.billingPackageFacts > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 0 12px;
+  border-left: 1px solid var(--ui-border);
+}
+.billingPackageFacts dt {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.billingPackageFacts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+.billingPackageEditor {
+  padding: 16px 14px;
+  border-top: 1px solid var(--ui-border-strong);
+  background: rgba(7, 18, 31, 0.48);
+}
+.billingPackageToolGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.billingPackageToolCard {
+  align-content: start;
+  min-height: 100px;
+}
+.billingPackageToolCardOpen {
+  grid-column: 1 / -1;
+}
+.billingPackageToolBody {
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-border);
+}
+.billingCreditAdjustmentForm {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.billingCreditAdjustmentForm .billingSectionAction {
+  grid-column: 1 / -1;
+}
+.billingPackageFormGroup {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+}
+.billingPackageFormGroup legend {
+  padding: 0 10px 0 0;
+  color: rgba(226, 238, 247, 0.92);
+  font-size: 12px;
+  font-weight: 800;
+}
+.billingPackageAvailability {
+  min-height: 38px;
+}
+@media (max-width: 1180px) {
+  .billingAdminConfigGrid {
+    grid-template-columns: 1fr;
+  }
+  .billingPackageSummaryRow {
+    grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr);
+  }
+  .billingPackageSummaryRow > .btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+@media (max-width: 760px) {
+  .billingPaymentMetrics,
+  .billingPackageStats,
+  .billingPackageToolGrid,
+  .billingCreditAdjustmentForm,
+  .billingPackageSummaryRow,
+  .billingPackageFacts {
+    grid-template-columns: 1fr;
+  }
+  .billingPackageStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .billingPackageFacts {
+    gap: 8px;
+  }
+  .billingPackageFacts > div {
+    padding: 0;
+    border-left: 0;
+  }
+  .billingPackageSummaryRow > .btn,
+  .billingSectionAction {
+    width: 100%;
+    justify-content: center;
+  }
+  .billingPackageToolCardOpen {
+    grid-column: auto;
+  }
+}
 .adminCheckboxLabel {
   display: inline-flex;
   align-items: center;

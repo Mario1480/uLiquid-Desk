@@ -1234,6 +1234,43 @@
         "hint": "When enabled, OpenAI costs are reserved and settled against prepaid AI Credits."
       }
     },
+    "packageSummary": {
+      "description": "Review plans and add-ons at a glance. Open only the package you want to edit.",
+      "total": "Total packages",
+      "active": "Active",
+      "plans": "Plans",
+      "addons": "Add-ons",
+      "empty": "No billing packages have been configured yet.",
+      "planGroup": "Subscription plans",
+      "addonGroup": "Add-ons and topups",
+      "groupEmpty": "No packages in this group.",
+      "enabled": "Active",
+      "disabled": "Inactive",
+      "price": "Price",
+      "period": "Billing period",
+      "grant": "Included grant",
+      "months": "{count, plural, one {# month} other {# months}}",
+      "monthlyCredits": "{value} AI Credits / month",
+      "oneTimeCredits": "{value} AI Credits once",
+      "botSlots": "+{value} running bot slots",
+      "aiPredictionSlots": "+{value} AI prediction slots",
+      "compositePredictionSlots": "+{value} composite prediction slots",
+      "edit": "Edit package",
+      "closeEditor": "Close editor"
+    },
+    "packageTools": {
+      "title": "Package tools",
+      "description": "Create new offers or perform audited support corrections only when needed.",
+      "openCreate": "Create new package",
+      "openCredits": "Adjust AI Credits",
+      "close": "Close",
+      "usdFixed": "USD is fixed for all new plans and add-ons."
+    },
+    "formGroups": {
+      "identity": "Package identity",
+      "commerce": "Price and availability",
+      "entitlements": "Limits and included benefits"
+    },
     "createTitle": "Create package",
     "createHelp": "Define package type, pricing and limits. Changes apply to future checkouts.",
     "create": "Create package",

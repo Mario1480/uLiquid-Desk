@@ -1234,6 +1234,43 @@
         "hint": "Wenn aktiviert, werden OpenAI-Kosten reserviert und mit vorausbezahlten AI Credits verrechnet."
       }
     },
+    "packageSummary": {
+      "description": "Prüfe Pläne und Add-ons auf einen Blick. Öffne nur das Paket, das du bearbeiten möchtest.",
+      "total": "Pakete gesamt",
+      "active": "Aktiv",
+      "plans": "Pläne",
+      "addons": "Add-ons",
+      "empty": "Es wurden noch keine Billing-Pakete konfiguriert.",
+      "planGroup": "Subscription-Pläne",
+      "addonGroup": "Add-ons und Topups",
+      "groupEmpty": "Keine Pakete in dieser Gruppe.",
+      "enabled": "Aktiv",
+      "disabled": "Inaktiv",
+      "price": "Preis",
+      "period": "Abrechnungszeitraum",
+      "grant": "Enthaltene Leistung",
+      "months": "{count, plural, one {# Monat} other {# Monate}}",
+      "monthlyCredits": "{value} AI Credits / Monat",
+      "oneTimeCredits": "{value} AI Credits einmalig",
+      "botSlots": "+{value} laufende Bot-Slots",
+      "aiPredictionSlots": "+{value} AI-Prediction-Slots",
+      "compositePredictionSlots": "+{value} Composite-Prediction-Slots",
+      "edit": "Paket bearbeiten",
+      "closeEditor": "Editor schließen"
+    },
+    "packageTools": {
+      "title": "Paket-Werkzeuge",
+      "description": "Erstelle neue Angebote oder führe nachvollziehbare Support-Korrekturen nur bei Bedarf aus.",
+      "openCreate": "Neues Paket erstellen",
+      "openCredits": "AI Credits anpassen",
+      "close": "Schließen",
+      "usdFixed": "USD ist für alle neuen Pläne und Add-ons fest vorgegeben."
+    },
+    "formGroups": {
+      "identity": "Paketidentität",
+      "commerce": "Preis und Verfügbarkeit",
+      "entitlements": "Limits und enthaltene Leistungen"
+    },
     "createTitle": "Paket erstellen",
     "createHelp": "Definiere Pakettyp, Preis und Limits. Änderungen gelten für zukünftige Checkouts.",
     "create": "Paket erstellen",
