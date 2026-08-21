@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callOpenAiResponses } from "./responsesProvider.js";
+import { callOpenAiResponses, OpenAiResponsesIncompleteError } from "./responsesProvider.js";
 
 test("Responses provider sends fixed default tier and parses structured usage", async () => {
   const originalFetch = globalThis.fetch;
@@ -123,6 +123,53 @@ test("Responses provider preserves explicitly strict function schemas", async ()
       signal: new AbortController().signal
     });
     assert.equal(requestBody.tools[0].strict, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Responses provider preserves billable usage on incomplete max-output responses", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    id: "resp_incomplete",
+    status: "incomplete",
+    model: "gpt-5.6-luna",
+    service_tier: "default",
+    incomplete_details: { reason: "max_output_tokens" },
+    output: [],
+    usage: {
+      input_tokens: 120,
+      input_tokens_details: { cached_tokens: 10, cache_write_tokens: 0 },
+      output_tokens: 80,
+      output_tokens_details: { reasoning_tokens: 20 }
+    }
+  }), { status: 200, headers: { "x-request-id": "req_incomplete" } })) as typeof fetch;
+  try {
+    await assert.rejects(
+      callOpenAiResponses({
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5.6-luna",
+        messages: [{ role: "user", content: "Hello" }],
+        maxOutputTokens: 80,
+        signal: new AbortController().signal
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof OpenAiResponsesIncompleteError);
+        assert.equal(error.message, "max_output_tokens");
+        assert.equal(error.responseId, "resp_incomplete");
+        assert.equal(error.requestId, "req_incomplete");
+        assert.equal(error.serviceTier, "default");
+        assert.deepEqual(error.usage, {
+          inputTokens: 120n,
+          cachedInputTokens: 10n,
+          cacheWriteTokens: 0n,
+          outputTokens: 80n,
+          reasoningTokens: 20n
+        });
+        return true;
+      }
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

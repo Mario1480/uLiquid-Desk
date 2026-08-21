@@ -20,7 +20,7 @@ import {
   type AiRoutingDecision,
   type AiRoutingProfile
 } from "./credits/modelRouter.js";
-import { callOpenAiResponses } from "./credits/responsesProvider.js";
+import { callOpenAiResponses, OpenAiResponsesIncompleteError } from "./credits/responsesProvider.js";
 import type { AiTokenUsage } from "./credits/pricing.js";
 
 type OpenAiErrorPayload = {
@@ -781,6 +781,61 @@ function failureNeedsReconciliation(error: unknown): boolean {
   return Boolean(row.responseId || row.usage);
 }
 
+type AiFailureBillingSettlement = {
+  chargedCredits: bigint;
+  remainingBalance: bigint;
+};
+
+type AiFailureWithBillingSettlement = Error & {
+  aiBillingSettlement?: AiFailureBillingSettlement;
+};
+
+export function getAiFailureBillingSettlement(error: unknown): AiFailureBillingSettlement | null {
+  if (!(error instanceof Error)) return null;
+  const settlement = (error as AiFailureWithBillingSettlement).aiBillingSettlement;
+  if (!settlement || typeof settlement.chargedCredits !== "bigint" || typeof settlement.remainingBalance !== "bigint") {
+    return null;
+  }
+  return settlement;
+}
+
+type AiIncompleteFailureBillingDeps = {
+  recordUsage: typeof recordAiUsage;
+  settleRun: typeof settleAiRun;
+};
+
+export async function settleIncompleteAiFailureUsage(params: {
+  database: any;
+  error: unknown;
+  runId: string;
+  callIndex: number;
+  routing: AiRoutingDecision;
+  latencyMs: number;
+}, deps: AiIncompleteFailureBillingDeps = {
+  recordUsage: recordAiUsage,
+  settleRun: settleAiRun
+}): Promise<AiFailureBillingSettlement | null> {
+  if (!(params.error instanceof OpenAiResponsesIncompleteError) || !params.error.usage) return null;
+  await deps.recordUsage({
+    database: params.database,
+    agentRunId: params.runId,
+    callIndex: params.callIndex,
+    routing: params.routing,
+    usage: params.error.usage,
+    responseId: params.error.responseId,
+    requestId: params.error.requestId,
+    serviceTier: params.error.serviceTier,
+    latencyMs: params.latencyMs,
+    status: "FAILED",
+    errorCode: params.error.message.slice(0, 191)
+  });
+  const settlement = await deps.settleRun({ database: params.database, agentRunId: params.runId });
+  if (settlement) {
+    (params.error as AiFailureWithBillingSettlement).aiBillingSettlement = settlement;
+  }
+  return settlement;
+}
+
 async function callChatCompletions(params: {
   provider: EnabledAiProvider;
   apiKey: string;
@@ -1088,7 +1143,27 @@ export async function callAiChat(
     };
   } catch (error) {
     const isAbort = error instanceof Error && error.name === "AbortError";
-    if (billingEnabled && options.aiRunContext && failureNeedsReconciliation(error)) {
+    let failureSettlement: AiFailureBillingSettlement | null = null;
+    if (billingEnabled && runId) {
+      try {
+        failureSettlement = await settleIncompleteAiFailureUsage({
+          database: db,
+          error,
+          runId,
+          callIndex,
+          routing,
+          latencyMs: Date.now() - startedAt
+        });
+      } catch (billingError) {
+        logger.warn("ai_incomplete_usage_settlement_failed", {
+          ai_provider: provider,
+          ai_model: model,
+          ai_call_ms: Date.now() - startedAt,
+          reason: billingError instanceof Error ? billingError.message : String(billingError)
+        });
+      }
+    }
+    if (billingEnabled && options.aiRunContext && !failureSettlement && failureNeedsReconciliation(error)) {
       await markAiReservationForReconciliation({
         database: db,
         agentRunId: options.aiRunContext.runId,
@@ -1096,14 +1171,14 @@ export async function callAiChat(
       }).catch(() => undefined);
     }
     if (standaloneRunId && standaloneReservationCreated) {
-      const reconciliationRequired = failureNeedsReconciliation(error);
+      const reconciliationRequired = !failureSettlement && failureNeedsReconciliation(error);
       if (reconciliationRequired) {
         await markAiReservationForReconciliation({
           database: db,
           agentRunId: standaloneRunId,
           reason: isAbort ? "provider_timeout_after_dispatch" : "provider_usage_ambiguous"
         });
-      } else {
+      } else if (!failureSettlement) {
         await releaseAiReservation({
           database: db,
           agentRunId: standaloneRunId,
@@ -1114,6 +1189,7 @@ export async function callAiChat(
         where: { id: standaloneRunId },
         data: {
           status: reconciliationRequired ? "reconciliation_required" : "failed",
+          chargedCredits: failureSettlement?.chargedCredits ?? 0n,
           errorCode: String(error).slice(0, 191),
           completedAt: new Date(),
           latencyMs: Date.now() - startedAt

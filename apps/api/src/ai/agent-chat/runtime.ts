@@ -1,4 +1,4 @@
-import { resolveOpenAiModelRoutingWithSource, type AiChatResult, type CallAiChatOptions, type ChatMessage } from "../provider.js";
+import { getAiFailureBillingSettlement, resolveOpenAiModelRoutingWithSource, type AiChatResult, type CallAiChatOptions, type ChatMessage } from "../provider.js";
 import {
   estimateAiRunReservation,
   isAiCreditBillingEnabledForDatabase,
@@ -381,7 +381,11 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
     let billingStatus = "failed";
     if (billingEnabled) {
       try {
-        if (usageTotal > 0) {
+        const failureSettlement = getAiFailureBillingSettlement(error);
+        if (failureSettlement) {
+          chargedCredits = failureSettlement.chargedCredits;
+          remainingCredits = failureSettlement.remainingBalance;
+        } else if (usageTotal > 0) {
           const settled = await settleAiRun({ database: params.db, agentRunId: run.id });
           chargedCredits = settled?.chargedCredits ?? 0n;
         } else {

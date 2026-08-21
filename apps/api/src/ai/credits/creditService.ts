@@ -122,7 +122,7 @@ export async function estimateAiRunReservation(params: {
 
 async function getSettledUsage(tx: any, userId: string, from: Date): Promise<bigint> {
   const aggregate = await tx.aiAgentRun.aggregate({
-    where: { userId, completedAt: { gte: from }, status: "completed" },
+    where: { userId, completedAt: { gte: from }, chargedCredits: { gt: 0n } },
     _sum: { chargedCredits: true }
   });
   return toBigInt(aggregate?._sum?.chargedCredits);

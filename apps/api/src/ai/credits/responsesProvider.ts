@@ -17,6 +17,21 @@ export type OpenAiResponsesResult = {
   finishReason: string | null;
 };
 
+export class OpenAiResponsesIncompleteError extends Error {
+  readonly status = 503;
+
+  constructor(
+    reason: string,
+    readonly responseId: string | null,
+    readonly requestId: string | null,
+    readonly serviceTier: string,
+    readonly usage: AiTokenUsage | null
+  ) {
+    super(reason);
+    this.name = "OpenAiResponsesIncompleteError";
+  }
+}
+
 function responseInput(messages: ChatMessage[]): { instructions?: string; input: unknown[] } {
   const instructions = messages
     .filter((message) => message.role === "system")
@@ -151,9 +166,19 @@ export async function callOpenAiResponses(params: {
     throw error;
   }
   if (payload?.status !== "completed") {
-    const error = new Error(String(payload?.incomplete_details?.reason ?? payload?.error?.code ?? "ai_response_incomplete"));
-    Object.assign(error, { status: 503, requestId, responseId: payload?.id ?? null, usage: payload?.usage ?? null });
-    throw error;
+    let usage: AiTokenUsage | null = null;
+    try {
+      usage = parseUsage(payload);
+    } catch {
+      // Missing or malformed usage still requires operator reconciliation.
+    }
+    throw new OpenAiResponsesIncompleteError(
+      String(payload?.incomplete_details?.reason ?? payload?.error?.code ?? "ai_response_incomplete"),
+      typeof payload?.id === "string" ? payload.id : null,
+      requestId,
+      typeof payload?.service_tier === "string" ? payload.service_tier : "default",
+      usage
+    );
   }
   const output = parseOutput(payload);
   if (!output.content && output.toolCalls.length === 0) throw new Error("ai_empty_response");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiCreditError, isAiCreditBillingEnabledForDatabase, releaseAiReservation, reserveAiCredits } from "./creditService.js";
+import { AiCreditError, getAiCreditSummary, isAiCreditBillingEnabledForDatabase, releaseAiReservation, reserveAiCredits } from "./creditService.js";
 
 function reservationDatabase(balance = 100n) {
   const state = {
@@ -95,5 +95,36 @@ test("reservation fails before dispatch when balance is insufficient", async () 
   } finally {
     if (previous === undefined) delete process.env.AI_CREDIT_BILLING_V2;
     else process.env.AI_CREDIT_BILLING_V2 = previous;
+  }
+});
+
+test("credit summary counts every charged run regardless of terminal run status", async () => {
+  const aggregateFilters: any[] = [];
+  const database: any = {
+    userSubscription: {
+      findUnique: async () => ({
+        aiCreditBalance: 90n,
+        aiCreditsReserved: 10n,
+        aiCreditsUsedLifetime: 10n,
+        aiDailyLimitCredits: null,
+        aiMonthlyLimitCredits: null,
+        aiMaxRunCredits: null
+      })
+    },
+    aiAgentRun: {
+      aggregate: async ({ where }: any) => {
+        aggregateFilters.push(where);
+        return { _sum: { chargedCredits: 5n } };
+      }
+    }
+  };
+
+  const summary = await getAiCreditSummary(database, "user-1", new Date("2026-08-21T12:00:00.000Z"));
+  assert.equal(summary.usedToday, 5n);
+  assert.equal(summary.usedThisMonth, 5n);
+  assert.equal(aggregateFilters.length, 2);
+  for (const where of aggregateFilters) {
+    assert.deepEqual(where.chargedCredits, { gt: 0n });
+    assert.equal("status" in where, false);
   }
 });

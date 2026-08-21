@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  getAiFailureBillingSettlement,
   hasUsableAiChatMessageOutput,
   isSelfHostedAiProvider,
   normalizeAiProvider,
   resolveAiModelFromConfig,
+  settleIncompleteAiFailureUsage,
   shouldChargeAiCredits
 } from "./provider.js";
+import { OpenAiResponsesIncompleteError } from "./credits/responsesProvider.js";
 
 test("hasUsableAiChatMessageOutput rejects empty completions and accepts text or tool calls", () => {
   assert.equal(hasUsableAiChatMessageOutput({ role: "assistant", content: null }), false);
@@ -115,4 +118,57 @@ test("shouldChargeAiCredits only charges token billing for openai", () => {
   assert.equal(shouldChargeAiCredits("openai"), true);
   assert.equal(shouldChargeAiCredits("ollama"), false);
   assert.equal(shouldChargeAiCredits("vllm"), false);
+});
+
+test("failed provider calls can carry an idempotent billing settlement to outer runtimes", () => {
+  const error = Object.assign(new Error("max_output_tokens"), {
+    aiBillingSettlement: { chargedCredits: 7n, remainingBalance: 93n }
+  });
+  assert.deepEqual(getAiFailureBillingSettlement(error), {
+    chargedCredits: 7n,
+    remainingBalance: 93n
+  });
+  assert.equal(getAiFailureBillingSettlement(new Error("plain failure")), null);
+});
+
+test("incomplete provider usage is recorded and settled before the failure escapes", async () => {
+  const error = new OpenAiResponsesIncompleteError(
+    "max_output_tokens",
+    "resp_1",
+    "req_1",
+    "default",
+    { inputTokens: 120n, cachedInputTokens: 10n, cacheWriteTokens: 0n, outputTokens: 80n, reasoningTokens: 20n }
+  );
+  const calls: Array<{ name: string; params: any }> = [];
+  const settlement = await settleIncompleteAiFailureUsage({
+    database: { marker: "db" },
+    error,
+    runId: "run_1",
+    callIndex: 2,
+    routing: {
+      model: "gpt-5.6-luna",
+      modelClass: "standard",
+      reasoningEffort: "low",
+      maxOutputTokens: 80,
+      maxToolRounds: 0,
+      reasonCode: "test"
+    },
+    latencyMs: 250
+  }, {
+    recordUsage: async (params: any) => {
+      calls.push({ name: "record", params });
+      return {};
+    },
+    settleRun: async (params: any) => {
+      calls.push({ name: "settle", params });
+      return { chargedCredits: 7n, remainingBalance: 93n };
+    }
+  });
+
+  assert.deepEqual(calls.map((call) => call.name), ["record", "settle"]);
+  assert.equal(calls[0].params.status, "FAILED");
+  assert.equal(calls[0].params.errorCode, "max_output_tokens");
+  assert.deepEqual(calls[0].params.usage, error.usage);
+  assert.deepEqual(settlement, { chargedCredits: 7n, remainingBalance: 93n });
+  assert.deepEqual(getAiFailureBillingSettlement(error), settlement);
 });
