@@ -22,6 +22,7 @@ import {
   POSITION_COPILOT_AGENT_CHAT_PREFILL_KEY,
   POSITION_COPILOT_MANUAL_REVIEW_HREF
 } from "../../src/trade/positionCopilot";
+import { useReconnectingWebSocket } from "../../src/trade/useReconnectingWebSocket";
 import {
   DEFAULT_CHART_PREFERENCES,
   type ChartEngine,
@@ -746,6 +747,8 @@ function TradePageContent() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [marketStreamError, setMarketStreamError] = useState<string | null>(null);
+  const [userStreamError, setUserStreamError] = useState<string | null>(null);
   const [softWarning, setSoftWarning] = useState<string | null>(null);
   const [dataBlockReason, setDataBlockReason] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -758,8 +761,6 @@ function TradePageContent() {
   const [prefillInfo, setPrefillInfo] = useState<string | null>(null);
   const [prefillContextExpanded, setPrefillContextExpanded] = useState(true);
 
-  const marketWsRef = useRef<WebSocket | null>(null);
-  const userWsRef = useRef<WebSocket | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
   const tickerUpdateTimerRef = useRef<number | null>(null);
   const pendingTickerRef = useRef<TickerState | null>(null);
@@ -1606,8 +1607,6 @@ function TradePageContent() {
     void bootstrap();
     return () => {
       disposed = true;
-      if (marketWsRef.current) marketWsRef.current.close();
-      if (userWsRef.current) userWsRef.current.close();
       if (refreshTimerRef.current) window.clearInterval(refreshTimerRef.current);
       clearPendingTickerUpdate();
     };
@@ -1652,20 +1651,20 @@ function TradePageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePrefill?.predictionId, estimatedMaxInputByMode]);
 
-  useEffect(() => {
-    if (!selectedAccountId || !selectedSymbol) return;
+  const marketStreamUrl = selectedAccountId && selectedSymbol
+    ? `${wsBase}/ws/market?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&symbol=${encodeURIComponent(selectedSymbol)}&marketType=${encodeURIComponent(marketType)}`
+    : null;
+  const userStreamUrl = selectedAccountId
+    ? `${wsBase}/ws/user?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&marketType=${encodeURIComponent(marketType)}`
+    : null;
 
-    if (marketWsRef.current) {
-      marketWsRef.current.close();
-      marketWsRef.current = null;
-    }
-
-    const marketWs = new WebSocket(
-      `${wsBase}/ws/market?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&symbol=${encodeURIComponent(selectedSymbol)}&marketType=${encodeURIComponent(marketType)}`
-    );
-    marketWsRef.current = marketWs;
-
-    marketWs.onmessage = (event) => {
+  const reconnectMarketStream = useReconnectingWebSocket({
+    url: marketStreamUrl,
+    onConnected: () => setMarketStreamError(null),
+    onDisconnected: () => {
+      setMarketStreamError((current) => current ?? t("messages.marketStreamDisconnected"));
+    },
+    onMessage: (event) => {
       let payload: WsEnvelope | null = null;
       try {
         payload = JSON.parse(event.data) as WsEnvelope;
@@ -1679,37 +1678,22 @@ function TradePageContent() {
       }
 
       if (payload.type === "error") {
-        setError(payload.message ?? t("messages.marketWebsocketError"));
+        setMarketStreamError(payload.message ?? t("messages.marketWebsocketError"));
       }
-    };
-
-    marketWs.onerror = () => {
-      setError(t("messages.marketStreamDisconnected"));
-    };
-
-    return () => {
-      marketWs.close();
-      clearPendingTickerUpdate();
-      if (marketWsRef.current === marketWs) {
-        marketWsRef.current = null;
-      }
-    };
-  }, [applyTickerUpdate, clearPendingTickerUpdate, selectedAccountId, selectedSymbol, marketType, wsBase]);
+    }
+  });
 
   useEffect(() => {
-    if (!selectedAccountId) return;
+    return () => clearPendingTickerUpdate();
+  }, [clearPendingTickerUpdate, marketStreamUrl]);
 
-    if (userWsRef.current) {
-      userWsRef.current.close();
-      userWsRef.current = null;
-    }
-
-    const userWs = new WebSocket(
-      `${wsBase}/ws/user?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&marketType=${encodeURIComponent(marketType)}`
-    );
-    userWsRef.current = userWs;
-
-    userWs.onmessage = (event) => {
+  const reconnectUserStream = useReconnectingWebSocket({
+    url: userStreamUrl,
+    onConnected: () => setUserStreamError(null),
+    onDisconnected: () => {
+      setUserStreamError((current) => current ?? t("messages.userStreamDisconnected"));
+    },
+    onMessage: (event) => {
       let payload: WsEnvelope | null = null;
       try {
         payload = JSON.parse(event.data) as WsEnvelope;
@@ -1717,6 +1701,11 @@ function TradePageContent() {
         return;
       }
       if (!payload) return;
+
+      if (payload.type === "error") {
+        setUserStreamError(payload.message ?? t("messages.userStreamDisconnected"));
+        return;
+      }
 
       if (payload.type === "account" && payload.data) {
         const data = payload.data as {
@@ -1776,19 +1765,8 @@ function TradePageContent() {
           // ignore transient refresh errors
         });
       }
-    };
-
-    userWs.onerror = () => {
-      setError(t("messages.userStreamDisconnected"));
-    };
-
-    return () => {
-      userWs.close();
-      if (userWsRef.current === userWs) {
-        userWsRef.current = null;
-      }
-    };
-  }, [selectedAccountId, selectedSymbol, marketType, wsBase]);
+    }
+  });
 
   useEffect(() => {
     if (!selectedAccountId || !selectedSymbol) return;
@@ -2250,24 +2228,28 @@ function TradePageContent() {
     void persistSettings({ chartPreferences: next });
   }, [persistSettings]);
 
+  const displayedError = error ?? marketStreamError ?? userStreamError;
+
   return (
     <div className="tradeDeskWrap">
       <PageHeader title={t("title")} description={t("subtitle")} />
 
-      {error ? (
+      {displayedError ? (
         <Notice tone="danger" className="card tradeDeskNotice tradeDeskNoticeError">
-          <strong>{t("alerts.error")}:</strong> {error}
+          <strong>{t("alerts.error")}:</strong> {displayedError}
           <div style={{ marginTop: 8 }}>
             <button
               className="btn"
               onClick={() => {
                 if (!selectedAccountId) return;
+                reconnectMarketStream();
+                reconnectUserStream();
                 void loadDeskData(selectedAccountId, selectedSymbol);
-	              }}
-	            >
-	              <AppIcon name="refresh" />
-	              {t("actions.retry")}
-	            </button>
+              }}
+            >
+              <AppIcon name="refresh" />
+              {t("actions.retry")}
+            </button>
           </div>
         </Notice>
       ) : null}
