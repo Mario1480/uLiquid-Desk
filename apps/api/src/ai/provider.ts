@@ -155,13 +155,13 @@ function parseStoredAiModelRouting(value: unknown): Partial<AiModelRouting> {
 }
 
 export type CallAiOptions = {
+  billingUserId: string | null;
+  billingScope: string;
   systemMessage?: string;
   model?: string;
   timeoutMs?: number;
   temperature?: number;
   maxTokens?: number;
-  billingUserId?: string | null;
-  billingScope?: string;
   onUsage?: (usage: AiUsageTokens) => void;
   onResolved?: (meta: AiCallResolvedMeta) => void;
 };
@@ -192,13 +192,13 @@ export type ChatToolDefinition = {
 };
 
 export type CallAiChatOptions = {
+  billingUserId: string | null;
+  billingScope: string;
   systemMessage?: string;
   model?: string;
   timeoutMs?: number;
   temperature?: number;
   maxTokens?: number;
-  billingUserId?: string | null;
-  billingScope?: string;
   onUsage?: (usage: AiUsageTokens) => void;
   onResolved?: (meta: AiCallResolvedMeta) => void;
   tools?: ChatToolDefinition[];
@@ -219,6 +219,24 @@ export type CallAiChatOptions = {
     routing: AiRoutingDecision;
   };
 };
+
+export type AiBillingAttribution = {
+  userId: string | null;
+  scope: string;
+  mode: "user" | "platform";
+};
+
+export function resolveAiBillingAttribution(input: {
+  billingUserId: string | null;
+  billingScope: string;
+}): AiBillingAttribution {
+  const scope = typeof input.billingScope === "string" ? input.billingScope.trim() : "";
+  if (!scope) throw new Error("ai_billing_scope_missing");
+  const userId = typeof input.billingUserId === "string" && input.billingUserId.trim()
+    ? input.billingUserId.trim()
+    : null;
+  return { userId, scope, mode: userId ? "user" : "platform" };
+}
 
 export type AiToolCall = {
   id: string;
@@ -995,7 +1013,7 @@ async function callChatCompletions(params: {
 
 export async function callAiChat(
   messages: ChatMessage[],
-  options: CallAiChatOptions = {}
+  options: CallAiChatOptions
 ): Promise<AiChatResult> {
   const provider: EnabledAiProvider = "openai";
   const key = await resolveAiApiKey(provider);
@@ -1016,11 +1034,9 @@ export async function callAiChat(
   const timeout = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   const startedAt = Date.now();
 
-  const billingUserId =
-    typeof options.billingUserId === "string" && options.billingUserId.trim()
-      ? options.billingUserId.trim()
-      : null;
-  const billingScope = options.billingScope?.trim() || "ai_call";
+  const billingAttribution = resolveAiBillingAttribution(options);
+  const billingUserId = billingAttribution.userId;
+  const billingScope = billingAttribution.scope;
   const configuredModelRouting = await resolveOpenAiModelRoutingWithSource();
   const routing = options.aiRunContext?.routing ?? routeOpenAiModel({
     scope: billingScope,
@@ -1209,7 +1225,7 @@ export async function callAiChat(
   }
 }
 
-export async function callAi(prompt: string, options: CallAiOptions = {}): Promise<string> {
+export async function callAi(prompt: string, options: CallAiOptions): Promise<string> {
   const messages: ChatMessage[] = [
     ...(options.systemMessage
       ? [{ role: "system" as const, content: options.systemMessage }]

@@ -5,11 +5,32 @@ import {
   hasUsableAiChatMessageOutput,
   isSelfHostedAiProvider,
   normalizeAiProvider,
+  resolveAiBillingAttribution,
   resolveAiModelFromConfig,
   settleIncompleteAiFailureUsage,
   shouldChargeAiCredits
 } from "./provider.js";
 import { OpenAiResponsesIncompleteError } from "./credits/responsesProvider.js";
+
+test("AI billing attribution requires a scope and makes platform calls explicit", () => {
+  assert.deepEqual(resolveAiBillingAttribution({
+    billingUserId: "  user-1  ",
+    billingScope: "  position_copilot  "
+  }), {
+    userId: "user-1",
+    scope: "position_copilot",
+    mode: "user"
+  });
+  assert.deepEqual(resolveAiBillingAttribution({
+    billingUserId: null,
+    billingScope: "prediction_explainer"
+  }), {
+    userId: null,
+    scope: "prediction_explainer",
+    mode: "platform"
+  });
+  assert.throws(() => resolveAiBillingAttribution({ billingUserId: "user-1", billingScope: "  " }), /ai_billing_scope_missing/);
+});
 
 test("hasUsableAiChatMessageOutput rejects empty completions and accepts text or tool calls", () => {
   assert.equal(hasUsableAiChatMessageOutput({ role: "assistant", content: null }), false);

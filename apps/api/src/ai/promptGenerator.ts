@@ -47,7 +47,7 @@ const PROMPT_BUILDER_CHAT_MAX_TOKENS = boundedTokenBudget(
   1800
 );
 
-type CallAiFn = (prompt: string, options?: CallAiOptions) => Promise<string>;
+type CallAiFn = (prompt: string, options: CallAiOptions) => Promise<string>;
 
 type SelectedIndicator = Pick<AiPromptIndicatorOptionPublic, "key" | "label" | "description">;
 

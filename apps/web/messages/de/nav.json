@@ -26,6 +26,11 @@
     "languageMenu": "Sprache wechseln",
     "alertsMenu": "Alarme öffnen",
     "userMenu": "Benutzermenü öffnen",
+    "aiCredits": {
+      "short": "AI",
+      "loading": "AI-Credit-Guthaben wird geladen",
+      "tooltip": "{available} AI Credits verfügbar, {reserved} reserviert. Abrechnung öffnen."
+    },
     "language": {
       "en": "Englisch",
       "de": "Deutsch"

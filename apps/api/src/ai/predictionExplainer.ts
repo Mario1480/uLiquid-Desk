@@ -171,6 +171,7 @@ type GenerateDeps = {
   promptSettings?: AiPromptRuntimeSettings;
   promptScopeContext?: AiPromptScopeContext;
   traceUserId?: string | null;
+  billingScope?: string;
   requireSuccessfulAi?: boolean;
 };
 
@@ -2383,6 +2384,7 @@ export async function generatePredictionExplanation(
   const aiModel = await getAiModelAsync();
   const aiFallbackModel = resolveExplainerFallbackModel(aiModel);
   const callAiFn = deps.callAiFn ?? callAi;
+  const billingScope = deps.billingScope?.trim() || "prediction_explainer";
   const agentEnabled = useAgentSignalEngine(aiProvider);
   const shouldRecordPayloadBudgetTelemetry = !isSelfHostedAiProvider(aiProvider);
   const effectiveExplainerTimeoutMs =
@@ -2391,7 +2393,7 @@ export async function generatePredictionExplanation(
       : EXPLAINER_TIMEOUT_MS;
   const traceBase = {
     userId: deps.traceUserId ?? null,
-    scope: "prediction_explainer",
+    scope: billingScope,
     provider: aiProvider,
     model: aiModel,
     symbol: promptInput.symbol,
@@ -2571,7 +2573,7 @@ export async function generatePredictionExplanation(
               timeoutMs: effectiveExplainerTimeoutMs,
               maxTokens: resolveExplainerTokenBudget(inputArgs.model).retryMaxTokens,
               billingUserId: deps.traceUserId ?? null,
-              billingScope: "prediction_explainer",
+              billingScope,
               onUsage: (usage) => {
                 const derived =
                   usage.totalTokens
@@ -2615,7 +2617,7 @@ export async function generatePredictionExplanation(
             timeoutMs: effectiveExplainerTimeoutMs,
             maxTokens: resolveExplainerTokenBudget(aiModel).retryMaxTokens,
             billingUserId: deps.traceUserId ?? null,
-            billingScope: "prediction_explainer",
+            billingScope,
             profile: runtimeProfile.agentSignalProfile
           });
           raw = agentResult.content;
@@ -2711,7 +2713,7 @@ export async function generatePredictionExplanation(
                 timeoutMs: effectiveExplainerTimeoutMs,
                 maxTokens: resolveExplainerAttemptMaxTokens(currentModel, attempt),
                 billingUserId: deps.traceUserId ?? null,
-                billingScope: "prediction_explainer",
+                billingScope,
                 onUsage: (usage) => {
                   const derived =
                     usage.totalTokens
@@ -2845,7 +2847,7 @@ export async function generatePredictionExplanation(
               timeoutMs: effectiveExplainerTimeoutMs,
               maxTokens: resolveExplainerTokenBudget(aiModel).retryMaxTokens,
               billingUserId: deps.traceUserId ?? null,
-              billingScope: "prediction_explainer",
+              billingScope,
               profile: runtimeProfile.agentSignalProfile
             });
             raw = agentResult.content;

@@ -1496,6 +1496,7 @@ export function registerStrategyWriteRoutes(
         confidence: Number(prediction.confidence)
       },
       context: {
+        billingUserId: user.id,
         exchange: typeof featureSnapshot.prefillExchange === "string" ? featureSnapshot.prefillExchange : undefined,
         accountId: typeof featureSnapshot.prefillExchangeAccountId === "string"
           ? featureSnapshot.prefillExchangeAccountId

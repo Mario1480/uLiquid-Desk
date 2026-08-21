@@ -15,6 +15,14 @@ import {
   type ServerInfoPayload,
   type SubscriptionPayload
 } from "../../../src/billing/subscriptionViewModel";
+import {
+  formatAiCreditAmount,
+  formatAiTokenAmount,
+  isKnownAiCreditUsageScope,
+  type AiCreditSummary,
+  type AiCreditUsageItem,
+  type AiCreditUsagePage
+} from "../../../src/billing/aiCredits";
 
 function formatMaybeDate(value: string | null, locale: string): string {
   if (!value) return "-";
@@ -64,28 +72,6 @@ function getOrderExplorerUrl(order: BillingOrder): string | null {
     : null;
 }
 
-type AiCreditSummary = {
-  available: string;
-  reserved: string;
-  usedToday: string;
-  usedThisMonth: string;
-  dailyLimit: string | null;
-  monthlyLimit: string | null;
-  maxRunCredits: string | null;
-  warningLevel: "none" | "low_20" | "low_10" | "exhausted";
-  topups: Array<{ id: string; code: string; name: string; priceCents: number; aiCredits: string }>;
-};
-
-type AiCreditUsageItem = {
-  id: string;
-  scope: string;
-  status: string;
-  modelClass: string | null;
-  chargedCredits: string;
-  modelCallCount: number;
-  createdAt: string;
-};
-
 export default function SubscriptionPage() {
   const t = useTranslations("settings.subscription");
   const tCommon = useTranslations("settings.common");
@@ -97,6 +83,8 @@ export default function SubscriptionPage() {
   const [serverInfo, setServerInfo] = useState<ServerInfoPayload | null>(null);
   const [aiCredits, setAiCredits] = useState<AiCreditSummary | null>(null);
   const [aiUsage, setAiUsage] = useState<AiCreditUsageItem[]>([]);
+  const [aiUsagePage, setAiUsagePage] = useState<AiCreditUsagePage["page"]>({ hasMore: false, nextCursor: null });
+  const [aiUsageLoadingMore, setAiUsageLoadingMore] = useState(false);
   const [dailyLimit, setDailyLimit] = useState("");
   const [monthlyLimit, setMonthlyLimit] = useState("");
   const [maxRunCredits, setMaxRunCredits] = useState("");
@@ -116,7 +104,7 @@ export default function SubscriptionPage() {
         apiGet<AuthMePayload>("/auth/me"),
         apiGet<ServerInfoPayload>("/settings/server-info"),
         apiGet<AiCreditSummary>("/api/billing/ai-credits"),
-        apiGet<{ items: AiCreditUsageItem[] }>("/api/billing/ai-credits/usage?limit=20")
+        apiGet<AiCreditUsagePage>("/api/billing/ai-credits/usage?limit=25")
       ]);
 
       if (subscriptionResult.status === "fulfilled") {
@@ -150,7 +138,13 @@ export default function SubscriptionPage() {
       } else {
         setAiCredits(null);
       }
-      setAiUsage(aiUsageResult.status === "fulfilled" ? aiUsageResult.value.items : []);
+      if (aiUsageResult.status === "fulfilled") {
+        setAiUsage(aiUsageResult.value.items);
+        setAiUsagePage(aiUsageResult.value.page);
+      } else {
+        setAiUsage([]);
+        setAiUsagePage({ hasMore: false, nextCursor: null });
+      }
     } finally {
       setLoading(false);
     }
@@ -176,6 +170,53 @@ export default function SubscriptionPage() {
     } finally {
       setSavingCreditLimits(false);
     }
+  }
+
+  async function loadMoreAiUsage() {
+    if (!aiUsagePage.hasMore || !aiUsagePage.nextCursor || aiUsageLoadingMore) return;
+    setAiUsageLoadingMore(true);
+    setMessage(null);
+    try {
+      const next = await apiGet<AiCreditUsagePage>(`/api/billing/ai-credits/usage?limit=25&cursor=${encodeURIComponent(aiUsagePage.nextCursor)}`);
+      setAiUsage((current) => {
+        const knownIds = new Set(current.map((item) => item.id));
+        return [...current, ...next.items.filter((item) => !knownIds.has(item.id))];
+      });
+      setAiUsagePage(next.page);
+    } catch (error) {
+      setMessage(formatApiError(error));
+    } finally {
+      setAiUsageLoadingMore(false);
+    }
+  }
+
+  function aiUsageScopeLabel(scope: string): string {
+    if (isKnownAiCreditUsageScope(scope)) return t(`credits.scopes.${scope}`);
+    return scope.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+  }
+
+  function aiUsageStatusLabel(status: string): string {
+    const normalized = status.toLowerCase();
+    if (["completed", "failed", "running", "reconciliation_required"].includes(normalized)) {
+      return t(`credits.statuses.${normalized}`);
+    }
+    return status;
+  }
+
+  function aiUsageModelClassLabel(modelClass: string | null): string {
+    if (!modelClass) return "-";
+    if (["utility", "standard", "analysis", "deep"].includes(modelClass)) {
+      return t(`credits.analysisClasses.${modelClass}`);
+    }
+    return modelClass;
+  }
+
+  function aiReservationStatusLabel(status: string): string {
+    const normalized = status.toLowerCase();
+    if (["active", "settled", "released", "expired", "reconciliation_required"].includes(normalized)) {
+      return t(`credits.reservationStatuses.${normalized}`);
+    }
+    return status;
   }
 
   return (
@@ -296,11 +337,11 @@ export default function SubscriptionPage() {
               <div className="subscriptionCardTitle">{t("license.cards.aiWallet")}</div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiBalance")}</span>
-                <span>{aiCredits?.available ?? model.ai.balance}</span>
+                <span>{aiCredits ? formatAiCreditAmount(aiCredits.available, locale) : model.ai.balance}</span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiReserved")}</span>
-                <span>{aiCredits?.reserved ?? "0"}</span>
+                <span>{aiCredits ? formatAiCreditAmount(aiCredits.reserved, locale) : "0"}</span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiMonthlyIncluded")}</span>
@@ -308,15 +349,15 @@ export default function SubscriptionPage() {
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiUsedLifetime")}</span>
-                <span>{model.ai.usedLifetime}</span>
+                <span>{aiCredits ? formatAiCreditAmount(aiCredits.usedLifetime, locale) : model.ai.usedLifetime}</span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiUsedToday")}</span>
-                <span>{aiCredits?.usedToday ?? "0"}</span>
+                <span>{aiCredits ? formatAiCreditAmount(aiCredits.usedToday, locale) : "0"}</span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiUsedMonth")}</span>
-                <span>{aiCredits?.usedThisMonth ?? "0"}</span>
+                <span>{aiCredits ? formatAiCreditAmount(aiCredits.usedThisMonth, locale) : "0"}</span>
               </div>
             </div>
 
@@ -375,14 +416,14 @@ export default function SubscriptionPage() {
                 {t("credits.buyTopup")}
               </Link>
             </div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="table subscriptionOrdersTable">
+            <div className="subscriptionTableScroll">
+              <table className="table subscriptionOrdersTable subscriptionAiUsageTable">
                 <thead>
                   <tr>
                     <th>{t("credits.createdAt")}</th>
-                    <th>{t("credits.scope")}</th>
-                    <th>{t("credits.analysisClass")}</th>
-                    <th>{t("credits.calls")}</th>
+                    <th>{t("credits.action")}</th>
+                    <th>{t("credits.model")}</th>
+                    <th>{t("credits.usage")}</th>
                     <th>{t("credits.charged")}</th>
                     <th>{t("credits.status")}</th>
                   </tr>
@@ -391,11 +432,44 @@ export default function SubscriptionPage() {
                   {aiUsage.map((item) => (
                     <tr key={item.id}>
                       <td>{formatMaybeDate(item.createdAt, locale)}</td>
-                      <td>{item.scope}</td>
-                      <td>{item.modelClass ?? "-"}</td>
-                      <td>{item.modelCallCount}</td>
-                      <td>{item.chargedCredits}</td>
-                      <td>{item.status}</td>
+                      <td>
+                        <strong className="subscriptionAiUsageAction">{aiUsageScopeLabel(item.scope)}</strong>
+                        <span className="subscriptionAiUsageMeta">{item.scope}</span>
+                      </td>
+                      <td>
+                        <span>{aiUsageModelClassLabel(item.modelClass)}</span>
+                        <span className="subscriptionAiUsageMeta">{item.model ?? item.provider ?? "-"}</span>
+                      </td>
+                      <td>
+                        <span>{t("credits.callCount", { count: item.modelCallCount })}</span>
+                        <span
+                          className="subscriptionAiUsageMeta"
+                          title={t("credits.tokenBreakdown", {
+                            input: formatAiTokenAmount(item.tokenUsage.input, locale),
+                            cached: formatAiTokenAmount(item.tokenUsage.cachedInput, locale),
+                            output: formatAiTokenAmount(item.tokenUsage.output, locale),
+                            reasoning: formatAiTokenAmount(item.tokenUsage.reasoning, locale)
+                          })}
+                        >
+                          {t("credits.tokenCount", { count: formatAiTokenAmount(item.usageTotalTokens, locale) })}
+                        </span>
+                      </td>
+                      <td>
+                        <strong className="subscriptionAiUsageCredits">{formatAiCreditAmount(item.chargedCredits, locale)}</strong>
+                        {item.reservation && item.reservation.status !== "SETTLED" ? (
+                          <span className="subscriptionAiUsageMeta">
+                            {t("credits.reservation", {
+                              count: formatAiCreditAmount(item.reservation.reservedCredits, locale),
+                              status: aiReservationStatusLabel(item.reservation.status)
+                            })}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span className={`subscriptionAiUsageStatus subscriptionAiUsageStatus-${item.status.toLowerCase()}`}>
+                          {aiUsageStatusLabel(item.status)}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                   {aiUsage.length === 0 ? (
@@ -403,6 +477,17 @@ export default function SubscriptionPage() {
                   ) : null}
                 </tbody>
               </table>
+            </div>
+            <div className="subscriptionAiUsageFooter">
+              <span className="subscriptionPortalMuted">{t("credits.loadedCount", { count: aiUsage.length })}</span>
+              {aiUsagePage.hasMore ? (
+                <button className="btn" type="button" disabled={aiUsageLoadingMore} onClick={() => void loadMoreAiUsage()}>
+                  <AppIcon name="chevronDown" />
+                  {aiUsageLoadingMore ? t("credits.loadingMore") : t("credits.loadMore")}
+                </button>
+              ) : aiUsage.length > 0 ? (
+                <span className="subscriptionPortalMuted">{t("credits.historyComplete")}</span>
+              ) : null}
             </div>
           </div>
 

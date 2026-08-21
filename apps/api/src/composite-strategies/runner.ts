@@ -129,6 +129,7 @@ export type CompositeRunInput = {
     tsCreated: string;
   };
   context?: {
+    billingUserId?: string | null;
     exchange?: string;
     accountId?: string;
     symbol?: string;
@@ -845,6 +846,8 @@ export async function runCompositeStrategy(
         featureSnapshot: input.featureSnapshot
       }, {
         promptSettings: runtimePrompt,
+        traceUserId: input.context?.billingUserId ?? null,
+        billingScope: "composite_strategy_ai",
         promptScopeContext: {
           exchange: input.context?.exchange,
           accountId: input.context?.accountId,

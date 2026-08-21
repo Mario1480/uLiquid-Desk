@@ -24,7 +24,7 @@ export const POSITION_COPILOT_SYSTEM_MESSAGE = buildAiAgentSystemMessage("positi
 
 type CallAiChat = (
   messages: ChatMessage[],
-  options?: CallAiChatOptions
+  options: CallAiChatOptions
 ) => Promise<AiChatResult>;
 
 type AiPositionCopilotResponse = {

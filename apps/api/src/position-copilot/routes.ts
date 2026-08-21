@@ -13,7 +13,7 @@ import {
   savePositionCopilotSettings
 } from "./settings.js";
 
-type CallAiChat = (messages: ChatMessage[], options?: CallAiChatOptions) => Promise<AiChatResult>;
+type CallAiChat = (messages: ChatMessage[], options: CallAiChatOptions) => Promise<AiChatResult>;
 
 type RegisterPositionCopilotRoutesDeps = {
   db: any;

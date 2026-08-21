@@ -9,7 +9,7 @@ import { profileMutationSchema } from "./schemas.js";
 import { listAgentSkillDescriptors } from "./skills.js";
 import type { AgentProfileKey, ResolvedAgentProfile } from "./contracts.js";
 
-type CallAiChat = (messages: ChatMessage[], options?: CallAiChatOptions) => Promise<AiChatResult>;
+type CallAiChat = (messages: ChatMessage[], options: CallAiChatOptions) => Promise<AiChatResult>;
 
 export type AgentChatServiceDeps = {
   db: any;

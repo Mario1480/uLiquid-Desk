@@ -26,6 +26,11 @@
     "languageMenu": "Switch language",
     "alertsMenu": "Open alerts",
     "userMenu": "Open user menu",
+    "aiCredits": {
+      "short": "AI",
+      "loading": "Loading AI Credit balance",
+      "tooltip": "{available} AI Credits available, {reserved} reserved. Open billing."
+    },
     "language": {
       "en": "English",
       "de": "German"

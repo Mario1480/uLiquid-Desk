@@ -9994,6 +9994,7 @@ async function refreshPredictionStateForTemplate(params: {
             tsCreated
           },
           context: {
+            billingUserId: template.userId,
             exchange: template.exchange,
             accountId: template.exchangeAccountId,
             symbol: template.symbol,

@@ -22,6 +22,16 @@ const limitsSchema = z.object({
   maxRunCredits: z.string().regex(/^\d+$/).nullable()
 }).strict();
 
+const usageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  cursor: z.string().trim().min(1).max(512).optional()
+});
+
+type AiUsageCursor = {
+  id: string;
+  createdAt: string;
+};
+
 const pricingSchema = z.object({
   model: z.string().trim().min(1).max(120),
   inputMicrousdPerMillion: z.string().regex(/^\d+$/),
@@ -39,6 +49,14 @@ function asString(value: unknown): string {
   return typeof value === "bigint" ? value.toString() : String(value ?? "0");
 }
 
+function asBigInt(value: unknown): bigint {
+  try {
+    return BigInt(String(value ?? "0"));
+  } catch {
+    return 0n;
+  }
+}
+
 function warningLevel(balance: bigint, available: bigint): "none" | "low_20" | "low_10" | "exhausted" {
   if (available <= 0n) return "exhausted";
   if (balance <= 0n) return "none";
@@ -46,6 +64,38 @@ function warningLevel(balance: bigint, available: bigint): "none" | "low_20" | "
   if (percent <= 10n) return "low_10";
   if (percent <= 20n) return "low_20";
   return "none";
+}
+
+function serializeAiCreditSummary(summary: Awaited<ReturnType<typeof getAiCreditSummary>>) {
+  return {
+    balance: asString(summary.balance),
+    reserved: asString(summary.reserved),
+    available: asString(summary.available),
+    usedLifetime: asString(summary.usedLifetime),
+    usedToday: asString(summary.usedToday),
+    usedThisMonth: asString(summary.usedThisMonth),
+    dailyLimit: summary.dailyLimit?.toString() ?? null,
+    monthlyLimit: summary.monthlyLimit?.toString() ?? null,
+    maxRunCredits: summary.maxRunCredits?.toString() ?? null,
+    warningLevel: warningLevel(summary.balance, summary.available)
+  };
+}
+
+export function encodeAiUsageCursor(cursor: AiUsageCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+export function decodeAiUsageCursor(value: string): AiUsageCursor {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<AiUsageCursor>;
+    const createdAt = typeof parsed.createdAt === "string" ? new Date(parsed.createdAt) : null;
+    if (typeof parsed.id !== "string" || parsed.id.trim().length === 0 || !createdAt || Number.isNaN(createdAt.getTime())) {
+      throw new Error("invalid_cursor");
+    }
+    return { id: parsed.id, createdAt: createdAt.toISOString() };
+  } catch {
+    throw new Error("invalid_cursor");
+  }
 }
 
 function requireAdminOr403(res: Response, requireSuperadmin: (res: Response) => Promise<boolean>): Promise<boolean> {
@@ -68,17 +118,25 @@ export function registerAiCreditRoutes(app: Express, deps: {
       })
     ]);
     return res.json({
-      balance: asString(summary.balance),
-      reserved: asString(summary.reserved),
-      available: asString(summary.available),
-      usedLifetime: asString(summary.usedLifetime),
-      usedToday: asString(summary.usedToday),
-      usedThisMonth: asString(summary.usedThisMonth),
-      dailyLimit: summary.dailyLimit?.toString() ?? null,
-      monthlyLimit: summary.monthlyLimit?.toString() ?? null,
-      maxRunCredits: summary.maxRunCredits?.toString() ?? null,
-      warningLevel: warningLevel(summary.balance, summary.available),
+      ...serializeAiCreditSummary(summary),
       topups: topups.map((row: any) => ({ ...row, aiCredits: asString(row.aiCredits) }))
+    });
+  });
+
+  app.get("/api/billing/ai-credits/summary", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const subscription = await deps.db.userSubscription.findUnique({
+      where: { userId: user.id },
+      select: { aiCreditBalance: true, aiCreditsReserved: true }
+    });
+    const balance = asBigInt(subscription?.aiCreditBalance);
+    const reserved = asBigInt(subscription?.aiCreditsReserved);
+    const available = balance > reserved ? balance - reserved : 0n;
+    return res.json({
+      balance: balance.toString(),
+      reserved: reserved.toString(),
+      available: available.toString(),
+      warningLevel: warningLevel(balance, available)
     });
   });
 
@@ -106,20 +164,95 @@ export function registerAiCreditRoutes(app: Express, deps: {
 
   app.get("/api/billing/ai-credits/usage", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
-    const take = Math.min(100, Math.max(1, Number(req.query.limit ?? 30)));
+    const parsedQuery = usageQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) return res.status(400).json({ error: "invalid_query", details: parsedQuery.error.flatten() });
+    let cursor: AiUsageCursor | null = null;
+    if (parsedQuery.data.cursor) {
+      try {
+        cursor = decodeAiUsageCursor(parsedQuery.data.cursor);
+      } catch {
+        return res.status(400).json({ error: "invalid_cursor" });
+      }
+    }
+    const cursorDate = cursor ? new Date(cursor.createdAt) : null;
     const runs = await deps.db.aiAgentRun.findMany({
-      where: { userId: user.id, modelCallCount: { gt: 0 } },
-      select: { id: true, scope: true, status: true, modelClass: true, chargedCredits: true, providerCostMicrousd: true, retailCostMicrousd: true, modelCallCount: true, createdAt: true, completedAt: true },
-      orderBy: { createdAt: "desc" },
-      take
+      where: {
+        userId: user.id,
+        AND: [
+          { OR: [{ modelCallCount: { gt: 0 } }, { reservation: { isNot: null } }] },
+          ...(cursor && cursorDate ? [{
+            OR: [
+              { createdAt: { lt: cursorDate } },
+              { createdAt: cursorDate, id: { lt: cursor.id } }
+            ]
+          }] : [])
+        ]
+      },
+      select: {
+        id: true,
+        scope: true,
+        status: true,
+        provider: true,
+        model: true,
+        modelClass: true,
+        reservedCredits: true,
+        chargedCredits: true,
+        modelCallCount: true,
+        usageTotalTokens: true,
+        latencyMs: true,
+        createdAt: true,
+        completedAt: true,
+        reservation: { select: { status: true, reservedCredits: true, settledCredits: true } },
+        usageRecords: {
+          select: { inputTokens: true, cachedInputTokens: true, outputTokens: true, reasoningTokens: true },
+          orderBy: { callIndex: "asc" }
+        }
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: parsedQuery.data.limit + 1
     });
+    const hasMore = runs.length > parsedQuery.data.limit;
+    const visibleRuns = hasMore ? runs.slice(0, parsedQuery.data.limit) : runs;
+    const nextRow = hasMore ? visibleRuns.at(-1) : null;
     return res.json({
-      items: runs.map((run: any) => ({
-        ...run,
-        chargedCredits: asString(run.chargedCredits),
-        providerCostMicrousd: asString(run.providerCostMicrousd),
-        retailCostMicrousd: asString(run.retailCostMicrousd)
-      }))
+      items: visibleRuns.map((run: any) => {
+        const tokenUsage = run.usageRecords.reduce((totals: Record<string, bigint>, record: any) => ({
+          input: totals.input + BigInt(record.inputTokens ?? 0),
+          cachedInput: totals.cachedInput + BigInt(record.cachedInputTokens ?? 0),
+          output: totals.output + BigInt(record.outputTokens ?? 0),
+          reasoning: totals.reasoning + BigInt(record.reasoningTokens ?? 0)
+        }), { input: 0n, cachedInput: 0n, output: 0n, reasoning: 0n });
+        return {
+          id: run.id,
+          scope: run.scope,
+          status: run.status,
+          provider: run.provider,
+          model: run.model,
+          modelClass: run.modelClass,
+          reservedCredits: asString(run.reservedCredits),
+          chargedCredits: asString(run.chargedCredits),
+          modelCallCount: run.modelCallCount,
+          usageTotalTokens: run.usageTotalTokens ?? Number(tokenUsage.input + tokenUsage.output),
+          tokenUsage: {
+            input: tokenUsage.input.toString(),
+            cachedInput: tokenUsage.cachedInput.toString(),
+            output: tokenUsage.output.toString(),
+            reasoning: tokenUsage.reasoning.toString()
+          },
+          latencyMs: run.latencyMs,
+          reservation: run.reservation ? {
+            status: run.reservation.status,
+            reservedCredits: asString(run.reservation.reservedCredits),
+            settledCredits: asString(run.reservation.settledCredits)
+          } : null,
+          createdAt: run.createdAt,
+          completedAt: run.completedAt
+        };
+      }),
+      page: {
+        hasMore,
+        nextCursor: nextRow ? encodeAiUsageCursor({ id: nextRow.id, createdAt: nextRow.createdAt.toISOString() }) : null
+      }
     });
   });
 

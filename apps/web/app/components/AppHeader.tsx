@@ -21,6 +21,7 @@ import {
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
 import ClientErrorBoundary from "./ClientErrorBoundary";
+import AiCreditHeaderPill from "./AiCreditHeaderPill";
 import { AppIcon } from "./AppIcon";
 
 const WalletConnectionWidget = dynamic(() => import("./WalletConnectionWidget"), {
@@ -607,6 +608,8 @@ export default function AppHeader({
               <span>{tHeader("maintenanceActive")}</span>
             </Link>
           ) : null}
+
+          <AiCreditHeaderPill />
 
           <ClientErrorBoundary fallback={<button className="btn" type="button" disabled>Wallet unavailable</button>}>
             <WalletConnectionWidget />

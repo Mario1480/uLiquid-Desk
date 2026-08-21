@@ -142,6 +142,64 @@
   vertical-align: top;
   text-align: left;
 }
+.subscriptionTableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.subscriptionAiUsageTable {
+  min-width: 820px;
+}
+.subscriptionAiUsageAction,
+.subscriptionAiUsageCredits {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.subscriptionAiUsageMeta {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.subscriptionAiUsageStatus {
+  display: inline-flex;
+  padding: 3px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.08);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.subscriptionAiUsageStatus-completed {
+  border-color: rgba(34, 197, 94, 0.42);
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.1);
+}
+.subscriptionAiUsageStatus-running {
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.1);
+}
+.subscriptionAiUsageStatus-failed {
+  border-color: rgba(239, 68, 68, 0.46);
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.1);
+}
+.subscriptionAiUsageStatus-reconciliation_required {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.1);
+}
+.subscriptionAiUsageFooter {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
 .subscriptionOrderPackageCell {
   display: grid;
   gap: 4px;

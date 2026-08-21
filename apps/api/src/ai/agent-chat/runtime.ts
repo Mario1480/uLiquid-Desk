@@ -30,7 +30,7 @@ import type {
   ResolvedAgentProfile
 } from "./contracts.js";
 
-type CallAiChat = (messages: ChatMessage[], options?: CallAiChatOptions) => Promise<AiChatResult>;
+type CallAiChat = (messages: ChatMessage[], options: CallAiChatOptions) => Promise<AiChatResult>;
 
 type RunAgentChatParams = {
   db: any;

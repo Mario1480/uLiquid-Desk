@@ -72,6 +72,8 @@ test("pipeline execution order follows topological graph", async () => {
 });
 
 test("merge policy first_non_neutral picks first non-neutral node output", async () => {
+  let billedUserId: string | null | undefined;
+  let billingScope: string | undefined;
   const result = await runCompositeStrategy({
     compositeId: "comp_2",
     combineMode: "pipeline",
@@ -82,7 +84,8 @@ test("merge policy first_non_neutral picks first non-neutral node output", async
     ],
     edgesJson: [{ from: "n1", to: "n2" }],
     featureSnapshot: baseFeatureSnapshot,
-    basePrediction
+    basePrediction,
+    context: { billingUserId: "user-1" }
   }, {
     resolveLocalStrategyRef: async () => ({ exists: true, version: "1.0.0" }),
     resolveAiPromptRef: async () => true,
@@ -131,13 +134,17 @@ test("merge policy first_non_neutral picks first non-neutral node output", async
       matchedScopeType: null,
       matchedOverrideId: null
     }),
-    generatePredictionExplanationFn: async () => ({
-      explanation: "ai says up",
-      tags: ["trend_up"],
-      keyDrivers: [{ name: "historyContext.reg.state", value: "trend_up" }],
-      aiPrediction: { signal: "up", confidence: 0.81, expectedMovePct: 1.5 },
-      disclaimer: "grounded_features_only"
-    })
+    generatePredictionExplanationFn: async (_input, deps) => {
+      billedUserId = deps.traceUserId;
+      billingScope = deps.billingScope;
+      return {
+        explanation: "ai says up",
+        tags: ["trend_up"],
+        keyDrivers: [{ name: "historyContext.reg.state", value: "trend_up" }],
+        aiPrediction: { signal: "up", confidence: 0.81, expectedMovePct: 1.5 },
+        disclaimer: "grounded_features_only"
+      };
+    }
   });
 
   assert.equal(result.signal, "up");
@@ -145,6 +152,8 @@ test("merge policy first_non_neutral picks first non-neutral node output", async
   assert.equal(result.tags.includes("trend_up"), true);
   assert.equal(result.predictionOutput.signalSource, "ai");
   assert.equal(result.predictionOutput.expectedMovePct, 1.5);
+  assert.equal(billedUserId, "user-1");
+  assert.equal(billingScope, "composite_strategy_ai");
 });
 
 test("AI nodes respect gating and max AI call budget", async () => {
