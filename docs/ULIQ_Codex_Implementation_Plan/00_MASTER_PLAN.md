@@ -1,0 +1,156 @@
+# ULIQ Integration – Codex Master Implementation Plan
+
+## Status und Ziel
+
+ULIQ wird als optionaler Utility-, Membership- und Locking-Layer in uLiquid Desk integriert. Das bestehende Arbitrum-USDC-Payment-System bleibt der einzige Settlement-Pfad für Abonnements, AI Credits und weitere Plattformleistungen.
+
+Dieser Ordner ist die einzige Source of Truth für die ULIQ-Umsetzung. Die ADRs in diesem Ordner dokumentieren verbindliche Entscheidungen und verbleibende Blocker. Es wird keine parallele zweite ULIQ-Architektur gepflegt.
+
+Aktueller Gate-Status:
+
+- `GO`: ADR-Dokumentation, Contract Interface Design und Specification, Prisma-/Data-Model-Design, Indexer- und Entitlement-Architektur, UI/UX-Design, Testplanung, Threat Modeling und Arbitrum-Sepolia-Deployment-Planung.
+- `GO TESTNET / PROVISIONAL`: isolierte Solidity-, Backend-, UI- und Arbitrum-Sepolia-Implementierung. Der direkte Test-USDC-Refund wird ausschließlich über einen austauschbaren Testnet-Custody-Adapter abgebildet und ist keine Legal-/Safeguarding-Entscheidung.
+- `NO-GO`: Production-Solidity-Contracts, Mainnet-Deployment, Presale und DEX-Launch, bis die Legal-P0-Blocker aus `ADR_001_LEGAL_PRESALE_MODEL.md` gelöst sind.
+
+## Verbindliche Produktregeln
+
+- Chain: Arbitrum One.
+- Token: ERC-20, Symbol `ULIQ`, Fixed Supply von 1.000.000.000 ULIQ, 18 Decimals.
+- Payments und Settlement: ausschließlich USDC.
+- ULIQ ist kein Payment Asset für Abonnements, AI Credits oder andere Plattformleistungen.
+- Haupt-Presale: direkt im uLiquid Desk über die verknüpfte User-Wallet.
+- Presale Allocation: 120.000.000 ULIQ.
+- Presale-Preis: 0,001 USDC pro ULIQ.
+- Hard Cap: 120.000 USDC.
+- Kein Soft Cap und deshalb kein Soft-Cap-Refund.
+- Sale-Ende: Hard Cap erreicht oder `saleEnd` Timestamp erreicht.
+- Gesetzliche, vertragliche oder Emergency-bedingte Withdrawal-/Refund-Pfade bleiben davon unberührt.
+- Ein Kauf erzeugt zunächst eine `PENDING_WITHDRAWAL` Allocation und noch keine frei verfügbaren ULIQ.
+- Modellierte Withdrawal Period: 14 Kalendertage; finale rechtliche Definition ist Legal Gate.
+- Während `PENDING_WITHDRAWAL`: 0 Wallet-ULIQ, keine Vesting-Position, 0 eligible ULIQ, keine Benefits.
+- Nach Finalisierung: 25 % an die Käufer-Wallet, 75 % in eine Presale-Vesting-Position.
+- Finalisierung ist nach Deadline permissionless, atomar und immer zugunsten des unveränderlichen Buyers.
+- Presale-Vesting startet global zum einmalig on-chain gesetzten DEX-Launch-Timestamp und läuft 9 Monate linear.
+- DEX Launch ist erst bei `pendingPurchaseCount == 0` zulässig.
+- Finalisierte, noch nicht freigegebene Presale-Vesting-ULIQ zählen für Utility.
+- Eligible ULIQ nach Finalisierung: `wallet + unreleased vesting + locked`, wobei jeder Token exakt einmal zählt.
+- Lock-Zeiträume im MVP: 30, 90 oder 180 Tage; kein APY und keine Rewards.
+- ERC20Permit wird verwendet.
+- Optionaler externer Launchpad-Sale ist nicht Teil des MVP.
+
+## MVP Utility
+
+Enthalten:
+
+- AI-Credit-Discount.
+- Subscription-Discount.
+- Premium AI Features.
+- Premium Product Features.
+- Early Access und Feature Access.
+- USD-equivalentes ULIQ-Tier-System.
+- Locking-basierte Produkt-Benefits.
+
+Benefit-Regeln:
+
+- Feature Benefits benötigen einen aktuellen bestätigten Entitlement Snapshot, aber keinen Holding Cooldown.
+- Subscription- und AI-Credit-Discounts benötigen valid entitlement, einen 24-Stunden-Holding-Cooldown und eine 10 Minuten gültige Benefit Reservation.
+- Finalisierte Presale Allocations sind vom zusätzlichen 24-Stunden-Cooldown ausgenommen.
+- Wallet-Wechsel/-Unlink setzt offene ULIQ Reservations von `RESERVED` auf `RELEASED` und erzwingt eine vollständige Neuberechnung.
+
+Nicht enthalten:
+
+- Platform-Fee-Discount.
+- Earn oder APY.
+- Token-, USDC- oder Revenue-Sharing-Rewards.
+- Governance.
+- automatischer Buyback.
+
+Platform-Fee-Discounts werden ausschließlich in `ADR_003_PLATFORM_FEE_DISCOUNT.md` für eine spätere Version untersucht. BotVault-V4-Gebühren werden im ULIQ-MVP nicht verändert.
+
+## Token Allocation – final
+
+| Bucket | Anteil | ULIQ |
+| --- | ---: | ---: |
+| Presale | 12 % | 120.000.000 |
+| Liquidity | 8 % | 80.000.000 |
+| Ecosystem | 22 % | 220.000.000 |
+| Treasury | 30 % | 300.000.000 |
+| Team | 15 % | 150.000.000 |
+| Marketing / Partnerships | 13 % | 130.000.000 |
+| Gesamt | 100 % | 1.000.000.000 |
+
+Verbindliches Release-/Control-Modell:
+
+- Team: 12 Monate Cliff plus 36 Monate linear über Vesting Contracts.
+- Treasury: 12 Monate Lock plus 48 Monate Maximum Release Budget.
+- Ecosystem: 60 Monate Release Budget.
+- Marketing/Partnerships: 48 Monate Release Budget.
+- Liquidity: bedarfsgerechte, nicht lineare Freigabe.
+- getrennte Treasury-, Ecosystem-, Marketing- und Liquidity-Safes; keine zentrale persönliche EOA.
+- `released != distributed` und `unlocked != circulating`; keine automatische Distribution.
+
+## Bestehende uLiquid-Bausteine wiederverwenden
+
+- SIWE-verknüpfte User-Wallet und Arbitrum-Wagmi/Viem-Konfiguration.
+- direktes Arbitrum-USDC-Billing mit Sender-, Treasury-, Confirmation- und Reconciliation-Prüfung.
+- `AiCreditLedger` und bestehende AI-Credit-Pakete.
+- Prisma/Postgres und vorhandene generische Modelle `OnchainIndexedEvent` und `OnchainSyncCursor`.
+- bestehende API-Job-, Alert-, Admin-Audit-, Reauth- und Feature-Flag-Strukturen.
+- Next.js Web App, App Shell, `AppIcon`, Sidebar, i18n und uLiquid Design Tokens.
+- Foundry-Contract-Package unter `packages/contracts`.
+
+## Nicht tun
+
+- Kein ULIQ-Payment für Abo, AI Credits oder andere Plattformleistungen.
+- Kein zweites Wallet-System.
+- Kein zweiter paralleler Onchain-Indexer ohne dokumentierte technische Notwendigkeit.
+- Keine Token-Tax, Blacklist, Transfer-Limits oder spätere Mint-Funktion.
+- Keine Entitlement-Entscheidung ausschließlich im Browser.
+- Keine Utility für pending oder withdrawn Presale Purchases.
+- Keine Doppelzählung von Wallet-, Vesting- und Locker-Beständen.
+- Keine Platform-Fee-Änderung im MVP.
+- Keine Wiedereinführung von CCPayment als ULIQ-Sonderpfad.
+- Keine Multisig-, Treasury- oder Owner-Private-Keys im Backend.
+- Keine Production-Contract-Implementierung, solange ADR-001 blockiert ist.
+
+## Umsetzungsphasen
+
+0. Decisions, Legal Review und ADRs.
+1. Contract Specification; noch keine Production-Implementierung ohne Legal Go.
+2. Data Model und Erweiterung des bestehenden Indexers.
+3. blockkonsistente Entitlement Engine.
+4. Presale Backend, Withdrawal- und Finalization-Orchestrierung.
+5. Billing- und AI-Credit-Integration mit 10-Minuten-Benefit-Reservations.
+6. Frontend und Admin.
+7. Arbitrum-Testnet.
+8. externer Smart-Contract-Audit.
+9. finaler Legal Sign-off.
+10. Mainnet-Deployment.
+11. Presale.
+12. DEX-Launch und globaler Vesting-Start.
+13. Buyback/Burn nur als separat genehmigtes Folgeprojekt.
+
+## P0/P1/P2
+
+### P0 – vor Production Contracts
+
+- ADR-001 mit spezialisiertem Legal Counsel abschließen.
+- Withdrawal-, Refund-, Safeguarding-, Cancellation- und Jurisdiktionsmodell festlegen.
+- exakte OpenZeppelin-Version pinnen und vor Audit einfrieren.
+- konkrete DEX-/Pool-Adresse, Fee Tier, TWAP-Implementierung und Failover Source vor Audit festlegen.
+- ADR-006-State-Machine in eine auditierbare Contract Specification überführen, einschließlich Rounding-/Partial-Fill-Policy.
+
+### P1 – vor Testnet Product Integration
+
+- Prisma-Schema, Migration und uint256-Typstrategie implementieren.
+- bestehenden Indexer um Block Hash, Canonical Status, Lease, Reorg und Reconciliation erweitern.
+- Entitlement Snapshots und Benefit Reservations implementieren.
+- Billing-/AI-Discount-Flows inklusive exakt 10 Minuten Quote-TTL integrieren.
+- Presale-, Withdrawal-, Vesting-, Locking- und Admin-UI umsetzen.
+
+### P2 – vor breitem Mainnet Rollout
+
+- externe Launchpad-Adapteranalyse.
+- zusätzliche Price-Feed-Quellen und fortgeschrittene Manipulationserkennung.
+- Platform-Fee-ADR für eine spätere Version neu bewerten.
+- Buyback/Burn als separates Legal-, Treasury- und Audit-Projekt bewerten.
