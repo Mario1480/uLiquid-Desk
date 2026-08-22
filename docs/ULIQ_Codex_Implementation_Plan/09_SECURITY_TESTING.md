@@ -153,3 +153,29 @@
 - Audit Report und Findings Closure.
 - Mainnet Deployment und Verification Receipts.
 - Monitoring-, Alert- und Incident-Runbook-Evidence.
+
+## Lokale Evidence 2026-08-22
+
+Verifiziert:
+
+- `npm run contracts:build`: PASS.
+- `npm run contracts:test`: PASS, 38/38 repositoryweite Contract-Tests. Der ULIQ-Scope umfasst 10 Unit-/Fuzz-Tests und 4 Invarianten; die beiden ULIQ-Fuzz-Tests liefen mit 256 Runs, jede ULIQ-Invariante mit 256 Runs und 128.000 Calls.
+- ULIQ-Coverage: `ULIQToken` 100 % Lines, `ULIQPresaleVesting` 100 % Lines, `ULIQPresale` 84,21 % Lines, `ULIQLocker` 90,32 % Lines, `ULIQTestnetEscrow` 90 % Lines und `ULIQMockUSDC` 100 % Lines. Die von Foundry ausgewiesene Branch-Coverage liegt niedriger und bleibt ein Audit-Härtungspunkt.
+- `npm -w apps/api run typecheck`: PASS.
+- `npm -w apps/api run test:uliq`: PASS, 21/21.
+- `npm -w apps/api run test:billing`: PASS, 100/100.
+- `npm -w apps/api run test:auth`: PASS, 48/48.
+- `npm -w apps/web run typecheck`, `i18n:check` und `test:billing`: PASS, letzteres 6/6.
+- `npx prisma validate` und `npx prisma generate`: PASS.
+- `npm run quality:any-budget`, `npm run quality:vendor-charting` und `git diff --check`: PASS.
+- lokaler Anvil-Deploy mit Inventory-/Role-/Wiring-Preflight: PASS; die dabei erzeugten Adressen sind flüchtige Local-Adressen und kein Sepolia-Address-Book.
+
+Offen oder blockiert:
+
+- Slither: nicht ausgeführt, Tool lokal nicht installiert.
+- Arbitrum-Fork-Test gegen canonical USDC: nicht als Testnet-Nachweis ausgeführt; der isolierte Testnet-Scope verwendet Mock-USDC/Testnet-Custody.
+- Sepolia-Deploy, Arbiscan-Verifikation und Live-Contract-E2E: blockiert durch fehlende lokale Testnet-RPC-, Deployer-, Safe- und Arbiscan-Konfiguration.
+- Browser-E2E: geschützter Flow benötigt eine autorisierte Test-Session und deployte API/Contracts; Auth wurde nicht umgangen.
+- externer unabhängiger Audit: nicht durchgeführt.
+
+Foundry meldet nicht sicherheitskritische Lint-Hinweise zu Namenskonventionen und Modifier-Wrapping. Bestehende Vault-Tests erzeugen darüber hinaus bekannte Test-Lints; die komplette Suite bleibt grün. Diese Hinweise werden vor einem Audit-Freeze geprüft und nicht als statischer Security-Scan fehlinterpretiert.

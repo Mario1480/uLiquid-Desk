@@ -12,6 +12,25 @@ Aktueller Gate-Status:
 - `GO TESTNET / PROVISIONAL`: isolierte Solidity-, Backend-, UI- und Arbitrum-Sepolia-Implementierung. Der direkte Test-USDC-Refund wird ausschließlich über einen austauschbaren Testnet-Custody-Adapter abgebildet und ist keine Legal-/Safeguarding-Entscheidung.
 - `NO-GO`: Production-Solidity-Contracts, Mainnet-Deployment, Presale und DEX-Launch, bis die Legal-P0-Blocker aus `ADR_001_LEGAL_PRESALE_MODEL.md` gelöst sind.
 
+## Implementierungsstand 2026-08-22
+
+Der isolierte MVP-Testnet-Scope ist im Branch `codex/uliq-mvp-testnet` implementiert und lokal validiert:
+
+- Testnet-only Token, Presale, Test-USDC-Custody, Presale-Vesting und Locker inklusive Local-/Sepolia-Deploy-Scripts und Chain-ID-Guards.
+- Prisma-Migration `20260822090000_uliq_mvp_testnet` mit `Decimal(78,0)` für ULIQ-`uint256`, Domain-Projektionen, Holding-Provenienz, Entitlement-/Price-Snapshots, Reservation-/Ledger-Lifecycle und Reconciliation.
+- Dual-RPC-/finalized-head Indexer mit DB-Lease, Cursor-CAS, Retry/Backoff, Reorg-Rebuild und Alerts.
+- blockkonsistente Entitlement Engine, 24-Stunden-Cooldown für reguläre Transfers, Presale-Ausnahme, Held-Tier-Degradation und 10-Minuten-Benefit-Reservations.
+- explizit opt-in-basierte Billing-Discount-Integration; Settlement bleibt USDC, Platform Fees bleiben unverändert.
+- User-UI unter `/uliq`, `/uliq/presale`, `/uliq/vesting`, `/uliq/locking` und Superadmin-UI unter `/admin/uliq`, jeweils DE/EN und Arbitrum-Sepolia-only.
+
+Noch nicht als Testnet-End-to-End-Evidence verifiziert:
+
+- Arbitrum-Sepolia-Deployment und Source Verification, weil RPC-/Deployer-/Safe-/Arbiscan-Konfiguration in der lokalen Umgebung fehlt.
+- authentifizierter Browser-E2E gegen deployte Contracts und migrierte Testnet-Datenbank.
+- externer Smart-Contract-Audit und Slither-Report; Slither ist lokal nicht installiert.
+
+Damit ist die Implementierung lokal deploy-ready, aber noch nicht `READY FOR EXTERNAL AUDIT` und nicht Sepolia-E2E-abgenommen. ADR-001 bleibt davon unverändert `BLOCKED`.
+
 ## Verbindliche Produktregeln
 
 - Chain: Arbitrum One.

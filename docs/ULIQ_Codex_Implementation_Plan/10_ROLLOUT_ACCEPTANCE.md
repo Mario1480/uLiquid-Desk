@@ -284,3 +284,28 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - Indexer/Reconciliation/Alerts nicht production-ready.
 - Market Reference ohne konkrete DEX-/Pool-Adresse, Fee Tier, TWAP-Implementierung oder Failover Source.
 - keine getestete Pause-/Incident-/Refund-Runbook-Probe.
+
+## Acceptance-Status 2026-08-22
+
+Die folgenden Bewertungen beziehen sich ausschließlich auf lokale Implementierung und automatisierte Tests. Sie sind kein Sepolia- oder Production-Nachweis.
+
+| Kriterium | Status | Evidence / Restpunkt |
+| --- | --- | --- |
+| A Purchase während Withdrawal | PASS lokal | Pending ohne Token-/Vesting-/Benefit-Aktivierung ist in Contract und Projektion getestet. |
+| B Finalisierung 25/75 | PASS lokal | atomare, permissionless Finalisierung und Rundung sind Unit-/Fuzz-getestet. |
+| C Withdrawal/Refund | PASS lokal / BLOCKED legal | Testnet-Escrow-Refund ist getestet; Production-Safeguarding bleibt ADR-001-blockiert. |
+| D Sale Cancellation | BLOCKED | finale Cancellation-Policy bleibt ADR-001-blockiert und wurde nicht irreversibel vorimplementiert. |
+| E Vesting Start/Claim | PASS lokal | globaler einmaliger Start, 270-Tage-Testnet-Vesting und Claim-Accounting getestet. |
+| F Locking | PASS lokal | nur 30/90/180 Tage, kein Early Withdraw, keine Rewards. |
+| G Blockkonsistenz | PASS lokal | finalized Dual-RPC-Head und ein Block-Snapshot; `uint256` als Decimal/String. |
+| H Tier/Price Mode | PASS lokal / BLOCKED DEX | Referenz-, Observation-, Degradation- und Held-Tier-Gates getestet; echte Pool-/TWAP-Quelle fehlt. |
+| I Subscription-/AI-Discount | PASS lokal | Opt-in, exakte Cent-Mathematik, Reservation und USDC-Settlement integriert; Platform Fee unverändert. |
+| J Quote TTL/Wallet-Wechsel | PASS lokal | 10-Minuten-TTL und Reservation Release getestet. |
+| K Holding Cooldown | PASS lokal | Provenienz, Presale-Ausnahme, Locker-Lineage und 24-Stunden-Cooldown getestet. |
+| L Reorg/Indexer Recovery | PASS lokal | Lease, Retry, Reorg-Rebuild, Reservation-Reversal und Alert getestet. |
+| M Admin/Safe | PASS prepare-only / BLOCKED external | Superadmin vor Reauth, Audit und Safe-Calldata vorhanden; reale Safe-Signer/Threshold/Receipt-Evidence fehlt. |
+| N State/Pause/Sale-Ende | PASS lokal / BLOCKED legal | Testnet-State-Machine getestet; Production-Cancellation bleibt blockiert. |
+| O Allocation/Release Budgets | PARTIAL | Fixed Supply und Presale-Budget vorhanden; Mainnet-Safes und übrige Release-Contracts sind nicht Teil dieses Testnet-MVP. |
+| P Regression/Evidence | PASS lokal / BLOCKED Sepolia | lokale Suites grün; Sepolia-Deploy, Source Verification, Browser-E2E und externer Audit fehlen. |
+
+Releaseurteil: `NOT READY`. Für die nächste Gate-Stufe fehlen mindestens der reproduzierbare Sepolia-Deploy samt Address Book und Source Verification, authentifizierte E2E-/Recovery-Proben, Slither beziehungsweise gleichwertige statische Analyse und ein unabhängiger Audit. Mainnet bleibt zusätzlich durch ADR-001, reale DEX-/Pool-Konfiguration und verifizierte Safe-Struktur blockiert.

@@ -4,6 +4,14 @@
 
 Die ULIQ-Integration baut auf vorhandener Infrastruktur auf. Es wird weder ein zweites Wallet- noch ein zweites Billing- oder Onchain-Indexer-System eingeführt. Historische CCPayment-Artefakte bleiben migrationsbedingt erhalten, werden aber nicht als ULIQ-Pfad reaktiviert.
 
+## Umgesetzt im Testnet-MVP 2026-08-22
+
+- Die unten als geplant beschriebenen Contract-, Prisma-, API-, Indexer-, Billing-, Web- und Admin-Touchpoints sind im Branch `codex/uliq-mvp-testnet` umgesetzt.
+- Die Runtime ist fail-closed, akzeptiert ausschließlich Chain ID `421614` und verlangt zwei unterschiedliche API-RPC-Endpunkte.
+- Local- und Sepolia-Deploy-Scripts verweigern andere Chains. Es existiert kein Mainnet-Deploy-Pfad für ULIQ.
+- `.env.example` und `.env.prod.example` dokumentieren ausschließlich leere serverseitige Adressen/Secrets sowie die öffentliche Sepolia-RPC-Konfiguration. Private Keys werden nicht in Repo oder Backend gespeichert.
+- Sepolia-Adressen bleiben bis zum echten Deployment unbekannt; lokale Anvil-Adressen werden nicht in ein Testnet-Address-Book übernommen.
+
 ## Contracts
 
 Pfad: `packages/contracts`
