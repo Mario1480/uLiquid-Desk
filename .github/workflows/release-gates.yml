@@ -150,6 +150,9 @@ jobs:
         with:
           version: stable
 
+      - name: Install contract dependencies
+        run: npm ci --workspace packages/contracts --include-workspace-root=false
+
       - name: Build contracts
         run: npm run contracts:build
 
