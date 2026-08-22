@@ -7,10 +7,10 @@ Die ULIQ-Integration baut auf vorhandener Infrastruktur auf. Es wird weder ein z
 ## Umgesetzt im Testnet-MVP 2026-08-22
 
 - Die unten als geplant beschriebenen Contract-, Prisma-, API-, Indexer-, Billing-, Web- und Admin-Touchpoints sind im Branch `codex/uliq-mvp-testnet` umgesetzt.
-- Die Runtime ist fail-closed, akzeptiert ausschließlich Chain ID `421614` und verlangt zwei unterschiedliche API-RPC-Endpunkte.
+- Die Runtime ist fail-closed, akzeptiert ausschließlich Chain ID `421614` und verlangt zwei unterschiedliche API-RPC-Endpunkte. Ein technisch als `production` gebauter Prozess darf ULIQ nur mit dem zusätzlichen expliziten Staging-Gate `ULIQ_TESTNET_RUNTIME=true` und der ausdrücklich gesetzten Chain ID `421614` aktivieren; echte Production behält alle ULIQ-Flags und dieses Gate auf `false`.
 - Local- und Sepolia-Deploy-Scripts verweigern andere Chains. Es existiert kein Mainnet-Deploy-Pfad für ULIQ.
 - `.env.example` und `.env.prod.example` dokumentieren ausschließlich leere serverseitige Adressen/Secrets sowie die öffentliche Sepolia-RPC-Konfiguration. Private Keys werden nicht in Repo oder Backend gespeichert.
-- Sepolia-Adressen bleiben bis zum echten Deployment unbekannt; lokale Anvil-Adressen werden nicht in ein Testnet-Address-Book übernommen.
+- Das echte Arbitrum-Sepolia-Deployment vom 2026-08-22 ist im Deployment-Nachweis in `10_ROLLOUT_ACCEPTANCE.md` erfasst. Lokale Anvil-Adressen bleiben davon getrennt und sind niemals gültige Sepolia-Evidence.
 
 ## Contracts
 

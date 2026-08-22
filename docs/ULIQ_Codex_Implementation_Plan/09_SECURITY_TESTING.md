@@ -162,7 +162,7 @@ Verifiziert:
 - `npm run contracts:test`: PASS, 38/38 repositoryweite Contract-Tests. Der ULIQ-Scope umfasst 10 Unit-/Fuzz-Tests und 4 Invarianten; die beiden ULIQ-Fuzz-Tests liefen mit 256 Runs, jede ULIQ-Invariante mit 256 Runs und 128.000 Calls.
 - ULIQ-Coverage mit Foundry `--ir-minimum`: `ULIQToken` 100 % Lines, `ULIQPresaleVesting` 100 % Lines, `ULIQPresale` 84,21 % Lines, `ULIQLocker` 90,32 % Lines, `ULIQTestnetEscrow` 90 % Lines und `ULIQMockUSDC` 100 % Lines. Das Flag ist wegen eines `stack too deep` im unoptimierten Coverage-Build erforderlich und Foundry warnt dabei vor ungenaueren Source Mappings; die ausgewiesene Branch-Coverage liegt niedriger und bleibt ein Audit-Härtungspunkt.
 - `npm -w apps/api run typecheck`: PASS.
-- `npm -w apps/api run test:uliq`: PASS, 21/21.
+- `npm -w apps/api run test:uliq`: PASS, 23/23 einschließlich explizitem Production-Build-/Sepolia-Staging-Gate sowie `READY`-/`ACTIVE`-Kaufvorbereitungsgate.
 - `npm -w apps/api run test:billing`: PASS, 100/100.
 - `npm -w apps/api run test:auth`: PASS, 48/48.
 - `npm -w apps/web run typecheck`, `i18n:check` und `test:billing`: PASS, letzteres 6/6.
@@ -176,7 +176,9 @@ Verifiziert:
 Offen oder blockiert:
 
 - Arbitrum-Fork-Test gegen canonical USDC: nicht als Testnet-Nachweis ausgeführt; der isolierte Testnet-Scope verwendet Mock-USDC/Testnet-Custody.
-- Sepolia-Deploy, Arbiscan-Verifikation und Live-Contract-E2E: blockiert durch fehlende lokale Testnet-RPC-, Deployer-, Safe- und Arbiscan-Konfiguration.
+- Arbitrum-Sepolia-Deploy und Konfiguration: PASS; Address Book, Stage-1-/Stage-2-Transaktionen und Finalitätsnachweis stehen in `10_ROLLOUT_ACCEPTANCE.md`.
+- Source Verification: PASS über Sourcify für alle sechs Testnet-Contracts; Runtime- und Creation-Bytecode wurden jeweils als `exact_match` bestätigt.
+- Live-Contract-E2E: offen; Presale bleibt bis zur getrennten Freigabe von `activateSale()` im Zustand `READY`.
 - Browser-E2E: geschützter Flow benötigt eine autorisierte Test-Session und deployte API/Contracts; Auth wurde nicht umgangen.
 - externer unabhängiger Audit: nicht durchgeführt.
 

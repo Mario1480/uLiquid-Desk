@@ -285,9 +285,40 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - Market Reference ohne konkrete DEX-/Pool-Adresse, Fee Tier, TWAP-Implementierung oder Failover Source.
 - keine getestete Pause-/Incident-/Refund-Runbook-Probe.
 
+## Arbitrum-Sepolia-Deployment-Nachweis 2026-08-22
+
+Netzwerk und Rollen:
+
+- Chain ID: `421614`.
+- Deployment-/Testnet-Admin: `0x4165Df9092aD2adffFE6A63ad10863F696cac125`.
+- Erster Deployment-Block und kanonischer Indexer-Startblock: `300866779`.
+- Testnet Withdrawal Period: `300` Sekunden; die Production-Spezifikation von 14 Tagen bleibt unverändert.
+
+Address Book:
+
+| Contract | Adresse | Deployment Tx | Source Verification |
+| --- | --- | --- | --- |
+| `ULIQMockUSDC` | `0xA59C569041Ec4c735776FA8D0f46D19c2ef87220` | `0x7f86f2cf93efee73f0f9c02960660e3ca313ec338e05c49605068ecf59e72aa0` | Sourcify `exact_match` |
+| `ULIQToken` | `0xCBd2D8a404FF371e36afCDF619123D5f1d62c23D` | `0x3127eecf93c1fcd321be1a7594594c155621259b507cc749a793467585229450` | Sourcify `exact_match` |
+| `ULIQPresaleVesting` | `0x05D3d445e2793a982d75D813FFbc1EF18c4346E2` | `0x8db848428cc1919b32b9aa2628157dbfd5b811445faf4a6c7143ac7b848633b1` | Sourcify `exact_match` |
+| `ULIQTestnetEscrow` | `0x25890c163C2B66fA1d1ca9a488c545466d6e09c8` | `0xe677999ad2c8654f5c835dbbfbc36c38ab0db4a08b4885eb2a2e96038540ee27` | Sourcify `exact_match` |
+| `ULIQPresale` | `0x6203E5085df25435E94059d1427b7010A07A8cD3` | `0x58537182c56d0063d3cc5d12b053d2ddd15354b6e600ec5098d28235517004d0` | Sourcify `exact_match` |
+| `ULIQLocker` | `0x98627918528ADa3B08d0a35fF4360B829e1095Cc` | `0xb63ebde080dd6cde6a84f465a233351ecc3d10d514e03408ad697bf84b26a79d` | Sourcify `exact_match` |
+
+Stage 2 wurde in vier getrennten Admin-Transaktionen ausgeführt und anschließend gegen den Arbitrum-Sepolia-RPC finalitätsgeprüft:
+
+- Vesting mit Presale verbunden: `0x1bbef4bcd93b0f607cbd64e61f460113bba2fba8e4ac1ab4313ed900b54cf335`.
+- Testnet Escrow mit Presale verbunden: `0x64894f8fec250ccc7b8afa5d6e541694b4461132adb1a4c785229830f6ebb708`.
+- `120,000,000 ULIQ` Presale Inventory übertragen: `0xdc7e44db19ad7954fcd99a5769d4ced554198a85498286796e531544659dc19d`.
+- Presale auf `READY` gesetzt: `0xbcfe6cea4d18e9f6286b4bb12d5a96766427189759ac4f70610d6df101914339`.
+
+Alle vier Receipts hatten Status `1`; ihre kanonischen Blockhashes stimmten beim Recheck überein. Der letzte Stage-2-Block `300872135` lag beim Recheck unter dem vom RPC gemeldeten finalisierten Block `300875669`. Live Reads bestätigten danach `READY`, die vollständige Contract-Verkabelung und exakt `120,000,000 ULIQ` Presale Inventory. `activateSale()` bleibt eine getrennt freizugebende Testnet-Onchain-Aktion.
+
+Sourcify bestätigte für alle sechs Adressen sowohl Runtime- als auch Creation-Bytecode als `exact_match`. Noch offen: Staging-Runtime-Aktivierung, Indexer-/Reconciliation-Smoke und authentifizierte Browser-E2E-Flows.
+
 ## Acceptance-Status 2026-08-22
 
-Die folgenden Bewertungen beziehen sich ausschließlich auf lokale Implementierung und automatisierte Tests. Sie sind kein Sepolia- oder Production-Nachweis.
+Die folgenden Bewertungen unterscheiden lokale Test-Evidence, den oben dokumentierten Arbitrum-Sepolia-Nachweis und weiterhin offene externe Gates ausdrücklich. Keine Testnet-Evidence ist ein Production-Nachweis.
 
 | Kriterium | Status | Evidence / Restpunkt |
 | --- | --- | --- |
@@ -306,6 +337,6 @@ Die folgenden Bewertungen beziehen sich ausschließlich auf lokale Implementieru
 | M Admin/Safe | PASS prepare-only / BLOCKED external | Superadmin vor Reauth, Audit und Safe-Calldata vorhanden; reale Safe-Signer/Threshold/Receipt-Evidence fehlt. |
 | N State/Pause/Sale-Ende | PASS lokal / BLOCKED legal | Testnet-State-Machine getestet; Production-Cancellation bleibt blockiert. |
 | O Allocation/Release Budgets | PARTIAL | Fixed Supply und Presale-Budget vorhanden; Mainnet-Safes und übrige Release-Contracts sind nicht Teil dieses Testnet-MVP. |
-| P Regression/Evidence | PASS lokal / BLOCKED Sepolia | lokale Suites und Slither-Retest nach CEI-Härtung grün beziehungsweise bewertet; Sepolia-Deploy, Source Verification, Browser-E2E und externer Audit fehlen. |
+| P Regression/Evidence | PASS lokal / PARTIAL Sepolia | Stage 1 und Stage 2 sind deployed, konfiguriert, finalitätsgeprüft und bei Sourcify exakt verifiziert. Staging-Runtime-/Indexer-Evidence, Browser-E2E und externer Audit fehlen. |
 
-Releaseurteil: `NOT READY`. Für die nächste Gate-Stufe fehlen mindestens der reproduzierbare Sepolia-Deploy samt Address Book und Source Verification, authentifizierte E2E-/Recovery-Proben und ein unabhängiger Audit. Die verbleibenden Slither-Findings sind lokal bewertet, müssen aber im unabhängigen Review mitgeprüft werden. Mainnet bleibt zusätzlich durch ADR-001, reale DEX-/Pool-Konfiguration und verifizierte Safe-Struktur blockiert.
+Releaseurteil: `NOT READY`. Für die nächste Gate-Stufe fehlen mindestens Staging-Runtime-/Indexer-/Reconciliation-Evidence, authentifizierte E2E-/Recovery-Proben und ein unabhängiger Audit. Die verbleibenden Slither-Findings sind lokal bewertet, müssen aber im unabhängigen Review mitgeprüft werden. Mainnet bleibt zusätzlich durch ADR-001, reale DEX-/Pool-Konfiguration und verifizierte Safe-Struktur blockiert.
