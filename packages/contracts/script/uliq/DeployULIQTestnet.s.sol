@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {ScriptBase} from "../ScriptBase.sol";
+import {ULIQToken} from "../../src/uliq/ULIQToken.sol";
+import {ULIQPresale} from "../../src/uliq/ULIQPresale.sol";
+import {ULIQPresaleVesting} from "../../src/uliq/ULIQPresaleVesting.sol";
+import {ULIQLocker} from "../../src/uliq/ULIQLocker.sol";
+import {ULIQTestnetEscrow} from "../../src/uliq/testnet/ULIQTestnetEscrow.sol";
+import {ULIQMockUSDC} from "../../src/uliq/testnet/ULIQMockUSDC.sol";
+
+/// @notice Reproducible local/Arbitrum Sepolia deployment. Mainnet chain IDs are rejected.
+contract DeployULIQTestnet is ScriptBase {
+    uint256 public constant ARBITRUM_SEPOLIA_CHAIN_ID = 421_614;
+    uint256 public constant LOCAL_CHAIN_ID = 31_337;
+    uint256 public constant HARD_CAP_USDC_RAW = 120_000 * 1e6;
+    uint256 public constant PRESALE_ALLOCATION_RAW = 120_000_000 ether;
+    uint256 public constant RATE_NUMERATOR = 1e15;
+    uint256 public constant RATE_DENOMINATOR = 1;
+    uint64 public constant TESTNET_VESTING_DURATION_SECONDS = 270 days;
+
+    error UnsupportedChain(uint256 chainId);
+    error InvalidAdmin();
+
+    event ULIQTestnetDeploymentCompleted(
+        uint256 indexed chainId,
+        address indexed admin,
+        address indexed usdc,
+        address token,
+        address presale,
+        address vesting,
+        address locker,
+        address paymentCustody,
+        uint64 withdrawalPeriodSeconds
+    );
+
+    function run(address admin, address testUsdc, uint64 saleStart, uint64 saleEnd, uint64 withdrawalPeriodSeconds)
+        external
+        returns (
+            address tokenAddress,
+            address presaleAddress,
+            address vestingAddress,
+            address lockerAddress,
+            address custodyAddress,
+            address usdcAddress
+        )
+    {
+        if (block.chainid != ARBITRUM_SEPOLIA_CHAIN_ID && block.chainid != LOCAL_CHAIN_ID) {
+            revert UnsupportedChain(block.chainid);
+        }
+        if (admin == address(0)) revert InvalidAdmin();
+
+        vm.startBroadcast();
+
+        if (testUsdc == address(0)) {
+            testUsdc = address(new ULIQMockUSDC());
+        }
+        ULIQToken token = new ULIQToken(admin);
+        ULIQPresaleVesting vesting =
+            new ULIQPresaleVesting(address(token), admin, TESTNET_VESTING_DURATION_SECONDS);
+        ULIQTestnetEscrow custody = new ULIQTestnetEscrow(testUsdc, admin);
+        ULIQPresale presale = new ULIQPresale(
+            address(token),
+            testUsdc,
+            address(custody),
+            address(vesting),
+            admin,
+            HARD_CAP_USDC_RAW,
+            PRESALE_ALLOCATION_RAW,
+            RATE_NUMERATOR,
+            RATE_DENOMINATOR,
+            saleStart,
+            saleEnd,
+            withdrawalPeriodSeconds
+        );
+        ULIQLocker locker = new ULIQLocker(address(token));
+
+        vm.stopBroadcast();
+
+        tokenAddress = address(token);
+        presaleAddress = address(presale);
+        vestingAddress = address(vesting);
+        lockerAddress = address(locker);
+        custodyAddress = address(custody);
+        usdcAddress = testUsdc;
+
+        emit ULIQTestnetDeploymentCompleted(
+            block.chainid,
+            admin,
+            testUsdc,
+            tokenAddress,
+            presaleAddress,
+            vestingAddress,
+            lockerAddress,
+            custodyAddress,
+            withdrawalPeriodSeconds
+        );
+    }
+}
