@@ -107,6 +107,71 @@ enum AiUsageRecordStatus {
   RECONCILIATION_REQUIRED
 }
 
+enum OnchainCanonicalStatus {
+  OBSERVED
+  CONFIRMED
+  FINALIZED
+  ORPHANED
+}
+
+enum UliqPresalePurchaseStatus {
+  PENDING_WITHDRAWAL
+  WITHDRAWN
+  FINALIZED
+}
+
+enum UliqLockPositionStatus {
+  ACTIVE
+  MATURED
+  WITHDRAWN
+  ORPHANED
+}
+
+enum UliqPriceMode {
+  PRESALE_REFERENCE
+  MARKET_OBSERVATION
+  MARKET_REFERENCE
+}
+
+enum UliqPriceQualityStatus {
+  HEALTHY
+  DEGRADED
+  STALE
+  INVALID
+}
+
+enum UliqBenefitReservationStatus {
+  RESERVED
+  CONSUMED
+  RELEASED
+  REVERSED
+}
+
+enum UliqBenefitType {
+  SUBSCRIPTION_DISCOUNT
+  AI_CREDIT_DISCOUNT
+}
+
+enum UliqBenefitLedgerEntryType {
+  CONSUMED
+  REVERSED
+  ADJUSTMENT
+}
+
+enum UliqHoldingProvenanceType {
+  PRESALE_FINALIZED
+  VESTING_CLAIM
+  WALLET_TRANSFER
+  LOCK_RETURN
+  UNKNOWN
+}
+
+enum UliqReconciliationStatus {
+  OK
+  MISMATCH
+  FAILED
+}
+
 enum GridBotMode {
   long
   short
@@ -281,25 +346,25 @@ model Bot {
   user                 User?            @relation(fields: [userId], references: [id])
   exchangeAccount      ExchangeAccount? @relation(fields: [exchangeAccountId], references: [id])
 
-  mmConfig                    MarketMakingConfig?
-  futuresConfig               FuturesBotConfig?
-  volConfig                   VolumeConfig?
-  riskConfig                  RiskConfig?
-  notificationConfig          BotNotificationConfig?
-  priceSupportConfig          BotPriceSupportConfig?
-  runtime                     BotRuntime?
-  riskEvents                  RiskEvent[]
-  alerts                      BotAlert[]
-  manualTrades                ManualTradeLog[]
-  metrics                     BotMetric[]
-  tradeStates                 BotTradeState[]
-  tradeHistory                BotTradeHistory[]
+  mmConfig                   MarketMakingConfig?
+  futuresConfig              FuturesBotConfig?
+  volConfig                  VolumeConfig?
+  riskConfig                 RiskConfig?
+  notificationConfig         BotNotificationConfig?
+  priceSupportConfig         BotPriceSupportConfig?
+  runtime                    BotRuntime?
+  riskEvents                 RiskEvent[]
+  alerts                     BotAlert[]
+  manualTrades               ManualTradeLog[]
+  metrics                    BotMetric[]
+  tradeStates                BotTradeState[]
+  tradeHistory               BotTradeHistory[]
   predictionCopierExecutions PredictionCopierExecution[]
-  platformAlerts              PlatformAlert[]
-  gridInstance                GridBotInstance?
-  botVault                    BotVault?
-  gridOrderMaps               GridBotOrderMap[]
-  gridFillEvents              GridBotFillEvent[]
+  platformAlerts             PlatformAlert[]
+  gridInstance               GridBotInstance?
+  botVault                   BotVault?
+  gridOrderMaps              GridBotOrderMap[]
+  gridFillEvents             GridBotFillEvent[]
 }
 
 model FuturesBotConfig {
@@ -552,7 +617,7 @@ model PredictionCopierExecution {
   status               String    @default("reviewed")
   orderType            String    @map("order_type")
   requestedQty         Float?    @map("requested_qty")
-  requestedNotionalUsd Float? @map("requested_notional_usd")
+  requestedNotionalUsd Float?    @map("requested_notional_usd")
   referencePrice       Float?    @map("reference_price")
   limitPrice           Float?    @map("limit_price")
   stopLossPrice        Float?    @map("stop_loss_price")
@@ -732,9 +797,9 @@ model User {
   dashboardPerformanceAccountSnapshots DashboardPerformanceAccountSnapshot[]
   aiPromptTemplates                    UserAiPromptTemplate[]
   aiTraceLogs                          AiTraceLog[]
-  aiAgentProfiles                     AiAgentProfile[]
-  aiAgentConversations                AiAgentConversation[]
-  aiAgentRuns                         AiAgentRun[]
+  aiAgentProfiles                      AiAgentProfile[]
+  aiAgentConversations                 AiAgentConversation[]
+  aiAgentRuns                          AiAgentRun[]
   subscription                         UserSubscription?
   billingOrders                        BillingOrder[]
   aiCreditLedger                       AiCreditLedger[]
@@ -771,8 +836,14 @@ model User {
   siweNonces                           SiweNonce[]
   legalAcknowledgements                UserLegalAcknowledgement[]
   onchainActions                       OnchainAction[]
-  mobilePushTokens                      MobilePushToken[]
-  mobileWatchlistItems                  MobileWatchlistItem[]
+  mobilePushTokens                     MobilePushToken[]
+  mobileWatchlistItems                 MobileWatchlistItem[]
+  uliqPresalePurchases                 UliqPresalePurchase[]
+  uliqEntitlementSnapshots             UliqEntitlementSnapshot[]
+  uliqBenefitReservations              UliqBenefitReservation[]
+  uliqBenefitLedgerEntries             UliqBenefitLedger[]
+  uliqHoldingLots                      UliqHoldingLot[]
+  uliqTierConfigsCreated               UliqTierConfig[]                      @relation("UliqTierConfigCreatedBy")
 }
 
 model UserLegalAcknowledgement {
@@ -794,17 +865,17 @@ model UserLegalAcknowledgement {
 }
 
 model TelegramLinkSession {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
-  token            String   @unique
+  token            String    @unique
   expiresAt        DateTime
   consumedAt       DateTime?
   telegramChatId   String?
   telegramUserId   String?
   telegramUsername String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, consumedAt, expiresAt])
   @@index([expiresAt])
@@ -967,34 +1038,48 @@ model BillingPackage {
 }
 
 model BillingOrder {
-  id               String             @id @default(cuid())
-  provider         BillingProvider
-  userId           String             @map("user_id")
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptionId   String?            @map("subscription_id")
-  subscription     UserSubscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  packageId        String             @map("package_id")
-  pkg              BillingPackage     @relation(fields: [packageId], references: [id], onDelete: Restrict)
-  merchantOrderId  String             @unique @map("merchant_order_id")
-  status           BillingOrderStatus @default(PENDING)
-  amountCents      Int                @map("amount_cents")
-  currency         String             @default("USD")
-  payUrl           String?            @map("pay_url")
-  externalOrderId  String?            @map("external_order_id")
-  paymentStatusRaw String?            @map("payment_status_raw")
-  cartFingerprint  String?            @map("cart_fingerprint")
-  paidAt           DateTime?          @map("paid_at")
-  expiresAt        DateTime?          @map("expires_at")
-  createPayload    Json?              @map("create_payload")
-  createResponse   Json?              @map("create_response")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
+  id                        String             @id @default(cuid())
+  provider                  BillingProvider
+  userId                    String             @map("user_id")
+  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId            String?            @map("subscription_id")
+  subscription              UserSubscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  packageId                 String             @map("package_id")
+  pkg                       BillingPackage     @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  merchantOrderId           String             @unique @map("merchant_order_id")
+  status                    BillingOrderStatus @default(PENDING)
+  amountCents               Int                @map("amount_cents")
+  currency                  String             @default("USD")
+  payUrl                    String?            @map("pay_url")
+  externalOrderId           String?            @map("external_order_id")
+  paymentStatusRaw          String?            @map("payment_status_raw")
+  cartFingerprint           String?            @map("cart_fingerprint")
+  paidAt                    DateTime?          @map("paid_at")
+  expiresAt                 DateTime?          @map("expires_at")
+  createPayload             Json?              @map("create_payload")
+  createResponse            Json?              @map("create_response")
+  baseAmountCents           Int?               @map("base_amount_cents")
+  discountAmountCents       Int?               @map("discount_amount_cents")
+  finalAmountCents          Int?               @map("final_amount_cents")
+  uliqTierSnapshot          String?            @map("uliq_tier_snapshot")
+  uliqDiscountBps           Int?               @map("uliq_discount_bps")
+  uliqEntitlementSnapshotId String?            @map("uliq_entitlement_snapshot_id")
+  uliqBenefitReservationId  String?            @unique @map("uliq_benefit_reservation_id")
+  uliqTierConfigVersion     Int?               @map("uliq_tier_config_version")
+  uliqPriceSnapshotId       String?            @map("uliq_price_snapshot_id")
+  uliqWalletAddress         String?            @map("uliq_wallet_address")
+  uliqAsOfBlock             BigInt?            @map("uliq_as_of_block")
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  updatedAt                 DateTime           @updatedAt @map("updated_at")
 
-  items            BillingOrderItem[]
-  creditLedger     AiCreditLedger[]
-  capacityGrants   SubscriptionCapacityGrant[]
-  onchainPayment   BillingOnchainPayment?
-  subscriptionTerm SubscriptionTerm?
+  items                   BillingOrderItem[]
+  creditLedger            AiCreditLedger[]
+  capacityGrants          SubscriptionCapacityGrant[]
+  onchainPayment          BillingOnchainPayment?
+  subscriptionTerm        SubscriptionTerm?
+  uliqEntitlementSnapshot UliqEntitlementSnapshot?    @relation(fields: [uliqEntitlementSnapshotId], references: [id], onDelete: SetNull)
+  uliqBenefitReservation  UliqBenefitReservation?     @relation(fields: [uliqBenefitReservationId], references: [id], onDelete: SetNull)
+  uliqPriceSnapshot       UliqPriceSnapshot?          @relation(fields: [uliqPriceSnapshotId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt(sort: Desc)], map: "billing_orders_user_created_idx")
   @@index([status, createdAt(sort: Desc)], map: "billing_orders_status_created_idx")
@@ -1129,18 +1214,21 @@ model SubscriptionNotificationDelivery {
 }
 
 model BillingOrderItem {
-  id              String             @id @default(cuid())
-  orderId         String             @map("order_id")
-  order           BillingOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  packageId       String             @map("package_id")
-  pkg             BillingPackage     @relation(fields: [packageId], references: [id], onDelete: Restrict)
-  quantity        Int                @default(1)
-  unitPriceCents  Int                @map("unit_price_cents")
-  lineAmountCents Int                @map("line_amount_cents")
-  currency        String             @default("USD")
-  kindSnapshot    BillingPackageKind @map("kind_snapshot")
-  packageSnapshot Json?              @map("package_snapshot")
-  createdAt       DateTime           @default(now()) @map("created_at")
+  id                  String             @id @default(cuid())
+  orderId             String             @map("order_id")
+  order               BillingOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  packageId           String             @map("package_id")
+  pkg                 BillingPackage     @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  quantity            Int                @default(1)
+  unitPriceCents      Int                @map("unit_price_cents")
+  lineAmountCents     Int                @map("line_amount_cents")
+  baseAmountCents     Int?               @map("base_amount_cents")
+  discountAmountCents Int?               @map("discount_amount_cents")
+  finalAmountCents    Int?               @map("final_amount_cents")
+  currency            String             @default("USD")
+  kindSnapshot        BillingPackageKind @map("kind_snapshot")
+  packageSnapshot     Json?              @map("package_snapshot")
+  createdAt           DateTime           @default(now()) @map("created_at")
 
   @@index([orderId], map: "billing_order_items_order_idx")
   @@index([packageId], map: "billing_order_items_package_idx")
@@ -1185,28 +1273,28 @@ model BillingWebhookEvent {
 }
 
 model AiCreditLedger {
-  id                    String               @id @default(cuid())
-  userId                String               @map("user_id")
-  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptionId        String?              @map("subscription_id")
-  subscription          UserSubscription?    @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  orderId               String?              @map("order_id")
-  order                 BillingOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  agentRunId            String?              @map("agent_run_id")
-  agentRun              AiAgentRun?          @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  reservationId         String?              @map("reservation_id")
-  reservation           AiCreditReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
-  pricingRevisionId     String?              @map("pricing_revision_id")
-  pricingRevision       AiModelPricing?       @relation(fields: [pricingRevisionId], references: [id], onDelete: Restrict)
-  reason                AiLedgerReason
-  idempotencyKey        String?              @unique @map("idempotency_key")
-  deltaCredits          BigInt               @map("delta_credits")
-  balanceAfterCredits   BigInt               @map("balance_after_credits")
-  reservedAfterCredits  BigInt               @default(0) @map("reserved_after_credits")
-  providerCostMicrousd  BigInt?              @map("provider_cost_microusd")
-  retailCostMicrousd    BigInt?              @map("retail_cost_microusd")
-  meta                  Json?
-  createdAt             DateTime             @default(now()) @map("created_at")
+  id                   String               @id @default(cuid())
+  userId               String               @map("user_id")
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId       String?              @map("subscription_id")
+  subscription         UserSubscription?    @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  orderId              String?              @map("order_id")
+  order                BillingOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  agentRunId           String?              @map("agent_run_id")
+  agentRun             AiAgentRun?          @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  reservationId        String?              @map("reservation_id")
+  reservation          AiCreditReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  pricingRevisionId    String?              @map("pricing_revision_id")
+  pricingRevision      AiModelPricing?      @relation(fields: [pricingRevisionId], references: [id], onDelete: Restrict)
+  reason               AiLedgerReason
+  idempotencyKey       String?              @unique @map("idempotency_key")
+  deltaCredits         BigInt               @map("delta_credits")
+  balanceAfterCredits  BigInt               @map("balance_after_credits")
+  reservedAfterCredits BigInt               @default(0) @map("reserved_after_credits")
+  providerCostMicrousd BigInt?              @map("provider_cost_microusd")
+  retailCostMicrousd   BigInt?              @map("retail_cost_microusd")
+  meta                 Json?
+  createdAt            DateTime             @default(now()) @map("created_at")
 
   @@index([userId, createdAt(sort: Desc)], map: "ai_credit_ledger_user_created_idx")
   @@index([reason, createdAt(sort: Desc)], map: "ai_credit_ledger_reason_created_idx")
@@ -1216,27 +1304,27 @@ model AiCreditLedger {
 }
 
 model AiModelPricing {
-  id                              String   @id @default(cuid())
-  provider                        String
-  model                           String
-  serviceTier                     String   @default("default") @map("service_tier")
-  processingRegion                String   @default("global") @map("processing_region")
-  inputMicrousdPerMillion         BigInt   @map("input_microusd_per_million")
-  cachedInputMicrousdPerMillion   BigInt   @map("cached_input_microusd_per_million")
-  cacheWriteMicrousdPerMillion    BigInt?  @map("cache_write_microusd_per_million")
-  outputMicrousdPerMillion        BigInt   @map("output_microusd_per_million")
-  longContextThresholdTokens      Int?     @map("long_context_threshold_tokens")
-  longInputMultiplierBps          Int?     @map("long_input_multiplier_bps")
-  longOutputMultiplierBps         Int?     @map("long_output_multiplier_bps")
-  markupBps                       Int
-  revision                        Int
-  effectiveFrom                   DateTime @map("effective_from")
-  effectiveUntil                  DateTime? @map("effective_until")
-  isActive                        Boolean  @default(true) @map("is_active")
-  createdAt                       DateTime @default(now()) @map("created_at")
-  updatedAt                       DateTime @updatedAt @map("updated_at")
+  id                            String    @id @default(cuid())
+  provider                      String
+  model                         String
+  serviceTier                   String    @default("default") @map("service_tier")
+  processingRegion              String    @default("global") @map("processing_region")
+  inputMicrousdPerMillion       BigInt    @map("input_microusd_per_million")
+  cachedInputMicrousdPerMillion BigInt    @map("cached_input_microusd_per_million")
+  cacheWriteMicrousdPerMillion  BigInt?   @map("cache_write_microusd_per_million")
+  outputMicrousdPerMillion      BigInt    @map("output_microusd_per_million")
+  longContextThresholdTokens    Int?      @map("long_context_threshold_tokens")
+  longInputMultiplierBps        Int?      @map("long_input_multiplier_bps")
+  longOutputMultiplierBps       Int?      @map("long_output_multiplier_bps")
+  markupBps                     Int
+  revision                      Int
+  effectiveFrom                 DateTime  @map("effective_from")
+  effectiveUntil                DateTime? @map("effective_until")
+  isActive                      Boolean   @default(true) @map("is_active")
+  createdAt                     DateTime  @default(now()) @map("created_at")
+  updatedAt                     DateTime  @updatedAt @map("updated_at")
 
-  usageRecords AiUsageRecord[]
+  usageRecords  AiUsageRecord[]
   ledgerEntries AiCreditLedger[]
 
   @@unique([provider, model, serviceTier, processingRegion, revision], map: "ai_model_pricing_revision_key")
@@ -1246,23 +1334,23 @@ model AiModelPricing {
 }
 
 model AiCreditReservation {
-  id                    String                    @id @default(cuid())
-  userId                String                    @map("user_id")
-  user                  User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptionId        String                    @map("subscription_id")
-  subscription          UserSubscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  agentRunId            String                    @unique @map("agent_run_id")
-  agentRun              AiAgentRun                @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
-  status                AiCreditReservationStatus @default(ACTIVE)
-  reservedCredits       BigInt                    @map("reserved_credits")
-  settledCredits        BigInt                    @default(0) @map("settled_credits")
-  idempotencyKey        String                    @unique @map("idempotency_key")
-  expiresAt             DateTime                  @map("expires_at")
-  settledAt             DateTime?                 @map("settled_at")
-  releasedAt            DateTime?                 @map("released_at")
-  reconciliationReason  String?                   @map("reconciliation_reason")
-  createdAt             DateTime                  @default(now()) @map("created_at")
-  updatedAt             DateTime                  @updatedAt @map("updated_at")
+  id                   String                    @id @default(cuid())
+  userId               String                    @map("user_id")
+  user                 User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId       String                    @map("subscription_id")
+  subscription         UserSubscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  agentRunId           String                    @unique @map("agent_run_id")
+  agentRun             AiAgentRun                @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  status               AiCreditReservationStatus @default(ACTIVE)
+  reservedCredits      BigInt                    @map("reserved_credits")
+  settledCredits       BigInt                    @default(0) @map("settled_credits")
+  idempotencyKey       String                    @unique @map("idempotency_key")
+  expiresAt            DateTime                  @map("expires_at")
+  settledAt            DateTime?                 @map("settled_at")
+  releasedAt           DateTime?                 @map("released_at")
+  reconciliationReason String?                   @map("reconciliation_reason")
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
 
   ledgerEntries AiCreditLedger[]
 
@@ -1272,31 +1360,31 @@ model AiCreditReservation {
 }
 
 model AiUsageRecord {
-  id                         String              @id @default(cuid())
-  agentRunId                 String              @map("agent_run_id")
-  agentRun                   AiAgentRun          @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
-  callIndex                  Int                 @map("call_index")
-  provider                   String
-  model                      String
-  modelClass                 String              @map("model_class")
-  serviceTier                String              @default("default") @map("service_tier")
-  processingRegion           String              @default("global") @map("processing_region")
-  responseId                 String?             @unique @map("response_id")
-  requestId                  String?             @map("request_id")
-  inputTokens                BigInt              @default(0) @map("input_tokens")
-  cachedInputTokens          BigInt              @default(0) @map("cached_input_tokens")
-  cacheWriteTokens           BigInt              @default(0) @map("cache_write_tokens")
-  outputTokens               BigInt              @default(0) @map("output_tokens")
-  reasoningTokens            BigInt              @default(0) @map("reasoning_tokens")
-  providerCostMicrousd       BigInt              @default(0) @map("provider_cost_microusd")
-  retailCostMicrousd         BigInt              @default(0) @map("retail_cost_microusd")
-  pricingRevisionId          String              @map("pricing_revision_id")
-  pricingRevision            AiModelPricing      @relation(fields: [pricingRevisionId], references: [id], onDelete: Restrict)
-  pricingSnapshot            Json                @map("pricing_snapshot")
-  status                     AiUsageRecordStatus @default(COMPLETED)
-  errorCode                  String?             @map("error_code")
-  latencyMs                  Int?                @map("latency_ms")
-  createdAt                  DateTime            @default(now()) @map("created_at")
+  id                   String              @id @default(cuid())
+  agentRunId           String              @map("agent_run_id")
+  agentRun             AiAgentRun          @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  callIndex            Int                 @map("call_index")
+  provider             String
+  model                String
+  modelClass           String              @map("model_class")
+  serviceTier          String              @default("default") @map("service_tier")
+  processingRegion     String              @default("global") @map("processing_region")
+  responseId           String?             @unique @map("response_id")
+  requestId            String?             @map("request_id")
+  inputTokens          BigInt              @default(0) @map("input_tokens")
+  cachedInputTokens    BigInt              @default(0) @map("cached_input_tokens")
+  cacheWriteTokens     BigInt              @default(0) @map("cache_write_tokens")
+  outputTokens         BigInt              @default(0) @map("output_tokens")
+  reasoningTokens      BigInt              @default(0) @map("reasoning_tokens")
+  providerCostMicrousd BigInt              @default(0) @map("provider_cost_microusd")
+  retailCostMicrousd   BigInt              @default(0) @map("retail_cost_microusd")
+  pricingRevisionId    String              @map("pricing_revision_id")
+  pricingRevision      AiModelPricing      @relation(fields: [pricingRevisionId], references: [id], onDelete: Restrict)
+  pricingSnapshot      Json                @map("pricing_snapshot")
+  status               AiUsageRecordStatus @default(COMPLETED)
+  errorCode            String?             @map("error_code")
+  latencyMs            Int?                @map("latency_ms")
+  createdAt            DateTime            @default(now()) @map("created_at")
 
   @@unique([agentRunId, callIndex], map: "ai_usage_records_run_call_key")
   @@index([provider, model, createdAt(sort: Desc)], map: "ai_usage_records_provider_model_created_idx")
@@ -1685,23 +1773,23 @@ model MasterVault {
 }
 
 model FundingVault {
-  id                    String    @id @default(cuid())
-  userId                String    @unique @map("user_id")
-  onchainAddress        String?   @unique @map("onchain_address")
-  factoryAddress        String?   @map("factory_address")
-  contractVersion       String    @default("v1") @map("contract_version")
-  operatorAddress       String?   @map("operator_address")
-  operatorVersion       Int       @default(1) @map("operator_version")
-  operatorSecretRef     String?   @map("operator_secret_ref")
-  freeBalance           Float     @default(0) @map("free_balance")
-  reservedBalance       Float     @default(0) @map("reserved_balance")
-  totalDeposited        Float     @default(0) @map("total_deposited")
-  totalWithdrawn        Float     @default(0) @map("total_withdrawn")
-  status                String    @default("active")
-  lastSyncedAt          DateTime? @map("last_synced_at")
-  metadata              Json?
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(cuid())
+  userId            String    @unique @map("user_id")
+  onchainAddress    String?   @unique @map("onchain_address")
+  factoryAddress    String?   @map("factory_address")
+  contractVersion   String    @default("v1") @map("contract_version")
+  operatorAddress   String?   @map("operator_address")
+  operatorVersion   Int       @default(1) @map("operator_version")
+  operatorSecretRef String?   @map("operator_secret_ref")
+  freeBalance       Float     @default(0) @map("free_balance")
+  reservedBalance   Float     @default(0) @map("reserved_balance")
+  totalDeposited    Float     @default(0) @map("total_deposited")
+  totalWithdrawn    Float     @default(0) @map("total_withdrawn")
+  status            String    @default("active")
+  lastSyncedAt      DateTime? @map("last_synced_at")
+  metadata          Json?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   botVaults      BotVault[]
@@ -2015,27 +2103,27 @@ model CashEvent {
 }
 
 model OnchainAction {
-  id            String   @id @default(cuid())
-  actionKey     String   @unique @map("action_key")
-  actionType    String   @map("action_type")
-  status        String   @default("prepared")
-  userId        String?  @map("user_id")
-  masterVaultId String?  @map("master_vault_id")
-  fundingVaultId String? @map("funding_vault_id")
-  botVaultId    String?  @map("bot_vault_id")
-  chainId       Int      @map("chain_id")
-  toAddress     String   @map("to_address")
-  dataHex       String   @map("data_hex")
-  valueWei      String   @default("0") @map("value_wei")
-  txHash        String?  @unique @map("tx_hash")
-  metadata      Json?
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id             String   @id @default(cuid())
+  actionKey      String   @unique @map("action_key")
+  actionType     String   @map("action_type")
+  status         String   @default("prepared")
+  userId         String?  @map("user_id")
+  masterVaultId  String?  @map("master_vault_id")
+  fundingVaultId String?  @map("funding_vault_id")
+  botVaultId     String?  @map("bot_vault_id")
+  chainId        Int      @map("chain_id")
+  toAddress      String   @map("to_address")
+  dataHex        String   @map("data_hex")
+  valueWei       String   @default("0") @map("value_wei")
+  txHash         String?  @unique @map("tx_hash")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
-  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
-  masterVault MasterVault? @relation(fields: [masterVaultId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  masterVault  MasterVault?  @relation(fields: [masterVaultId], references: [id], onDelete: SetNull)
   fundingVault FundingVault? @relation(fields: [fundingVaultId], references: [id], onDelete: SetNull)
-  botVault    BotVault?    @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
+  botVault     BotVault?     @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt(sort: Desc)], map: "onchain_actions_status_created_idx")
   @@index([userId, createdAt(sort: Desc)], map: "onchain_actions_user_created_idx")
@@ -2046,30 +2134,334 @@ model OnchainAction {
 }
 
 model OnchainIndexedEvent {
-  id              String   @id @default(cuid())
-  eventKey        String   @unique @map("event_key")
-  chainId         Int      @map("chain_id")
-  blockNumber     BigInt   @map("block_number")
-  transactionHash String   @map("transaction_hash")
-  logIndex        Int      @map("log_index")
-  contractAddress String   @map("contract_address")
-  eventName       String   @map("event_name")
+  id              String                 @id @default(cuid())
+  eventKey        String                 @unique @map("event_key")
+  chainId         Int                    @map("chain_id")
+  blockNumber     BigInt                 @map("block_number")
+  blockHash       String?                @map("block_hash")
+  parentBlockHash String?                @map("parent_block_hash")
+  transactionHash String                 @map("transaction_hash")
+  logIndex        Int                    @map("log_index")
+  contractAddress String                 @map("contract_address")
+  eventName       String                 @map("event_name")
   payload         Json?
-  processedAt     DateTime @default(now()) @map("processed_at")
-  createdAt       DateTime @default(now()) @map("created_at")
+  canonicalStatus OnchainCanonicalStatus @default(OBSERVED) @map("canonical_status")
+  confirmations   Int                    @default(0)
+  confirmedAt     DateTime?              @map("confirmed_at")
+  finalizedAt     DateTime?              @map("finalized_at")
+  orphanedAt      DateTime?              @map("orphaned_at")
+  processedAt     DateTime               @default(now()) @map("processed_at")
+  createdAt       DateTime               @default(now()) @map("created_at")
 
+  @@unique([chainId, transactionHash, logIndex], map: "onchain_indexed_events_chain_tx_log_key")
   @@index([chainId, blockNumber, logIndex], map: "onchain_indexed_events_chain_block_log_idx")
+  @@index([chainId, canonicalStatus, blockNumber], map: "onchain_indexed_events_chain_status_block_idx")
   @@index([eventName, createdAt(sort: Desc)], map: "onchain_indexed_events_name_created_idx")
   @@map("onchain_indexed_events")
 }
 
 model OnchainSyncCursor {
-  id                 String   @id
-  chainId            Int      @map("chain_id")
-  lastProcessedBlock BigInt   @default(0) @map("last_processed_block")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  id                     String    @id
+  chainId                Int       @map("chain_id")
+  contractAddress        String?   @map("contract_address")
+  startBlock             BigInt    @default(0) @map("start_block")
+  lastProcessedBlock     BigInt    @default(0) @map("last_processed_block")
+  lastFinalizedBlock     BigInt    @default(0) @map("last_finalized_block")
+  lastProcessedBlockHash String?   @map("last_processed_block_hash")
+  leaseOwner             String?   @map("lease_owner")
+  leaseExpiresAt         DateTime? @map("lease_expires_at")
+  heartbeatAt            DateTime? @map("heartbeat_at")
+  lastSuccessfulAt       DateTime? @map("last_successful_at")
+  failureCount           Int       @default(0) @map("failure_count")
+  nextRetryAt            DateTime? @map("next_retry_at")
+  lastError              String?   @map("last_error")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
 
+  @@index([chainId, leaseExpiresAt], map: "onchain_sync_cursors_chain_lease_idx")
   @@map("onchain_sync_cursors")
+}
+
+model UliqPresalePurchase {
+  id                     String                    @id @default(cuid())
+  chainId                Int                       @map("chain_id")
+  presaleContractAddress String                    @map("presale_contract_address")
+  purchaseIdOnchain      Decimal                   @map("purchase_id_onchain") @db.Decimal(78, 0)
+  userId                 String?                   @map("user_id")
+  user                   User?                     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  walletAddress          String                    @map("wallet_address")
+  buyerAddress           String                    @map("buyer_address")
+  purchaseTimestamp      DateTime                  @map("purchase_timestamp")
+  transactionHash        String                    @map("transaction_hash")
+  logIndex               Int                       @map("log_index")
+  usdcAmountRaw          Decimal                   @map("usdc_amount_raw") @db.Decimal(78, 0)
+  uliqAllocationRaw      Decimal                   @map("uliq_allocation_raw") @db.Decimal(78, 0)
+  finalizationWalletRaw  Decimal                   @map("finalization_wallet_raw") @db.Decimal(78, 0)
+  finalizationVestingRaw Decimal                   @map("finalization_vesting_raw") @db.Decimal(78, 0)
+  status                 UliqPresalePurchaseStatus @default(PENDING_WITHDRAWAL)
+  withdrawalDeadline     DateTime                  @map("withdrawal_deadline")
+  purchaseBlockNumber    BigInt                    @map("purchase_block_number")
+  purchaseBlockHash      String                    @map("purchase_block_hash")
+  withdrawTxHash         String?                   @map("withdraw_tx_hash")
+  refundTxHash           String?                   @map("refund_tx_hash")
+  finalizeTxHash         String?                   @map("finalize_tx_hash")
+  withdrawnAt            DateTime?                 @map("withdrawn_at")
+  refundedAt             DateTime?                 @map("refunded_at")
+  finalizedAt            DateTime?                 @map("finalized_at")
+  legalTermsVersion      String                    @map("legal_terms_version")
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  updatedAt              DateTime                  @updatedAt @map("updated_at")
+
+  @@unique([chainId, presaleContractAddress, purchaseIdOnchain], map: "uliq_presale_purchases_chain_contract_purchase_key")
+  @@unique([chainId, transactionHash, logIndex], map: "uliq_presale_purchases_chain_tx_log_key")
+  @@index([walletAddress, status, withdrawalDeadline], map: "uliq_presale_purchases_wallet_status_deadline_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "uliq_presale_purchases_user_created_idx")
+  @@map("uliq_presale_purchases")
+}
+
+model UliqVestingPosition {
+  id               String    @id @default(cuid())
+  chainId          Int       @map("chain_id")
+  contractAddress  String    @map("contract_address")
+  walletAddress    String    @map("wallet_address")
+  allocatedRaw     Decimal   @map("allocated_raw") @db.Decimal(78, 0)
+  releasedRaw      Decimal   @map("released_raw") @db.Decimal(78, 0)
+  vestingStart     DateTime? @map("vesting_start")
+  vestingEnd       DateTime? @map("vesting_end")
+  asOfBlock        BigInt    @map("as_of_block")
+  blockHash        String    @map("block_hash")
+  lastReconciledAt DateTime? @map("last_reconciled_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@unique([chainId, contractAddress, walletAddress], map: "uliq_vesting_positions_chain_contract_wallet_key")
+  @@index([walletAddress, asOfBlock], map: "uliq_vesting_positions_wallet_block_idx")
+  @@map("uliq_vesting_positions")
+}
+
+model UliqLockPosition {
+  id              String                 @id @default(cuid())
+  chainId         Int                    @map("chain_id")
+  contractAddress String                 @map("contract_address")
+  lockIdOnchain   Decimal                @map("lock_id_onchain") @db.Decimal(78, 0)
+  walletAddress   String                 @map("wallet_address")
+  amountRaw       Decimal                @map("amount_raw") @db.Decimal(78, 0)
+  durationDays    Int                    @map("duration_days")
+  startAt         DateTime               @map("start_at")
+  unlockAt        DateTime               @map("unlock_at")
+  withdrawnAt     DateTime?              @map("withdrawn_at")
+  status          UliqLockPositionStatus @default(ACTIVE)
+  asOfBlock       BigInt                 @map("as_of_block")
+  blockHash       String                 @map("block_hash")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  @@unique([chainId, contractAddress, lockIdOnchain], map: "uliq_lock_positions_chain_contract_lock_key")
+  @@index([walletAddress, status, unlockAt], map: "uliq_lock_positions_wallet_status_unlock_idx")
+  @@map("uliq_lock_positions")
+}
+
+model UliqPriceSnapshot {
+  id                   String                 @id @default(cuid())
+  chainId              Int                    @map("chain_id")
+  poolAddress          String?                @map("pool_address")
+  baseTokenAddress     String                 @map("base_token_address")
+  quoteTokenAddress    String                 @map("quote_token_address")
+  priceUsd             Decimal                @map("price_usd") @db.Decimal(38, 18)
+  mode                 UliqPriceMode
+  source               String
+  twapWindowSeconds    Int?                   @map("twap_window_seconds")
+  spotPriceUsd         Decimal?               @map("spot_price_usd") @db.Decimal(38, 18)
+  spotTwapDeviationBps Int?                   @map("spot_twap_deviation_bps")
+  liquidityUsd         Decimal?               @map("liquidity_usd") @db.Decimal(38, 2)
+  poolAgeSeconds       Int?                   @map("pool_age_seconds")
+  blockNumber          BigInt                 @map("block_number")
+  blockHash            String                 @map("block_hash")
+  qualityStatus        UliqPriceQualityStatus @map("quality_status")
+  degradationReason    String?                @map("degradation_reason")
+  observedAt           DateTime               @map("observed_at")
+  validUntil           DateTime               @map("valid_until")
+  createdAt            DateTime               @default(now()) @map("created_at")
+
+  entitlementSnapshots UliqEntitlementSnapshot[]
+  benefitReservations  UliqBenefitReservation[]
+  billingOrders        BillingOrder[]
+
+  @@index([chainId, mode, observedAt(sort: Desc)], map: "uliq_price_snapshots_chain_mode_observed_idx")
+  @@index([qualityStatus, validUntil], map: "uliq_price_snapshots_quality_valid_idx")
+  @@map("uliq_price_snapshots")
+}
+
+model UliqEntitlementSnapshot {
+  id                       String                 @id @default(cuid())
+  userId                   String                 @map("user_id")
+  user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress            String                 @map("wallet_address")
+  chainId                  Int                    @map("chain_id")
+  asOfBlock                BigInt                 @map("as_of_block")
+  blockHash                String                 @map("block_hash")
+  walletRaw                Decimal                @map("wallet_raw") @db.Decimal(78, 0)
+  vestingRaw               Decimal                @map("vesting_raw") @db.Decimal(78, 0)
+  lockedRaw                Decimal                @map("locked_raw") @db.Decimal(78, 0)
+  eligibleRaw              Decimal                @map("eligible_raw") @db.Decimal(78, 0)
+  featureEligibleRaw       Decimal                @map("feature_eligible_raw") @db.Decimal(78, 0)
+  monetaryEligibleRaw      Decimal                @map("monetary_eligible_raw") @db.Decimal(78, 0)
+  holdingCooldownSeconds   Int                    @default(86400) @map("holding_cooldown_seconds")
+  holdingQualifiedAt       DateTime?              @map("holding_qualified_at")
+  presaleCooldownExemptRaw Decimal                @map("presale_cooldown_exempt_raw") @db.Decimal(78, 0)
+  pendingPresaleRaw        Decimal                @map("pending_presale_raw") @db.Decimal(78, 0)
+  referencePriceUsd        Decimal                @map("reference_price_usd") @db.Decimal(38, 18)
+  priceMode                UliqPriceMode          @map("price_mode")
+  priceQualityStatus       UliqPriceQualityStatus @map("price_quality_status")
+  degradationReason        String?                @map("degradation_reason")
+  eligibleUsd              Decimal                @map("eligible_usd") @db.Decimal(38, 18)
+  baseTier                 String                 @map("base_tier")
+  lockModifier             String?                @map("lock_modifier")
+  effectiveTier            String                 @map("effective_tier")
+  tierConfigVersion        Int                    @map("tier_config_version")
+  priceSnapshotId          String                 @map("price_snapshot_id")
+  priceSnapshot            UliqPriceSnapshot      @relation(fields: [priceSnapshotId], references: [id], onDelete: Restrict)
+  computedAt               DateTime               @default(now()) @map("computed_at")
+  validUntil               DateTime               @map("valid_until")
+  createdAt                DateTime               @default(now()) @map("created_at")
+
+  benefitReservations UliqBenefitReservation[]
+  billingOrders       BillingOrder[]
+
+  @@unique([userId, walletAddress, chainId, asOfBlock], map: "uliq_entitlement_snapshots_user_wallet_chain_block_key")
+  @@index([userId, computedAt(sort: Desc)], map: "uliq_entitlement_snapshots_user_computed_idx")
+  @@index([walletAddress, validUntil], map: "uliq_entitlement_snapshots_wallet_valid_idx")
+  @@map("uliq_entitlement_snapshots")
+}
+
+model UliqBenefitReservation {
+  id                    String                       @id @default(cuid())
+  userId                String                       @map("user_id")
+  user                  User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress         String                       @map("wallet_address")
+  entitlementSnapshotId String                       @map("entitlement_snapshot_id")
+  entitlementSnapshot   UliqEntitlementSnapshot      @relation(fields: [entitlementSnapshotId], references: [id], onDelete: Restrict)
+  configVersion         Int                          @map("config_version")
+  priceSnapshotId       String                       @map("price_snapshot_id")
+  priceSnapshot         UliqPriceSnapshot            @relation(fields: [priceSnapshotId], references: [id], onDelete: Restrict)
+  asOfBlock             BigInt                       @map("as_of_block")
+  referenceType         String                       @map("reference_type")
+  referenceId           String                       @map("reference_id")
+  benefitType           UliqBenefitType              @map("benefit_type")
+  currency              String                       @default("USD")
+  baseAmount            Decimal                      @map("base_amount") @db.Decimal(38, 8)
+  discountAmount        Decimal                      @map("discount_amount") @db.Decimal(38, 8)
+  finalAmount           Decimal                      @map("final_amount") @db.Decimal(38, 8)
+  status                UliqBenefitReservationStatus @default(RESERVED)
+  expiresAt             DateTime                     @map("expires_at")
+  consumedAt            DateTime?                    @map("consumed_at")
+  releasedAt            DateTime?                    @map("released_at")
+  reversedAt            DateTime?                    @map("reversed_at")
+  idempotencyKey        String                       @unique @map("idempotency_key")
+  metadata              Json?
+  createdAt             DateTime                     @default(now()) @map("created_at")
+  updatedAt             DateTime                     @updatedAt @map("updated_at")
+
+  billingOrder  BillingOrder?
+  ledgerEntries UliqBenefitLedger[]
+
+  @@unique([referenceType, referenceId, benefitType], map: "uliq_benefit_reservations_reference_benefit_key")
+  @@index([userId, status, expiresAt], map: "uliq_benefit_reservations_user_status_expiry_idx")
+  @@index([walletAddress, status], map: "uliq_benefit_reservations_wallet_status_idx")
+  @@map("uliq_benefit_reservations")
+}
+
+model UliqBenefitLedger {
+  id                    String                     @id @default(cuid())
+  userId                String?                    @map("user_id")
+  user                  User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  walletAddress         String                     @map("wallet_address")
+  benefitType           UliqBenefitType            @map("benefit_type")
+  referenceType         String                     @map("reference_type")
+  referenceId           String                     @map("reference_id")
+  reservationId         String                     @map("reservation_id")
+  reservation           UliqBenefitReservation     @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  tierSnapshot          String                     @map("tier_snapshot")
+  configVersion         Int                        @map("config_version")
+  priceSnapshotId       String                     @map("price_snapshot_id")
+  entitlementSnapshotId String                     @map("entitlement_snapshot_id")
+  currency              String                     @default("USD")
+  baseAmount            Decimal                    @map("base_amount") @db.Decimal(38, 8)
+  discountAmount        Decimal                    @map("discount_amount") @db.Decimal(38, 8)
+  finalAmount           Decimal                    @map("final_amount") @db.Decimal(38, 8)
+  entryType             UliqBenefitLedgerEntryType @map("entry_type")
+  idempotencyKey        String                     @unique @map("idempotency_key")
+  metadata              Json?
+  createdAt             DateTime                   @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)], map: "uliq_benefit_ledger_user_created_idx")
+  @@index([reservationId, createdAt], map: "uliq_benefit_ledger_reservation_created_idx")
+  @@map("uliq_benefit_ledger")
+}
+
+model UliqHoldingLot {
+  id                 String                    @id @default(cuid())
+  userId             String?                   @map("user_id")
+  user               User?                     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  chainId            Int                       @map("chain_id")
+  walletAddress      String                    @map("wallet_address")
+  provenance         UliqHoldingProvenanceType
+  sourceEventKey     String                    @map("source_event_key")
+  lineageRoot        String                    @map("lineage_root")
+  amountRaw          Decimal                   @map("amount_raw") @db.Decimal(78, 0)
+  remainingRaw       Decimal                   @map("remaining_raw") @db.Decimal(78, 0)
+  acquiredAt         DateTime                  @map("acquired_at")
+  monetaryEligibleAt DateTime                  @map("monetary_eligible_at")
+  asOfBlock          BigInt                    @map("as_of_block")
+  blockHash          String                    @map("block_hash")
+  canonical          Boolean                   @default(true)
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+
+  @@unique([chainId, sourceEventKey], map: "uliq_holding_lots_chain_source_event_key")
+  @@index([walletAddress, canonical, monetaryEligibleAt], map: "uliq_holding_lots_wallet_eligible_idx")
+  @@index([lineageRoot, canonical], map: "uliq_holding_lots_lineage_canonical_idx")
+  @@map("uliq_holding_lots")
+}
+
+model UliqTierConfig {
+  id                      String    @id @default(cuid())
+  code                    String
+  version                 Int
+  enabled                 Boolean   @default(true)
+  minUsdValue             Decimal   @map("min_usd_value") @db.Decimal(38, 18)
+  minimumLockDurationDays Int?      @map("minimum_lock_duration_days")
+  featureFlags            Json      @map("feature_flags")
+  aiDiscountBps           Int       @default(0) @map("ai_discount_bps")
+  subscriptionDiscountBps Int       @default(0) @map("subscription_discount_bps")
+  monetaryBenefitCaps     Json?     @map("monetary_benefit_caps")
+  effectiveFrom           DateTime  @map("effective_from")
+  effectiveUntil          DateTime? @map("effective_until")
+  createdByUserId         String?   @map("created_by_user_id")
+  createdBy               User?     @relation("UliqTierConfigCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  reason                  String
+  createdAt               DateTime  @default(now()) @map("created_at")
+
+  @@unique([code, version], map: "uliq_tier_configs_code_version_key")
+  @@index([enabled, effectiveFrom, effectiveUntil], map: "uliq_tier_configs_effective_idx")
+  @@map("uliq_tier_configs")
+}
+
+model UliqReconciliationRun {
+  id            String                   @id @default(cuid())
+  chainId       Int                      @map("chain_id")
+  scope         String
+  asOfBlock     BigInt                   @map("as_of_block")
+  blockHash     String                   @map("block_hash")
+  status        UliqReconciliationStatus
+  mismatchCount Int                      @default(0) @map("mismatch_count")
+  details       Json?
+  startedAt     DateTime                 @default(now()) @map("started_at")
+  finishedAt    DateTime?                @map("finished_at")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+
+  @@index([chainId, scope, startedAt(sort: Desc)], map: "uliq_reconciliation_runs_chain_scope_started_idx")
+  @@index([status, startedAt(sort: Desc)], map: "uliq_reconciliation_runs_status_started_idx")
+  @@map("uliq_reconciliation_runs")
 }
 
 model BotOrder {
@@ -2450,29 +2842,29 @@ model EconomicCalendarConfig {
 }
 
 model EconomicEvent {
-  id        String   @id @default(cuid())
-  sourceId  String   @map("source_id")
-  ts        DateTime
-  country   String
-  currency  String
-  title     String
-  impact    String
-  forecast  Float?
-  previous  Float?
-  actual    Float?
-  source    String   @default("official")
-  sourceName String?  @map("source_name")
-  sourceUrl  String?  @map("source_url")
-  category   String   @default("economic_release")
-  status     String   @default("scheduled")
-  unit       String?
-  period     String?
-  fetchedAt  DateTime @default(now()) @map("fetched_at")
-  originalTimezone String? @map("original_timezone")
-  timeConfidence String? @map("time_confidence")
-  revision    Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(cuid())
+  sourceId         String   @map("source_id")
+  ts               DateTime
+  country          String
+  currency         String
+  title            String
+  impact           String
+  forecast         Float?
+  previous         Float?
+  actual           Float?
+  source           String   @default("official")
+  sourceName       String?  @map("source_name")
+  sourceUrl        String?  @map("source_url")
+  category         String   @default("economic_release")
+  status           String   @default("scheduled")
+  unit             String?
+  period           String?
+  fetchedAt        DateTime @default(now()) @map("fetched_at")
+  originalTimezone String?  @map("original_timezone")
+  timeConfidence   String?  @map("time_confidence")
+  revision         Int      @default(0)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   revisions EconomicEventRevision[]
 
@@ -2500,25 +2892,25 @@ model EconomicEventRevision {
 }
 
 model MarketNewsItem {
-  id              String   @id @default(cuid())
-  sourceId        String   @map("source_id")
+  id              String    @id @default(cuid())
+  sourceId        String    @map("source_id")
   provider        String
-  sourceName      String   @map("source_name")
-  sourceUrl       String   @map("source_url")
-  canonicalUrl    String?  @map("canonical_url")
+  sourceName      String    @map("source_name")
+  sourceUrl       String    @map("source_url")
+  canonicalUrl    String?   @map("canonical_url")
   title           String
   summary         String?
-  publishedAt     DateTime @map("published_at")
-  fetchedAt       DateTime @map("fetched_at")
+  publishedAt     DateTime  @map("published_at")
+  fetchedAt       DateTime  @map("fetched_at")
   language        String?
-  symbols         Json     @default("[]")
-  categories      Json     @default("[]")
-  contentHash     String   @map("content_hash")
-  licenseStatus   String   @default("approved") @map("license_status")
+  symbols         Json      @default("[]")
+  categories      Json      @default("[]")
+  contentHash     String    @map("content_hash")
+  licenseStatus   String    @default("approved") @map("license_status")
   termsReviewedAt DateTime? @map("terms_reviewed_at")
   retentionUntil  DateTime? @map("retention_until")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@unique([provider, sourceId])
   @@index([publishedAt(sort: Desc)])
@@ -2676,30 +3068,30 @@ model CompositeStrategy {
 }
 
 model AiTraceLog {
-  id                 String   @id @default(cuid())
-  userId             String?  @map("user_id")
-  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id                 String      @id @default(cuid())
+  userId             String?     @map("user_id")
+  user               User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   scope              String
   provider           String?
   model              String?
   symbol             String?
-  marketType         String?  @map("market_type")
+  marketType         String?     @map("market_type")
   timeframe          String?
-  promptTemplateId   String?  @map("prompt_template_id")
-  promptTemplateName String?  @map("prompt_template_name")
-  systemMessage      String?  @map("system_message")
-  userPayload        Json?    @map("user_payload")
-  rawResponse        String?  @map("raw_response")
-  parsedResponse     Json?    @map("parsed_response")
-  success            Boolean  @default(true)
+  promptTemplateId   String?     @map("prompt_template_id")
+  promptTemplateName String?     @map("prompt_template_name")
+  systemMessage      String?     @map("system_message")
+  userPayload        Json?       @map("user_payload")
+  rawResponse        String?     @map("raw_response")
+  parsedResponse     Json?       @map("parsed_response")
+  success            Boolean     @default(true)
   error              String?
-  fallbackUsed       Boolean  @default(false) @map("fallback_used")
-  cacheHit           Boolean  @default(false) @map("cache_hit")
-  rateLimited        Boolean  @default(false) @map("rate_limited")
-  latencyMs          Int?     @map("latency_ms")
-  agentRunId         String?  @map("agent_run_id")
+  fallbackUsed       Boolean     @default(false) @map("fallback_used")
+  cacheHit           Boolean     @default(false) @map("cache_hit")
+  rateLimited        Boolean     @default(false) @map("rate_limited")
+  latencyMs          Int?        @map("latency_ms")
+  agentRunId         String?     @map("agent_run_id")
   agentRun           AiAgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  createdAt          DateTime @default(now()) @map("created_at")
+  createdAt          DateTime    @default(now()) @map("created_at")
 
   @@index([createdAt(sort: Desc)])
   @@index([scope, createdAt(sort: Desc)])
@@ -2734,22 +3126,22 @@ model AiAgentProfile {
 }
 
 model AiAgentConversation {
-  id                        String   @id @default(cuid())
-  userId                    String   @map("user_id")
-  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  profileId                 String?  @map("profile_id")
+  id                        String          @id @default(cuid())
+  userId                    String          @map("user_id")
+  user                      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId                 String?         @map("profile_id")
   profile                   AiAgentProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
-  profileKey                String   @default("market_analyst") @map("profile_key")
+  profileKey                String          @default("market_analyst") @map("profile_key")
   title                     String
-  status                    String   @default("active")
-  selectedVenue             String   @default("auto") @map("selected_venue")
-  selectedExchangeAccountId String?  @map("selected_exchange_account_id")
-  marketType                String?  @map("market_type")
+  status                    String          @default("active")
+  selectedVenue             String          @default("auto") @map("selected_venue")
+  selectedExchangeAccountId String?         @map("selected_exchange_account_id")
+  marketType                String?         @map("market_type")
   symbol                    String?
   summary                   String?
-  createdAt                 DateTime @default(now()) @map("created_at")
-  updatedAt                 DateTime @updatedAt @map("updated_at")
-  lastMessageAt             DateTime @default(now()) @map("last_message_at")
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
+  lastMessageAt             DateTime        @default(now()) @map("last_message_at")
 
   messages AiAgentMessage[]
   runs     AiAgentRun[]
@@ -2759,50 +3151,50 @@ model AiAgentConversation {
 }
 
 model AiAgentMessage {
-  id             String   @id @default(cuid())
-  conversationId String   @map("conversation_id")
+  id             String              @id @default(cuid())
+  conversationId String              @map("conversation_id")
   conversation   AiAgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           String
   content        String
   blocks         Json?
-  sourceRefs     Json?    @map("source_refs")
-  createdAt      DateTime @default(now()) @map("created_at")
+  sourceRefs     Json?               @map("source_refs")
+  createdAt      DateTime            @default(now()) @map("created_at")
 
   @@index([conversationId, createdAt])
   @@map("ai_agent_messages")
 }
 
 model AiAgentRun {
-  id               String   @id @default(cuid())
-  conversationId   String?  @map("conversation_id")
-  conversation     AiAgentConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  userId           String   @map("user_id")
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  scope            String
-  status           String
-  profileSnapshot  Json     @map("profile_snapshot")
-  contextSnapshot  Json     @map("context_snapshot")
-  provider         String?
-  model            String?
-  modelClass       String?  @map("model_class")
-  routingDecision  Json?    @map("routing_decision")
-  reservedCredits  BigInt   @default(0) @map("reserved_credits")
-  chargedCredits   BigInt   @default(0) @map("charged_credits")
-  providerCostMicrousd BigInt @default(0) @map("provider_cost_microusd")
-  retailCostMicrousd BigInt @default(0) @map("retail_cost_microusd")
-  modelCallCount   Int      @default(0) @map("model_call_count")
-  idempotencyKey   String?  @unique @map("idempotency_key")
-  toolIterations   Int      @default(0) @map("tool_iterations")
-  toolCallCount    Int      @default(0) @map("tool_call_count")
-  usageTotalTokens Int?     @map("usage_total_tokens")
-  latencyMs        Int?     @map("latency_ms")
-  errorCode        String?  @map("error_code")
-  createdAt        DateTime @default(now()) @map("created_at")
-  completedAt      DateTime? @map("completed_at")
+  id                   String               @id @default(cuid())
+  conversationId       String?              @map("conversation_id")
+  conversation         AiAgentConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  userId               String               @map("user_id")
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scope                String
+  status               String
+  profileSnapshot      Json                 @map("profile_snapshot")
+  contextSnapshot      Json                 @map("context_snapshot")
+  provider             String?
+  model                String?
+  modelClass           String?              @map("model_class")
+  routingDecision      Json?                @map("routing_decision")
+  reservedCredits      BigInt               @default(0) @map("reserved_credits")
+  chargedCredits       BigInt               @default(0) @map("charged_credits")
+  providerCostMicrousd BigInt               @default(0) @map("provider_cost_microusd")
+  retailCostMicrousd   BigInt               @default(0) @map("retail_cost_microusd")
+  modelCallCount       Int                  @default(0) @map("model_call_count")
+  idempotencyKey       String?              @unique @map("idempotency_key")
+  toolIterations       Int                  @default(0) @map("tool_iterations")
+  toolCallCount        Int                  @default(0) @map("tool_call_count")
+  usageTotalTokens     Int?                 @map("usage_total_tokens")
+  latencyMs            Int?                 @map("latency_ms")
+  errorCode            String?              @map("error_code")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  completedAt          DateTime?            @map("completed_at")
 
-  toolCalls    AiAgentToolCall[]
-  usageRecords AiUsageRecord[]
-  reservation  AiCreditReservation?
+  toolCalls     AiAgentToolCall[]
+  usageRecords  AiUsageRecord[]
+  reservation   AiCreditReservation?
   ledgerEntries AiCreditLedger[]
   traceLogs     AiTraceLog[]
 
@@ -2812,18 +3204,18 @@ model AiAgentRun {
 }
 
 model AiAgentToolCall {
-  id                String   @id @default(cuid())
-  runId             String   @map("run_id")
+  id                String     @id @default(cuid())
+  runId             String     @map("run_id")
   run               AiAgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  toolName          String   @map("tool_name")
+  toolName          String     @map("tool_name")
   status            String
   venue             String?
-  exchangeAccountId String?  @map("exchange_account_id")
-  argumentsSummary  Json?    @map("arguments_summary")
-  resultSummary     Json?    @map("result_summary")
-  durationMs        Int?     @map("duration_ms")
-  errorCode         String?  @map("error_code")
-  createdAt         DateTime @default(now()) @map("created_at")
+  exchangeAccountId String?    @map("exchange_account_id")
+  argumentsSummary  Json?      @map("arguments_summary")
+  resultSummary     Json?      @map("result_summary")
+  durationMs        Int?       @map("duration_ms")
+  errorCode         String?    @map("error_code")
+  createdAt         DateTime   @default(now()) @map("created_at")
 
   @@index([runId, createdAt])
   @@index([toolName, createdAt(sort: Desc)])
