@@ -20,6 +20,6 @@
     "configure:uliq:testnet": "npm run configure:uliq:testnet:dry-run -- --broadcast"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "5.2.0"
+    "@openzeppelin/contracts": "5.4.0"
   }
 }

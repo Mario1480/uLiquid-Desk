@@ -7,7 +7,7 @@ Die folgenden Contracts werden spezifiziert und auf Testnet erprobt. Production-
 ## Gemeinsame Contract-Regeln
 
 - Solidity ist für die Testnet-Implementierung auf `0.8.30`, das bestehende gemeinsame EVM-Target weiterhin auf `paris` gepinnt.
-- OpenZeppelin Contracts ist exakt auf `5.2.0` gepinnt; keine `^5.x`-Range. Die am 2026-08-22 geprüfte aktuelle Stable-Version `5.6.1` verlangt in transitiv eingebundenen Utilities das Cancun-Opcode `MCOPY`. Das gemeinsame EVM-Target wird wegen bestehender Vault-Contracts nicht ungeprüft global auf Cancun angehoben. Die Dependency-Entscheidung wird vor Audit erneut geprüft und danach eingefroren.
+- OpenZeppelin Contracts ist exakt auf `5.4.0` gepinnt; keine `^5.x`-Range. Version 5.4.0 behebt GHSA-9rcw-c2f9-2j55 und besteht den Clean Build sowie die ULIQ-Suite mit Solidity `0.8.30` und EVM Paris. Die am 2026-08-22 geprüfte aktuelle Stable-Version `5.6.1` verlangt in transitiv eingebundenen Utilities das Cancun-Opcode `MCOPY`. Das gemeinsame EVM-Target wird wegen bestehender Vault-Contracts nicht ungeprüft global auf Cancun angehoben. Die Dependency-Entscheidung wird vor Audit erneut geprüft und danach eingefroren.
 - Die Version wird in Tests, Deployment-Artefakten und Audit-Scope festgehalten.
 - Contracts sind möglichst non-upgradeable.
 - Administrative Rollen liegen bei Safe/Multisig-Adressen, nicht bei persönlichen EOAs oder App-Servern.

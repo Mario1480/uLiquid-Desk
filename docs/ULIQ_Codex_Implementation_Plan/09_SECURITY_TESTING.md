@@ -160,7 +160,7 @@ Verifiziert:
 
 - `npm run contracts:build`: PASS.
 - `npm run contracts:test`: PASS, 38/38 repositoryweite Contract-Tests. Der ULIQ-Scope umfasst 10 Unit-/Fuzz-Tests und 4 Invarianten; die beiden ULIQ-Fuzz-Tests liefen mit 256 Runs, jede ULIQ-Invariante mit 256 Runs und 128.000 Calls.
-- ULIQ-Coverage: `ULIQToken` 100 % Lines, `ULIQPresaleVesting` 100 % Lines, `ULIQPresale` 84,21 % Lines, `ULIQLocker` 90,32 % Lines, `ULIQTestnetEscrow` 90 % Lines und `ULIQMockUSDC` 100 % Lines. Die von Foundry ausgewiesene Branch-Coverage liegt niedriger und bleibt ein Audit-Härtungspunkt.
+- ULIQ-Coverage mit Foundry `--ir-minimum`: `ULIQToken` 100 % Lines, `ULIQPresaleVesting` 100 % Lines, `ULIQPresale` 84,21 % Lines, `ULIQLocker` 90,32 % Lines, `ULIQTestnetEscrow` 90 % Lines und `ULIQMockUSDC` 100 % Lines. Das Flag ist wegen eines `stack too deep` im unoptimierten Coverage-Build erforderlich und Foundry warnt dabei vor ungenaueren Source Mappings; die ausgewiesene Branch-Coverage liegt niedriger und bleibt ein Audit-Härtungspunkt.
 - `npm -w apps/api run typecheck`: PASS.
 - `npm -w apps/api run test:uliq`: PASS, 21/21.
 - `npm -w apps/api run test:billing`: PASS, 100/100.
@@ -168,6 +168,7 @@ Verifiziert:
 - `npm -w apps/web run typecheck`, `i18n:check` und `test:billing`: PASS, letzteres 6/6.
 - `npx prisma validate` und `npx prisma generate`: PASS.
 - `npm run quality:any-budget`, `npm run quality:vendor-charting` und `git diff --check`: PASS.
+- `npm audit --omit=dev`: PASS mit 0 Production-Dependency-Findings nach Pin auf OpenZeppelin Contracts 5.4.0 und `nanoid` 3.3.18.
 - lokaler Anvil-Deploy mit Inventory-/Role-/Wiring-Preflight: PASS; die dabei erzeugten Adressen sind flüchtige Local-Adressen und kein Sepolia-Address-Book.
 
 Offen oder blockiert:
