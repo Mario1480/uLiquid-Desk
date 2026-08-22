@@ -412,6 +412,30 @@
   margin-top: 8px;
   width: 100%;
 }
+.subscriptionUliqDiscountToggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(101, 204, 255, 0.28);
+  border-radius: 12px;
+  background: rgba(63, 175, 255, 0.08);
+  cursor: pointer;
+}
+.subscriptionUliqDiscountToggle input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--color-brand-secondary);
+}
+.subscriptionUliqDiscountToggle span {
+  display: grid;
+  gap: 3px;
+}
+.subscriptionUliqDiscountToggle small {
+  color: var(--muted);
+  line-height: 1.4;
+}
 .subscriptionOrderSimpleHint {
   margin-top: 10px;
   border: 1px solid rgba(251, 191, 36, 0.45);

@@ -1,5 +1,5 @@
 import { defineChain, type Chain } from "viem";
-import { arbitrum } from "viem/chains";
+import { arbitrum, arbitrumSepolia } from "viem/chains";
 import { web3Env } from "./env";
 import { DEFAULT_HYPEREVM_EXPLORER_URL } from "../wallet/explorer";
 
@@ -40,9 +40,18 @@ export const hyperEvmChain: Chain = {
   }
 };
 
+export const uliqArbitrumSepoliaChain: Chain = {
+  ...arbitrumSepolia,
+  rpcUrls: {
+    default: {
+      http: [process.env.NEXT_PUBLIC_ULIQ_RPC_URL?.trim() || arbitrumSepolia.rpcUrls.default.http[0]]
+    }
+  }
+};
+
 export const supportedChains: Chain[] = web3Env.enableArbitrum
-  ? [hyperEvmChain, arbitrum]
-  : [hyperEvmChain];
+  ? [hyperEvmChain, arbitrum, ...(web3Env.uliqTestnetEnabled ? [uliqArbitrumSepoliaChain] : [])]
+  : [hyperEvmChain, ...(web3Env.uliqTestnetEnabled ? [uliqArbitrumSepoliaChain] : [])];
 
 export const targetChain =
   supportedChains.find((chain) => chain.id === web3Env.targetChainId) ?? hyperEvmChain;

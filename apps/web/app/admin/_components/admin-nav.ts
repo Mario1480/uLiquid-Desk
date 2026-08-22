@@ -21,6 +21,9 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/statistics", label: "Statistics", icon: "performance" },
   { href: "/admin/providers", label: "Providers", icon: "server" },
   { href: "/admin/affiliate", label: "Affiliate", icon: "link" },
+  ...(process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true"
+    ? [{ href: "/admin/uliq", label: "ULIQ Testnet", icon: "money" as const }]
+    : []),
   {
     href: "/admin/system/vaults/execution",
     label: "Vaults",

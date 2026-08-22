@@ -26,6 +26,7 @@ import {
   type BillingOrder,
   type BillingOrderStatus,
   type BillingPackage,
+  type UliqBenefitSnapshot,
   type SubscriptionPayload
 } from "../../../../src/billing/subscriptionViewModel";
 import {
@@ -55,6 +56,7 @@ type CheckoutResponse = {
   status?: BillingOrderStatus;
   order?: BillingOrder;
   payment?: BillingOnchainPayment | null;
+  uliqBenefit?: UliqBenefitSnapshot | null;
 };
 
 type OrderStatusResponse = Partial<BillingOrder> & {
@@ -68,6 +70,7 @@ type ActiveCheckout = {
   merchantOrderId: string | null;
   status: BillingOrderStatus;
   payment: BillingOnchainPayment;
+  uliqBenefit: UliqBenefitSnapshot | null;
 };
 
 type PaymentStage =
@@ -201,13 +204,15 @@ function checkoutFromOrder(order: BillingOrder): ActiveCheckout | null {
     payment: normalizePaymentDetails({
       ...order.onchainPayment,
       txHash: order.onchainPayment.txHash ?? storedTxHash
-    }, null, order)
+    }, null, order),
+    uliqBenefit: order.uliqBenefit ?? null
   };
 }
 
 function SubscriptionOrderPageContent() {
   const t = useTranslations("settings.subscription");
   const tCommon = useTranslations("settings.common");
+  const tUliq = useTranslations("uliq.billing");
   const locale = useLocale() as AppLocale;
   const { address, chainId, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
@@ -222,6 +227,8 @@ function SubscriptionOrderPageContent() {
   const [message, setMessage] = useState<string | null>(null);
   const [activeCheckout, setActiveCheckout] = useState<ActiveCheckout | null>(null);
   const [paymentStage, setPaymentStage] = useState<PaymentStage>("ready");
+  const [applyUliqDiscount, setApplyUliqDiscount] = useState(false);
+  const publicUliqEnabled = process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true";
 
   const model = useMemo(() => buildOrderPageModel(payload), [payload]);
   const payment = activeCheckout?.payment ?? null;
@@ -322,7 +329,8 @@ function SubscriptionOrderPageContent() {
       orderId: nextOrderId,
       merchantOrderId: order?.merchantOrderId ?? fallback?.merchantOrderId ?? null,
       status: nextStatus,
-      payment: nextPayment
+      payment: nextPayment,
+      uliqBenefit: response.uliqBenefit ?? order?.uliqBenefit ?? fallback?.uliqBenefit ?? null
     };
     setActiveCheckout(nextCheckout);
     setPaymentStage(stageFromStatus(nextStatus, nextPayment));
@@ -453,7 +461,8 @@ function SubscriptionOrderPageContent() {
     setMessage(null);
     try {
       const response = await apiPost<CheckoutResponse>("/settings/subscription/checkout", {
-        items: cartItems
+        items: cartItems,
+        applyUliqDiscount: publicUliqEnabled && applyUliqDiscount
       });
       if (response.mode === "instant" || response.status === "paid" || response.order?.status === "paid") {
         setMessage(t("messages.activatedInstantly"));
@@ -470,7 +479,8 @@ function SubscriptionOrderPageContent() {
         orderId,
         merchantOrderId: response.merchantOrderId ?? response.order?.merchantOrderId ?? null,
         status: response.status ?? response.order?.status ?? "pending",
-        payment: normalizePaymentDetails(rawPaymentDetails, null, response.order)
+        payment: normalizePaymentDetails(rawPaymentDetails, null, response.order),
+        uliqBenefit: response.uliqBenefit ?? response.order?.uliqBenefit ?? null
       };
       setActiveCheckout(nextCheckout);
       setPaymentStage(stageFromStatus(nextCheckout.status, nextCheckout.payment));
@@ -497,7 +507,9 @@ function SubscriptionOrderPageContent() {
         open_order_cart_mismatch: "openOrderConflict",
         open_order_exists: "openOrderConflict"
       };
-      setMessage(code && knownErrors[code]
+      setMessage(code?.startsWith("uliq_")
+        ? tUliq("unavailable")
+        : code && knownErrors[code]
         ? t(`order.errors.${knownErrors[code]}`)
         : error instanceof ApiError
           ? error.message
@@ -828,6 +840,12 @@ function SubscriptionOrderPageContent() {
                   <div className="subscriptionOrderSummaryItem"><span>{t("order.addonsPrice")}</span><span>{centsToCurrency(addonsPrice)}</span></div>
                   <div className="subscriptionOrderSummaryDivider" />
                   <div className="subscriptionOrderSummaryItem subscriptionOrderSummaryStrong"><span>{t("order.checkoutTotal")}</span><span>{centsToCurrency(checkoutTotal)}</span></div>
+                  {publicUliqEnabled ? (
+                    <label className="subscriptionUliqDiscountToggle">
+                      <input type="checkbox" checked={applyUliqDiscount} onChange={(event) => setApplyUliqDiscount(event.target.checked)} disabled={hasBlockingCheckout} />
+                      <span><strong>{tUliq("apply")}</strong><small>{tUliq("hint")}</small></span>
+                    </label>
+                  ) : null}
                   <button
                     type="button"
                     className="btn btnPrimary subscriptionOrderPayButton"
@@ -868,6 +886,15 @@ function SubscriptionOrderPageContent() {
 
           <div className="subscriptionPaymentDetails">
             <div><span>{t("order.payment.amount")}</span><strong>{payment.amountFormatted} USDC</strong></div>
+            {activeCheckout.uliqBenefit ? (
+              <>
+                <div><span>{tUliq("tier")}</span><strong>{activeCheckout.uliqBenefit.tier ?? "Basic"}</strong></div>
+                <div><span>{tUliq("base")}</span><strong>{centsToCurrency(activeCheckout.uliqBenefit.baseAmountCents ?? 0)}</strong></div>
+                <div><span>{tUliq("discount")}</span><strong>-{centsToCurrency(activeCheckout.uliqBenefit.discountAmountCents ?? 0)} ({(activeCheckout.uliqBenefit.discountBps ?? 0) / 100}%)</strong></div>
+                <div><span>{tUliq("final")}</span><strong>{centsToCurrency(activeCheckout.uliqBenefit.finalAmountCents ?? 0)}</strong></div>
+                <div><span>{tUliq("expires")}</span><strong>{activeCheckout.uliqBenefit.expiresAt ? new Date(activeCheckout.uliqBenefit.expiresAt).toLocaleString(locale) : "—"}</strong></div>
+              </>
+            ) : null}
             <div><span>{t("order.payment.network")}</span><strong>Arbitrum One ({payment.chainId})</strong></div>
             <div><span>{t("order.payment.recipient")}</span><strong className="subscriptionMono">{paymentRecipient ?? "-"}</strong></div>
             <div><span>{t("order.payment.expiresAt")}</span><strong>{new Date(payment.expiresAt).toLocaleString(locale)}</strong></div>

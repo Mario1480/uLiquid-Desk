@@ -335,6 +335,16 @@ export default function AppSidebar({
       active: pathnameWithoutLocale.startsWith("/accounts")
     });
 
+    if (process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true") {
+      capitalItems.push({
+        key: "uliq",
+        label: tNav("uliq"),
+        href: hrefFor("/uliq"),
+        icon: "money",
+        active: pathnameWithoutLocale.startsWith("/uliq")
+      });
+    }
+
     capitalItems.push({
       key: "wallet",
       label: tNav("wallet"),

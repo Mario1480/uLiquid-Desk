@@ -12,6 +12,7 @@ import enWallet from "../messages/en/wallet.json";
 import enFunding from "../messages/en/funding.json";
 import enAccounts from "../messages/en/accounts.json";
 import enAgentChat from "../messages/en/agentChat.json";
+import enUliq from "../messages/en/uliq.json";
 import deCommon from "../messages/de/common.json";
 import deNav from "../messages/de/nav.json";
 import deAuth from "../messages/de/auth.json";
@@ -26,6 +27,7 @@ import deWallet from "../messages/de/wallet.json";
 import deFunding from "../messages/de/funding.json";
 import deAccounts from "../messages/de/accounts.json";
 import deAgentChat from "../messages/de/agentChat.json";
+import deUliq from "../messages/de/uliq.json";
 import type { AppLocale } from "./config";
 
 export type I18nMessages = {
@@ -43,6 +45,7 @@ export type I18nMessages = {
   funding: typeof enFunding;
   accounts: typeof enAccounts;
   agentChat: typeof enAgentChat;
+  uliq: typeof enUliq;
 };
 
 const messagesByLocale: Record<AppLocale, I18nMessages> = {
@@ -60,7 +63,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     wallet: enWallet,
     funding: enFunding,
     accounts: enAccounts,
-    agentChat: enAgentChat
+    agentChat: enAgentChat,
+    uliq: enUliq
   },
   de: {
     common: deCommon,
@@ -76,7 +80,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     wallet: deWallet,
     funding: deFunding,
     accounts: deAccounts,
-    agentChat: deAgentChat
+    agentChat: deAgentChat,
+    uliq: deUliq
   }
 };
 

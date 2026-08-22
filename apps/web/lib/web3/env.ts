@@ -30,5 +30,6 @@ export const web3Env = {
   hyperEvmExplorerUrl:
     parseOptionalString(process.env.NEXT_PUBLIC_HYPEREVM_EXPLORER_URL) ?? DEFAULT_HYPEREVM_EXPLORER_URL,
   walletConnectProjectId: parseOptionalString(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID),
-  enableArbitrum: parseBoolean(process.env.NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM, DEFAULT_ENABLE_ARBITRUM)
+  enableArbitrum: parseBoolean(process.env.NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM, DEFAULT_ENABLE_ARBITRUM),
+  uliqTestnetEnabled: parseBoolean(process.env.NEXT_PUBLIC_ULIQ_ENABLED, false)
 };

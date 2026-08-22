@@ -77,6 +77,7 @@ export type BillingOrder = {
   createdAt: string | null;
   expiresAt?: string | null;
   explorerUrl?: string | null;
+  uliqBenefit?: UliqBenefitSnapshot | null;
   onchainPayment?: BillingOnchainPayment | null;
   package: {
     id: string;
@@ -100,6 +101,16 @@ export type BillingOrder = {
       addonType: BillingAddonType | null;
     } | null;
   }>;
+};
+
+export type UliqBenefitSnapshot = {
+  reservationId: string;
+  tier: string | null;
+  discountBps: number | null;
+  baseAmountCents: number | null;
+  discountAmountCents: number | null;
+  finalAmountCents: number | null;
+  expiresAt: string | null;
 };
 
 export type SubscriptionPayload = {

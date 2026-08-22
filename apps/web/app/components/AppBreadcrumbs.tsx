@@ -69,6 +69,7 @@ function iconForSegment(segment: string): BreadcrumbIconKey {
   if (normalized === "news") return "news";
   if (normalized === "accounts") return "accounts";
   if (normalized === "funding") return "funding";
+  if (normalized === "uliq") return "money";
   if (normalized === "settings") return "settings";
   if (normalized === "help") return "help";
   if (normalized === "admin") return "admin";
@@ -100,6 +101,7 @@ export default function AppBreadcrumbs() {
       accounts: { label: tNav("accounts"), icon: "accounts" as BreadcrumbIconKey },
       wallet: { label: tNav("wallet"), icon: "wallet" as BreadcrumbIconKey },
       funding: { label: tNav("funding"), icon: "funding" as BreadcrumbIconKey },
+      uliq: { label: tNav("uliq"), icon: "money" as BreadcrumbIconKey },
       vaults: { label: tNav("vaults"), icon: "vault" as BreadcrumbIconKey },
       settings: { label: tNav("settings"), icon: "settings" as BreadcrumbIconKey },
       help: { label: tNav("help"), icon: "help" as BreadcrumbIconKey },
@@ -226,6 +228,10 @@ export default function AppBreadcrumbs() {
       {
         test: /^\/wallet$/,
         items: [{ label: root.walletPage.label, path: "/wallet", icon: root.walletPage.icon }]
+      },
+      {
+        test: /^\/uliq(?:\/.*)?$/,
+        items: [{ label: root.uliq.label, path: "/uliq", icon: root.uliq.icon }]
       },
       {
         test: /^\/wallet\/history$/,

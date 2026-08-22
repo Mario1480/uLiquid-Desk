@@ -7,6 +7,202 @@
   padding-top: 3px;
 }
 
+/* ULIQ Testnet MVP */
+.uliqPage {
+  gap: 18px;
+}
+
+.uliqLegalNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.uliqLegalNotice > div {
+  display: grid;
+  gap: 3px;
+}
+
+.uliqMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.uliqMetricGridCompact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.uliqProgress {
+  height: 8px;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface-control);
+}
+
+.uliqProgress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-brand-primary), var(--color-brand-secondary));
+}
+
+.uliqTwoColumn {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.uliqFormRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.uliqLockForm {
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1fr) minmax(130px, 0.45fr) auto;
+}
+
+.uliqFormRow label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.uliqAvailableBalance {
+  display: grid;
+  gap: 4px;
+  align-self: stretch;
+  padding: 9px 11px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface-control);
+}
+
+.uliqAvailableBalance span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.uliqQuote,
+.uliqDetailList,
+.uliqPositionCard {
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  background: var(--ui-surface-card);
+}
+
+.uliqQuote {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+}
+
+.uliqQuote > div,
+.uliqDetailList > div,
+.uliqSchedule,
+.uliqPositionCard > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.uliqQuote span,
+.uliqDetailList span,
+.uliqSchedule span,
+.uliqPositionCard dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.uliqDetailList {
+  display: grid;
+  overflow: hidden;
+}
+
+.uliqDetailList > div {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.uliqDetailList > div:last-child {
+  border-bottom: 0;
+}
+
+.uliqSchedule {
+  padding: 12px 0;
+}
+
+.uliqPositionList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.uliqPositionCard {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 13px;
+}
+
+.uliqPositionCard dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.uliqPositionCard dl > div {
+  display: grid;
+  gap: 4px;
+}
+
+.uliqPositionCard dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.uliqActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.uliqMono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  overflow-wrap: anywhere;
+}
+
+.uliqAdminPayload {
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .uliqMetricGrid,
+  .uliqMetricGridCompact,
+  .uliqTwoColumn,
+  .uliqPositionList,
+  .uliqFormRow,
+  .uliqLockForm,
+  .uliqPositionCard dl {
+    grid-template-columns: 1fr;
+  }
+
+  .uliqFormRow .btn,
+  .uliqActions .btn {
+    width: 100%;
+  }
+}
+
 .botCard {
   padding: 14px 16px;
   text-decoration: none;
