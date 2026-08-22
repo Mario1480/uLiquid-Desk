@@ -18,8 +18,32 @@ import {
   verifyArbitrumUsdcTransaction,
   type BillingOnchainClient
 } from "./onchain.js";
+import {
+  consumeUliqBenefitReservationInTransaction,
+  createUliqBenefitReservationInTransaction,
+  expireUliqBenefitReservations,
+  prepareUliqBillingBenefit,
+  releaseUliqBenefitReservationInTransaction,
+  selectUliqBenefitType,
+  type PreparedUliqBillingBenefit
+} from "../uliq/benefitReservation.service.js";
+import { allocateUliqDiscountAcrossLines } from "../uliq/math.js";
+import { getUliqFeatureFlags } from "../uliq/config.js";
 
 const db = prisma as any;
+
+function uliqDiscountsRuntimeEnabled(): boolean {
+  try {
+    const flags = getUliqFeatureFlags();
+    return flags.enabled && flags.discountsEnabled;
+  } catch {
+    return false;
+  }
+}
+
+async function expireUliqBenefitsIfEnabled(now = new Date()): Promise<void> {
+  if (uliqDiscountsRuntimeEnabled()) await expireUliqBenefitReservations(db, now);
+}
 
 export type EffectivePlan = "free" | "pro";
 export type BillingPackageKind = "plan" | "addon";
@@ -2004,10 +2028,11 @@ async function resolveCheckoutLines(params: {
   return lines;
 }
 
-function fingerprintCheckoutLines(lines: CheckoutResolvedLine[]): string {
+function fingerprintCheckoutLines(lines: CheckoutResolvedLine[], applyUliqDiscount = false): string {
   const canonical = lines
     .map((line) => `${line.packageId}:${line.quantity}`)
     .sort()
+    .concat(`uliq:${applyUliqDiscount ? "requested" : "none"}`)
     .join("|");
   return crypto.createHash("sha256").update(canonical).digest("hex");
 }
@@ -2063,6 +2088,28 @@ function buildCheckoutOrderItems(lines: CheckoutResolvedLine[]): any[] {
   }));
 }
 
+function buildDiscountedCheckoutOrderItems(
+  lines: CheckoutResolvedLine[],
+  prepared: PreparedUliqBillingBenefit | null
+): any[] {
+  const allocations = prepared
+    ? allocateUliqDiscountAcrossLines(
+      lines.map((line) => line.lineAmountCents),
+      prepared.discountAmountCents
+    )
+    : lines.map((line) => ({
+      baseAmountCents: line.lineAmountCents,
+      discountAmountCents: 0,
+      finalAmountCents: line.lineAmountCents
+    }));
+  return buildCheckoutOrderItems(lines).map((item, index) => ({
+    ...item,
+    baseAmountCents: allocations[index].baseAmountCents,
+    discountAmountCents: allocations[index].discountAmountCents,
+    finalAmountCents: allocations[index].finalAmountCents
+  }));
+}
+
 async function expireStalePendingBillingOrders(userId: string, now = new Date()): Promise<number> {
   const result = await db.billingOrder.updateMany({
     where: {
@@ -2082,6 +2129,7 @@ async function expireStalePendingBillingOrders(userId: string, now = new Date())
 
 async function findOpenArbitrumOrderForUser(userId: string, now: Date): Promise<any | null> {
   await expireStalePendingBillingOrders(userId, now);
+  await expireUliqBenefitsIfEnabled(now);
   return db.billingOrder.findFirst({
     where: {
       userId,
@@ -2092,6 +2140,7 @@ async function findOpenArbitrumOrderForUser(userId: string, now: Date): Promise<
       pkg: true,
       onchainPayment: true,
       subscriptionTerm: true,
+      uliqBenefitReservation: true,
       items: {
         include: { pkg: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }]
@@ -2108,6 +2157,8 @@ export async function createBillingOrderWithTreasurySnapshotCas(params: {
   scanFromBlock: bigint;
   orderData: Record<string, unknown>;
   include: Record<string, unknown>;
+  uliqBenefit?: PreparedUliqBillingBenefit | null;
+  uliqReservationNow?: Date;
 }): Promise<any> {
   return runSerializableBillingConfigTransaction(params.database, async (tx: any) => {
     const {
@@ -2131,9 +2182,20 @@ export async function createBillingOrderWithTreasurySnapshotCas(params: {
       }
     });
     if (guarded.count !== 1) throw new Error("billing_payment_configuration_changed");
+    const reservation = params.uliqBenefit
+      ? await createUliqBenefitReservationInTransaction({
+        tx,
+        prepared: params.uliqBenefit,
+        referenceType: "BILLING_ORDER",
+        referenceId: String(billingOrderData.merchantOrderId),
+        idempotencyKey: `billing:${String(billingOrderData.merchantOrderId)}:${params.uliqBenefit.benefitType}`,
+        now: params.uliqReservationNow
+      })
+      : null;
     return tx.billingOrder.create({
       data: {
         ...billingOrderData,
+        uliqBenefitReservationId: reservation?.id ?? null,
         onchainPayment: {
           create: {
             chainId: ARBITRUM_ONE_CHAIN_ID,
@@ -2155,6 +2217,7 @@ export async function createBillingOrderWithTreasurySnapshotCas(params: {
 export async function createBillingCheckout(params: {
   userId: string;
   items: CheckoutCartItemInput[];
+  applyUliqDiscount?: boolean;
 }): Promise<{
   order: any;
   payment: any | null;
@@ -2164,13 +2227,14 @@ export async function createBillingCheckout(params: {
 
   await ensureBillingDefaults();
   const lines = await resolveCheckoutLines({ userId: params.userId, items: params.items });
-  const amountCents = requirePayableBillingCartAmountCents(calculateBillingCartAmountCents(lines));
+  const baseAmountCents = requirePayableBillingCartAmountCents(calculateBillingCartAmountCents(lines));
   const planLine = lines.find((line) => line.kind === "plan");
   const anchorPackageId = planLine?.packageId ?? lines[0]?.packageId;
   if (!anchorPackageId) throw new Error("cart_empty");
 
   const now = new Date();
-  const cartFingerprint = fingerprintCheckoutLines(lines);
+  const applyUliqDiscount = params.applyUliqDiscount === true;
+  const cartFingerprint = fingerprintCheckoutLines(lines, applyUliqDiscount);
   const openOrder = await findOpenArbitrumOrderForUser(params.userId, now);
   if (openOrder) {
     if (openOrder.cartFingerprint !== cartFingerprint) throw new Error("open_order_cart_mismatch");
@@ -2179,9 +2243,31 @@ export async function createBillingCheckout(params: {
 
   const merchantOrderId = `ULIQUID_${crypto.randomUUID()}`;
   const currency = lines[0]?.currency ?? DEFAULT_BILLING_CURRENCY;
+  const uliqBenefit = applyUliqDiscount
+    ? await prepareUliqBillingBenefit({
+      db,
+      userId: params.userId,
+      baseAmountCents,
+      benefitType: selectUliqBenefitType(lines),
+      now
+    })
+    : null;
+  const amountCents = uliqBenefit?.finalAmountCents ?? baseAmountCents;
   const createPayload = {
     merchantOrderId,
     checkoutMode: "arbitrum_usdc",
+    uliqBenefit: uliqBenefit ? {
+      tier: uliqBenefit.tierSnapshot,
+      discountBps: uliqBenefit.discountBps,
+      baseAmountCents,
+      discountAmountCents: uliqBenefit.discountAmountCents,
+      finalAmountCents: uliqBenefit.finalAmountCents,
+      entitlementSnapshotId: uliqBenefit.entitlementSnapshotId,
+      priceSnapshotId: uliqBenefit.priceSnapshotId,
+      asOfBlock: uliqBenefit.asOfBlock.toString(),
+      configVersion: uliqBenefit.configVersion,
+      expiresAt: uliqBenefit.expiresAt.toISOString()
+    } : null,
     items: lines.map((line) => ({
       packageId: line.packageId,
       packageCode: String(line.pkg.code ?? ""),
@@ -2241,14 +2327,27 @@ export async function createBillingCheckout(params: {
           cartFingerprint,
           expiresAt,
           createPayload,
-          items: { create: buildCheckoutOrderItems(lines) },
+          baseAmountCents,
+          discountAmountCents: uliqBenefit?.discountAmountCents ?? 0,
+          finalAmountCents: amountCents,
+          uliqTierSnapshot: uliqBenefit?.tierSnapshot ?? null,
+          uliqDiscountBps: uliqBenefit?.discountBps ?? null,
+          uliqEntitlementSnapshotId: uliqBenefit?.entitlementSnapshotId ?? null,
+          uliqTierConfigVersion: uliqBenefit?.configVersion ?? null,
+          uliqPriceSnapshotId: uliqBenefit?.priceSnapshotId ?? null,
+          uliqWalletAddress: uliqBenefit?.walletAddress ?? null,
+          uliqAsOfBlock: uliqBenefit?.asOfBlock ?? null,
+          items: { create: buildDiscountedCheckoutOrderItems(lines, uliqBenefit) },
           expectedSenderAddress,
           expectedAmountRaw
         },
+        uliqBenefit,
+        uliqReservationNow: now,
         include: {
           pkg: true,
           onchainPayment: true,
           subscriptionTerm: true,
+          uliqBenefitReservation: true,
           items: { include: { pkg: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }
         }
       });
@@ -2288,17 +2387,25 @@ export async function cancelBillingOrder(params: {
   ) {
     throw new Error("order_not_cancellable");
   }
-  const updated = await db.billingOrder.updateMany({
-    where: {
-      id: order.id,
-      userId: params.userId,
-      provider: "ARBITRUM_USDC",
-      status: "PENDING",
-      onchainPayment: { txHash: null }
-    },
-    data: { status: "EXPIRED", paymentStatusRaw: "user_cancelled" }
+  await db.$transaction(async (tx: any) => {
+    const updated = await tx.billingOrder.updateMany({
+      where: {
+        id: order.id,
+        userId: params.userId,
+        provider: "ARBITRUM_USDC",
+        status: "PENDING",
+        onchainPayment: { txHash: null }
+      },
+      data: { status: "EXPIRED", paymentStatusRaw: "user_cancelled" }
+    });
+    if (updated.count !== 1) throw new Error("order_not_cancellable");
+    await releaseUliqBenefitReservationInTransaction({
+      tx,
+      reservationId: order.uliqBenefitReservationId,
+      now: new Date(),
+      reason: "billing_order_cancelled"
+    });
   });
-  if (updated.count !== 1) throw new Error("order_not_cancellable");
   return getBillingOrderForUser(params.userId, params.orderId);
 }
 
@@ -2308,6 +2415,7 @@ export async function submitBillingTransaction(params: {
   txHash: string;
   client?: BillingOnchainClient;
 }): Promise<{ order: any; payment: any | null }> {
+  await expireUliqBenefitsIfEnabled();
   const txHash = normalizeBillingTxHash(params.txHash);
   const order = await fetchBillingOrderWithItems(params.orderId);
   if (!order || order.userId !== params.userId) throw new Error("order_not_found");
@@ -2499,6 +2607,7 @@ export async function reconcileBillingOrderPayment(params: {
   userId?: string;
   client?: BillingOnchainClient;
 }): Promise<{ order: any; payment: any | null }> {
+  await expireUliqBenefitsIfEnabled();
   const order = await fetchBillingOrderWithItems(params.orderId);
   if (!order || (params.userId && order.userId !== params.userId)) throw new Error("order_not_found");
   if (order.provider !== "ARBITRUM_USDC" || !order.onchainPayment) {
@@ -2627,6 +2736,7 @@ export async function reconcilePendingBillingPayments(params?: {
   client?: BillingOnchainClient;
 }): Promise<{ checked: number; paid: number; confirming: number; reviewRequired: number; retry: number }> {
   const now = new Date();
+  await expireUliqBenefitsIfEnabled(now);
   const rows = await db.billingOnchainPayment.findMany({
     where: {
       txHash: { not: null },
@@ -3031,6 +3141,7 @@ export async function discoverMissingBillingTransactions(params?: {
   client?: BillingOnchainClient;
 }): Promise<{ scannedScopes: number; discovered: number; reviewRequired: number }> {
   const now = new Date();
+  await expireUliqBenefitsIfEnabled(now);
   const recoveryCutoff = new Date(now.getTime() - BILLING_LATE_PAYMENT_RECOVERY_MS);
   const eligibleOrderWhere = {
     status: { in: ["PENDING", "EXPIRED"] },
@@ -3785,6 +3896,12 @@ async function finalizeConfirmedBillingOrder(
         });
       }
     }
+
+    await consumeUliqBenefitReservationInTransaction({
+      tx,
+      reservationId: order.uliqBenefitReservationId,
+      now
+    });
 
     const paidClaim = await tx.billingOrder.updateMany({
       where: { id: order.id, status: "CONFIRMING" },

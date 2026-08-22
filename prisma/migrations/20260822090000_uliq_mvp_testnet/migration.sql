@@ -509,3 +509,17 @@ ALTER TABLE "uliq_benefit_ledger"
         "base_amount" >= 0 AND "discount_amount" >= 0 AND "final_amount" >= 0
         AND "base_amount" - "discount_amount" = "final_amount"
     );
+
+-- Version 1 establishes only the accepted tier thresholds. Monetary benefits
+-- deliberately start at zero BPS and require a separately audited/admin-authored
+-- config version before the testnet discount flag can have an economic effect.
+INSERT INTO "uliq_tier_configs" (
+    "id", "code", "version", "enabled", "min_usd_value",
+    "feature_flags", "ai_discount_bps", "subscription_discount_bps",
+    "effective_from", "reason", "created_at"
+) VALUES
+    ('uliq-tier-v1-basic', 'BASIC', 1, TRUE, 0, '{}'::jsonb, 0, 0, NOW(), 'ULIQ MVP testnet threshold baseline', NOW()),
+    ('uliq-tier-v1-bronze', 'BRONZE', 1, TRUE, 100, '{}'::jsonb, 0, 0, NOW(), 'ULIQ MVP testnet threshold baseline', NOW()),
+    ('uliq-tier-v1-silver', 'SILVER', 1, TRUE, 500, '{}'::jsonb, 0, 0, NOW(), 'ULIQ MVP testnet threshold baseline', NOW()),
+    ('uliq-tier-v1-gold', 'GOLD', 1, TRUE, 1500, '{}'::jsonb, 0, 0, NOW(), 'ULIQ MVP testnet threshold baseline', NOW()),
+    ('uliq-tier-v1-platinum', 'PLATINUM', 1, TRUE, 5000, '{}'::jsonb, 0, 0, NOW(), 'ULIQ MVP testnet threshold baseline', NOW());

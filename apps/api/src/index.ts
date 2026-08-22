@@ -400,6 +400,13 @@ import { registerMarketIntelligenceRoutes } from "./routes/market-intelligence.j
 import { getMarketIntelligenceService } from "./services/marketIntelligence/service.js";
 import { registerGridVaultRouteGroup } from "./routes/gridVaultRouteGroup.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
+import { registerUliqRoutes } from "./uliq/routes.js";
+import { registerUliqAdminRoutes } from "./uliq/admin.routes.js";
+import { UliqPresaleService } from "./uliq/presale.service.js";
+import { UliqEntitlementService } from "./uliq/entitlement.service.js";
+import { createLazyUliqService } from "./uliq/runtime.js";
+import { releaseOpenUliqReservationsForWalletChange } from "./uliq/benefitReservation.service.js";
+import { createUliqJobs } from "./jobs/uliqJobs.js";
 import {
   createIdempotencyMiddleware,
   createRateLimitMiddleware,
@@ -622,6 +629,9 @@ const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
     })
 });
 const platformAlertCleanupJob = createPlatformAlertCleanupJob(db);
+const uliqJobs = createUliqJobs(db);
+const uliqPresaleService = createLazyUliqService(() => new UliqPresaleService(db));
+const uliqEntitlementService = createLazyUliqService(() => new UliqEntitlementService(db));
 const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db, {
   resolveTelegramConfig: async (userId) => resolveTelegramConfig(userId),
   sendTelegramMessage: async ({ botToken, chatId, text }) =>
@@ -11880,7 +11890,13 @@ registerMobileTradingRoutes(app, {
   closePaperPosition,
   closePaperSpotPosition
 });
-registerSiweAuthRoutes(app, { db, siweService, vaultService });
+registerSiweAuthRoutes(app, {
+  db,
+  siweService,
+  vaultService,
+  releaseUliqReservationsForWalletChange: (input) => releaseOpenUliqReservationsForWalletChange({ db, ...input })
+});
+registerUliqRoutes(app, { presaleService: uliqPresaleService, entitlementService: uliqEntitlementService });
 registerManualTradingMarketDataRoutes(app, {
   getTradingSettings,
   resolveMarketDataTradingAccount,
@@ -12092,6 +12108,14 @@ registerBillingRoutes(app, {
     updateSubscriptionNotificationPreference(db, params),
   getArbitrumUsdcPaymentReadiness,
   updateArbitrumUsdcPaymentConfiguration
+});
+
+registerUliqAdminRoutes(app, {
+  db,
+  presaleService: uliqPresaleService,
+  requireSuperadmin,
+  consumeRecentReauth,
+  recordAdminAuditEvent
 });
 
 registerSettingsRiskRoutes(app, {
@@ -13205,6 +13229,9 @@ const apiLifecycle = createApiLifecycle({
     { name: "economic-calendar-daily-telegram", start: () => economicCalendarDailyTelegramJob.start(), stop: () => economicCalendarDailyTelegramJob.stop() },
     { name: "system-health-telegram", start: () => systemHealthTelegramJob.start(), stop: () => systemHealthTelegramJob.stop() },
     { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },
+    { name: "uliq-indexer", start: () => uliqJobs.indexer.start(), stop: () => uliqJobs.indexer.stop() },
+    { name: "uliq-reconciliation", start: () => uliqJobs.reconciliation.start(), stop: () => uliqJobs.reconciliation.stop() },
+    { name: "uliq-reservation-expiry", start: () => uliqJobs.reservationExpiry.start(), stop: () => uliqJobs.reservationExpiry.stop() },
     { name: "hyperliquid-api-expiry-reminder", start: () => hyperliquidApiExpiryReminderJob.start(), stop: () => hyperliquidApiExpiryReminderJob.stop() },
     { name: "subscription-reminder", start: () => subscriptionReminderJob.start(), stop: () => subscriptionReminderJob.stop() },
     { name: "vault-accounting", start: () => vaultAccountingJob.start(), stop: () => vaultAccountingJob.stop() },

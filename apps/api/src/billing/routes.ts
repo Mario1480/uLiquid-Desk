@@ -10,13 +10,15 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 
 const subscriptionCheckoutSchema = z.union([
   z.object({
-    packageId: z.string().trim().min(1).max(191)
+    packageId: z.string().trim().min(1).max(191),
+    applyUliqDiscount: z.boolean().optional()
   }),
   z.object({
     items: z.array(z.object({
       packageId: z.string().trim().min(1).max(191),
       quantity: z.number().int().min(1).max(100)
-    })).min(1).max(20)
+    })).min(1).max(20),
+    applyUliqDiscount: z.boolean().optional()
   })
 ]);
 
@@ -347,7 +349,11 @@ export type RegisterBillingRoutesDeps = {
   adjustAiCreditBalanceByAdmin(params: { userId: string; deltaCredits: string; note: string; actorUserId: string }): Promise<{ balance: bigint }>;
   isBillingEnabled(): Promise<boolean>;
   listSubscriptionOrders(userId: string): Promise<any[]>;
-  createBillingCheckout(params: { userId: string; items: Array<{ packageId: string; quantity: number }> }): Promise<any>;
+  createBillingCheckout(params: {
+    userId: string;
+    items: Array<{ packageId: string; quantity: number }>;
+    applyUliqDiscount?: boolean;
+  }): Promise<any>;
   getBillingOrderForUser(userId: string, orderId: string): Promise<any>;
   cancelBillingOrder(params: { userId: string; orderId: string }): Promise<any>;
   submitBillingTransaction(params: { userId: string; orderId: string; txHash: string }): Promise<any>;
@@ -416,6 +422,7 @@ function mapBillingRouteError(error: unknown): { status: number; body: Record<st
     || reason === "package_addon_value_required"
     || reason === "package_plan_required"
     || reason === "invalid_transaction_hash"
+    || reason === "uliq_invalid_base_amount"
   ) {
     return { status: 400, body: { error: reason } };
   }
@@ -443,10 +450,21 @@ function mapBillingRouteError(error: unknown): { status: number; body: Record<st
   if (reason === "wallet_not_linked" || reason === "wallet_mismatch") {
     return { status: 422, body: { error: reason } };
   }
+  if (
+    reason === "uliq_wallet_changed"
+    || reason === "uliq_entitlement_invalid"
+    || reason === "uliq_entitlement_expired"
+    || reason === "uliq_reservation_expired"
+  ) {
+    return { status: 409, body: { error: reason } };
+  }
   if (reason === "notification_email_unavailable" || reason === "notification_telegram_unavailable") {
     return { status: 422, body: { error: reason } };
   }
   if (reason === "billing_disabled" || reason === "payment_config_not_ready" || reason === "billing_payment_not_configured") {
+    return { status: 503, body: { error: reason } };
+  }
+  if (reason === "uliq_discounts_disabled" || reason === "uliq_price_degraded") {
     return { status: 503, body: { error: reason } };
   }
   if (reason === "rpc_unavailable" || reason === "billing_rpc_unavailable") {
@@ -794,7 +812,8 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
     try {
       const checkout = await deps.createBillingCheckout({
         userId: user.id,
-        items: checkoutItems
+        items: checkoutItems,
+        applyUliqDiscount: parsed.data.applyUliqDiscount === true
       });
       const payment = mapCheckoutPayment(checkout);
       return res.json({
@@ -806,7 +825,18 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
           checkout.order.expiresAt instanceof Date
             ? checkout.order.expiresAt.toISOString()
             : checkout.order.expiresAt ?? null,
-        payment
+        payment,
+        uliqBenefit: checkout.order.uliqBenefitReservation ? {
+          reservationId: checkout.order.uliqBenefitReservation.id,
+          tier: checkout.order.uliqTierSnapshot,
+          discountBps: checkout.order.uliqDiscountBps,
+          baseAmountCents: checkout.order.baseAmountCents,
+          discountAmountCents: checkout.order.discountAmountCents,
+          finalAmountCents: checkout.order.finalAmountCents,
+          expiresAt: checkout.order.uliqBenefitReservation.expiresAt instanceof Date
+            ? checkout.order.uliqBenefitReservation.expiresAt.toISOString()
+            : checkout.order.uliqBenefitReservation.expiresAt
+        } : null
       });
     } catch (error) {
       const mapped = mapBillingRouteError(error);

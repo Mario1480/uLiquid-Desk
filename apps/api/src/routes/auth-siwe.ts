@@ -40,6 +40,12 @@ export function registerSiweAuthRoutes(
     vaultService?: {
       syncMasterVaultFromOnchainForUser?: (input: { userId: string }) => Promise<unknown>;
     } | null;
+    releaseUliqReservationsForWalletChange?: (input: {
+      userId: string;
+      previousWalletAddress: string | null;
+      nextWalletAddress: string | null;
+      updateWallet: (tx: any) => Promise<unknown>;
+    }) => Promise<number>;
   }
 ) {
   app.get("/auth/siwe/nonce", async (_req, res) => {
@@ -154,14 +160,29 @@ export function registerSiweAuthRoutes(
         });
       }
 
-      await deps.db.user.update({
-        where: {
-          id: authUser.id
-        },
-        data: {
-          walletAddress: verified.address
-        }
+      const current = deps.releaseUliqReservationsForWalletChange
+        ? await deps.db.user.findUnique({
+          where: { id: authUser.id },
+          select: { walletAddress: true }
+        })
+        : null;
+      const updateWallet = (tx: any) => tx.user.update({
+        where: { id: authUser.id },
+        data: { walletAddress: verified.address }
       });
+      if (
+        deps.releaseUliqReservationsForWalletChange
+        && String(current?.walletAddress ?? "").toLowerCase() !== verified.address.toLowerCase()
+      ) {
+        await deps.releaseUliqReservationsForWalletChange({
+          userId: authUser.id,
+          previousWalletAddress: current?.walletAddress ?? null,
+          nextWalletAddress: verified.address,
+          updateWallet
+        });
+      } else {
+        await updateWallet(deps.db);
+      }
 
       await deps.vaultService?.syncMasterVaultFromOnchainForUser?.({
         userId: authUser.id
@@ -189,15 +210,26 @@ export function registerSiweAuthRoutes(
 
   app.delete("/auth/siwe/link", requireAuth, async (_req, res) => {
     const authUser = getUserFromLocals(res);
-
-    await deps.db.user.update({
-      where: {
-        id: authUser.id
-      },
-      data: {
-        walletAddress: null
-      }
+    const current = deps.releaseUliqReservationsForWalletChange
+      ? await deps.db.user.findUnique({
+        where: { id: authUser.id },
+        select: { walletAddress: true }
+      })
+      : null;
+    const updateWallet = (tx: any) => tx.user.update({
+      where: { id: authUser.id },
+      data: { walletAddress: null }
     });
+    if (deps.releaseUliqReservationsForWalletChange && current?.walletAddress) {
+      await deps.releaseUliqReservationsForWalletChange({
+        userId: authUser.id,
+        previousWalletAddress: current.walletAddress,
+        nextWalletAddress: null,
+        updateWallet
+      });
+    } else {
+      await updateWallet(deps.db);
+    }
 
     return res.json({
       ok: true,
