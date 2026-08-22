@@ -314,7 +314,11 @@ Stage 2 wurde in vier getrennten Admin-Transaktionen ausgeführt und anschließe
 
 Alle vier Receipts hatten Status `1`; ihre kanonischen Blockhashes stimmten beim Recheck überein. Der letzte Stage-2-Block `300872135` lag beim Recheck unter dem vom RPC gemeldeten finalisierten Block `300875669`. Live Reads bestätigten danach `READY`, die vollständige Contract-Verkabelung und exakt `120,000,000 ULIQ` Presale Inventory. `activateSale()` bleibt eine getrennt freizugebende Testnet-Onchain-Aktion.
 
-Sourcify bestätigte für alle sechs Adressen sowohl Runtime- als auch Creation-Bytecode als `exact_match`. Noch offen: Staging-Runtime-Aktivierung, Indexer-/Reconciliation-Smoke und authentifizierte Browser-E2E-Flows.
+Sourcify bestätigte für alle sechs Adressen sowohl Runtime- als auch Creation-Bytecode als `exact_match`.
+
+Die isolierte Staging-Runtime ist unter `staging.desk.uliquid.vip` und `api.staging.desk.uliquid.vip` aktiv. Beim ersten Backfill blockierte der Stage-2-Inventory-Transfer am Prisma-Decimal-String `1e+27`; Commit `04552d24` führt Datenbank-Decimals vor der `bigint`-Verarbeitung verlustfrei in ausgeschriebene Integer-Strings über. Nach dem API-only-Deploy rückte der committed Cursor von Block `300871778` zunächst auf `300872278` und damit über den letzten Stage-2-Block `300872135` vor; zwei weitere erfolgreiche Abschnitte brachten ihn auf `300873278`. `failure_count` fiel auf `0`, `last_error` und `next_retry_at` wurden geleert. Transfer `0xdc7e...c19d` und `SaleStateChanged` `0xbcfe...4339` sind `FINALIZED`; der initiale `10^27`-Lot weist nach dem Inventory-Transfer exakt `880000000000000000000000000` Raw Units Restbestand aus. Eine frische Reconciliation bei Block `300914114` war `OK` mit `0` Abweichungen; es bestand kein ULIQ-Alert. Der vollständige historische Catch-up lief zum Prüfzeitpunkt weiter und ist noch kein abgeschlossener Langlaufnachweis. Details: `docs/tasks/2026-08-22-uliq-staging-indexer-decimal-recovery.md`.
+
+Die öffentliche Presale-API und die authentifizierte ULIQ-Read-UI melden weiterhin `READY`, `0` Purchases und `120,000,000 ULIQ` Inventory. Noch offen: vollständiger Indexer-Catch-up, authentifizierte transaktionale Browser-E2E-Flows und die weiteren externen Release-Gates.
 
 ## Acceptance-Status 2026-08-22
 
@@ -328,15 +332,15 @@ Die folgenden Bewertungen unterscheiden lokale Test-Evidence, den oben dokumenti
 | D Sale Cancellation | BLOCKED | finale Cancellation-Policy bleibt ADR-001-blockiert und wurde nicht irreversibel vorimplementiert. |
 | E Vesting Start/Claim | PASS lokal | globaler einmaliger Start, 270-Tage-Testnet-Vesting und Claim-Accounting getestet. |
 | F Locking | PASS lokal | nur 30/90/180 Tage, kein Early Withdraw, keine Rewards. |
-| G Blockkonsistenz | PASS lokal | finalized Dual-RPC-Head und ein Block-Snapshot; `uint256` als Decimal/String. |
+| G Blockkonsistenz | PASS lokal / PARTIAL Sepolia | finalized Dual-RPC-Head und ein Block-Snapshot; `10^27` wurde lokal und beim Staging-Replay verlustfrei verarbeitet. Vollständiger Catch-up bleibt offen. |
 | H Tier/Price Mode | PASS lokal / BLOCKED DEX | Referenz-, Observation-, Degradation- und Held-Tier-Gates getestet; echte Pool-/TWAP-Quelle fehlt. |
 | I Subscription-/AI-Discount | PASS lokal | Opt-in, exakte Cent-Mathematik, Reservation und USDC-Settlement integriert; Platform Fee unverändert. |
 | J Quote TTL/Wallet-Wechsel | PASS lokal | 10-Minuten-TTL und Reservation Release getestet. |
 | K Holding Cooldown | PASS lokal | Provenienz, Presale-Ausnahme, Locker-Lineage und 24-Stunden-Cooldown getestet. |
-| L Reorg/Indexer Recovery | PASS lokal | Lease, Retry, Reorg-Rebuild, Reservation-Reversal und Alert getestet. |
+| L Reorg/Indexer Recovery | PASS lokal / PARTIAL Sepolia | Lease, Retry, Reorg-Rebuild, Reservation-Reversal und Alert getestet; Staging-Cursor überwand den `1e+27`-Block mit Fehlerreset und korrekter Lot-Projektion. Vollständiger Catch-up und reale Reorg-Probe bleiben offen. |
 | M Admin/Safe | PASS prepare-only / BLOCKED external | Superadmin vor Reauth, Audit und Safe-Calldata vorhanden; reale Safe-Signer/Threshold/Receipt-Evidence fehlt. |
 | N State/Pause/Sale-Ende | PASS lokal / BLOCKED legal | Testnet-State-Machine getestet; Production-Cancellation bleibt blockiert. |
 | O Allocation/Release Budgets | PARTIAL | Fixed Supply und Presale-Budget vorhanden; Mainnet-Safes und übrige Release-Contracts sind nicht Teil dieses Testnet-MVP. |
-| P Regression/Evidence | PASS lokal / PARTIAL Sepolia | Stage 1 und Stage 2 sind deployed, konfiguriert, finalitätsgeprüft und bei Sourcify exakt verifiziert. Staging-Runtime-/Indexer-Evidence, Browser-E2E und externer Audit fehlen. |
+| P Regression/Evidence | PASS lokal / PARTIAL Sepolia | Stage 1/2, Source Verification, Staging-Runtime, API/UI-Read-Smoke, Indexer-Recovery und Reconciliation sind belegt. Transaktionale Browser-E2E-Flows, vollständiger Catch-up, Langlauf und externer Audit fehlen. |
 
-Releaseurteil: `NOT READY`. Für die nächste Gate-Stufe fehlen mindestens Staging-Runtime-/Indexer-/Reconciliation-Evidence, authentifizierte E2E-/Recovery-Proben und ein unabhängiger Audit. Die verbleibenden Slither-Findings sind lokal bewertet, müssen aber im unabhängigen Review mitgeprüft werden. Mainnet bleibt zusätzlich durch ADR-001, reale DEX-/Pool-Konfiguration und verifizierte Safe-Struktur blockiert.
+Releaseurteil: `NOT READY`. Für die nächste Gate-Stufe fehlen mindestens vollständiger Indexer-Catch-up, authentifizierte transaktionale E2E-/Recovery-Proben und ein unabhängiger Audit. Die verbleibenden Slither-Findings sind lokal bewertet, müssen aber im unabhängigen Review mitgeprüft werden. Mainnet bleibt zusätzlich durch ADR-001, reale DEX-/Pool-Konfiguration und verifizierte Safe-Struktur blockiert.
