@@ -15,11 +15,37 @@ test("ULIQ flags default to fail closed", () => {
   assert.equal(ULIQ_RESERVATION_TTL_MS, 600_000);
 });
 
-test("ULIQ rejects any production activation", () => {
+test("ULIQ rejects production activation without an explicit Sepolia runtime", () => {
   assert.throws(
     () => getUliqFeatureFlags({ NODE_ENV: "production", ULIQ_ENABLED: "true" }),
     /uliq_production_activation_forbidden/
   );
+  assert.throws(
+    () => getUliqFeatureFlags({
+      NODE_ENV: "production",
+      ULIQ_ENABLED: "true",
+      ULIQ_TESTNET_RUNTIME: "true",
+      ULIQ_CHAIN_ID: "42161"
+    }),
+    /uliq_production_activation_forbidden/
+  );
+});
+
+test("ULIQ allows an explicit Arbitrum Sepolia staging runtime in a production build", () => {
+  assert.deepEqual(getUliqFeatureFlags({
+    NODE_ENV: "production",
+    ULIQ_TESTNET_RUNTIME: "true",
+    ULIQ_CHAIN_ID: "421614",
+    ULIQ_ENABLED: "true",
+    ULIQ_PRESALE_ENABLED: "true",
+    ULIQ_ADMIN_ENABLED: "true"
+  }), {
+    enabled: true,
+    presaleEnabled: true,
+    discountsEnabled: false,
+    lockingEnabled: false,
+    adminEnabled: true
+  });
 });
 
 test("ULIQ runtime accepts only Arbitrum Sepolia with distinct RPCs", () => {
@@ -37,6 +63,11 @@ test("ULIQ runtime accepts only Arbitrum Sepolia with distinct RPCs", () => {
   };
   assert.equal(getUliqRuntimeConfig(base).chainId, 421614);
   assert.equal(getUliqRuntimeConfig(base).startBlock, 123n);
+  assert.equal(getUliqRuntimeConfig({
+    ...base,
+    NODE_ENV: "production",
+    ULIQ_TESTNET_RUNTIME: "true"
+  }).chainId, 421614);
   assert.throws(() => getUliqRuntimeConfig({ ...base, ULIQ_CHAIN_ID: "42161" }), /uliq_testnet_chain_required/);
   assert.throws(
     () => getUliqRuntimeConfig({ ...base, ULIQ_RPC_SECONDARY_URL: base.ULIQ_RPC_PRIMARY_URL }),

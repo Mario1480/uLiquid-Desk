@@ -68,8 +68,13 @@ export function getUliqFeatureFlags(env: NodeJS.ProcessEnv = process.env): UliqF
     lockingEnabled: enabled(env.ULIQ_LOCKING_ENABLED),
     adminEnabled: enabled(env.ULIQ_ADMIN_ENABLED)
   };
-  if (String(env.NODE_ENV ?? "").trim().toLowerCase() === "production" && Object.values(flags).some(Boolean)) {
-    throw new Error("uliq_production_activation_forbidden");
+  const productionRuntime = String(env.NODE_ENV ?? "").trim().toLowerCase() === "production";
+  if (productionRuntime && Object.values(flags).some(Boolean)) {
+    const explicitTestnetRuntime = enabled(env.ULIQ_TESTNET_RUNTIME);
+    const explicitChainId = String(env.ULIQ_CHAIN_ID ?? "").trim();
+    if (!explicitTestnetRuntime || explicitChainId !== String(ULIQ_TESTNET_CHAIN_ID)) {
+      throw new Error("uliq_production_activation_forbidden");
+    }
   }
   if (!flags.enabled && Object.entries(flags).some(([key, value]) => key !== "enabled" && value)) {
     throw new Error("uliq_parent_feature_disabled");
