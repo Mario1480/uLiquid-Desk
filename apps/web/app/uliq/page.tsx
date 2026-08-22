@@ -202,6 +202,7 @@ function UliqHubContent() {
   const remainingUsdcRaw = overview
     ? (BigInt(overview.hardCapUsdcRaw) - BigInt(overview.totalRaisedUsdcRaw)).toString()
     : "0";
+  const saleActive = overview?.state === "ACTIVE";
   const activeBenefits = entitlement
     ? Object.entries(entitlement.featureFlags ?? {}).filter(([, enabled]) => enabled === true).map(([key]) => key)
     : [];
@@ -346,16 +347,17 @@ function UliqHubContent() {
       <div className="uliqTwoColumn">
         <section className="uiSection">
           <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("purchase.title")}</h2><p className="uiSectionDescription">{t("purchase.description")}</p></div></div>
+          {overview && !saleActive ? <div className="uiNotice uiNotice-warning">{t("purchase.inactive", { state: overview.state })}</div> : null}
           <div className="uliqFormRow">
             <label><span>{t("purchase.amount")}</span><input className="input" inputMode="decimal" value={purchaseAmount} onChange={(event) => { setPurchaseAmount(event.target.value); setQuote(null); }} placeholder="100.00" /></label>
-            <button type="button" className="btn" onClick={() => void requestQuote()} disabled={busy !== null}><AppIcon name="preview" /> {t("purchase.quote")}</button>
+            <button type="button" className="btn" onClick={() => void requestQuote()} disabled={!saleActive || busy !== null}><AppIcon name="preview" /> {t("purchase.quote")}</button>
           </div>
           {quote ? (
             <div className="uliqQuote">
               <div><span>{t("purchase.accepted")}</span><strong>{formatRaw(quote.acceptedUsdcRaw, 6, 2)} USDC</strong></div>
               <div><span>{t("purchase.allocation")}</span><strong>{formatRaw(quote.uliqAllocationRaw, 18, 2)} ULIQ</strong></div>
               {quote.partialFill ? <p>{t("purchase.partial")}</p> : null}
-              <button type="button" className="btn btnPrimary" disabled={!canSign || busy !== null} onClick={() => void runAction("purchase", purchase)}><AppIcon name="wallet" /> {t("purchase.buy")}</button>
+              <button type="button" className="btn btnPrimary" disabled={!saleActive || !canSign || busy !== null} onClick={() => void runAction("purchase", purchase)}><AppIcon name="wallet" /> {t("purchase.buy")}</button>
             </div>
           ) : null}
           <div className="uiNotice uiNotice-info">{t("purchase.pending")}</div>

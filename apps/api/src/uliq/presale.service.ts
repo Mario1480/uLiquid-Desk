@@ -118,14 +118,26 @@ export class UliqPresaleService {
   async quotePurchase(requestedUsdcRawInput: unknown) {
     const requestedUsdcRaw = parseUint256Decimal(requestedUsdcRawInput, "requested_usdc_raw");
     const head = await getConsistentFinalizedBlock(this.rpc);
-    const read = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
-      address: this.config.contracts.presale,
-      abi: uliqPresaleAbi,
-      functionName: "quotePurchase",
-      args: [requestedUsdcRaw],
-      blockNumber: head.number
-    }));
-    const [acceptedUsdcRaw, uliqAllocationRaw] = read.value;
+    const read = await withUliqRpcFailover(this.rpc, async (client) => {
+      const [state, quote] = await Promise.all([
+        client.readContract({
+          address: this.config.contracts.presale,
+          abi: uliqPresaleAbi,
+          functionName: "state",
+          blockNumber: head.number
+        }),
+        client.readContract({
+          address: this.config.contracts.presale,
+          abi: uliqPresaleAbi,
+          functionName: "quotePurchase",
+          args: [requestedUsdcRaw],
+          blockNumber: head.number
+        })
+      ]);
+      return { state: Number(state), quote };
+    });
+    if (read.value.state !== 2) throw new Error("uliq_sale_not_active");
+    const [acceptedUsdcRaw, uliqAllocationRaw] = read.value.quote;
     return {
       requestedUsdcRaw: requestedUsdcRaw.toString(),
       acceptedUsdcRaw: acceptedUsdcRaw.toString(),
@@ -140,6 +152,7 @@ export class UliqPresaleService {
     const wallet = await this.requireWallet(params.userId);
     const maxUsdcAmountRaw = parseUint256Decimal(params.maxUsdcAmountRaw, "max_usdc_amount_raw");
     const minUliqAllocationRaw = parseUint256Decimal(params.minUliqAllocationRaw, "min_uliq_allocation_raw");
+    await this.requireActiveSale();
     return {
       approval: transactionRequest(
         this.config.chainId,
@@ -319,6 +332,17 @@ export class UliqPresaleService {
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { walletAddress: true } });
     if (!user?.walletAddress) throw new Error("wallet_not_linked");
     return normalizeUliqAddress(user.walletAddress).toLowerCase() as `0x${string}`;
+  }
+
+  private async requireActiveSale(): Promise<void> {
+    const head = await getConsistentFinalizedBlock(this.rpc);
+    const read = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
+      address: this.config.contracts.presale,
+      abi: uliqPresaleAbi,
+      functionName: "state",
+      blockNumber: head.number
+    }));
+    if (Number(read.value) !== 2) throw new Error("uliq_sale_not_active");
   }
 
   private async readPurchase(purchaseId: bigint) {

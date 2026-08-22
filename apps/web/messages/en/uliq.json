@@ -33,6 +33,7 @@
     "accepted": "Accepted",
     "allocation": "ULIQ allocation",
     "partial": "Partial fill: the contract accepts only the remaining available amount.",
+    "inactive": "Purchases are available only while the sale is ACTIVE. Current state: {state}.",
     "pending": "After purchase, the allocation remains fully inactive until the withdrawal period has ended."
   },
   "entitlement": {

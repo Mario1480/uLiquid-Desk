@@ -33,6 +33,7 @@
     "accepted": "Akzeptiert",
     "allocation": "ULIQ Allocation",
     "partial": "Partial Fill: Der Contract akzeptiert nur den noch verfügbaren Rest.",
+    "inactive": "Käufe sind erst im Status ACTIVE möglich. Aktueller Status: {state}.",
     "pending": "Nach dem Kauf bleibt die Allocation bis zum Ablauf der Frist vollständig inaktiv."
   },
   "entitlement": {

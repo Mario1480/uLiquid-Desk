@@ -21,7 +21,9 @@ function mapError(error: unknown): { status: number; error: string } {
   if (reason === "uliq_disabled" || reason === "uliq_production_activation_forbidden") return { status: 404, error: "not_found" };
   if (reason === "wallet_not_linked") return { status: 422, error: reason };
   if (reason.includes("invalid_") || reason === "unsupported_lock_duration") return { status: 400, error: reason };
-  if (reason.includes("mismatch") || reason.includes("not_pending")) return { status: 409, error: reason };
+  if (reason.includes("mismatch") || reason.includes("not_pending") || reason === "uliq_sale_not_active") {
+    return { status: 409, error: reason };
+  }
   if (reason.includes("rpc")) return { status: 503, error: "uliq_rpc_unavailable" };
   return { status: 500, error: "uliq_request_failed" };
 }
