@@ -6,6 +6,16 @@ import { UliqPresaleService } from "./presale.service.js";
 
 const dexLaunchSchema = z.object({ dexLaunchTimestamp: z.string().trim().regex(/^[1-9]\d*$/).max(20) });
 
+function jsonSafe(value: unknown): any {
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(jsonSafe);
+  if (value && typeof value === "object") {
+    if (value instanceof Date) return value.toISOString();
+    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, jsonSafe(nested)]));
+  }
+  return value;
+}
+
 export function registerUliqAdminRoutes(app: express.Express, deps: {
   db: any;
   presaleService: UliqPresaleService;
@@ -20,6 +30,12 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
     ip?: string | null;
   }): Promise<void>;
 }) {
+  const requireSuperadmin: express.RequestHandler = (_req, res, next) => {
+    void deps.requireSuperadmin(res).then((allowed) => {
+      if (allowed) next();
+    }).catch(next);
+  };
+
   function enabled(res: express.Response): boolean {
     try {
       const flags = getUliqFeatureFlags();
@@ -34,24 +50,45 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
     }
   }
 
-  app.get("/admin/uliq", requireAuth, async (_req, res) => {
-    if (!enabled(res) || !(await deps.requireSuperadmin(res))) return;
-    const [overview, cursor, reconciliation, reservations, price] = await Promise.all([
+  app.get("/admin/uliq", requireAuth, requireSuperadmin, async (_req, res) => {
+    if (!enabled(res)) return;
+    const [overview, cursor, reconciliation, reservations, price, purchases, vesting, locks, tiers, alerts, audit] = await Promise.all([
       deps.presaleService.getOverview(),
       deps.db.onchainSyncCursor.findFirst({ where: { id: { startsWith: "uliq:" } }, orderBy: { updatedAt: "desc" } }),
       deps.db.uliqReconciliationRun.findFirst({ orderBy: { startedAt: "desc" } }),
       deps.db.uliqBenefitReservation.groupBy({ by: ["status"], _count: { _all: true } }),
-      deps.db.uliqPriceSnapshot.findFirst({ orderBy: { observedAt: "desc" } })
+      deps.db.uliqPriceSnapshot.findFirst({ orderBy: { observedAt: "desc" } }),
+      deps.db.uliqPresalePurchase.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+        _sum: { usdcAmountRaw: true, uliqAllocationRaw: true, finalizationWalletRaw: true, finalizationVestingRaw: true }
+      }),
+      deps.db.uliqVestingPosition.aggregate({ _sum: { allocatedRaw: true, releasedRaw: true }, _count: { _all: true } }),
+      deps.db.uliqLockPosition.aggregate({ where: { status: "ACTIVE" }, _sum: { amountRaw: true }, _count: { _all: true } }),
+      deps.db.uliqTierConfig.findMany({ where: { enabled: true }, orderBy: [{ version: "desc" }, { minUsdValue: "asc" }] }),
+      deps.db.platformAlert.findMany({ where: { source: { startsWith: "uliq" } }, orderBy: { createdAt: "desc" }, take: 20 }),
+      deps.db.adminAuditEvent.findMany({ where: { targetType: "uliq_presale" }, orderBy: { createdAt: "desc" }, take: 20 })
     ]);
-    return res.json({ overview, indexer: cursor, reconciliation, reservations, price });
+    return res.json(jsonSafe({
+      overview,
+      indexer: cursor,
+      reconciliation,
+      reservations,
+      price,
+      stats: { purchases, vesting, locks },
+      tiers,
+      alerts,
+      audit
+    }));
   });
 
   app.post(
     "/admin/uliq/safe/set-dex-launch/prepare",
     requireAuth,
+    requireSuperadmin,
     deps.consumeRecentReauth,
     async (req, res) => {
-      if (!enabled(res) || !(await deps.requireSuperadmin(res))) return;
+      if (!enabled(res)) return;
       const parsed = dexLaunchSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {

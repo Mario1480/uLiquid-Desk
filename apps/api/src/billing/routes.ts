@@ -211,6 +211,15 @@ function mapSubscriptionOrderForResponse(input: any) {
     paidAt: toIsoDateString(order.paidAt),
     expiresAt: toIsoDateString(order.expiresAt),
     createdAt: toIsoDateString(order.createdAt),
+    uliqBenefit: order.uliqBenefitReservation ? {
+      reservationId: order.uliqBenefitReservation.id,
+      tier: order.uliqTierSnapshot,
+      discountBps: order.uliqDiscountBps,
+      baseAmountCents: order.baseAmountCents,
+      discountAmountCents: order.discountAmountCents,
+      finalAmountCents: order.finalAmountCents,
+      expiresAt: toIsoDateString(order.uliqBenefitReservation.expiresAt)
+    } : null,
     explorerUrl: payment?.explorerUrl ?? (txHash ? `https://arbiscan.io/tx/${txHash}` : null),
     onchainPayment: payment ? {
       chainId: Number(payment.chainId),

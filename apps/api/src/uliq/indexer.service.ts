@@ -44,6 +44,23 @@ function splitFinalizedAllocation(allocationRaw: bigint): { walletRaw: bigint; v
   return { walletRaw, vestingRaw: allocationRaw - walletRaw };
 }
 
+export function shouldConsumeHoldingTransfer(params: {
+  from: string;
+  to: string;
+  config: UliqRuntimeConfig;
+}): boolean {
+  const from = params.from.toLowerCase();
+  const to = params.to.toLowerCase();
+  const sourcesWithoutIndependentLots = new Set([
+    params.config.contracts.presale.toLowerCase(),
+    params.config.contracts.vesting.toLowerCase(),
+    params.config.contracts.locker.toLowerCase()
+  ]);
+  return from !== zeroAddress
+    && !sourcesWithoutIndependentLots.has(from)
+    && to !== params.config.contracts.locker.toLowerCase();
+}
+
 export function decodeUliqLog(log: IndexerLog, config: UliqRuntimeConfig): DecodedUliqEvent | null {
   const address = log.address.toLowerCase();
   const abi = address === config.contracts.token.toLowerCase()
@@ -309,7 +326,7 @@ async function projectUliqEvent(params: {
       config.contracts.vesting.toLowerCase(),
       config.contracts.locker.toLowerCase()
     ]);
-    if (from !== zeroAddress && !internalContracts.has(from) && !internalContracts.has(to)) {
+    if (shouldConsumeHoldingTransfer({ from, to, config })) {
       await consumeHoldingLots(tx, config, from, amount);
     }
     if (to !== zeroAddress && !internalContracts.has(from) && !internalContracts.has(to)) {
@@ -391,7 +408,7 @@ async function findCommonAncestor(params: {
   return params.config.startBlock > 0n ? params.config.startBlock - 1n : 0n;
 }
 
-async function rollbackAfterReorg(params: {
+export async function rollbackUliqAfterReorg(params: {
   db: any;
   config: UliqRuntimeConfig;
   ancestor: bigint;
@@ -423,6 +440,9 @@ async function rollbackAfterReorg(params: {
     });
     const ids = staleSnapshots.map((row: any) => row.id);
     if (ids.length > 0) {
+      const consumedReservations = await tx.uliqBenefitReservation.findMany({
+        where: { entitlementSnapshotId: { in: ids }, status: "CONSUMED" }
+      });
       await tx.uliqBenefitReservation.updateMany({
         where: { entitlementSnapshotId: { in: ids }, status: "RESERVED" },
         data: { status: "RELEASED", releasedAt: params.now, metadata: { releaseReason: "onchain_reorg" } }
@@ -431,6 +451,51 @@ async function rollbackAfterReorg(params: {
         where: { id: { in: ids } },
         data: { validUntil: params.now, priceQualityStatus: "DEGRADED", degradationReason: "onchain_reorg" }
       });
+      for (const reservation of consumedReservations) {
+        const reversed = await tx.uliqBenefitReservation.updateMany({
+          where: { id: reservation.id, status: "CONSUMED" },
+          data: { status: "REVERSED", reversedAt: params.now, metadata: { reversalReason: "onchain_reorg" } }
+        });
+        if (reversed.count !== 1) continue;
+        const metadata = reservation.metadata && typeof reservation.metadata === "object"
+          ? reservation.metadata as Record<string, unknown>
+          : {};
+        await tx.uliqBenefitLedger.upsert({
+          where: { idempotencyKey: `reservation:${reservation.id}:reversed:onchain-reorg` },
+          create: {
+            userId: reservation.userId,
+            walletAddress: reservation.walletAddress,
+            benefitType: reservation.benefitType,
+            referenceType: reservation.referenceType,
+            referenceId: reservation.referenceId,
+            reservationId: reservation.id,
+            tierSnapshot: String(metadata.tierSnapshot ?? "BASIC"),
+            configVersion: reservation.configVersion,
+            priceSnapshotId: reservation.priceSnapshotId,
+            entitlementSnapshotId: reservation.entitlementSnapshotId,
+            currency: reservation.currency,
+            baseAmount: reservation.baseAmount,
+            discountAmount: reservation.discountAmount,
+            finalAmount: reservation.finalAmount,
+            entryType: "REVERSED",
+            idempotencyKey: `reservation:${reservation.id}:reversed:onchain-reorg`,
+            metadata: { reversedAt: params.now.toISOString(), reason: "onchain_reorg", ancestor: params.ancestor.toString() }
+          },
+          update: {}
+        });
+        await tx.platformAlert.create({
+          data: {
+            severity: "critical",
+            status: "open",
+            type: "uliq_consumed_benefit_reorg_reversal",
+            source: "uliq_indexer",
+            title: "ULIQ consumed benefit invalidated by reorg",
+            message: `Reservation ${reservation.id} requires operator review after a chain reorg.`,
+            userId: reservation.userId,
+            metadata: { reservationId: reservation.id, ancestor: params.ancestor.toString() }
+          }
+        });
+      }
     }
     const rewindBlock = params.config.startBlock > 0n ? params.config.startBlock - 1n : 0n;
     await tx.onchainSyncCursor.updateMany({
@@ -442,7 +507,7 @@ async function rollbackAfterReorg(params: {
         heartbeatAt: params.now
       }
     });
-  });
+  }, { maxWait: 5_000, timeout: 60_000, isolationLevel: "Serializable" });
 }
 
 export class UliqIndexerService {
@@ -468,7 +533,7 @@ export class UliqIndexerService {
           lastProcessedBlock: BigInt(cursor.lastProcessedBlock)
         });
         reorgDepth = Number(BigInt(cursor.lastProcessedBlock) - ancestor);
-        await rollbackAfterReorg({ db: this.db, config: this.config, ancestor, owner: this.owner, now });
+        await rollbackUliqAfterReorg({ db: this.db, config: this.config, ancestor, owner: this.owner, now });
         cursor = await this.db.onchainSyncCursor.findUnique({ where: { id: cursorId(this.config) } });
       }
     }
@@ -588,7 +653,7 @@ export class UliqIndexerService {
         }
       });
       if (advanced.count !== 1) throw new Error("uliq_indexer_cursor_cas_lost");
-    });
+    }, { maxWait: 5_000, timeout: 60_000, isolationLevel: "Serializable" });
     return { processedBlocks: Number(toBlock - fromBlock + 1n), processedEvents, reorgDepth };
   }
 }

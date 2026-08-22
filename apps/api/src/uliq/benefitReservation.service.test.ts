@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   consumeUliqBenefitReservationInTransaction,
   createUliqBenefitReservationInTransaction,
+  expireUliqBenefitReservations,
   releaseOpenUliqReservationsForWalletChange,
   type PreparedUliqBillingBenefit
 } from "./benefitReservation.service.js";
@@ -118,4 +119,31 @@ test("wallet mutation and reservation release share one transaction", async () =
   });
   assert.equal(released, 2);
   assert.deepEqual(calls, ["release", "wallet"]);
+});
+
+test("expired ten-minute reservation releases and expires an unsigned billing order atomically", async () => {
+  let reservationStatus = "RESERVED";
+  let orderStatus = "PENDING";
+  const db = {
+    $transaction: async (run: (tx: any) => Promise<any>) => run({
+      uliqBenefitReservation: {
+        findMany: async () => [{ id: "reservation-1", billingOrder: { id: "order-1", status: orderStatus } }],
+        updateMany: async () => {
+          if (reservationStatus !== "RESERVED") return { count: 0 };
+          reservationStatus = "RELEASED";
+          return { count: 1 };
+        }
+      },
+      billingOrder: {
+        updateMany: async () => {
+          if (orderStatus !== "PENDING") return { count: 0 };
+          orderStatus = "EXPIRED";
+          return { count: 1 };
+        }
+      }
+    })
+  };
+  assert.equal(await expireUliqBenefitReservations(db, now), 1);
+  assert.equal(reservationStatus, "RELEASED");
+  assert.equal(orderStatus, "EXPIRED");
 });

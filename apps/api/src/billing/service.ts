@@ -1927,6 +1927,7 @@ async function fetchBillingOrderWithItems(orderId: string): Promise<any> {
       pkg: true,
       onchainPayment: true,
       subscriptionTerm: true,
+      uliqBenefitReservation: true,
       items: {
         include: {
           pkg: {
@@ -4477,6 +4478,7 @@ export async function getSubscriptionSummary(userId: string): Promise<{
       include: {
         onchainPayment: true,
         subscriptionTerm: true,
+        uliqBenefitReservation: true,
         pkg: {
           select: {
             id: true,
@@ -4584,6 +4586,7 @@ export async function listSubscriptionOrders(userId: string): Promise<any[]> {
     include: {
       onchainPayment: true,
       subscriptionTerm: true,
+      uliqBenefitReservation: true,
       pkg: {
         select: {
           id: true,

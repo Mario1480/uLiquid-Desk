@@ -43,7 +43,9 @@ async function readPresaleAtBlock(client: PublicClient, config: UliqRuntimeConfi
     client.readContract({ address: config.contracts.presale, abi: uliqPresaleAbi, functionName: "totalSoldUliqRaw", blockNumber }),
     client.readContract({ address: config.contracts.presale, abi: uliqPresaleAbi, functionName: "pendingAllocationUliqRaw", blockNumber }),
     client.readContract({ address: config.contracts.presale, abi: uliqPresaleAbi, functionName: "pendingPurchaseCount", blockNumber }),
-    client.readContract({ address: config.contracts.presale, abi: uliqPresaleAbi, functionName: "maximumPurchasableUsdcRaw", blockNumber })
+    client.readContract({ address: config.contracts.presale, abi: uliqPresaleAbi, functionName: "maximumPurchasableUsdcRaw", blockNumber }),
+    client.readContract({ address: config.contracts.token, abi: uliqTokenAbi, functionName: "balanceOf", args: [config.contracts.presale], blockNumber }),
+    client.readContract({ address: config.contracts.token, abi: uliqTokenAbi, functionName: "balanceOf", args: [config.contracts.vesting], blockNumber })
   ]);
   return reads.map((value) => BigInt(value as bigint));
 }
@@ -58,7 +60,7 @@ export class UliqPresaleService {
   async getOverview() {
     const head = await getConsistentFinalizedBlock(this.rpc);
     const read = await withUliqRpcFailover(this.rpc, (client) => readPresaleAtBlock(client, this.config, head.number));
-    const [state, saleStart, saleEnd, withdrawalPeriod, dexLaunch, hardCap, raised, sold, pendingRaw, pendingCount, maximum] = read.value;
+    const [state, saleStart, saleEnd, withdrawalPeriod, dexLaunch, hardCap, raised, sold, pendingRaw, pendingCount, maximum, presaleInventory, vestingInventory] = read.value;
     return {
       chainId: this.config.chainId,
       contractAddress: this.config.contracts.presale,
@@ -75,10 +77,17 @@ export class UliqPresaleService {
       pendingAllocationUliqRaw: pendingRaw.toString(),
       pendingPurchaseCount: pendingCount.toString(),
       maximumPurchasableUsdcRaw: maximum.toString(),
+      presaleInventoryUliqRaw: presaleInventory.toString(),
+      vestingInventoryUliqRaw: vestingInventory.toString(),
       referencePriceUsd: "0.001",
       asOfBlock: head.number.toString(),
       blockHash: head.hash,
       rpcSource: read.source,
+      rpcHealth: {
+        primary: "healthy",
+        secondary: "healthy",
+        finalizedHeadAgreement: true
+      },
       legalStatus: "TESTNET_PROVISIONAL_ADR_001_BLOCKED"
     };
   }
@@ -276,6 +285,7 @@ export class UliqPresaleService {
     const timestampValue = parseUint256Decimal(value, "dex_launch_timestamp");
     if (timestampValue > (1n << 64n) - 1n) throw new Error("invalid_dex_launch_timestamp");
     const head = await getConsistentFinalizedBlock(this.rpc);
+    if (timestampValue < head.timestamp) throw new Error("uliq_dex_launch_timestamp_in_past");
     const read = await withUliqRpcFailover(this.rpc, async (client) => {
       const [state, pendingPurchaseCount, owner] = await Promise.all([
         client.readContract({ address: this.config.contracts.presale, abi: uliqPresaleAbi, functionName: "state", blockNumber: head.number }),

@@ -74,6 +74,10 @@ export function calculateEligibleUsdScaled(eligibleRaw: bigint, priceUsd: string
   return eligibleRaw * parseDecimalToScale(priceUsd) / TOKEN_SCALE;
 }
 
+export function calculateUntrackedEligibleRaw(eligibleRaw: bigint, trackedRaw: bigint): bigint {
+  return trackedRaw < eligibleRaw ? eligibleRaw - trackedRaw : 0n;
+}
+
 export async function loadUliqTierConfigs(db: any, now = new Date()): Promise<UliqTierDecision[]> {
   const rows = await db.uliqTierConfig.findMany({
     where: {
@@ -110,6 +114,16 @@ export function resolveUliqTier(eligibleUsdScaled: bigint, configs: UliqTierDeci
     subscriptionDiscountBps: 0,
     minUsdValue: "0"
   };
+}
+
+export function resolveEffectiveTierForPrice(params: {
+  freshTier: UliqTierDecision;
+  configs: UliqTierDecision[];
+  priceQualityStatus: UliqPriceDecision["qualityStatus"];
+  previousHealthyTierCode?: string | null;
+}): UliqTierDecision {
+  if (params.priceQualityStatus === "HEALTHY" || !params.previousHealthyTierCode) return params.freshTier;
+  return params.configs.find((tier) => tier.code === params.previousHealthyTierCode) ?? params.freshTier;
 }
 
 async function readBalancesAtBlock(params: {
@@ -232,7 +246,7 @@ export class UliqEntitlementService {
     const lockedRaw = BigInt(read.value.lockedRaw);
     const eligibleRaw = calculateEligibleRaw(walletRaw, vestingRaw, lockedRaw);
 
-    const [pending, qualifiedLots, exemptLots] = await Promise.all([
+    const [pending, qualifiedLots, exemptLots, allLots, cursor] = await Promise.all([
       this.db.uliqPresalePurchase.aggregate({
         where: { chainId: this.config.chainId, walletAddress: wallet, status: "PENDING_WITHDRAWAL" },
         _sum: { uliqAllocationRaw: true }
@@ -254,12 +268,44 @@ export class UliqEntitlementService {
           provenance: "PRESALE_FINALIZED"
         },
         _sum: { remainingRaw: true }
-      })
+      }),
+      this.db.uliqHoldingLot.aggregate({
+        where: { chainId: this.config.chainId, walletAddress: wallet, canonical: true },
+        _sum: { remainingRaw: true }
+      }),
+      this.db.onchainSyncCursor.findUnique({ where: { id: `uliq:${this.config.chainId}:all` }, select: { lastProcessedBlock: true } })
     ]);
     const pendingPresaleRaw = decimalBigInt(pending?._sum?.uliqAllocationRaw);
     const qualifiedRaw = decimalBigInt(qualifiedLots?._sum?.remainingRaw);
     const monetaryEligibleRaw = qualifiedRaw > eligibleRaw ? eligibleRaw : qualifiedRaw;
     const presaleCooldownExemptRaw = decimalBigInt(exemptLots?._sum?.remainingRaw);
+    const untrackedRaw = calculateUntrackedEligibleRaw(eligibleRaw, decimalBigInt(allLots?._sum?.remainingRaw));
+    if (untrackedRaw > 0n && cursor && BigInt(cursor.lastProcessedBlock) >= head.number) {
+      await this.db.uliqHoldingLot.upsert({
+        where: {
+          chainId_sourceEventKey: {
+            chainId: this.config.chainId,
+            sourceEventKey: `unknown-reconcile:${wallet}:${head.number}`
+          }
+        },
+        create: {
+          userId,
+          chainId: this.config.chainId,
+          walletAddress: wallet,
+          provenance: "UNKNOWN",
+          sourceEventKey: `unknown-reconcile:${wallet}:${head.number}`,
+          lineageRoot: `unknown-reconcile:${wallet}:${head.number}`,
+          amountRaw: untrackedRaw.toString(),
+          remainingRaw: untrackedRaw.toString(),
+          acquiredAt: now,
+          monetaryEligibleAt: new Date(now.getTime() + ULIQ_HOLDING_COOLDOWN_SECONDS * 1_000),
+          asOfBlock: head.number,
+          blockHash: head.hash,
+          canonical: true
+        },
+        update: {}
+      });
+    }
     const price = await resolveUliqPriceSnapshot({
       db: this.db,
       config: this.config,
@@ -278,9 +324,12 @@ export class UliqEntitlementService {
         where: { userId, walletAddress: wallet, priceQualityStatus: "HEALTHY" },
         orderBy: { computedAt: "desc" }
       });
-      if (previous) {
-        effectiveTier = tierConfigs.find((tier) => tier.code === previous.effectiveTier) ?? freshTier;
-      }
+      effectiveTier = resolveEffectiveTierForPrice({
+        freshTier,
+        configs: tierConfigs,
+        priceQualityStatus: price.qualityStatus,
+        previousHealthyTierCode: previous?.effectiveTier
+      });
     }
     const validUntil = new Date(Math.min(price.validUntil.getTime(), now.getTime() + ULIQ_ENTITLEMENT_TTL_MS));
     const stored = await this.db.uliqEntitlementSnapshot.create({

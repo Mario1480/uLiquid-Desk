@@ -133,5 +133,28 @@ export async function resolveUliqPriceSnapshot(params: {
       validUntil
     }
   });
+  if (qualityStatus !== "HEALTHY" && params.db.platformAlert?.findFirst && params.db.platformAlert?.create) {
+    const openAlert = await params.db.platformAlert.findFirst({
+      where: {
+        source: "uliq_price",
+        type: "uliq_price_degraded",
+        status: { in: ["open", "acknowledged"] }
+      },
+      select: { id: true }
+    });
+    if (!openAlert) {
+      await params.db.platformAlert.create({
+        data: {
+          severity: "high",
+          status: "open",
+          type: "uliq_price_degraded",
+          source: "uliq_price",
+          title: "ULIQ price reference degraded",
+          message: `ULIQ price quality is degraded: ${degradationReason}`,
+          metadata: { blockNumber: params.blockNumber.toString(), blockHash: params.blockHash, degradationReason }
+        }
+      });
+    }
+  }
   return mapSnapshot(created);
 }

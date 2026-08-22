@@ -277,6 +277,63 @@ test("checkout returns the server-defined Arbitrum USDC payment contract without
   assert.equal("payUrl" in (res.body ?? {}), false);
 });
 
+test("checkout forwards explicit ULIQ opt-in and returns the exact reservation snapshot", async () => {
+  const app = createFakeApp();
+  let checkoutInput: any = null;
+  registerBillingRoutes(app as any, createRouteDeps({
+    createBillingCheckout: async (input: any) => {
+      checkoutInput = input;
+      return {
+        mode: "onchain",
+        order: {
+          id: "order_uliq",
+          merchantOrderId: "ULIQUID_DISCOUNT_1",
+          status: "PENDING",
+          baseAmountCents: 10_000,
+          discountAmountCents: 1_500,
+          finalAmountCents: 8_500,
+          uliqTierSnapshot: "GOLD",
+          uliqDiscountBps: 1_500,
+          uliqBenefitReservation: {
+            id: "reservation-1",
+            expiresAt: new Date("2026-08-22T12:10:00.000Z")
+          }
+        },
+        payment: {
+          chainId: 42161,
+          tokenAddress: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+          tokenDecimals: 6,
+          expectedSenderAddress: "0x2222222222222222222222222222222222222222",
+          recipientAddress: "0x1111111111111111111111111111111111111111",
+          amountRaw: "85000000",
+          amountFormatted: "85.00",
+          expiresAt: "2026-08-22T12:10:00.000Z"
+        }
+      };
+    }
+  }) as any);
+  const res = createMockRes();
+  await lastHandler(app, "post", "/settings/subscription/checkout")(
+    { body: { items: [{ packageId: "ai_credits_1m", quantity: 1 }], applyUliqDiscount: true } },
+    res
+  );
+  assert.deepEqual(checkoutInput, {
+    userId: "user_1",
+    items: [{ packageId: "ai_credits_1m", quantity: 1 }],
+    applyUliqDiscount: true
+  });
+  assert.deepEqual(res.body.uliqBenefit, {
+    reservationId: "reservation-1",
+    tier: "GOLD",
+    discountBps: 1_500,
+    baseAmountCents: 10_000,
+    discountAmountCents: 1_500,
+    finalAmountCents: 8_500,
+    expiresAt: "2026-08-22T12:10:00.000Z"
+  });
+  assert.equal(res.body.payment.amountRaw, "85000000");
+});
+
 test("checkout maps unsupported zero-value carts to a stable client error", async () => {
   const app = createFakeApp();
   registerBillingRoutes(app as any, createRouteDeps({
