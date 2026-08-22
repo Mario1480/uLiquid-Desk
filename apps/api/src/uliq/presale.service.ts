@@ -2,7 +2,7 @@ import { encodeFunctionData, type PublicClient } from "viem";
 import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
-import { normalizeUliqAddress, parseUint256Decimal } from "./uint256.js";
+import { databaseUint256Decimal, normalizeUliqAddress, parseUint256Decimal } from "./uint256.js";
 
 const SALE_STATES = [
   "DRAFT",
@@ -105,11 +105,11 @@ export class UliqPresaleService {
       purchases: purchases.map((row: any) => ({
         ...row,
         id: String(row.id),
-        purchaseIdOnchain: String(row.purchaseIdOnchain),
-        usdcAmountRaw: String(row.usdcAmountRaw),
-        uliqAllocationRaw: String(row.uliqAllocationRaw),
-        finalizationWalletRaw: String(row.finalizationWalletRaw),
-        finalizationVestingRaw: String(row.finalizationVestingRaw),
+        purchaseIdOnchain: databaseUint256Decimal(row.purchaseIdOnchain, "purchase_id_onchain"),
+        usdcAmountRaw: databaseUint256Decimal(row.usdcAmountRaw, "usdc_amount_raw"),
+        uliqAllocationRaw: databaseUint256Decimal(row.uliqAllocationRaw, "uliq_allocation_raw"),
+        finalizationWalletRaw: databaseUint256Decimal(row.finalizationWalletRaw, "finalization_wallet_raw"),
+        finalizationVestingRaw: databaseUint256Decimal(row.finalizationVestingRaw, "finalization_vesting_raw"),
         purchaseBlockNumber: BigInt(row.purchaseBlockNumber).toString()
       }))
     };
@@ -255,8 +255,8 @@ export class UliqPresaleService {
       lockedBalanceRaw: BigInt(read.value).toString(),
       positions: positions.map((row: any) => ({
         ...row,
-        lockIdOnchain: String(row.lockIdOnchain),
-        amountRaw: String(row.amountRaw),
+        lockIdOnchain: databaseUint256Decimal(row.lockIdOnchain, "lock_id_onchain"),
+        amountRaw: databaseUint256Decimal(row.amountRaw, "lock_amount_raw"),
         asOfBlock: BigInt(row.asOfBlock).toString()
       })),
       supportedDurationsDays: [30, 90, 180],

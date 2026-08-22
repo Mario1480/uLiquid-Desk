@@ -1,6 +1,7 @@
 import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
+import { parseDatabaseUint256Decimal } from "./uint256.js";
 
 type Mismatch = {
   scope: string;
@@ -93,9 +94,10 @@ export class UliqReconciliationService {
           })
         ]);
         const projectedVesting = vesting
-          ? BigInt(String(vesting.allocatedRaw)) - BigInt(String(vesting.releasedRaw))
+          ? parseDatabaseUint256Decimal(vesting.allocatedRaw, "vesting_allocated_raw")
+            - parseDatabaseUint256Decimal(vesting.releasedRaw, "vesting_released_raw")
           : 0n;
-        const projectedLocked = BigInt(String(locks?._sum?.amountRaw ?? "0"));
+        const projectedLocked = parseDatabaseUint256Decimal(locks?._sum?.amountRaw ?? "0", "locked_amount_raw");
         if (onchain.value.vestingRaw !== projectedVesting) {
           mismatches.push({ scope: "wallet", walletAddress, field: "vestingRaw", onchain: onchain.value.vestingRaw.toString(), projected: projectedVesting.toString() });
         }

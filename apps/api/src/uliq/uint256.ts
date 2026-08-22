@@ -14,6 +14,28 @@ export function uint256Decimal(value: unknown, field = "uint256"): string {
   return parseUint256Decimal(value, field).toString();
 }
 
+type FixedDecimalLike = {
+  toFixed: () => string;
+};
+
+function isFixedDecimalLike(value: unknown): value is FixedDecimalLike {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && "toFixed" in value
+    && typeof (value as { toFixed?: unknown }).toFixed === "function"
+  );
+}
+
+export function parseDatabaseUint256Decimal(value: unknown, field = "uint256"): bigint {
+  const normalized = isFixedDecimalLike(value) ? value.toFixed() : value;
+  return parseUint256Decimal(normalized, field);
+}
+
+export function databaseUint256Decimal(value: unknown, field = "uint256"): string {
+  return parseDatabaseUint256Decimal(value, field).toString();
+}
+
 export function normalizeUliqAddress(value: unknown, field = "address"): `0x${string}` {
   const normalized = String(value ?? "").trim();
   if (!isAddress(normalized)) throw new Error(`invalid_${field}`);

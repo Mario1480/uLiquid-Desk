@@ -1,6 +1,7 @@
 import { getUliqFeatureFlags, ULIQ_RESERVATION_TTL_MS } from "./config.js";
 import { UliqEntitlementService, type UliqEntitlement } from "./entitlement.service.js";
 import { calculateUliqDiscountCents, type UliqDiscountAllocation } from "./math.js";
+import { parseDatabaseUint256Decimal } from "./uint256.js";
 
 export type UliqBenefitType = "SUBSCRIPTION_DISCOUNT" | "AI_CREDIT_DISCOUNT";
 
@@ -104,7 +105,7 @@ export async function createUliqBenefitReservationInTransaction(params: {
     || snapshot.validUntil <= now
     || String(snapshot.priceSnapshotId) !== params.prepared.priceSnapshotId
     || BigInt(snapshot.asOfBlock) !== params.prepared.asOfBlock
-    || BigInt(String(snapshot.monetaryEligibleRaw)) <= 0n
+    || parseDatabaseUint256Decimal(snapshot.monetaryEligibleRaw, "monetary_eligible_raw") <= 0n
   ) {
     throw new Error("uliq_entitlement_invalid");
   }

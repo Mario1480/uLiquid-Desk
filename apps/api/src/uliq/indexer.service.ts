@@ -3,6 +3,7 @@ import { decodeEventLog, zeroAddress, type Log, type PublicClient } from "viem";
 import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, type UliqRpcPair } from "./rpc.js";
+import { parseDatabaseUint256Decimal } from "./uint256.js";
 
 const CURSOR_PREFIX = "uliq";
 const DEFAULT_LEASE_MS = 30_000;
@@ -94,7 +95,7 @@ async function consumeHoldingLots(tx: any, config: UliqRuntimeConfig, walletAddr
   });
   for (const lot of lots) {
     if (remaining === 0n) break;
-    const available = BigInt(String(lot.remainingRaw));
+    const available = parseDatabaseUint256Decimal(lot.remainingRaw, "holding_lot_remaining_raw");
     const consumed = available < remaining ? available : remaining;
     await tx.uliqHoldingLot.update({
       where: { id: lot.id },

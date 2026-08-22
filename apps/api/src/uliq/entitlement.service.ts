@@ -8,7 +8,12 @@ import {
 } from "./config.js";
 import { resolveUliqPriceSnapshot, type UliqPriceDecision } from "./price.service.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
-import { formatScaledDecimal, parseDecimalToScale, parseUint256Decimal } from "./uint256.js";
+import {
+  databaseUint256Decimal,
+  formatScaledDecimal,
+  parseDatabaseUint256Decimal,
+  parseDecimalToScale
+} from "./uint256.js";
 
 const TOKEN_SCALE = 10n ** 18n;
 
@@ -56,7 +61,7 @@ export type UliqEntitlement = {
 };
 
 function decimalBigInt(value: unknown): bigint {
-  return parseUint256Decimal(String(value ?? "0"));
+  return parseDatabaseUint256Decimal(value ?? "0");
 }
 
 function jsonObject(value: unknown): Record<string, unknown> {
@@ -172,14 +177,14 @@ function mapStoredEntitlement(row: any, tier: UliqTierDecision, monetaryTier: Ul
     chainId: Number(row.chainId),
     asOfBlock: BigInt(row.asOfBlock),
     blockHash: String(row.blockHash),
-    walletRaw: String(row.walletRaw),
-    vestingRaw: String(row.vestingRaw),
-    lockedRaw: String(row.lockedRaw),
-    eligibleRaw: String(row.eligibleRaw),
-    featureEligibleRaw: String(row.featureEligibleRaw),
-    monetaryEligibleRaw: String(row.monetaryEligibleRaw),
-    presaleCooldownExemptRaw: String(row.presaleCooldownExemptRaw),
-    pendingPresaleRaw: String(row.pendingPresaleRaw),
+    walletRaw: databaseUint256Decimal(row.walletRaw, "wallet_raw"),
+    vestingRaw: databaseUint256Decimal(row.vestingRaw, "vesting_raw"),
+    lockedRaw: databaseUint256Decimal(row.lockedRaw, "locked_raw"),
+    eligibleRaw: databaseUint256Decimal(row.eligibleRaw, "eligible_raw"),
+    featureEligibleRaw: databaseUint256Decimal(row.featureEligibleRaw, "feature_eligible_raw"),
+    monetaryEligibleRaw: databaseUint256Decimal(row.monetaryEligibleRaw, "monetary_eligible_raw"),
+    presaleCooldownExemptRaw: databaseUint256Decimal(row.presaleCooldownExemptRaw, "presale_cooldown_exempt_raw"),
+    pendingPresaleRaw: databaseUint256Decimal(row.pendingPresaleRaw, "pending_presale_raw"),
     referencePriceUsd: String(row.referencePriceUsd),
     priceMode: row.priceMode,
     priceQualityStatus: row.priceQualityStatus,
