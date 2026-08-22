@@ -16,7 +16,7 @@ Run the focused suite with `npm -w @mm/contracts run test:uliq`. Deployment and 
 
 Required non-secret inputs:
 
-- `ULIQ_ADMIN_ADDRESS`: testnet Safe/admin address; verify it independently before broadcast.
+- `ULIQ_ADMIN_ADDRESS`: testnet Safe or admin EOA; verify it independently before broadcast. Automated configuration is only possible when the configured deployer key controls this address.
 - `ULIQ_TEST_USDC_ADDRESS`: 6-decimal test token, or the zero address to deploy `ULIQMockUSDC`.
 - `ULIQ_SALE_START`, `ULIQ_SALE_END`: Unix timestamps with `saleEnd > saleStart`.
 - `ULIQ_WITHDRAWAL_PERIOD_SECONDS`: explicit testnet value; the production specification remains 14 days.
@@ -24,7 +24,7 @@ Required non-secret inputs:
 Required secret/provider inputs must come from a local secret manager or protected CI environment, never from a committed env file:
 
 - `ARBITRUM_SEPOLIA_RPC_URL`
-- `ULIQ_TESTNET_DEPLOYER_PRIVATE_KEY`
+- `ULIQ_TESTNET_DEPLOYER_PRIVATE_KEY`: funded testnet deployer; for automated configuration it must also control an admin EOA.
 - `ETHERSCAN_API_KEY` when source verification is enabled
 
 Run the non-broadcast simulation first:
@@ -39,7 +39,9 @@ After checking chain ID, admin, USDC, timestamps, deployer funding and simulated
 FORGE_BROADCAST_ARGS=--verify npm -w packages/contracts run deploy:uliq:testnet
 ```
 
-Record the emitted addresses, then supply `ULIQ_TOKEN_ADDRESS`, `ULIQ_PRESALE_ADDRESS`, `ULIQ_VESTING_ADDRESS` and `ULIQ_PAYMENT_CUSTODY_ADDRESS`. Simulate `configure:uliq:testnet:dry-run`, verify ownership/wiring/inventory, and only then run `configure:uliq:testnet`. Finally copy the canonical deployment block and verified addresses into the server-side ULIQ runtime configuration. Local Anvil addresses are never valid Sepolia evidence.
+Record the emitted addresses, then supply `ULIQ_TOKEN_ADDRESS`, `ULIQ_PRESALE_ADDRESS`, `ULIQ_VESTING_ADDRESS` and `ULIQ_PAYMENT_CUSTODY_ADDRESS`. Simulate `configure:uliq:testnet:dry-run`, verify ownership/wiring/inventory, and only then run `configure:uliq:testnet` when the admin is an EOA controlled by the dedicated testnet key.
+
+When `ULIQ_ADMIN_ADDRESS` is a Safe, do not provide or invent a private key for it. Instead, prepare and approve the equivalent Safe batch for `vesting.setPresale(presale)`, `custody.setPresale(presale)`, `token.transfer(presale, 120_000_000 ether)` and `presale.markReady()`. Verify the testnet Safe owners and threshold (at least 2) independently before execution. Finally copy the canonical deployment block and verified addresses into the server-side ULIQ runtime configuration. Local Anvil addresses are never valid Sepolia evidence.
 
 ## Current Contract Set
 
