@@ -27,7 +27,7 @@ jobs:
       API_URL: http://localhost:4000
       API_BASE_URL: http://localhost:4000
       # Public deterministic test fixture. Never use this value outside CI.
-      SECRET_MASTER_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      SECRET_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
