@@ -27,7 +27,7 @@ Noch nicht als Testnet-End-to-End-Evidence verifiziert:
 
 - Arbitrum-Sepolia-Deployment und Source Verification, weil RPC-/Deployer-/Safe-/Arbiscan-Konfiguration in der lokalen Umgebung fehlt.
 - authentifizierter Browser-E2E gegen deployte Contracts und migrierte Testnet-Datenbank.
-- externer Smart-Contract-Audit und Slither-Report; Slither ist lokal nicht installiert.
+- externer unabhängiger Smart-Contract-Audit; Slither 0.11.6 wurde lokal ausgeführt und die Findings sind in `09_SECURITY_TESTING.md` bewertet.
 
 Damit ist die Implementierung lokal deploy-ready, aber noch nicht `READY FOR EXTERNAL AUDIT` und nicht Sepolia-E2E-abgenommen. ADR-001 bleibt davon unverändert `BLOCKED`.
 

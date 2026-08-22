@@ -258,12 +258,12 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         pendingAllocationUliqRaw += uliqAllocationRaw;
         pendingPurchaseCount += 1;
 
-        paymentCustody.collectFrom(msg.sender, acceptedUsdcRaw);
-        emit PurchaseCreated(purchaseId, msg.sender, acceptedUsdcRaw, uliqAllocationRaw, withdrawalDeadline);
-
         if (totalRaisedUsdcRaw == hardCapUsdcRaw || totalSoldUliqRaw == allocationCapUliqRaw) {
             _setState(SaleState.ENDED);
         }
+
+        emit PurchaseCreated(purchaseId, msg.sender, acceptedUsdcRaw, uliqAllocationRaw, withdrawalDeadline);
+        paymentCustody.collectFrom(msg.sender, acceptedUsdcRaw);
     }
 
     function withdrawPurchase(uint256 purchaseId) external nonReentrant {
@@ -317,9 +317,9 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         if (dexLaunchTimestamp_ < block.timestamp) revert InvalidDexLaunchTimestamp();
 
         dexLaunchTimestamp = dexLaunchTimestamp_;
-        vesting.setVestingStart(dexLaunchTimestamp_);
         _setState(SaleState.DEX_LAUNCHED);
         emit DexLaunchTimestampSet(dexLaunchTimestamp_);
+        vesting.setVestingStart(dexLaunchTimestamp_);
     }
 
     function maximumPurchasableUsdcRaw() external view returns (uint256 acceptedUsdcRaw) {

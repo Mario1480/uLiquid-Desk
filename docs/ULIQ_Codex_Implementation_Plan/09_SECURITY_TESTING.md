@@ -170,10 +170,11 @@ Verifiziert:
 - `npm run quality:any-budget`, `npm run quality:vendor-charting` und `git diff --check`: PASS.
 - `npm audit --omit=dev`: PASS mit 0 Production-Dependency-Findings nach Pin auf OpenZeppelin Contracts 5.4.0 und `nanoid` 3.3.18.
 - lokaler Anvil-Deploy mit Inventory-/Role-/Wiring-Preflight: PASS; die dabei erzeugten Adressen sind flüchtige Local-Adressen und kein Sepolia-Address-Book.
+- Slither 0.11.6 wurde isoliert gegen den ULIQ-Scope ausgeführt. Der erste Lauf meldete zwei `reentrancy-no-eth`-Treffer und einen `reentrancy-events`-Treffer; die State-Transitions in `buy` und `setDexLaunchTimestamp` wurden daraufhin nach Checks-Effects-Interactions vor die externen Calls gezogen. Der Retest enthält keine Reentrancy-Findings mehr und `npm -w @mm/contracts run test:uliq` bleibt mit 14/14 grün.
+- Der Slither-Retest enthält 13 verbleibende, manuell bewertete Treffer: einmal Medium/High `incorrect-equality` für den beabsichtigten `amount == 0`-Guard in `claim` sowie zwölf Low/Medium `timestamp`-Treffer. Der Equality-Guard verändert weder Preis noch Vesting-Mathematik, sondern verhindert ausschließlich einen Null-Claim. Die Timestamp-Vergleiche bilden die fachlich verpflichtenden Sale-, Withdrawal-, DEX-Launch-, Vesting- und Lock-Zeitfenster ab; einzelne vom Timestamp-Detector gruppierte Balance-/Nullvergleiche sind keine Zeitmanipulationspfade. Diese Bewertungen ersetzen keinen unabhängigen Audit.
 
 Offen oder blockiert:
 
-- Slither: nicht ausgeführt, Tool lokal nicht installiert.
 - Arbitrum-Fork-Test gegen canonical USDC: nicht als Testnet-Nachweis ausgeführt; der isolierte Testnet-Scope verwendet Mock-USDC/Testnet-Custody.
 - Sepolia-Deploy, Arbiscan-Verifikation und Live-Contract-E2E: blockiert durch fehlende lokale Testnet-RPC-, Deployer-, Safe- und Arbiscan-Konfiguration.
 - Browser-E2E: geschützter Flow benötigt eine autorisierte Test-Session und deployte API/Contracts; Auth wurde nicht umgangen.

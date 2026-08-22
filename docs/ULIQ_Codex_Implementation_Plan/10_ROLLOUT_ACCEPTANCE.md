@@ -306,6 +306,6 @@ Die folgenden Bewertungen beziehen sich ausschließlich auf lokale Implementieru
 | M Admin/Safe | PASS prepare-only / BLOCKED external | Superadmin vor Reauth, Audit und Safe-Calldata vorhanden; reale Safe-Signer/Threshold/Receipt-Evidence fehlt. |
 | N State/Pause/Sale-Ende | PASS lokal / BLOCKED legal | Testnet-State-Machine getestet; Production-Cancellation bleibt blockiert. |
 | O Allocation/Release Budgets | PARTIAL | Fixed Supply und Presale-Budget vorhanden; Mainnet-Safes und übrige Release-Contracts sind nicht Teil dieses Testnet-MVP. |
-| P Regression/Evidence | PASS lokal / BLOCKED Sepolia | lokale Suites grün; Sepolia-Deploy, Source Verification, Browser-E2E und externer Audit fehlen. |
+| P Regression/Evidence | PASS lokal / BLOCKED Sepolia | lokale Suites und Slither-Retest nach CEI-Härtung grün beziehungsweise bewertet; Sepolia-Deploy, Source Verification, Browser-E2E und externer Audit fehlen. |
 
-Releaseurteil: `NOT READY`. Für die nächste Gate-Stufe fehlen mindestens der reproduzierbare Sepolia-Deploy samt Address Book und Source Verification, authentifizierte E2E-/Recovery-Proben, Slither beziehungsweise gleichwertige statische Analyse und ein unabhängiger Audit. Mainnet bleibt zusätzlich durch ADR-001, reale DEX-/Pool-Konfiguration und verifizierte Safe-Struktur blockiert.
+Releaseurteil: `NOT READY`. Für die nächste Gate-Stufe fehlen mindestens der reproduzierbare Sepolia-Deploy samt Address Book und Source Verification, authentifizierte E2E-/Recovery-Proben und ein unabhängiger Audit. Die verbleibenden Slither-Findings sind lokal bewertet, müssen aber im unabhängigen Review mitgeprüft werden. Mainnet bleibt zusätzlich durch ADR-001, reale DEX-/Pool-Konfiguration und verifizierte Safe-Struktur blockiert.
