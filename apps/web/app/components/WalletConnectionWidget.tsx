@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useDisconnect } from "wagmi";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { TARGET_CHAIN, TARGET_CHAIN_ID, TARGET_CHAIN_NAME, isWeb3ModalReady, wagmiConfig } from "../../lib/web3/config";
 import { getWeb3ModalInitState, openWeb3Modal } from "../../lib/web3/modal";
@@ -23,15 +23,18 @@ function WalletConnectionWidgetContent({
 }) {
   const tWallet = useTranslations("nav.header.wallet");
   const { address, chainId, isConnected } = useAccount();
+  const { connectors, connectAsync, isPending: isConnectPending } = useConnect();
   const { disconnect } = useDisconnect();
   const [isSwitchPending, setIsSwitchPending] = useState(false);
   const [isDisconnectPending, setIsDisconnectPending] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const hasChainMismatch = isConnected && chainId !== TARGET_CHAIN_ID;
+  const injectedConnector = connectors.find((connector) => connector.type === "injected");
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -76,10 +79,30 @@ function WalletConnectionWidgetContent({
       }
     }
     if (!isConnected) {
-      if (!modalReady) return;
-      await openWeb3Modal({ view: "Connect" }).finally(onModalStateChange);
+      setConnectionError(null);
+      if (modalReady) {
+        try {
+          await openWeb3Modal({ view: "Connect" });
+          return;
+        } catch {
+          onModalStateChange();
+        }
+      }
+      if (!injectedConnector) {
+        setConnectionError(tWallet("noInjectedWallet"));
+        setMenuOpen(true);
+        return;
+      }
+      try {
+        await connectAsync({ connector: injectedConnector });
+        setMenuOpen(false);
+      } catch {
+        setConnectionError(tWallet("connectFailed"));
+        setMenuOpen(true);
+      }
       return;
     }
+    setConnectionError(null);
     setMenuOpen((current) => !current);
   }
 
@@ -109,17 +132,19 @@ function WalletConnectionWidgetContent({
     window.setTimeout(() => setCopied(false), 1200);
   }
 
-  const buttonLabel = !isConnected
+  const buttonLabel = isConnectPending
+    ? tWallet("statusConnecting")
+    : !isConnected
     ? tWallet("connectWallet")
     : hasChainMismatch
       ? tWallet("switchToHyperEvm")
       : shortAddress(address);
 
-  const buttonTitle = hasChainMismatch ? tWallet("wrongNetwork", { chain: TARGET_CHAIN_NAME }) : undefined;
+  const buttonTitle = connectionError ?? (hasChainMismatch ? tWallet("wrongNetwork", { chain: TARGET_CHAIN_NAME }) : undefined);
   const explorerUrl = address && TARGET_CHAIN.blockExplorers?.default?.url
     ? `${TARGET_CHAIN.blockExplorers.default.url.replace(/\/$/, "")}/address/${address}`
     : null;
-  const isButtonDisabled = isSwitchPending || isDisconnectPending || (!isConnected && (!modalReady || !isWeb3ModalReady));
+  const isButtonDisabled = isConnectPending || isSwitchPending || isDisconnectPending || (!isConnected && !modalReady && !injectedConnector);
 
   return (
     <div ref={anchorRef} className="appHeaderMenuAnchor">
@@ -137,8 +162,8 @@ function WalletConnectionWidgetContent({
         aria-label={buttonLabel}
         onClick={() => void handlePrimaryAction()}
         disabled={isButtonDisabled}
-        aria-haspopup={isConnected && !hasChainMismatch ? "dialog" : undefined}
-        aria-expanded={isConnected && !hasChainMismatch ? menuOpen : undefined}
+        aria-haspopup={(isConnected && !hasChainMismatch) || connectionError ? "dialog" : undefined}
+        aria-expanded={(isConnected && !hasChainMismatch) || connectionError ? menuOpen : undefined}
       >
         <span className="appHeaderWalletIcon" aria-hidden="true"><AppIcon name="wallet" /></span>
         <span className="appHeaderWalletTriggerLabel">{buttonLabel}</span>
@@ -146,6 +171,21 @@ function WalletConnectionWidgetContent({
           <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
         ) : null}
       </button>
+      {!isConnected && connectionError && menuOpen ? (
+        <div
+          ref={panelRef}
+          className="appHeaderMenuPanel appHeaderWalletPanel"
+          role="dialog"
+          aria-label={tWallet("walletTitle")}
+          tabIndex={-1}
+        >
+          <div className="appHeaderMenuTitleRow">
+            <div className="appHeaderMenuTitle">{tWallet("walletTitle")}</div>
+            <span className="badge badgeWarn">{tWallet("statusDisconnected")}</span>
+          </div>
+          <div className="appHeaderWalletPanelMeta" role="alert">{connectionError}</div>
+        </div>
+      ) : null}
       {isConnected && menuOpen ? (
         <div
           ref={panelRef}
