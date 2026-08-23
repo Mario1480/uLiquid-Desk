@@ -41,6 +41,7 @@ const PLATFORM_ADMIN_CORE_PATHS = [
   "/admin/audit",
   "/admin/statistics",
   "/admin/providers",
+  "/admin/uliq",
   "/admin/system"
 ] as const;
 
@@ -49,6 +50,7 @@ const ADMIN_INTEGRATED_REDIRECTS: Array<{
   target: string | ((match: RegExpMatchArray) => string);
 }> = [
   { pattern: /^\/admin\/legacy$/, target: "/admin/system" },
+  { pattern: /^\/admin\/legacy\/uliq$/, target: "/admin/uliq" },
   { pattern: /^\/admin(?:\/legacy)?\/access-section$/, target: "/admin/system/access" },
   { pattern: /^\/admin(?:\/legacy)?\/api-keys$/, target: "/admin/system/integrations/api-keys" },
   { pattern: /^\/admin(?:\/legacy)?\/exchanges$/, target: "/admin/system/integrations/exchanges" },
