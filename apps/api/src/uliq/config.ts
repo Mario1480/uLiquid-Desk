@@ -19,6 +19,7 @@ export type UliqContractAddresses = {
   presale: `0x${string}`;
   vesting: `0x${string}`;
   locker: `0x${string}`;
+  paymentCustody: `0x${string}`;
   usdc: `0x${string}`;
 };
 
@@ -106,6 +107,7 @@ export function getUliqRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Uliq
       presale: requireAddress(env.ULIQ_PRESALE_ADDRESS, "presale_address"),
       vesting: requireAddress(env.ULIQ_VESTING_ADDRESS, "vesting_address"),
       locker: requireAddress(env.ULIQ_LOCKER_ADDRESS, "locker_address"),
+      paymentCustody: requireAddress(env.ULIQ_PAYMENT_CUSTODY_ADDRESS, "payment_custody_address"),
       usdc: requireAddress(env.ULIQ_USDC_ADDRESS, "usdc_address")
     }
   };

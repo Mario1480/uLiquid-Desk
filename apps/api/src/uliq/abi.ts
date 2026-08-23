@@ -56,3 +56,25 @@ export const uliqLockerAbi = parseAbi([
   "event TokensLocked(uint256 indexed lockId,address indexed owner,uint256 amount,uint64 durationSeconds,uint64 unlockAt)",
   "event TokensUnlocked(uint256 indexed lockId,address indexed owner,uint256 amount)"
 ]);
+
+export const uliqPaymentCustodyAbi = parseAbi([
+  "function owner() view returns (address)",
+  "function paymentToken() view returns (address)",
+  "function presale() view returns (address)",
+  "function treasury() view returns (address)",
+  "function pendingTreasury() view returns (address)",
+  "function balance() view returns (uint256)",
+  "function totalCollected() view returns (uint256)",
+  "function totalRefunded() view returns (uint256)",
+  "function totalReleased() view returns (uint256)",
+  "function payments(uint256 purchaseId) view returns (address buyer,uint256 amount,uint8 state)",
+  "function proposeTreasury(address proposedTreasury)",
+  "function acceptTreasury()",
+  "function cancelTreasuryTransfer()",
+  "event PaymentCollected(uint256 indexed purchaseId,address indexed buyer,uint256 amount)",
+  "event PaymentRefunded(uint256 indexed purchaseId,address indexed buyer,uint256 amount)",
+  "event PaymentReleased(uint256 indexed purchaseId,address indexed buyer,address indexed treasury,uint256 amount)",
+  "event TreasuryTransferStarted(address indexed previousTreasury,address indexed proposedTreasury)",
+  "event TreasuryTransferCancelled(address indexed activeTreasury,address indexed cancelledTreasury)",
+  "event TreasuryTransferred(address indexed previousTreasury,address indexed newTreasury)"
+]);

@@ -35,6 +35,8 @@
 - Pause blockiert Kauf, aber nicht zulässige Withdrawals, Finalisierungen und Reads.
 - getrennte Treasury-/Ecosystem-/Marketing-/Liquidity-Safes sowie Team-/Presale-Vesting-Budgets.
 - Reentrancy, malicious ERC20 assumptions, forced token transfers und Rescue-Grenzen.
+- purchase-gebundene tUSDC-States `COLLECTED -> REFUNDED | RELEASED`, kein doppeltes Settlement und atomarer Revert bei fehlgeschlagener Treasury-Auszahlung.
+- Treasury-Rotation mit Owner-Proposal, Acceptance ausschließlich durch die vorgeschlagene Wallet, Cancellation und deaktivierter Ownership Renunciation.
 
 ## Contract Invariants
 
@@ -43,6 +45,7 @@
 - ein Purchase kann höchstens einmal refunded oder finalized werden.
 - pending Purchases aktivieren niemals Utility oder ULIQ Transfer.
 - Summe der wirtschaftlich wirksamen USDC Purchases minus Refunds entspricht dem contractseitig erklärten Sale Accounting nach finalem Safeguarding-Modell.
+- Testnet-Custody: `totalCollected == escrowBalance + totalRefunded + totalReleased`; indexierte pending tUSDC entsprechen dem Escrow-Bestand und indexierte Treasury-Releases dem Onchain-Counter.
 - `released <= allocated` für jede Vesting-Position.
 - Locker Withdrawals überschreiten nie eingezahlte Locks.
 - Locking oder Claiming erzeugen keine ULIQ aus dem Nichts.

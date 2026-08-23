@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { erc20Abi, formatUnits, isAddress, parseUnits, type Address, type Hex } from "viem";
 import { useAccount, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
-import { waitForTransactionReceipt } from "wagmi/actions";
+import { getTransactionReceipt, waitForTransactionReceipt } from "wagmi/actions";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { wagmiConfig } from "../../lib/web3/config";
 import { AppIcon } from "../components/AppIcon";
@@ -103,6 +103,33 @@ type PreparedTx = {
   expectedSender: string | null;
 };
 
+const PENDING_FINALIZE_TX_STORAGE_KEY = "uliquid.uliq.pendingFinalizeTxHashes.v1";
+
+function finalizeTxKey(chainId: number, contractAddress: string, purchaseId: string): string {
+  return `${chainId}:${contractAddress.toLowerCase()}:${purchaseId}`;
+}
+
+function readPendingFinalizeTxHashes(): Record<string, Hex> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PENDING_FINALIZE_TX_STORAGE_KEY) ?? "{}") as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, Hex] => (
+      typeof entry[1] === "string" && /^0x[0-9a-fA-F]{64}$/.test(entry[1])
+    )).map(([key, hash]) => [key, hash.toLowerCase() as Hex]));
+  } catch {
+    return {};
+  }
+}
+
+function writePendingFinalizeTxHashes(value: Record<string, Hex>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PENDING_FINALIZE_TX_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // The contract-state preflight remains the safety fallback if browser storage is unavailable.
+  }
+}
+
 function formatRaw(value: string | null | undefined, decimals: number, maximumFractionDigits = 4): string {
   try {
     const formatted = formatUnits(BigInt(value ?? "0"), decimals);
@@ -153,6 +180,7 @@ function UliqHubContent() {
   const [lockAmount, setLockAmount] = useState("");
   const [lockDuration, setLockDuration] = useState(30);
   const [lastTxHash, setLastTxHash] = useState<Hex | null>(null);
+  const [pendingFinalizeTxHashes, setPendingFinalizeTxHashes] = useState<Record<string, Hex>>({});
   const publicEnabled = process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true";
   const paymentTokenAddress = overview?.paymentTokenAddress && isAddress(overview.paymentTokenAddress)
     ? overview.paymentTokenAddress as Address
@@ -169,6 +197,24 @@ function UliqHubContent() {
   const linkedWallet = me?.walletAddress?.toLowerCase() ?? "";
   const walletMatches = Boolean(address && linkedWallet && address.toLowerCase() === linkedWallet);
   const canSign = publicEnabled && isConnected && walletMatches;
+
+  const rememberPendingFinalize = useCallback((key: string, hash: Hex) => {
+    setPendingFinalizeTxHashes((current) => {
+      const next = { ...current, [key]: hash.toLowerCase() as Hex };
+      writePendingFinalizeTxHashes(next);
+      return next;
+    });
+  }, []);
+
+  const forgetPendingFinalize = useCallback((key: string) => {
+    setPendingFinalizeTxHashes((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      writePendingFinalizeTxHashes(next);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     if (!publicEnabled) {
@@ -194,6 +240,40 @@ function UliqHubContent() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    setPendingFinalizeTxHashes(readPendingFinalizeTxHashes());
+  }, []);
+
+  useEffect(() => {
+    if (!overview || !me) return;
+    for (const purchase of me.purchases) {
+      if (purchase.status !== "PENDING_WITHDRAWAL") {
+        forgetPendingFinalize(finalizeTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain));
+      }
+    }
+  }, [forgetPendingFinalize, me, overview]);
+
+  useEffect(() => {
+    if (!overview || !me) return;
+    let cancelled = false;
+    const pendingReceipts = me.purchases.flatMap((purchase) => {
+      if (purchase.status !== "PENDING_WITHDRAWAL") return [];
+      const key = finalizeTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
+      const hash = pendingFinalizeTxHashes[key];
+      return hash ? [{ key, hash }] : [];
+    });
+    for (const pending of pendingReceipts) {
+      void getTransactionReceipt(wagmiConfig, { chainId: overview.chainId, hash: pending.hash })
+        .then((receipt) => {
+          if (!cancelled && receipt.status === "reverted") forgetPendingFinalize(pending.key);
+        })
+        .catch(() => {
+          // A missing receipt remains fail-closed until the transaction or indexer resolves it.
+        });
+    }
+    return () => { cancelled = true; };
+  }, [forgetPendingFinalize, me, overview, pendingFinalizeTxHashes]);
+
   const saleProgress = useMemo(() => {
     if (!overview) return 0;
     const cap = BigInt(overview.hardCapUsdcRaw);
@@ -218,7 +298,12 @@ function UliqHubContent() {
     return raw;
   }
 
-  async function executeTransaction(tx: PreparedTx, stage: string): Promise<Hex> {
+  async function executeTransaction(
+    tx: PreparedTx,
+    stage: string,
+    onSubmitted?: (hash: Hex) => void,
+    onReverted?: () => void
+  ): Promise<Hex> {
     if (!canSign || !address) throw new Error(t("messages.walletRequired"));
     if (chainId !== tx.chainId) await switchChainAsync({ chainId: tx.chainId });
     setNotice(stage);
@@ -230,8 +315,13 @@ function UliqHubContent() {
       value: BigInt(tx.value || "0")
     });
     setLastTxHash(hash);
+    onSubmitted?.(hash);
     setNotice(t("messages.txSubmitted"));
-    await waitForTransactionReceipt(wagmiConfig, { chainId: tx.chainId, hash, confirmations: 1 });
+    const receipt = await waitForTransactionReceipt(wagmiConfig, { chainId: tx.chainId, hash, confirmations: 1 });
+    if (receipt.status !== "success") {
+      onReverted?.();
+      throw new Error(t("messages.txReverted"));
+    }
     return hash;
   }
 
@@ -277,9 +367,36 @@ function UliqHubContent() {
     setPurchaseAmount("");
   }
 
-  async function executePrepared(path: string, body: Record<string, unknown>, label: string) {
+  async function executePrepared(
+    path: string,
+    body: Record<string, unknown>,
+    label: string,
+    onSubmitted?: (hash: Hex) => void,
+    onReverted?: () => void
+  ): Promise<void> {
     const prepared = await apiPost<PreparedTx>(path, body);
-    await executeTransaction(prepared, label);
+    await executeTransaction(prepared, label, onSubmitted, onReverted);
+  }
+
+  async function finalizePurchase(purchase: Purchase): Promise<void> {
+    if (!overview) throw new Error(t("messages.actionFailed"));
+    const key = finalizeTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
+    let submitted = false;
+    try {
+      await executePrepared(
+        "/uliq/presale/finalize/prepare",
+        { purchaseId: purchase.purchaseIdOnchain },
+        t("purchases.finalize"),
+        (hash) => {
+          submitted = true;
+          rememberPendingFinalize(key, hash);
+        },
+        () => forgetPendingFinalize(key)
+      );
+    } catch (finalizeError) {
+      if (!submitted) forgetPendingFinalize(key);
+      throw finalizeError;
+    }
   }
 
   async function lockTokens() {
@@ -418,13 +535,15 @@ function UliqHubContent() {
         <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("purchases.title")}</h2><p className="uiSectionDescription">{t("connected")}: <span className="uliqMono">{linkedWallet || "–"}</span></p></div></div>
         {me?.purchases?.length ? <div className="uliqPositionList">{me.purchases.map((purchaseRow) => {
           const deadlinePassed = new Date(purchaseRow.withdrawalDeadline).getTime() < Date.now();
+          const finalizeKey = overview ? finalizeTxKey(overview.chainId, overview.contractAddress, purchaseRow.purchaseIdOnchain) : null;
+          const finalizeSyncPending = Boolean(finalizeKey && pendingFinalizeTxHashes[finalizeKey]);
           return <article key={purchaseRow.id} className="uliqPositionCard">
-            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className={`uiStatusBadge uiStatusBadge-${statusTone(purchaseRow.status)}`}>{purchaseRow.status.replaceAll("_", " ")}</span></div>
+            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className={`uiStatusBadge uiStatusBadge-${statusTone(finalizeSyncPending ? "completed" : purchaseRow.status)}`}>{finalizeSyncPending ? t("purchases.finalizeSyncingStatus") : purchaseRow.status.replaceAll("_", " ")}</span></div>
             <dl><div><dt>{t("purchases.allocation")}</dt><dd>{formatRaw(purchaseRow.uliqAllocationRaw, 18)} ULIQ</dd></div><div><dt>{t("purchases.deadline")}</dt><dd>{formatDate(purchaseRow.withdrawalDeadline, locale)}</dd></div></dl>
             {purchaseRow.status === "PENDING_WITHDRAWAL" ? <div className="uliqActions">
-              <div className="uiNotice uiNotice-warning">{t("purchases.pendingInactive")}</div>
-              <button type="button" className="btn" disabled={!canSign || deadlinePassed || busy !== null} onClick={() => void runAction(`withdraw-${purchaseRow.id}`, () => executePrepared("/uliq/presale/withdraw/prepare", { purchaseId: purchaseRow.purchaseIdOnchain }, t("purchases.withdraw")))}><AppIcon name="restore" /> {t("purchases.withdraw")}</button>
-              <button type="button" className="btn btnPrimary" disabled={!canSign || !deadlinePassed || busy !== null} onClick={() => void runAction(`finalize-${purchaseRow.id}`, () => executePrepared("/uliq/presale/finalize/prepare", { purchaseId: purchaseRow.purchaseIdOnchain }, t("purchases.finalize")))}><AppIcon name="check" /> {t("purchases.finalize")}</button>
+              <div className={`uiNotice ${finalizeSyncPending ? "uiNotice-success" : "uiNotice-warning"}`}>{t(finalizeSyncPending ? "purchases.finalizeSyncingHint" : "purchases.pendingInactive")}</div>
+              <button type="button" className="btn" disabled={!canSign || deadlinePassed || busy !== null || finalizeSyncPending} onClick={() => void runAction(`withdraw-${purchaseRow.id}`, () => executePrepared("/uliq/presale/withdraw/prepare", { purchaseId: purchaseRow.purchaseIdOnchain }, t("purchases.withdraw")))}><AppIcon name="restore" /> {t("purchases.withdraw")}</button>
+              <button type="button" className="btn btnPrimary" disabled={!canSign || !deadlinePassed || busy !== null || finalizeSyncPending} onClick={() => void runAction(`finalize-${purchaseRow.id}`, () => finalizePurchase(purchaseRow))}><AppIcon name="check" /> {t(finalizeSyncPending ? "purchases.finalizeSyncing" : "purchases.finalize")}</button>
             </div> : null}
           </article>;
         })}</div> : <div className="uiEmptyState">{t("purchases.empty")}</div>}

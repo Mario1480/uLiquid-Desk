@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acquireUliqIndexerLease, rollbackUliqAfterReorg, shouldConsumeHoldingTransfer } from "./indexer.service.js";
+import { encodeAbiParameters, encodeEventTopics } from "viem";
+import { uliqPaymentCustodyAbi } from "./abi.js";
+import { acquireUliqIndexerLease, decodeUliqLog, projectUliqEvent, rollbackUliqAfterReorg, shouldConsumeHoldingTransfer } from "./indexer.service.js";
 import type { UliqRuntimeConfig } from "./config.js";
 
 const config = {
@@ -97,6 +99,7 @@ test("reorg invalidation releases quotes and reverses consumed benefits with an 
         presale: "0x2222222222222222222222222222222222222222",
         vesting: "0x3333333333333333333333333333333333333333",
         locker: "0x4444444444444444444444444444444444444444",
+        paymentCustody: "0x6666666666666666666666666666666666666666",
         usdc: "0x5555555555555555555555555555555555555555"
       }
     },
@@ -119,6 +122,7 @@ test("holding provenance survives locker transitions but consumes ordinary and u
       presale: "0x2222222222222222222222222222222222222222",
       vesting: "0x3333333333333333333333333333333333333333",
       locker: "0x4444444444444444444444444444444444444444",
+      paymentCustody: "0x8888888888888888888888888888888888888888",
       usdc: "0x5555555555555555555555555555555555555555"
     }
   };
@@ -127,4 +131,50 @@ test("holding provenance survives locker transitions but consumes ordinary and u
   assert.equal(shouldConsumeHoldingTransfer({ from: wallet, to: "0x7777777777777777777777777777777777777777", config: completeConfig }), true);
   assert.equal(shouldConsumeHoldingTransfer({ from: wallet, to: completeConfig.contracts.presale, config: completeConfig }), true);
   assert.equal(shouldConsumeHoldingTransfer({ from: completeConfig.contracts.vesting, to: wallet, config: completeConfig }), false);
+});
+
+test("indexer attributes a finalized purchase's released tUSDC to the active treasury", async () => {
+  const completeConfig = {
+    ...config,
+    contracts: {
+      token: "0x1111111111111111111111111111111111111111",
+      presale: "0x2222222222222222222222222222222222222222",
+      vesting: "0x3333333333333333333333333333333333333333",
+      locker: "0x4444444444444444444444444444444444444444",
+      usdc: "0x5555555555555555555555555555555555555555",
+      paymentCustody: "0x6666666666666666666666666666666666666666"
+    }
+  } as UliqRuntimeConfig;
+  const transactionHash = `0x${"ab".repeat(32)}` as `0x${string}`;
+  const blockHash = `0x${"cd".repeat(32)}` as `0x${string}`;
+  const buyer = "0x7777777777777777777777777777777777777777" as const;
+  const treasury = "0x8888888888888888888888888888888888888888" as const;
+  const log = {
+    address: completeConfig.contracts.paymentCustody,
+    topics: encodeEventTopics({
+      abi: uliqPaymentCustodyAbi,
+      eventName: "PaymentReleased",
+      args: { purchaseId: 1n, buyer, treasury }
+    }),
+    data: encodeAbiParameters([{ type: "uint256" }], [10_000_000n]),
+    blockNumber: 123n,
+    blockHash,
+    transactionHash,
+    logIndex: 4
+  } as any;
+  const decoded = decodeUliqLog(log, completeConfig);
+  assert.equal(decoded?.eventName, "PaymentReleased");
+  let update: any = null;
+  await projectUliqEvent({
+    tx: { uliqPresalePurchase: { updateMany: async (value: any) => { update = value; } } },
+    config: completeConfig,
+    log,
+    decoded: decoded!,
+    eventKey: "event-1",
+    blockTimestamp: new Date("2026-08-23T12:00:00.000Z")
+  });
+  assert.equal(update.where.purchaseIdOnchain, "1");
+  assert.equal(update.data.treasuryRecipient, treasury.toLowerCase());
+  assert.equal(update.data.treasuryReleasedUsdcRaw, "10000000");
+  assert.equal(update.data.treasuryReleaseTxHash, transactionHash);
 });

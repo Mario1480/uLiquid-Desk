@@ -86,6 +86,7 @@ Vor Kauf:
 - Finalization Preview: 25 % Wallet / 75 % Vesting; beide tatsächlichen Pending-Bestände bleiben 0.
 - Withdrawal Period und konkrete Deadline-Semantik.
 - klare Aussage: während Withdrawal 0 eligible ULIQ und keine Benefits.
+- klare Testnet-Aussage: tUSDC bleibt bis Withdrawal oder Finalisierung im Escrow; Withdrawal erstattet an den Buyer, Finalisierung zahlt an die aktive Testnet-Treasury aus.
 - Sale Terms, Legal Acknowledgement und Restricted-Jurisdiction-Gates nach ADR-001.
 - Approve/Permit und Buy Flow.
 
@@ -101,6 +102,7 @@ Während Withdrawal:
 - Benefits: inactive.
 - verfügbare Withdrawal-/Refund-Aktion nach finalen Sale Terms.
 - Tx-, Confirmation-, Indexer- und Refund-Status.
+- Treasury-Release darf erst nach erfolgreichem Finalize-Receipt plus canonical Indexer-Abgleich als abgeschlossen erscheinen.
 - ein bereits erfolgreiches Receipt erscheint sofort als vorläufig bestätigter Purchase, auch wenn der `finalized`-Indexer noch nachläuft.
 
 Nach Finalisierung:

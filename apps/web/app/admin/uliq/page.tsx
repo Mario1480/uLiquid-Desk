@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits } from "viem";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPost } from "../../../lib/api";
+import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { AppIcon } from "../../components/AppIcon";
 import ReauthDialog from "../../components/ReauthDialog";
 import AdminDetailSection from "../_components/AdminDetailSection";
@@ -28,6 +28,21 @@ type AdminUliqPayload = {
       secondary: string;
       finalizedHeadAgreement: boolean;
     };
+  };
+  treasury: {
+    desiredTreasury: string | null;
+    desiredUpdatedAt: string | null;
+    syncStatus: string;
+    integrityStatus: string;
+    custodyAddress: string;
+    owner: string;
+    activeTreasury: string;
+    pendingTreasury: string | null;
+    escrowBalanceUsdcRaw: string;
+    totalCollectedUsdcRaw: string;
+    totalRefundedUsdcRaw: string;
+    totalReleasedUsdcRaw: string;
+    asOfBlock: string;
   };
   indexer: null | {
     lastProcessedBlock: string | null;
@@ -75,8 +90,10 @@ type AdminUliqPayload = {
 
 type SafePreparation = {
   safeTransaction: { chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string };
-  preflight: { owner: string; state: string; pendingPurchaseCount: string; asOfBlock: string; blockHash: string };
+  preflight: Record<string, unknown>;
 };
+
+type ReauthAction = "dex" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return String(error.payload?.error ?? error.message);
@@ -105,14 +122,19 @@ export default function UliqAdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dexLaunchTime, setDexLaunchTime] = useState(initialDexTime);
+  const [treasuryInput, setTreasuryInput] = useState("");
   const [reauthOpen, setReauthOpen] = useState(false);
+  const [reauthAction, setReauthAction] = useState<ReauthAction>("dex");
   const [preparation, setPreparation] = useState<SafePreparation | null>(null);
+  const [preparationLabel, setPreparationLabel] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setData(await apiGet<AdminUliqPayload>("/admin/uliq"));
+      const payload = await apiGet<AdminUliqPayload>("/admin/uliq");
+      setData(payload);
+      setTreasuryInput(payload.treasury.desiredTreasury ?? payload.treasury.activeTreasury ?? "");
     } catch (loadError) {
       setError(errorMessage(loadError));
     } finally {
@@ -133,7 +155,44 @@ export default function UliqAdminPage() {
       dexLaunchTimestamp: Math.floor(parsed.getTime() / 1_000).toString()
     });
     setPreparation(response);
+    setPreparationLabel("setDexLaunchTimestamp");
     setNotice(t("prepared"));
+  }
+
+  async function saveTreasury() {
+    const treasury = await apiPut<AdminUliqPayload["treasury"]>("/admin/uliq/treasury", {
+      desiredAddress: treasuryInput
+    });
+    setData((current) => current ? { ...current, treasury } : current);
+    setTreasuryInput(treasury.desiredTreasury ?? treasuryInput);
+    setNotice(t("treasurySaved"));
+  }
+
+  async function prepareTreasuryAction(action: Exclude<ReauthAction, "dex" | "treasury-save">) {
+    const route = {
+      "treasury-propose": "/admin/uliq/treasury/propose/prepare",
+      "treasury-accept": "/admin/uliq/treasury/accept/prepare",
+      "treasury-cancel": "/admin/uliq/treasury/cancel/prepare"
+    }[action];
+    const response = await apiPost<SafePreparation>(route, {});
+    setPreparation(response);
+    setPreparationLabel({
+      "treasury-propose": "proposeTreasury",
+      "treasury-accept": "acceptTreasury",
+      "treasury-cancel": "cancelTreasuryTransfer"
+    }[action]);
+    setNotice(t("prepared"));
+  }
+
+  function requestReauth(action: ReauthAction) {
+    setReauthAction(action);
+    setReauthOpen(true);
+  }
+
+  async function runReauthenticatedAction() {
+    if (reauthAction === "dex") return prepareSafeTransaction();
+    if (reauthAction === "treasury-save") return saveTreasury();
+    return prepareTreasuryAction(reauthAction);
   }
 
   async function copyPayload() {
@@ -226,6 +285,47 @@ export default function UliqAdminPage() {
             </div>
           </AdminDetailSection>
 
+          <AdminDetailSection title={t("treasuryTitle")} description={t("treasuryDescription")}>
+            <AdminNotice tone="warning">{t("treasuryTwoStep")}</AdminNotice>
+            <div className="adminDetailGrid">
+              <div className="adminKeyValueList">
+                <div className="adminKeyValueRow"><span>{t("treasurySync")}</span><AdminStatusBadge value={data.treasury.syncStatus} /></div>
+                <div className="adminKeyValueRow"><span>{t("treasuryIntegrity")}</span><AdminStatusBadge value={data.treasury.integrityStatus} /></div>
+                <div className="adminKeyValueRow"><span>{t("treasuryActive")}</span><strong className="uliqMono">{data.treasury.activeTreasury}</strong></div>
+                <div className="adminKeyValueRow"><span>{t("treasuryPending")}</span><strong className="uliqMono">{data.treasury.pendingTreasury ?? "—"}</strong></div>
+                <div className="adminKeyValueRow"><span>{t("treasuryOwner")}</span><strong className="uliqMono">{data.treasury.owner}</strong></div>
+              </div>
+              <div className="adminKeyValueList">
+                <div className="adminKeyValueRow"><span>{t("escrowBalance")}</span><strong>{formatToken(data.treasury.escrowBalanceUsdcRaw, 6)} tUSDC</strong></div>
+                <div className="adminKeyValueRow"><span>{t("treasuryCollected")}</span><strong>{formatToken(data.treasury.totalCollectedUsdcRaw, 6)} tUSDC</strong></div>
+                <div className="adminKeyValueRow"><span>{t("treasuryRefunded")}</span><strong>{formatToken(data.treasury.totalRefundedUsdcRaw, 6)} tUSDC</strong></div>
+                <div className="adminKeyValueRow"><span>{t("treasuryReleased")}</span><strong>{formatToken(data.treasury.totalReleasedUsdcRaw, 6)} tUSDC</strong></div>
+                <div className="adminKeyValueRow"><span>{t("block")}</span><strong>#{data.treasury.asOfBlock}</strong></div>
+              </div>
+            </div>
+            <div className="adminFormGridCompact">
+              <label className="adminFormField">
+                <span className="adminFormFieldLabel">{t("treasuryDesired")}</span>
+                <input className="input uliqMono" value={treasuryInput} onChange={(event) => setTreasuryInput(event.target.value.trim())} placeholder="0x…" />
+                <span className="adminFormFieldHint">{t("treasuryDesiredHint")}</span>
+              </label>
+            </div>
+            <div className="adminToolbarRow">
+              <button type="button" className="btn btnPrimary" onClick={() => requestReauth("treasury-save")} disabled={!treasuryInput}>
+                <AppIcon name="save" /> {t("treasurySave")}
+              </button>
+              <button type="button" className="btn" onClick={() => requestReauth("treasury-propose")} disabled={data.treasury.syncStatus !== "proposal_required"}>
+                <AppIcon name="send" /> {t("treasuryPropose")}
+              </button>
+              <button type="button" className="btn" onClick={() => requestReauth("treasury-accept")} disabled={data.treasury.syncStatus !== "acceptance_required"}>
+                <AppIcon name="check" /> {t("treasuryAccept")}
+              </button>
+              <button type="button" className="btn" onClick={() => requestReauth("treasury-cancel")} disabled={!data.treasury.pendingTreasury}>
+                <AppIcon name="cancel" /> {t("treasuryCancel")}
+              </button>
+            </div>
+          </AdminDetailSection>
+
           <AdminDetailSection title={t("safeTitle")} description={t("safeDescription")}>
             <div className="adminFormGridCompact">
               <label className="adminFormField">
@@ -234,10 +334,12 @@ export default function UliqAdminPage() {
                 <span className="adminFormFieldHint">{t("fourEyes")}</span>
               </label>
             </div>
-            <button type="button" className="btn btnPrimary" onClick={() => setReauthOpen(true)} disabled={!dexLaunchTime}>
+            <button type="button" className="btn btnPrimary" onClick={() => requestReauth("dex")} disabled={!dexLaunchTime}>
               <AppIcon name="shield" /> {t("prepare")}
             </button>
-            <h3 className="adminSubsectionTitle">{t("payload")}</h3>
+          </AdminDetailSection>
+
+          <AdminDetailSection title={t("payload")} description={preparationLabel ?? undefined}>
             {preparation ? (
               <>
                 <pre className="card uliqAdminPayload uliqMono">{JSON.stringify(preparation, null, 2)}</pre>
@@ -260,7 +362,7 @@ export default function UliqAdminPage() {
       <ReauthDialog
         open={reauthOpen}
         onClose={() => setReauthOpen(false)}
-        onVerified={prepareSafeTransaction}
+        onVerified={runReauthenticatedAction}
       />
     </div>
   );

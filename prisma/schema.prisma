@@ -2197,6 +2197,10 @@ model UliqPresalePurchase {
   uliqAllocationRaw      Decimal                   @map("uliq_allocation_raw") @db.Decimal(78, 0)
   finalizationWalletRaw  Decimal                   @map("finalization_wallet_raw") @db.Decimal(78, 0)
   finalizationVestingRaw Decimal                   @map("finalization_vesting_raw") @db.Decimal(78, 0)
+  treasuryRecipient      String?                   @map("treasury_recipient")
+  treasuryReleasedUsdcRaw Decimal                  @default(0) @map("treasury_released_usdc_raw") @db.Decimal(78, 0)
+  treasuryReleaseTxHash  String?                   @map("treasury_release_tx_hash")
+  treasuryReleasedAt     DateTime?                 @map("treasury_released_at")
   status                 UliqPresalePurchaseStatus @default(PENDING_WITHDRAWAL)
   withdrawalDeadline     DateTime                  @map("withdrawal_deadline")
   purchaseBlockNumber    BigInt                    @map("purchase_block_number")
@@ -2215,6 +2219,7 @@ model UliqPresalePurchase {
   @@unique([chainId, transactionHash, logIndex], map: "uliq_presale_purchases_chain_tx_log_key")
   @@index([walletAddress, status, withdrawalDeadline], map: "uliq_presale_purchases_wallet_status_deadline_idx")
   @@index([userId, createdAt(sort: Desc)], map: "uliq_presale_purchases_user_created_idx")
+  @@index([treasuryRecipient, treasuryReleasedAt], map: "uliq_presale_purchases_treasury_release_idx")
   @@map("uliq_presale_purchases")
 }
 

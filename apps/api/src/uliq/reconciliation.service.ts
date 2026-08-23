@@ -1,4 +1,4 @@
-import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
+import { uliqLockerAbi, uliqPaymentCustodyAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
 import { parseDatabaseUint256Decimal } from "./uint256.js";
@@ -119,6 +119,48 @@ export class UliqReconciliationService {
       ]);
       if (BigInt(pendingOnchain.value) !== BigInt(pendingProjected)) {
         mismatches.push({ scope: "presale", field: "pendingPurchaseCount", onchain: BigInt(pendingOnchain.value).toString(), projected: String(pendingProjected) });
+      }
+
+      const [custodyOnchain, pendingUsdcProjected, releasedUsdcProjected] = await Promise.all([
+        withUliqRpcFailover(this.rpc, async (client) => {
+          const [balance, totalCollected, totalRefunded, totalReleased] = await Promise.all([
+            client.readContract({ address: this.config.contracts.paymentCustody, abi: uliqPaymentCustodyAbi, functionName: "balance", blockNumber: head.number }),
+            client.readContract({ address: this.config.contracts.paymentCustody, abi: uliqPaymentCustodyAbi, functionName: "totalCollected", blockNumber: head.number }),
+            client.readContract({ address: this.config.contracts.paymentCustody, abi: uliqPaymentCustodyAbi, functionName: "totalRefunded", blockNumber: head.number }),
+            client.readContract({ address: this.config.contracts.paymentCustody, abi: uliqPaymentCustodyAbi, functionName: "totalReleased", blockNumber: head.number })
+          ]);
+          return {
+            balance: BigInt(balance),
+            totalCollected: BigInt(totalCollected),
+            totalRefunded: BigInt(totalRefunded),
+            totalReleased: BigInt(totalReleased)
+          };
+        }),
+        this.db.uliqPresalePurchase.aggregate({
+          where: { chainId: this.config.chainId, presaleContractAddress: this.config.contracts.presale.toLowerCase(), status: "PENDING_WITHDRAWAL" },
+          _sum: { usdcAmountRaw: true }
+        }),
+        this.db.uliqPresalePurchase.aggregate({
+          where: { chainId: this.config.chainId, presaleContractAddress: this.config.contracts.presale.toLowerCase(), status: "FINALIZED" },
+          _sum: { treasuryReleasedUsdcRaw: true }
+        })
+      ]);
+      const custody = custodyOnchain.value;
+      const projectedPendingUsdc = parseDatabaseUint256Decimal(pendingUsdcProjected?._sum?.usdcAmountRaw ?? "0", "pending_usdc_raw");
+      const projectedReleasedUsdc = parseDatabaseUint256Decimal(releasedUsdcProjected?._sum?.treasuryReleasedUsdcRaw ?? "0", "released_usdc_raw");
+      if (custody.totalCollected !== custody.balance + custody.totalRefunded + custody.totalReleased) {
+        mismatches.push({
+          scope: "payment_custody",
+          field: "accountingIdentity",
+          onchain: custody.totalCollected.toString(),
+          projected: (custody.balance + custody.totalRefunded + custody.totalReleased).toString()
+        });
+      }
+      if (custody.balance !== projectedPendingUsdc) {
+        mismatches.push({ scope: "payment_custody", field: "pendingEscrowUsdcRaw", onchain: custody.balance.toString(), projected: projectedPendingUsdc.toString() });
+      }
+      if (custody.totalReleased !== projectedReleasedUsdc) {
+        mismatches.push({ scope: "payment_custody", field: "treasuryReleasedUsdcRaw", onchain: custody.totalReleased.toString(), projected: projectedReleasedUsdc.toString() });
       }
 
       const status = mismatches.length === 0 ? "OK" : "MISMATCH";

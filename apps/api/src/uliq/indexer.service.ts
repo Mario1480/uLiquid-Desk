@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { decodeEventLog, zeroAddress, type Log, type PublicClient } from "viem";
-import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
+import { uliqLockerAbi, uliqPaymentCustodyAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, type UliqRpcPair } from "./rpc.js";
 import { parseDatabaseUint256Decimal } from "./uint256.js";
@@ -72,7 +72,9 @@ export function decodeUliqLog(log: IndexerLog, config: UliqRuntimeConfig): Decod
         ? uliqVestingAbi
         : address === config.contracts.locker.toLowerCase()
           ? uliqLockerAbi
-          : null;
+          : address === config.contracts.paymentCustody.toLowerCase()
+            ? uliqPaymentCustodyAbi
+            : null;
   if (!abi) return null;
   try {
     const decoded = decodeEventLog({ abi, data: log.data, topics: log.topics, strict: true });
@@ -155,7 +157,7 @@ async function createHoldingLot(params: {
   });
 }
 
-async function projectUliqEvent(params: {
+export async function projectUliqEvent(params: {
   tx: any;
   config: UliqRuntimeConfig;
   log: IndexerLog;
@@ -166,6 +168,24 @@ async function projectUliqEvent(params: {
   const { tx, config, log, decoded, eventKey, blockTimestamp } = params;
   const args = decoded.args;
   const contractAddress = log.address.toLowerCase();
+
+  if (contractAddress === config.contracts.paymentCustody.toLowerCase()) {
+    if (decoded.eventName === "PaymentReleased") {
+      await tx.uliqPresalePurchase.updateMany({
+        where: {
+          chainId: config.chainId,
+          presaleContractAddress: config.contracts.presale.toLowerCase(),
+          purchaseIdOnchain: String(args.purchaseId)
+        },
+        data: {
+          treasuryRecipient: normalizedAddress(args.treasury),
+          treasuryReleasedUsdcRaw: String(args.amount),
+          treasuryReleaseTxHash: log.transactionHash.toLowerCase(),
+          treasuryReleasedAt: blockTimestamp
+        }
+      });
+    }
+  }
 
   if (contractAddress === config.contracts.presale.toLowerCase()) {
     if (decoded.eventName === "PurchaseCreated") {

@@ -18,14 +18,18 @@ contract DeployULIQTestnet is ScriptBase {
     uint256 public constant RATE_NUMERATOR = 1e15;
     uint256 public constant RATE_DENOMINATOR = 1;
     uint64 public constant TESTNET_VESTING_DURATION_SECONDS = 270 days;
+    uint64 public constant MIN_TESTNET_WITHDRAWAL_PERIOD_SECONDS = 1 hours;
 
     error UnsupportedChain(uint256 chainId);
     error InvalidAdmin();
+    error InvalidTreasury();
+    error WithdrawalPeriodTooShort(uint64 configured, uint64 minimum);
 
     event ULIQTestnetDeploymentCompleted(
         uint256 indexed chainId,
         address indexed admin,
-        address indexed usdc,
+        address indexed treasury,
+        address usdc,
         address token,
         address presale,
         address vesting,
@@ -34,7 +38,14 @@ contract DeployULIQTestnet is ScriptBase {
         uint64 withdrawalPeriodSeconds
     );
 
-    function run(address admin, address testUsdc, uint64 saleStart, uint64 saleEnd, uint64 withdrawalPeriodSeconds)
+    function run(
+        address admin,
+        address treasury,
+        address testUsdc,
+        uint64 saleStart,
+        uint64 saleEnd,
+        uint64 withdrawalPeriodSeconds
+    )
         external
         returns (
             address tokenAddress,
@@ -49,6 +60,10 @@ contract DeployULIQTestnet is ScriptBase {
             revert UnsupportedChain(block.chainid);
         }
         if (admin == address(0)) revert InvalidAdmin();
+        if (treasury == address(0)) revert InvalidTreasury();
+        if (withdrawalPeriodSeconds < MIN_TESTNET_WITHDRAWAL_PERIOD_SECONDS) {
+            revert WithdrawalPeriodTooShort(withdrawalPeriodSeconds, MIN_TESTNET_WITHDRAWAL_PERIOD_SECONDS);
+        }
 
         vm.startBroadcast();
 
@@ -56,9 +71,8 @@ contract DeployULIQTestnet is ScriptBase {
             testUsdc = address(new ULIQMockUSDC());
         }
         ULIQToken token = new ULIQToken(admin);
-        ULIQPresaleVesting vesting =
-            new ULIQPresaleVesting(address(token), admin, TESTNET_VESTING_DURATION_SECONDS);
-        ULIQTestnetEscrow custody = new ULIQTestnetEscrow(testUsdc, admin);
+        ULIQPresaleVesting vesting = new ULIQPresaleVesting(address(token), admin, TESTNET_VESTING_DURATION_SECONDS);
+        ULIQTestnetEscrow custody = new ULIQTestnetEscrow(testUsdc, admin, treasury);
         ULIQPresale presale = new ULIQPresale(
             address(token),
             testUsdc,
@@ -87,6 +101,7 @@ contract DeployULIQTestnet is ScriptBase {
         emit ULIQTestnetDeploymentCompleted(
             block.chainid,
             admin,
+            treasury,
             testUsdc,
             tokenAddress,
             presaleAddress,

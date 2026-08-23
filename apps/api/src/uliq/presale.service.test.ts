@@ -28,6 +28,7 @@ const config: UliqRuntimeConfig = {
     presale: ADDRESS,
     vesting: ADDRESS,
     locker: ADDRESS,
+    paymentCustody: PAYMENT_CUSTODY,
     usdc: ADDRESS
   }
 };

@@ -110,6 +110,7 @@ export class UliqPresaleService {
         uliqAllocationRaw: databaseUint256Decimal(row.uliqAllocationRaw, "uliq_allocation_raw"),
         finalizationWalletRaw: databaseUint256Decimal(row.finalizationWalletRaw, "finalization_wallet_raw"),
         finalizationVestingRaw: databaseUint256Decimal(row.finalizationVestingRaw, "finalization_vesting_raw"),
+        treasuryReleasedUsdcRaw: databaseUint256Decimal(row.treasuryReleasedUsdcRaw, "treasury_released_usdc_raw"),
         purchaseBlockNumber: BigInt(row.purchaseBlockNumber).toString()
       }))
     };

@@ -19,6 +19,7 @@ Das Dashboard zeigt read-only und zeitlich eingeordnet:
 - Indexer Cursor, Lag, Lease Owner, Backfill und Reorgs.
 - Reconciliation Mismatches und failed event processing.
 - Alert Delivery und letzte Runbook-Probe.
+- gewünschte, aktive und vorgeschlagene Testnet-Treasury, Escrow-Bestand sowie kumuliert eingezogene, erstattete und ausgezahlte tUSDC.
 
 Dashboard-Werte sind Beobachtungen und keine automatische Berechtigung zu Onchain-Aktionen.
 
@@ -48,6 +49,16 @@ Es darf höchstens:
 - canonical Execution Receipt indexieren.
 
 Das Backend darf eine vorbereitete Safe Transaction nicht als ausgeführt behandeln.
+
+### Testnet-Treasury-Rotation
+
+- gewünschte Treasury-Adresse wird als versionierter Global Setting gespeichert und gegen den finalisierten Onchain-Zustand verglichen.
+- Speichern sowie Prepare-Aktionen erfordern Superadmin und aktuelle Reauthentication und erzeugen Audit Events.
+- `proposeTreasury` muss vom Contract-Owner/Safe ausgeführt werden.
+- `acceptTreasury` muss von der exakt vorgeschlagenen neuen Treasury/Safe ausgeführt werden.
+- `cancelTreasuryTransfer` muss vom Contract-Owner/Safe ausgeführt werden.
+- Backend und Web-App signieren oder senden keine dieser Transaktionen.
+- Mainnet verbietet weiterhin eine persönliche EOA als Treasury und bleibt bis ADR-001 blockiert.
 
 ## Kritische Aktionen
 

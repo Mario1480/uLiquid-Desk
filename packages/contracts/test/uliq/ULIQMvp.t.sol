@@ -7,6 +7,7 @@ import {ULIQPresaleVesting} from "../../src/uliq/ULIQPresaleVesting.sol";
 import {ULIQLocker} from "../../src/uliq/ULIQLocker.sol";
 import {ULIQTestnetEscrow} from "../../src/uliq/testnet/ULIQTestnetEscrow.sol";
 import {ULIQMockUSDC} from "../../src/uliq/testnet/ULIQMockUSDC.sol";
+import {DeployULIQTestnet} from "../../script/uliq/DeployULIQTestnet.s.sol";
 
 interface VmUliq {
     function addr(uint256 privateKey) external returns (address);
@@ -14,6 +15,7 @@ interface VmUliq {
     function startPrank(address msgSender) external;
     function stopPrank() external;
     function warp(uint256 timestamp) external;
+    function expectRevert() external;
     function expectRevert(bytes calldata revertData) external;
     function expectRevert(bytes4 revertData) external;
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
@@ -23,6 +25,8 @@ contract ULIQMvpTest {
     VmUliq internal constant VM = VmUliq(address(uint160(uint256(keccak256("hevm cheat code")))));
     uint256 internal constant BUYER_KEY = 0xA11CE;
     address internal constant RELAYER = address(0xB0B);
+    address internal constant TREASURY = address(0x7EAA5);
+    address internal constant NEXT_TREASURY = address(0x7EAA6);
     uint256 internal constant HARD_CAP_USDC_RAW = 120_000 * 1e6;
     uint256 internal constant PRESALE_ALLOCATION_RAW = 120_000_000 ether;
     uint256 internal constant RATE = 1e15;
@@ -43,7 +47,7 @@ contract ULIQMvpTest {
         token = new ULIQToken(address(this));
         usdc = new ULIQMockUSDC();
         vesting = new ULIQPresaleVesting(address(token), address(this), VESTING_DURATION);
-        custody = new ULIQTestnetEscrow(address(usdc), address(this));
+        custody = new ULIQTestnetEscrow(address(usdc), address(this), TREASURY);
         saleEnd = uint64(block.timestamp + 30 days);
         presale = new ULIQPresale(
             address(token),
@@ -80,7 +84,14 @@ contract ULIQMvpTest {
         uint256 deadline = block.timestamp + 1 hours;
         uint256 nonce = token.nonces(buyer);
         bytes32 structHash = keccak256(
-            abi.encode(keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"), buyer, RELAYER, value, nonce, deadline)
+            abi.encode(
+                keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
+                buyer,
+                RELAYER,
+                value,
+                nonce,
+                deadline
+            )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = VM.sign(BUYER_KEY, digest);
@@ -92,13 +103,22 @@ contract ULIQMvpTest {
         require(token.totalSupply() == beforeSupply - 1 ether, "burn_supply_wrong");
     }
 
+    function testTestnetDeploymentRejectsWithdrawalPeriodBelowOneHour() public {
+        DeployULIQTestnet deployment = new DeployULIQTestnet();
+        VM.expectRevert(
+            abi.encodeWithSelector(DeployULIQTestnet.WithdrawalPeriodTooShort.selector, uint64(3_599), uint64(1 hours))
+        );
+        deployment.run(
+            address(this), TREASURY, address(usdc), uint64(block.timestamp), uint64(block.timestamp + 30 days), 3_599
+        );
+    }
+
     function testBuyCreatesPendingOnly() public {
         uint256 purchaseId = _buy(1_000 * 1e6);
         (
             address storedBuyer,
             uint256 paid,
-            uint256 allocation,
-            ,
+            uint256 allocation,,
             uint64 deadline,
             ULIQPresale.PurchaseState purchaseState
         ) = presale.purchases(purchaseId);
@@ -111,6 +131,11 @@ contract ULIQMvpTest {
         require(token.balanceOf(buyer) == 0, "pending_wallet_not_zero");
         require(vesting.unreleased(buyer) == 0, "pending_vesting_not_zero");
         require(presale.pendingPurchaseCount() == 1, "pending_count_wrong");
+        (address paymentBuyer, uint256 paymentAmount, ULIQTestnetEscrow.PaymentState paymentState) =
+            custody.payments(purchaseId);
+        require(paymentBuyer == buyer, "custody_buyer_wrong");
+        require(paymentAmount == paid, "custody_amount_wrong");
+        require(paymentState == ULIQTestnetEscrow.PaymentState.COLLECTED, "custody_state_wrong");
     }
 
     function testWithdrawRefundsAndPreventsFinalize() public {
@@ -124,6 +149,10 @@ contract ULIQMvpTest {
         require(token.balanceOf(buyer) == 0, "withdraw_wallet_not_zero");
         require(vesting.unreleased(buyer) == 0, "withdraw_vesting_not_zero");
         require(presale.pendingPurchaseCount() == 0, "pending_not_decremented");
+        (,, ULIQTestnetEscrow.PaymentState paymentState) = custody.payments(purchaseId);
+        require(paymentState == ULIQTestnetEscrow.PaymentState.REFUNDED, "refund_not_settled");
+        require(custody.totalRefunded() == 1_000 * 1e6, "refunded_total_wrong");
+        require(custody.totalReleased() == 0, "unexpected_release");
 
         VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
         VM.expectRevert(ULIQPresale.PurchaseNotPending.selector);
@@ -132,6 +161,7 @@ contract ULIQMvpTest {
 
     function testPermissionlessFinalizeIsAtomicTwentyFiveSeventyFive() public {
         uint256 purchaseId = _buy(1_000 * 1e6);
+        uint256 treasuryBefore = usdc.balanceOf(TREASURY);
         VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
 
         VM.prank(RELAYER);
@@ -143,12 +173,67 @@ contract ULIQMvpTest {
         require(presale.finalizedAllocationUliqRaw() == 1_000_000 ether, "finalized_total_wrong");
         require(presale.pendingPurchaseCount() == 0, "pending_count_wrong");
         require(token.balanceOf(RELAYER) == 0, "relayer_received_tokens");
+        require(usdc.balanceOf(TREASURY) == treasuryBefore + 1_000 * 1e6, "treasury_release_wrong");
+        (,, ULIQTestnetEscrow.PaymentState paymentState) = custody.payments(purchaseId);
+        require(paymentState == ULIQTestnetEscrow.PaymentState.RELEASED, "release_not_settled");
+        require(custody.totalReleased() == 1_000 * 1e6, "released_total_wrong");
+        require(custody.balance() == 0, "settled_balance_wrong");
 
         VM.expectRevert(ULIQPresale.PurchaseNotPending.selector);
         presale.finalizePurchase(purchaseId);
         VM.prank(buyer);
         VM.expectRevert(ULIQPresale.PurchaseNotPending.selector);
         presale.withdrawPurchase(purchaseId);
+    }
+
+    function testTreasuryRotationRequiresOwnerProposalAndRecipientAcceptance() public {
+        VM.prank(buyer);
+        VM.expectRevert();
+        custody.proposeTreasury(NEXT_TREASURY);
+
+        custody.proposeTreasury(NEXT_TREASURY);
+        require(custody.treasury() == TREASURY, "treasury_changed_before_acceptance");
+        require(custody.pendingTreasury() == NEXT_TREASURY, "pending_treasury_wrong");
+        VM.expectRevert(ULIQTestnetEscrow.TreasuryTransferPending.selector);
+        custody.proposeTreasury(address(0x7EAA7));
+
+        VM.prank(buyer);
+        VM.expectRevert(ULIQTestnetEscrow.UnauthorizedTreasuryAcceptance.selector);
+        custody.acceptTreasury();
+
+        VM.prank(NEXT_TREASURY);
+        custody.acceptTreasury();
+        require(custody.treasury() == NEXT_TREASURY, "treasury_not_rotated");
+        require(custody.pendingTreasury() == address(0), "pending_treasury_not_cleared");
+
+        uint256 purchaseId = _buy(10 * 1e6);
+        VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
+        presale.finalizePurchase(purchaseId);
+        require(usdc.balanceOf(NEXT_TREASURY) == 10 * 1e6, "new_treasury_not_used");
+    }
+
+    function testTreasuryRotationCanBeCancelledAndOwnershipCannotBeRenounced() public {
+        custody.proposeTreasury(NEXT_TREASURY);
+        custody.cancelTreasuryTransfer();
+        require(custody.treasury() == TREASURY, "active_treasury_changed");
+        require(custody.pendingTreasury() == address(0), "cancel_did_not_clear_pending");
+
+        VM.expectRevert(ULIQTestnetEscrow.OwnershipRenunciationDisabled.selector);
+        custody.renounceOwnership();
+    }
+
+    function testCustodyRejectsUnauthorizedOrDuplicateSettlement() public {
+        VM.prank(buyer);
+        VM.expectRevert(ULIQTestnetEscrow.UnauthorizedPresale.selector);
+        custody.collectFrom(99, buyer, 1e6);
+
+        uint256 purchaseId = _buy(10 * 1e6);
+        VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
+        presale.finalizePurchase(purchaseId);
+
+        VM.prank(address(presale));
+        VM.expectRevert(abi.encodeWithSelector(ULIQTestnetEscrow.PaymentNotCollected.selector, purchaseId));
+        custody.releaseToTreasury(purchaseId, buyer, 10 * 1e6);
     }
 
     function testPauseBlocksBuyButAllowsWithdrawal() public {
@@ -168,7 +253,7 @@ contract ULIQMvpTest {
         _buy(119_999 * 1e6);
         uint256 buyerBefore = usdc.balanceOf(buyer);
         uint256 purchaseId = _buy(10 * 1e6);
-        (, uint256 accepted, uint256 allocation,,, ) = presale.purchases(purchaseId);
+        (, uint256 accepted, uint256 allocation,,,) = presale.purchases(purchaseId);
 
         require(accepted == 1e6, "partial_fill_wrong");
         require(allocation == 1_000 ether, "partial_allocation_wrong");

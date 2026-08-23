@@ -99,10 +99,7 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         uint64 withdrawalDeadline
     );
     event PurchaseWithdrawn(
-        uint256 indexed purchaseId,
-        address indexed buyer,
-        uint256 usdcRefundRaw,
-        uint256 cancelledUliqAllocationRaw
+        uint256 indexed purchaseId, address indexed buyer, uint256 usdcRefundRaw, uint256 cancelledUliqAllocationRaw
     );
     event PurchaseFinalized(
         uint256 indexed purchaseId,
@@ -128,12 +125,12 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         uint64 withdrawalPeriodSeconds_
     ) Ownable(admin) {
         if (
-            uliq_ == address(0) || usdc_ == address(0) || paymentCustody_ == address(0)
-                || vesting_ == address(0) || admin == address(0)
+            uliq_ == address(0) || usdc_ == address(0) || paymentCustody_ == address(0) || vesting_ == address(0)
+                || admin == address(0)
         ) revert ZeroAddress();
         if (
-            hardCapUsdcRaw_ == 0 || allocationCapUliqRaw_ == 0 || rateNumerator_ == 0
-                || rateDenominator_ == 0 || saleStart_ >= saleEnd_ || withdrawalPeriodSeconds_ == 0
+            hardCapUsdcRaw_ == 0 || allocationCapUliqRaw_ == 0 || rateNumerator_ == 0 || rateDenominator_ == 0
+                || saleStart_ >= saleEnd_ || withdrawalPeriodSeconds_ == 0
         ) revert InvalidConfiguration();
 
         uliq = IERC20(uliq_);
@@ -263,7 +260,7 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         }
 
         emit PurchaseCreated(purchaseId, msg.sender, acceptedUsdcRaw, uliqAllocationRaw, withdrawalDeadline);
-        paymentCustody.collectFrom(msg.sender, acceptedUsdcRaw);
+        paymentCustody.collectFrom(purchaseId, msg.sender, acceptedUsdcRaw);
     }
 
     function withdrawPurchase(uint256 purchaseId) external nonReentrant {
@@ -281,10 +278,8 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         totalSoldUliqRaw -= purchase.uliqAllocationRaw;
         withdrawnAllocationUliqRaw += purchase.uliqAllocationRaw;
 
-        paymentCustody.refundTo(purchase.buyer, purchase.usdcAmountRaw);
-        emit PurchaseWithdrawn(
-            purchaseId, purchase.buyer, purchase.usdcAmountRaw, purchase.uliqAllocationRaw
-        );
+        paymentCustody.refundTo(purchaseId, purchase.buyer, purchase.usdcAmountRaw);
+        emit PurchaseWithdrawn(purchaseId, purchase.buyer, purchase.usdcAmountRaw, purchase.uliqAllocationRaw);
     }
 
     function finalizePurchase(uint256 purchaseId) external nonReentrant {
@@ -306,6 +301,7 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         uliq.safeTransfer(purchase.buyer, walletAmount);
         uliq.safeTransfer(address(vesting), vestingAmount);
         vesting.allocate(purchase.buyer, vestingAmount);
+        paymentCustody.releaseToTreasury(purchaseId, purchase.buyer, purchase.usdcAmountRaw);
 
         emit PurchaseFinalized(purchaseId, purchase.buyer, msg.sender, walletAmount, vestingAmount);
     }

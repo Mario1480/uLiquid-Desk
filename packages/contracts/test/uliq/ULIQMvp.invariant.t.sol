@@ -54,7 +54,7 @@ contract ULIQMvpInvariantTest {
         token = new ULIQToken(address(this));
         ULIQMockUSDC usdc = new ULIQMockUSDC();
         vesting = new ULIQPresaleVesting(address(token), address(this), 270 days);
-        custody = new ULIQTestnetEscrow(address(usdc), address(this));
+        custody = new ULIQTestnetEscrow(address(usdc), address(this), address(0x7EAA5));
         presale = new ULIQPresale(
             address(token),
             address(usdc),
@@ -98,9 +98,13 @@ contract ULIQMvpInvariantTest {
     }
 
     function invariant_InventoryAlwaysCoversPendingAllocations() public view {
+        require(token.balanceOf(address(presale)) >= presale.pendingAllocationUliqRaw(), "pending_inventory_insolvent");
+    }
+
+    function invariant_CustodyAccountingMatchesBalance() public view {
         require(
-            token.balanceOf(address(presale)) >= presale.pendingAllocationUliqRaw(),
-            "pending_inventory_insolvent"
+            custody.totalCollected() == custody.balance() + custody.totalRefunded() + custody.totalReleased(),
+            "custody_accounting_drift"
         );
     }
 }

@@ -29,7 +29,9 @@ Die folgenden Contracts werden spezifiziert und auf Testnet erprobt. Production-
 
 ## `ULIQPresale.sol`
 
-Die Testnet-Implementierung verwendet `IULIQPaymentCustody` als austauschbare Custody-Grenze. `ULIQTestnetEscrow` ist ausdrücklich `TESTNET / PROVISIONAL`, kann ausschließlich Test-USDC einsammeln und an den unveränderlichen Buyer refunden und besitzt keine Treasury-Release-Funktion. Ein Production-Custody-/Safeguarding-Adapter bleibt ADR-001-blockiert.
+Die Testnet-Implementierung verwendet `IULIQPaymentCustody` als austauschbare Custody-Grenze. `ULIQTestnetEscrow` ist ausdrücklich `TESTNET / PROVISIONAL` und bindet jeden tUSDC-Eingang an eine eindeutige Purchase-ID. Ein Eingang kann danach exakt einmal entweder an den unveränderlichen Buyer refunded oder bei Purchase-Finalisierung an die aktive Testnet-Treasury ausgezahlt werden. ULIQ-Verteilung, Vesting-Zuordnung, Purchase State und Treasury-Auszahlung sind atomar; schlägt die tUSDC-Auszahlung fehl, revertiert die gesamte Finalisierung.
+
+Die Testnet-Treasury ist rotierbar, aber nicht einseitig überschreibbar: Der Contract-Owner schlägt eine neue Adresse vor, ausschließlich diese Adresse kann die Rolle akzeptieren, und der Owner kann einen offenen Vorschlag verwerfen. Ownership Renunciation ist deaktiviert; ein generischer Sweep-/Rescue-Pfad existiert nicht. Backend und Admin UI speichern nur die gewünschte Adresse und bereiten validierte Safe-Transaktionen vor, ohne Private Keys, Signatur oder Broadcast. Ein Production-Custody-/Safeguarding-Adapter und dessen Auszahlungszeitpunkt bleiben ungeachtet dieser Testnet-Simulation ADR-001-blockiert.
 
 ### Sale State
 
@@ -73,6 +75,7 @@ Finalisierung:
 - Wallet-Transfer, Vesting-Zuordnung und Purchase State `FINALIZED` werden atomar gesetzt.
 - Finalisierung ist idempotent und darf nicht nach Withdrawal oder unzulässiger Sale Cancellation erfolgen.
 - `finalizePurchase(purchaseId)` ist permissionless. Caller und Gas Payer können beliebig sein; Buyer/Beneficiary und Beträge bleiben unveränderlich und der Caller erhält keine ULIQ oder Benefits.
+- der exakt zum Purchase eingezogene tUSDC-Betrag wird in derselben atomaren Transaktion an die zu diesem Zeitpunkt aktive Testnet-Treasury ausgezahlt; diese Regel ist ausschließlich Testnet-Evidence und kein Production-Safeguarding-Entscheid.
 
 Withdrawal:
 
@@ -92,6 +95,7 @@ Withdrawal:
 - Hard-Cap-Restbeträge folgen einer vor Audit explizit spezifizierten Rounding-/Partial-Fill-Policy.
 - per-wallet Minimum und Maximum müssen vor Audit konkret festgelegt werden.
 - Purchase-, Withdrawal- und Finalization-Deadlines werden als Timestamp gespeichert und klar gerundet.
+- der Testnet-Deploy-Guard akzeptiert keine Withdrawal Period unter 3.600 Sekunden; der empfohlene Staging-Wert ist `3600`. Production bleibt bei der separat freizugebenden 14-Tage-Working-Assumption.
 - Sale-Inventar wird vorab funded; kein Minting im Presale.
 - USDC 6 Decimals und ULIQ 18 Decimals werden ausschließlich mit Integer-Mathematik verarbeitet.
 

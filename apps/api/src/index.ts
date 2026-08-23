@@ -403,6 +403,7 @@ import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
 import { registerUliqRoutes } from "./uliq/routes.js";
 import { registerUliqAdminRoutes } from "./uliq/admin.routes.js";
 import { UliqPresaleService } from "./uliq/presale.service.js";
+import { UliqTreasuryService } from "./uliq/treasury.service.js";
 import { UliqEntitlementService } from "./uliq/entitlement.service.js";
 import { createLazyUliqService } from "./uliq/runtime.js";
 import { releaseOpenUliqReservationsForWalletChange } from "./uliq/benefitReservation.service.js";
@@ -631,6 +632,7 @@ const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
 const platformAlertCleanupJob = createPlatformAlertCleanupJob(db);
 const uliqJobs = createUliqJobs(db);
 const uliqPresaleService = createLazyUliqService(() => new UliqPresaleService(db));
+const uliqTreasuryService = createLazyUliqService(() => new UliqTreasuryService(db));
 const uliqEntitlementService = createLazyUliqService(() => new UliqEntitlementService(db));
 const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db, {
   resolveTelegramConfig: async (userId) => resolveTelegramConfig(userId),
@@ -12113,6 +12115,7 @@ registerBillingRoutes(app, {
 registerUliqAdminRoutes(app, {
   db,
   presaleService: uliqPresaleService,
+  treasuryService: uliqTreasuryService,
   requireSuperadmin,
   consumeRecentReauth,
   recordAdminAuditEvent
