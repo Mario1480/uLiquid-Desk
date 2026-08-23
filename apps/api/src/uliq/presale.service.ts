@@ -152,7 +152,7 @@ export class UliqPresaleService {
     const wallet = await this.requireWallet(params.userId);
     const maxUsdcAmountRaw = parseUint256Decimal(params.maxUsdcAmountRaw, "max_usdc_amount_raw");
     const minUliqAllocationRaw = parseUint256Decimal(params.minUliqAllocationRaw, "min_uliq_allocation_raw");
-    await this.requireActiveSale();
+    const paymentCustody = await this.requireActiveSale();
     return {
       approval: transactionRequest(
         this.config.chainId,
@@ -160,7 +160,7 @@ export class UliqPresaleService {
         encodeFunctionData({
           abi: uliqTokenAbi,
           functionName: "approve",
-          args: [this.config.contracts.presale, maxUsdcAmountRaw]
+          args: [paymentCustody, maxUsdcAmountRaw]
         }),
         wallet
       ),
@@ -334,15 +334,27 @@ export class UliqPresaleService {
     return normalizeUliqAddress(user.walletAddress).toLowerCase() as `0x${string}`;
   }
 
-  private async requireActiveSale(): Promise<void> {
+  private async requireActiveSale(): Promise<`0x${string}`> {
     const head = await getConsistentFinalizedBlock(this.rpc);
-    const read = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
-      address: this.config.contracts.presale,
-      abi: uliqPresaleAbi,
-      functionName: "state",
-      blockNumber: head.number
-    }));
-    if (Number(read.value) !== 2) throw new Error("uliq_sale_not_active");
+    const read = await withUliqRpcFailover(this.rpc, async (client) => {
+      const [state, paymentCustody] = await Promise.all([
+        client.readContract({
+          address: this.config.contracts.presale,
+          abi: uliqPresaleAbi,
+          functionName: "state",
+          blockNumber: head.number
+        }),
+        client.readContract({
+          address: this.config.contracts.presale,
+          abi: uliqPresaleAbi,
+          functionName: "paymentCustody",
+          blockNumber: head.number
+        })
+      ]);
+      return { state: Number(state), paymentCustody };
+    });
+    if (read.value.state !== 2) throw new Error("uliq_sale_not_active");
+    return normalizeUliqAddress(read.value.paymentCustody, "payment_custody");
   }
 
   private async readPurchase(purchaseId: bigint) {

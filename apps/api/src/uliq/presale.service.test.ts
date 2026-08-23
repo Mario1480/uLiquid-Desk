@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { decodeFunctionData } from "viem";
+import { uliqTokenAbi } from "./abi.js";
 import type { UliqRuntimeConfig } from "./config.js";
 import { UliqPresaleService } from "./presale.service.js";
 
 const ADDRESS = "0x1111111111111111111111111111111111111111" as const;
 const WALLET = "0x2222222222222222222222222222222222222222" as const;
+const PAYMENT_CUSTODY = "0x3333333333333333333333333333333333333333" as const;
 const BLOCK_HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
 
 const config: UliqRuntimeConfig = {
@@ -34,6 +37,7 @@ function createRpc(saleState: bigint) {
     getBlock: async () => ({ number: 123n, hash: BLOCK_HASH, timestamp: 1_787_418_172n }),
     readContract: async (request: { functionName: string }) => {
       if (request.functionName === "state") return saleState;
+      if (request.functionName === "paymentCustody") return PAYMENT_CUSTODY;
       if (request.functionName === "quotePurchase") return [100n, 100_000n] as const;
       throw new Error(`unexpected_read_${request.functionName}`);
     }
@@ -69,5 +73,10 @@ test("ULIQ purchase quote and preparation remain disabled until the sale is ACTI
     minUliqAllocationRaw: "100000"
   });
   assert.equal(prepared.approval.expectedSender, WALLET.toLowerCase());
+  assert.equal(prepared.approval.to, config.contracts.usdc);
+  const approval = decodeFunctionData({ abi: uliqTokenAbi, data: prepared.approval.data });
+  assert.equal(approval.functionName, "approve");
+  assert.deepEqual(approval.args, [PAYMENT_CUSTODY, 100n]);
   assert.equal(prepared.purchase.expectedSender, WALLET.toLowerCase());
+  assert.equal(prepared.purchase.to, config.contracts.presale);
 });

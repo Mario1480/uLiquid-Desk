@@ -9,6 +9,7 @@ export const uliqTokenAbi = parseAbi([
 
 export const uliqPresaleAbi = parseAbi([
   "function owner() view returns (address)",
+  "function paymentCustody() view returns (address)",
   "function state() view returns (uint8)",
   "function saleStart() view returns (uint64)",
   "function saleEnd() view returns (uint64)",
