@@ -34,7 +34,14 @@ function WalletConnectionWidgetContent({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const hasChainMismatch = isConnected && chainId !== TARGET_CHAIN_ID;
-  const injectedConnector = connectors.find((connector) => connector.type === "injected");
+  const injectedConnector = connectors.find((connector) =>
+    connector.id === "io.metamask" ||
+    connector.id === "metaMask" ||
+    connector.name.toLowerCase().includes("metamask") ||
+    (typeof connector.rdns === "string"
+      ? connector.rdns === "io.metamask"
+      : connector.rdns?.includes("io.metamask"))
+  ) ?? connectors.find((connector) => connector.type === "injected");
 
   useEffect(() => {
     if (!menuOpen) return;

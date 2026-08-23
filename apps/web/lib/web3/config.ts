@@ -18,7 +18,10 @@ const transports = Object.fromEntries(
   supportedChains.map((chain) => [chain.id, http(chain.rpcUrls.default.http[0] ?? undefined)])
 );
 
-const fallbackConnectors = [injected({ shimDisconnect: true })];
+const fallbackConnectors = [
+  injected({ target: "metaMask", shimDisconnect: true }),
+  injected({ shimDisconnect: true })
+];
 const appKitConnectors = web3ModalProjectId
   ? [
       walletConnect({
