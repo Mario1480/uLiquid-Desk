@@ -39,6 +39,13 @@ Pending Allocation darf optisch nicht als verfügbar, vested oder eligible darge
 
 Mindestens:
 
+- `AWAITING_SIGNATURE`
+- `SUBMITTED`
+- `SOFT_CONFIRMED`
+- `SAFE`
+- `FINALIZED`
+- `FAILED`
+- `REORGED`
 - `SALE_NOT_STARTED`
 - `SALE_ACTIVE`
 - `PURCHASE_PENDING`
@@ -52,6 +59,19 @@ Mindestens:
 - `VESTING_ACTIVE`
 - `INDEXER_DELAYED`
 - `REVIEW_REQUIRED`
+
+## Receipt-first Purchase UX und Netzwerk-Finalität
+
+Verbindliche Mainnet-UX-Anforderung, festgehalten am 2026-08-23:
+
+- Die UI wartet nach einem erfolgreichen Kauf-Receipt nicht auf den `finalized`-Indexer, bevor sie dem User den Kauf sichtbar bestätigt.
+- Nach Signatur und Hash wird `SUBMITTED` angezeigt. Nach einem erfolgreichen L2-Receipt mit passendem Contract, Event, Buyer und Betrag wird der Kauf sofort als `SOFT_CONFIRMED` mit dem klaren Zusatz „Netzwerk-Finalität ausstehend“ in der Purchase-Historie dargestellt.
+- `SOFT_CONFIRMED` ist ausschließlich eine vorläufige UX-Projektion. Sie aktiviert weder Wallet-/Vesting-ULIQ noch Entitlements, Benefits, Rabatte oder andere irreversible Produktzustände.
+- Der Backend-/Indexer-Status führt denselben Purchase anschließend über `SAFE` nach `FINALIZED`. Für irreversible Accounting-, Benefit- und Release-Entscheidungen bleibt `FINALIZED` erforderlich; eine feste Zahl von Arbitrum-Child-Blocks ersetzt diese Block-Tags nicht.
+- Der canonical Indexer-Datensatz ersetzt die vorläufige Anzeige anhand Chain ID, Transaction Hash, Log Index und Purchase ID idempotent, ohne einen zweiten Purchase zu erzeugen.
+- Revert, Replacement, RPC-Ausfall, Reorg oder Receipt-/Indexer-Mismatch führen sichtbar zu `FAILED`, `REORGED` oder `REVIEW_REQUIRED`; eine vorläufige Anzeige darf dabei niemals still als final bestehen bleiben.
+- Status, Transaction Hash, Betrag und aktueller Confirmation-Level müssen nach Reload und auf einem zweiten Gerät wiederherstellbar sein. Die Finalitätsprüfung läuft im Hintergrund weiter; der User muss die Seite nicht geöffnet lassen.
+- DE/EN-Copy unterscheidet ausdrücklich Wallet-Bestätigung, L2-Receipt, Netzwerk-Finalität und die separate Presale-Business-Finalisierung nach der Withdrawal Period.
 
 ## Presale Page
 
@@ -81,6 +101,7 @@ Während Withdrawal:
 - Benefits: inactive.
 - verfügbare Withdrawal-/Refund-Aktion nach finalen Sale Terms.
 - Tx-, Confirmation-, Indexer- und Refund-Status.
+- ein bereits erfolgreiches Receipt erscheint sofort als vorläufig bestätigter Purchase, auch wenn der `finalized`-Indexer noch nachläuft.
 
 Nach Finalisierung:
 

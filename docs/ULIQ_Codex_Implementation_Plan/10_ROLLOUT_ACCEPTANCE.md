@@ -273,6 +273,17 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - `git diff --check` ist grün.
 - Audit, Legal Sign-off, Deployment, Safe Ownership und Smoke Evidence sind releasebezogen dokumentiert.
 
+### Q. Receipt-first Purchase UX und Finality
+
+- Nach erfolgreichem L2-Receipt wird der Purchase ohne Warten auf `finalized` sofort mit Amount, Transaction Hash und `SOFT_CONFIRMED` in der User-Historie angezeigt.
+- Die vorläufige Anzeige stammt aus einem validierten Receipt/Event für den erwarteten Contract, Buyer und Betrag; eine Quote oder ein Toast allein gilt nicht als Kaufnachweis.
+- Der Confirmation-Level wechselt nachvollziehbar von `SUBMITTED` über `SOFT_CONFIRMED` und optional `SAFE` zu `FINALIZED`.
+- Der canonical Indexer-Datensatz reconciled die vorläufige Projektion idempotent über Chain ID, Transaction Hash, Log Index und Purchase ID; es entsteht kein Duplicate.
+- Vor `FINALIZED` werden keine irreversiblen Accounting-, Entitlement-, Benefit-, Discount- oder Release-Zustände aktiviert.
+- Revert, Replacement, RPC-Ausfall, Reorg und Receipt-/Indexer-Mismatch sind getestet und führen zu `FAILED`, `REORGED` oder `REVIEW_REQUIRED` statt zu einer falschen Erfolgsmeldung.
+- Reload, erneute Anmeldung und zweites Gerät stellen den laufenden Status wieder her; der User muss die Seite während der Netzwerk-Finalität nicht geöffnet lassen.
+- DE/EN-UI und Benachrichtigungen trennen Netzwerk-Finalität von der späteren Presale-Finalisierung nach Ablauf der Withdrawal Period.
+
 ## Mainnet No-Go Conditions
 
 - ADR-001 blockiert oder Legal Sign-off fehlt.
@@ -284,6 +295,7 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - Indexer/Reconciliation/Alerts nicht production-ready.
 - Market Reference ohne konkrete DEX-/Pool-Adresse, Fee Tier, TWAP-Implementierung oder Failover Source.
 - keine getestete Pause-/Incident-/Refund-Runbook-Probe.
+- Receipt-first Purchase UX, persistente Statuswiederherstellung oder Reorg-/Indexer-Reconciliation nach Kriterium Q fehlt.
 
 ## Arbitrum-Sepolia-Deployment-Nachweis 2026-08-22
 
