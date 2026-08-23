@@ -5,6 +5,31 @@ import {
   csrfCookieOptions,
   sessionCookieOptions
 } from "./cookies.js";
+import { resolveAuthCookieNames } from "./cookieNames.js";
+
+test("auth cookie names keep legacy defaults and support an isolated environment prefix", () => {
+  assert.deepEqual(resolveAuthCookieNames(""), {
+    prefix: "mm",
+    session: "mm_session",
+    csrf: "mm_csrf",
+    reauth: "mm_reauth",
+    siweNonce: "mm_siwe_nonce"
+  });
+  assert.deepEqual(resolveAuthCookieNames("mm_staging"), {
+    prefix: "mm_staging",
+    session: "mm_staging_session",
+    csrf: "mm_staging_csrf",
+    reauth: "mm_staging_reauth",
+    siweNonce: "mm_staging_siwe_nonce"
+  });
+});
+
+test("auth cookie names reject unsafe prefixes", () => {
+  assert.throws(
+    () => resolveAuthCookieNames("staging.cookie"),
+    /Invalid NEXT_PUBLIC_AUTH_COOKIE_PREFIX/
+  );
+});
 
 test("auth cookies are httpOnly for sessions and readable only for csrf", () => {
   const session = sessionCookieOptions(60_000);

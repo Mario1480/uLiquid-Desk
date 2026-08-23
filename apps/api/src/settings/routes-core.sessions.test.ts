@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { SESSION_COOKIE } from "../auth/cookies.js";
 import { registerSettingsCoreRoutes } from "./routes-core.js";
 
 type RouteMap = Map<string, Array<(...args: any[]) => any>>;
@@ -281,7 +282,7 @@ test("settings sessions list marks the current session without leaking token has
   const handler = getFinalHandler(app, "get", "/settings/sessions");
   const res = createMockRes();
 
-  await handler({ cookies: { mm_session: "current_token" } }, res);
+  await handler({ cookies: { [SESSION_COOKIE]: "current_token" } }, res);
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.items.length, 2);
@@ -296,7 +297,7 @@ test("settings sessions can revoke another own session", async () => {
   const handler = getFinalHandler(app, "delete", "/settings/sessions/:id");
   const res = createMockRes();
 
-  await handler({ cookies: { mm_session: "current_token" }, params: { id: "session_other" } }, res);
+  await handler({ cookies: { [SESSION_COOKIE]: "current_token" }, params: { id: "session_other" } }, res);
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { ok: true });
@@ -309,7 +310,7 @@ test("settings sessions blocks current session revoke through single-session rou
   const handler = getFinalHandler(app, "delete", "/settings/sessions/:id");
   const res = createMockRes();
 
-  await handler({ cookies: { mm_session: "current_token" }, params: { id: "session_current" } }, res);
+  await handler({ cookies: { [SESSION_COOKIE]: "current_token" }, params: { id: "session_current" } }, res);
 
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.error, "current_session_cannot_be_revoked_here");
@@ -321,7 +322,7 @@ test("settings sessions revoke others preserves the current session", async () =
   const handler = getFinalHandler(app, "delete", "/settings/sessions");
   const res = createMockRes();
 
-  await handler({ cookies: { mm_session: "current_token" }, query: { scope: "others" } }, res);
+  await handler({ cookies: { [SESSION_COOKIE]: "current_token" }, query: { scope: "others" } }, res);
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.deletedCount, 1);
@@ -335,7 +336,7 @@ test("settings sessions returns not found for foreign session ids", async () => 
   const handler = getFinalHandler(app, "delete", "/settings/sessions/:id");
   const res = createMockRes();
 
-  await handler({ cookies: { mm_session: "current_token" }, params: { id: "session_foreign" } }, res);
+  await handler({ cookies: { [SESSION_COOKIE]: "current_token" }, params: { id: "session_foreign" } }, res);
 
   assert.equal(res.statusCode, 404);
   assert.equal(res.body.error, "session_not_found");

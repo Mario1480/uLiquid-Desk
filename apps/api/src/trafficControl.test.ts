@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { SESSION_COOKIE } from "./auth/cookies.js";
 import {
   createIdempotencyMiddleware,
   createRateLimitMiddleware,
@@ -110,7 +111,7 @@ test("rateLimitByBodyEmailOrIp normalizes account keys and falls back to IP", ()
 });
 
 test("rateLimitBySessionOrIp hashes session tokens before scoping", () => {
-  const req = createReqRes({ ip: "10.0.0.1", cookies: { mm_session: "raw-session-token" } });
+  const req = createReqRes({ ip: "10.0.0.1", cookies: { [SESSION_COOKIE]: "raw-session-token" } });
   const scope = rateLimitBySessionOrIp(req.req as any, req.res as any);
 
   assert.equal(typeof scope, "string");

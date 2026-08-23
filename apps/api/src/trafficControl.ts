@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { SESSION_COOKIE } from "./auth/cookies.js";
 import { logger } from "./logger.js";
 import { getCorrelationId } from "./requestContext.js";
 
@@ -286,7 +287,7 @@ export function rateLimitByUser(_req: Request, res: Response): string | null {
 }
 
 export function rateLimitBySessionOrIp(req: Request, res: Response): string | null {
-  const session = String(req.cookies?.mm_session ?? "").trim();
+  const session = String(req.cookies?.[SESSION_COOKIE] ?? "").trim();
   if (session) return `session:${hashScopeValue(session)}`;
   return rateLimitByIp(req) ?? rateLimitByUser(req, res);
 }

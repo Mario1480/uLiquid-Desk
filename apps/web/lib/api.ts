@@ -1,3 +1,4 @@
+import { AUTH_CSRF_COOKIE_NAME } from "./authCookies";
 
 const DEFAULT_LOCAL_API_PORT = "4000";
 const GET_RETRY_DELAYS_MS = [200, 600] as const;
@@ -185,7 +186,7 @@ async function request<T>(
     headers["Content-Type"] = "application/json";
   }
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    const csrf = getCookie("mm_csrf");
+    const csrf = getCookie(AUTH_CSRF_COOKIE_NAME);
     if (csrf) headers["x-csrf-token"] = csrf;
   }
   const url = `${apiBase}${path}`;

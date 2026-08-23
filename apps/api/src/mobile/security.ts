@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { SESSION_COOKIE } from "../auth/cookies.js";
 import { logger } from "../logger.js";
 import { getCorrelationId, getRequestId } from "../requestContext.js";
 import {
@@ -63,7 +64,7 @@ export function createMobileRateLimitMiddlewares() {
     name: "mobile_anonymous",
     max: readPositiveNumberEnv("MOBILE_API_ANON_RATE_LIMIT_MAX", 60),
     windowMs: readPositiveNumberEnv("MOBILE_API_ANON_RATE_LIMIT_WINDOW_MS", 5 * 60_000),
-    keyFn: (req) => String(req.cookies?.mm_session ?? "").trim() ? null : rateLimitByIp(req)
+    keyFn: (req) => String(req.cookies?.[SESSION_COOKIE] ?? "").trim() ? null : rateLimitByIp(req)
   });
 
   return [

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import { SESSION_COOKIE } from "../auth/cookies.js";
+import { SESSION_COOKIE, clearAuthCookieOptions } from "../auth/cookies.js";
 import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "../legalAcknowledgement.js";
 import {
   findTelegramChatIdConflict as findTelegramChatIdConflictFromDeps,
@@ -644,7 +644,7 @@ export function registerSettingsCoreRoutes(
       });
     });
 
-    res.clearCookie(SESSION_COOKIE, { path: "/" });
+    res.clearCookie(SESSION_COOKIE, clearAuthCookieOptions());
     return res.json({ ok: true, deletedAt: deletedAt.toISOString() });
   });
 

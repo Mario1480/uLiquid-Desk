@@ -56,7 +56,7 @@ Open:
 - `GET /api/trading/settings`
 - `POST /api/trading/settings`
 
-All routes require auth session cookie (`mm_session`).
+All routes require the configured auth session cookie (`<NEXT_PUBLIC_AUTH_COOKIE_PREFIX>_session`, default `mm_session`).
 
 ## Notes
 - Internal canonical symbol format is `BTCUSDT`.

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { SIWE_NONCE_COOKIE } from "../auth/cookies.js";
 import { registerSiweAuthRoutes } from "./auth-siwe.js";
 
 type RouteMap = Map<string, Array<(...args: any[]) => any>>;
@@ -96,7 +97,7 @@ test("GET /auth/siwe/nonce returns nonce and sets nonce cookie", async () => {
   assert.equal(res.body?.nonce, "nonce_1");
   assert.equal(typeof res.body?.expiresAt, "string");
   assert.equal(res.cookies.length, 1);
-  assert.equal(res.cookies[0]?.name, "mm_siwe_nonce");
+  assert.equal(res.cookies[0]?.name, SIWE_NONCE_COOKIE);
 });
 
 test("POST /auth/siwe/verify returns wallet_not_linked when address is unknown", async () => {
@@ -129,7 +130,7 @@ test("POST /auth/siwe/verify returns wallet_not_linked when address is unknown",
       signature: "s"
     },
     cookies: {
-      mm_siwe_nonce: "token"
+      [SIWE_NONCE_COOKIE]: "token"
     },
     get() {
       return "localhost:4000";
@@ -176,7 +177,7 @@ test("POST /auth/siwe/link returns conflict when wallet belongs to another user"
       signature: "s"
     },
     cookies: {
-      mm_siwe_nonce: "token"
+      [SIWE_NONCE_COOKIE]: "token"
     },
     get() {
       return "localhost:4000";
@@ -230,7 +231,7 @@ test("POST /auth/siwe/link syncs onchain master vault after linking wallet", asy
       address: "0x3333333333333333333333333333333333333333"
     },
     cookies: {
-      mm_siwe_nonce: "token"
+      [SIWE_NONCE_COOKIE]: "token"
     },
     get() {
       return "localhost:4000";

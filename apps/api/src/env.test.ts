@@ -51,3 +51,18 @@ test("assertApiEnv does not require Redis traffic control in development", () =>
     SECRET_MASTER_KEY: "a".repeat(64)
   }));
 });
+
+test("assertApiEnv accepts isolated auth cookie prefixes", () => {
+  assert.doesNotThrow(() => assertApiEnv(baseProductionEnv({
+    NEXT_PUBLIC_AUTH_COOKIE_PREFIX: "mm_staging"
+  })));
+});
+
+test("assertApiEnv rejects unsafe auth cookie prefixes", () => {
+  assert.throws(
+    () => assertApiEnv(baseProductionEnv({
+      NEXT_PUBLIC_AUTH_COOKIE_PREFIX: "staging.cookie"
+    })),
+    /NEXT_PUBLIC_AUTH_COOKIE_PREFIX must start with a letter/
+  );
+});

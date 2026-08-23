@@ -8,6 +8,7 @@ import {
   validateServiceEnv,
   type EnvMap
 } from "@mm/core";
+import { validateAuthCookiePrefix } from "./auth/cookieNames.js";
 
 let validated = false;
 
@@ -130,6 +131,10 @@ export function assertApiEnv(env: EnvMap = process.env): void {
     {
       names: ["SESSION_TTL_DAYS"],
       validate: (value) => validatePositiveInteger(value)
+    },
+    {
+      names: ["NEXT_PUBLIC_AUTH_COOKIE_PREFIX"],
+      validate: (value) => validateAuthCookiePrefix(value)
     },
     {
       names: ["API_REQUEST_TIMEOUT_MS"],

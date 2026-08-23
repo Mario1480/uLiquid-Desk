@@ -53,6 +53,12 @@ read -r -p "Web domain [${WEB_DOMAIN_DEFAULT}]: " WEB_DOMAIN
 WEB_DOMAIN="${WEB_DOMAIN:-${WEB_DOMAIN_DEFAULT}}"
 read -r -p "API domain [${API_DOMAIN_DEFAULT}]: " API_DOMAIN
 API_DOMAIN="${API_DOMAIN:-${API_DOMAIN_DEFAULT}}"
+AUTH_COOKIE_PREFIX_DEFAULT="mm"
+if [[ "${WEB_DOMAIN}" == staging.* ]]; then
+  AUTH_COOKIE_PREFIX_DEFAULT="mm_staging"
+fi
+read -r -p "Auth cookie prefix [${AUTH_COOKIE_PREFIX_DEFAULT}]: " NEXT_PUBLIC_AUTH_COOKIE_PREFIX
+NEXT_PUBLIC_AUTH_COOKIE_PREFIX="${NEXT_PUBLIC_AUTH_COOKIE_PREFIX:-${AUTH_COOKIE_PREFIX_DEFAULT}}"
 read -r -p "Invite base URL [${INVITE_BASE_URL_DEFAULT}]: " INVITE_BASE_URL
 INVITE_BASE_URL="${INVITE_BASE_URL:-${INVITE_BASE_URL_DEFAULT}}"
 read -r -s -p "SMTP password for ${SMTP_USER_DEFAULT} (blank = set later): " SMTP_PASS
@@ -162,6 +168,10 @@ if [[ -z "${WEB_DOMAIN}" && -n "${API_DOMAIN}" ]]; then
   echo "If API_DOMAIN is set, WEB_DOMAIN must also be set."
   exit 1
 fi
+if [[ ! "${NEXT_PUBLIC_AUTH_COOKIE_PREFIX}" =~ ^[A-Za-z][A-Za-z0-9_-]{0,31}$ ]]; then
+  echo "Auth cookie prefix must start with a letter and contain only letters, digits, underscores, or hyphens (max 32 characters)."
+  exit 1
+fi
 
 PRIMARY_IP="$(hostname -I | awk '{print $1}')"
 if [[ -z "${PRIMARY_IP}" ]]; then
@@ -231,6 +241,7 @@ set_env_value "${APP_DIR}/.env.prod" "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
 set_env_value "${APP_DIR}/.env.prod" "NEXT_PUBLIC_API_URL" "${API_PUBLIC_URL}"
 set_env_value "${APP_DIR}/.env.prod" "API_BASE_URL" "http://api:8080"
 set_env_value "${APP_DIR}/.env.prod" "API_URL" "http://api:8080"
+set_env_value "${APP_DIR}/.env.prod" "NEXT_PUBLIC_AUTH_COOKIE_PREFIX" "${NEXT_PUBLIC_AUTH_COOKIE_PREFIX}"
 set_env_value "${APP_DIR}/.env.prod" "COOKIE_DOMAIN" "${COOKIE_DOMAIN_VALUE}"
 set_env_value "${APP_DIR}/.env.prod" "COOKIE_SECURE" "${COOKIE_SECURE_VALUE}"
 set_env_value "${APP_DIR}/.env.prod" "CORS_ORIGINS" "${WEB_ORIGIN}"

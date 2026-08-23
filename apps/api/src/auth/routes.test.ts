@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { SESSION_COOKIE, SIWE_NONCE_COOKIE } from "./cookies.js";
 import { buildOtpFailureUpdate, registerAuthRoutes } from "./routes.js";
 
 test("buildOtpFailureUpdate locks OTP after the configured failed attempt threshold", () => {
@@ -62,10 +63,10 @@ test("logout revokes outstanding reauth sessions", async () => {
     }
   };
 
-  await handler({ cookies: { mm_session: "session-token" } } as any, res);
+  await handler({ cookies: { [SESSION_COOKIE]: "session-token" } } as any, res);
 
   assert.equal(destroyedToken, "session-token");
   assert.equal(revokedUserId, "user_1");
   assert.equal(res.body?.ok, true);
-  assert.equal(cleared.includes("mm_siwe_nonce"), true);
+  assert.equal(cleared.includes(SIWE_NONCE_COOKIE), true);
 });

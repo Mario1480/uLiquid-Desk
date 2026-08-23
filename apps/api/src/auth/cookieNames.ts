@@ -1,0 +1,37 @@
+export const DEFAULT_AUTH_COOKIE_PREFIX = "mm";
+
+const AUTH_COOKIE_PREFIX_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
+
+export type AuthCookieNames = {
+  prefix: string;
+  session: string;
+  csrf: string;
+  reauth: string;
+  siweNonce: string;
+};
+
+export function validateAuthCookiePrefix(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (!AUTH_COOKIE_PREFIX_PATTERN.test(normalized)) {
+    return "must start with a letter and contain only letters, digits, underscores, or hyphens (max 32 characters)";
+  }
+  return null;
+}
+
+export function resolveAuthCookieNames(
+  configuredPrefix: string | null | undefined = process.env.NEXT_PUBLIC_AUTH_COOKIE_PREFIX
+): AuthCookieNames {
+  const prefix = String(configuredPrefix ?? "").trim() || DEFAULT_AUTH_COOKIE_PREFIX;
+  const validationError = validateAuthCookiePrefix(prefix);
+  if (validationError) {
+    throw new Error(`Invalid NEXT_PUBLIC_AUTH_COOKIE_PREFIX: ${validationError}.`);
+  }
+  return {
+    prefix,
+    session: `${prefix}_session`,
+    csrf: `${prefix}_csrf`,
+    reauth: `${prefix}_reauth`,
+    siweNonce: `${prefix}_siwe_nonce`
+  };
+}

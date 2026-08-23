@@ -5,6 +5,7 @@ import {
   validateServiceEnv,
   type EnvMap
 } from "@mm/core/dist/env.js";
+import { validateAuthCookiePrefix } from "./authCookies";
 
 let validated = false;
 
@@ -39,6 +40,10 @@ export function assertWebEnv(env: EnvMap = process.env): void {
     {
       names: ["NEXT_PUBLIC_HYPEREVM_EXPLORER_URL"],
       validate: (value) => validateHttpUrl(value)
+    },
+    {
+      names: ["NEXT_PUBLIC_AUTH_COOKIE_PREFIX"],
+      validate: (value) => validateAuthCookiePrefix(value)
     }
   ], env);
 

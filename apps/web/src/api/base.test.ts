@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { apiGet, apiPost, resolveBrowserApiBase } from "../../lib/api.js";
+import {
+  AUTH_CSRF_COOKIE_NAME,
+  resolveAuthCookieNames
+} from "../../lib/authCookies.js";
+
+test("derives isolated browser auth cookie names from the environment prefix", () => {
+  assert.deepEqual(resolveAuthCookieNames("mm_staging"), {
+    prefix: "mm_staging",
+    session: "mm_staging_session",
+    csrf: "mm_staging_csrf"
+  });
+  assert.throws(
+    () => resolveAuthCookieNames("staging.cookie"),
+    /Invalid NEXT_PUBLIC_AUTH_COOKIE_PREFIX/
+  );
+});
 
 test("keeps production api host when browser host already matches the public panel", () => {
   const resolved = resolveBrowserApiBase("https://api.desk.uliquid.vip", {
@@ -89,6 +105,34 @@ test("apiPost keeps JSON content-type when a JSON body is sent", async () => {
   const headers = capturedInit?.headers as Record<string, string> | undefined;
   assert.equal(headers?.["Content-Type"], "application/json");
   assert.equal(capturedInit?.body, JSON.stringify({ value: 1 }));
+});
+
+test("apiPost reads the CSRF token from the configured auth cookie namespace", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  let capturedInit: RequestInit | undefined;
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { cookie: `${AUTH_CSRF_COOKIE_NAME}=csrf-from-configured-cookie` }
+  });
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInit = init;
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  try {
+    await apiPost<{ ok: boolean }>("/api/probe", { value: 1 });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
+    else delete (globalThis as { document?: unknown }).document;
+  }
+
+  const headers = capturedInit?.headers as Record<string, string> | undefined;
+  assert.equal(headers?.["x-csrf-token"], "csrf-from-configured-cookie");
 });
 
 test("apiGet retries transient network fetch failures", async () => {

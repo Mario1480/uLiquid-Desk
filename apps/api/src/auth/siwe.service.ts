@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { SiweMessage, generateNonce } from "siwe";
+import { SIWE_NONCE_COOKIE } from "./cookies.js";
 
-export const SIWE_NONCE_COOKIE = "mm_siwe_nonce";
+export { SIWE_NONCE_COOKIE } from "./cookies.js";
 const DEFAULT_NONCE_TTL_MIN = 10;
 const DEFAULT_ALLOWED_CHAIN_IDS = [999, 42161];
 

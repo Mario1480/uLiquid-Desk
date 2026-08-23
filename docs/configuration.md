@@ -62,11 +62,27 @@ Optional but commonly used:
 
 - `API_PORT`
 - `API_HOST`
+- `NEXT_PUBLIC_AUTH_COOKIE_PREFIX` (default `mm`; use a distinct value such as `mm_staging` for sibling environments sharing a parent domain)
 - `COOKIE_DOMAIN`
 - `COOKIE_SECURE`
 - `API_RATE_LIMIT_REDIS_URL`
 - `PY_STRATEGY_URL`
 - `PY_GRID_URL`
+
+### Isolated auth cookies for sibling environments
+
+Production and staging deployments below the same parent domain must use different
+`NEXT_PUBLIC_AUTH_COOKIE_PREFIX` values. The prefix is public configuration and is
+used consistently by the API, browser client, Next.js proxy, WebSocket auth, CSRF,
+reauthentication, and SIWE wallet login.
+
+- Production keeps the backward-compatible default: `NEXT_PUBLIC_AUTH_COOKIE_PREFIX=mm`
+- Staging uses an isolated namespace: `NEXT_PUBLIC_AUTH_COOKIE_PREFIX=mm_staging`
+
+Changing the prefix makes only that environment's existing browser login cookies
+inactive, so users sign in once again. Cookies from sibling environments are left
+untouched and ignored. Rebuild both the API and web services after changing the
+value because the web client receives it at build time.
 
 ### `apps/runner`
 

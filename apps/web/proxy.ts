@@ -7,6 +7,7 @@ import {
   withLocalePath,
   type AppLocale
 } from "./i18n/config";
+import { AUTH_SESSION_COOKIE_NAME } from "./lib/authCookies";
 import { assertWebEnv } from "./lib/startup-env";
 
 assertWebEnv();
@@ -207,7 +208,7 @@ export async function proxy(req: NextRequest) {
     locale: localeFromPath,
     pathnameWithoutLocale
   } = extractLocaleFromPathname(pathname);
-  const session = req.cookies.get("mm_session");
+  const session = req.cookies.get(AUTH_SESSION_COOKIE_NAME);
   const apiBase = apiBaseUrl();
   const locale =
     localeFromPath ??

@@ -3,6 +3,7 @@ import type http from "node:http";
 import type { Duplex } from "node:stream";
 import type WebSocket from "ws";
 import type { WebSocketServer } from "ws";
+import { SESSION_COOKIE } from "../auth/cookies.js";
 
 export type WsAuthUser = {
   id: string;
@@ -48,7 +49,7 @@ function hashSessionToken(token: string): string {
 }
 
 async function authenticateWsUser(db: SessionDb, req: http.IncomingMessage): Promise<WsAuthUser | null> {
-  const token = readCookieValue(req.headers.cookie, "mm_session");
+  const token = readCookieValue(req.headers.cookie, SESSION_COOKIE);
   if (!token) return null;
 
   const session = await db.session.findUnique({

@@ -1,9 +1,13 @@
 import crypto from "node:crypto";
+import { resolveAuthCookieNames } from "./cookieNames.js";
 
-export const SESSION_COOKIE = "mm_session";
-export const CSRF_COOKIE = "mm_csrf";
+const AUTH_COOKIE_NAMES = resolveAuthCookieNames();
+
+export const SESSION_COOKIE = AUTH_COOKIE_NAMES.session;
+export const CSRF_COOKIE = AUTH_COOKIE_NAMES.csrf;
 export const CSRF_HEADER = "x-csrf-token";
-export const REAUTH_COOKIE = "mm_reauth";
+export const REAUTH_COOKIE = AUTH_COOKIE_NAMES.reauth;
+export const SIWE_NONCE_COOKIE = AUTH_COOKIE_NAMES.siweNonce;
 
 function cookieSecure(): boolean {
   const secureEnv = (process.env.COOKIE_SECURE ?? "").toLowerCase();
