@@ -19,7 +19,19 @@ const transports = Object.fromEntries(
 );
 
 const fallbackConnectors = [
-  injected({ target: "metaMask", shimDisconnect: true }),
+  injected({
+    target: {
+      id: "metaMask",
+      name: "MetaMask",
+      provider(window) {
+        const injectedProviders = window?.ethereum?.providers ?? (window?.ethereum ? [window.ethereum] : []);
+        return injectedProviders.find((provider) =>
+          provider.isMetaMask && !provider.isTrust && !provider.isTrustWallet
+        );
+      }
+    },
+    shimDisconnect: true
+  }),
   injected({ shimDisconnect: true })
 ];
 const appKitConnectors = web3ModalProjectId
