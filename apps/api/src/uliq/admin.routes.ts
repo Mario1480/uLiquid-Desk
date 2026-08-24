@@ -1,4 +1,5 @@
 import type express from "express";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { getUliqFeatureFlags } from "./config.js";
@@ -10,6 +11,7 @@ const treasurySchema = z.object({ desiredAddress: z.string().trim().max(42) });
 
 function jsonSafe(value: unknown): any {
   if (typeof value === "bigint") return value.toString();
+  if (Prisma.Decimal.isDecimal(value)) return value.toFixed();
   if (Array.isArray(value)) return value.map(jsonSafe);
   if (value && typeof value === "object") {
     if (value instanceof Date) return value.toISOString();

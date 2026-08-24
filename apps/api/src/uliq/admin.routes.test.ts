@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Prisma } from "@prisma/client";
 import { registerUliqAdminRoutes } from "./admin.routes.js";
 
 type Handler = (...args: any[]) => any;
 
 function fakeApp() {
+  const get = new Map<string, Handler[]>();
   const post = new Map<string, Handler[]>();
   const put = new Map<string, Handler[]>();
   return {
-    get: () => undefined,
+    get(path: string, ...handlers: Handler[]) { get.set(path, handlers); },
     post(path: string, ...handlers: Handler[]) { post.set(path, handlers); },
     put(path: string, ...handlers: Handler[]) { put.set(path, handlers); },
+    getRoutes: get,
     postRoutes: post,
     putRoutes: put
   };
@@ -34,6 +37,76 @@ async function run(handlers: Handler[], req: any, res: any) {
   };
   await next();
 }
+
+test("ULIQ admin overview serializes Prisma Decimal values as JSON strings", async () => {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_ADMIN_ENABLED = "true";
+  try {
+    const decimal = (value: string) => new Prisma.Decimal(value);
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: {
+        onchainSyncCursor: { findFirst: async () => null },
+        uliqReconciliationRun: { findFirst: async () => ({ asOfBlock: 123n, mismatchCount: 0 }) },
+        uliqBenefitReservation: { groupBy: async () => [] },
+        uliqPriceSnapshot: {
+          findFirst: async () => ({
+            priceUsd: decimal("0.001000000000000000"),
+            spotPriceUsd: decimal("0.001100000000000000"),
+            liquidityUsd: decimal("1234.56")
+          })
+        },
+        uliqPresalePurchase: {
+          groupBy: async () => [{
+            status: "FINALIZED",
+            _count: { _all: 1 },
+            _sum: { usdcAmountRaw: decimal("10000000"), uliqAllocationRaw: decimal("10000000000000000000000") }
+          }]
+        },
+        uliqVestingPosition: {
+          aggregate: async () => ({ _count: { _all: 1 }, _sum: { allocatedRaw: decimal("7500"), releasedRaw: decimal("0") } })
+        },
+        uliqLockPosition: {
+          aggregate: async () => ({ _count: { _all: 0 }, _sum: { amountRaw: decimal("0") } })
+        },
+        uliqTierConfig: {
+          findMany: async () => [{ id: "tier-1", code: "BASIC", minUsdValue: decimal("0") }]
+        },
+        platformAlert: { findMany: async () => [] },
+        adminAuditEvent: { findMany: async () => [] }
+      },
+      presaleService: { getOverview: async () => ({ state: "ACTIVE" }) } as any,
+      treasuryService: { getState: async () => ({ activeTreasury: "0x1111111111111111111111111111111111111111" }) } as any,
+      requireSuperadmin: async () => true,
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => { await next(); },
+      recordAdminAuditEvent: async () => undefined
+    });
+
+    const handlers = app.getRoutes.get("/admin/uliq");
+    assert.ok(handlers);
+    const response = mockResponse();
+    await run(handlers!.slice(1), {}, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.price.priceUsd, "0.001");
+    assert.equal(response.body.price.spotPriceUsd, "0.0011");
+    assert.equal(response.body.price.liquidityUsd, "1234.56");
+    assert.equal(response.body.stats.purchases[0]._sum.usdcAmountRaw, "10000000");
+    assert.equal(response.body.stats.vesting._sum.allocatedRaw, "7500");
+    assert.equal(response.body.tiers[0].minUsdValue, "0");
+    assert.equal(response.body.reconciliation.asOfBlock, "123");
+    assert.equal(JSON.stringify(response.body).includes('"s":'), false);
+    assert.equal(JSON.stringify(response.body).includes('"e":'), false);
+    assert.equal(JSON.stringify(response.body).includes('"d":'), false);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
 
 test("ULIQ Safe preparation checks superadmin before consuming reauth and never signs", async () => {
   const previousEnabled = process.env.ULIQ_ENABLED;
