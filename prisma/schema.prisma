@@ -120,6 +120,16 @@ enum UliqPresalePurchaseStatus {
   FINALIZED
 }
 
+enum UliqPurchaseTrackingStatus {
+  SUBMITTED
+  SOFT_CONFIRMED
+  SAFE
+  FINALIZED
+  FAILED
+  REORGED
+  REVIEW_REQUIRED
+}
+
 enum UliqLockPositionStatus {
   ACTIVE
   MATURED
@@ -839,6 +849,7 @@ model User {
   mobilePushTokens                     MobilePushToken[]
   mobileWatchlistItems                 MobileWatchlistItem[]
   uliqPresalePurchases                 UliqPresalePurchase[]
+  uliqPurchaseTrackings                UliqPurchaseTracking[]
   uliqEntitlementSnapshots             UliqEntitlementSnapshot[]
   uliqBenefitReservations              UliqBenefitReservation[]
   uliqBenefitLedgerEntries             UliqBenefitLedger[]
@@ -2221,6 +2232,38 @@ model UliqPresalePurchase {
   @@index([userId, createdAt(sort: Desc)], map: "uliq_presale_purchases_user_created_idx")
   @@index([treasuryRecipient, treasuryReleasedAt], map: "uliq_presale_purchases_treasury_release_idx")
   @@map("uliq_presale_purchases")
+}
+
+model UliqPurchaseTracking {
+  id                        String                     @id @default(cuid())
+  chainId                   Int                        @map("chain_id")
+  presaleContractAddress    String                     @map("presale_contract_address")
+  transactionHash           String                     @map("transaction_hash")
+  userId                    String                     @map("user_id")
+  user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress             String                     @map("wallet_address")
+  status                    UliqPurchaseTrackingStatus @default(SUBMITTED)
+  maxUsdcAmountRaw          Decimal                    @map("max_usdc_amount_raw") @db.Decimal(78, 0)
+  minUliqAllocationRaw      Decimal                    @map("min_uliq_allocation_raw") @db.Decimal(78, 0)
+  actualUsdcAmountRaw       Decimal?                   @map("actual_usdc_amount_raw") @db.Decimal(78, 0)
+  actualUliqAllocationRaw   Decimal?                   @map("actual_uliq_allocation_raw") @db.Decimal(78, 0)
+  purchaseIdOnchain         Decimal?                   @map("purchase_id_onchain") @db.Decimal(78, 0)
+  logIndex                  Int?                       @map("log_index")
+  receiptBlockNumber        BigInt?                    @map("receipt_block_number")
+  receiptBlockHash          String?                    @map("receipt_block_hash")
+  statusReason              String?                    @map("status_reason")
+  submittedAt               DateTime                   @default(now()) @map("submitted_at")
+  receiptObservedAt         DateTime?                  @map("receipt_observed_at")
+  lastCheckedAt             DateTime?                  @map("last_checked_at")
+  networkFinalizedAt        DateTime?                  @map("network_finalized_at")
+  createdAt                 DateTime                   @default(now()) @map("created_at")
+  updatedAt                 DateTime                   @updatedAt @map("updated_at")
+
+  @@unique([chainId, transactionHash], map: "uliq_purchase_tracking_chain_tx_key")
+  @@unique([chainId, presaleContractAddress, purchaseIdOnchain], map: "uliq_purchase_tracking_chain_purchase_key")
+  @@index([userId, status, updatedAt(sort: Desc)], map: "uliq_purchase_tracking_user_status_updated_idx")
+  @@index([status, lastCheckedAt], map: "uliq_purchase_tracking_status_checked_idx")
+  @@map("uliq_purchase_trackings")
 }
 
 model UliqVestingPosition {

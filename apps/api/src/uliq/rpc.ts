@@ -51,12 +51,53 @@ export async function getConsistentFinalizedBlock(pair: UliqRpcPair): Promise<{
   hash: `0x${string}`;
   timestamp: bigint;
 }> {
+  return getConsistentTaggedBlock(pair, "finalized");
+}
+
+export async function getConsistentSafeBlock(pair: UliqRpcPair): Promise<{
+  number: bigint;
+  hash: `0x${string}`;
+  timestamp: bigint;
+}> {
+  return getConsistentTaggedBlock(pair, "safe");
+}
+
+export async function getConsistentBlockAt(pair: UliqRpcPair, blockNumber: bigint): Promise<{
+  number: bigint;
+  hash: `0x${string}`;
+  timestamp: bigint;
+}> {
   const [primary, secondary] = await Promise.all([
-    pair.primary.getBlock({ blockTag: "finalized" }),
-    pair.secondary.getBlock({ blockTag: "finalized" })
+    pair.primary.getBlock({ blockNumber }),
+    pair.secondary.getBlock({ blockNumber })
   ]);
-  if (primary.number !== secondary.number || primary.hash !== secondary.hash || !primary.hash) {
-    throw new Error("uliq_rpc_finalized_head_mismatch");
+  if (!primary.hash || !secondary.hash || primary.number !== blockNumber || secondary.number !== blockNumber) {
+    throw new Error("uliq_rpc_block_unavailable");
   }
-  return { number: primary.number, hash: primary.hash, timestamp: primary.timestamp };
+  if (primary.hash.toLowerCase() !== secondary.hash.toLowerCase()) {
+    throw new Error("uliq_rpc_block_mismatch");
+  }
+  return { number: blockNumber, hash: primary.hash, timestamp: primary.timestamp };
+}
+
+async function getConsistentTaggedBlock(pair: UliqRpcPair, blockTag: "safe" | "finalized"): Promise<{
+  number: bigint;
+  hash: `0x${string}`;
+  timestamp: bigint;
+}> {
+  const [primaryHead, secondaryHead] = await Promise.all([
+    pair.primary.getBlock({ blockTag }),
+    pair.secondary.getBlock({ blockTag })
+  ]);
+  if (!primaryHead.hash || !secondaryHead.hash) throw new Error(`uliq_rpc_${blockTag}_head_unavailable`);
+
+  const commonNumber = primaryHead.number < secondaryHead.number ? primaryHead.number : secondaryHead.number;
+  if (primaryHead.number === commonNumber && secondaryHead.number === commonNumber) {
+    if (primaryHead.hash.toLowerCase() !== secondaryHead.hash.toLowerCase()) {
+      throw new Error(`uliq_rpc_${blockTag}_head_mismatch`);
+    }
+    return { number: commonNumber, hash: primaryHead.hash, timestamp: primaryHead.timestamp };
+  }
+
+  return getConsistentBlockAt(pair, commonNumber);
 }

@@ -403,6 +403,7 @@ import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
 import { registerUliqRoutes } from "./uliq/routes.js";
 import { registerUliqAdminRoutes } from "./uliq/admin.routes.js";
 import { UliqPresaleService } from "./uliq/presale.service.js";
+import { UliqPurchaseTrackingService } from "./uliq/purchaseTracking.service.js";
 import { UliqTreasuryService } from "./uliq/treasury.service.js";
 import { UliqEntitlementService } from "./uliq/entitlement.service.js";
 import { createLazyUliqService } from "./uliq/runtime.js";
@@ -632,6 +633,7 @@ const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
 const platformAlertCleanupJob = createPlatformAlertCleanupJob(db);
 const uliqJobs = createUliqJobs(db);
 const uliqPresaleService = createLazyUliqService(() => new UliqPresaleService(db));
+const uliqPurchaseTrackingService = createLazyUliqService(() => new UliqPurchaseTrackingService(db));
 const uliqTreasuryService = createLazyUliqService(() => new UliqTreasuryService(db));
 const uliqEntitlementService = createLazyUliqService(() => new UliqEntitlementService(db));
 const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db, {
@@ -11898,7 +11900,11 @@ registerSiweAuthRoutes(app, {
   vaultService,
   releaseUliqReservationsForWalletChange: (input) => releaseOpenUliqReservationsForWalletChange({ db, ...input })
 });
-registerUliqRoutes(app, { presaleService: uliqPresaleService, entitlementService: uliqEntitlementService });
+registerUliqRoutes(app, {
+  presaleService: uliqPresaleService,
+  purchaseTrackingService: uliqPurchaseTrackingService,
+  entitlementService: uliqEntitlementService
+});
 registerManualTradingMarketDataRoutes(app, {
   getTradingSettings,
   resolveMarketDataTradingAccount,
@@ -13233,6 +13239,7 @@ const apiLifecycle = createApiLifecycle({
     { name: "system-health-telegram", start: () => systemHealthTelegramJob.start(), stop: () => systemHealthTelegramJob.stop() },
     { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },
     { name: "uliq-indexer", start: () => uliqJobs.indexer.start(), stop: () => uliqJobs.indexer.stop() },
+    { name: "uliq-purchase-tracking", start: () => uliqJobs.purchaseTracking.start(), stop: () => uliqJobs.purchaseTracking.stop() },
     { name: "uliq-reconciliation", start: () => uliqJobs.reconciliation.start(), stop: () => uliqJobs.reconciliation.stop() },
     { name: "uliq-reservation-expiry", start: () => uliqJobs.reservationExpiry.start(), stop: () => uliqJobs.reservationExpiry.stop() },
     { name: "hyperliquid-api-expiry-reminder", start: () => hyperliquidApiExpiryReminderJob.start(), stop: () => hyperliquidApiExpiryReminderJob.stop() },

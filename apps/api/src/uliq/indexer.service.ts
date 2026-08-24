@@ -267,6 +267,18 @@ export async function projectUliqEvent(params: {
         blockNumber: log.blockNumber,
         blockHash: log.blockHash
       });
+    } else if (decoded.eventName === "UnsoldUliqReleased") {
+      await createHoldingLot({
+        tx,
+        config,
+        walletAddress: normalizedAddress(args.treasury),
+        amountRaw: BigInt(String(args.amount)),
+        eventKey: `${eventKey}:unsold-release`,
+        provenance: "WALLET_TRANSFER",
+        acquiredAt: blockTimestamp,
+        blockNumber: log.blockNumber,
+        blockHash: log.blockHash
+      });
     } else if (decoded.eventName === "DexLaunchTimestampSet") {
       const start = new Date(Number(args.dexLaunchTimestamp) * 1_000);
       const durationMs = 270 * 24 * 60 * 60 * 1_000;

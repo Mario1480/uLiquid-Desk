@@ -26,11 +26,14 @@ export const uliqPresaleAbi = parseAbi([
   "function buy(uint256 maxUsdcAmountRaw,uint256 minUliqAllocationRaw) returns (uint256 purchaseId,uint256 acceptedUsdcRaw,uint256 uliqAllocationRaw)",
   "function withdrawPurchase(uint256 purchaseId)",
   "function finalizePurchase(uint256 purchaseId)",
+  "function markDexPending()",
+  "function cancelEmptySale()",
   "function setDexLaunchTimestamp(uint64 dexLaunchTimestamp)",
   "event SaleStateChanged(uint8 indexed previousState,uint8 indexed nextState)",
   "event PurchaseCreated(uint256 indexed purchaseId,address indexed buyer,uint256 usdcAmountRaw,uint256 uliqAllocationRaw,uint64 withdrawalDeadline)",
   "event PurchaseWithdrawn(uint256 indexed purchaseId,address indexed buyer,uint256 usdcRefundRaw,uint256 cancelledUliqAllocationRaw)",
   "event PurchaseFinalized(uint256 indexed purchaseId,address indexed buyer,address indexed caller,uint256 walletUliqRaw,uint256 vestingUliqRaw)",
+  "event UnsoldUliqReleased(address indexed treasury,uint256 amount)",
   "event DexLaunchTimestampSet(uint64 indexed dexLaunchTimestamp)"
 ]);
 

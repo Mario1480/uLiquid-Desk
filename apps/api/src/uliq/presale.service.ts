@@ -1,6 +1,7 @@
 import { encodeFunctionData, type PublicClient } from "viem";
 import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
+import { mapUliqPurchaseTrackingForApi } from "./purchaseTracking.service.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
 import { databaseUint256Decimal, normalizeUliqAddress, parseUint256Decimal } from "./uint256.js";
 
@@ -96,10 +97,23 @@ export class UliqPresaleService {
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { walletAddress: true } });
     if (!user?.walletAddress) throw new Error("wallet_not_linked");
     const walletAddress = String(user.walletAddress).toLowerCase();
-    const purchases = await this.db.uliqPresalePurchase.findMany({
-      where: { userId, walletAddress },
-      orderBy: [{ purchaseBlockNumber: "desc" }, { logIndex: "desc" }]
-    });
+    const [purchases, trackedPurchases] = await Promise.all([
+      this.db.uliqPresalePurchase.findMany({
+        where: { userId, walletAddress },
+        orderBy: [{ purchaseBlockNumber: "desc" }, { logIndex: "desc" }]
+      }),
+      this.db.uliqPurchaseTracking.findMany({
+        where: {
+          userId,
+          walletAddress,
+          chainId: this.config.chainId,
+          presaleContractAddress: this.config.contracts.presale.toLowerCase()
+        },
+        orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
+        take: 50
+      })
+    ]);
+    const canonicalTransactionHashes = new Set(purchases.map((row: any) => String(row.transactionHash).toLowerCase()));
     return {
       walletAddress,
       purchases: purchases.map((row: any) => ({
@@ -111,8 +125,12 @@ export class UliqPresaleService {
         finalizationWalletRaw: databaseUint256Decimal(row.finalizationWalletRaw, "finalization_wallet_raw"),
         finalizationVestingRaw: databaseUint256Decimal(row.finalizationVestingRaw, "finalization_vesting_raw"),
         treasuryReleasedUsdcRaw: databaseUint256Decimal(row.treasuryReleasedUsdcRaw, "treasury_released_usdc_raw"),
-        purchaseBlockNumber: BigInt(row.purchaseBlockNumber).toString()
-      }))
+        purchaseBlockNumber: BigInt(row.purchaseBlockNumber).toString(),
+        confirmationStatus: "FINALIZED"
+      })),
+      trackedPurchases: trackedPurchases
+        .filter((row: any) => !canonicalTransactionHashes.has(String(row.transactionHash).toLowerCase()))
+        .map(mapUliqPurchaseTrackingForApi)
     };
   }
 

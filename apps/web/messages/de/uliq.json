@@ -10,6 +10,9 @@
   "walletMismatch": "Verbinde die serverseitig verknüpfte Wallet {wallet} auf Arbitrum Sepolia.",
   "connected": "Verknüpfte Wallet",
   "network": "Arbitrum Sepolia",
+  "token": {
+    "addToWallet": "ULIQ zu Wallet hinzufügen"
+  },
   "sale": {
     "title": "Presale-Status",
     "description": "Finalisierte Blockdaten, Hard-Cap-Fortschritt und aktuell maximal kaufbare Menge.",
@@ -79,7 +82,26 @@
   },
   "purchases": {
     "title": "Presale Purchases",
-    "empty": "Noch keine indexierten Purchases für diese Wallet.",
+    "empty": "Noch keine Purchases für diese Wallet.",
+    "pendingId": "Kauf wird zugeordnet",
+    "amount": "Kaufbetrag",
+    "transaction": "Transaktion öffnen",
+    "confirmationStatus": {
+      "submitted": "EINGEREICHT",
+      "softConfirmed": "BESTÄTIGT · FINALITÄT AUSSTEHEND",
+      "safe": "SAFE · FINALITÄT AUSSTEHEND",
+      "finalized": "NETZWERK FINALISIERT",
+      "failed": "FEHLGESCHLAGEN",
+      "reorged": "REORG ERKANNT",
+      "reviewRequired": "PRÜFUNG ERFORDERLICH"
+    },
+    "trackedSubmitted": "Die Wallet hat die Transaktion eingereicht. Receipt und Kaufdaten werden geprüft.",
+    "trackedSoftConfirmed": "Kauf erfolgreich – {usdc} USDC, {uliq} ULIQ. Finalität wird automatisch im Hintergrund geprüft.",
+    "trackedSafe": "Kauf bestätigt – {usdc} USDC, {uliq} ULIQ. Die endgültige Netzwerkfinalität steht noch aus.",
+    "trackedFinalized": "Die Netzwerkfinalität ist bestätigt. Der Indexer übernimmt den Kauf jetzt in den endgültigen Presale-Status.",
+    "trackedFailed": "Die Kauftransaktion wurde nicht erfolgreich ausgeführt. Es wurden keine Benefits freigeschaltet.",
+    "trackedReorged": "Der Receipt-Block gehört nicht mehr zur bestätigten Chain. Der Kauf bleibt gesperrt und wird geprüft.",
+    "trackedReviewRequired": "Receipt oder Kaufdaten konnten nicht eindeutig zugeordnet werden. Der Kauf bleibt gesperrt und muss geprüft werden.",
     "withdraw": "Widerruf vorbereiten",
     "finalize": "Finalisierung vorbereiten",
     "finalizeSyncing": "Finalisierung bestätigt – Indexer wird aktualisiert",
@@ -93,7 +115,14 @@
     "txSubmitted": "Transaktion eingereicht. Warte auf eine Bestätigung …",
     "txConfirmed": "Wallet-Transaktion bestätigt. Der Indexer aktualisiert den Status in Kürze.",
     "txReverted": "Die Wallet-Transaktion wurde zurückgesetzt und nicht ausgeführt.",
+    "txCancelled": "Die Wallet-Transaktion wurde abgebrochen oder durch eine Abbruchtransaktion ersetzt.",
     "approvalConfirmed": "Approval bestätigt. Bitte jetzt die Haupttransaktion signieren.",
+    "purchaseSoftConfirmed": "Kauf erfolgreich – {usdc} USDC, {uliq} ULIQ. Finalität wird automatisch im Hintergrund geprüft.",
+    "purchaseTrackingDelayed": "Die Wallet-Transaktion wurde bestätigt. Die Kaufzuordnung ist verzögert und wird automatisch im Hintergrund wiederholt; Benefits bleiben bis zur echten Finalisierung gesperrt.",
+    "purchaseTrackingReview": "Die bestätigte Wallet-Transaktion konnte nicht eindeutig als gültiger Presale-Kauf verifiziert werden. Benefits bleiben gesperrt; bitte die Transaktion prüfen lassen.",
+    "tokenAdded": "ULIQ wurde zur Wallet hinzugefügt.",
+    "tokenAddRejected": "ULIQ wurde nicht zur Wallet hinzugefügt. Die Wallet-Anfrage wurde abgelehnt.",
+    "tokenAddUnsupported": "Diese Wallet konnte ULIQ nicht automatisch hinzufügen. Nutze alternativ die ULIQ-Contract-Adresse für den manuellen Import.",
     "walletRequired": "Eine passende verknüpfte Wallet ist erforderlich.",
     "invalidAmount": "Bitte einen positiven Dezimalbetrag eingeben.",
     "actionFailed": "Die Aktion konnte nicht abgeschlossen werden."

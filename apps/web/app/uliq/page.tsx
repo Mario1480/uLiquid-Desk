@@ -10,6 +10,11 @@ import { wagmiConfig } from "../../lib/web3/config";
 import { AppIcon } from "../components/AppIcon";
 import Web3Providers from "../components/Web3Providers";
 import PageHeader from "../components/ui/PageHeader";
+import {
+  isWalletWatchAssetProvider,
+  requestWalletWatchAsset,
+  ULIQ_TOKEN_IMAGE_PATH
+} from "../../src/wallet/watchAsset";
 
 type PresaleOverview = {
   chainId: number;
@@ -23,6 +28,7 @@ type PresaleOverview = {
   pendingAllocationUliqRaw: string;
   pendingPurchaseCount: string;
   maximumPurchasableUsdcRaw: string;
+  tokenAddress: string;
   paymentTokenAddress: string;
   referencePriceUsd: string;
   asOfBlock: string;
@@ -37,9 +43,33 @@ type Purchase = {
   uliqAllocationRaw: string;
   withdrawalDeadline: string;
   transactionHash: string;
+  confirmationStatus: "FINALIZED";
 };
 
-type UserPresale = { walletAddress: string; purchases: Purchase[] };
+type PurchaseConfirmationStatus = "SUBMITTED" | "SOFT_CONFIRMED" | "SAFE" | "FINALIZED" | "FAILED" | "REORGED" | "REVIEW_REQUIRED";
+
+type TrackedPurchase = {
+  id: string;
+  chainId: number;
+  transactionHash: string;
+  confirmationStatus: PurchaseConfirmationStatus;
+  maxUsdcAmountRaw: string;
+  minUliqAllocationRaw: string;
+  usdcAmountRaw: string | null;
+  uliqAllocationRaw: string | null;
+  purchaseIdOnchain: string | null;
+  receiptBlockNumber: string | null;
+  statusReason: string | null;
+  submittedAt: string;
+  receiptObservedAt: string | null;
+  networkFinalizedAt: string | null;
+};
+
+type UserPresale = {
+  walletAddress: string;
+  purchases: Purchase[];
+  trackedPurchases: TrackedPurchase[];
+};
 
 type Entitlement = {
   walletAddress: string;
@@ -103,7 +133,28 @@ type PreparedTx = {
   expectedSender: string | null;
 };
 
+type TransactionResult = {
+  submittedHash: Hex;
+  receiptHash: Hex;
+  replacementReason: "cancelled" | "replaced" | "repriced" | null;
+};
+
 const PENDING_FINALIZE_TX_STORAGE_KEY = "uliquid.uliq.pendingFinalizeTxHashes.v1";
+const PURCHASE_TRACKING_REQUEST_TIMEOUT_MS = 5_000;
+
+async function purchaseTrackingRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      apiPost<T>(path, body),
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("purchase_tracking_request_timeout")), PURCHASE_TRACKING_REQUEST_TIMEOUT_MS);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 function finalizeTxKey(chainId: number, contractAddress: string, purchaseId: string): string {
   return `${chainId}:${contractAddress.toLowerCase()}:${purchaseId}`;
@@ -154,16 +205,16 @@ function errorMessage(error: unknown): string {
 
 function statusTone(value: string): string {
   const state = value.toLowerCase();
-  if (["active", "finalized", "healthy", "dex_launched", "completed"].includes(state)) return "success";
-  if (["paused", "pending_withdrawal", "market_observation", "degraded"].includes(state)) return "warning";
-  if (["cancelled", "withdrawn", "invalid", "stale"].includes(state)) return "danger";
+  if (["active", "finalized", "healthy", "dex_launched", "completed", "soft_confirmed"].includes(state)) return "success";
+  if (["paused", "pending_withdrawal", "market_observation", "degraded", "submitted", "safe", "review_required"].includes(state)) return "warning";
+  if (["cancelled", "withdrawn", "invalid", "stale", "failed", "reorged"].includes(state)) return "danger";
   return "info";
 }
 
 function UliqHubContent() {
   const t = useTranslations("uliq");
   const locale = useLocale();
-  const { address, chainId, isConnected } = useAccount();
+  const { address, chainId, connector, isConnected } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { sendTransactionAsync } = useSendTransaction();
   const [overview, setOverview] = useState<PresaleOverview | null>(null);
@@ -240,6 +291,21 @@ function UliqHubContent() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const hasPendingPurchaseTracking = Boolean(me?.trackedPurchases?.some((purchase) => (
+    ["SUBMITTED", "SOFT_CONFIRMED", "SAFE", "FINALIZED"].includes(purchase.confirmationStatus)
+  )));
+
+  useEffect(() => {
+    if (!hasPendingPurchaseTracking) return;
+    const timer = window.setInterval(() => { void load(); }, 10_000);
+    const refreshOnFocus = () => { void load(); };
+    window.addEventListener("focus", refreshOnFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshOnFocus);
+    };
+  }, [hasPendingPurchaseTracking, load]);
+
   useEffect(() => {
     setPendingFinalizeTxHashes(readPendingFinalizeTxHashes());
   }, []);
@@ -289,6 +355,29 @@ function UliqHubContent() {
   const vestingProgress = vesting && BigInt(vesting.allocatedRaw) > BigInt(0)
     ? Number(BigInt(vesting.vestedRaw) * BigInt(10_000) / BigInt(vesting.allocatedRaw)) / 100
     : 0;
+  const trackedPurchases = me?.trackedPurchases ?? [];
+  const hasPurchaseHistory = Boolean(me && (me.purchases.length > 0 || trackedPurchases.length > 0));
+
+  function trackingPresentation(purchase: TrackedPurchase): { label: string; message: string; noticeTone: string } {
+    const usdc = formatRaw(purchase.usdcAmountRaw ?? purchase.maxUsdcAmountRaw, 6, 2);
+    const uliq = formatRaw(purchase.uliqAllocationRaw ?? purchase.minUliqAllocationRaw, 18, 2);
+    switch (purchase.confirmationStatus) {
+      case "SUBMITTED":
+        return { label: t("purchases.confirmationStatus.submitted"), message: t("purchases.trackedSubmitted"), noticeTone: "info" };
+      case "SOFT_CONFIRMED":
+        return { label: t("purchases.confirmationStatus.softConfirmed"), message: t("purchases.trackedSoftConfirmed", { usdc, uliq }), noticeTone: "success" };
+      case "SAFE":
+        return { label: t("purchases.confirmationStatus.safe"), message: t("purchases.trackedSafe", { usdc, uliq }), noticeTone: "info" };
+      case "FINALIZED":
+        return { label: t("purchases.confirmationStatus.finalized"), message: t("purchases.trackedFinalized"), noticeTone: "success" };
+      case "FAILED":
+        return { label: t("purchases.confirmationStatus.failed"), message: t("purchases.trackedFailed"), noticeTone: "danger" };
+      case "REORGED":
+        return { label: t("purchases.confirmationStatus.reorged"), message: t("purchases.trackedReorged"), noticeTone: "danger" };
+      default:
+        return { label: t("purchases.confirmationStatus.reviewRequired"), message: t("purchases.trackedReviewRequired"), noticeTone: "warning" };
+    }
+  }
 
   function parsePositiveAmount(value: string, decimals: number): bigint {
     const normalized = value.trim().replace(",", ".");
@@ -301,9 +390,9 @@ function UliqHubContent() {
   async function executeTransaction(
     tx: PreparedTx,
     stage: string,
-    onSubmitted?: (hash: Hex) => void,
+    onSubmitted?: (hash: Hex) => void | Promise<void>,
     onReverted?: () => void
-  ): Promise<Hex> {
+  ): Promise<TransactionResult> {
     if (!canSign || !address) throw new Error(t("messages.walletRequired"));
     if (chainId !== tx.chainId) await switchChainAsync({ chainId: tx.chainId });
     setNotice(stage);
@@ -315,23 +404,35 @@ function UliqHubContent() {
       value: BigInt(tx.value || "0")
     });
     setLastTxHash(hash);
-    onSubmitted?.(hash);
+    await onSubmitted?.(hash);
     setNotice(t("messages.txSubmitted"));
-    const receipt = await waitForTransactionReceipt(wagmiConfig, { chainId: tx.chainId, hash, confirmations: 1 });
+    let replacementReason: TransactionResult["replacementReason"] = null;
+    let replacementHash: Hex | null = null;
+    const receipt = await waitForTransactionReceipt(wagmiConfig, {
+      chainId: tx.chainId,
+      hash,
+      confirmations: 1,
+      onReplaced: (replacement) => {
+        replacementReason = replacement.reason;
+        replacementHash = replacement.transaction.hash;
+        setLastTxHash(replacement.transaction.hash);
+      }
+    });
     if (receipt.status !== "success") {
       onReverted?.();
       throw new Error(t("messages.txReverted"));
     }
-    return hash;
+    const receiptHash = (receipt.transactionHash ?? replacementHash ?? hash) as Hex;
+    return { submittedHash: hash, receiptHash, replacementReason };
   }
 
-  async function runAction(key: string, action: () => Promise<void>) {
+  async function runAction<T>(key: string, action: () => Promise<T>) {
     setBusy(key);
     setError(null);
     setNotice(null);
     try {
-      await action();
-      setNotice(t("messages.txConfirmed"));
+      const successMessage = await action();
+      setNotice(typeof successMessage === "string" ? successMessage : t("messages.txConfirmed"));
       await load();
     } catch (actionError) {
       setError(errorMessage(actionError) || t("messages.actionFailed"));
@@ -354,28 +455,106 @@ function UliqHubContent() {
     }
   }
 
+  async function addUliqTokenToWallet(): Promise<string> {
+    if (!overview || !isAddress(overview.tokenAddress) || !connector) {
+      throw new Error(t("messages.walletRequired"));
+    }
+    if (chainId !== overview.chainId) await switchChainAsync({ chainId: overview.chainId });
+    const provider = await connector.getProvider();
+    if (!isWalletWatchAssetProvider(provider)) throw new Error(t("messages.tokenAddUnsupported"));
+    let added = false;
+    try {
+      added = await requestWalletWatchAsset(provider, {
+        tokenAddress: overview.tokenAddress,
+        imageUrl: new URL(ULIQ_TOKEN_IMAGE_PATH, window.location.origin).toString()
+      });
+    } catch (watchError) {
+      const code = typeof watchError === "object" && watchError !== null && "code" in watchError
+        ? Number((watchError as { code?: unknown }).code)
+        : null;
+      if (code === 4001) throw new Error(t("messages.tokenAddRejected"));
+      throw new Error(t("messages.tokenAddUnsupported"));
+    }
+    if (!added) throw new Error(t("messages.tokenAddRejected"));
+    return t("messages.tokenAdded");
+  }
+
   async function purchase() {
     if (!quote) throw new Error(t("purchase.quote"));
     const prepared = await apiPost<{ approval: PreparedTx; purchase: PreparedTx }>("/uliq/presale/purchase/prepare", {
       maxUsdcAmountRaw: quote.requestedUsdcRaw,
       minUliqAllocationRaw: quote.uliqAllocationRaw
     });
-    await executeTransaction(prepared.approval, t("messages.txSubmitted"));
+    const approvalResult = await executeTransaction(prepared.approval, t("messages.txSubmitted"));
+    if (approvalResult.replacementReason === "cancelled") throw new Error(t("messages.txCancelled"));
     setNotice(t("messages.approvalConfirmed"));
-    await executeTransaction(prepared.purchase, t("purchase.buy"));
+    let tracked: TrackedPurchase | null = null;
+    const purchaseResult = await executeTransaction(
+      prepared.purchase,
+      t("purchase.buy"),
+      async (transactionHash) => {
+        try {
+          tracked = await purchaseTrackingRequest<TrackedPurchase>("/uliq/presale/purchase/track", {
+            transactionHash,
+            maxUsdcAmountRaw: quote.requestedUsdcRaw,
+            minUliqAllocationRaw: quote.uliqAllocationRaw
+          });
+        } catch {
+          // A second registration attempt uses the mined hash after the receipt resolves.
+        }
+      }
+    );
+    try {
+      if (purchaseResult.receiptHash !== purchaseResult.submittedHash && tracked) {
+        tracked = await purchaseTrackingRequest<TrackedPurchase>("/uliq/presale/purchase/track/replace", {
+          transactionHash: purchaseResult.submittedHash,
+          replacementTransactionHash: purchaseResult.receiptHash,
+          reason: purchaseResult.replacementReason ?? "replaced"
+        });
+      } else if (!tracked && purchaseResult.replacementReason !== "cancelled") {
+        tracked = await purchaseTrackingRequest<TrackedPurchase>("/uliq/presale/purchase/track", {
+          transactionHash: purchaseResult.receiptHash,
+          maxUsdcAmountRaw: quote.requestedUsdcRaw,
+          minUliqAllocationRaw: quote.uliqAllocationRaw
+        });
+      }
+      if (purchaseResult.replacementReason !== "cancelled") {
+        tracked = await purchaseTrackingRequest<TrackedPurchase>("/uliq/presale/purchase/track/refresh", {
+          transactionHash: purchaseResult.receiptHash
+        });
+      }
+    } catch {
+      // The persisted background job retries matching; benefits remain fail-closed meanwhile.
+    }
+    if (purchaseResult.replacementReason === "cancelled") throw new Error(t("messages.txCancelled"));
     setQuote(null);
     setPurchaseAmount("");
+    if (tracked?.usdcAmountRaw && tracked.uliqAllocationRaw) {
+      return t("messages.purchaseSoftConfirmed", {
+        usdc: formatRaw(tracked.usdcAmountRaw, 6, 2),
+        uliq: formatRaw(tracked.uliqAllocationRaw, 18, 2)
+      });
+    }
+    if (tracked && ["FAILED", "REORGED", "REVIEW_REQUIRED"].includes(tracked.confirmationStatus)) {
+      throw new Error(t("messages.purchaseTrackingReview"));
+    }
+    return t("messages.purchaseTrackingDelayed");
   }
 
   async function executePrepared(
     path: string,
     body: Record<string, unknown>,
     label: string,
-    onSubmitted?: (hash: Hex) => void,
+    onSubmitted?: (hash: Hex) => void | Promise<void>,
     onReverted?: () => void
-  ): Promise<void> {
+  ): Promise<TransactionResult> {
     const prepared = await apiPost<PreparedTx>(path, body);
-    await executeTransaction(prepared, label, onSubmitted, onReverted);
+    const result = await executeTransaction(prepared, label, onSubmitted, onReverted);
+    if (result.replacementReason === "cancelled") {
+      onReverted?.();
+      throw new Error(t("messages.txCancelled"));
+    }
+    return result;
   }
 
   async function finalizePurchase(purchase: Purchase): Promise<void> {
@@ -383,7 +562,7 @@ function UliqHubContent() {
     const key = finalizeTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
     let submitted = false;
     try {
-      await executePrepared(
+      const result = await executePrepared(
         "/uliq/presale/finalize/prepare",
         { purchaseId: purchase.purchaseIdOnchain },
         t("purchases.finalize"),
@@ -393,6 +572,7 @@ function UliqHubContent() {
         },
         () => forgetPendingFinalize(key)
       );
+      if (result.receiptHash !== result.submittedHash) rememberPendingFinalize(key, result.receiptHash);
     } catch (finalizeError) {
       if (!submitted) forgetPendingFinalize(key);
       throw finalizeError;
@@ -405,9 +585,11 @@ function UliqHubContent() {
       amountRaw: amountRaw.toString(),
       durationDays: lockDuration
     });
-    await executeTransaction(prepared.approval, t("messages.txSubmitted"));
+    const approvalResult = await executeTransaction(prepared.approval, t("messages.txSubmitted"));
+    if (approvalResult.replacementReason === "cancelled") throw new Error(t("messages.txCancelled"));
     setNotice(t("messages.approvalConfirmed"));
-    await executeTransaction(prepared.lock, t("locking.lock"));
+    const lockResult = await executeTransaction(prepared.lock, t("locking.lock"));
+    if (lockResult.replacementReason === "cancelled") throw new Error(t("messages.txCancelled"));
     setLockAmount("");
   }
 
@@ -423,9 +605,14 @@ function UliqHubContent() {
         description={t("subtitle")}
         tone="accent"
         actions={(
-          <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
-            <AppIcon name="refresh" /> {t("refresh")}
-          </button>
+          <>
+            <button type="button" className="btn btnPrimary" onClick={() => void runAction("watch-uliq", addUliqTokenToWallet)} disabled={!canSign || !overview?.tokenAddress || busy !== null}>
+              <AppIcon name="wallet" /> {t("token.addToWallet")}
+            </button>
+            <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
+              <AppIcon name="refresh" /> {t("refresh")}
+            </button>
+          </>
         )}
       />
 
@@ -533,12 +720,30 @@ function UliqHubContent() {
 
       <section className="uiSection">
         <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("purchases.title")}</h2><p className="uiSectionDescription">{t("connected")}: <span className="uliqMono">{linkedWallet || "–"}</span></p></div></div>
-        {me?.purchases?.length ? <div className="uliqPositionList">{me.purchases.map((purchaseRow) => {
+        {hasPurchaseHistory ? <div className="uliqPositionList">
+          {trackedPurchases.map((trackedPurchase) => {
+            const presentation = trackingPresentation(trackedPurchase);
+            return <article key={`tracking-${trackedPurchase.id}`} className="uliqPositionCard">
+              <div>
+                <strong>{trackedPurchase.purchaseIdOnchain ? `#${trackedPurchase.purchaseIdOnchain}` : t("purchases.pendingId")}</strong>
+                <span className={`uiStatusBadge uiStatusBadge-${statusTone(trackedPurchase.confirmationStatus)}`}>{presentation.label}</span>
+              </div>
+              <dl>
+                <div><dt>{t("purchases.amount")}</dt><dd>{formatRaw(trackedPurchase.usdcAmountRaw ?? trackedPurchase.maxUsdcAmountRaw, 6, 2)} USDC</dd></div>
+                <div><dt>{t("purchases.allocation")}</dt><dd>{formatRaw(trackedPurchase.uliqAllocationRaw ?? trackedPurchase.minUliqAllocationRaw, 18, 2)} ULIQ</dd></div>
+              </dl>
+              <div className={`uiNotice uiNotice-${presentation.noticeTone}`}>{presentation.message}</div>
+              <div className="uliqActions">
+                <a className="btn" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${trackedPurchase.transactionHash}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {t("purchases.transaction")}</a>
+              </div>
+            </article>;
+          })}
+          {me?.purchases.map((purchaseRow) => {
           const deadlinePassed = new Date(purchaseRow.withdrawalDeadline).getTime() < Date.now();
           const finalizeKey = overview ? finalizeTxKey(overview.chainId, overview.contractAddress, purchaseRow.purchaseIdOnchain) : null;
           const finalizeSyncPending = Boolean(finalizeKey && pendingFinalizeTxHashes[finalizeKey]);
           return <article key={purchaseRow.id} className="uliqPositionCard">
-            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className={`uiStatusBadge uiStatusBadge-${statusTone(finalizeSyncPending ? "completed" : purchaseRow.status)}`}>{finalizeSyncPending ? t("purchases.finalizeSyncingStatus") : purchaseRow.status.replaceAll("_", " ")}</span></div>
+            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className="uliqStatusGroup"><span className="uiStatusBadge uiStatusBadge-success">{t("purchases.confirmationStatus.finalized")}</span><span className={`uiStatusBadge uiStatusBadge-${statusTone(finalizeSyncPending ? "completed" : purchaseRow.status)}`}>{finalizeSyncPending ? t("purchases.finalizeSyncingStatus") : purchaseRow.status.replaceAll("_", " ")}</span></span></div>
             <dl><div><dt>{t("purchases.allocation")}</dt><dd>{formatRaw(purchaseRow.uliqAllocationRaw, 18)} ULIQ</dd></div><div><dt>{t("purchases.deadline")}</dt><dd>{formatDate(purchaseRow.withdrawalDeadline, locale)}</dd></div></dl>
             {purchaseRow.status === "PENDING_WITHDRAWAL" ? <div className="uliqActions">
               <div className={`uiNotice ${finalizeSyncPending ? "uiNotice-success" : "uiNotice-warning"}`}>{t(finalizeSyncPending ? "purchases.finalizeSyncingHint" : "purchases.pendingInactive")}</div>
@@ -546,7 +751,8 @@ function UliqHubContent() {
               <button type="button" className="btn btnPrimary" disabled={!canSign || !deadlinePassed || busy !== null || finalizeSyncPending} onClick={() => void runAction(`finalize-${purchaseRow.id}`, () => finalizePurchase(purchaseRow))}><AppIcon name="check" /> {t(finalizeSyncPending ? "purchases.finalizeSyncing" : "purchases.finalize")}</button>
             </div> : null}
           </article>;
-        })}</div> : <div className="uiEmptyState">{t("purchases.empty")}</div>}
+          })}
+        </div> : <div className="uiEmptyState">{t("purchases.empty")}</div>}
       </section>
 
       {locks ? <section className="uiSection"><div className="uiSectionHeader"><h2 className="uiSectionTitle">{t("locking.positions")}</h2></div>{locks.positions.length ? <div className="uliqPositionList">{locks.positions.map((position) => <article key={position.id} className="uliqPositionCard"><div><strong>Lock #{position.lockIdOnchain}</strong><span className={`uiStatusBadge uiStatusBadge-${statusTone(position.status)}`}>{position.status}</span></div><dl><div><dt>{t("locking.amount")}</dt><dd>{formatRaw(position.amountRaw, 18)} ULIQ</dd></div><div><dt>{t("purchases.deadline")}</dt><dd>{formatDate(position.unlockAt, locale)}</dd></div></dl>{position.status !== "WITHDRAWN" ? <button type="button" className="btn" disabled={!canSign || new Date(position.unlockAt).getTime() > Date.now() || busy !== null} onClick={() => void runAction(`unlock-${position.id}`, () => executePrepared("/uliq/locking/unlock/prepare", { lockId: position.lockIdOnchain }, t("locking.unlock")))}><AppIcon name="withdraw" /> {t("locking.unlock")}</button> : null}</article>)}</div> : <div className="uiEmptyState">{t("locking.empty")}</div>}</section> : null}

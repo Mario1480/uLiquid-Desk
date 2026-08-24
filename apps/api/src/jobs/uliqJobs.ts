@@ -2,6 +2,7 @@ import { logger } from "../logger.js";
 import { expireUliqBenefitReservations } from "../uliq/benefitReservation.service.js";
 import { getUliqFeatureFlags, getUliqRuntimeConfig } from "../uliq/config.js";
 import { UliqIndexerService } from "../uliq/indexer.service.js";
+import { UliqPurchaseTrackingService } from "../uliq/purchaseTracking.service.js";
 import { UliqReconciliationService } from "../uliq/reconciliation.service.js";
 
 type JobState = {
@@ -79,8 +80,10 @@ function createPollingJob(params: {
 
 export function createUliqJobs(db: any) {
   let indexer: UliqIndexerService | null = null;
+  let purchaseTracking: UliqPurchaseTrackingService | null = null;
   let reconciliation: UliqReconciliationService | null = null;
   const getIndexer = () => indexer ??= new UliqIndexerService(db, getUliqRuntimeConfig());
+  const getPurchaseTracking = () => purchaseTracking ??= new UliqPurchaseTrackingService(db, getUliqRuntimeConfig());
   const getReconciliation = () => reconciliation ??= new UliqReconciliationService(db, getUliqRuntimeConfig());
   return {
     indexer: createPollingJob({
@@ -105,6 +108,12 @@ export function createUliqJobs(db: any) {
           throw error;
         }
       }
+    }),
+    purchaseTracking: createPollingJob({
+      name: "uliq_purchase_tracking",
+      enabled: () => safeEnabled("enabled"),
+      pollMs: intervalMs("ULIQ_PURCHASE_TRACKING_INTERVAL_SECONDS", 10),
+      run: () => getPurchaseTracking().reconcilePending()
     }),
     reconciliation: createPollingJob({
       name: "uliq_reconciliation",

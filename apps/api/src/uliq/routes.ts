@@ -5,12 +5,21 @@ import { getUliqFeatureFlags } from "./config.js";
 import { UliqEntitlementService } from "./entitlement.service.js";
 import { mapUliqEntitlementForApi } from "./benefitReservation.service.js";
 import { UliqPresaleService } from "./presale.service.js";
+import { UliqPurchaseTrackingService } from "./purchaseTracking.service.js";
 
 const uint256Schema = z.string().trim().regex(/^(0|[1-9]\d*)$/).max(78);
 const quoteSchema = z.object({ requestedUsdcRaw: uint256Schema });
 const purchaseSchema = z.object({
   maxUsdcAmountRaw: uint256Schema,
   minUliqAllocationRaw: uint256Schema
+});
+const transactionHashSchema = z.string().trim().regex(/^0x[0-9a-fA-F]{64}$/);
+const purchaseTrackingSchema = purchaseSchema.extend({ transactionHash: transactionHashSchema });
+const purchaseTrackingRefreshSchema = z.object({ transactionHash: transactionHashSchema });
+const purchaseTrackingReplacementSchema = z.object({
+  transactionHash: transactionHashSchema,
+  replacementTransactionHash: transactionHashSchema,
+  reason: z.enum(["cancelled", "replaced", "repriced"]).optional()
 });
 const purchaseIdSchema = z.object({ purchaseId: uint256Schema });
 const lockSchema = z.object({ amountRaw: uint256Schema, durationDays: z.union([z.literal(30), z.literal(90), z.literal(180)]) });
@@ -20,6 +29,7 @@ function mapError(error: unknown): { status: number; error: string } {
   const reason = error instanceof Error ? error.message : String(error);
   if (reason === "uliq_disabled" || reason === "uliq_production_activation_forbidden") return { status: 404, error: "not_found" };
   if (reason === "wallet_not_linked") return { status: 422, error: reason };
+  if (reason === "purchase_tracking_not_found") return { status: 404, error: reason };
   if (reason.includes("invalid_") || reason === "unsupported_lock_duration") return { status: 400, error: reason };
   if (reason.includes("mismatch") || reason.includes("not_pending") || reason === "uliq_sale_not_active") {
     return { status: 409, error: reason };
@@ -30,6 +40,7 @@ function mapError(error: unknown): { status: number; error: string } {
 
 export function registerUliqRoutes(app: express.Express, deps: {
   presaleService: UliqPresaleService;
+  purchaseTrackingService: UliqPurchaseTrackingService;
   entitlementService: UliqEntitlementService;
 }) {
   function allowed(flag: "presaleEnabled" | "lockingEnabled" | "enabled", res: express.Response): boolean {
@@ -80,6 +91,42 @@ export function registerUliqRoutes(app: express.Express, deps: {
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     try { return res.json(await deps.presaleService.preparePurchase({ userId: getUserFromLocals(res).id, ...parsed.data })); }
     catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
+  });
+
+  app.post("/uliq/presale/purchase/track", requireAuth, async (req, res) => {
+    if (!allowed("presaleEnabled", res)) return;
+    const parsed = purchaseTrackingSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    try {
+      return res.json(await deps.purchaseTrackingService.trackSubmitted({
+        userId: getUserFromLocals(res).id,
+        ...parsed.data
+      }));
+    } catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
+  });
+
+  app.post("/uliq/presale/purchase/track/refresh", requireAuth, async (req, res) => {
+    if (!allowed("presaleEnabled", res)) return;
+    const parsed = purchaseTrackingRefreshSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    try {
+      return res.json(await deps.purchaseTrackingService.refreshForUser(
+        getUserFromLocals(res).id,
+        parsed.data.transactionHash
+      ));
+    } catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
+  });
+
+  app.post("/uliq/presale/purchase/track/replace", requireAuth, async (req, res) => {
+    if (!allowed("presaleEnabled", res)) return;
+    const parsed = purchaseTrackingReplacementSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    try {
+      return res.json(await deps.purchaseTrackingService.replaceSubmitted({
+        userId: getUserFromLocals(res).id,
+        ...parsed.data
+      }));
+    } catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
   });
 
   app.post("/uliq/presale/withdraw/prepare", requireAuth, async (req, res) => {

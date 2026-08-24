@@ -10,6 +10,9 @@
   "walletMismatch": "Connect the server-linked wallet {wallet} on Arbitrum Sepolia.",
   "connected": "Linked wallet",
   "network": "Arbitrum Sepolia",
+  "token": {
+    "addToWallet": "Add ULIQ to wallet"
+  },
   "sale": {
     "title": "Presale status",
     "description": "Finalized block data, hard-cap progress, and the current maximum purchase.",
@@ -79,7 +82,26 @@
   },
   "purchases": {
     "title": "Presale purchases",
-    "empty": "No indexed purchases for this wallet yet.",
+    "empty": "No purchases for this wallet yet.",
+    "pendingId": "Assigning purchase",
+    "amount": "Purchase amount",
+    "transaction": "Open transaction",
+    "confirmationStatus": {
+      "submitted": "SUBMITTED",
+      "softConfirmed": "CONFIRMED · FINALITY PENDING",
+      "safe": "SAFE · FINALITY PENDING",
+      "finalized": "NETWORK FINALIZED",
+      "failed": "FAILED",
+      "reorged": "REORG DETECTED",
+      "reviewRequired": "REVIEW REQUIRED"
+    },
+    "trackedSubmitted": "The wallet submitted the transaction. The receipt and purchase data are being verified.",
+    "trackedSoftConfirmed": "Purchase successful – {usdc} USDC, {uliq} ULIQ. Finality is checked automatically in the background.",
+    "trackedSafe": "Purchase confirmed – {usdc} USDC, {uliq} ULIQ. Final network finality is still pending.",
+    "trackedFinalized": "Network finality is confirmed. The indexer is moving the purchase into its final presale state.",
+    "trackedFailed": "The purchase transaction did not execute successfully. No benefits were enabled.",
+    "trackedReorged": "The receipt block is no longer part of the confirmed chain. The purchase remains locked for review.",
+    "trackedReviewRequired": "The receipt or purchase data could not be matched unambiguously. The purchase remains locked for review.",
     "withdraw": "Prepare withdrawal",
     "finalize": "Prepare finalization",
     "finalizeSyncing": "Finalization confirmed – updating indexer",
@@ -93,7 +115,14 @@
     "txSubmitted": "Transaction submitted. Waiting for one confirmation …",
     "txConfirmed": "Wallet transaction confirmed. The indexer will refresh the status shortly.",
     "txReverted": "The wallet transaction reverted and was not executed.",
+    "txCancelled": "The wallet transaction was cancelled or replaced by a cancellation transaction.",
     "approvalConfirmed": "Approval confirmed. Please sign the main transaction now.",
+    "purchaseSoftConfirmed": "Purchase successful – {usdc} USDC, {uliq} ULIQ. Finality is checked automatically in the background.",
+    "purchaseTrackingDelayed": "The wallet transaction was confirmed. Purchase matching is delayed and will retry automatically in the background; benefits remain locked until true finality.",
+    "purchaseTrackingReview": "The confirmed wallet transaction could not be verified unambiguously as a valid presale purchase. Benefits remain locked; please have the transaction reviewed.",
+    "tokenAdded": "ULIQ was added to the wallet.",
+    "tokenAddRejected": "ULIQ was not added to the wallet. The wallet request was rejected.",
+    "tokenAddUnsupported": "This wallet could not add ULIQ automatically. Use the ULIQ contract address for a manual import instead.",
     "walletRequired": "A matching linked wallet is required.",
     "invalidAmount": "Enter a positive decimal amount.",
     "actionFailed": "The action could not be completed."
