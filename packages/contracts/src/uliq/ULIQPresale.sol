@@ -89,6 +89,7 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
     error DexLaunchAlreadySet();
     error InvalidDexLaunchTimestamp();
     error CancellationRequiresNoPurchases();
+    error InvalidCancellationState(SaleState actual);
 
     event SaleStateChanged(SaleState indexed previousState, SaleState indexed nextState);
     event PurchaseCreated(
@@ -108,6 +109,7 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         uint256 walletUliqRaw,
         uint256 vestingUliqRaw
     );
+    event UnsoldUliqReleased(address indexed treasury, uint256 amount);
     event DexLaunchTimestampSet(uint64 indexed dexLaunchTimestamp);
 
     constructor(
@@ -182,18 +184,23 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
         _setState(SaleState.ENDED);
     }
 
-    function markDexPending() external onlyOwner {
+    /// @notice Advances the ended sale and atomically releases only the unsold presale allocation.
+    /// @dev The recipient is resolved from the payment custody so ULIQ and settled USDC share one active treasury.
+    function markDexPending() external onlyOwner nonReentrant {
         _requireState(SaleState.ENDED);
+        if (pendingPurchaseCount != 0) revert PendingPurchasesRemain(pendingPurchaseCount);
         _setState(SaleState.DEX_PENDING);
+        _releaseUnsoldUliqToTreasury();
     }
 
     /// @notice Cancels only an empty testnet sale. Finalized/pending cancellation remains ADR-001-blocked.
-    function cancelEmptySale() external onlyOwner {
-        if (state != SaleState.ACTIVE && state != SaleState.PAUSED) {
-            revert InvalidState(SaleState.ACTIVE, state);
+    function cancelEmptySale() external onlyOwner nonReentrant {
+        if (state != SaleState.READY && state != SaleState.ACTIVE && state != SaleState.PAUSED) {
+            revert InvalidCancellationState(state);
         }
         if (totalSoldUliqRaw != 0 || pendingPurchaseCount != 0) revert CancellationRequiresNoPurchases();
         _setState(SaleState.CANCELLED);
+        _releaseUnsoldUliqToTreasury();
     }
 
     function completeSale() external onlyOwner {
@@ -320,6 +327,18 @@ contract ULIQPresale is Ownable2Step, ReentrancyGuard {
 
     function maximumPurchasableUsdcRaw() external view returns (uint256 acceptedUsdcRaw) {
         (acceptedUsdcRaw,) = quotePurchase(type(uint256).max);
+    }
+
+    function _releaseUnsoldUliqToTreasury() private {
+        address treasury = paymentCustody.treasury();
+        if (treasury == address(0)) revert ZeroAddress();
+
+        uint256 unsoldUliqRaw = allocationCapUliqRaw - finalizedAllocationUliqRaw;
+        uint256 inventory = uliq.balanceOf(address(this));
+        if (inventory < unsoldUliqRaw) revert InsufficientInventory(inventory, unsoldUliqRaw);
+
+        if (unsoldUliqRaw != 0) uliq.safeTransfer(treasury, unsoldUliqRaw);
+        emit UnsoldUliqReleased(treasury, unsoldUliqRaw);
     }
 
     function _requireState(SaleState expected) private view {

@@ -252,6 +252,9 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - `PAUSED` sperrt neue Käufe, lässt aber zulässige Withdrawals, permissionless Finalisierungen und Reads zu.
 - Sale endet bei Hard Cap oder `saleEnd`; mehr als 120.000.000 ULIQ können nie verkauft werden.
 - Rounding-/Partial-Fill-Policy für den letzten Hard-Cap-Restbetrag ist vor Audit spezifiziert und getestet.
+- `ENDED -> DEX_PENDING` ist bei offenen Purchases verboten und gibt danach exakt die unverkaufte Presale-Allokation an die aktive Payment-Custody-Treasury frei.
+- Die Unsold-Freigabe kann keine Pending-/finalisierten Käuferansprüche und keine zusätzlich an den Presale gesendeten ULIQ entnehmen.
+- Ein leerer, bereits finanzierter Sale kann aus `READY`, `ACTIVE` oder `PAUSED` abgebrochen werden, ohne dass das Presale-Inventar im Contract verbleibt.
 - permissionless Finalisierung durch eine fremde Adresse zahlt ausschließlich an Buyer/Vesting und erzeugt keinen Caller-Benefit.
 - vollständige Cancellation bereits finalisierter Purchases bleibt vor ADR-001 Legal Sign-off unimplementiert.
 

@@ -28,6 +28,9 @@
 - einmaliger DEX Launch Timestamp und unzulässige Timestamp-Werte.
 - DEX Launch bei `pendingPurchaseCount > 0` verboten.
 - Sale-Ende durch Hard Cap oder `saleEnd`, einschließlich Rounding-/Partial-Fill-Policy am Restbetrag.
+- `ENDED -> DEX_PENDING` bei Pending Purchase verboten; nach vollständigem Settlement geht exakt die unverkaufte Presale-Allokation an die aktive Custody-Treasury.
+- Leerstornierung aus `READY`, `ACTIVE` oder `PAUSED` gibt die vollständige Presale-Allokation an dieselbe aktive Treasury zurück; Full-Cap-Sale führt zu einem Zero-Amount-Unsold-Event ohne zusätzlichen Transfer.
+- Forced/versehentlich zusätzliche ULIQ im Presale werden vom Unsold-Release nicht erfasst.
 - globales 9-Monats-Vesting vor/am/nach Start.
 - mehrere Purchases und Claims pro Wallet.
 - Lock 30/90/180, vorzeitiger Withdraw, doppelter Withdraw und mehrere Locks.
@@ -46,6 +49,7 @@
 - pending Purchases aktivieren niemals Utility oder ULIQ Transfer.
 - Summe der wirtschaftlich wirksamen USDC Purchases minus Refunds entspricht dem contractseitig erklärten Sale Accounting nach finalem Safeguarding-Modell.
 - Testnet-Custody: `totalCollected == escrowBalance + totalRefunded + totalReleased`; indexierte pending tUSDC entsprechen dem Escrow-Bestand und indexierte Treasury-Releases dem Onchain-Counter.
+- Bei `pendingPurchaseCount == 0` entspricht der Unsold-Release exakt `allocationCapUliqRaw - finalizedAllocationUliqRaw`; er verändert `totalSupply` nicht und adressiert ausschließlich die aktive Custody-Treasury.
 - `released <= allocated` für jede Vesting-Position.
 - Locker Withdrawals überschreiten nie eingezahlte Locks.
 - Locking oder Claiming erzeugen keine ULIQ aus dem Nichts.

@@ -263,6 +263,101 @@ contract ULIQMvpTest {
         require(presale.state() == ULIQPresale.SaleState.ENDED, "sale_not_ended");
     }
 
+    function testEndedSaleReleasesUnsoldOnlyToCurrentTreasury() public {
+        custody.proposeTreasury(NEXT_TREASURY);
+        VM.prank(NEXT_TREASURY);
+        custody.acceptTreasury();
+
+        uint256 purchaseId = _buy(1_000 * 1e6);
+        VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
+        presale.finalizePurchase(purchaseId);
+        require(usdc.balanceOf(NEXT_TREASURY) == 1_000 * 1e6, "usdc_treasury_wrong");
+
+        require(token.transfer(address(presale), 1 ether), "extra_inventory_transfer_failed");
+        VM.warp(saleEnd);
+        presale.endSale();
+
+        uint256 treasuryBefore = token.balanceOf(NEXT_TREASURY);
+        uint256 expectedUnsold = PRESALE_ALLOCATION_RAW - 1_000_000 ether;
+        presale.markDexPending();
+
+        require(presale.state() == ULIQPresale.SaleState.DEX_PENDING, "dex_pending_not_set");
+        require(token.balanceOf(NEXT_TREASURY) == treasuryBefore + expectedUnsold, "unsold_treasury_wrong");
+        require(token.balanceOf(address(presale)) == 1 ether, "non_presale_inventory_swept");
+        require(token.totalSupply() == 1_000_000_000 ether, "release_changed_supply");
+    }
+
+    function testCancelEmptySaleReleasesEntireAllocationToCurrentTreasury() public {
+        custody.proposeTreasury(NEXT_TREASURY);
+        VM.prank(NEXT_TREASURY);
+        custody.acceptTreasury();
+
+        presale.cancelEmptySale();
+
+        require(presale.state() == ULIQPresale.SaleState.CANCELLED, "cancelled_not_set");
+        require(token.balanceOf(NEXT_TREASURY) == PRESALE_ALLOCATION_RAW, "cancel_inventory_not_released");
+        require(token.balanceOf(address(presale)) == 0, "cancel_inventory_remaining");
+    }
+
+    function testReadySaleCanBeCancelledBeforeActivationWithoutStrandingInventory() public {
+        ULIQToken readyToken = new ULIQToken(address(this));
+        ULIQPresaleVesting readyVesting = new ULIQPresaleVesting(address(readyToken), address(this), VESTING_DURATION);
+        ULIQTestnetEscrow readyCustody = new ULIQTestnetEscrow(address(usdc), address(this), TREASURY);
+        ULIQPresale readyPresale = new ULIQPresale(
+            address(readyToken),
+            address(usdc),
+            address(readyCustody),
+            address(readyVesting),
+            address(this),
+            HARD_CAP_USDC_RAW,
+            PRESALE_ALLOCATION_RAW,
+            RATE,
+            1,
+            uint64(block.timestamp + 7 days),
+            uint64(block.timestamp + 37 days),
+            WITHDRAWAL_PERIOD
+        );
+        readyCustody.setPresale(address(readyPresale));
+        readyVesting.setPresale(address(readyPresale));
+        require(readyToken.transfer(address(readyPresale), PRESALE_ALLOCATION_RAW), "ready_inventory_transfer_failed");
+        readyPresale.markReady();
+
+        VM.prank(buyer);
+        VM.expectRevert();
+        readyPresale.cancelEmptySale();
+        require(readyToken.balanceOf(address(readyPresale)) == PRESALE_ALLOCATION_RAW, "unauthorized_ready_cancel");
+
+        readyPresale.cancelEmptySale();
+        require(readyPresale.state() == ULIQPresale.SaleState.CANCELLED, "ready_cancel_state_wrong");
+        require(readyToken.balanceOf(TREASURY) == PRESALE_ALLOCATION_RAW, "ready_cancel_treasury_wrong");
+        require(readyToken.balanceOf(address(readyPresale)) == 0, "ready_cancel_inventory_remaining");
+    }
+
+    function testOnlyOwnerCanAdvanceEndedSaleAndReleaseUnsold() public {
+        VM.warp(saleEnd);
+        presale.endSale();
+
+        VM.prank(buyer);
+        VM.expectRevert();
+        presale.markDexPending();
+
+        require(token.balanceOf(TREASURY) == 0, "unauthorized_release_succeeded");
+        require(token.balanceOf(address(presale)) == PRESALE_ALLOCATION_RAW, "unauthorized_inventory_changed");
+    }
+
+    function testFullySoldSaleAdvancesWithZeroUnsoldRelease() public {
+        uint256 purchaseId = _buy(HARD_CAP_USDC_RAW);
+        VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
+        presale.finalizePurchase(purchaseId);
+
+        uint256 treasuryBefore = token.balanceOf(TREASURY);
+        presale.markDexPending();
+
+        require(presale.state() == ULIQPresale.SaleState.DEX_PENDING, "sold_out_dex_pending_not_set");
+        require(token.balanceOf(TREASURY) == treasuryBefore, "sold_out_released_extra");
+        require(token.balanceOf(address(presale)) == 0, "sold_out_inventory_remaining");
+    }
+
     function testFuzzQuoteAndSplitRounding(uint96 rawRequested) public {
         uint256 requested = 1 + (uint256(rawRequested) % HARD_CAP_USDC_RAW);
         (uint256 accepted, uint256 allocation) = presale.quotePurchase(requested);
@@ -289,12 +384,12 @@ contract ULIQMvpTest {
         uint256 purchaseId = _buy(1_000 * 1e6);
         VM.warp(saleEnd);
         presale.endSale();
-        presale.markDexPending();
 
         VM.expectRevert(abi.encodeWithSelector(ULIQPresale.PendingPurchasesRemain.selector, 1));
-        presale.setDexLaunchTimestamp(uint64(block.timestamp + 1));
+        presale.markDexPending();
 
         presale.finalizePurchase(purchaseId);
+        presale.markDexPending();
         uint64 launchAt = uint64(block.timestamp + 1);
         presale.setDexLaunchTimestamp(launchAt);
         require(vesting.vestingStart() == launchAt, "vesting_start_wrong");

@@ -28,7 +28,7 @@ Die fachliche Semantik ist beschlossen; Details von Withdrawal, Safeguarding und
 
 Die Solidity State Machine darf Zustände zusammenfassen, muss jedoch dieselben zulässigen Aktionen und Sperren erzwingen.
 
-Reguläre Übergänge: `DRAFT -> READY -> ACTIVE -> ENDED -> DEX_PENDING -> DEX_LAUNCHED -> COMPLETED`. Sonderübergänge: `ACTIVE <-> PAUSED`, `ACTIVE -> CANCELLED` und `PAUSED -> CANCELLED`.
+Reguläre Übergänge: `DRAFT -> READY -> ACTIVE -> ENDED -> DEX_PENDING -> DEX_LAUNCHED -> COMPLETED`. Sonderübergänge: `ACTIVE <-> PAUSED` sowie die Leerstornierungen `READY -> CANCELLED`, `ACTIVE -> CANCELLED` und `PAUSED -> CANCELLED`.
 
 ### Purchase State
 
@@ -76,7 +76,7 @@ Reguläre Übergänge: `DRAFT -> READY -> ACTIVE -> ENDED -> DEX_PENDING -> DEX_
 
 - Sale endet bei erreichtem Hard Cap oder `saleEnd` Timestamp; es gibt keinen Soft Cap.
 - nie dürfen mehr als 120.000.000 ULIQ beziehungsweise 120.000 USDC verkauft werden.
-- nach `ENDED` folgt `DEX_PENDING`.
+- nach `ENDED` folgt `DEX_PENDING` erst bei `pendingPurchaseCount == 0`; der atomare Übergang gibt die exakt unverkaufte Presale-Allokation an die aktive Payment-Custody-Treasury frei.
 - DEX Launch ist nur zulässig, wenn `pendingPurchaseCount == 0`.
 - neue Purchases nach gesetztem DEX-/Vesting-Start sind standardmäßig verboten.
 - DEX Launch und Market Price Mode sind getrennte Aktionen.
@@ -148,5 +148,7 @@ Für Token-Transfer technisch nicht möglich; ein Backend Timer allein kann kein
 - DEX Timestamp ist nur einmal setzbar.
 - Pause blockiert neue Purchases, aber nicht zulässige Withdrawals, Finalisierungen oder Reads.
 - `DEX_PENDING -> DEX_LAUNCHED` ist nur bei `pendingPurchaseCount == 0` möglich.
+- `ENDED -> DEX_PENDING` ist nur bei `pendingPurchaseCount == 0` möglich und darf weder Buyer-Ansprüche noch zusätzlich an den Presale gesendete ULIQ erfassen.
+- eine erlaubte Leerstornierung aus `READY`, `ACTIVE` oder `PAUSED` gibt die vollständige Presale-Allokation an dieselbe aktive Treasury zurück und verhindert gebundenes Inventar bei ausbleibender Aktivierung.
 - Permissionless Finalisierung kann Beneficiary oder Allocation nicht ändern.
 - Claim und Lock verändern eligible ULIQ nicht doppelt.

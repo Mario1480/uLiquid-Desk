@@ -31,7 +31,7 @@ Die folgenden Contracts werden spezifiziert und auf Testnet erprobt. Production-
 
 Die Testnet-Implementierung verwendet `IULIQPaymentCustody` als austauschbare Custody-Grenze. `ULIQTestnetEscrow` ist ausdrücklich `TESTNET / PROVISIONAL` und bindet jeden tUSDC-Eingang an eine eindeutige Purchase-ID. Ein Eingang kann danach exakt einmal entweder an den unveränderlichen Buyer refunded oder bei Purchase-Finalisierung an die aktive Testnet-Treasury ausgezahlt werden. ULIQ-Verteilung, Vesting-Zuordnung, Purchase State und Treasury-Auszahlung sind atomar; schlägt die tUSDC-Auszahlung fehl, revertiert die gesamte Finalisierung.
 
-Die Testnet-Treasury ist rotierbar, aber nicht einseitig überschreibbar: Der Contract-Owner schlägt eine neue Adresse vor, ausschließlich diese Adresse kann die Rolle akzeptieren, und der Owner kann einen offenen Vorschlag verwerfen. Ownership Renunciation ist deaktiviert; ein generischer Sweep-/Rescue-Pfad existiert nicht. Backend und Admin UI speichern nur die gewünschte Adresse und bereiten validierte Safe-Transaktionen vor, ohne Private Keys, Signatur oder Broadcast. Ein Production-Custody-/Safeguarding-Adapter und dessen Auszahlungszeitpunkt bleiben ungeachtet dieser Testnet-Simulation ADR-001-blockiert.
+Die Testnet-Treasury ist rotierbar, aber nicht einseitig überschreibbar: Der Contract-Owner schlägt eine neue Adresse vor, ausschließlich diese Adresse kann die Rolle akzeptieren, und der Owner kann einen offenen Vorschlag verwerfen. Ownership Renunciation ist deaktiviert; ein generischer Sweep-/Rescue-Pfad existiert nicht. Beim Übergang `ENDED -> DEX_PENDING` muss `pendingPurchaseCount == 0` gelten; danach wird exakt `allocationCapUliqRaw - finalizedAllocationUliqRaw` an die zu diesem Zeitpunkt aktive `paymentCustody.treasury()` übertragen. Eine erlaubte Leerstornierung aus `READY`, `ACTIVE` oder `PAUSED` gibt dieselbe exakt begrenzte Sale-Allokation an diese Treasury zurück. So bleibt auch eine bereits finanzierte Instanz recoverbar, deren Aktivierungsfenster nie genutzt wurde. Zusätzlich oder versehentlich an den Presale gesendete ULIQ werden nicht mitübertragen. Backend und Admin UI speichern nur die gewünschte Adresse und bereiten validierte Safe-Transaktionen vor, ohne Private Keys, Signatur oder Broadcast. Ein Production-Custody-/Safeguarding-Adapter und dessen Auszahlungszeitpunkt bleiben ungeachtet dieser Testnet-Simulation ADR-001-blockiert.
 
 ### Sale State
 
@@ -49,7 +49,7 @@ Die fachliche State Machine umfasst mindestens:
 
 Die Solidity-Darstellung darf kompakter sein, muss aber dieselben erlaubten und verbotenen Übergänge erzwingen.
 
-Fachlich gilt `DRAFT -> READY -> ACTIVE -> ENDED -> DEX_PENDING -> DEX_LAUNCHED -> COMPLETED`, ergänzt um `ACTIVE <-> PAUSED`, `ACTIVE -> CANCELLED` und `PAUSED -> CANCELLED`.
+Fachlich gilt `DRAFT -> READY -> ACTIVE -> ENDED -> DEX_PENDING -> DEX_LAUNCHED -> COMPLETED`, ergänzt um `ACTIVE <-> PAUSED` sowie die Leerstornierungen `READY -> CANCELLED`, `ACTIVE -> CANCELLED` und `PAUSED -> CANCELLED`.
 
 ### Purchase State
 
@@ -110,7 +110,7 @@ Withdrawal:
 ### Pause und DEX Launch
 
 - `PAUSED` verbietet neue Purchases, lässt aber zulässige Withdrawals, permissionless Finalisierungen und Reads zu.
-- nach Sale-Ende wechselt der fachliche State zu `DEX_PENDING`.
+- nach Sale-Ende wechselt der fachliche State erst bei `pendingPurchaseCount == 0` zu `DEX_PENDING`; derselbe atomare Übergang gibt die exakt unverkaufte Presale-Allokation an die aktive Payment-Custody-Treasury frei.
 - DEX Launch ist nur bei `pendingPurchaseCount == 0` zulässig.
 - der globale DEX-Launch-Timestamp ist on-chain genau einmal setzbar, danach unveränderlich und ausschließlich Safe-/Multisig-kontrolliert.
 
@@ -119,6 +119,7 @@ Withdrawal:
 - SafeERC20, ReentrancyGuard und Checks-Effects-Interactions.
 - Pausable nur für risikorelevante Entry Points; bereits rechtmäßig verfügbare User-Claims und Refunds dürfen nicht unbeabsichtigt dauerhaft blockiert werden.
 - keine unbeschränkte Rescue-Funktion für User-Mittel.
+- Unsold-Release ausschließlich als Owner-kontrollierter, einmaliger State-Übergang beziehungsweise erlaubte Leerstornierung, mit `pendingPurchaseCount == 0`, exakt begrenztem Betrag und Event.
 - Überschuss-/Fremdtoken-Recovery benötigt enge Regeln, Events und Safe-Kontrolle.
 - Kauf- und Refund-Events enthalten Purchase ID, Käufer, USDC Raw Amount, ULIQ Raw Allocation und Deadline.
 

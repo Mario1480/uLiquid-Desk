@@ -68,6 +68,15 @@ Das Backend darf eine vorbereitete Safe Transaction nicht als ausgeführt behand
 - nur auf dem erwarteten Vesting Contract und der erwarteten Chain.
 - Timestamp, aktuelle Chain-Zeit, Sale State und verbleibende pending Purchases im Preflight anzeigen.
 - Preflight und Contract erzwingen `pendingPurchaseCount == 0`.
+
+### `markDexPending()` / Unsold ULIQ
+
+- High Impact, owner-/Safe-kontrolliert und pro Sale nur über den einmaligen State-Übergang ausführbar.
+- Preflight zeigt finalisierten Sale State, `pendingPurchaseCount`, aktive Payment-Custody-Treasury, finalisierte Allocation, erwartete Unsold-Menge und tatsächliches Presale-Inventar.
+- Contract erzwingt `ENDED`, `pendingPurchaseCount == 0`, ausreichendes Inventar und die aktive `paymentCustody.treasury()` als unveränderlichen Empfänger der vorbereiteten Transaktion.
+- Übertragen wird exakt die unverkaufte Presale-Allokation; zusätzliche ULIQ im Contract bleiben unberührt.
+- Backend und Web-App signieren oder senden die Transaktion nicht; Receipt, `UnsoldUliqReleased` und Treasury-Zielbalance werden getrennt beobachtet und finalisiert indexiert.
+- `cancelEmptySale()` ist nur für einen leeren Sale aus `READY`, `ACTIVE` oder `PAUSED` zulässig und dient zugleich als Recovery-Pfad, falls eine finanzierte Instanz nie aktiviert wird.
 - keine Änderung nach Ausführung.
 - Safe/Multisig-kontrolliert.
 - Ausführung, Receipt, Block Hash und Indexer-Verarbeitung auditieren.

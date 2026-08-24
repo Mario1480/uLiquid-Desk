@@ -59,6 +59,8 @@ Damit ist die Implementierung lokal deploy-ready, aber noch nicht `READY FOR EXT
 
 Testnet-V2-Nachweis (kein Production-Entscheid): Auf Arbitrum Sepolia wird jeder tUSDC-Eingang purchase-gebunden im provisional Escrow geführt. Withdrawal erstattet exakt diesen Betrag an den Buyer; Finalisierung gibt ihn in derselben atomaren Transaktion an die aktive Testnet-Treasury frei. Die Testnet-Deployment-Sperre verlangt mindestens 3.600 Sekunden Withdrawal Period. Dies simuliert den vollständigen E2E-Accounting-Flow, ersetzt aber weder die 14-Tage-Working-Assumption noch die durch ADR-001 blockierte Production-Safeguarding-/Treasury-Entscheidung. Implementierungsstand 2026-08-23: lokal implementiert und getestet; neue Contract-Adressen, Migration, Runtime-Konfiguration und Staging-Deploy sind noch nicht ausgeführt.
 
+Testnet-V3-Contract-Follow-up (kein Deployment- oder Production-Entscheid): Der Übergang `ENDED -> DEX_PENDING` ist erst bei `pendingPurchaseCount == 0` möglich und gibt dann atomar exakt die unverkaufte Presale-Allokation an `paymentCustody.treasury()` frei. `cancelEmptySale()` verwendet dieselbe aktive Treasury und ist für einen leeren Sale aus `READY`, `ACTIVE` oder `PAUSED` verfügbar, damit eine bereits finanzierte, aber nie aktivierte Instanz ihr Inventar nicht dauerhaft bindet. Dies ist kein generischer Sweep: zusätzliche, nicht zur Presale-Allokation gehörende ULIQ werden nicht mitübertragen. Das Indexer-Event erzeugt für die Treasury einen regulären `WALLET_TRANSFER`-Holding-Lot mit 24-Stunden-Cooldown. Implementierungsstand 2026-08-24: lokal implementiert und getestet; das bestehende V2-Testnet-Deployment bleibt unverändert und ein neuer Contract-Deploy benötigt eine separate Freigabe.
+
 ## MVP Utility
 
 Enthalten:
