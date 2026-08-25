@@ -140,6 +140,7 @@ type TransactionResult = {
 };
 
 const PENDING_FINALIZE_TX_STORAGE_KEY = "uliquid.uliq.pendingFinalizeTxHashes.v1";
+const PENDING_WITHDRAW_TX_STORAGE_KEY = "uliquid.uliq.pendingWithdrawTxHashes.v1";
 const PURCHASE_TRACKING_REQUEST_TIMEOUT_MS = 5_000;
 
 async function purchaseTrackingRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -156,14 +157,14 @@ async function purchaseTrackingRequest<T>(path: string, body: Record<string, unk
   }
 }
 
-function finalizeTxKey(chainId: number, contractAddress: string, purchaseId: string): string {
+function purchaseTxKey(chainId: number, contractAddress: string, purchaseId: string): string {
   return `${chainId}:${contractAddress.toLowerCase()}:${purchaseId}`;
 }
 
-function readPendingFinalizeTxHashes(): Record<string, Hex> {
+function readPendingTxHashes(storageKey: string): Record<string, Hex> {
   if (typeof window === "undefined") return {};
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(PENDING_FINALIZE_TX_STORAGE_KEY) ?? "{}") as Record<string, unknown>;
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? "{}") as Record<string, unknown>;
     return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, Hex] => (
       typeof entry[1] === "string" && /^0x[0-9a-fA-F]{64}$/.test(entry[1])
     )).map(([key, hash]) => [key, hash.toLowerCase() as Hex]));
@@ -172,10 +173,10 @@ function readPendingFinalizeTxHashes(): Record<string, Hex> {
   }
 }
 
-function writePendingFinalizeTxHashes(value: Record<string, Hex>): void {
+function writePendingTxHashes(storageKey: string, value: Record<string, Hex>): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(PENDING_FINALIZE_TX_STORAGE_KEY, JSON.stringify(value));
+    window.localStorage.setItem(storageKey, JSON.stringify(value));
   } catch {
     // The contract-state preflight remains the safety fallback if browser storage is unavailable.
   }
@@ -232,6 +233,7 @@ function UliqHubContent() {
   const [lockDuration, setLockDuration] = useState(30);
   const [lastTxHash, setLastTxHash] = useState<Hex | null>(null);
   const [pendingFinalizeTxHashes, setPendingFinalizeTxHashes] = useState<Record<string, Hex>>({});
+  const [pendingWithdrawTxHashes, setPendingWithdrawTxHashes] = useState<Record<string, Hex>>({});
   const publicEnabled = process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true";
   const paymentTokenAddress = overview?.paymentTokenAddress && isAddress(overview.paymentTokenAddress)
     ? overview.paymentTokenAddress as Address
@@ -252,7 +254,7 @@ function UliqHubContent() {
   const rememberPendingFinalize = useCallback((key: string, hash: Hex) => {
     setPendingFinalizeTxHashes((current) => {
       const next = { ...current, [key]: hash.toLowerCase() as Hex };
-      writePendingFinalizeTxHashes(next);
+      writePendingTxHashes(PENDING_FINALIZE_TX_STORAGE_KEY, next);
       return next;
     });
   }, []);
@@ -262,7 +264,25 @@ function UliqHubContent() {
       if (!(key in current)) return current;
       const next = { ...current };
       delete next[key];
-      writePendingFinalizeTxHashes(next);
+      writePendingTxHashes(PENDING_FINALIZE_TX_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const rememberPendingWithdraw = useCallback((key: string, hash: Hex) => {
+    setPendingWithdrawTxHashes((current) => {
+      const next = { ...current, [key]: hash.toLowerCase() as Hex };
+      writePendingTxHashes(PENDING_WITHDRAW_TX_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const forgetPendingWithdraw = useCallback((key: string) => {
+    setPendingWithdrawTxHashes((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      writePendingTxHashes(PENDING_WITHDRAW_TX_STORAGE_KEY, next);
       return next;
     });
   }, []);
@@ -307,38 +327,54 @@ function UliqHubContent() {
   }, [hasPendingPurchaseTracking, load]);
 
   useEffect(() => {
-    setPendingFinalizeTxHashes(readPendingFinalizeTxHashes());
+    setPendingFinalizeTxHashes(readPendingTxHashes(PENDING_FINALIZE_TX_STORAGE_KEY));
+    setPendingWithdrawTxHashes(readPendingTxHashes(PENDING_WITHDRAW_TX_STORAGE_KEY));
   }, []);
 
   useEffect(() => {
     if (!overview || !me) return;
     for (const purchase of me.purchases) {
       if (purchase.status !== "PENDING_WITHDRAWAL") {
-        forgetPendingFinalize(finalizeTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain));
+        const key = purchaseTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
+        forgetPendingFinalize(key);
+        forgetPendingWithdraw(key);
       }
     }
-  }, [forgetPendingFinalize, me, overview]);
+  }, [forgetPendingFinalize, forgetPendingWithdraw, me, overview]);
 
   useEffect(() => {
     if (!overview || !me) return;
     let cancelled = false;
     const pendingReceipts = me.purchases.flatMap((purchase) => {
       if (purchase.status !== "PENDING_WITHDRAWAL") return [];
-      const key = finalizeTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
-      const hash = pendingFinalizeTxHashes[key];
-      return hash ? [{ key, hash }] : [];
+      const key = purchaseTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
+      const receipts: Array<{ action: "finalize" | "withdraw"; key: string; hash: Hex }> = [];
+      const finalizeHash = pendingFinalizeTxHashes[key];
+      const withdrawHash = pendingWithdrawTxHashes[key];
+      if (finalizeHash) receipts.push({ action: "finalize", key, hash: finalizeHash });
+      if (withdrawHash) receipts.push({ action: "withdraw", key, hash: withdrawHash });
+      return receipts;
     });
     for (const pending of pendingReceipts) {
       void getTransactionReceipt(wagmiConfig, { chainId: overview.chainId, hash: pending.hash })
         .then((receipt) => {
-          if (!cancelled && receipt.status === "reverted") forgetPendingFinalize(pending.key);
+          if (cancelled || receipt.status !== "reverted") return;
+          if (pending.action === "finalize") forgetPendingFinalize(pending.key);
+          else forgetPendingWithdraw(pending.key);
         })
         .catch(() => {
           // A missing receipt remains fail-closed until the transaction or indexer resolves it.
         });
     }
     return () => { cancelled = true; };
-  }, [forgetPendingFinalize, me, overview, pendingFinalizeTxHashes]);
+  }, [
+    forgetPendingFinalize,
+    forgetPendingWithdraw,
+    me,
+    overview,
+    pendingFinalizeTxHashes,
+    pendingWithdrawTxHashes
+  ]);
 
   const saleProgress = useMemo(() => {
     if (!overview) return 0;
@@ -559,7 +595,7 @@ function UliqHubContent() {
 
   async function finalizePurchase(purchase: Purchase): Promise<void> {
     if (!overview) throw new Error(t("messages.actionFailed"));
-    const key = finalizeTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
+    const key = purchaseTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
     let submitted = false;
     try {
       const result = await executePrepared(
@@ -576,6 +612,28 @@ function UliqHubContent() {
     } catch (finalizeError) {
       if (!submitted) forgetPendingFinalize(key);
       throw finalizeError;
+    }
+  }
+
+  async function withdrawPurchase(purchase: Purchase): Promise<void> {
+    if (!overview) throw new Error(t("messages.actionFailed"));
+    const key = purchaseTxKey(overview.chainId, overview.contractAddress, purchase.purchaseIdOnchain);
+    let submitted = false;
+    try {
+      const result = await executePrepared(
+        "/uliq/presale/withdraw/prepare",
+        { purchaseId: purchase.purchaseIdOnchain },
+        t("purchases.withdraw"),
+        (hash) => {
+          submitted = true;
+          rememberPendingWithdraw(key, hash);
+        },
+        () => forgetPendingWithdraw(key)
+      );
+      if (result.receiptHash !== result.submittedHash) rememberPendingWithdraw(key, result.receiptHash);
+    } catch (withdrawError) {
+      if (!submitted) forgetPendingWithdraw(key);
+      throw withdrawError;
     }
   }
 
@@ -740,15 +798,22 @@ function UliqHubContent() {
           })}
           {me?.purchases.map((purchaseRow) => {
           const deadlinePassed = new Date(purchaseRow.withdrawalDeadline).getTime() < Date.now();
-          const finalizeKey = overview ? finalizeTxKey(overview.chainId, overview.contractAddress, purchaseRow.purchaseIdOnchain) : null;
-          const finalizeSyncPending = Boolean(finalizeKey && pendingFinalizeTxHashes[finalizeKey]);
+          const actionKey = overview ? purchaseTxKey(overview.chainId, overview.contractAddress, purchaseRow.purchaseIdOnchain) : null;
+          const finalizeSyncPending = Boolean(actionKey && pendingFinalizeTxHashes[actionKey]);
+          const withdrawSyncPending = Boolean(actionKey && pendingWithdrawTxHashes[actionKey]);
+          const settlementSyncPending = finalizeSyncPending || withdrawSyncPending;
+          const syncingStatus = withdrawSyncPending
+            ? t("purchases.withdrawSyncingStatus")
+            : finalizeSyncPending
+              ? t("purchases.finalizeSyncingStatus")
+              : purchaseRow.status.replaceAll("_", " ");
           return <article key={purchaseRow.id} className="uliqPositionCard">
-            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className="uliqStatusGroup"><span className="uiStatusBadge uiStatusBadge-success">{t("purchases.confirmationStatus.finalized")}</span><span className={`uiStatusBadge uiStatusBadge-${statusTone(finalizeSyncPending ? "completed" : purchaseRow.status)}`}>{finalizeSyncPending ? t("purchases.finalizeSyncingStatus") : purchaseRow.status.replaceAll("_", " ")}</span></span></div>
+            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className="uliqStatusGroup"><span className="uiStatusBadge uiStatusBadge-success">{t("purchases.confirmationStatus.finalized")}</span><span className={`uiStatusBadge uiStatusBadge-${statusTone(settlementSyncPending ? "completed" : purchaseRow.status)}`}>{syncingStatus}</span></span></div>
             <dl><div><dt>{t("purchases.allocation")}</dt><dd>{formatRaw(purchaseRow.uliqAllocationRaw, 18)} ULIQ</dd></div><div><dt>{t("purchases.deadline")}</dt><dd>{formatDate(purchaseRow.withdrawalDeadline, locale)}</dd></div></dl>
             {purchaseRow.status === "PENDING_WITHDRAWAL" ? <div className="uliqActions">
-              <div className={`uiNotice ${finalizeSyncPending ? "uiNotice-success" : "uiNotice-warning"}`}>{t(finalizeSyncPending ? "purchases.finalizeSyncingHint" : "purchases.pendingInactive")}</div>
-              <button type="button" className="btn" disabled={!canSign || deadlinePassed || busy !== null || finalizeSyncPending} onClick={() => void runAction(`withdraw-${purchaseRow.id}`, () => executePrepared("/uliq/presale/withdraw/prepare", { purchaseId: purchaseRow.purchaseIdOnchain }, t("purchases.withdraw")))}><AppIcon name="restore" /> {t("purchases.withdraw")}</button>
-              <button type="button" className="btn btnPrimary" disabled={!canSign || !deadlinePassed || busy !== null || finalizeSyncPending} onClick={() => void runAction(`finalize-${purchaseRow.id}`, () => finalizePurchase(purchaseRow))}><AppIcon name="check" /> {t(finalizeSyncPending ? "purchases.finalizeSyncing" : "purchases.finalize")}</button>
+              <div className={`uiNotice ${settlementSyncPending ? "uiNotice-success" : "uiNotice-warning"}`}>{t(withdrawSyncPending ? "purchases.withdrawSyncingHint" : finalizeSyncPending ? "purchases.finalizeSyncingHint" : "purchases.pendingInactive")}</div>
+              <button type="button" className="btn" disabled={!canSign || deadlinePassed || busy !== null || settlementSyncPending} onClick={() => void runAction(`withdraw-${purchaseRow.id}`, () => withdrawPurchase(purchaseRow))}><AppIcon name="restore" /> {t(withdrawSyncPending ? "purchases.withdrawSyncing" : "purchases.withdraw")}</button>
+              <button type="button" className="btn btnPrimary" disabled={!canSign || !deadlinePassed || busy !== null || settlementSyncPending} onClick={() => void runAction(`finalize-${purchaseRow.id}`, () => finalizePurchase(purchaseRow))}><AppIcon name="check" /> {t(finalizeSyncPending ? "purchases.finalizeSyncing" : "purchases.finalize")}</button>
             </div> : null}
           </article>;
           })}

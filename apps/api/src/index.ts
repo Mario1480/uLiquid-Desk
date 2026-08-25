@@ -13240,6 +13240,7 @@ const apiLifecycle = createApiLifecycle({
     { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },
     { name: "uliq-indexer", start: () => uliqJobs.indexer.start(), stop: () => uliqJobs.indexer.stop() },
     { name: "uliq-purchase-tracking", start: () => uliqJobs.purchaseTracking.start(), stop: () => uliqJobs.purchaseTracking.stop() },
+    { name: "uliq-auto-finalizer", start: () => uliqJobs.autoFinalizer.start(), stop: () => uliqJobs.autoFinalizer.stop() },
     { name: "uliq-reconciliation", start: () => uliqJobs.reconciliation.start(), stop: () => uliqJobs.reconciliation.stop() },
     { name: "uliq-reservation-expiry", start: () => uliqJobs.reservationExpiry.start(), stop: () => uliqJobs.reservationExpiry.stop() },
     { name: "hyperliquid-api-expiry-reminder", start: () => hyperliquidApiExpiryReminderJob.start(), stop: () => hyperliquidApiExpiryReminderJob.stop() },

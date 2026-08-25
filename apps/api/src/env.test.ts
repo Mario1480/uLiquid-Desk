@@ -66,3 +66,34 @@ test("assertApiEnv rejects unsafe auth cookie prefixes", () => {
     /NEXT_PUBLIC_AUTH_COOKIE_PREFIX must start with a letter/
   );
 });
+
+test("assertApiEnv requires a dedicated key when the ULIQ auto finalizer is enabled", () => {
+  assert.throws(
+    () => assertApiEnv(baseProductionEnv({
+      ULIQ_ENABLED: "true",
+      ULIQ_PRESALE_ENABLED: "true",
+      ULIQ_AUTO_FINALIZER_ENABLED: "true"
+    })),
+    /ULIQ_FINALIZER_PRIVATE_KEY is required/
+  );
+});
+
+test("assertApiEnv rejects enabling the ULIQ auto finalizer without its parent features", () => {
+  assert.throws(
+    () => assertApiEnv(baseProductionEnv({
+      ULIQ_AUTO_FINALIZER_ENABLED: "true",
+      ULIQ_FINALIZER_PRIVATE_KEY: "1".repeat(64)
+    })),
+    /requires ULIQ_ENABLED=true and ULIQ_PRESALE_ENABLED=true/
+  );
+});
+
+test("assertApiEnv accepts a scoped ULIQ auto finalizer configuration", () => {
+  assert.doesNotThrow(() => assertApiEnv(baseProductionEnv({
+    ULIQ_ENABLED: "true",
+    ULIQ_PRESALE_ENABLED: "true",
+    ULIQ_AUTO_FINALIZER_ENABLED: "true",
+    ULIQ_FINALIZER_PRIVATE_KEY: "1".repeat(64),
+    ULIQ_AUTO_FINALIZER_BATCH_SIZE: "5"
+  })));
+});

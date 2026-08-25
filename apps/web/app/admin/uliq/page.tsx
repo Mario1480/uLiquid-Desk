@@ -93,7 +93,7 @@ type SafePreparation = {
   preflight: Record<string, unknown>;
 };
 
-type ReauthAction = "dex" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
+type ReauthAction = "dex-pending" | "dex" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return String(error.payload?.error ?? error.message);
@@ -159,6 +159,13 @@ export default function UliqAdminPage() {
     setNotice(t("prepared"));
   }
 
+  async function prepareDexPending() {
+    const response = await apiPost<SafePreparation>("/admin/uliq/safe/mark-dex-pending/prepare", {});
+    setPreparation(response);
+    setPreparationLabel("markDexPending");
+    setNotice(t("prepared"));
+  }
+
   async function saveTreasury() {
     const treasury = await apiPut<AdminUliqPayload["treasury"]>("/admin/uliq/treasury", {
       desiredAddress: treasuryInput
@@ -190,6 +197,7 @@ export default function UliqAdminPage() {
   }
 
   async function runReauthenticatedAction() {
+    if (reauthAction === "dex-pending") return prepareDexPending();
     if (reauthAction === "dex") return prepareSafeTransaction();
     if (reauthAction === "treasury-save") return saveTreasury();
     return prepareTreasuryAction(reauthAction);
@@ -326,6 +334,22 @@ export default function UliqAdminPage() {
             </div>
           </AdminDetailSection>
 
+          <AdminDetailSection title={t("dexPendingTitle")} description={t("dexPendingDescription")}>
+            <div className="adminKeyValueList">
+              <div className="adminKeyValueRow"><span>{t("saleState")}</span><AdminStatusBadge value={data.overview.state} /></div>
+              <div className="adminKeyValueRow"><span>{t("pending")}</span><strong>{data.overview.pendingPurchaseCount}</strong></div>
+              <div className="adminKeyValueRow"><span>{t("presaleInventory")}</span><strong>{formatToken(data.overview.presaleInventoryUliqRaw, 18, 0)} ULIQ</strong></div>
+            </div>
+            <button
+              type="button"
+              className="btn btnPrimary"
+              onClick={() => requestReauth("dex-pending")}
+              disabled={data.overview.state !== "ENDED" || data.overview.pendingPurchaseCount !== "0"}
+            >
+              <AppIcon name="launch" /> {t("dexPendingPrepare")}
+            </button>
+          </AdminDetailSection>
+
           <AdminDetailSection title={t("safeTitle")} description={t("safeDescription")}>
             <div className="adminFormGridCompact">
               <label className="adminFormField">
@@ -334,7 +358,12 @@ export default function UliqAdminPage() {
                 <span className="adminFormFieldHint">{t("fourEyes")}</span>
               </label>
             </div>
-            <button type="button" className="btn btnPrimary" onClick={() => requestReauth("dex")} disabled={!dexLaunchTime}>
+            <button
+              type="button"
+              className="btn btnPrimary"
+              onClick={() => requestReauth("dex")}
+              disabled={!dexLaunchTime || data.overview.state !== "DEX_PENDING" || data.overview.pendingPurchaseCount !== "0"}
+            >
               <AppIcon name="shield" /> {t("prepare")}
             </button>
           </AdminDetailSection>

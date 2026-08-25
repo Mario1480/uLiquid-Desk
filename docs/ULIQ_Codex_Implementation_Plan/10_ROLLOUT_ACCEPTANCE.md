@@ -253,6 +253,7 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - Sale endet bei Hard Cap oder `saleEnd`; mehr als 120.000.000 ULIQ können nie verkauft werden.
 - Rounding-/Partial-Fill-Policy für den letzten Hard-Cap-Restbetrag ist vor Audit spezifiziert und getestet.
 - `ENDED -> DEX_PENDING` ist bei offenen Purchases verboten und gibt danach exakt die unverkaufte Presale-Allokation an die aktive Payment-Custody-Treasury frei.
+- Der Admin-Prepare-Pfad für `markDexPending()` prüft und simuliert am gemeinsamen `finalized`-Head: `ENDED`, `pendingPurchaseCount == 0`, Custody-Bindung, aktive Treasury, finalisierte Allocation, erwartete Unsold-Menge und ausreichendes Presale-Inventar. Er signiert und sendet nicht; `setDexLaunchTimestamp()` bleibt bis zum finalisierten `DEX_PENDING`-State gesperrt.
 - Die Unsold-Freigabe kann keine Pending-/finalisierten Käuferansprüche und keine zusätzlich an den Presale gesendeten ULIQ entnehmen.
 - Ein leerer, bereits finanzierter Sale kann aus `READY`, `ACTIVE` oder `PAUSED` abgebrochen werden, ohne dass das Presale-Inventar im Contract verbleibt.
 - permissionless Finalisierung durch eine fremde Adresse zahlt ausschließlich an Buyer/Vesting und erzeugt keinen Caller-Benefit.
@@ -287,6 +288,18 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - Reload, erneute Anmeldung und zweites Gerät stellen den laufenden Status wieder her; der User muss die Seite während der Netzwerk-Finalität nicht geöffnet lassen.
 - DE/EN-UI und Benachrichtigungen trennen Netzwerk-Finalität von der späteren Presale-Finalisierung nach Ablauf der Withdrawal Period.
 
+### R. Permissionless Auto-Finalization und DEX-Liveness
+
+- Ein Käufer muss nach Ablauf der Withdrawal Period keine zweite Wallet-Transaktion ausführen, damit sein Purchase finalisiert werden kann.
+- Der automatische Finalizer berücksichtigt ausschließlich am konsistenten `finalized`-Head bereits canonical erfasste Purchases und verwendet dessen Block-Timestamp statt lokaler Serverzeit als Eligibility-Gate.
+- Projection-Mismatch, falsche Chain/Contract-Adresse, unbekannter Purchase-State oder widersprüchliche RPC-Heads führen ohne Submission zu `review_required` beziehungsweise Retry/Backoff.
+- Pro Purchase existiert genau eine persistente Onchain-Action; wiederholte Job-Läufe und mehrere API-Instanzen erzeugen keine parallelen normalen Submissions.
+- `submitted`, L2-Receipt und canonical `finalized` sind getrennte Zustände. Erst passender finalisierter Block Hash plus Purchase-State `FINALIZED` schließen die Action ab.
+- `latest` darf nur als konservative Duplicate-Suppression bei stale Submission-Persistenz dienen und niemals einen `confirmed`-State erzeugen.
+- Der Finalizer-Key ist eine separate Least-Privilege-EOA ohne Owner-, Treasury-, Safe- oder Deployer-Rechte und besitzt nur ein begrenztes Gasbudget.
+- Fehlende oder erschöpfte Finalizer-Finanzierung, stale Submissions, Reverts und wiederholte RPC-Ausfälle sind sichtbar, alarmiert und über ein getestetes Runbook behebbar.
+- Der UI-Finalisierungsbutton bleibt als manueller permissionless Fallback erhalten; `pendingPurchaseCount == 0` bleibt die unveränderte Contract-Voraussetzung für `DEX_PENDING`.
+
 ## Mainnet No-Go Conditions
 
 - ADR-001 blockiert oder Legal Sign-off fehlt.
@@ -299,6 +312,7 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - Market Reference ohne konkrete DEX-/Pool-Adresse, Fee Tier, TWAP-Implementierung oder Failover Source.
 - keine getestete Pause-/Incident-/Refund-Runbook-Probe.
 - Receipt-first Purchase UX, persistente Statuswiederherstellung oder Reorg-/Indexer-Reconciliation nach Kriterium Q fehlt.
+- Auto-Finalizer, dedizierter Gas-Signer, persistente Idempotency, Alerting oder Stale-Submission-Runbook nach Kriterium R fehlt.
 
 ## Arbitrum-Sepolia-Deployment-Nachweis 2026-08-22
 

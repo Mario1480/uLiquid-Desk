@@ -49,6 +49,19 @@ function validateNonPlaceholderToken(value: string): string | null {
   return null;
 }
 
+function validateEvmPrivateKey(value: string): string | null {
+  return /^(?:0x)?[a-fA-F0-9]{64}$/.test(value.trim())
+    ? null
+    : "must be a 32-byte hexadecimal EVM private key";
+}
+
+function validateIntegerRange(value: string, minimum: number, maximum: number): string | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum
+    ? null
+    : `must be an integer between ${minimum} and ${maximum}`;
+}
+
 function validateRedisUrl(value: string): string | null {
   try {
     const parsed = new URL(value);
@@ -96,6 +109,7 @@ export function assertApiEnv(env: EnvMap = process.env): void {
   const pythonRuntimeEnabled =
     isEnvEnabled(env.PY_STRATEGY_ENABLED, false)
     || isEnvEnabled(env.PY_GRID_ENABLED, false);
+  const uliqAutoFinalizerEnabled = isEnvEnabled(env.ULIQ_AUTO_FINALIZER_ENABLED, false);
 
   validateServiceEnv("apps/api", [
     {
@@ -169,8 +183,44 @@ export function assertApiEnv(env: EnvMap = process.env): void {
       required: pythonRuntimeEnabled,
       message: "Set PY_STRATEGY_AUTH_TOKEN (or PY_GRID_AUTH_TOKEN) when Python strategy/grid runtime is enabled.",
       validate: (value) => production ? validateNonPlaceholderToken(value) : null
+    },
+    {
+      names: ["ULIQ_FINALIZER_PRIVATE_KEY"],
+      required: uliqAutoFinalizerEnabled,
+      message: "ULIQ_FINALIZER_PRIVATE_KEY is required when ULIQ_AUTO_FINALIZER_ENABLED=true.",
+      validate: (value) => validateEvmPrivateKey(value)
+    },
+    {
+      names: ["ULIQ_AUTO_FINALIZER_INTERVAL_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 5, 3_600)
+    },
+    {
+      names: ["ULIQ_AUTO_FINALIZER_BATCH_SIZE"],
+      validate: (value) => validateIntegerRange(value, 1, 50)
+    },
+    {
+      names: ["ULIQ_AUTO_FINALIZER_RETRY_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 5, 3_600)
+    },
+    {
+      names: ["ULIQ_AUTO_FINALIZER_MAX_RETRY_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 30, 86_400)
+    },
+    {
+      names: ["ULIQ_AUTO_FINALIZER_SUBMISSION_STALE_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 60, 86_400)
     }
   ], env);
+
+  if (
+    uliqAutoFinalizerEnabled
+    && (!isEnvEnabled(env.ULIQ_ENABLED, false) || !isEnvEnabled(env.ULIQ_PRESALE_ENABLED, false))
+  ) {
+    throw new Error(
+      "[uLiquid Desk] apps/api environment validation failed:\n"
+      + "- ULIQ_AUTO_FINALIZER_ENABLED requires ULIQ_ENABLED=true and ULIQ_PRESALE_ENABLED=true."
+    );
+  }
 
   if (production) {
     const cookieSecure = String(env.COOKIE_SECURE ?? "").trim().toLowerCase();

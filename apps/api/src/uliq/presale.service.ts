@@ -1,5 +1,5 @@
-import { encodeFunctionData, type PublicClient } from "viem";
-import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
+import { encodeFunctionData, zeroAddress, type PublicClient } from "viem";
+import { uliqLockerAbi, uliqPaymentCustodyAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { mapUliqPurchaseTrackingForApi } from "./purchaseTracking.service.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
@@ -343,6 +343,88 @@ export class UliqPresaleService {
         pendingPurchaseCount: "0",
         asOfBlock: head.number.toString(),
         blockHash: head.hash
+      }
+    };
+  }
+
+  async prepareMarkDexPending() {
+    const head = await getConsistentFinalizedBlock(this.rpc);
+    const read = await withUliqRpcFailover(this.rpc, async (client) => {
+      const [
+        state,
+        pendingPurchaseCount,
+        owner,
+        paymentCustody,
+        treasury,
+        finalizedAllocationUliqRaw,
+        allocationCapUliqRaw,
+        presaleInventoryUliqRaw
+      ] = await Promise.all([
+        client.readContract({ address: this.config.contracts.presale, abi: uliqPresaleAbi, functionName: "state", blockNumber: head.number }),
+        client.readContract({ address: this.config.contracts.presale, abi: uliqPresaleAbi, functionName: "pendingPurchaseCount", blockNumber: head.number }),
+        client.readContract({ address: this.config.contracts.presale, abi: uliqPresaleAbi, functionName: "owner", blockNumber: head.number }),
+        client.readContract({ address: this.config.contracts.presale, abi: uliqPresaleAbi, functionName: "paymentCustody", blockNumber: head.number }),
+        client.readContract({ address: this.config.contracts.paymentCustody, abi: uliqPaymentCustodyAbi, functionName: "treasury", blockNumber: head.number }),
+        client.readContract({ address: this.config.contracts.presale, abi: uliqPresaleAbi, functionName: "finalizedAllocationUliqRaw", blockNumber: head.number }),
+        client.readContract({ address: this.config.contracts.presale, abi: uliqPresaleAbi, functionName: "allocationCapUliqRaw", blockNumber: head.number }),
+        client.readContract({ address: this.config.contracts.token, abi: uliqTokenAbi, functionName: "balanceOf", args: [this.config.contracts.presale], blockNumber: head.number })
+      ]);
+      return {
+        state: Number(state),
+        pendingPurchaseCount: BigInt(pendingPurchaseCount as bigint),
+        owner: normalizeUliqAddress(owner),
+        paymentCustody: normalizeUliqAddress(paymentCustody),
+        treasury: normalizeUliqAddress(treasury),
+        finalizedAllocationUliqRaw: BigInt(finalizedAllocationUliqRaw as bigint),
+        allocationCapUliqRaw: BigInt(allocationCapUliqRaw as bigint),
+        presaleInventoryUliqRaw: BigInt(presaleInventoryUliqRaw as bigint)
+      };
+    });
+    if (read.value.state !== 4) throw new Error("uliq_sale_not_ended");
+    if (read.value.pendingPurchaseCount !== 0n) throw new Error("uliq_pending_purchases_remain");
+    if (read.value.paymentCustody.toLowerCase() !== this.config.contracts.paymentCustody.toLowerCase()) {
+      throw new Error("uliq_payment_custody_mismatch");
+    }
+    if (read.value.treasury === zeroAddress) throw new Error("uliq_treasury_zero_address");
+    if (read.value.finalizedAllocationUliqRaw > read.value.allocationCapUliqRaw) {
+      throw new Error("uliq_allocation_invalid");
+    }
+    const unsoldUliqRaw = read.value.allocationCapUliqRaw - read.value.finalizedAllocationUliqRaw;
+    if (read.value.presaleInventoryUliqRaw < unsoldUliqRaw) {
+      throw new Error("uliq_presale_inventory_insufficient");
+    }
+
+    const simulation = await withUliqRpcFailover(this.rpc, (client) => client.simulateContract({
+      address: this.config.contracts.presale,
+      abi: uliqPresaleAbi,
+      functionName: "markDexPending",
+      account: read.value.owner,
+      blockNumber: head.number
+    }));
+
+    return {
+      safeTransaction: {
+        ...transactionRequest(this.config.chainId, this.config.contracts.presale, encodeFunctionData({
+          abi: uliqPresaleAbi,
+          functionName: "markDexPending"
+        }), read.value.owner),
+        operation: 0
+      },
+      preflight: {
+        owner: read.value.owner,
+        state: "ENDED",
+        pendingPurchaseCount: "0",
+        paymentCustody: read.value.paymentCustody,
+        treasury: read.value.treasury,
+        finalizedAllocationUliqRaw: read.value.finalizedAllocationUliqRaw.toString(),
+        allocationCapUliqRaw: read.value.allocationCapUliqRaw.toString(),
+        unsoldUliqRaw: unsoldUliqRaw.toString(),
+        presaleInventoryUliqRaw: read.value.presaleInventoryUliqRaw.toString(),
+        simulation: "success",
+        asOfBlock: head.number.toString(),
+        blockHash: head.hash,
+        rpcSource: read.source,
+        simulationRpcSource: simulation.source
       }
     };
   }

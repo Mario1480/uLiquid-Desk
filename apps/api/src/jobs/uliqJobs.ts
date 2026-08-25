@@ -1,4 +1,5 @@
 import { logger } from "../logger.js";
+import { getUliqAutoFinalizerSettings, UliqAutoFinalizerService } from "../uliq/autoFinalizer.service.js";
 import { expireUliqBenefitReservations } from "../uliq/benefitReservation.service.js";
 import { getUliqFeatureFlags, getUliqRuntimeConfig } from "../uliq/config.js";
 import { UliqIndexerService } from "../uliq/indexer.service.js";
@@ -23,6 +24,15 @@ function safeEnabled(flag: "enabled" | "discountsEnabled"): boolean {
   try {
     const flags = getUliqFeatureFlags();
     return flags.enabled && flags[flag];
+  } catch {
+    return false;
+  }
+}
+
+function autoFinalizerEnabled(): boolean {
+  try {
+    const flags = getUliqFeatureFlags();
+    return flags.enabled && flags.presaleEnabled && getUliqAutoFinalizerSettings().enabled;
   } catch {
     return false;
   }
@@ -82,9 +92,11 @@ export function createUliqJobs(db: any) {
   let indexer: UliqIndexerService | null = null;
   let purchaseTracking: UliqPurchaseTrackingService | null = null;
   let reconciliation: UliqReconciliationService | null = null;
+  let autoFinalizer: UliqAutoFinalizerService | null = null;
   const getIndexer = () => indexer ??= new UliqIndexerService(db, getUliqRuntimeConfig());
   const getPurchaseTracking = () => purchaseTracking ??= new UliqPurchaseTrackingService(db, getUliqRuntimeConfig());
   const getReconciliation = () => reconciliation ??= new UliqReconciliationService(db, getUliqRuntimeConfig());
+  const getAutoFinalizer = () => autoFinalizer ??= new UliqAutoFinalizerService(db, getUliqRuntimeConfig());
   return {
     indexer: createPollingJob({
       name: "uliq_indexer",
@@ -114,6 +126,12 @@ export function createUliqJobs(db: any) {
       enabled: () => safeEnabled("enabled"),
       pollMs: intervalMs("ULIQ_PURCHASE_TRACKING_INTERVAL_SECONDS", 10),
       run: () => getPurchaseTracking().reconcilePending()
+    }),
+    autoFinalizer: createPollingJob({
+      name: "uliq_auto_finalizer",
+      enabled: autoFinalizerEnabled,
+      pollMs: intervalMs("ULIQ_AUTO_FINALIZER_INTERVAL_SECONDS", 30),
+      run: () => getAutoFinalizer().runOnce()
     }),
     reconciliation: createPollingJob({
       name: "uliq_reconciliation",

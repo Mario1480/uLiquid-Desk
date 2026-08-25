@@ -130,6 +130,26 @@ test("receipt-first tracking persists SUBMITTED and validates PurchaseCreated in
   assert.equal(confirmed.receiptBlockNumber, "101");
 });
 
+test("receipt reconciliation accepts database decimals that stringify in scientific notation", async () => {
+  const state = createState({ receipt: purchaseReceipt() });
+  const service = new UliqPurchaseTrackingService(state.db, config, state.rpc);
+  await submit(service);
+  state.row.maxUsdcAmountRaw = {
+    toFixed: () => "10000000",
+    toString: () => "1e+7"
+  };
+  state.row.minUliqAllocationRaw = {
+    toFixed: () => (10_000n * 10n ** 18n).toString(),
+    toString: () => "1e+22"
+  };
+
+  const confirmed = await service.refreshForUser("user-1", TX_HASH, new Date("2026-08-24T12:02:00.000Z"));
+
+  assert.equal(confirmed.confirmationStatus, "SOFT_CONFIRMED");
+  assert.equal(confirmed.usdcAmountRaw, "10000000");
+  assert.equal(confirmed.uliqAllocationRaw, (10_000n * 10n ** 18n).toString());
+});
+
 test("tracking advances through SAFE to FINALIZED only after matching common block hashes", async () => {
   const state = createState({ receipt: purchaseReceipt() });
   const service = new UliqPurchaseTrackingService(state.db, config, state.rpc);

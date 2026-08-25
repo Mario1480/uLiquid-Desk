@@ -76,6 +76,7 @@ Das Backend darf eine vorbereitete Safe Transaction nicht als ausgeführt behand
 - Contract erzwingt `ENDED`, `pendingPurchaseCount == 0`, ausreichendes Inventar und die aktive `paymentCustody.treasury()` als unveränderlichen Empfänger der vorbereiteten Transaktion.
 - Übertragen wird exakt die unverkaufte Presale-Allokation; zusätzliche ULIQ im Contract bleiben unberührt.
 - Backend und Web-App signieren oder senden die Transaktion nicht; Receipt, `UnsoldUliqReleased` und Treasury-Zielbalance werden getrennt beobachtet und finalisiert indexiert.
+- Implementierungsstand 2026-08-25: `/admin/uliq/safe/mark-dex-pending/prepare` verlangt Superadmin plus frische Reauth, liest alle Gates am gemeinsamen `finalized`-Head beider RPCs, simuliert `markDexPending()` und gibt ausschließlich Safe-kompatibles, unsigniertes Calldata zurück. Die Admin UI sperrt den Prepare-Button außerhalb von `ENDED` oder bei offenen Purchases und schaltet den separaten DEX-Launch-Schritt erst in `DEX_PENDING` frei.
 - `cancelEmptySale()` ist nur für einen leeren Sale aus `READY`, `ACTIVE` oder `PAUSED` zulässig und dient zugleich als Recovery-Pfad, falls eine finanzierte Instanz nie aktiviert wird.
 - keine Änderung nach Ausführung.
 - Safe/Multisig-kontrolliert.
@@ -88,6 +89,18 @@ Das Backend darf eine vorbereitete Safe Transaction nicht als ausgeführt behand
 - Pause ist keine Cancellation.
 - bereits zulässige Withdrawals/Refunds und Claims dürfen nur gemäß finaler State Machine blockiert werden.
 - permissionless Finalisierungen bleiben in `PAUSED` zulässig.
+
+### Automatischer Purchase-Finalizer
+
+- Ein dedizierter, permissionless Finalizer verhindert, dass vergessene User-Aktionen `pendingPurchaseCount` und damit `DEX_PENDING` unbegrenzt blockieren.
+- Eligibility wird ausschließlich an einem zwischen beiden konfigurierten RPCs konsistenten `finalized`-Head geprüft: canonical Purchase vorhanden, Status `PENDING_WITHDRAWAL` und `finalizedBlock.timestamp > withdrawalDeadline`.
+- Vor jeder Submission werden Buyer, USDC-Betrag, ULIQ-Allokation und Withdrawal Deadline zwischen Datenbankprojektion und Contract-State verglichen; Abweichungen wechseln fail-closed auf `review_required`.
+- Jede Ausführung besitzt einen eindeutigen `OnchainAction.actionKey`, einen persistenten Submission-/Receipt-State, begrenzte Batch-Größe und exponentielles Retry/Backoff. Mehrere API-Instanzen dürfen dadurch denselben Purchase nicht parallel absenden.
+- Der Finalizer verwendet eine eigene Least-Privilege-EOA, die ausschließlich mit begrenztem ETH-Gasbudget finanziert wird. Owner-, Treasury-, Safe- oder Deployer-Keys sind unzulässig.
+- Erfolgreiches L2-Receipt ist nur `submitted`; abgeschlossen ist die Automation erst nach canonical `finalized`-Inclusion, passendem Block Hash und onchain Purchase-State `FINALIZED`.
+- Ein nicht-finaler `latest`-Read darf bei einem verlorenen Submission-Persist ausschließlich eine mögliche Duplicate-Submission unterdrücken; er bestätigt weder Receipt noch Finalisierung.
+- Der Contract zahlt unabhängig vom Caller 25 % an den Buyer, 75 % an dessen Vesting und die Payment-Custody an die aktive Treasury aus. Der Finalizer erhält keinen wirtschaftlichen Vorteil.
+- Die Automation ist über `ULIQ_AUTO_FINALIZER_ENABLED` separat fail-closed und darf erst nach Key-, Chain-, RPC-, Gasbudget-, Alert- und Runbook-Preflight aktiviert werden.
 
 ### Sale Cancellation
 
@@ -128,6 +141,7 @@ Mindestens:
 - Purchase pending ohne Indexer Event.
 - Withdrawal submitted ohne bestätigten Refund.
 - Finalization submitted ohne 25/75-Projektion.
+- Auto-Finalizer `submitting`/`submitted` stale, Transaktion nicht auffindbar oder Gasbudget erschöpft.
 - Inventory Mismatch.
 - Price Feed degraded/manipulation suspected.
 - Holding-Cooldown-Provenienz oder Reservation-Reconciliation fehlerhaft.

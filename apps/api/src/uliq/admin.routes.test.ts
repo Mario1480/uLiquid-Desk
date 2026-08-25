@@ -120,6 +120,20 @@ test("ULIQ Safe preparation checks superadmin before consuming reauth and never 
     registerUliqAdminRoutes(app as any, {
       db: {},
       presaleService: {
+        prepareMarkDexPending: async () => {
+          calls.push("prepare:mark-dex-pending");
+          return {
+            safeTransaction: {
+              chainId: 421614,
+              to: "0x1111111111111111111111111111111111111111",
+              data: "0x5678",
+              value: "0",
+              operation: 0,
+              expectedSender: "0x4444444444444444444444444444444444444444"
+            },
+            preflight: { state: "ENDED", pendingPurchaseCount: "0", simulation: "success" }
+          };
+        },
         prepareDexLaunchTimestamp: async (timestamp: string) => {
           calls.push(`prepare:${timestamp}`);
           return {
@@ -155,6 +169,17 @@ test("ULIQ Safe preparation checks superadmin before consuming reauth and never 
     assert.deepEqual(calls, ["superadmin", "reauth", "prepare:1787410000", "audit"]);
     assert.equal(allowed.body.safeTransaction.chainId, 421614);
     assert.equal(Object.prototype.hasOwnProperty.call(allowed.body, "signature"), false);
+
+    calls.length = 0;
+    const markHandlers = app.postRoutes.get("/admin/uliq/safe/mark-dex-pending/prepare");
+    assert.ok(markHandlers);
+    const markResponse = mockResponse();
+    await run(markHandlers!.slice(1), { body: {}, ip: "127.0.0.1" }, markResponse);
+    assert.deepEqual(calls, ["superadmin", "reauth", "prepare:mark-dex-pending", "audit"]);
+    assert.equal(markResponse.body.preflight.state, "ENDED");
+    assert.equal(markResponse.body.preflight.simulation, "success");
+    assert.equal(markResponse.body.safeTransaction.expectedSender, "0x4444444444444444444444444444444444444444");
+    assert.equal(Object.prototype.hasOwnProperty.call(markResponse.body, "signature"), false);
   } finally {
     if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
     else process.env.ULIQ_ENABLED = previousEnabled;

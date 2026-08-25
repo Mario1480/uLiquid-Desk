@@ -164,6 +164,45 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
   }
 
   app.post(
+    "/admin/uliq/safe/mark-dex-pending/prepare",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!enabled(res)) return;
+      try {
+        const prepared = await deps.presaleService.prepareMarkDexPending();
+        const actor = getUserFromLocals(res);
+        await deps.recordAdminAuditEvent({
+          actorUserId: actor.id,
+          action: "uliq_safe_transaction_prepared",
+          targetType: "uliq_presale",
+          targetId: prepared.safeTransaction.to,
+          metadata: {
+            function: "markDexPending",
+            chainId: prepared.safeTransaction.chainId,
+            expectedSender: prepared.safeTransaction.expectedSender,
+            preflight: prepared.preflight
+          },
+          ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+        });
+        return res.json(prepared);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const conflict = [
+          "not_ended",
+          "pending_purchases",
+          "custody_mismatch",
+          "treasury_zero",
+          "allocation_invalid",
+          "inventory_insufficient"
+        ].some((marker) => reason.includes(marker));
+        return res.status(conflict ? 409 : 503).json({ error: reason });
+      }
+    }
+  );
+
+  app.post(
     "/admin/uliq/safe/set-dex-launch/prepare",
     requireAuth,
     requireSuperadmin,

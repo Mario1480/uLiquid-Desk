@@ -10,7 +10,12 @@ import {
   withUliqRpcFailover,
   type UliqRpcPair
 } from "./rpc.js";
-import { databaseUint256Decimal, normalizeUliqAddress, parseUint256Decimal } from "./uint256.js";
+import {
+  databaseUint256Decimal,
+  normalizeUliqAddress,
+  parseDatabaseUint256Decimal,
+  parseUint256Decimal
+} from "./uint256.js";
 
 const ACTIVE_TRACKING_STATUSES = ["SUBMITTED", "SOFT_CONFIRMED", "SAFE"] as const;
 const RECEIPT_REVIEW_AFTER_MS = 30 * 60 * 1_000;
@@ -304,8 +309,14 @@ export class UliqPurchaseTrackingService {
       const buyer = normalizeUliqAddress(purchaseEvent.args.buyer, "purchase_buyer").toLowerCase();
       const usdcAmountRaw = BigInt(String(purchaseEvent.args.usdcAmountRaw));
       const uliqAllocationRaw = BigInt(String(purchaseEvent.args.uliqAllocationRaw));
-      const maxUsdcAmountRaw = parseUint256Decimal(row.maxUsdcAmountRaw, "tracking_max_usdc_amount_raw");
-      const minUliqAllocationRaw = parseUint256Decimal(row.minUliqAllocationRaw, "tracking_min_uliq_allocation_raw");
+      const maxUsdcAmountRaw = parseDatabaseUint256Decimal(
+        row.maxUsdcAmountRaw,
+        "tracking_max_usdc_amount_raw"
+      );
+      const minUliqAllocationRaw = parseDatabaseUint256Decimal(
+        row.minUliqAllocationRaw,
+        "tracking_min_uliq_allocation_raw"
+      );
       if (buyer !== row.walletAddress.toLowerCase()) {
         return this.updateStatus(row, "REVIEW_REQUIRED", "receipt_buyer_mismatch", now);
       }
