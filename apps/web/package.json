@@ -16,6 +16,7 @@
     "test:billing": "tsx --test src/billing/*.test.ts",
     "test:i18n-routing": "tsx --test src/i18n/localeRouting.test.ts",
     "test:agent-chat-ui": "tsx --test src/agent-chat/*.test.ts",
+    "test:uliq-admin": "tsx --test src/uliq/*.test.ts",
     "i18n:check": "tsx src/i18n/integrity.ts"
   },
   "dependencies": {

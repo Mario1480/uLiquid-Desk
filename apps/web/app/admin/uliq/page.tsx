@@ -1,11 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatUnits } from "viem";
+import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import { useLocale, useTranslations } from "next-intl";
+import { useAccount, useSendTransaction, useSwitchChain } from "wagmi";
+import { getBlock, getTransactionReceipt, waitForTransactionReceipt } from "wagmi/actions";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
+import { wagmiConfig } from "../../../lib/web3/config";
+import {
+  deriveDexLaunchConfirmationStatus,
+  isDexLaunchTracking,
+  type DexLaunchConfirmationStatus,
+  type DexLaunchTracking
+} from "../../../src/uliq/adminDexLaunch";
 import { AppIcon } from "../../components/AppIcon";
 import ReauthDialog from "../../components/ReauthDialog";
+import Web3Providers from "../../components/Web3Providers";
 import AdminDetailSection from "../_components/AdminDetailSection";
 import AdminNotice from "../_components/AdminNotice";
 import AdminPageHeader from "../_components/AdminPageHeader";
@@ -15,7 +25,10 @@ import AdminStatusBadge from "../_components/AdminStatusBadge";
 type GroupedCount = { status: string; _count: { _all: number }; _sum?: Record<string, string | null> };
 type AdminUliqPayload = {
   overview: {
+    chainId: number;
+    contractAddress: string;
     state: string;
+    dexLaunchTimestamp: string | null;
     totalSoldUliqRaw: string;
     totalRaisedUsdcRaw: string;
     pendingPurchaseCount: string;
@@ -89,11 +102,13 @@ type AdminUliqPayload = {
 };
 
 type SafePreparation = {
-  safeTransaction: { chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string };
+  safeTransaction: { chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string | null };
   preflight: Record<string, unknown>;
 };
 
-type ReauthAction = "dex-pending" | "dex" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
+type ReauthAction = "dex-pending" | "dex-prepare" | "dex-submit" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
+
+const DEX_LAUNCH_TRACKING_STORAGE_KEY = "uliquid.uliq.admin.dexLaunchTracking.v1";
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return String(error.payload?.error ?? error.message);
@@ -109,54 +124,286 @@ function formatToken(raw: string | null | undefined, decimals: number, fractionD
 }
 
 function initialDexTime(): string {
-  const date = new Date(Date.now() + 15 * 60_000);
+  const date = new Date(Date.now() + 30 * 60_000);
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
 }
 
-export default function UliqAdminPage() {
+function readDexLaunchTracking(): DexLaunchTracking | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DEX_LAUNCH_TRACKING_STORAGE_KEY) ?? "null");
+    return isDexLaunchTracking(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDexLaunchTracking(value: DexLaunchTracking): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DEX_LAUNCH_TRACKING_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // Finalized contract state remains the authoritative recovery path.
+  }
+}
+
+function localDateTimeMin(): string {
+  const date = new Date(Date.now() + 60_000);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function dexTrackingTone(status: DexLaunchConfirmationStatus): "success" | "warning" | "danger" | "info" {
+  if (status === "FINALIZED") return "success";
+  if (status === "FAILED" || status === "REORGED") return "danger";
+  if (status === "SUBMITTED" || status === "AWAITING_SIGNATURE") return "warning";
+  return "info";
+}
+
+function UliqAdminPageContent() {
   const t = useTranslations("uliq.admin");
   const locale = useLocale();
+  const { address, chainId, isConnected } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+  const { sendTransactionAsync } = useSendTransaction();
   const [data, setData] = useState<AdminUliqPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dexLaunchTime, setDexLaunchTime] = useState(initialDexTime);
   const [treasuryInput, setTreasuryInput] = useState("");
+  const [poolReady, setPoolReady] = useState(false);
   const [reauthOpen, setReauthOpen] = useState(false);
-  const [reauthAction, setReauthAction] = useState<ReauthAction>("dex");
+  const [reauthAction, setReauthAction] = useState<ReauthAction>("dex-submit");
   const [preparation, setPreparation] = useState<SafePreparation | null>(null);
   const [preparationLabel, setPreparationLabel] = useState<string | null>(null);
+  const [dexSubmitting, setDexSubmitting] = useState(false);
+  const [dexTracking, setDexTracking] = useState<DexLaunchTracking | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const payload = await apiGet<AdminUliqPayload>("/admin/uliq");
       setData(payload);
-      setTreasuryInput(payload.treasury.desiredTreasury ?? payload.treasury.activeTreasury ?? "");
+      if (!options?.silent) {
+        setTreasuryInput(payload.treasury.desiredTreasury ?? payload.treasury.activeTreasury ?? "");
+      }
+      return payload;
     } catch (loadError) {
-      setError(errorMessage(loadError));
+      if (!options?.silent) setError(errorMessage(loadError));
+      return null;
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setDexTracking(readDexLaunchTracking()); }, []);
+
+  const persistDexTracking = useCallback((tracking: DexLaunchTracking) => {
+    setDexTracking(tracking);
+    writeDexLaunchTracking(tracking);
+  }, []);
+
+  const refreshDexTracking = useCallback(async (tracking: DexLaunchTracking) => {
+    if (["FINALIZED", "FAILED", "REORGED"].includes(tracking.confirmationStatus)) return;
+    try {
+      const receipt = await getTransactionReceipt(wagmiConfig, {
+        chainId: tracking.chainId,
+        hash: tracking.transactionHash
+      });
+      if (receipt.status !== "success") {
+        persistDexTracking({ ...tracking, confirmationStatus: "FAILED", receiptBlockNumber: receipt.blockNumber.toString(), updatedAt: new Date().toISOString() });
+        return;
+      }
+      const [canonicalBlock, safeBlock, finalizedBlock] = await Promise.all([
+        getBlock(wagmiConfig, { chainId: tracking.chainId, blockNumber: receipt.blockNumber }),
+        getBlock(wagmiConfig, { chainId: tracking.chainId, blockTag: "safe" }),
+        getBlock(wagmiConfig, { chainId: tracking.chainId, blockTag: "finalized" })
+      ]);
+      if (!canonicalBlock.hash || !receipt.blockHash) return;
+      const confirmationStatus = deriveDexLaunchConfirmationStatus({
+        receiptStatus: receipt.status,
+        receiptBlockNumber: receipt.blockNumber,
+        receiptBlockHash: receipt.blockHash,
+        canonicalBlockHash: canonicalBlock.hash,
+        safeBlockNumber: safeBlock.number,
+        finalizedBlockNumber: finalizedBlock.number
+      });
+      const next = {
+        ...tracking,
+        confirmationStatus,
+        receiptBlockNumber: receipt.blockNumber.toString(),
+        updatedAt: new Date().toISOString()
+      };
+      persistDexTracking(next);
+      if (confirmationStatus === "FINALIZED") await load({ silent: true });
+    } catch {
+      // A submitted transaction may not have a receipt yet; the next poll retries.
+    }
+  }, [load, persistDexTracking]);
+
+  useEffect(() => {
+    if (!dexTracking || ["FINALIZED", "FAILED", "REORGED"].includes(dexTracking.confirmationStatus)) return;
+    void refreshDexTracking(dexTracking);
+    const timer = window.setInterval(() => void refreshDexTracking(dexTracking), 12_000);
+    return () => window.clearInterval(timer);
+  }, [dexTracking, refreshDexTracking]);
+
+  useEffect(() => {
+    if (!data || !["ENDED", "DEX_PENDING"].includes(data.overview.state)) return;
+    const timer = window.setInterval(() => void load({ silent: true }), 15_000);
+    return () => window.clearInterval(timer);
+  }, [data, load]);
 
   const purchaseCounts = useMemo(() => Object.fromEntries(
     (data?.stats.purchases ?? []).map((row) => [row.status, row._count._all])
   ), [data]);
+  const parsedDexLaunchTime = new Date(dexLaunchTime);
+  const dexLaunchTimeValid = !Number.isNaN(parsedDexLaunchTime.getTime()) && parsedDexLaunchTime.getTime() >= Date.now();
+  const ownerMatches = Boolean(address && data?.treasury.owner && address.toLowerCase() === data.treasury.owner.toLowerCase());
+  const dexPreflightReady = Boolean(
+    data
+    && data.overview.state === "DEX_PENDING"
+    && data.overview.pendingPurchaseCount === "0"
+    && dexLaunchTimeValid
+    && poolReady
+    && !dexSubmitting
+  );
+  const activeDexTracking = dexTracking
+    && data
+    && dexTracking.chainId === data.overview.chainId
+    && dexTracking.contractAddress.toLowerCase() === data.overview.contractAddress.toLowerCase()
+      ? dexTracking
+      : null;
 
-  async function prepareSafeTransaction() {
+  function dexTrackingLabel(status: DexLaunchConfirmationStatus): string {
+    switch (status) {
+      case "AWAITING_SIGNATURE": return t("confirmation.awaitingSignature");
+      case "SUBMITTED": return t("confirmation.submitted");
+      case "SOFT_CONFIRMED": return t("confirmation.softConfirmed");
+      case "SAFE": return t("confirmation.safe");
+      case "FINALIZED": return t("confirmation.finalized");
+      case "FAILED": return t("confirmation.failed");
+      case "REORGED": return t("confirmation.reorged");
+    }
+  }
+
+  function dexLaunchTimestamp(): string {
     const parsed = new Date(dexLaunchTime);
-    if (Number.isNaN(parsed.getTime()) || parsed.getTime() < Date.now()) throw new Error("invalid_dex_launch_timestamp");
+    if (Number.isNaN(parsed.getTime()) || parsed.getTime() < Date.now()) throw new Error(t("invalidTimestamp"));
+    return Math.floor(parsed.getTime() / 1_000).toString();
+  }
+
+  async function submitDexLaunch(response: SafePreparation, timestamp: string) {
+    const tx = response.safeTransaction;
+    if (!isConnected || !address) throw new Error(t("walletRequired"));
+    if (!isAddress(tx.to) || !/^0x[0-9a-fA-F]*$/.test(tx.data) || tx.operation !== 0) {
+      throw new Error(t("invalidPreparedTransaction"));
+    }
+    if (!tx.expectedSender || tx.expectedSender.toLowerCase() !== address.toLowerCase()) {
+      throw new Error(t("ownerMismatch", { owner: tx.expectedSender ?? data?.treasury.owner ?? "—" }));
+    }
+
+    setDexSubmitting(true);
+    setError(null);
+    try {
+      if (chainId !== tx.chainId) await switchChainAsync({ chainId: tx.chainId });
+      setNotice(t("awaitingSignature"));
+      const submittedAt = new Date().toISOString();
+      const hash = await sendTransactionAsync({
+        account: address,
+        chainId: tx.chainId,
+        to: tx.to as Address,
+        data: tx.data as Hex,
+        value: BigInt(tx.value || "0")
+      });
+      let activeHash = hash;
+      persistDexTracking({
+        chainId: tx.chainId,
+        contractAddress: tx.to as Address,
+        transactionHash: hash,
+        dexLaunchTimestamp: timestamp,
+        confirmationStatus: "SUBMITTED",
+        receiptBlockNumber: null,
+        submittedAt,
+        updatedAt: submittedAt
+      });
+      setNotice(t("transactionSubmitted"));
+
+      let replacementReason: "cancelled" | "replaced" | "repriced" | null = null;
+      void waitForTransactionReceipt(wagmiConfig, {
+        chainId: tx.chainId,
+        hash,
+        confirmations: 1,
+        onReplaced: (replacement) => {
+          replacementReason = replacement.reason;
+          activeHash = replacement.transaction.hash;
+          persistDexTracking({
+            chainId: tx.chainId,
+            contractAddress: tx.to as Address,
+            transactionHash: activeHash,
+            dexLaunchTimestamp: timestamp,
+            confirmationStatus: replacement.reason === "cancelled" ? "FAILED" : "SUBMITTED",
+            receiptBlockNumber: null,
+            submittedAt,
+            updatedAt: new Date().toISOString()
+          });
+          if (replacement.reason === "cancelled") {
+            setNotice(null);
+            setError(t("transactionCancelled"));
+          }
+        }
+      }).then(async (receipt) => {
+        if (replacementReason === "cancelled") return;
+        if (receipt.status !== "success") {
+          persistDexTracking({
+            chainId: tx.chainId,
+            contractAddress: tx.to as Address,
+            transactionHash: activeHash,
+            dexLaunchTimestamp: timestamp,
+            confirmationStatus: "FAILED",
+            receiptBlockNumber: receipt.blockNumber.toString(),
+            submittedAt,
+            updatedAt: new Date().toISOString()
+          });
+          setNotice(null);
+          setError(t("transactionReverted"));
+          return;
+        }
+        persistDexTracking({
+          chainId: tx.chainId,
+          contractAddress: tx.to as Address,
+          transactionHash: activeHash,
+          dexLaunchTimestamp: timestamp,
+          confirmationStatus: "SOFT_CONFIRMED",
+          receiptBlockNumber: receipt.blockNumber.toString(),
+          submittedAt,
+          updatedAt: new Date().toISOString()
+        });
+        setNotice(t("receiptConfirmed"));
+        await load({ silent: true });
+      }).catch(() => {
+        // Local persistence and the polling effect continue receipt/finality recovery.
+      });
+    } finally {
+      setDexSubmitting(false);
+    }
+  }
+
+  async function prepareSafeTransaction(submit: boolean) {
+    if (!poolReady) throw new Error(t("poolConfirmationRequired"));
+    const timestamp = dexLaunchTimestamp();
     const response = await apiPost<SafePreparation>("/admin/uliq/safe/set-dex-launch/prepare", {
-      dexLaunchTimestamp: Math.floor(parsed.getTime() / 1_000).toString()
+      dexLaunchTimestamp: timestamp
     });
     setPreparation(response);
     setPreparationLabel("setDexLaunchTimestamp");
-    setNotice(t("prepared"));
+    if (submit) await submitDexLaunch(response, timestamp);
+    else setNotice(t("prepared"));
   }
 
   async function prepareDexPending() {
@@ -175,7 +422,7 @@ export default function UliqAdminPage() {
     setNotice(t("treasurySaved"));
   }
 
-  async function prepareTreasuryAction(action: Exclude<ReauthAction, "dex" | "treasury-save">) {
+  async function prepareTreasuryAction(action: "treasury-propose" | "treasury-accept" | "treasury-cancel") {
     const route = {
       "treasury-propose": "/admin/uliq/treasury/propose/prepare",
       "treasury-accept": "/admin/uliq/treasury/accept/prepare",
@@ -198,7 +445,8 @@ export default function UliqAdminPage() {
 
   async function runReauthenticatedAction() {
     if (reauthAction === "dex-pending") return prepareDexPending();
-    if (reauthAction === "dex") return prepareSafeTransaction();
+    if (reauthAction === "dex-prepare") return prepareSafeTransaction(false);
+    if (reauthAction === "dex-submit") return prepareSafeTransaction(true);
     if (reauthAction === "treasury-save") return saveTreasury();
     return prepareTreasuryAction(reauthAction);
   }
@@ -351,21 +599,74 @@ export default function UliqAdminPage() {
           </AdminDetailSection>
 
           <AdminDetailSection title={t("safeTitle")} description={t("safeDescription")}>
+            <AdminNotice tone="warning">{t("externalPoolNotice")}</AdminNotice>
+            <ol className="uliqLaunchSteps">
+              <li>
+                <span>1</span>
+                <div><strong>{t("stepDexPending")}</strong><small>{t("stepDexPendingHint")}</small></div>
+                <AdminStatusBadge value={["DEX_PENDING", "DEX_LAUNCHED", "COMPLETED"].includes(data.overview.state) ? "completed" : "pending"} />
+              </li>
+              <li>
+                <span>2</span>
+                <div><strong>{t("stepSchedule")}</strong><small>{data.overview.dexLaunchTimestamp ? new Date(data.overview.dexLaunchTimestamp).toLocaleString(locale) : t("stepScheduleHint")}</small></div>
+                <AdminStatusBadge value={data.overview.dexLaunchTimestamp ? "completed" : "pending"} />
+              </li>
+              <li>
+                <span>3</span>
+                <div><strong>{t("stepFinality")}</strong><small>{["DEX_LAUNCHED", "COMPLETED"].includes(data.overview.state) ? t("confirmation.finalized") : activeDexTracking ? dexTrackingLabel(activeDexTracking.confirmationStatus) : t("stepFinalityHint")}</small></div>
+                <AdminStatusBadge value={["DEX_LAUNCHED", "COMPLETED"].includes(data.overview.state) ? "finalized" : activeDexTracking?.confirmationStatus ?? "pending"} />
+              </li>
+            </ol>
             <div className="adminFormGridCompact">
               <label className="adminFormField">
                 <span className="adminFormFieldLabel">{t("timestamp")}</span>
-                <input className="input" type="datetime-local" value={dexLaunchTime} onChange={(event) => setDexLaunchTime(event.target.value)} />
-                <span className="adminFormFieldHint">{t("fourEyes")}</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  min={localDateTimeMin()}
+                  value={dexLaunchTime}
+                  onChange={(event) => setDexLaunchTime(event.target.value)}
+                  disabled={data.overview.state !== "DEX_PENDING" || dexSubmitting}
+                />
+                <span className="adminFormFieldHint">{t("immutableTimestamp")}</span>
               </label>
             </div>
-            <button
-              type="button"
-              className="btn btnPrimary"
-              onClick={() => requestReauth("dex")}
-              disabled={!dexLaunchTime || data.overview.state !== "DEX_PENDING" || data.overview.pendingPurchaseCount !== "0"}
-            >
-              <AppIcon name="shield" /> {t("prepare")}
-            </button>
+            <label className="uliqLaunchConfirmation">
+              <input type="checkbox" checked={poolReady} onChange={(event) => setPoolReady(event.target.checked)} disabled={data.overview.state !== "DEX_PENDING" || dexSubmitting} />
+              <span>{t("externalPoolConfirmation")}</span>
+            </label>
+            <div className="adminKeyValueList">
+              <div className="adminKeyValueRow"><span>{t("ownerWallet")}</span><strong className="uliqMono">{data.treasury.owner}</strong></div>
+              <div className="adminKeyValueRow"><span>{t("connectedWallet")}</span><strong className="uliqMono">{address ?? "—"}</strong></div>
+            </div>
+            {!isConnected ? <AdminNotice tone="warning">{t("walletRequired")}</AdminNotice> : null}
+            {isConnected && !ownerMatches ? <AdminNotice tone="warning">{t("ownerMismatch", { owner: data.treasury.owner })}</AdminNotice> : null}
+            <div className="adminToolbarRow">
+              <button
+                type="button"
+                className="btn btnPrimary"
+                onClick={() => requestReauth("dex-submit")}
+                disabled={!dexPreflightReady || !isConnected || !ownerMatches}
+              >
+                <AppIcon name="launch" /> {dexSubmitting ? t("awaitingSignature") : t("submitLaunch")}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => requestReauth("dex-prepare")}
+                disabled={!dexPreflightReady}
+              >
+                <AppIcon name="shield" /> {t("prepareSafeFallback")}
+              </button>
+            </div>
+            {activeDexTracking ? (
+              <AdminNotice tone={dexTrackingTone(activeDexTracking.confirmationStatus)}>
+                <span>{dexTrackingLabel(activeDexTracking.confirmationStatus)} · </span>
+                <a href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${activeDexTracking.transactionHash}`} target="_blank" rel="noreferrer">
+                  {activeDexTracking.transactionHash.slice(0, 12)}…
+                </a>
+              </AdminNotice>
+            ) : null}
           </AdminDetailSection>
 
           <AdminDetailSection title={t("payload")} description={preparationLabel ?? undefined}>
@@ -395,4 +696,8 @@ export default function UliqAdminPage() {
       />
     </div>
   );
+}
+
+export default function UliqAdminPage() {
+  return <Web3Providers><UliqAdminPageContent /></Web3Providers>;
 }

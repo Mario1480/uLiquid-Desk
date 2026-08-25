@@ -193,6 +193,66 @@
   white-space: pre-wrap;
 }
 
+.uliqLaunchSteps {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.uliqLaunchSteps li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.uliqLaunchSteps li:last-child {
+  border-bottom: 0;
+}
+
+.uliqLaunchSteps li > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.uliqLaunchSteps li > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.uliqLaunchSteps small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.uliqLaunchConfirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.uliqLaunchConfirmation input {
+  margin-top: 2px;
+  accent-color: var(--color-brand-primary);
+}
+
 @media (max-width: 760px) {
   .uliqMetricGrid,
   .uliqMetricGridCompact,
@@ -207,6 +267,16 @@
   .uliqFormRow .btn,
   .uliqActions .btn {
     width: 100%;
+  }
+
+  .uliqLaunchSteps li {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .uliqLaunchSteps .uiStatusBadge,
+  .uliqLaunchSteps .adminStatusBadge {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 
