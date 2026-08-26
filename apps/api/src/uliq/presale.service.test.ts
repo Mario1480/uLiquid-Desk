@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decodeFunctionData } from "viem";
-import { uliqPresaleAbi, uliqTokenAbi } from "./abi.js";
+import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi } from "./abi.js";
 import type { UliqRuntimeConfig } from "./config.js";
 import { UliqPresaleService } from "./presale.service.js";
 
@@ -82,6 +82,58 @@ test("ULIQ purchase quote and preparation remain disabled until the sale is ACTI
   assert.deepEqual(approval.args, [PAYMENT_CUSTODY, 100n]);
   assert.equal(prepared.purchase.expectedSender, WALLET.toLowerCase());
   assert.equal(prepared.purchase.to, config.contracts.presale);
+});
+
+test("ULIQ lock preparation exposes only 1, 6 and 12 month initial terms", async () => {
+  const service = new UliqPresaleService(createDb(), config, createRpc(2n));
+  const expected = new Map([
+    [31, 31n * 24n * 60n * 60n],
+    [184, 184n * 24n * 60n * 60n],
+    [366, 366n * 24n * 60n * 60n]
+  ]);
+  for (const [durationDays, durationSeconds] of expected) {
+    const prepared = await service.prepareLock({
+      userId: "user-1",
+      amountRaw: "1000000000000000000",
+      durationDays
+    });
+    const decoded = decodeFunctionData({ abi: uliqLockerAbi, data: prepared.lock.data });
+    assert.equal(decoded.functionName, "lock");
+    assert.deepEqual(decoded.args, [1_000_000_000_000_000_000n, durationSeconds]);
+  }
+  await assert.rejects(
+    service.prepareLock({ userId: "user-1", amountRaw: "1", durationDays: 30 }),
+    /unsupported_lock_duration/
+  );
+});
+
+test("ULIQ lock extension preparation uses finalized owner/expiry and returns unsigned calldata", async () => {
+  const currentUnlockAt = 1_800_000_000n;
+  const newUnlockAt = currentUnlockAt + 31n * 24n * 60n * 60n;
+  const client = {
+    getBlock: async () => ({ number: 123n, hash: BLOCK_HASH, timestamp: 1_787_418_172n }),
+    readContract: async (request: { functionName: string }) => {
+      if (request.functionName === "locks") return [WALLET, 500n, 1_700_000_000n, currentUnlockAt, false] as const;
+      throw new Error(`unexpected_read_${request.functionName}`);
+    }
+  };
+  const service = new UliqPresaleService(createDb(), config, { primary: client, secondary: client } as any);
+  const prepared = await service.prepareLockExtension({
+    userId: "user-1",
+    lockId: "7",
+    newUnlockAt: newUnlockAt.toString()
+  });
+  assert.equal(prepared.transaction.expectedSender, WALLET.toLowerCase());
+  assert.equal(prepared.asOfBlock, "123");
+  const decoded = decodeFunctionData({ abi: uliqLockerAbi, data: prepared.transaction.data });
+  assert.equal(decoded.functionName, "extendLock");
+  assert.deepEqual(decoded.args, [7n, newUnlockAt]);
+  assert.equal(Object.prototype.hasOwnProperty.call(prepared, "signature"), false);
+
+  await assert.rejects(
+    service.prepareLockExtension({ userId: "user-1", lockId: "7", newUnlockAt: currentUnlockAt.toString() }),
+    /lock_expiry_not_increasing/
+  );
 });
 
 function createDexPendingRpc(params: {

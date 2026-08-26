@@ -96,7 +96,19 @@ type AdminUliqPayload = {
     minUsdValue: string;
     subscriptionDiscountBps: number;
     aiDiscountBps: number;
+    monetaryBenefitCaps: { aiCreditDiscountMonthlyCents?: number | string } | null;
   }>;
+  lockGate: {
+    version: string;
+    coverageShareBps: number;
+    supportedTerms: Array<{ billingMonths: number; durationDays: number; label: string }>;
+    tierCapStatus: Array<{
+      code: string;
+      version: number;
+      aiCreditDiscountMonthlyCents: number | string | null;
+      configured: boolean;
+    }>;
+  };
   alerts: Array<{ id: string; severity: string; status: string; message: string; createdAt: string }>;
   audit: Array<{ id: string; action: string; actorUserId: string; createdAt: string }>;
 };
@@ -539,6 +551,16 @@ function UliqAdminPageContent() {
             <div className="adminKeyValueList">
               {data.tiers.map((tier) => <div className="adminKeyValueRow" key={tier.id}><strong>{tier.code} · v{tier.version}</strong><span>${tier.minUsdValue} · Sub {tier.subscriptionDiscountBps / 100}% · AI {tier.aiDiscountBps / 100}%</span></div>)}
             </div>
+          </AdminDetailSection>
+
+          <AdminDetailSection title={t("lockGateTitle")} description={t("lockGateDescription")}>
+            <div className="adminKeyValueList">
+              <div className="adminKeyValueRow"><span>{t("lockGateVersion")}</span><strong>{data.lockGate.version}</strong></div>
+              <div className="adminKeyValueRow"><span>{t("coverageShare")}</span><strong>{data.lockGate.coverageShareBps / 100}%</strong></div>
+              <div className="adminKeyValueRow"><span>{t("supportedTerms")}</span><strong>{data.lockGate.supportedTerms.map((term) => `${term.billingMonths}M / ${term.durationDays}d`).join(" · ")}</strong></div>
+              {data.lockGate.tierCapStatus.map((tier) => <div className="adminKeyValueRow" key={`${tier.code}-${tier.version}`}><span>{tier.code} · v{tier.version}</span><span><AdminStatusBadge value={tier.configured ? "configured" : "missing"} /> {tier.aiCreditDiscountMonthlyCents == null ? "—" : `${Number(tier.aiCreditDiscountMonthlyCents) / 100} USD`}</span></div>)}
+            </div>
+            <AdminNotice tone="info">{t("lockGateAuditHint")}</AdminNotice>
           </AdminDetailSection>
 
           <AdminDetailSection title={t("treasuryTitle")} description={t("treasuryDescription")}>

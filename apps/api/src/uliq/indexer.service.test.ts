@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
-import { uliqPaymentCustodyAbi, uliqPresaleAbi } from "./abi.js";
+import { uliqLockerAbi, uliqPaymentCustodyAbi, uliqPresaleAbi } from "./abi.js";
 import { acquireUliqIndexerLease, decodeUliqLog, projectUliqEvent, rollbackUliqAfterReorg, shouldConsumeHoldingTransfer } from "./indexer.service.js";
 import type { UliqRuntimeConfig } from "./config.js";
 
@@ -228,5 +228,56 @@ test("indexer records an unsold presale release as an ordinary treasury holding"
   assert.equal(upsert.create.amountRaw, releasedAmount.toString());
   assert.equal(upsert.create.provenance, "WALLET_TRANSFER");
   assert.equal(upsert.create.sourceEventKey, "event-unsold:unsold-release");
-  assert.equal(upsert.create.monetaryEligibleAt.toISOString(), "2026-08-24T18:00:00.000Z");
+  assert.equal(upsert.create.monetaryEligibleAt.toISOString(), "2026-08-23T18:00:00.000Z");
+});
+
+test("indexer projects a finalized lock extension without changing principal", async () => {
+  const completeConfig = {
+    ...config,
+    contracts: {
+      token: "0x1111111111111111111111111111111111111111",
+      presale: "0x2222222222222222222222222222222222222222",
+      vesting: "0x3333333333333333333333333333333333333333",
+      locker: "0x4444444444444444444444444444444444444444",
+      usdc: "0x5555555555555555555555555555555555555555",
+      paymentCustody: "0x6666666666666666666666666666666666666666"
+    }
+  } as UliqRuntimeConfig;
+  const owner = "0x7777777777777777777777777777777777777777" as const;
+  const previousUnlockAt = 1_800_000_000n;
+  const newUnlockAt = 1_815_897_600n;
+  const log = {
+    address: completeConfig.contracts.locker,
+    topics: encodeEventTopics({
+      abi: uliqLockerAbi,
+      eventName: "LockExtended",
+      args: { lockId: 7n, owner }
+    }),
+    data: encodeAbiParameters(
+      [{ type: "uint64" }, { type: "uint64" }],
+      [previousUnlockAt, newUnlockAt]
+    ),
+    blockNumber: 789n,
+    blockHash: `0x${"56".repeat(32)}`,
+    transactionHash: `0x${"78".repeat(32)}`,
+    logIndex: 2
+  } as any;
+  const decoded = decodeUliqLog(log, completeConfig);
+  assert.equal(decoded?.eventName, "LockExtended");
+
+  let update: any = null;
+  await projectUliqEvent({
+    tx: { uliqLockPosition: { updateMany: async (value: any) => { update = value; } } },
+    config: completeConfig,
+    log,
+    decoded: decoded!,
+    eventKey: "event-lock-extended",
+    blockTimestamp: new Date("2026-08-26T12:00:00.000Z")
+  });
+
+  assert.equal(update.where.lockIdOnchain, "7");
+  assert.equal(update.where.walletAddress, owner.toLowerCase());
+  assert.equal(update.data.unlockAt.toISOString(), new Date(Number(newUnlockAt) * 1_000).toISOString());
+  assert.deepEqual(update.data.extensionCount, { increment: 1 });
+  assert.equal("amountRaw" in update.data, false);
 });

@@ -36,6 +36,7 @@ async function run(handlers: Handler[], req: any, res: any) {
     if (handler) await handler(req, res, next);
   };
   await next();
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 test("ULIQ admin overview serializes Prisma Decimal values as JSON strings", async () => {
@@ -100,6 +101,91 @@ test("ULIQ admin overview serializes Prisma Decimal values as JSON strings", asy
     assert.equal(JSON.stringify(response.body).includes('"s":'), false);
     assert.equal(JSON.stringify(response.body).includes('"e":'), false);
     assert.equal(JSON.stringify(response.body).includes('"d":'), false);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
+
+test("ULIQ tier benefit changes require reauth and atomically create an audited config version", async () => {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_ADMIN_ENABLED = "true";
+  try {
+    const calls: string[] = [];
+    const created: any[] = [];
+    const tx = {
+      uliqTierConfig: {
+        findMany: async () => [
+          {
+            code: "BASIC",
+            version: 3,
+            minUsdValue: new Prisma.Decimal("0"),
+            featureFlags: { chat: true },
+            subscriptionDiscountBps: 0,
+            aiDiscountBps: 0,
+            monetaryBenefitCaps: null
+          },
+          {
+            code: "GOLD",
+            version: 3,
+            minUsdValue: new Prisma.Decimal("1500"),
+            featureFlags: { predictions: true },
+            subscriptionDiscountBps: 1_000,
+            aiDiscountBps: 500,
+            monetaryBenefitCaps: { aiCreditDiscountMonthlyCents: 500 }
+          }
+        ],
+        updateMany: async () => { calls.push("close-v3"); return { count: 2 }; },
+        create: async ({ data }: any) => { calls.push(`create:${data.code}`); created.push(data); return data; }
+      }
+    };
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: {
+        $transaction: async (runInTransaction: (client: any) => Promise<any>) => {
+          calls.push("transaction");
+          return runInTransaction(tx);
+        }
+      },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => { calls.push("superadmin"); return true; },
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => {
+        calls.push("reauth");
+        await next();
+      },
+      recordAdminAuditEvent: async (input) => {
+        assert.equal(input.tx, tx);
+        assert.equal(input.action, "uliq_tier_benefits_version_created");
+        assert.equal(input.metadata?.reason, "Quarterly benefit review");
+        calls.push("audit");
+      }
+    });
+
+    const handlers = app.putRoutes.get("/admin/uliq/tier-benefits");
+    assert.ok(handlers);
+    const response = mockResponse();
+    await run(handlers!.slice(1), {
+      body: {
+        reason: "Quarterly benefit review",
+        tiers: [
+          { code: "BASIC", subscriptionDiscountBps: 0, aiDiscountBps: 0, aiCreditDiscountMonthlyCents: null },
+          { code: "GOLD", subscriptionDiscountBps: 1_500, aiDiscountBps: 1_000, aiCreditDiscountMonthlyCents: 750 }
+        ]
+      },
+      ip: "127.0.0.1"
+    }, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.version, 4);
+    assert.deepEqual(calls, ["superadmin", "reauth", "transaction", "close-v3", "create:BASIC", "create:GOLD", "audit"]);
+    assert.equal(created[1].monetaryBenefitCaps.aiCreditDiscountMonthlyCents, 750);
+    assert.equal(created[1].minimumLockDurationDays, null);
+    assert.equal(created[1].reason, "Quarterly benefit review");
   } finally {
     if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
     else process.env.ULIQ_ENABLED = previousEnabled;

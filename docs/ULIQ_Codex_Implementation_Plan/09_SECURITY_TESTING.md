@@ -33,7 +33,7 @@
 - Forced/versehentlich zusätzliche ULIQ im Presale werden vom Unsold-Release nicht erfasst.
 - globales 9-Monats-Vesting vor/am/nach Start.
 - mehrere Purchases und Claims pro Wallet.
-- Lock 30/90/180, vorzeitiger Withdraw, doppelter Withdraw und mehrere Locks.
+- Lock 31/184/366, vorzeitiger Withdraw, doppelter Withdraw, mehrere Locks und wiederholte nicht verkürzende Extension.
 - Access Control, Zwei-Schritt-Ownership, Safe-Rollen und Pause-Semantik.
 - Pause blockiert Kauf, aber nicht zulässige Withdrawals, Finalisierungen und Reads.
 - getrennte Treasury-/Ecosystem-/Marketing-/Liquidity-Safes sowie Team-/Presale-Vesting-Budgets.
@@ -52,6 +52,7 @@
 - Bei `pendingPurchaseCount == 0` entspricht der Unsold-Release exakt `allocationCapUliqRaw - finalizedAllocationUliqRaw`; er verändert `totalSupply` nicht und adressiert ausschließlich die aktive Custody-Treasury.
 - `released <= allocated` für jede Vesting-Position.
 - Locker Withdrawals überschreiten nie eingezahlte Locks.
+- Lock Extension verändert weder Position Amount noch `lockedBalanceOf` oder `totalLocked` und kann den Ablauf niemals verkürzen.
 - Locking oder Claiming erzeugen keine ULIQ aus dem Nichts.
 
 ## Backend und API Tests
@@ -79,7 +80,9 @@
 - Shallow und Deep Reorg innerhalb des unterstützten Fensters.
 - orphaned Event markieren, Domain State rollbacken, canonical Event replayen.
 - Restart ohne Doppelprojektion.
+- `LockExtended` ist idempotent; Reorg/Replay stellt den kanonischen Ablauf wieder her.
 - Reconciliation gegen `balanceOf`, Vesting, Locker, Purchases und Inventory.
+- Reconciliation erkennt Amount-, Expiry- und Withdrawn-Abweichungen je Lock.
 - Mismatch erzeugt Alert und wird nicht still überschrieben.
 
 ## Entitlement Tests
@@ -104,9 +107,14 @@
 - parallele Discount Requests und Cap Reservation.
 - Quote TTL exakt 10 Minuten.
 - Wallet-Wechsel setzt alle offenen Reservations von `RESERVED` auf `RELEASED` und invalidiert rabattierte Quotes.
-- regulär erworbene/frei übertragene ULIQ erfüllen monetäre Benefits erst nach 24 Stunden Holding Age.
-- finalisierte Presale Allocation ist unmittelbar ohne zusätzlichen 24-Stunden-Cooldown monetär qualifiziert.
-- Token-Rotation zwischen Accounts erzeugt keinen mehrfachen wirtschaftlichen Benefit gemäß ADR-004.
+- kein ULIQ/kein Lock nutzt weiterhin den normalen Standardpreis-Checkout.
+- Holding-Tier ohne Lock behält Feature Access, erhält aber keinen monetären Discount.
+- Lock unter 25 % wird abgelehnt; mehrere Locks werden nur bei ausreichender Laufzeit addiert.
+- Ablauf eine Sekunde vor Produktende wird abgelehnt; exakte Gleichheit wird akzeptiert.
+- Monthly/6-month/annual Calendar Boundaries inklusive Leap Year und Early-Renewal-Kette.
+- abgelaufener unwithdrawn Lock bleibt im Holding-Tier, qualifiziert aber keinen monetären Benefit.
+- Extension qualifiziert erst nach kanonischer Finalisierung; Reorg/Orphaning invalidiert die Reservation.
+- Token-Rotation zwischen Accounts erzeugt ohne eigene finalisierte Lock-Abdeckung keinen mehrfachen wirtschaftlichen Benefit gemäß ADR-004/ADR-008.
 - Base-, Discount- und Final-Amount-Invariants.
 - Line-Discounts summieren exakt zum Order Discount.
 - USDC Raw Amount entspricht Final Amount.
@@ -114,6 +122,7 @@
 - bestehender USDC Checkout: pending, confirming, paid, failed, expired und review_required.
 - Late Payment und Reservation Expiry werden deterministisch behandelt.
 - AI Credits werden exakt einmal über `AiCreditLedger` gutgeschrieben.
+- AI-Discount ohne aktive ULIQ-rabattierte Subscription oder ohne versionierten Monats-Cap wird fail-closed abgelehnt.
 - Platform-Fee-Flows bleiben unverändert.
 
 ## Frontend Tests
@@ -126,7 +135,7 @@
 - pending UI zeigt 0 Wallet-ULIQ, 0 eligible und Benefits inactive.
 - finalized UI zeigt 25/75 und aktive Benefits.
 - Wallet-Wechsel und Quote Expiry.
-- Vesting Claim und Lock/Unlock.
+- Vesting Claim und Lock/Extend/Unlock.
 - DE/EN i18n vollständig.
 - Mobile WalletConnect, responsive Layout, Keyboard und Screenreader.
 

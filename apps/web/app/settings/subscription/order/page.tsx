@@ -125,6 +125,16 @@ function parseCheckoutErrorCode(error: unknown): string | null {
   return null;
 }
 
+function formatUliqRaw(value: unknown): string {
+  try {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(
+      Number(formatUnits(BigInt(String(value ?? "0")), 18))
+    );
+  } catch {
+    return "0";
+  }
+}
+
 function clampQuantity(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(20, Math.trunc(value)));
@@ -225,6 +235,7 @@ function SubscriptionOrderPageContent() {
   const [selectedPlanId, setSelectedPlanId] = useState<string>("");
   const [addonQuantities, setAddonQuantities] = useState<Record<string, number>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const [requiredLockUntil, setRequiredLockUntil] = useState<string | null>(null);
   const [activeCheckout, setActiveCheckout] = useState<ActiveCheckout | null>(null);
   const [paymentStage, setPaymentStage] = useState<PaymentStage>("ready");
   const [applyUliqDiscount, setApplyUliqDiscount] = useState(false);
@@ -475,6 +486,7 @@ function SubscriptionOrderPageContent() {
     }
     setCheckoutLoading(true);
     setMessage(null);
+    setRequiredLockUntil(null);
     try {
       const response = await apiPost<CheckoutResponse>("/settings/subscription/checkout", {
         items: cartItems,
@@ -527,13 +539,41 @@ function SubscriptionOrderPageContent() {
         premium_upgrade_term_mismatch: "premiumUpgradeTermMismatch",
         premium_upgrade_price_evidence_invalid: "premiumUpgradeUnavailable"
       };
-      setMessage(code?.startsWith("uliq_")
+      const lockGateCodes = new Set([
+        "uliq_lock_required",
+        "uliq_lock_amount_insufficient",
+        "uliq_lock_term_insufficient"
+      ]);
+      const lockGateMessage = error instanceof ApiError && code && lockGateCodes.has(code)
+        ? tUliq("lockGateFailure", {
+          required: formatUliqRaw(error.payload?.requiredLockedRaw),
+          qualifying: formatUliqRaw(error.payload?.qualifyingLockedRaw),
+          until: error.payload?.requiredBenefitUntil
+            ? new Date(String(error.payload.requiredBenefitUntil)).toLocaleString(locale)
+            : "—"
+        })
+        : code === "uliq_lock_state_stale"
+          ? tUliq("lockStateStale")
+          : code === "uliq_ai_discounted_subscription_required"
+            ? tUliq("aiSubscriptionRequired")
+            : code === "uliq_ai_cap_exceeded" || code === "uliq_ai_cap_unconfigured"
+              ? tUliq("aiCapExceeded")
+              : null;
+      if (
+        error instanceof ApiError
+        && code
+        && lockGateCodes.has(code)
+        && typeof error.payload?.requiredBenefitUntil === "string"
+      ) {
+        setRequiredLockUntil(error.payload.requiredBenefitUntil);
+      }
+      setMessage(lockGateMessage ?? (code?.startsWith("uliq_")
         ? tUliq("unavailable")
         : code && knownErrors[code]
         ? t(`order.errors.${knownErrors[code]}`)
         : error instanceof ApiError
           ? error.message
-          : String(error));
+          : String(error)));
     } finally {
       setCheckoutLoading(false);
     }
@@ -920,6 +960,8 @@ function SubscriptionOrderPageContent() {
                 <div><span>{tUliq("base")}</span><strong>{centsToCurrency(activeCheckout.uliqBenefit.baseAmountCents ?? 0)}</strong></div>
                 <div><span>{tUliq("discount")}</span><strong>-{centsToCurrency(activeCheckout.uliqBenefit.discountAmountCents ?? 0)} ({(activeCheckout.uliqBenefit.discountBps ?? 0) / 100}%)</strong></div>
                 <div><span>{tUliq("final")}</span><strong>{centsToCurrency(activeCheckout.uliqBenefit.finalAmountCents ?? 0)}</strong></div>
+                <div><span>{tUliq("lockedForBenefit")}</span><strong>{formatUliqRaw(activeCheckout.uliqBenefit.qualifyingLockedRaw)} ULIQ</strong></div>
+                <div><span>{tUliq("lockCoverage")}</span><strong>{activeCheckout.uliqBenefit.requiredBenefitUntil ? new Date(activeCheckout.uliqBenefit.requiredBenefitUntil).toLocaleString(locale) : "—"}</strong></div>
                 <div><span>{tUliq("expires")}</span><strong>{activeCheckout.uliqBenefit.expiresAt ? new Date(activeCheckout.uliqBenefit.expiresAt).toLocaleString(locale) : "—"}</strong></div>
               </>
             ) : null}
@@ -1033,7 +1075,10 @@ function SubscriptionOrderPageContent() {
       ) : null}
 
       <div className="subscriptionOrderSimpleHint">{t("order.cartHint")}</div>
-      {message ? <div className="subscriptionPortalMessage">{message}</div> : null}
+      {message ? <div className="subscriptionPortalMessage">
+        <span>{message}</span>
+        {requiredLockUntil ? <Link className="btn" href={`${withLocalePath("/uliq/locking", locale)}?requiredUntil=${encodeURIComponent(requiredLockUntil)}`}><AppIcon name="shield" /> {tUliq("manageLock")}</Link> : null}
+      </div> : null}
     </div>
   );
 }

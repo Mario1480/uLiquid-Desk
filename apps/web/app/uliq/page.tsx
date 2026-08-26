@@ -113,14 +113,29 @@ type LockPosition = {
   amountRaw: string;
   durationDays: number;
   startAt: string;
+  originalUnlockAt: string;
   unlockAt: string;
+  extensionCount: number;
+  remainingCoverageSeconds: number;
+  qualifiesFor: Record<string, boolean>;
   status: string;
 };
 
 type Locks = {
   lockedBalanceRaw: string;
   positions: LockPosition[];
+  supportedDurations: Array<{
+    billingMonths: 1 | 6 | 12;
+    durationDays: 31 | 184 | 366;
+    label: string;
+  }>;
   supportedDurationsDays: number[];
+  coverageTerms: Array<{
+    billingMonths: 1 | 6 | 12;
+    durationDays: 31 | 184 | 366;
+    label: string;
+    requiredUntil: string;
+  }>;
 };
 
 type PurchaseQuote = {
@@ -257,12 +272,23 @@ function UliqHubContent() {
   const [purchaseAmount, setPurchaseAmount] = useState("");
   const [quote, setQuote] = useState<PurchaseQuote | null>(null);
   const [lockAmount, setLockAmount] = useState("");
-  const [lockDuration, setLockDuration] = useState(30);
+  const [lockDuration, setLockDuration] = useState(31);
+  const [extensionTerms, setExtensionTerms] = useState<Record<string, 0 | 1 | 6 | 12>>({});
+  const [checkoutRequiredUntil, setCheckoutRequiredUntil] = useState<string | null>(null);
   const [lastTxHash, setLastTxHash] = useState<Hex | null>(null);
   const [pendingFinalizeTxHashes, setPendingFinalizeTxHashes] = useState<Record<string, Hex>>({});
   const [pendingWithdrawTxHashes, setPendingWithdrawTxHashes] = useState<Record<string, Hex>>({});
   const [pendingClaimTransaction, setPendingClaimTransaction] = useState<PendingClaimTransaction | null>(null);
   const publicEnabled = process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true";
+
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("requiredUntil");
+    if (!raw) return;
+    const value = new Date(raw);
+    if (Number.isFinite(value.getTime()) && value.getTime() > Date.now()) {
+      setCheckoutRequiredUntil(value.toISOString());
+    }
+  }, []);
   const paymentTokenAddress = overview?.paymentTokenAddress && isAddress(overview.paymentTokenAddress)
     ? overview.paymentTokenAddress as Address
     : undefined;
@@ -759,6 +785,26 @@ function UliqHubContent() {
     setLockAmount("");
   }
 
+  async function extendLock(position: LockPosition): Promise<string> {
+    if (!locks) throw new Error(t("messages.actionFailed"));
+    const billingMonths = extensionTerms[position.id] ?? (checkoutRequiredUntil ? 0 : 1);
+    const requiredUntil = billingMonths === 0
+      ? checkoutRequiredUntil
+      : locks.coverageTerms.find((candidate) => candidate.billingMonths === billingMonths)?.requiredUntil;
+    if (!requiredUntil) throw new Error(t("messages.actionFailed"));
+    const requiredUntilMs = new Date(requiredUntil).getTime();
+    if (!Number.isFinite(requiredUntilMs) || requiredUntilMs <= new Date(position.unlockAt).getTime()) {
+      throw new Error(t("locking.extensionNotNeeded"));
+    }
+    const prepared = await apiPost<{ transaction: PreparedTx }>("/uliq/locking/extend/prepare", {
+      lockId: position.lockIdOnchain,
+      newUnlockAt: String(Math.floor(requiredUntilMs / 1_000))
+    });
+    const result = await executeTransaction(prepared.transaction, t("locking.extend"));
+    if (result.replacementReason === "cancelled") throw new Error(t("messages.txCancelled"));
+    return t("locking.extensionPending");
+  }
+
   if (!publicEnabled) {
     return <div className="uiPage"><div className="uiNotice uiNotice-warning">{t("unavailable")}</div></div>;
   }
@@ -849,6 +895,7 @@ function UliqHubContent() {
               <div><span>{t("entitlement.validUntil")}</span><strong>{formatDate(entitlement.validUntil, locale)}</strong></div>
               <div><span>{t("entitlement.benefits")}</span><strong>{activeBenefits.length ? activeBenefits.join(", ") : t("entitlement.none")}</strong></div>
             </div>
+            <div className="uiNotice uiNotice-info">{t("locking.discountGate")}</div>
             {entitlement.degradationReason ? <div className="uiNotice uiNotice-warning">{entitlement.degradationReason}</div> : null}
           </section>
         ) : null}
@@ -878,7 +925,7 @@ function UliqHubContent() {
             <div className="uliqFormRow uliqLockForm">
               <div className="uliqAvailableBalance"><span>{t("locking.available")}</span><strong>{formatRaw(entitlement?.walletRaw, 18)} ULIQ</strong></div>
               <label><span>{t("locking.amount")}</span><input className="input" inputMode="decimal" value={lockAmount} onChange={(event) => setLockAmount(event.target.value)} placeholder="100000" /></label>
-              <label><span>{t("locking.duration")}</span><select className="input" value={lockDuration} onChange={(event) => setLockDuration(Number(event.target.value))}>{locks.supportedDurationsDays.map((days) => <option key={days} value={days}>{days} days</option>)}</select></label>
+              <label><span>{t("locking.duration")}</span><select className="input" value={lockDuration} onChange={(event) => setLockDuration(Number(event.target.value))}>{locks.supportedDurations.map((term) => <option key={term.durationDays} value={term.durationDays}>{t(`locking.terms.${term.billingMonths}`)}</option>)}</select></label>
               <button type="button" className="btn btnPrimary" disabled={!canSign || busy !== null} onClick={() => void runAction("lock", lockTokens)}><AppIcon name="shield" /> {t("locking.lock")}</button>
             </div>
           </section>
@@ -929,7 +976,34 @@ function UliqHubContent() {
         </div> : <div className="uiEmptyState">{t("purchases.empty")}</div>}
       </section>
 
-      {locks ? <section className="uiSection"><div className="uiSectionHeader"><h2 className="uiSectionTitle">{t("locking.positions")}</h2></div>{locks.positions.length ? <div className="uliqPositionList">{locks.positions.map((position) => <article key={position.id} className="uliqPositionCard"><div><strong>Lock #{position.lockIdOnchain}</strong><span className={`uiStatusBadge uiStatusBadge-${statusTone(position.status)}`}>{position.status}</span></div><dl><div><dt>{t("locking.amount")}</dt><dd>{formatRaw(position.amountRaw, 18)} ULIQ</dd></div><div><dt>{t("purchases.deadline")}</dt><dd>{formatDate(position.unlockAt, locale)}</dd></div></dl>{position.status !== "WITHDRAWN" ? <button type="button" className="btn" disabled={!canSign || new Date(position.unlockAt).getTime() > Date.now() || busy !== null} onClick={() => void runAction(`unlock-${position.id}`, () => executePrepared("/uliq/locking/unlock/prepare", { lockId: position.lockIdOnchain }, t("locking.unlock")))}><AppIcon name="withdraw" /> {t("locking.unlock")}</button> : null}</article>)}</div> : <div className="uiEmptyState">{t("locking.empty")}</div>}</section> : null}
+      {locks ? <section className="uiSection">
+        <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("locking.positions")}</h2><p className="uiSectionDescription">{t("locking.positionsDescription")}</p></div></div>
+        {checkoutRequiredUntil ? <div className="uiNotice uiNotice-info">{t("locking.checkoutRequiredUntil", { until: formatDate(checkoutRequiredUntil, locale) })}</div> : null}
+        {locks.positions.length ? <div className="uliqPositionList">{locks.positions.map((position) => {
+          const selectedMonths = extensionTerms[position.id] ?? (checkoutRequiredUntil ? 0 : 1);
+          const selectedRequiredUntil = selectedMonths === 0
+            ? checkoutRequiredUntil
+            : locks.coverageTerms.find((term) => term.billingMonths === selectedMonths)?.requiredUntil ?? null;
+          const extensionNeeded = Boolean(selectedRequiredUntil && new Date(position.unlockAt).getTime() < new Date(selectedRequiredUntil).getTime());
+          return <article key={position.id} className="uliqPositionCard">
+            <div><strong>Lock #{position.lockIdOnchain}</strong><span className={`uiStatusBadge uiStatusBadge-${statusTone(position.status)}`}>{position.status}</span></div>
+            <dl>
+              <div><dt>{t("locking.amount")}</dt><dd>{formatRaw(position.amountRaw, 18)} ULIQ</dd></div>
+              <div><dt>{t("locking.unlockAt")}</dt><dd>{formatDate(position.unlockAt, locale)}</dd></div>
+              <div><dt>{t("locking.remaining")}</dt><dd>{t("locking.remainingDays", { days: Math.ceil(position.remainingCoverageSeconds / 86_400) })}</dd></div>
+              <div><dt>{t("locking.extensions")}</dt><dd>{position.extensionCount}</dd></div>
+            </dl>
+            <div className="uliqCoverageBadges">
+              {locks.coverageTerms.map((term) => <span key={term.billingMonths} className={`uiStatusBadge uiStatusBadge-${position.qualifiesFor[String(term.billingMonths)] ? "success" : "warning"}`}>{t(`locking.coverage.${position.qualifiesFor[String(term.billingMonths)] ? "covered" : "short"}`, { term: t(`locking.terms.${term.billingMonths}`) })}</span>)}
+            </div>
+            {position.status !== "WITHDRAWN" ? <div className="uliqLockActions">
+              <label><span>{t("locking.extendFor")}</span><select className="input" value={selectedMonths} onChange={(event) => setExtensionTerms((current) => ({ ...current, [position.id]: Number(event.target.value) as 0 | 1 | 6 | 12 }))}>{checkoutRequiredUntil ? <option value={0}>{t("locking.requiredCheckoutTerm")} · {formatDate(checkoutRequiredUntil, locale)}</option> : null}{locks.coverageTerms.map((term) => <option key={term.billingMonths} value={term.billingMonths}>{t(`locking.terms.${term.billingMonths}`)} · {formatDate(term.requiredUntil, locale)}</option>)}</select></label>
+              <button type="button" className="btn" disabled={!canSign || busy !== null || !extensionNeeded} onClick={() => void runAction(`extend-${position.id}`, () => extendLock(position))}><AppIcon name="refresh" /> {t("locking.extend")}</button>
+              <button type="button" className="btn" disabled={!canSign || new Date(position.unlockAt).getTime() > Date.now() || busy !== null} onClick={() => void runAction(`unlock-${position.id}`, () => executePrepared("/uliq/locking/unlock/prepare", { lockId: position.lockIdOnchain }, t("locking.unlock")))}><AppIcon name="withdraw" /> {t("locking.unlock")}</button>
+            </div> : null}
+          </article>;
+        })}</div> : <div className="uiEmptyState">{t("locking.empty")}</div>}
+      </section> : null}
 
       {lastTxHash ? <a className="btn uliqExplorerLink" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${lastTxHash}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {lastTxHash.slice(0, 12)}…</a> : null}
     </div>

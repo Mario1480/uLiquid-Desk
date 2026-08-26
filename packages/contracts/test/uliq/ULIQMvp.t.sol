@@ -18,6 +18,7 @@ interface VmUliq {
     function expectRevert() external;
     function expectRevert(bytes calldata revertData) external;
     function expectRevert(bytes4 revertData) external;
+    function expectEmit(bool checkTopic1, bool checkTopic2, bool checkTopic3, bool checkData) external;
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
 }
 
@@ -32,6 +33,13 @@ contract ULIQMvpTest {
     uint256 internal constant RATE = 1e15;
     uint64 internal constant WITHDRAWAL_PERIOD = 5 minutes;
     uint64 internal constant VESTING_DURATION = 270 days;
+
+    event LockExtended(
+        uint256 indexed lockId,
+        address indexed owner,
+        uint64 previousUnlockAt,
+        uint64 newUnlockAt
+    );
 
     address internal buyer;
     ULIQToken internal token;
@@ -412,7 +420,7 @@ contract ULIQMvpTest {
         token.approve(address(locker), type(uint256).max);
         VM.expectRevert(ULIQLocker.UnsupportedDuration.selector);
         locker.lock(1 ether, 60 days);
-        uint256 lockId = locker.lock(150_000 ether, 30 days);
+        uint256 lockId = locker.lock(150_000 ether, 31 days);
         VM.expectRevert(ULIQLocker.LockStillActive.selector);
         locker.unlock(lockId);
         VM.stopPrank();
@@ -420,11 +428,75 @@ contract ULIQMvpTest {
         require(token.balanceOf(buyer) == 100_000 ether, "lock_wallet_wrong");
         require(locker.lockedBalanceOf(buyer) == 150_000 ether, "locked_wrong");
 
-        VM.warp(block.timestamp + 30 days);
+        VM.warp(block.timestamp + 31 days);
         VM.prank(buyer);
         locker.unlock(lockId);
         require(token.balanceOf(buyer) == 250_000 ether, "unlock_wallet_wrong");
         require(locker.lockedBalanceOf(buyer) == 0, "unlock_locked_wrong");
+    }
+
+    function testLockerSupportsAllInitialTermsAndExtensionPreservesBalances() public {
+        uint256 purchaseId = _buy(1_000 * 1e6);
+        VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
+        presale.finalizePurchase(purchaseId);
+
+        VM.startPrank(buyer);
+        token.approve(address(locker), type(uint256).max);
+        uint256 oneMonthLock = locker.lock(10_000 ether, 31 days);
+        locker.lock(20_000 ether, 184 days);
+        locker.lock(30_000 ether, 366 days);
+        (address owner, uint256 amount, uint64 startedAt, uint64 previousUnlockAt, bool withdrawn) =
+            locker.locks(oneMonthLock);
+        uint64 newUnlockAt = previousUnlockAt + 90 days;
+        uint256 ownerBalanceBefore = locker.lockedBalanceOf(buyer);
+        uint256 totalBefore = locker.totalLocked();
+
+        VM.expectEmit(true, true, false, true);
+        emit LockExtended(oneMonthLock, buyer, previousUnlockAt, newUnlockAt);
+        locker.extendLock(oneMonthLock, newUnlockAt);
+
+        (address extendedOwner, uint256 extendedAmount, uint64 extendedStartedAt, uint64 extendedUnlockAt, bool extendedWithdrawn) =
+            locker.locks(oneMonthLock);
+        require(owner == extendedOwner && owner == buyer, "extension_owner_changed");
+        require(amount == extendedAmount && amount == 10_000 ether, "extension_amount_changed");
+        require(startedAt == extendedStartedAt, "extension_start_changed");
+        require(!withdrawn && !extendedWithdrawn, "extension_withdrawn_changed");
+        require(extendedUnlockAt == newUnlockAt, "extension_expiry_wrong");
+        require(locker.lockedBalanceOf(buyer) == ownerBalanceBefore, "extension_owner_balance_changed");
+        require(locker.totalLocked() == totalBefore, "extension_total_changed");
+
+        uint64 repeatedUnlockAt = newUnlockAt + 30 days;
+        locker.extendLock(oneMonthLock, repeatedUnlockAt);
+        (,,, uint64 finalUnlockAt,) = locker.locks(oneMonthLock);
+        require(finalUnlockAt == repeatedUnlockAt, "repeated_extension_failed");
+        VM.stopPrank();
+    }
+
+    function testLockerExtensionRejectsShorteningWrongOwnerAndWithdrawnPosition() public {
+        uint256 purchaseId = _buy(1_000 * 1e6);
+        VM.warp(block.timestamp + WITHDRAWAL_PERIOD + 1);
+        presale.finalizePurchase(purchaseId);
+
+        VM.startPrank(buyer);
+        token.approve(address(locker), type(uint256).max);
+        uint256 lockId = locker.lock(10_000 ether, 31 days);
+        (,,, uint64 unlockAt,) = locker.locks(lockId);
+        VM.expectRevert(ULIQLocker.LockExpiryNotIncreasing.selector);
+        locker.extendLock(lockId, unlockAt);
+        VM.expectRevert(ULIQLocker.LockExpiryNotIncreasing.selector);
+        locker.extendLock(lockId, unlockAt - 1);
+        VM.stopPrank();
+
+        VM.prank(RELAYER);
+        VM.expectRevert(ULIQLocker.NotLockOwner.selector);
+        locker.extendLock(lockId, unlockAt + 1 days);
+
+        VM.warp(unlockAt);
+        VM.prank(buyer);
+        locker.unlock(lockId);
+        VM.prank(buyer);
+        VM.expectRevert(ULIQLocker.AlreadyWithdrawn.selector);
+        locker.extendLock(lockId, unlockAt + 1 days);
     }
 
     function _buy(uint256 usdcAmountRaw) private returns (uint256 purchaseId) {

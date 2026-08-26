@@ -6,7 +6,7 @@
 
 - ADR-001 Legal Presale Model durch spezialisierten Counsel auflösen.
 - Jurisdiktionen, Retail, Withdrawal, Refund, Cancellation, USDC Safeguarding, KYC/AML/Sanktionsprüfung und Sale Terms festlegen.
-- ADR-002, ADR-004, ADR-005 und ADR-006 sind technisch `ACCEPTED`; ADR-003 und ADR-007 behalten ihren dokumentierten Scope/Status.
+- ADR-002, ADR-004, ADR-005, ADR-006 und ADR-008 sind technisch im jeweils dokumentierten Scope akzeptiert; ADR-008 supersediert den monetären Holding-Cooldown aus ADR-004. ADR-003 und ADR-007 behalten ihren dokumentierten Scope/Status.
 - konkrete DEX-/Pool-Adresse, Fee Tier, TWAP-Implementierung und Failover Source vor Audit finalisieren.
 - Ergebnis: formales Legal/Architecture Go für Contract Implementation.
 
@@ -29,7 +29,7 @@
 - blockkonsistente Snapshots.
 - pending Allocations ausgeschlossen.
 - Tier Config und Price Mode.
-- Feature Access sowie monetäre Benefits mit 24-Stunden-Holding-Cooldown und 10-Minuten-Reservations.
+- Feature Access ohne Lock sowie monetäre Benefits mit finalisiertem 25-%-Lock-/Term-Gate und 10-Minuten-Reservations.
 - Wallet-Wechsel/Anti-Reuse.
 
 ### Phase 4 – Presale Backend
@@ -58,7 +58,7 @@
 
 - alle Contracts auf Arbitrum Sepolia mit 6-Decimal-Test-USDC.
 - kompletter Purchase -> Withdrawal und Purchase -> Finalization Flow.
-- 25/75, 9-Monats-Vesting via Time Warp und 30/90/180 Locks.
+- 25/75, 9-Monats-Vesting via Time Warp und 31/184/366 Locks einschließlich Extension.
 - Reorg-, Indexer-Restart-, RPC-Failover- und Reconciliation-Proben.
 - Safe-/Role- und Incident-Runbook-Probe.
 
@@ -172,13 +172,14 @@ Claim von 100.000 ULIQ:
 
 ### F. Locking
 
-Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
+Lock von 150.000 Wallet-ULIQ für initial 31, 184 oder 366 Tage:
 
 - vorher: wallet 350k, vesting 650k, locked 0, eligible 1m.
 - nachher: wallet 200k, vesting 650k, locked 150k, eligible 1m.
 - vorzeitiger Withdraw ist ausgeschlossen.
 - nach regulärem Withdraw sinkt locked und steigt wallet um denselben Raw Amount.
 - kein APY, Reward oder Revenue Share wird erzeugt.
+- Extension kann nur einen späteren exakten Ablauf setzen und verändert Start, Betrag sowie Locked Balances nicht.
 
 ### G. Blockkonsistenz
 
@@ -207,6 +208,10 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - erfolgreiche Zahlung konsumiert die Reservation und aktiviert Produkt/AI Credits genau einmal.
 - Cancel/Expire/Failure released die Reservation; wirtschaftliche Rückabwicklung erzeugt Reversal Ledger.
 - pending/withdrawn Purchase erhält keinen Discount.
+- der Lock deckt mindestens 25 % des aktuellen Tier-Minimums und endet nicht vor dem gespeicherten `plannedTerm.endsAt`.
+- rabattierte Subscription-Laufzeiten sind exakt 1, 6 oder 12 Kalendermonate; Early Renewal verwendet das Ende der angehängten Term-Kette.
+- AI-Credit-Discount setzt eine aktive ULIQ-rabattierte Subscription, Lock-Abdeckung bis zu deren Ende und einen versionierten Monats-Cap voraus.
+- bei jeder Gate-Ablehnung bleibt der Standardpreis-USDC-Checkout verfügbar.
 - Platform Fees und bestehende BotVaultV4 bleiben unverändert.
 
 ### J. Quote TTL und Wallet-Wechsel
@@ -218,14 +223,16 @@ Lock von 150.000 Wallet-ULIQ für 30, 90 oder 180 Tage:
 - rabattierte Quote kann nicht mit neuer Wallet wiederverwendet werden.
 - historische Purchases bleiben an die ursprüngliche Wallet gebunden.
 
-### K. Holding Cooldown und Presale-Ausnahme
+### K. Mandatory Lock und Term-Abdeckung
 
-- Feature Benefits benötigen keinen Holding Cooldown und folgen dem nächsten validierten Entitlement Refresh.
-- regulär erworbene oder frei übertragene ULIQ erzeugen vor 24 Stunden Holding Age keinen Subscription-/AI-Credit-Discount.
-- nach 24 Stunden canonical belegter Holding Age kann die qualifizierte Menge für monetäre Benefits verwendet werden.
-- Wallet A nutzt einen Discount und transferiert danach zu Wallet B: Wallet B erhält nicht unmittelbar einen monetären Benefit aus derselben Menge.
-- eine canonical finalisierte Presale Allocation ist unmittelbar nach `FINALIZED` ohne zusätzliche 24 Stunden für Benefits aktiv.
-- Claim oder Lock derselben wirtschaftlichen Menge darf Holding Age oder eligible ULIQ nicht vervielfachen.
+- Feature Benefits benötigen keinen Lock und folgen dem nächsten validierten Entitlement Refresh.
+- Holding allein erzeugt keinen Subscription-/AI-Credit-Discount.
+- erforderlicher Lock-Betrag ist aufgerundet 25 % des aktuellen Tier-Minimums unter demselben Price-/Config-Snapshot.
+- mehrere nicht withdrawn Locks mit `unlockAt >= requiredBenefitUntil` werden addiert; kürzere Locks werden ausgeschlossen.
+- Ablauf exakt am Produktende ist zulässig, eine Sekunde davor nicht.
+- ein abgelaufener unwithdrawn Lock kann im Holding-Tier bleiben, verliert aber monetäre Qualifikation.
+- Wallet A nutzt einen Discount und transferiert danach zu Wallet B: Wallet B erhält ohne eigene finalisierte Lock-Abdeckung keinen monetären Benefit.
+- Claim, Lock oder Unlock derselben wirtschaftlichen Menge darf eligible ULIQ nicht vervielfachen.
 
 ### L. Reorg und Indexer Recovery
 
@@ -360,12 +367,12 @@ Die folgenden Bewertungen unterscheiden lokale Test-Evidence, den oben dokumenti
 | C Withdrawal/Refund | PASS lokal / BLOCKED legal | Testnet-Escrow-Refund ist getestet; Production-Safeguarding bleibt ADR-001-blockiert. |
 | D Sale Cancellation | BLOCKED | finale Cancellation-Policy bleibt ADR-001-blockiert und wurde nicht irreversibel vorimplementiert. |
 | E Vesting Start/Claim | PASS lokal | globaler einmaliger Start, 270-Tage-Testnet-Vesting und Claim-Accounting getestet. |
-| F Locking | PASS lokal | nur 30/90/180 Tage, kein Early Withdraw, keine Rewards. |
+| F Locking | PASS lokal / NOT DEPLOYED | 31/184/366 Tage und nicht verkürzende Extension sind lokal getestet; kein Early Withdraw, keine Rewards. Neuer Testnet-Contract noch nicht deployt. |
 | G Blockkonsistenz | PASS lokal / PARTIAL Sepolia | finalized Dual-RPC-Head und ein Block-Snapshot; `10^27` wurde lokal und beim Staging-Replay verlustfrei verarbeitet. Vollständiger Catch-up bleibt offen. |
 | H Tier/Price Mode | PASS lokal / BLOCKED DEX | Referenz-, Observation-, Degradation- und Held-Tier-Gates getestet; echte Pool-/TWAP-Quelle fehlt. |
-| I Subscription-/AI-Discount | PASS lokal | Opt-in, exakte Cent-Mathematik, Reservation und USDC-Settlement integriert; Platform Fee unverändert. |
+| I Subscription-/AI-Discount | PASS lokal / CONFIG OPEN | Lock-/Term-Gate, exakte Cent-Mathematik, Reservation und USDC-Settlement integriert; produktive Tier-BPS/AI-Caps sind noch zu konfigurieren, Platform Fee unverändert. |
 | J Quote TTL/Wallet-Wechsel | PASS lokal | 10-Minuten-TTL und Reservation Release getestet. |
-| K Holding Cooldown | PASS lokal | Provenienz, Presale-Ausnahme, Locker-Lineage und 24-Stunden-Cooldown getestet. |
+| K Mandatory Lock | PASS lokal / NOT DEPLOYED | 25-%-Betrag, exakte Term-Abdeckung, Aggregation, stale Evidence und Extension sind lokal getestet; Migration/Contract/Staging-E2E fehlen. |
 | L Reorg/Indexer Recovery | PASS lokal / PARTIAL Sepolia | Lease, Retry, Reorg-Rebuild, Reservation-Reversal und Alert getestet; Staging-Cursor überwand den `1e+27`-Block mit Fehlerreset und korrekter Lot-Projektion. Vollständiger Catch-up und reale Reorg-Probe bleiben offen. |
 | M Admin/Safe | PASS prepare-only / BLOCKED external | Superadmin vor Reauth, Audit und Safe-Calldata vorhanden; reale Safe-Signer/Threshold/Receipt-Evidence fehlt. |
 | N State/Pause/Sale-Ende | PASS lokal / BLOCKED legal | Testnet-State-Machine getestet; Production-Cancellation bleibt blockiert. |

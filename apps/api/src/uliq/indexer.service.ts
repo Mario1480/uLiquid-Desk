@@ -120,7 +120,6 @@ async function createHoldingLot(params: {
 }) {
   if (params.amountRaw === 0n || params.walletAddress === zeroAddress) return;
   const userId = await resolveUserIdByWallet(params.tx, params.walletAddress);
-  const cooldownMs = params.provenance === "PRESALE_FINALIZED" ? 0 : 24 * 60 * 60 * 1_000;
   await params.tx.uliqHoldingLot.upsert({
     where: {
       chainId_sourceEventKey: {
@@ -138,7 +137,7 @@ async function createHoldingLot(params: {
       amountRaw: params.amountRaw.toString(),
       remainingRaw: params.amountRaw.toString(),
       acquiredAt: params.acquiredAt,
-      monetaryEligibleAt: new Date(params.acquiredAt.getTime() + cooldownMs),
+      monetaryEligibleAt: params.acquiredAt,
       asOfBlock: params.blockNumber,
       blockHash: params.blockHash,
       canonical: true
@@ -149,7 +148,7 @@ async function createHoldingLot(params: {
       amountRaw: params.amountRaw.toString(),
       remainingRaw: params.amountRaw.toString(),
       acquiredAt: params.acquiredAt,
-      monetaryEligibleAt: new Date(params.acquiredAt.getTime() + cooldownMs),
+      monetaryEligibleAt: params.acquiredAt,
       asOfBlock: params.blockNumber,
       blockHash: params.blockHash,
       canonical: true
@@ -335,12 +334,42 @@ export async function projectUliqEvent(params: {
           amountRaw: String(args.amount),
           durationDays: Math.floor(durationSeconds / 86_400),
           startAt: new Date(unlockAt.getTime() - durationSeconds * 1_000),
+          originalUnlockAt: unlockAt,
           unlockAt,
+          extensionCount: 0,
           status: unlockAt <= blockTimestamp ? "MATURED" : "ACTIVE",
           asOfBlock: log.blockNumber,
           blockHash: log.blockHash
         },
-        update: { amountRaw: String(args.amount), unlockAt, asOfBlock: log.blockNumber, blockHash: log.blockHash, status: "ACTIVE" }
+        update: {
+          amountRaw: String(args.amount),
+          originalUnlockAt: unlockAt,
+          unlockAt,
+          lastExtendedAt: null,
+          extensionCount: 0,
+          asOfBlock: log.blockNumber,
+          blockHash: log.blockHash,
+          status: unlockAt <= blockTimestamp ? "MATURED" : "ACTIVE"
+        }
+      });
+    } else if (decoded.eventName === "LockExtended") {
+      const newUnlockAt = new Date(Number(args.newUnlockAt) * 1_000);
+      await tx.uliqLockPosition.updateMany({
+        where: {
+          chainId: config.chainId,
+          contractAddress,
+          lockIdOnchain: String(args.lockId),
+          walletAddress,
+          status: { in: ["ACTIVE", "MATURED"] }
+        },
+        data: {
+          unlockAt: newUnlockAt,
+          lastExtendedAt: blockTimestamp,
+          extensionCount: { increment: 1 },
+          status: newUnlockAt <= blockTimestamp ? "MATURED" : "ACTIVE",
+          asOfBlock: log.blockNumber,
+          blockHash: log.blockHash
+        }
       });
     } else if (decoded.eventName === "TokensUnlocked") {
       await tx.uliqLockPosition.updateMany({

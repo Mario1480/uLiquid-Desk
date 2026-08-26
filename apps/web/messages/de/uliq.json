@@ -73,14 +73,35 @@
   },
   "locking": {
     "title": "Utility Locking",
-    "description": "Reines Utility-Locking für 30, 90 oder 180 Tage – ohne APY, Rewards oder Ausschüttung.",
+    "description": "Reines Utility-Locking für 1, 6 oder 12 Monate – ohne APY, Rewards oder Ausschüttung. Eine längere Laufzeit erhöht den Rabatt nicht.",
     "balance": "Locked Balance",
     "amount": "ULIQ-Betrag",
     "available": "Verfügbare Wallet-ULIQ",
     "duration": "Laufzeit",
-    "lock": "Approval & Lock",
+    "lock": "Approval & Locken",
     "positions": "Lock-Positionen",
-    "unlock": "Unlock vorbereiten",
+    "positionsDescription": "Finalisierte Lock-Laufzeiten und ihre aktuelle Abdeckung für neue Vertragslaufzeiten.",
+    "unlock": "Entsperren",
+    "unlockAt": "Entsperrbar ab",
+    "remaining": "Restlaufzeit",
+    "remainingDays": "{days} Tage",
+    "extensions": "Verlängerungen",
+    "extendFor": "Abdeckung verlängern",
+    "extend": "Verlängern",
+    "extensionNotNeeded": "Dieser Lock deckt die gewählte Laufzeit bereits ab.",
+    "extensionPending": "Verlängerung bestätigt · Finalität und Indexer-Abgleich laufen im Hintergrund.",
+    "discountGate": "Feature-Zugriff basiert auf dem gesamten qualifizierten ULIQ-Bestand. Geldrabatte gelten nur, wenn zusätzlich mindestens 25 % der aktuellen Tier-Mindestmenge bis zum exakten Vertragsende finalisiert gelockt sind.",
+    "checkoutRequiredUntil": "Der fehlgeschlagene Checkout benötigt Lock-Abdeckung bis {until}. Wähle unten das benötigte Checkout-Ende und bestätige die Extension in deiner Wallet.",
+    "requiredCheckoutTerm": "Benötigtes Checkout-Ende",
+    "terms": {
+      "1": "1 Monat",
+      "6": "6 Monate",
+      "12": "12 Monate"
+    },
+    "coverage": {
+      "covered": "{term} abgedeckt",
+      "short": "{term} nicht abgedeckt"
+    },
     "empty": "Noch keine indexierten Lock-Positionen."
   },
   "purchases": {
@@ -141,7 +162,14 @@
     "base": "Basispreis",
     "discount": "ULIQ Discount",
     "final": "Finaler USDC-Preis",
-    "expires": "Reservation läuft ab"
+    "expires": "Reservation läuft ab",
+    "lockCoverage": "Lock-Abdeckung bis",
+    "lockedForBenefit": "Qualifizierend gelockt",
+    "lockGateFailure": "Der Rabatt benötigt {required} ULIQ im Lock bis {until}. Aktuell decken {qualifying} ULIQ diese Laufzeit ab. Du kannst zum Standardpreis fortfahren oder den Lock verlängern.",
+    "lockStateStale": "Der finalisierte Lock-Stand ist noch nicht aktuell. Der Rabatt bleibt bis zum Indexer-Abgleich gesperrt; der Standardpreis ist weiterhin verfügbar.",
+    "aiSubscriptionRequired": "Der AI-Credit-Rabatt ist nur während eines aktiven, bereits mit ULIQ-Rabatt gekauften Abos verfügbar.",
+    "aiCapExceeded": "Das monatliche AI-Rabattlimit dieses Tiers ist ausgeschöpft. Der Standardpreis ist weiterhin verfügbar.",
+    "manageLock": "Lock prüfen oder verlängern"
   },
   "admin": {
     "eyebrow": "Platform Admin · Testnet",
@@ -176,6 +204,12 @@
     "released": "Freigegeben",
     "tiers": "Tier-Konfiguration",
     "tiersDescription": "Versionierte Schwellen und Discounts. Die Testnet-Migration setzt alle monetären Discounts standardmäßig auf null.",
+    "lockGateTitle": "Lock-Gate-Konfiguration",
+    "lockGateDescription": "Geldrabatte benötigen finalisierte Lock-Abdeckung bis zum exakten Vertragsende. Feature-Zugriff bleibt davon unabhängig.",
+    "lockGateVersion": "Gate-Version",
+    "coverageShare": "Erforderlicher Tier-Anteil",
+    "supportedTerms": "Initiale Laufzeiten",
+    "lockGateAuditHint": "Änderungen an Discounts und AI-Caps werden als neue Tier-Version mit Akteur, Grund sowie altem und neuem Wert auditiert.",
     "treasuryTitle": "Presale Treasury",
     "treasuryDescription": "Gewünschte Empfangswallet speichern, Onchain-Zustand prüfen und Safe-kompatible Transaktionen für einen kontrollierten Wechsel vorbereiten.",
     "treasuryTwoStep": "Der Wechsel ist zweistufig: Der Contract-Owner schlägt die neue Treasury vor. Danach muss genau diese neue Treasury die Übernahme selbst akzeptieren. Die API signiert oder sendet nichts.",

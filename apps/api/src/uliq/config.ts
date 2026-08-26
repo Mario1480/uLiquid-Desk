@@ -3,7 +3,6 @@ import { getAddress, isAddress } from "viem";
 export const ULIQ_TESTNET_CHAIN_ID = 421_614;
 export const ULIQ_REFERENCE_PRICE_USD = "0.001000000000000000";
 export const ULIQ_RESERVATION_TTL_MS = 10 * 60 * 1_000;
-export const ULIQ_HOLDING_COOLDOWN_SECONDS = 24 * 60 * 60;
 export const ULIQ_ENTITLEMENT_TTL_MS = 5 * 60 * 1_000;
 
 export type UliqFeatureFlags = {

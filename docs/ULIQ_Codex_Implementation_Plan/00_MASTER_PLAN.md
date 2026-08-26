@@ -4,7 +4,7 @@
 
 ULIQ wird als optionaler Utility-, Membership- und Locking-Layer in uLiquid Desk integriert. Das bestehende Arbitrum-USDC-Payment-System bleibt der einzige Settlement-Pfad für Abonnements, AI Credits und weitere Plattformleistungen.
 
-Dieser Ordner ist die einzige Source of Truth für die ULIQ-Umsetzung. Die ADRs in diesem Ordner dokumentieren verbindliche Entscheidungen und verbleibende Blocker. Es wird keine parallele zweite ULIQ-Architektur gepflegt.
+Dieser Ordner ist die einzige Source of Truth für die ULIQ-Umsetzung. Die ADRs in diesem Ordner dokumentieren verbindliche Entscheidungen und verbleibende Blocker; `ADR_INDEX.md` ist der kanonische ADR-Index. Es wird keine parallele zweite ULIQ-Architektur gepflegt.
 
 Aktueller Gate-Status:
 
@@ -19,7 +19,7 @@ Der isolierte MVP-Testnet-Scope ist im Branch `codex/uliq-mvp-testnet` implement
 - Testnet-only Token, Presale, Test-USDC-Custody, Presale-Vesting und Locker inklusive Local-/Sepolia-Deploy-Scripts und Chain-ID-Guards.
 - Prisma-Migration `20260822090000_uliq_mvp_testnet` mit `Decimal(78,0)` für ULIQ-`uint256`, Domain-Projektionen, Holding-Provenienz, Entitlement-/Price-Snapshots, Reservation-/Ledger-Lifecycle und Reconciliation.
 - Dual-RPC-/finalized-head Indexer mit DB-Lease, Cursor-CAS, Retry/Backoff, Reorg-Rebuild und Alerts.
-- blockkonsistente Entitlement Engine, 24-Stunden-Cooldown für reguläre Transfers, Presale-Ausnahme, Held-Tier-Degradation und 10-Minuten-Benefit-Reservations.
+- blockkonsistente Entitlement Engine, Held-Tier-Degradation und 10-Minuten-Benefit-Reservations. ADR-008 ersetzt den bisherigen 24-Stunden-Cooldown als monetäres Gate durch eine finalisierte Betrag-/Laufzeit-Lock-Prüfung.
 - explizit opt-in-basierte Billing-Discount-Integration; Settlement bleibt USDC, Platform Fees bleiben unverändert.
 - User-UI unter `/uliq`, `/uliq/presale`, `/uliq/vesting`, `/uliq/locking` und Superadmin-UI unter `/admin/uliq`, jeweils DE/EN und Arbitrum-Sepolia-only.
 
@@ -53,13 +53,15 @@ Damit ist die Implementierung lokal deploy-ready, aber noch nicht `READY FOR EXT
 - DEX Launch ist erst bei `pendingPurchaseCount == 0` zulässig.
 - Finalisierte, noch nicht freigegebene Presale-Vesting-ULIQ zählen für Utility.
 - Eligible ULIQ nach Finalisierung: `wallet + unreleased vesting + locked`, wobei jeder Token exakt einmal zählt.
-- Lock-Zeiträume im MVP: 30, 90 oder 180 Tage; kein APY und keine Rewards.
+- Initiale Lock-Zeiträume im MVP: 31, 184 oder 366 Tage, dargestellt als 1, 6 oder 12 Monate; der exakte `unlockAt`-Timestamp ist autoritativ. Locks dürfen nur verlängert, nie verkürzt werden. Kein APY und keine Rewards.
 - ERC20Permit wird verwendet.
 - Optionaler externer Launchpad-Sale ist nicht Teil des MVP.
 
 Testnet-V2-Nachweis (kein Production-Entscheid): Auf Arbitrum Sepolia wird jeder tUSDC-Eingang purchase-gebunden im provisional Escrow geführt. Withdrawal erstattet exakt diesen Betrag an den Buyer; Finalisierung gibt ihn in derselben atomaren Transaktion an die aktive Testnet-Treasury frei. Die Testnet-Deployment-Sperre verlangt mindestens 3.600 Sekunden Withdrawal Period. Dies simuliert den vollständigen E2E-Accounting-Flow, ersetzt aber weder die 14-Tage-Working-Assumption noch die durch ADR-001 blockierte Production-Safeguarding-/Treasury-Entscheidung. Implementierungsstand 2026-08-23: lokal implementiert und getestet; neue Contract-Adressen, Migration, Runtime-Konfiguration und Staging-Deploy sind noch nicht ausgeführt.
 
-Testnet-V3-Contract-Follow-up (kein Deployment- oder Production-Entscheid): Der Übergang `ENDED -> DEX_PENDING` ist erst bei `pendingPurchaseCount == 0` möglich und gibt dann atomar exakt die unverkaufte Presale-Allokation an `paymentCustody.treasury()` frei. `cancelEmptySale()` verwendet dieselbe aktive Treasury und ist für einen leeren Sale aus `READY`, `ACTIVE` oder `PAUSED` verfügbar, damit eine bereits finanzierte, aber nie aktivierte Instanz ihr Inventar nicht dauerhaft bindet. Dies ist kein generischer Sweep: zusätzliche, nicht zur Presale-Allokation gehörende ULIQ werden nicht mitübertragen. Das Indexer-Event erzeugt für die Treasury einen regulären `WALLET_TRANSFER`-Holding-Lot mit 24-Stunden-Cooldown. Implementierungsstand 2026-08-24: lokal implementiert und getestet; das bestehende V2-Testnet-Deployment bleibt unverändert und ein neuer Contract-Deploy benötigt eine separate Freigabe.
+Testnet-V3-Contract-Follow-up (kein Deployment- oder Production-Entscheid): Der Übergang `ENDED -> DEX_PENDING` ist erst bei `pendingPurchaseCount == 0` möglich und gibt dann atomar exakt die unverkaufte Presale-Allokation an `paymentCustody.treasury()` frei. `cancelEmptySale()` verwendet dieselbe aktive Treasury und ist für einen leeren Sale aus `READY`, `ACTIVE` oder `PAUSED` verfügbar, damit eine bereits finanzierte, aber nie aktivierte Instanz ihr Inventar nicht dauerhaft bindet. Dies ist kein generischer Sweep: zusätzliche, nicht zur Presale-Allokation gehörende ULIQ werden nicht mitübertragen. Das Indexer-Event erzeugt für die Treasury einen regulären `WALLET_TRANSFER`-Provenienz-Lot; dessen Alter autorisiert ab ADR-008 keinen monetären Benefit. Implementierungsstand 2026-08-24: lokal implementiert und getestet; das bestehende V2-Testnet-Deployment bleibt unverändert und ein neuer Contract-Deploy benötigt eine separate Freigabe.
+
+Testnet-ADR-008-Follow-up (kein Deployment- oder Production-Entscheid): Locker, API, Indexer, Billing-Gating und UI unterstützen 31/184/366 Tage, nicht verkürzbare Extensions und die 25-%-Abdeckung bis zum exakten Produktlaufzeitende. Migration, Contract-Neudeploy, Runtime-Aktivierung und Staging-E2E benötigen weiterhin jeweils separate Freigaben.
 
 ## MVP Utility
 
@@ -75,9 +77,10 @@ Enthalten:
 
 Benefit-Regeln:
 
-- Feature Benefits benötigen einen aktuellen bestätigten Entitlement Snapshot, aber keinen Holding Cooldown.
-- Subscription- und AI-Credit-Discounts benötigen valid entitlement, einen 24-Stunden-Holding-Cooldown und eine 10 Minuten gültige Benefit Reservation.
-- Finalisierte Presale Allocations sind vom zusätzlichen 24-Stunden-Cooldown ausgenommen.
+- Feature Benefits benötigen einen aktuellen bestätigten Entitlement Snapshot, aber keinen Lock.
+- Subscription- und AI-Credit-Discounts benötigen ein gültiges Entitlement, einen kanonisch finalisierten Lock über mindestens 25 % des aktuellen Tier-Minimums bis zum exakten Benefit-Ende und eine 10 Minuten gültige Benefit Reservation.
+- Der frühere 24-Stunden-Holding-Cooldown ist kein monetäres Gate mehr; die übrigen Anti-Reuse-Regeln aus ADR-004 bleiben erhalten.
+- AI-Credit-Discounts benötigen zusätzlich eine aktive, mit ULIQ-Discount gekaufte Subscription und einen gültigen versionierten Monats-Cap.
 - Wallet-Wechsel/-Unlink setzt offene ULIQ Reservations von `RESERVED` auf `RELEASED` und erzwingt eine vollständige Neuberechnung.
 
 Nicht enthalten:

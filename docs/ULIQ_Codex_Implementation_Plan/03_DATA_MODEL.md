@@ -105,8 +105,9 @@ Der Sale Read State speichert beziehungsweise projiziert zusätzlich `pendingPur
 - `lockIdOnchain`
 - `walletAddress`
 - `amountRaw` als `Decimal(78,0)`
-- `durationDays`: ausschließlich 30, 90 oder 180
-- `startAt`, `unlockAt`, `withdrawnAt`
+- `durationDays`: ausschließlich initial 31, 184 oder 366
+- `startAt`, `originalUnlockAt`, `unlockAt`, `withdrawnAt`
+- `lastExtendedAt`, `extensionCount`; Extensions ändern Originalwerte und Betrag nicht
 - `status`
 - `asOfBlock`, `blockHash`
 - Unique `(chainId, contractAddress, lockIdOnchain)`
@@ -121,9 +122,8 @@ Der Sale Read State speichert beziehungsweise projiziert zusätzlich `pendingPur
 - `blockHash`
 - `walletRaw`, `vestingRaw`, `lockedRaw`, `eligibleRaw` als `Decimal(78,0)`
 - `featureEligibleRaw` und `monetaryEligibleRaw` als getrennte abgeleitete Werte
-- `holdingCooldownSeconds`: für monetäre Benefits 86.400
-- `holdingQualifiedAt` beziehungsweise konservativer History-Proof für die monetary-eligible Menge
-- `presaleCooldownExemptRaw` für canonical finalisierte Presale-Provenienz
+- `holdingCooldownSeconds`: ab ADR-008 für monetäre Benefits `0`; ältere Werte bleiben nur historische Provenienz
+- `holdingQualifiedAt` und `presaleCooldownExemptRaw` bleiben für bestehende Historie/Analyse erhalten, autorisieren aber keinen neuen monetären Benefit
 - `pendingPresaleRaw` separat und ausdrücklich nicht eligible
 - `referencePriceUsd` als Decimal
 - `priceMode`: presale_reference, market_observation, market_reference
@@ -146,6 +146,10 @@ Alle Komponenten stammen vom selben `asOfBlock` und `blockHash`.
 - `configVersion`
 - `priceSnapshotId`
 - `asOfBlock`
+- `lockGateVersion`, `lockContractAddress`
+- `requiredBenefitUntil`
+- `requiredLockedRaw`, `qualifyingLockedRaw` als `Decimal(78,0)`
+- `qualifyingLockIds`
 - `referenceType`, `referenceId`
 - `benefitType`
 - `baseAmount`, `discountAmount`, `finalAmount` mit expliziter Currency/Unit
@@ -181,6 +185,7 @@ Die Reservation TTL beträgt exakt 10 Minuten. Wallet Link/Replace/Unlink setzt 
 - `subscriptionDiscountBps`
 - keine Platform-Fee-Discount-Felder im MVP
 - optionale monetary benefit caps mit klarer Periode und Currency
+- `aiCreditDiscountMonthlyCents` ist als versionierter Cap für AI-Credit-Discounts verpflichtend; fehlt ein gültiger Wert, gilt der AI-Discount fail-closed
 - `effectiveFrom`, `effectiveUntil`
 - `createdByUserId`, `reason`, `createdAt`
 - Unique `(code, version)`
@@ -215,6 +220,7 @@ Market-Reference-Qualität verlangt Pool Age >= 30 Tage, Pool TVL >= 50.000 USD,
 - `uliqPriceSnapshotId`
 - `uliqWalletAddress`
 - `uliqAsOfBlock`
+- `plannedTermStartsAt`, `plannedTermEndsAt`, `plannedTermGraceEndsAt` für rabattierte Subscription-Käufe
 
 `amountCents` und `expectedAmountRaw` bleiben der tatsächlich zu zahlende finale USDC-Betrag. Line-Items müssen Base- und Discount-Verteilung nachvollziehbar abbilden.
 

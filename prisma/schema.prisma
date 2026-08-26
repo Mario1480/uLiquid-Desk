@@ -1085,6 +1085,9 @@ model BillingOrder {
   uliqPriceSnapshotId       String?            @map("uliq_price_snapshot_id")
   uliqWalletAddress         String?            @map("uliq_wallet_address")
   uliqAsOfBlock             BigInt?            @map("uliq_as_of_block")
+  plannedTermStartsAt       DateTime?          @map("planned_term_starts_at")
+  plannedTermEndsAt         DateTime?          @map("planned_term_ends_at")
+  plannedTermGraceEndsAt    DateTime?          @map("planned_term_grace_ends_at")
   createdAt                 DateTime           @default(now()) @map("created_at")
   updatedAt                 DateTime           @updatedAt @map("updated_at")
 
@@ -2301,7 +2304,10 @@ model UliqLockPosition {
   amountRaw       Decimal                @map("amount_raw") @db.Decimal(78, 0)
   durationDays    Int                    @map("duration_days")
   startAt         DateTime               @map("start_at")
+  originalUnlockAt DateTime              @map("original_unlock_at")
   unlockAt        DateTime               @map("unlock_at")
+  lastExtendedAt  DateTime?              @map("last_extended_at")
+  extensionCount  Int                    @default(0) @map("extension_count")
   withdrawnAt     DateTime?              @map("withdrawn_at")
   status          UliqLockPositionStatus @default(ACTIVE)
   asOfBlock       BigInt                 @map("as_of_block")
@@ -2311,6 +2317,7 @@ model UliqLockPosition {
 
   @@unique([chainId, contractAddress, lockIdOnchain], map: "uliq_lock_positions_chain_contract_lock_key")
   @@index([walletAddress, status, unlockAt], map: "uliq_lock_positions_wallet_status_unlock_idx")
+  @@index([walletAddress, unlockAt, status], map: "uliq_lock_positions_wallet_expiry_status_idx")
   @@map("uliq_lock_positions")
 }
 
@@ -2359,7 +2366,7 @@ model UliqEntitlementSnapshot {
   eligibleRaw              Decimal                @map("eligible_raw") @db.Decimal(78, 0)
   featureEligibleRaw       Decimal                @map("feature_eligible_raw") @db.Decimal(78, 0)
   monetaryEligibleRaw      Decimal                @map("monetary_eligible_raw") @db.Decimal(78, 0)
-  holdingCooldownSeconds   Int                    @default(86400) @map("holding_cooldown_seconds")
+  holdingCooldownSeconds   Int                    @default(0) @map("holding_cooldown_seconds")
   holdingQualifiedAt       DateTime?              @map("holding_qualified_at")
   presaleCooldownExemptRaw Decimal                @map("presale_cooldown_exempt_raw") @db.Decimal(78, 0)
   pendingPresaleRaw        Decimal                @map("pending_presale_raw") @db.Decimal(78, 0)
@@ -2398,6 +2405,12 @@ model UliqBenefitReservation {
   priceSnapshotId       String                       @map("price_snapshot_id")
   priceSnapshot         UliqPriceSnapshot            @relation(fields: [priceSnapshotId], references: [id], onDelete: Restrict)
   asOfBlock             BigInt                       @map("as_of_block")
+  lockGateVersion       String?                      @map("lock_gate_version")
+  lockContractAddress   String?                      @map("lock_contract_address")
+  requiredBenefitUntil  DateTime?                    @map("required_benefit_until")
+  requiredLockedRaw     Decimal?                     @map("required_locked_raw") @db.Decimal(78, 0)
+  qualifyingLockedRaw   Decimal?                     @map("qualifying_locked_raw") @db.Decimal(78, 0)
+  qualifyingLockIds     Json?                        @map("qualifying_lock_ids")
   referenceType         String                       @map("reference_type")
   referenceId           String                       @map("reference_id")
   benefitType           UliqBenefitType              @map("benefit_type")
@@ -2421,6 +2434,7 @@ model UliqBenefitReservation {
   @@unique([referenceType, referenceId, benefitType], map: "uliq_benefit_reservations_reference_benefit_key")
   @@index([userId, status, expiresAt], map: "uliq_benefit_reservations_user_status_expiry_idx")
   @@index([walletAddress, status], map: "uliq_benefit_reservations_wallet_status_idx")
+  @@index([walletAddress, requiredBenefitUntil, status], map: "uliq_benefit_reservations_lock_gate_idx")
   @@map("uliq_benefit_reservations")
 }
 

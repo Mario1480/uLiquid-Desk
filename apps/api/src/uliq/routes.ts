@@ -22,8 +22,9 @@ const purchaseTrackingReplacementSchema = z.object({
   reason: z.enum(["cancelled", "replaced", "repriced"]).optional()
 });
 const purchaseIdSchema = z.object({ purchaseId: uint256Schema });
-const lockSchema = z.object({ amountRaw: uint256Schema, durationDays: z.union([z.literal(30), z.literal(90), z.literal(180)]) });
+const lockSchema = z.object({ amountRaw: uint256Schema, durationDays: z.union([z.literal(31), z.literal(184), z.literal(366)]) });
 const lockIdSchema = z.object({ lockId: uint256Schema });
+const lockExtensionSchema = lockIdSchema.extend({ newUnlockAt: uint256Schema });
 
 function mapError(error: unknown): { status: number; error: string } {
   const reason = error instanceof Error ? error.message : String(error);
@@ -31,7 +32,13 @@ function mapError(error: unknown): { status: number; error: string } {
   if (reason === "wallet_not_linked") return { status: 422, error: reason };
   if (reason === "purchase_tracking_not_found") return { status: 404, error: reason };
   if (reason.includes("invalid_") || reason === "unsupported_lock_duration") return { status: 400, error: reason };
-  if (reason.includes("mismatch") || reason.includes("not_pending") || reason === "uliq_sale_not_active") {
+  if (
+    reason.includes("mismatch")
+    || reason.includes("not_pending")
+    || reason === "uliq_sale_not_active"
+    || reason === "lock_already_withdrawn"
+    || reason === "lock_expiry_not_increasing"
+  ) {
     return { status: 409, error: reason };
   }
   if (reason.includes("rpc")) return { status: 503, error: "uliq_rpc_unavailable" };
@@ -177,5 +184,20 @@ export function registerUliqRoutes(app: express.Express, deps: {
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     try { return res.json(await deps.presaleService.prepareUnlock({ userId: getUserFromLocals(res).id, ...parsed.data })); }
     catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
+  });
+
+  app.post("/uliq/locking/extend/prepare", requireAuth, async (req, res) => {
+    if (!allowed("lockingEnabled", res)) return;
+    const parsed = lockExtensionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    try {
+      return res.json(await deps.presaleService.prepareLockExtension({
+        userId: getUserFromLocals(res).id,
+        ...parsed.data
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      return res.status(mapped.status).json({ error: mapped.error });
+    }
   });
 }

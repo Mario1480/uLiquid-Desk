@@ -140,11 +140,13 @@ Withdrawal:
 ## `ULIQLocker.sol`
 
 - akzeptiert nur frei verfügbare ULIQ aus der User-Wallet.
-- feste MVP-Perioden: 30, 90 oder 180 Tage.
+- feste initiale MVP-Perioden: 31, 184 oder 366 Tage, produktseitig als 1, 6 oder 12 Monate bezeichnet.
 - keine freie Laufzeitwahl.
 - kein APY, keine Token Rewards und keine USDC Rewards.
 - mehrere Locks pro Wallet erhalten eindeutige Lock IDs.
-- ein Lock speichert amount, owner, start und unlockAt.
+- ein Lock speichert amount, owner, start und unlockAt; der exakte Timestamp ist für die Benefit-Abdeckung autoritativ.
+- der Owner kann eine nicht withdrawn Position mit `extendLock(lockId, newUnlockAt)` ausschließlich auf einen strikt späteren Timestamp verlängern.
+- Extension verändert weder ursprünglichen Start/Betrag noch `lockedBalanceOf` oder `totalLocked` und emittiert `LockExtended` mit altem/neuem Ablauf.
 - Withdraw ist nach `unlockAt` einmalig möglich und emittiert ein Event.
 - Locking verschiebt ULIQ von Wallet zu Locker, ohne eligible ULIQ zu erhöhen.
 - Vesting-ULIQ können erst nach Claim gelockt werden.
@@ -184,6 +186,7 @@ Withdrawal:
 - mehrere Purchases desselben Beneficiary.
 - Vesting vor, am und nach DEX Launch; einmaliger Timestamp.
 - Claim und Locker-Übergänge ohne Doppelzählung.
+- alle drei initialen Laufzeiten, wiederholte Extension, Shortening-Revert, Wrong-Owner, withdrawn Position und unveränderte Locked Balances.
 - unzureichendes Inventar, fremde Tokens und reentrante/malicious Token-Annahmen.
 - Invariant: `distributed + vesting inventory + remaining sale inventory + burned` überschreitet nie die zugewiesene ULIQ-Menge.
 - Invariant: USDC Refund oder Finalisierung kann pro Purchase höchstens einmal wirtschaftlich wirksam werden.

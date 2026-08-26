@@ -182,6 +182,27 @@
   gap: 8px;
 }
 
+.uliqCoverageBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.uliqLockActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.uliqLockActions label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .uliqMono {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   overflow-wrap: anywhere;
@@ -261,6 +282,10 @@
   .uliqFormRow,
   .uliqLockForm,
   .uliqPositionCard dl {
+    grid-template-columns: 1fr;
+  }
+
+  .uliqLockActions {
     grid-template-columns: 1fr;
   }
 

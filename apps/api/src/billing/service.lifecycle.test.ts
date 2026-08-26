@@ -89,6 +89,8 @@ test("an already running schedule does not consume another slot after downgrade"
 test("uses UTC calendar-month semantics and clamps month-end renewals", () => {
   assert.equal(addBillingMonths(new Date("2024-01-31T12:00:00.000Z"), 1).toISOString(), "2024-02-29T12:00:00.000Z");
   assert.equal(addBillingMonths(new Date("2024-01-31T12:00:00.000Z"), 2).toISOString(), "2024-03-31T12:00:00.000Z");
+  assert.equal(addBillingMonths(new Date("2024-08-31T12:00:00.000Z"), 6).toISOString(), "2025-02-28T12:00:00.000Z");
+  assert.equal(addBillingMonths(new Date("2024-02-29T12:00:00.000Z"), 12).toISOString(), "2025-02-28T12:00:00.000Z");
   assert.equal(addBillingMonths(new Date("2025-01-31T12:00:00.000Z"), 1).toISOString(), "2025-02-28T12:00:00.000Z");
 });
 

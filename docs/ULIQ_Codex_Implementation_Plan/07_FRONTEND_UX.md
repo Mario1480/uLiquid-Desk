@@ -138,12 +138,14 @@ Nach Finalisierung:
 ## Locking Page
 
 - verfügbare unlocked Wallet-ULIQ.
-- feste Perioden 30, 90 und 180 Tage.
-- erwartete Produkt-Benefits, niemals Yield/APY/Rewards.
-- Unlock Date vor Bestätigung.
+- feste initiale Perioden 31, 184 und 366 Tage, dargestellt als 1, 6 und 12 Monate.
+- erwartete Produkt-Benefits, niemals Yield/APY/Rewards oder zusätzliche Laufzeit-Multiplikatoren.
+- exaktes Unlock Date und verbleibende Abdeckung vor Bestätigung.
+- pro Lock sichtbare Qualifikation für monatliche, sechsmonatige und jährliche Käufe.
+- bei unzureichender Laufzeit benötigtes Datum und direkte Vorbereitung einer nicht verkürzenden Extension.
 - aktive, abgelaufene und withdrawn Locks.
-- Lock/Withdraw Tx Progress.
-- Hinweis, dass Locking eligible ULIQ nicht erhöht.
+- Lock/Extend/Withdraw Tx Progress mit Receipt-, Finality- und Indexer-State.
+- Hinweis, dass Locking eligible ULIQ nicht erhöht und nur den bereits bestehenden Tier-Discount aktiviert.
 
 ## Billing und AI-Credit UI
 
@@ -155,8 +157,10 @@ Anzeigen:
 - Final USDC Price.
 - kurze Quote-Gültigkeit mit Countdown.
 - exakt 10 Minuten Quote-TTL.
-- Holding-Cooldown-Status für monetäre Benefits; bei regulären ULIQ Zeitpunkt bis zur 24-Stunden-Qualifikation.
-- finalisierte Presale Allocation klar als unmittelbar qualifiziert, ohne zusätzliche 24 Stunden.
+- Feature Access ohne Lock klar von monetärem Lock-Gating trennen.
+- erforderlichen und qualifizierenden Lock-Betrag sowie das exakte benötigte Abdeckungsdatum anzeigen.
+- strukturierte Gründe für fehlenden Lock, zu kleinen Betrag, zu kurze Laufzeit, stale Evidence, fehlende rabattierte Subscription oder fehlenden AI-Cap anzeigen.
+- normaler USDC-Checkout zum Standardpreis bleibt als expliziter Fallback verfügbar.
 - Wallet, Snapshot-Freshness und Fallback-Grund.
 
 Bei abgelaufener Reservation wird neu gequotet. Ein alter Discount darf nicht weiter angezeigt werden, wenn die Order bereits zum Standardpreis fortgesetzt werden muss.

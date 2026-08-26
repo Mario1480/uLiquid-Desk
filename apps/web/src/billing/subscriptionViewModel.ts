@@ -142,6 +142,11 @@ export type UliqBenefitSnapshot = {
   discountAmountCents: number | null;
   finalAmountCents: number | null;
   expiresAt: string | null;
+  lockGateVersion?: string | null;
+  requiredBenefitUntil?: string | null;
+  requiredLockedRaw?: string | null;
+  qualifyingLockedRaw?: string | null;
+  qualifyingLockIds?: string[];
 };
 
 export type SubscriptionLimits = {

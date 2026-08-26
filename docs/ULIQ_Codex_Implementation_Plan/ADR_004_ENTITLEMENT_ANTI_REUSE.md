@@ -2,7 +2,11 @@
 
 ## Status
 
-`ACCEPTED`
+`ACCEPTED / SUPERSEDED IN PART BY ADR-008`
+
+## Supersession note
+
+ADR-008 ersetzt ausschließlich die nachfolgend historisch dokumentierte Entscheidung, den 24-Stunden-Holding-Cooldown als monetäres Autorisierungs-Gate zu verwenden. Ab ADR-008 erfordern monetäre Benefits stattdessen einen kanonisch finalisierten Lock mit ausreichendem Betrag und Abdeckung bis zum konkreten Produktlaufzeitende. Reservation TTL, Idempotenz, Wallet-Wechsel, Reorg-Schutz, Ledger und Cap-Schutz aus dieser ADR bleiben verbindlich. Der historische Text wird nicht umgeschrieben.
 
 ## Context
 

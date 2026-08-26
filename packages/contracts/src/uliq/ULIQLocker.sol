@@ -10,9 +10,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 contract ULIQLocker is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint64 public constant THIRTY_DAYS = 30 days;
-    uint64 public constant NINETY_DAYS = 90 days;
-    uint64 public constant ONE_HUNDRED_EIGHTY_DAYS = 180 days;
+    uint64 public constant ONE_MONTH = 31 days;
+    uint64 public constant SIX_MONTHS = 184 days;
+    uint64 public constant TWELVE_MONTHS = 366 days;
 
     struct LockPosition {
         address owner;
@@ -35,6 +35,7 @@ contract ULIQLocker is ReentrancyGuard {
     error NotLockOwner();
     error LockStillActive();
     error AlreadyWithdrawn();
+    error LockExpiryNotIncreasing();
 
     event TokensLocked(
         uint256 indexed lockId,
@@ -44,6 +45,12 @@ contract ULIQLocker is ReentrancyGuard {
         uint64 unlockAt
     );
     event TokensUnlocked(uint256 indexed lockId, address indexed owner, uint256 amount);
+    event LockExtended(
+        uint256 indexed lockId,
+        address indexed owner,
+        uint64 previousUnlockAt,
+        uint64 newUnlockAt
+    );
 
     constructor(address token_) {
         if (token_ == address(0)) revert ZeroAddress();
@@ -87,12 +94,24 @@ contract ULIQLocker is ReentrancyGuard {
         emit TokensUnlocked(lockId, msg.sender, amount);
     }
 
+    function extendLock(uint256 lockId, uint64 newUnlockAt) external {
+        LockPosition storage position = locks[lockId];
+        if (position.owner == address(0)) revert LockNotFound();
+        if (position.owner != msg.sender) revert NotLockOwner();
+        if (position.withdrawn) revert AlreadyWithdrawn();
+        uint64 previousUnlockAt = position.unlockAt;
+        if (newUnlockAt <= previousUnlockAt) revert LockExpiryNotIncreasing();
+
+        position.unlockAt = newUnlockAt;
+        emit LockExtended(lockId, msg.sender, previousUnlockAt, newUnlockAt);
+    }
+
     function isSupportedDuration(uint64 durationSeconds) external pure returns (bool) {
         return _isSupportedDuration(durationSeconds);
     }
 
     function _isSupportedDuration(uint64 durationSeconds) private pure returns (bool) {
-        return durationSeconds == THIRTY_DAYS || durationSeconds == NINETY_DAYS
-            || durationSeconds == ONE_HUNDRED_EIGHTY_DAYS;
+        return durationSeconds == ONE_MONTH || durationSeconds == SIX_MONTHS
+            || durationSeconds == TWELVE_MONTHS;
     }
 }

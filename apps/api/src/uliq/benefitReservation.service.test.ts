@@ -4,9 +4,11 @@ import {
   consumeUliqBenefitReservationInTransaction,
   createUliqBenefitReservationInTransaction,
   expireUliqBenefitReservations,
+  prepareUliqBillingBenefit,
   releaseOpenUliqReservationsForWalletChange,
   resolveUliqDiscountSelection,
-  type PreparedUliqBillingBenefit
+  type PreparedUliqBillingBenefit,
+  UliqBenefitGateError
 } from "./benefitReservation.service.js";
 
 const now = new Date("2026-08-22T12:00:00.000Z");
@@ -19,15 +21,62 @@ const prepared: PreparedUliqBillingBenefit = {
   asOfBlock: 100n,
   configVersion: 1,
   tierSnapshot: "GOLD",
-  benefitType: "AI_CREDIT_DISCOUNT",
+  benefitType: "SUBSCRIPTION_DISCOUNT",
   discountBps: 1_500,
   baseAmountCents: 1_000,
   discountAmountCents: 150,
   finalAmountCents: 850,
   expiresAt: new Date(now.getTime() + 600_000),
   priceQualityStatus: "HEALTHY",
-  degradationReason: null
+  degradationReason: null,
+  lockDecision: {
+    version: "LOCK_GATE_V1",
+    qualifies: true,
+    requiredLockedRaw: "100",
+    qualifyingLockedRaw: "150",
+    qualifyingLockIds: ["7"],
+    requiredBenefitUntil: new Date("2026-09-22T12:00:00.000Z"),
+    coverageShareBps: 2_500,
+    failureReason: null
+  },
+  plannedTermWindow: {
+    startsAt: now,
+    endsAt: new Date("2026-09-22T12:00:00.000Z"),
+    graceEndsAt: new Date("2026-09-25T12:00:00.000Z")
+  },
+  sourceSubscriptionTermId: null,
+  aiMonthlyCapCents: null,
+  lockerContractAddress: "0x4444444444444444444444444444444444444444"
 };
+
+const entitlement = {
+  id: "snapshot-1",
+  walletAddress: wallet,
+  validUntil: new Date(now.getTime() + 300_000),
+  priceQualityStatus: "HEALTHY",
+  priceSnapshotId: "price-1",
+  asOfBlock: 100n,
+  tierConfigVersion: 1,
+  monetaryTier: "GOLD",
+  aiDiscountBps: 1_500,
+  subscriptionDiscountBps: 1_500,
+  degradationReason: null
+} as any;
+
+async function withDiscountFlags<T>(run: () => Promise<T>): Promise<T> {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousDiscounts = process.env.ULIQ_DISCOUNTS_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_DISCOUNTS_ENABLED = "true";
+  try {
+    return await run();
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousDiscounts === undefined) delete process.env.ULIQ_DISCOUNTS_ENABLED;
+    else process.env.ULIQ_DISCOUNTS_ENABLED = previousDiscounts;
+  }
+}
 
 test("ULIQ discounts exclude capacity add-ons and reject mixed subscription/AI discount classes", () => {
   assert.equal(resolveUliqDiscountSelection([
@@ -53,6 +102,56 @@ test("ULIQ discounts exclude capacity add-ons and reject mixed subscription/AI d
   ]), /uliq_mixed_discount_types_not_supported/);
 });
 
+test("AI discount requires an active subscription term that consumed a ULIQ subscription discount", async () => {
+  await withDiscountFlags(async () => {
+    await assert.rejects(
+      prepareUliqBillingBenefit({
+        db: { subscriptionTerm: { findFirst: async () => null } },
+        userId: "user-1",
+        baseAmountCents: 1_000,
+        benefitType: "AI_CREDIT_DISCOUNT",
+        entitlementService: {
+          getForUser: async () => entitlement,
+          getLockDecisionForBenefit: async () => { throw new Error("unexpected_lock_check"); }
+        },
+        now
+      }),
+      (error: unknown) => error instanceof UliqBenefitGateError
+        && error.message === "uliq_ai_discounted_subscription_required"
+    );
+  });
+});
+
+test("AI discount fails closed when the active tier has no versioned monthly cap", async () => {
+  await withDiscountFlags(async () => {
+    await assert.rejects(
+      prepareUliqBillingBenefit({
+        db: {
+          subscriptionTerm: {
+            findFirst: async () => ({ id: "term-1", endsAt: prepared.lockDecision.requiredBenefitUntil })
+          }
+        },
+        userId: "user-1",
+        baseAmountCents: 1_000,
+        benefitType: "AI_CREDIT_DISCOUNT",
+        entitlementService: {
+          getForUser: async () => entitlement,
+          getLockDecisionForBenefit: async () => ({
+            ...prepared.lockDecision,
+            tierCode: "GOLD",
+            configVersion: 1,
+            monetaryBenefitCaps: null,
+            lockerContractAddress: prepared.lockerContractAddress
+          })
+        },
+        now
+      }),
+      (error: unknown) => error instanceof UliqBenefitGateError
+        && error.message === "uliq_ai_cap_unconfigured"
+    );
+  });
+});
+
 test("reservation creation binds exact wallet/snapshots and ten-minute expiry", async () => {
   let createData: any = null;
   const tx = {
@@ -61,11 +160,19 @@ test("reservation creation binds exact wallet/snapshots and ten-minute expiry", 
       findUnique: async () => ({
         userId: "user-1",
         walletAddress: wallet,
+        chainId: 421614,
         validUntil: new Date(now.getTime() + 300_000),
         priceSnapshotId: "price-1",
         asOfBlock: 100n,
-        monetaryEligibleRaw: "1"
+        monetaryEligibleRaw: "1",
+        lockModifier: "LOCK_GATE_V1"
       })
+    },
+    onchainSyncCursor: {
+      findUnique: async () => ({ lastProcessedBlock: 100n, failureCount: 0, lastError: null })
+    },
+    uliqLockPosition: {
+      findMany: async () => [{ amountRaw: "150" }]
     },
     uliqBenefitReservation: {
       findUnique: async () => null,
@@ -87,7 +194,98 @@ test("reservation creation binds exact wallet/snapshots and ten-minute expiry", 
   assert.equal(createData.finalAmount, "8.50");
 });
 
-test("consumption is exactly once and writes one append-only ledger entry", async () => {
+test("reservation rejects lock evidence until the indexed finalized cursor reaches its snapshot", async () => {
+  const tx = {
+    user: { findUnique: async () => ({ walletAddress: wallet }) },
+    uliqEntitlementSnapshot: {
+      findUnique: async () => ({
+        userId: "user-1",
+        walletAddress: wallet,
+        chainId: 421614,
+        validUntil: new Date(now.getTime() + 300_000),
+        priceSnapshotId: "price-1",
+        asOfBlock: 100n,
+        monetaryEligibleRaw: "1",
+        lockModifier: "LOCK_GATE_V1"
+      })
+    },
+    onchainSyncCursor: {
+      findUnique: async () => ({ lastProcessedBlock: 99n, failureCount: 0, lastError: null })
+    },
+    uliqLockPosition: { findMany: async () => [{ amountRaw: "150" }] },
+    uliqBenefitReservation: { findUnique: async () => null, create: async () => ({}) }
+  };
+  await assert.rejects(
+    createUliqBenefitReservationInTransaction({
+      tx,
+      prepared,
+      referenceType: "BILLING_ORDER",
+      referenceId: "order-stale",
+      idempotencyKey: "idem-stale",
+      now
+    }),
+    (error: unknown) => error instanceof UliqBenefitGateError
+      && error.message === "uliq_lock_state_stale"
+  );
+});
+
+test("AI monthly discount cap counts reserved and consumed discounts and fails closed at the boundary", async () => {
+  const aiPrepared: PreparedUliqBillingBenefit = {
+    ...prepared,
+    benefitType: "AI_CREDIT_DISCOUNT",
+    sourceSubscriptionTermId: "term-1",
+    aiMonthlyCapCents: 200
+  };
+  const tx = {
+    user: { findUnique: async () => ({ walletAddress: wallet }) },
+    uliqEntitlementSnapshot: {
+      findUnique: async () => ({
+        userId: "user-1",
+        walletAddress: wallet,
+        chainId: 421614,
+        validUntil: new Date(now.getTime() + 300_000),
+        priceSnapshotId: "price-1",
+        asOfBlock: 100n,
+        monetaryEligibleRaw: "1",
+        lockModifier: "LOCK_GATE_V1"
+      })
+    },
+    onchainSyncCursor: {
+      findUnique: async () => ({ lastProcessedBlock: 100n, failureCount: 0, lastError: null })
+    },
+    uliqLockPosition: { findMany: async () => [{ amountRaw: "150" }] },
+    uliqBenefitReservation: {
+      findUnique: async () => null,
+      aggregate: async () => ({ _sum: { discountAmount: "0.51" } }),
+      create: async () => ({})
+    },
+    subscriptionTerm: {
+      findUnique: async () => ({
+        id: "term-1",
+        userId: "user-1",
+        status: "ACTIVE",
+        endsAt: prepared.lockDecision.requiredBenefitUntil,
+        order: { uliqBenefitReservation: { benefitType: "SUBSCRIPTION_DISCOUNT", status: "CONSUMED" } }
+      })
+    }
+  };
+  await assert.rejects(
+    createUliqBenefitReservationInTransaction({
+      tx,
+      prepared: aiPrepared,
+      referenceType: "BILLING_ORDER",
+      referenceId: "order-ai-cap",
+      idempotencyKey: "idem-ai-cap",
+      now
+    }),
+    (error: unknown) => error instanceof UliqBenefitGateError
+      && error.message === "uliq_ai_cap_exceeded"
+      && error.details.usedCents === 51
+      && error.details.requestedDiscountCents === 150
+  );
+});
+
+test("parallel consumption claims exactly once and writes one append-only ledger entry", async () => {
   let status = "RESERVED";
   const ledger: any[] = [];
   const reservation = {
@@ -106,9 +304,22 @@ test("consumption is exactly once and writes one append-only ledger entry", asyn
     finalAmount: "8.50",
     expiresAt: prepared.expiresAt,
     metadata: { tierSnapshot: "GOLD" },
-    billingOrder: { onchainPayment: { txHash: "0xabc" } }
+    billingOrder: { onchainPayment: { txHash: "0xabc" } },
+    entitlementSnapshot: { chainId: 421614 },
+    lockGateVersion: "LOCK_GATE_V1",
+    lockContractAddress: prepared.lockerContractAddress,
+    requiredBenefitUntil: prepared.lockDecision.requiredBenefitUntil,
+    requiredLockedRaw: prepared.lockDecision.requiredLockedRaw,
+    qualifyingLockIds: prepared.lockDecision.qualifyingLockIds,
+    asOfBlock: prepared.asOfBlock
   };
   const tx = {
+    onchainSyncCursor: {
+      findUnique: async () => ({ lastProcessedBlock: 100n, failureCount: 0, lastError: null })
+    },
+    uliqLockPosition: {
+      findMany: async () => [{ amountRaw: "150" }]
+    },
     uliqBenefitReservation: {
       findUnique: async () => ({ ...reservation, status }),
       updateMany: async () => {
@@ -119,7 +330,12 @@ test("consumption is exactly once and writes one append-only ledger entry", asyn
     },
     uliqBenefitLedger: { create: async ({ data }: any) => { ledger.push(data); } }
   };
-  assert.equal(await consumeUliqBenefitReservationInTransaction({ tx, reservationId: reservation.id, now }), true);
+  const parallel = await Promise.allSettled([
+    consumeUliqBenefitReservationInTransaction({ tx, reservationId: reservation.id, now }),
+    consumeUliqBenefitReservationInTransaction({ tx, reservationId: reservation.id, now })
+  ]);
+  assert.equal(parallel.filter((result) => result.status === "fulfilled" && result.value === true).length, 1);
+  assert.equal(parallel.filter((result) => result.status === "rejected").length, 1);
   assert.equal(await consumeUliqBenefitReservationInTransaction({ tx, reservationId: reservation.id, now }), false);
   assert.equal(ledger.length, 1);
 });

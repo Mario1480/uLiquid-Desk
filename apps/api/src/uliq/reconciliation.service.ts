@@ -65,7 +65,7 @@ export class UliqReconciliationService {
       });
       for (const user of users) {
         const walletAddress = String(user.walletAddress).toLowerCase() as `0x${string}`;
-        const [onchain, vesting, locks] = await Promise.all([
+        const [onchain, vesting, locks, lockPositions] = await Promise.all([
           withUliqRpcFailover(this.rpc, async (client) => {
             const [walletRaw, vestingRaw, lockedRaw] = await Promise.all([
               client.readContract({ address: this.config.contracts.token, abi: uliqTokenAbi, functionName: "balanceOf", args: [walletAddress], blockNumber: head.number }),
@@ -91,6 +91,16 @@ export class UliqReconciliationService {
               status: { in: ["ACTIVE", "MATURED"] }
             },
             _sum: { amountRaw: true }
+          }),
+          this.db.uliqLockPosition.findMany({
+            where: {
+              chainId: this.config.chainId,
+              contractAddress: this.config.contracts.locker.toLowerCase(),
+              walletAddress,
+              status: { in: ["ACTIVE", "MATURED"] }
+            },
+            orderBy: { lockIdOnchain: "asc" },
+            take: Math.max(1, Math.min(1_000, limit))
           })
         ]);
         const projectedVesting = vesting
@@ -103,6 +113,45 @@ export class UliqReconciliationService {
         }
         if (onchain.value.lockedRaw !== projectedLocked) {
           mismatches.push({ scope: "wallet", walletAddress, field: "lockedRaw", onchain: onchain.value.lockedRaw.toString(), projected: projectedLocked.toString() });
+        }
+        for (const position of lockPositions) {
+          const lockId = parseDatabaseUint256Decimal(position.lockIdOnchain, "lock_id_onchain");
+          const contractLock = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
+            address: this.config.contracts.locker,
+            abi: uliqLockerAbi,
+            functionName: "locks",
+            args: [lockId],
+            blockNumber: head.number
+          }));
+          const [, amountRaw,, unlockAt, withdrawn] = contractLock.value;
+          const projectedUnlockAt = BigInt(Math.floor(new Date(position.unlockAt).getTime() / 1_000));
+          if (BigInt(unlockAt) !== projectedUnlockAt) {
+            mismatches.push({
+              scope: "lock",
+              walletAddress,
+              field: `unlockAt:${lockId}`,
+              onchain: BigInt(unlockAt).toString(),
+              projected: projectedUnlockAt.toString()
+            });
+          }
+          if (BigInt(amountRaw) !== parseDatabaseUint256Decimal(position.amountRaw, "lock_amount_raw")) {
+            mismatches.push({
+              scope: "lock",
+              walletAddress,
+              field: `amountRaw:${lockId}`,
+              onchain: BigInt(amountRaw).toString(),
+              projected: parseDatabaseUint256Decimal(position.amountRaw, "lock_amount_raw").toString()
+            });
+          }
+          if (Boolean(withdrawn)) {
+            mismatches.push({
+              scope: "lock",
+              walletAddress,
+              field: `withdrawn:${lockId}`,
+              onchain: "true",
+              projected: "false"
+            });
+          }
         }
       }
 

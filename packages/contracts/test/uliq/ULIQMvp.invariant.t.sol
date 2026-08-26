@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {ULIQToken} from "../../src/uliq/ULIQToken.sol";
 import {ULIQPresale} from "../../src/uliq/ULIQPresale.sol";
 import {ULIQPresaleVesting} from "../../src/uliq/ULIQPresaleVesting.sol";
+import {ULIQLocker} from "../../src/uliq/ULIQLocker.sol";
 import {ULIQTestnetEscrow} from "../../src/uliq/testnet/ULIQTestnetEscrow.sol";
 import {ULIQMockUSDC} from "../../src/uliq/testnet/ULIQMockUSDC.sol";
 
@@ -106,5 +107,62 @@ contract ULIQMvpInvariantTest {
             custody.totalCollected() == custody.balance() + custody.totalRefunded() + custody.totalReleased(),
             "custody_accounting_drift"
         );
+    }
+}
+
+contract ULIQLockerHandler {
+    ULIQLocker public immutable locker;
+    ULIQToken public immutable token;
+    uint256[] public lockIds;
+
+    constructor(ULIQLocker locker_, ULIQToken token_) {
+        locker = locker_;
+        token = token_;
+        token_.approve(address(locker_), type(uint256).max);
+    }
+
+    function lock(uint96 rawAmount, uint8 rawTerm) external {
+        uint256 balance = token.balanceOf(address(this));
+        if (balance == 0) return;
+        uint256 amount = 1 + (uint256(rawAmount) % balance);
+        uint64[3] memory terms = [uint64(31 days), uint64(184 days), uint64(366 days)];
+        lockIds.push(locker.lock(amount, terms[rawTerm % terms.length]));
+    }
+
+    function extend(uint256 seed, uint32 rawExtension) external {
+        if (lockIds.length == 0) return;
+        uint256 lockId = lockIds[seed % lockIds.length];
+        (,,,, bool withdrawn) = locker.locks(lockId);
+        if (withdrawn) return;
+        (,,, uint64 unlockAt,) = locker.locks(lockId);
+        uint64 extension = uint64(1 + (uint256(rawExtension) % 366 days));
+        locker.extendLock(lockId, unlockAt + extension);
+    }
+}
+
+contract ULIQLockerInvariantTest {
+    ULIQToken internal token;
+    ULIQLocker internal locker;
+    ULIQLockerHandler internal handler;
+    address[] private _targets;
+    uint256 internal constant FUNDED_AMOUNT = 1_000_000 ether;
+
+    function setUp() public {
+        token = new ULIQToken(address(this));
+        locker = new ULIQLocker(address(token));
+        handler = new ULIQLockerHandler(locker, token);
+        require(token.transfer(address(handler), FUNDED_AMOUNT), "handler_funding_failed");
+        _targets.push(address(handler));
+    }
+
+    function targetContracts() external view returns (address[] memory) {
+        return _targets;
+    }
+
+    function invariant_ExtensionsNeverChangeLockedAccounting() public view {
+        uint256 locked = locker.totalLocked();
+        require(locked == locker.lockedBalanceOf(address(handler)), "locker_owner_total_drift");
+        require(locked == token.balanceOf(address(locker)), "locker_token_total_drift");
+        require(locked <= FUNDED_AMOUNT, "locker_exceeded_funding");
     }
 }

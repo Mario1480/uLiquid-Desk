@@ -8,6 +8,7 @@ import {
 } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { createResolvedEntitlementContext } from "../capabilities/entitlementContext.js";
+import { UliqBenefitGateError } from "../uliq/benefitReservation.service.js";
 
 const subscriptionCheckoutSchema = z.union([
   z.object({
@@ -220,7 +221,18 @@ function mapSubscriptionOrderForResponse(input: any) {
       baseAmountCents: order.baseAmountCents,
       discountAmountCents: order.discountAmountCents,
       finalAmountCents: order.finalAmountCents,
-      expiresAt: toIsoDateString(order.uliqBenefitReservation.expiresAt)
+      expiresAt: toIsoDateString(order.uliqBenefitReservation.expiresAt),
+      lockGateVersion: order.uliqBenefitReservation.lockGateVersion ?? null,
+      requiredBenefitUntil: toIsoDateString(order.uliqBenefitReservation.requiredBenefitUntil),
+      requiredLockedRaw: order.uliqBenefitReservation.requiredLockedRaw == null
+        ? null
+        : String(order.uliqBenefitReservation.requiredLockedRaw),
+      qualifyingLockedRaw: order.uliqBenefitReservation.qualifyingLockedRaw == null
+        ? null
+        : String(order.uliqBenefitReservation.qualifyingLockedRaw),
+      qualifyingLockIds: Array.isArray(order.uliqBenefitReservation.qualifyingLockIds)
+        ? order.uliqBenefitReservation.qualifyingLockIds.map(String)
+        : []
     } : null,
     explorerUrl: payment?.explorerUrl ?? (txHash ? `https://arbiscan.io/tx/${txHash}` : null),
     onchainPayment: payment ? {
@@ -424,6 +436,16 @@ function mapNotificationPreference(value: any) {
 
 function mapBillingRouteError(error: unknown): { status: number; body: Record<string, unknown> } {
   const reason = error instanceof Error ? error.message : String(error);
+  if (error instanceof UliqBenefitGateError) {
+    return {
+      status: 409,
+      body: {
+        error: reason,
+        ...error.details,
+        fallbackStandardPriceAvailable: true
+      }
+    };
+  }
   if (
     reason === "invalid_cart_payload"
     || reason === "cart_empty"
@@ -864,6 +886,17 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
           baseAmountCents: checkout.order.baseAmountCents,
           discountAmountCents: checkout.order.discountAmountCents,
           finalAmountCents: checkout.order.finalAmountCents,
+          lockGateVersion: checkout.order.uliqBenefitReservation.lockGateVersion ?? null,
+          requiredBenefitUntil: toIsoDateString(checkout.order.uliqBenefitReservation.requiredBenefitUntil),
+          requiredLockedRaw: checkout.order.uliqBenefitReservation.requiredLockedRaw == null
+            ? null
+            : String(checkout.order.uliqBenefitReservation.requiredLockedRaw),
+          qualifyingLockedRaw: checkout.order.uliqBenefitReservation.qualifyingLockedRaw == null
+            ? null
+            : String(checkout.order.uliqBenefitReservation.qualifyingLockedRaw),
+          qualifyingLockIds: Array.isArray(checkout.order.uliqBenefitReservation.qualifyingLockIds)
+            ? checkout.order.uliqBenefitReservation.qualifyingLockIds.map(String)
+            : [],
           expiresAt: checkout.order.uliqBenefitReservation.expiresAt instanceof Date
             ? checkout.order.uliqBenefitReservation.expiresAt.toISOString()
             : checkout.order.uliqBenefitReservation.expiresAt

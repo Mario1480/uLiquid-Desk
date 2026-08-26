@@ -69,8 +69,8 @@ Das Backend akzeptiert für User-Entitlements keine frei wählbare Wallet-Adress
 
 Für Benefits werden zwei Sichten abgeleitet:
 
-- `featureEligibleRaw`: aktueller bestätigter eligible Bestand ohne Holding Cooldown.
-- `monetaryEligibleRaw`: nur die Menge, deren canonical Holding-Provenienz die 24-Stunden-Regel erfüllt, plus sofort qualifizierte finalisierte Presale Allocation.
+- `featureEligibleRaw`: aktueller bestätigter eligible Bestand; Feature Access benötigt keinen Lock.
+- `monetaryEligibleRaw`: derselbe blockkonsistente eligible Bestand. Die Autorisierung eines konkreten monetären Discounts erfolgt separat über `LOCK_GATE_V1`, nicht über Holding Age.
 
 ## Tier System
 
@@ -101,11 +101,15 @@ Die Discount-BPS und Feature Flags werden versioniert in `UliqTierConfig` gepfle
 
 ## Locking Benefits
 
-- unterstützte Laufzeiten: 30, 90 und 180 Tage.
+- unterstützte initiale Laufzeiten: 31, 184 und 366 Tage, dargestellt als 1, 6 und 12 Monate.
 - Locking erzeugt keine zusätzlichen eligible ULIQ.
-- Locking darf nur Feature Flags, Discount-Stufen oder Early-Access-Regeln modifizieren, die in der aktiven Config ausdrücklich definiert sind.
+- Locking verändert weder Tier noch Discount-Stufe. Es aktiviert den vorhandenen Tier-Discount nur für den konkreten Produktzeitraum.
 - keine APY-, Reward- oder Revenue-Share-Semantik.
-- ein abgelaufener, aber noch nicht withdrawn Lock wird nach der final festgelegten Policy entweder bis zum Withdraw als locked behandelt oder verliert nur den Modifier; diese Policy muss vor Implementierung explizit beschlossen werden.
+- der exakte `unlockAt`-Timestamp ist autoritativ; eine nominelle Laufzeit allein beweist keine Abdeckung.
+- der erforderliche Raw-Betrag ist `ceil(currentTierMinimumRaw * 25 %)`, berechnet unter demselben Price-/Config-Snapshot.
+- nur nicht withdrawn kanonische Locks mit `unlockAt >= requiredBenefitUntil` werden addiert.
+- ein abgelaufener, aber noch nicht withdrawn Lock kann im Holding-Tier-Bestand bleiben, verliert ab `unlockAt` aber die monetäre Qualifikation.
+- Extensions dürfen `unlockAt` nur erhöhen und verändern weder Start noch Betrag oder Locked Balances.
 
 ## Feature Access vs. monetäre Benefits
 
@@ -120,10 +124,10 @@ Die Discount-BPS und Feature Flags werden versioniert in `UliqTierConfig` gepfle
 ### Monetäre Benefits
 
 - benötigen zusätzlich eine `UliqBenefitReservation`.
-- benötigen ein gültiges Entitlement und für regulär erworbene/frei übertragbare ULIQ eine bestätigte Holding Age von mindestens 24 Stunden.
-- finalisierte Presale Allocations sind unmittelbar nach canonical `FINALIZED` Event vom zusätzlichen 24-Stunden-Cooldown ausgenommen.
+- benötigen ein gültiges Entitlement sowie einen kanonisch finalisierten Lock mit ausreichendem Betrag und `unlockAt >= requiredBenefitUntil`.
+- der frühere 24-Stunden-Holding-Cooldown autorisiert ab ADR-008 keinen monetären Benefit mehr.
 - Zustände: `RESERVED`, `CONSUMED`, `RELEASED`, `REVERSED`.
-- Reservation bindet User, Wallet, Entitlement Snapshot, Price Snapshot, Config Version, Reference und Discount Amount.
+- Reservation bindet User, Wallet, Entitlement Snapshot, Price Snapshot, Config Version, Reference, Discount Amount und die vollständige versionierte Lock-Entscheidung.
 - Idempotency Key verhindert Doppelverbrauch.
 - Reservation TTL: exakt 10 Minuten.
 - abgelaufene, stornierte oder fehlgeschlagene Orders releasen beziehungsweise reversen die Reservation transaktional.
@@ -135,7 +139,7 @@ Die Discount-BPS und Feature Flags werden versioniert in `UliqTierConfig` gepfle
 - Neue Wallet-Entitlements werden vollständig neu berechnet.
 - Historische Purchases und Benefit Ledger bleiben an die ursprüngliche Wallet gebunden.
 - dieselbe Reservation kann nicht für mehrere Billing Orders oder Accounts konsumiert werden.
-- Transferierte reguläre ULIQ müssen auf der neuen Wallet erneut 24 Stunden gehalten werden; unmittelbare Rotation Wallet A -> Wallet B gewährt keinen monetären Benefit.
+- Transferierte ULIQ gewähren auf der neuen Wallet allein keinen monetären Benefit; die neue Wallet benötigt eine eigene finalisierte Lock-Abdeckung und Reservation.
 
 ## Cache und Invalidierung
 

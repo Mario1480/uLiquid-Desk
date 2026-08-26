@@ -57,9 +57,11 @@ export const uliqLockerAbi = parseAbi([
   "function lockedBalanceOf(address owner) view returns (uint256)",
   "function locks(uint256 lockId) view returns (address owner,uint256 amount,uint64 startedAt,uint64 unlockAt,bool withdrawn)",
   "function lock(uint256 amount,uint64 durationSeconds) returns (uint256 lockId)",
+  "function extendLock(uint256 lockId,uint64 newUnlockAt)",
   "function unlock(uint256 lockId)",
   "event TokensLocked(uint256 indexed lockId,address indexed owner,uint256 amount,uint64 durationSeconds,uint64 unlockAt)",
-  "event TokensUnlocked(uint256 indexed lockId,address indexed owner,uint256 amount)"
+  "event TokensUnlocked(uint256 indexed lockId,address indexed owner,uint256 amount)",
+  "event LockExtended(uint256 indexed lockId,address indexed owner,uint64 previousUnlockAt,uint64 newUnlockAt)"
 ]);
 
 export const uliqPaymentCustodyAbi = parseAbi([

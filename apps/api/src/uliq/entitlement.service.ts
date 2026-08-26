@@ -2,7 +2,6 @@ import { type PublicClient } from "viem";
 import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import {
   ULIQ_ENTITLEMENT_TTL_MS,
-  ULIQ_HOLDING_COOLDOWN_SECONDS,
   getUliqRuntimeConfig,
   type UliqRuntimeConfig
 } from "./config.js";
@@ -14,6 +13,12 @@ import {
   parseDatabaseUint256Decimal,
   parseDecimalToScale
 } from "./uint256.js";
+import {
+  ULIQ_LOCK_GATE_VERSION,
+  calculateRequiredLockRaw,
+  decideUliqLockGate,
+  type UliqLockGateDecision
+} from "./math.js";
 
 const TOKEN_SCALE = 10n ** 18n;
 
@@ -24,6 +29,8 @@ export type UliqTierDecision = {
   aiDiscountBps: number;
   subscriptionDiscountBps: number;
   minUsdValue: string;
+  minimumLockDurationDays: number | null;
+  monetaryBenefitCaps: Record<string, unknown> | null;
 };
 
 export type UliqEntitlement = {
@@ -49,7 +56,7 @@ export type UliqEntitlement = {
   eligibleUsd: string;
   monetaryEligibleUsd: string;
   baseTier: string;
-  lockModifier: null;
+  lockModifier: string | null;
   effectiveTier: string;
   monetaryTier: string;
   tierConfigVersion: number;
@@ -101,7 +108,9 @@ export async function loadUliqTierConfigs(db: any, now = new Date()): Promise<Ul
       featureFlags: jsonObject(row.featureFlags),
       aiDiscountBps: Number(row.aiDiscountBps),
       subscriptionDiscountBps: Number(row.subscriptionDiscountBps),
-      minUsdValue: String(row.minUsdValue)
+      minUsdValue: String(row.minUsdValue),
+      minimumLockDurationDays: row.minimumLockDurationDays == null ? null : Number(row.minimumLockDurationDays),
+      monetaryBenefitCaps: row.monetaryBenefitCaps == null ? null : jsonObject(row.monetaryBenefitCaps)
     }));
 }
 
@@ -117,7 +126,9 @@ export function resolveUliqTier(eligibleUsdScaled: bigint, configs: UliqTierDeci
     featureFlags: {},
     aiDiscountBps: 0,
     subscriptionDiscountBps: 0,
-    minUsdValue: "0"
+    minUsdValue: "0",
+    minimumLockDurationDays: null,
+    monetaryBenefitCaps: null
   };
 }
 
@@ -193,7 +204,7 @@ function mapStoredEntitlement(row: any, tier: UliqTierDecision, monetaryTier: Ul
     eligibleUsd: String(row.eligibleUsd),
     monetaryEligibleUsd: formatScaledDecimal(calculateEligibleUsdScaled(decimalBigInt(row.monetaryEligibleRaw), String(row.referencePriceUsd))),
     baseTier: String(row.baseTier),
-    lockModifier: null,
+    lockModifier: row.lockModifier ?? null,
     effectiveTier: String(row.effectiveTier),
     monetaryTier: monetaryTier.code,
     tierConfigVersion: Number(row.tierConfigVersion),
@@ -251,7 +262,7 @@ export class UliqEntitlementService {
     const lockedRaw = BigInt(read.value.lockedRaw);
     const eligibleRaw = calculateEligibleRaw(walletRaw, vestingRaw, lockedRaw);
 
-    const [pending, qualifiedLots, exemptLots, allLots, cursor] = await Promise.all([
+    const [pending, exemptLots] = await Promise.all([
       this.db.uliqPresalePurchase.aggregate({
         where: { chainId: this.config.chainId, walletAddress: wallet, status: "PENDING_WITHDRAWAL" },
         _sum: { uliqAllocationRaw: true }
@@ -261,56 +272,17 @@ export class UliqEntitlementService {
           chainId: this.config.chainId,
           walletAddress: wallet,
           canonical: true,
-          monetaryEligibleAt: { lte: now }
-        },
-        _sum: { remainingRaw: true }
-      }),
-      this.db.uliqHoldingLot.aggregate({
-        where: {
-          chainId: this.config.chainId,
-          walletAddress: wallet,
-          canonical: true,
           provenance: "PRESALE_FINALIZED"
         },
         _sum: { remainingRaw: true }
-      }),
-      this.db.uliqHoldingLot.aggregate({
-        where: { chainId: this.config.chainId, walletAddress: wallet, canonical: true },
-        _sum: { remainingRaw: true }
-      }),
-      this.db.onchainSyncCursor.findUnique({ where: { id: `uliq:${this.config.chainId}:all` }, select: { lastProcessedBlock: true } })
+      })
     ]);
     const pendingPresaleRaw = decimalBigInt(pending?._sum?.uliqAllocationRaw);
-    const qualifiedRaw = decimalBigInt(qualifiedLots?._sum?.remainingRaw);
-    const monetaryEligibleRaw = qualifiedRaw > eligibleRaw ? eligibleRaw : qualifiedRaw;
+    // ADR-008 removes holding age as a monetary authorization gate. The
+    // balance remains useful for tier reporting; a benefit-specific canonical
+    // lock decision authorizes each monetary reservation separately.
+    const monetaryEligibleRaw = eligibleRaw;
     const presaleCooldownExemptRaw = decimalBigInt(exemptLots?._sum?.remainingRaw);
-    const untrackedRaw = calculateUntrackedEligibleRaw(eligibleRaw, decimalBigInt(allLots?._sum?.remainingRaw));
-    if (untrackedRaw > 0n && cursor && BigInt(cursor.lastProcessedBlock) >= head.number) {
-      await this.db.uliqHoldingLot.upsert({
-        where: {
-          chainId_sourceEventKey: {
-            chainId: this.config.chainId,
-            sourceEventKey: `unknown-reconcile:${wallet}:${head.number}`
-          }
-        },
-        create: {
-          userId,
-          chainId: this.config.chainId,
-          walletAddress: wallet,
-          provenance: "UNKNOWN",
-          sourceEventKey: `unknown-reconcile:${wallet}:${head.number}`,
-          lineageRoot: `unknown-reconcile:${wallet}:${head.number}`,
-          amountRaw: untrackedRaw.toString(),
-          remainingRaw: untrackedRaw.toString(),
-          acquiredAt: now,
-          monetaryEligibleAt: new Date(now.getTime() + ULIQ_HOLDING_COOLDOWN_SECONDS * 1_000),
-          asOfBlock: head.number,
-          blockHash: head.hash,
-          canonical: true
-        },
-        update: {}
-      });
-    }
     const price = await resolveUliqPriceSnapshot({
       db: this.db,
       config: this.config,
@@ -320,9 +292,8 @@ export class UliqEntitlementService {
       now
     });
     const eligibleUsdScaled = calculateEligibleUsdScaled(eligibleRaw, price.priceUsd);
-    const monetaryUsdScaled = calculateEligibleUsdScaled(monetaryEligibleRaw, price.priceUsd);
     const freshTier = resolveUliqTier(eligibleUsdScaled, tierConfigs);
-    const monetaryTier = resolveUliqTier(monetaryUsdScaled, tierConfigs);
+    const monetaryTier = freshTier;
     let effectiveTier = freshTier;
     if (price.qualityStatus !== "HEALTHY") {
       const previous = await this.db.uliqEntitlementSnapshot.findFirst({
@@ -350,8 +321,8 @@ export class UliqEntitlementService {
         eligibleRaw: eligibleRaw.toString(),
         featureEligibleRaw: eligibleRaw.toString(),
         monetaryEligibleRaw: monetaryEligibleRaw.toString(),
-        holdingCooldownSeconds: ULIQ_HOLDING_COOLDOWN_SECONDS,
-        holdingQualifiedAt: monetaryEligibleRaw > 0n ? now : null,
+        holdingCooldownSeconds: 0,
+        holdingQualifiedAt: null,
         presaleCooldownExemptRaw: presaleCooldownExemptRaw.toString(),
         pendingPresaleRaw: pendingPresaleRaw.toString(),
         referencePriceUsd: price.priceUsd,
@@ -360,7 +331,7 @@ export class UliqEntitlementService {
         degradationReason: price.degradationReason,
         eligibleUsd: formatScaledDecimal(eligibleUsdScaled),
         baseTier: freshTier.code,
-        lockModifier: null,
+        lockModifier: ULIQ_LOCK_GATE_VERSION,
         effectiveTier: effectiveTier.code,
         tierConfigVersion: effectiveTier.configVersion,
         priceSnapshotId: price.id,
@@ -369,5 +340,76 @@ export class UliqEntitlementService {
       }
     });
     return mapStoredEntitlement(stored, effectiveTier, monetaryTier);
+  }
+
+  async getLockDecisionForBenefit(params: {
+    userId: string;
+    requiredBenefitUntil: Date;
+    entitlement?: UliqEntitlement;
+    now?: Date;
+  }): Promise<UliqLockGateDecision & {
+    tierCode: string;
+    tierMinimumUsd: string;
+    priceSnapshotId: string;
+    configVersion: number;
+    lockerContractAddress: string;
+    monetaryBenefitCaps: Record<string, unknown> | null;
+  }> {
+    const now = params.now ?? new Date();
+    if (Number.isNaN(params.requiredBenefitUntil.getTime()) || params.requiredBenefitUntil <= now) {
+      throw new Error("uliq_invalid_required_benefit_until");
+    }
+    const entitlement = params.entitlement ?? await this.getForUser(params.userId, { forceRefresh: true, now });
+    const configs = await loadUliqTierConfigs(this.db, now);
+    const tier = configs.find((candidate) => (
+      candidate.code === entitlement.baseTier
+      && candidate.configVersion === entitlement.tierConfigVersion
+    ));
+    if (!tier) throw new Error("uliq_tier_config_missing");
+    const requiredLockedRaw = calculateRequiredLockRaw({
+      tierMinimumUsdScaled: parseDecimalToScale(tier.minUsdValue),
+      referencePriceUsdScaled: parseDecimalToScale(entitlement.referencePriceUsd)
+    });
+    const [cursor, positions] = await Promise.all([
+      this.db.onchainSyncCursor.findUnique({
+        where: { id: `uliq:${this.config.chainId}:all` },
+        select: { lastProcessedBlock: true, failureCount: true, lastError: true }
+      }),
+      this.db.uliqLockPosition.findMany({
+        where: {
+          chainId: this.config.chainId,
+          contractAddress: this.config.contracts.locker.toLowerCase(),
+          walletAddress: entitlement.walletAddress.toLowerCase(),
+          status: { in: ["ACTIVE", "MATURED"] },
+          asOfBlock: { lte: entitlement.asOfBlock }
+        },
+        orderBy: [{ unlockAt: "asc" }, { lockIdOnchain: "asc" }]
+      })
+    ]);
+    const stateFresh = Boolean(
+      cursor
+      && BigInt(cursor.lastProcessedBlock) >= entitlement.asOfBlock
+      && Number(cursor.failureCount ?? 0) === 0
+      && !cursor.lastError
+    );
+    return {
+      ...decideUliqLockGate({
+        requiredLockedRaw,
+        requiredBenefitUntil: params.requiredBenefitUntil,
+        stateFresh,
+        positions: positions.map((position: any) => ({
+          lockId: databaseUint256Decimal(position.lockIdOnchain, "lock_id_onchain"),
+          amountRaw: decimalBigInt(position.amountRaw),
+          unlockAt: position.unlockAt instanceof Date ? position.unlockAt : new Date(position.unlockAt),
+          withdrawn: position.status === "WITHDRAWN" || position.status === "ORPHANED"
+        }))
+      }),
+      tierCode: tier.code,
+      tierMinimumUsd: tier.minUsdValue,
+      priceSnapshotId: entitlement.priceSnapshotId,
+      configVersion: tier.configVersion,
+      lockerContractAddress: this.config.contracts.locker.toLowerCase(),
+      monetaryBenefitCaps: tier.monetaryBenefitCaps
+    };
   }
 }

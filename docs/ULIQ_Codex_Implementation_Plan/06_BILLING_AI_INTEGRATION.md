@@ -17,8 +17,8 @@ Ein Discount ist nur zulässig, wenn:
 - Entitlement Snapshot blockkonsistent und nicht stale ist.
 - Price und Tier Config gültig sind.
 - Wallet im Snapshot weiterhin die serverseitig verknüpfte User-Wallet ist.
-- regulär erworbene/frei übertragbare ULIQ für die benötigte monetäre Tier-Menge seit mindestens 24 Stunden gehalten werden.
-- oder die benötigte Menge aus einer canonical finalisierten Presale Allocation stammt, die vom zusätzlichen Cooldown ausgenommen ist.
+- ein finalisierter kanonischer Lock mindestens 25 % des aktuellen Tier-Minimums abdeckt.
+- die Summe qualifizierender Locks einen `unlockAt`-Timestamp am oder nach dem exakten Produktlaufzeitende besitzt.
 - eine monetäre `UliqBenefitReservation` erfolgreich angelegt wurde.
 
 Pending oder withdrawn Presale Allocations erhalten niemals einen Discount.
@@ -27,20 +27,27 @@ Pending oder withdrawn Presale Allocations erhalten niemals einen Discount.
 
 1. bestehende aktive `BillingPackage`-Preise und Cart Lines auflösen.
 2. Base Amount in Cents berechnen.
-3. frischen ULIQ Entitlement Snapshot erzeugen.
-4. Subscription Discount BPS aus versionierter Tier Config bestimmen.
-5. Discount mit definierter Integer-Rundung berechnen.
-6. ULIQ Benefit Reservation atomar anlegen.
-7. Final Amount in Cents und USDC Raw Units berechnen.
-8. bestehende Arbitrum-USDC-Billing-Order mit Snapshot erstellen.
-9. bestehenden USDC Submit-, Confirmation-, Review- und Reconciliation-Flow verwenden.
-10. Reservation bei erfolgreicher Aktivierung `CONSUMED` setzen und Benefit Ledger schreiben.
-11. bei Ablauf/Cancel/Fehler `RELEASED`, bei wirtschaftlicher Rückabwicklung `REVERSED` setzen.
+3. exaktes `plannedTerm` mit der bestehenden UTC-Kalendermonatslogik berechnen; frühe Renewals hängen am Ende der Term-Kette an.
+4. frischen ULIQ Entitlement Snapshot erzeugen.
+5. Subscription Discount BPS aus versionierter Tier Config bestimmen.
+6. finalisierte Lock-Abdeckung bis `plannedTerm.endsAt` prüfen.
+7. Discount mit definierter Integer-Rundung berechnen.
+8. ULIQ Benefit Reservation atomar anlegen.
+9. Final Amount in Cents und USDC Raw Units berechnen.
+10. bestehende Arbitrum-USDC-Billing-Order mit unveränderlichem Planned-Term-/Lock-Snapshot erstellen.
+11. bestehenden USDC Submit-, Confirmation-, Review- und Reconciliation-Flow verwenden.
+12. Reservation bei erfolgreicher Aktivierung `CONSUMED` setzen und Benefit Ledger schreiben.
+13. bei Ablauf/Cancel/Fehler `RELEASED`, bei wirtschaftlicher Rückabwicklung `REVERSED` setzen.
+
+Rabattierte Plan-Käufe unterstützen ausschließlich insgesamt 1, 6 oder 12 Billing-Monate. Scheitert das ULIQ-Gate, bleibt derselbe Kauf ohne ULIQ zum normalen aktiven `BillingPackage`-Preis möglich.
 
 ## AI Credits
 
 Der gleiche Ablauf gilt für AI-Credit-Pakete:
 
+- aktive Subscription, deren Order eine konsumierte ULIQ-Subscription-Discount-Reservation besitzt.
+- Lock-Abdeckung bis zum Ende genau dieser Subscription.
+- gültiger versionierter Monats-Cap; ohne Cap wird der AI-Discount fail-closed abgelehnt.
 - Basispreis des bestehenden Credit Packs.
 - AI Discount laut effective ULIQ Tier.
 - finaler Preis ausschließlich in USDC.
@@ -84,6 +91,8 @@ Billing Order und Line Items speichern rekonstruierbar:
 - Price Snapshot ID und Price Mode.
 - Tier Config Version.
 - Benefit Reservation ID.
+- geplantes Subscription-Start-, End- und Grace-Ende.
+- Lock-Gate-Version, Locker-Adresse, erforderlicher/qualifizierender Raw-Betrag, qualifizierende Lock-IDs und `requiredBenefitUntil`.
 - Base-/Discount-/Final-Aufteilung je Line, wenn mehrere Pakete enthalten sind.
 
 `amountCents` und `BillingOnchainPayment.expectedAmountRaw` entsprechen dem finalen Zahlbetrag.
@@ -109,7 +118,7 @@ Billing Order und Line Items speichern rekonstruierbar:
 ## Degradation
 
 - Price Feed Failure, Staleness > 30 Minuten oder Spot/TWAP-Deviation > 25 %: bestehendes bestätigtes Tier halten, keine neuen Upgrades und keine automatische Herabstufung.
-- Fehlt dagegen ein gültiger Entitlement-/Holding-Nachweis, gilt Standardpreis ohne ULIQ Discount.
+- Fehlt dagegen ein gültiger Entitlement-/Lock-Nachweis, gilt Standardpreis ohne ULIQ Discount.
 - kein automatisches Nachgewähren eines Discounts nach bereits abgeschlossener Standardpreis-Zahlung.
 - UI zeigt Grund und Zeitpunkt der letzten gültigen ULIQ-Prüfung.
 - Feature Access Grace und monetärer Discount Fallback sind getrennte Policies.
@@ -120,9 +129,13 @@ Billing Order und Line Items speichern rekonstruierbar:
 - exakte BPS- und Cent-Rundung.
 - Reservation Race und Idempotenz.
 - Quote Expiry.
-- regulär erworbene ULIQ vor/nach 24-Stunden-Holding-Cooldown.
-- finalisierte Presale Allocation ohne zusätzlichen Cooldown.
-- Rotation Wallet A -> Wallet B ohne unmittelbaren zweiten monetären Benefit.
+- Holding-Tier ohne Lock: Feature Access aktiv, monetärer Discount abgelehnt.
+- Lock-Betrag unter/auf 25-%-Schwelle sowie Ablauf eine Sekunde vor/exakt am Term-Ende.
+- aggregierte Locks, abgelaufene Locks und 31/184/366-Tage-Initiallaufzeiten.
+- 1/6/12-Kalendermonatsgrenzen, Leap Year und angehängte Early Renewals.
+- Extension qualifiziert erst nach kanonischer Finalisierung; Reorg invalidiert die Evidence.
+- AI-Discount ohne aktive rabattierte Subscription beziehungsweise ohne gültigen Monats-Cap.
+- Rotation Wallet A -> Wallet B ohne eigene Lock-Abdeckung.
 - Wallet-Wechsel während offener Quote.
 - Token-Transfer nach Snapshot.
 - Order Cancel, Expire, Fail, Review Required und Late Payment Recovery.

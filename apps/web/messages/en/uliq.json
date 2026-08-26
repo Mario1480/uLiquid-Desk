@@ -73,14 +73,35 @@
   },
   "locking": {
     "title": "Utility locking",
-    "description": "Pure utility locking for 30, 90, or 180 days — without APY, rewards, or distributions.",
+    "description": "Pure utility locking for 1, 6, or 12 months — without APY, rewards, or distributions. A longer term does not increase the discount.",
     "balance": "Locked balance",
     "amount": "ULIQ amount",
     "available": "Available wallet ULIQ",
     "duration": "Duration",
     "lock": "Approve & lock",
     "positions": "Lock positions",
-    "unlock": "Prepare unlock",
+    "positionsDescription": "Finalized lock terms and their current coverage for new subscription terms.",
+    "unlock": "Unlock",
+    "unlockAt": "Unlock available",
+    "remaining": "Remaining term",
+    "remainingDays": "{days} days",
+    "extensions": "Extensions",
+    "extendFor": "Extend coverage",
+    "extend": "Extend",
+    "extensionNotNeeded": "This lock already covers the selected term.",
+    "extensionPending": "Extension confirmed · finality and indexer reconciliation continue in the background.",
+    "discountGate": "Feature access uses the full eligible ULIQ balance. Monetary discounts additionally require at least 25% of the current tier minimum to be finalized and locked through the exact subscription end.",
+    "checkoutRequiredUntil": "The failed checkout requires lock coverage through {until}. Select the required checkout end below and confirm the extension in your wallet.",
+    "requiredCheckoutTerm": "Required checkout end",
+    "terms": {
+      "1": "1 month",
+      "6": "6 months",
+      "12": "12 months"
+    },
+    "coverage": {
+      "covered": "{term} covered",
+      "short": "{term} not covered"
+    },
     "empty": "No indexed lock positions yet."
   },
   "purchases": {
@@ -141,7 +162,14 @@
     "base": "Base price",
     "discount": "ULIQ discount",
     "final": "Final USDC price",
-    "expires": "Reservation expires"
+    "expires": "Reservation expires",
+    "lockCoverage": "Lock coverage through",
+    "lockedForBenefit": "Qualifying locked",
+    "lockGateFailure": "The discount requires {required} ULIQ locked through {until}. Currently {qualifying} ULIQ cover that term. Continue at standard price or extend the lock.",
+    "lockStateStale": "The finalized lock state is not current yet. The discount stays blocked until indexer reconciliation; standard pricing remains available.",
+    "aiSubscriptionRequired": "The AI credit discount is available only during an active subscription already purchased with a ULIQ discount.",
+    "aiCapExceeded": "This tier's monthly AI discount cap has been reached. Standard pricing remains available.",
+    "manageLock": "Review or extend lock"
   },
   "admin": {
     "eyebrow": "Platform Admin · Testnet",
@@ -176,6 +204,12 @@
     "released": "Released",
     "tiers": "Tier configuration",
     "tiersDescription": "Versioned thresholds and discounts. The testnet migration defaults all monetary discounts to zero.",
+    "lockGateTitle": "Lock gate configuration",
+    "lockGateDescription": "Monetary discounts require finalized lock coverage through the exact subscription end. Feature access remains independent.",
+    "lockGateVersion": "Gate version",
+    "coverageShare": "Required tier share",
+    "supportedTerms": "Initial terms",
+    "lockGateAuditHint": "Discount and AI-cap changes create a new tier version audited with actor, reason, old value, and new value.",
     "treasuryTitle": "Presale treasury",
     "treasuryDescription": "Store the desired receiving wallet, verify onchain state, and prepare Safe-compatible transactions for a controlled rotation.",
     "treasuryTwoStep": "Rotation is two-step: the contract owner proposes the new treasury, then that exact treasury must accept the role itself. The API never signs or submits transactions.",

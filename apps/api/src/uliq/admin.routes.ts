@@ -3,11 +3,25 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { getUliqFeatureFlags } from "./config.js";
-import { UliqPresaleService } from "./presale.service.js";
+import { UliqPresaleService, ULIQ_LOCK_TERMS } from "./presale.service.js";
 import { normalizeUliqTreasuryAddress, UliqTreasuryService } from "./treasury.service.js";
+import { ULIQ_LOCK_GATE_VERSION, ULIQ_REQUIRED_LOCK_SHARE_BPS } from "./math.js";
 
 const dexLaunchSchema = z.object({ dexLaunchTimestamp: z.string().trim().regex(/^[1-9]\d*$/).max(20) });
 const treasurySchema = z.object({ desiredAddress: z.string().trim().max(42) });
+const tierBenefitConfigSchema = z.object({
+  reason: z.string().trim().min(8).max(500),
+  tiers: z.array(z.object({
+    code: z.string().trim().min(1).max(32),
+    subscriptionDiscountBps: z.number().int().min(0).max(10_000),
+    aiDiscountBps: z.number().int().min(0).max(10_000),
+    aiCreditDiscountMonthlyCents: z.number().int().min(0).max(2_147_483_647).nullable()
+  })).min(1).max(20)
+}).superRefine((value, ctx) => {
+  if (new Set(value.tiers.map((tier) => tier.code)).size !== value.tiers.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tiers"], message: "Tier codes must be unique" });
+  }
+});
 
 function jsonSafe(value: unknown): any {
   if (typeof value === "bigint") return value.toString();
@@ -27,6 +41,7 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
   requireSuperadmin(res: express.Response): Promise<boolean>;
   consumeRecentReauth: express.RequestHandler;
   recordAdminAuditEvent(input: {
+    tx?: any;
     actorUserId: string;
     action: string;
     targetType: string;
@@ -73,7 +88,7 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       deps.db.uliqLockPosition.aggregate({ where: { status: "ACTIVE" }, _sum: { amountRaw: true }, _count: { _all: true } }),
       deps.db.uliqTierConfig.findMany({ where: { enabled: true }, orderBy: [{ version: "desc" }, { minUsdValue: "asc" }] }),
       deps.db.platformAlert.findMany({ where: { source: { startsWith: "uliq" } }, orderBy: { createdAt: "desc" }, take: 20 }),
-      deps.db.adminAuditEvent.findMany({ where: { targetType: { in: ["uliq_presale", "uliq_treasury"] } }, orderBy: { createdAt: "desc" }, take: 20 })
+      deps.db.adminAuditEvent.findMany({ where: { targetType: { in: ["uliq_presale", "uliq_treasury", "uliq_tier_config"] } }, orderBy: { createdAt: "desc" }, take: 20 })
     ]);
     return res.json(jsonSafe({
       overview,
@@ -84,10 +99,111 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       price,
       stats: { purchases, vesting, locks },
       tiers,
+      lockGate: {
+        version: ULIQ_LOCK_GATE_VERSION,
+        coverageShareBps: ULIQ_REQUIRED_LOCK_SHARE_BPS,
+        supportedTerms: ULIQ_LOCK_TERMS,
+        tierCapStatus: tiers.map((tier: any) => ({
+          code: String(tier.code),
+          version: Number(tier.version),
+          aiCreditDiscountMonthlyCents: tier.monetaryBenefitCaps
+            && typeof tier.monetaryBenefitCaps === "object"
+            && !Array.isArray(tier.monetaryBenefitCaps)
+            ? tier.monetaryBenefitCaps.aiCreditDiscountMonthlyCents ?? null
+            : null,
+          configured: Boolean(
+            tier.monetaryBenefitCaps
+            && typeof tier.monetaryBenefitCaps === "object"
+            && !Array.isArray(tier.monetaryBenefitCaps)
+            && Number.isSafeInteger(Number(tier.monetaryBenefitCaps.aiCreditDiscountMonthlyCents))
+          )
+        }))
+      },
       alerts,
       audit
     }));
   });
+
+  app.put(
+    "/admin/uliq/tier-benefits",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!enabled(res)) return;
+      const parsed = tierBenefitConfigSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const actor = getUserFromLocals(res);
+        const result = await deps.db.$transaction(async (tx: any) => {
+          const current = await tx.uliqTierConfig.findMany({
+            where: { enabled: true, effectiveUntil: null },
+            orderBy: [{ version: "desc" }, { minUsdValue: "asc" }]
+          });
+          const currentVersion = current.length
+            ? Math.max(...current.map((tier: any) => Number(tier.version)))
+            : 0;
+          const active = current.filter((tier: any) => Number(tier.version) === currentVersion);
+          const requested = new Map(parsed.data.tiers.map((tier) => [tier.code, tier]));
+          if (
+            active.length === 0
+            || requested.size !== active.length
+            || active.some((tier: any) => !requested.has(String(tier.code)))
+          ) throw new Error("uliq_tier_config_set_mismatch");
+          const now = new Date();
+          const nextVersion = currentVersion + 1;
+          const oldValue = active.map((tier: any) => ({
+            code: tier.code,
+            version: tier.version,
+            subscriptionDiscountBps: tier.subscriptionDiscountBps,
+            aiDiscountBps: tier.aiDiscountBps,
+            monetaryBenefitCaps: tier.monetaryBenefitCaps
+          }));
+          await tx.uliqTierConfig.updateMany({
+            where: { version: currentVersion, enabled: true, effectiveUntil: null },
+            data: { effectiveUntil: now }
+          });
+          for (const tier of active) {
+            const next = requested.get(String(tier.code))!;
+            await tx.uliqTierConfig.create({
+              data: {
+                code: tier.code,
+                version: nextVersion,
+                enabled: true,
+                minUsdValue: tier.minUsdValue,
+                minimumLockDurationDays: null,
+                featureFlags: tier.featureFlags,
+                subscriptionDiscountBps: next.subscriptionDiscountBps,
+                aiDiscountBps: next.aiDiscountBps,
+                monetaryBenefitCaps: next.aiCreditDiscountMonthlyCents == null
+                  ? Prisma.DbNull
+                  : { aiCreditDiscountMonthlyCents: next.aiCreditDiscountMonthlyCents },
+                effectiveFrom: now,
+                effectiveUntil: null,
+                createdByUserId: actor.id,
+                reason: parsed.data.reason
+              }
+            });
+          }
+          const newValue = parsed.data.tiers.map((tier) => ({ ...tier, version: nextVersion }));
+          await deps.recordAdminAuditEvent({
+            tx,
+            actorUserId: actor.id,
+            action: "uliq_tier_benefits_version_created",
+            targetType: "uliq_tier_config",
+            targetId: String(nextVersion),
+            metadata: { reason: parsed.data.reason, oldValue, newValue },
+            ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+          });
+          return { version: nextVersion, effectiveFrom: now, tiers: newValue };
+        });
+        return res.json(jsonSafe(result));
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(reason.includes("mismatch") ? 409 : 500).json({ error: reason });
+      }
+    }
+  );
 
   app.put(
     "/admin/uliq/treasury",

@@ -4,6 +4,7 @@ import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { mapUliqPurchaseTrackingForApi } from "./purchaseTracking.service.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
 import { databaseUint256Decimal, normalizeUliqAddress, parseUint256Decimal } from "./uint256.js";
+import { addBillingMonths } from "../billing/termWindow.js";
 
 const SALE_STATES = [
   "DRAFT",
@@ -18,11 +19,16 @@ const SALE_STATES = [
 ] as const;
 
 const PURCHASE_STATES = ["PENDING_WITHDRAWAL", "WITHDRAWN", "FINALIZED"] as const;
-const LOCK_DURATIONS: Record<number, bigint> = {
-  30: 30n * 24n * 60n * 60n,
-  90: 90n * 24n * 60n * 60n,
-  180: 180n * 24n * 60n * 60n
+export const ULIQ_LOCK_DURATIONS: Record<number, bigint> = {
+  31: 31n * 24n * 60n * 60n,
+  184: 184n * 24n * 60n * 60n,
+  366: 366n * 24n * 60n * 60n
 };
+export const ULIQ_LOCK_TERMS = [
+  { billingMonths: 1, durationDays: 31, label: "1_MONTH" },
+  { billingMonths: 6, durationDays: 184, label: "6_MONTHS" },
+  { billingMonths: 12, durationDays: 366, label: "12_MONTHS" }
+] as const;
 
 function timestamp(value: bigint): string | null {
   return value === 0n ? null : new Date(Number(value) * 1_000).toISOString();
@@ -266,19 +272,39 @@ export class UliqPresaleService {
       blockNumber: head.number
     }));
     const positions = await this.db.uliqLockPosition.findMany({
-      where: { chainId: this.config.chainId, walletAddress: wallet, status: { not: "ORPHANED" } },
+      where: {
+        chainId: this.config.chainId,
+        contractAddress: this.config.contracts.locker.toLowerCase(),
+        walletAddress: wallet,
+        status: { not: "ORPHANED" }
+      },
       orderBy: [{ startAt: "desc" }, { id: "desc" }]
     });
+    const asOf = new Date(Number(head.timestamp) * 1_000);
+    const coverageTerms = ULIQ_LOCK_TERMS.map((term) => ({
+      ...term,
+      requiredUntil: addBillingMonths(asOf, term.billingMonths).toISOString()
+    }));
     return {
       walletAddress: wallet,
       lockedBalanceRaw: BigInt(read.value).toString(),
-      positions: positions.map((row: any) => ({
-        ...row,
-        lockIdOnchain: databaseUint256Decimal(row.lockIdOnchain, "lock_id_onchain"),
-        amountRaw: databaseUint256Decimal(row.amountRaw, "lock_amount_raw"),
-        asOfBlock: BigInt(row.asOfBlock).toString()
-      })),
-      supportedDurationsDays: [30, 90, 180],
+      positions: positions.map((row: any) => {
+        const unlockAt = row.unlockAt instanceof Date ? row.unlockAt : new Date(row.unlockAt);
+        return {
+          ...row,
+          lockIdOnchain: databaseUint256Decimal(row.lockIdOnchain, "lock_id_onchain"),
+          amountRaw: databaseUint256Decimal(row.amountRaw, "lock_amount_raw"),
+          asOfBlock: BigInt(row.asOfBlock).toString(),
+          remainingCoverageSeconds: Math.max(0, Math.floor((unlockAt.getTime() - asOf.getTime()) / 1_000)),
+          qualifiesFor: Object.fromEntries(coverageTerms.map((term) => [
+            String(term.billingMonths),
+            unlockAt.getTime() >= new Date(term.requiredUntil).getTime()
+          ]))
+        };
+      }),
+      supportedDurations: ULIQ_LOCK_TERMS,
+      supportedDurationsDays: ULIQ_LOCK_TERMS.map((term) => term.durationDays),
+      coverageTerms,
       asOfBlock: head.number.toString(),
       blockHash: head.hash
     };
@@ -287,7 +313,7 @@ export class UliqPresaleService {
   async prepareLock(params: { userId: string; amountRaw: unknown; durationDays: number }) {
     const wallet = await this.requireWallet(params.userId);
     const amount = parseUint256Decimal(params.amountRaw, "amount_raw");
-    const duration = LOCK_DURATIONS[params.durationDays];
+    const duration = ULIQ_LOCK_DURATIONS[params.durationDays];
     if (!duration) throw new Error("unsupported_lock_duration");
     return {
       approval: transactionRequest(this.config.chainId, this.config.contracts.token, encodeFunctionData({
@@ -311,6 +337,36 @@ export class UliqPresaleService {
       functionName: "unlock",
       args: [lockId]
     }), wallet);
+  }
+
+  async prepareLockExtension(params: { userId: string; lockId: unknown; newUnlockAt: unknown }) {
+    const wallet = await this.requireWallet(params.userId);
+    const lockId = parseUint256Decimal(params.lockId, "lock_id");
+    const newUnlockAt = parseUint256Decimal(params.newUnlockAt, "new_unlock_at");
+    if (newUnlockAt > (1n << 64n) - 1n) throw new Error("invalid_lock_extension_timestamp");
+    const head = await getConsistentFinalizedBlock(this.rpc);
+    const read = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
+      address: this.config.contracts.locker,
+      abi: uliqLockerAbi,
+      functionName: "locks",
+      args: [lockId],
+      blockNumber: head.number
+    }));
+    const [owner, , , currentUnlockAt, withdrawn] = read.value;
+    if (String(owner).toLowerCase() !== wallet) throw new Error("lock_wallet_mismatch");
+    if (Boolean(withdrawn)) throw new Error("lock_already_withdrawn");
+    if (newUnlockAt <= BigInt(currentUnlockAt)) throw new Error("lock_expiry_not_increasing");
+    return {
+      transaction: transactionRequest(this.config.chainId, this.config.contracts.locker, encodeFunctionData({
+        abi: uliqLockerAbi,
+        functionName: "extendLock",
+        args: [lockId, newUnlockAt]
+      }), wallet),
+      previousUnlockAt: timestamp(BigInt(currentUnlockAt)),
+      newUnlockAt: timestamp(newUnlockAt),
+      asOfBlock: head.number.toString(),
+      blockHash: head.hash
+    };
   }
 
   async prepareDexLaunchTimestamp(value: unknown) {

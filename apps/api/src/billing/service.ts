@@ -25,6 +25,7 @@ import {
   prepareUliqBillingBenefit,
   releaseUliqBenefitReservationInTransaction,
   resolveUliqDiscountSelection,
+  UliqBenefitGateError,
   type PreparedUliqBillingBenefit
 } from "../uliq/benefitReservation.service.js";
 import { allocateUliqDiscountAcrossLines } from "../uliq/math.js";
@@ -34,6 +35,13 @@ import {
   buildRealExchangeAccountCapacityWhere
 } from "../admission/quotaAdmission.js";
 import { CANONICAL_STAGE4_PACKAGES, canonicalPackageByCode } from "./canonicalPackages.js";
+import {
+  addBillingGracePeriod,
+  addBillingMonths,
+  planSubscriptionTermWindow
+} from "./termWindow.js";
+
+export { addBillingMonths, planSubscriptionTermWindow } from "./termWindow.js";
 
 const db = prisma as any;
 
@@ -409,46 +417,8 @@ function readPlanValidUntil(row: any): Date | null {
   return null;
 }
 
-export function addBillingMonths(base: Date, months: number): Date {
-  const count = Math.max(1, Math.trunc(months));
-  const sourceDay = base.getUTCDate();
-  const next = new Date(base);
-  next.setUTCDate(1);
-  next.setUTCMonth(next.getUTCMonth() + count);
-  const lastDay = new Date(Date.UTC(
-    next.getUTCFullYear(),
-    next.getUTCMonth() + 1,
-    0,
-    next.getUTCHours(),
-    next.getUTCMinutes(),
-    next.getUTCSeconds(),
-    next.getUTCMilliseconds()
-  )).getUTCDate();
-  next.setUTCDate(Math.min(sourceDay, lastDay));
-  return next;
-}
-
 function addGracePeriod(base: Date): Date {
-  return new Date(base.getTime() + BILLING_GRACE_PERIOD_MS);
-}
-
-export function planSubscriptionTermWindow(params: {
-  now: Date;
-  billingMonths: number;
-  latestTerm?: { endsAt: Date; graceEndsAt: Date } | null;
-  legacyValidUntil?: Date | null;
-}): { startsAt: Date; endsAt: Date; graceEndsAt: Date } {
-  let startsAt = params.now;
-  if (params.latestTerm && params.latestTerm.graceEndsAt.getTime() > params.now.getTime()) {
-    startsAt = params.latestTerm.endsAt;
-  } else if (
-    params.legacyValidUntil
-    && addGracePeriod(params.legacyValidUntil).getTime() > params.now.getTime()
-  ) {
-    startsAt = params.legacyValidUntil;
-  }
-  const endsAt = addBillingMonths(startsAt, params.billingMonths);
-  return { startsAt, endsAt, graceEndsAt: addGracePeriod(endsAt) };
+  return addBillingGracePeriod(base);
 }
 
 export function buildSubscriptionMonthlyGrantSchedule(startsAt: Date, endsAt: Date): Date[] {
@@ -2410,6 +2380,50 @@ function buildDiscountedCheckoutOrderItems(
   }));
 }
 
+async function planDiscountedSubscriptionTermWindow(params: {
+  userId: string;
+  planLine: CheckoutResolvedLine | undefined;
+  immediateUpgrade: ImmediatePremiumUpgradePricing | null;
+  now: Date;
+}): Promise<{ startsAt: Date; endsAt: Date; graceEndsAt: Date } | null> {
+  if (!params.planLine) return null;
+  if (params.immediateUpgrade) {
+    const sourceTerm = await db.subscriptionTerm.findUnique({
+      where: { id: params.immediateUpgrade.sourceTermId },
+      select: { userId: true, startsAt: true, endsAt: true, graceEndsAt: true }
+    });
+    if (
+      !sourceTerm
+      || sourceTerm.userId !== params.userId
+      || sourceTerm.endsAt.toISOString() !== params.immediateUpgrade.sourceTermEndsAt
+      || sourceTerm.graceEndsAt.toISOString() !== params.immediateUpgrade.sourceTermGraceEndsAt
+    ) throw new Error("premium_upgrade_source_term_changed");
+    return {
+      startsAt: sourceTerm.startsAt,
+      endsAt: sourceTerm.endsAt,
+      graceEndsAt: sourceTerm.graceEndsAt
+    };
+  }
+  const [latestTerm, subscription] = await Promise.all([
+    db.subscriptionTerm.findFirst({
+      where: { userId: params.userId },
+      select: { endsAt: true, graceEndsAt: true },
+      orderBy: [{ endsAt: "desc" }, { createdAt: "desc" }]
+    }),
+    db.userSubscription.findUnique({
+      where: { userId: params.userId },
+      select: { planValidUntil: true, proValidUntil: true }
+    })
+  ]);
+  return planSubscriptionTermWindow({
+    now: params.now,
+    billingMonths: normalizeInt(params.planLine.pkg?.billingMonths, 1, 1)
+      * normalizeInt(params.planLine.quantity, 1, 1),
+    latestTerm,
+    legacyValidUntil: readPlanValidUntil(subscription)
+  });
+}
+
 async function expireStalePendingBillingOrders(userId: string, now = new Date()): Promise<number> {
   const result = await db.billingOrder.updateMany({
     where: {
@@ -2552,12 +2566,36 @@ export async function createBillingCheckout(params: {
   const eligibleUliqBaseAmountCents = uliqSelection
     ? uliqSelection.eligibleLineIndexes.reduce((sum, index) => sum + lines[index].lineAmountCents, 0)
     : 0;
+  const discountedBillingMonths = planLine
+    ? normalizeInt(planLine.pkg?.billingMonths, 1, 1) * normalizeInt(planLine.quantity, 1, 1)
+    : null;
+  if (
+    uliqSelection?.benefitType === "SUBSCRIPTION_DISCOUNT"
+    && discountedBillingMonths !== 1
+    && discountedBillingMonths !== 6
+    && discountedBillingMonths !== 12
+  ) {
+    throw new UliqBenefitGateError("uliq_discount_term_unsupported", {
+      billingMonths: discountedBillingMonths,
+      supportedBillingMonths: [1, 6, 12]
+    });
+  }
+  const plannedTermWindow = uliqSelection?.benefitType === "SUBSCRIPTION_DISCOUNT"
+    ? await planDiscountedSubscriptionTermWindow({
+      userId: params.userId,
+      planLine,
+      immediateUpgrade,
+      now
+    })
+    : null;
   const uliqBenefit = uliqSelection
     ? await prepareUliqBillingBenefit({
       db,
       userId: params.userId,
       baseAmountCents: eligibleUliqBaseAmountCents,
       benefitType: uliqSelection.benefitType,
+      requiredBenefitUntil: plannedTermWindow?.endsAt,
+      plannedTermWindow,
       now
     })
     : null;
@@ -2576,7 +2614,16 @@ export async function createBillingCheckout(params: {
       priceSnapshotId: uliqBenefit.priceSnapshotId,
       asOfBlock: uliqBenefit.asOfBlock.toString(),
       configVersion: uliqBenefit.configVersion,
-      expiresAt: uliqBenefit.expiresAt.toISOString()
+      expiresAt: uliqBenefit.expiresAt.toISOString(),
+      lockGateVersion: uliqBenefit.lockDecision.version,
+      requiredBenefitUntil: uliqBenefit.lockDecision.requiredBenefitUntil.toISOString(),
+      requiredLockedRaw: uliqBenefit.lockDecision.requiredLockedRaw,
+      qualifyingLockedRaw: uliqBenefit.lockDecision.qualifyingLockedRaw,
+      plannedTermWindow: uliqBenefit.plannedTermWindow ? {
+        startsAt: uliqBenefit.plannedTermWindow.startsAt.toISOString(),
+        endsAt: uliqBenefit.plannedTermWindow.endsAt.toISOString(),
+        graceEndsAt: uliqBenefit.plannedTermWindow.graceEndsAt.toISOString()
+      } : null
     } : null,
     items: lines.map((line) => ({
       packageId: line.packageId,
@@ -2647,6 +2694,9 @@ export async function createBillingCheckout(params: {
           uliqPriceSnapshotId: uliqBenefit?.priceSnapshotId ?? null,
           uliqWalletAddress: uliqBenefit?.walletAddress ?? null,
           uliqAsOfBlock: uliqBenefit?.asOfBlock ?? null,
+          plannedTermStartsAt: uliqBenefit?.plannedTermWindow?.startsAt ?? null,
+          plannedTermEndsAt: uliqBenefit?.plannedTermWindow?.endsAt ?? null,
+          plannedTermGraceEndsAt: uliqBenefit?.plannedTermWindow?.graceEndsAt ?? null,
           items: {
             create: buildDiscountedCheckoutOrderItems(
               lines,
@@ -4058,6 +4108,11 @@ export function isBillingFinalizationReviewError(error: unknown): boolean {
     || reason === "confirmed_order_invalid_cart"
     || reason === "ai_credit_balance_out_of_range"
     || reason === "term_activation_failed"
+    || reason === "uliq_planned_term_missing"
+    || reason === "uliq_lock_required"
+    || reason === "uliq_lock_amount_insufficient"
+    || reason === "uliq_lock_term_insufficient"
+    || reason === "uliq_lock_state_stale"
   );
 }
 
@@ -4360,7 +4415,17 @@ async function finalizeConfirmedBillingOrder(
         orderBy: [{ endsAt: "desc" }, { createdAt: "desc" }]
       });
       const months = normalizeInt(planLine.pkg.billingMonths, 1, 1) * normalizeInt(planLine.quantity, 1, 1);
-      const { startsAt, endsAt, graceEndsAt } = planSubscriptionTermWindow({
+      const persistedWindow = order.plannedTermStartsAt && order.plannedTermEndsAt && order.plannedTermGraceEndsAt
+        ? {
+          startsAt: order.plannedTermStartsAt,
+          endsAt: order.plannedTermEndsAt,
+          graceEndsAt: order.plannedTermGraceEndsAt
+        }
+        : null;
+      if (order.uliqBenefitReservationId && !persistedWindow) {
+        throw new Error("uliq_planned_term_missing");
+      }
+      const { startsAt, endsAt, graceEndsAt } = persistedWindow ?? planSubscriptionTermWindow({
         now,
         billingMonths: months,
         latestTerm,

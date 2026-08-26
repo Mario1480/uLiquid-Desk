@@ -2,6 +2,7 @@ import { getUliqFeatureFlags, ULIQ_RESERVATION_TTL_MS } from "./config.js";
 import { UliqEntitlementService, type UliqEntitlement } from "./entitlement.service.js";
 import { calculateUliqDiscountCents, type UliqDiscountAllocation } from "./math.js";
 import { parseDatabaseUint256Decimal } from "./uint256.js";
+import type { UliqLockGateDecision } from "./math.js";
 
 export type UliqBenefitType = "SUBSCRIPTION_DISCOUNT" | "AI_CREDIT_DISCOUNT";
 
@@ -23,7 +24,26 @@ export type PreparedUliqBillingBenefit = UliqDiscountAllocation & {
   expiresAt: Date;
   priceQualityStatus: string;
   degradationReason: string | null;
+  lockDecision: UliqLockGateDecision;
+  plannedTermWindow: {
+    startsAt: Date;
+    endsAt: Date;
+    graceEndsAt: Date;
+  } | null;
+  sourceSubscriptionTermId: string | null;
+  aiMonthlyCapCents: number | null;
+  lockerContractAddress: string;
 };
+
+export class UliqBenefitGateError extends Error {
+  constructor(
+    code: string,
+    readonly details: Record<string, unknown> = {}
+  ) {
+    super(code);
+    this.name = "UliqBenefitGateError";
+  }
+}
 
 function centsToUsdDecimal(cents: number): string {
   if (!Number.isSafeInteger(cents) || cents < 0) throw new Error("uliq_invalid_amount_cents");
@@ -64,18 +84,75 @@ export async function prepareUliqBillingBenefit(params: {
   userId: string;
   baseAmountCents: number;
   benefitType: UliqBenefitType;
-  entitlementService?: Pick<UliqEntitlementService, "getForUser">;
+  entitlementService?: Pick<UliqEntitlementService, "getForUser" | "getLockDecisionForBenefit">;
+  requiredBenefitUntil?: Date;
+  plannedTermWindow?: { startsAt: Date; endsAt: Date; graceEndsAt: Date } | null;
   now?: Date;
 }): Promise<PreparedUliqBillingBenefit> {
   const flags = getUliqFeatureFlags();
   if (!flags.enabled || !flags.discountsEnabled) throw new Error("uliq_discounts_disabled");
   const now = params.now ?? new Date();
-  const entitlement = await (params.entitlementService ?? new UliqEntitlementService(params.db)).getForUser(
+  const entitlementService = params.entitlementService ?? new UliqEntitlementService(params.db);
+  const entitlement = await entitlementService.getForUser(
     params.userId,
     { forceRefresh: true, now }
   );
   if (entitlement.validUntil <= now) throw new Error("uliq_entitlement_expired");
   if (entitlement.priceQualityStatus !== "HEALTHY") throw new Error("uliq_price_degraded");
+  let requiredBenefitUntil = params.requiredBenefitUntil ?? null;
+  let sourceSubscriptionTermId: string | null = null;
+  if (params.benefitType === "AI_CREDIT_DISCOUNT") {
+    const activeDiscountedTerm = await params.db.subscriptionTerm.findFirst({
+      where: {
+        userId: params.userId,
+        status: "ACTIVE",
+        startsAt: { lte: now },
+        endsAt: { gt: now },
+        order: {
+          uliqBenefitReservation: {
+            benefitType: "SUBSCRIPTION_DISCOUNT",
+            status: "CONSUMED"
+          }
+        }
+      },
+      include: { order: { include: { uliqBenefitReservation: true } } },
+      orderBy: [{ endsAt: "desc" }, { createdAt: "desc" }]
+    });
+    if (!activeDiscountedTerm) throw new UliqBenefitGateError("uliq_ai_discounted_subscription_required");
+    requiredBenefitUntil = activeDiscountedTerm.endsAt;
+    sourceSubscriptionTermId = String(activeDiscountedTerm.id);
+  }
+  if (!requiredBenefitUntil || requiredBenefitUntil <= now) {
+    throw new UliqBenefitGateError("uliq_lock_term_insufficient", {
+      requiredBenefitUntil: requiredBenefitUntil?.toISOString() ?? null
+    });
+  }
+  const lockDecision = await entitlementService.getLockDecisionForBenefit({
+    userId: params.userId,
+    requiredBenefitUntil,
+    entitlement,
+    now
+  });
+  if (!lockDecision.qualifies) {
+    throw new UliqBenefitGateError(lockDecision.failureReason ?? "uliq_lock_required", {
+      requiredLockedRaw: lockDecision.requiredLockedRaw,
+      qualifyingLockedRaw: lockDecision.qualifyingLockedRaw,
+      qualifyingLockIds: lockDecision.qualifyingLockIds,
+      requiredBenefitUntil: lockDecision.requiredBenefitUntil.toISOString(),
+      coverageShareBps: lockDecision.coverageShareBps,
+      tier: lockDecision.tierCode
+    });
+  }
+  let aiMonthlyCapCents: number | null = null;
+  if (params.benefitType === "AI_CREDIT_DISCOUNT") {
+    aiMonthlyCapCents = readAiMonthlyDiscountCapCents(lockDecision.monetaryBenefitCaps);
+    if (aiMonthlyCapCents == null) {
+      throw new UliqBenefitGateError("uliq_ai_cap_unconfigured", {
+        tier: lockDecision.tierCode,
+        configVersion: lockDecision.configVersion
+      });
+    }
+  }
   const discountBps = params.benefitType === "AI_CREDIT_DISCOUNT"
     ? entitlement.aiDiscountBps
     : entitlement.subscriptionDiscountBps;
@@ -93,8 +170,80 @@ export async function prepareUliqBillingBenefit(params: {
     discountBps,
     expiresAt: new Date(now.getTime() + ULIQ_RESERVATION_TTL_MS),
     priceQualityStatus: entitlement.priceQualityStatus,
-    degradationReason: entitlement.degradationReason
+    degradationReason: entitlement.degradationReason,
+    lockDecision,
+    plannedTermWindow: params.plannedTermWindow ?? null,
+    sourceSubscriptionTermId,
+    aiMonthlyCapCents,
+    lockerContractAddress: lockDecision.lockerContractAddress
   };
+}
+
+function readAiMonthlyDiscountCapCents(value: Record<string, unknown> | null): number | null {
+  const raw = value?.aiCreditDiscountMonthlyCents;
+  if (typeof raw !== "number" && typeof raw !== "string") return null;
+  const parsed = typeof raw === "number" ? raw : Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function usdDecimalToCents(value: unknown): number {
+  const normalized = String(value ?? "0");
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) throw new Error("uliq_invalid_discount_amount");
+  const [whole, fraction = ""] = normalized.split(".");
+  const trailing = fraction.slice(2);
+  if (trailing && /[1-9]/.test(trailing)) throw new Error("uliq_discount_subcent_not_supported");
+  const cents = BigInt(whole) * 100n + BigInt((fraction + "00").slice(0, 2));
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("uliq_discount_amount_too_large");
+  return Number(cents);
+}
+
+function utcMonthWindow(now: Date): { startsAt: Date; endsAt: Date } {
+  return {
+    startsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+    endsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+  };
+}
+
+async function requireCanonicalLockEvidence(params: {
+  tx: any;
+  chainId: number;
+  lockerContractAddress: string;
+  walletAddress: string;
+  asOfBlock: bigint;
+  requiredBenefitUntil: Date;
+  requiredLockedRaw: bigint;
+  qualifyingLockIds: string[];
+}): Promise<void> {
+  const cursor = await params.tx.onchainSyncCursor.findUnique({
+    where: { id: `uliq:${params.chainId}:all` }
+  });
+  if (
+    !cursor
+    || BigInt(cursor.lastProcessedBlock) < params.asOfBlock
+    || Number(cursor.failureCount ?? 0) !== 0
+    || cursor.lastError
+  ) throw new UliqBenefitGateError("uliq_lock_state_stale");
+  const locks = await params.tx.uliqLockPosition.findMany({
+    where: {
+      chainId: params.chainId,
+      contractAddress: params.lockerContractAddress,
+      walletAddress: params.walletAddress,
+      lockIdOnchain: { in: params.qualifyingLockIds },
+      status: { in: ["ACTIVE", "MATURED"] },
+      unlockAt: { gte: params.requiredBenefitUntil }
+    }
+  });
+  const qualifyingRaw = locks.reduce(
+    (sum: bigint, lock: any) => sum + parseDatabaseUint256Decimal(lock.amountRaw, "lock_amount_raw"),
+    0n
+  );
+  if (qualifyingRaw < params.requiredLockedRaw) {
+    throw new UliqBenefitGateError("uliq_lock_amount_insufficient", {
+      requiredLockedRaw: params.requiredLockedRaw.toString(),
+      qualifyingLockedRaw: qualifyingRaw.toString(),
+      requiredBenefitUntil: params.requiredBenefitUntil.toISOString()
+    });
+  }
 }
 
 export async function createUliqBenefitReservationInTransaction(params: {
@@ -116,10 +265,12 @@ export async function createUliqBenefitReservationInTransaction(params: {
       select: {
         userId: true,
         walletAddress: true,
+        chainId: true,
         validUntil: true,
         priceSnapshotId: true,
         asOfBlock: true,
-        monetaryEligibleRaw: true
+        monetaryEligibleRaw: true,
+        lockModifier: true
       }
     })
   ]);
@@ -132,10 +283,20 @@ export async function createUliqBenefitReservationInTransaction(params: {
     || snapshot.validUntil <= now
     || String(snapshot.priceSnapshotId) !== params.prepared.priceSnapshotId
     || BigInt(snapshot.asOfBlock) !== params.prepared.asOfBlock
-    || parseDatabaseUint256Decimal(snapshot.monetaryEligibleRaw, "monetary_eligible_raw") <= 0n
+    || snapshot.lockModifier !== params.prepared.lockDecision.version
   ) {
     throw new Error("uliq_entitlement_invalid");
   }
+  await requireCanonicalLockEvidence({
+    tx: params.tx,
+    chainId: Number(snapshot.chainId),
+    lockerContractAddress: params.prepared.lockerContractAddress,
+    walletAddress: linkedWallet,
+    asOfBlock: params.prepared.asOfBlock,
+    requiredBenefitUntil: params.prepared.lockDecision.requiredBenefitUntil,
+    requiredLockedRaw: BigInt(params.prepared.lockDecision.requiredLockedRaw),
+    qualifyingLockIds: params.prepared.lockDecision.qualifyingLockIds
+  });
   const existing = await params.tx.uliqBenefitReservation.findUnique({
     where: { idempotencyKey: params.idempotencyKey }
   });
@@ -150,6 +311,41 @@ export async function createUliqBenefitReservationInTransaction(params: {
     }
     return existing;
   }
+  if (params.prepared.benefitType === "AI_CREDIT_DISCOUNT") {
+    const sourceTerm = params.prepared.sourceSubscriptionTermId
+      ? await params.tx.subscriptionTerm.findUnique({
+        where: { id: params.prepared.sourceSubscriptionTermId },
+        include: { order: { include: { uliqBenefitReservation: true } } }
+      })
+      : null;
+    if (
+      !sourceTerm
+      || sourceTerm.userId !== params.prepared.userId
+      || sourceTerm.status !== "ACTIVE"
+      || sourceTerm.endsAt.getTime() !== params.prepared.lockDecision.requiredBenefitUntil.getTime()
+      || sourceTerm.order?.uliqBenefitReservation?.benefitType !== "SUBSCRIPTION_DISCOUNT"
+      || sourceTerm.order?.uliqBenefitReservation?.status !== "CONSUMED"
+    ) throw new UliqBenefitGateError("uliq_ai_discounted_subscription_required");
+    if (params.prepared.aiMonthlyCapCents == null) throw new UliqBenefitGateError("uliq_ai_cap_unconfigured");
+    const month = utcMonthWindow(now);
+    const usage = await params.tx.uliqBenefitReservation.aggregate({
+      where: {
+        userId: params.prepared.userId,
+        benefitType: "AI_CREDIT_DISCOUNT",
+        status: { in: ["RESERVED", "CONSUMED"] },
+        createdAt: { gte: month.startsAt, lt: month.endsAt }
+      },
+      _sum: { discountAmount: true }
+    });
+    const usedCents = usdDecimalToCents(usage?._sum?.discountAmount ?? "0");
+    if (usedCents + params.prepared.discountAmountCents > params.prepared.aiMonthlyCapCents) {
+      throw new UliqBenefitGateError("uliq_ai_cap_exceeded", {
+        capCents: params.prepared.aiMonthlyCapCents,
+        usedCents,
+        requestedDiscountCents: params.prepared.discountAmountCents
+      });
+    }
+  }
   return params.tx.uliqBenefitReservation.create({
     data: {
       userId: params.prepared.userId,
@@ -158,6 +354,12 @@ export async function createUliqBenefitReservationInTransaction(params: {
       configVersion: params.prepared.configVersion,
       priceSnapshotId: params.prepared.priceSnapshotId,
       asOfBlock: params.prepared.asOfBlock,
+      lockGateVersion: params.prepared.lockDecision.version,
+      lockContractAddress: params.prepared.lockerContractAddress,
+      requiredBenefitUntil: params.prepared.lockDecision.requiredBenefitUntil,
+      requiredLockedRaw: params.prepared.lockDecision.requiredLockedRaw,
+      qualifyingLockedRaw: params.prepared.lockDecision.qualifyingLockedRaw,
+      qualifyingLockIds: params.prepared.lockDecision.qualifyingLockIds,
       referenceType: params.referenceType,
       referenceId: params.referenceId,
       benefitType: params.prepared.benefitType,
@@ -173,6 +375,17 @@ export async function createUliqBenefitReservationInTransaction(params: {
         discountBps: params.prepared.discountBps,
         priceQualityStatus: params.prepared.priceQualityStatus,
         degradationReason: params.prepared.degradationReason,
+        lockDecision: {
+          ...params.prepared.lockDecision,
+          requiredBenefitUntil: params.prepared.lockDecision.requiredBenefitUntil.toISOString()
+        },
+        plannedTermWindow: params.prepared.plannedTermWindow ? {
+          startsAt: params.prepared.plannedTermWindow.startsAt.toISOString(),
+          endsAt: params.prepared.plannedTermWindow.endsAt.toISOString(),
+          graceEndsAt: params.prepared.plannedTermWindow.graceEndsAt.toISOString()
+        } : null,
+        sourceSubscriptionTermId: params.prepared.sourceSubscriptionTermId,
+        aiMonthlyCapCents: params.prepared.aiMonthlyCapCents,
         ttlSeconds: ULIQ_RESERVATION_TTL_MS / 1_000
       }
     }
@@ -188,7 +401,10 @@ export async function consumeUliqBenefitReservationInTransaction(params: {
   const now = params.now ?? new Date();
   const reservation = await params.tx.uliqBenefitReservation.findUnique({
     where: { id: params.reservationId },
-    include: { billingOrder: { include: { onchainPayment: true } } }
+    include: {
+      billingOrder: { include: { onchainPayment: true } },
+      entitlementSnapshot: { select: { chainId: true } }
+    }
   });
   if (!reservation) throw new Error("uliq_reservation_not_found");
   if (reservation.status === "CONSUMED") return false;
@@ -199,6 +415,25 @@ export async function consumeUliqBenefitReservationInTransaction(params: {
   // ten-minute quote window without mutating the agreed payment amount.
   const submittedBeforeExpiry = Boolean(payment?.txHash);
   if (reservation.expiresAt <= now && !submittedBeforeExpiry) throw new Error("uliq_reservation_expired");
+  if (
+    !reservation.lockGateVersion
+    || !reservation.lockContractAddress
+    || !reservation.requiredBenefitUntil
+    || reservation.requiredLockedRaw == null
+    || !Array.isArray(reservation.qualifyingLockIds)
+  ) throw new UliqBenefitGateError("uliq_lock_required");
+  await requireCanonicalLockEvidence({
+    tx: params.tx,
+    chainId: Number(reservation.entitlementSnapshot?.chainId),
+    lockerContractAddress: String(reservation.lockContractAddress).toLowerCase(),
+    walletAddress: String(reservation.walletAddress).toLowerCase(),
+    asOfBlock: BigInt(reservation.asOfBlock),
+    requiredBenefitUntil: reservation.requiredBenefitUntil instanceof Date
+      ? reservation.requiredBenefitUntil
+      : new Date(reservation.requiredBenefitUntil),
+    requiredLockedRaw: parseDatabaseUint256Decimal(reservation.requiredLockedRaw, "required_locked_raw"),
+    qualifyingLockIds: reservation.qualifyingLockIds.map(String)
+  });
   const claimed = await params.tx.uliqBenefitReservation.updateMany({
     where: { id: reservation.id, status: "RESERVED" },
     data: { status: "CONSUMED", consumedAt: now }

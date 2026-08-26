@@ -391,6 +391,10 @@
   margin-top: 10px;
   color: #fca5a5;
   font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 .subscriptionOrderCard {
   padding: 12px;
