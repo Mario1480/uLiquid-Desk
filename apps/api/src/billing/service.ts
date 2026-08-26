@@ -24,11 +24,16 @@ import {
   expireUliqBenefitReservations,
   prepareUliqBillingBenefit,
   releaseUliqBenefitReservationInTransaction,
-  selectUliqBenefitType,
+  resolveUliqDiscountSelection,
   type PreparedUliqBillingBenefit
 } from "../uliq/benefitReservation.service.js";
 import { allocateUliqDiscountAcrossLines } from "../uliq/math.js";
 import { getUliqFeatureFlags } from "../uliq/config.js";
+import {
+  buildActiveBotCapacityWhere,
+  buildRealExchangeAccountCapacityWhere
+} from "../admission/quotaAdmission.js";
+import { CANONICAL_STAGE4_PACKAGES, canonicalPackageByCode } from "./canonicalPackages.js";
 
 const db = prisma as any;
 
@@ -45,7 +50,24 @@ async function expireUliqBenefitsIfEnabled(now = new Date()): Promise<void> {
   if (uliqDiscountsRuntimeEnabled()) await expireUliqBenefitReservations(db, now);
 }
 
-export type EffectivePlan = "free" | "pro";
+export type EffectivePlan = "free" | "pro" | "premium";
+export type StoredEffectivePlan = "FREE" | "PRO" | "PREMIUM";
+export type ResolvedEffectivePlan = {
+  userId: string;
+  plan: EffectivePlan;
+  status: "active" | "grace" | "inactive";
+  planValidUntil: string | null;
+  /** @deprecated Retained as a compatibility alias during the Premium rollout. */
+  proValidUntil: string | null;
+  maxExchangeAccounts: number | null;
+  maxRunningBots: number;
+  maxRunningPredictionsAi: number | null;
+  maxRunningPredictionsComposite: number | null;
+  allowedExchanges: string[];
+  aiCreditBalance: bigint;
+  aiCreditsUsedLifetime: bigint;
+  monthlyAiCreditsIncluded: bigint;
+};
 export type BillingPackageKind = "plan" | "addon";
 export type BillingAddonType =
   | "running_bots"
@@ -72,12 +94,43 @@ const DEFAULT_BILLING_FEATURE_FLAGS: BillingFeatureFlags = {
   aiCreditBillingEnabled: true
 };
 
-const FREE_MAX_RUNNING_BOTS = 1;
+const FREE_MAX_RUNNING_BOTS = 2;
+const FREE_MAX_EXCHANGE_ACCOUNTS = 1;
 const FREE_ALLOWED_EXCHANGES = ["*"];
-const FREE_MAX_RUNNING_PREDICTIONS_AI: number | null = null;
-const FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE: number | null = null;
+const FREE_MAX_RUNNING_PREDICTIONS_AI = 0;
+const FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE = 0;
+const PRO_MAX_RUNNING_BOTS = 5;
 const PRO_MAX_RUNNING_PREDICTIONS_AI = 3;
 const PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE = 2;
+const PREMIUM_MAX_RUNNING_BOTS = 15;
+const PREMIUM_MAX_RUNNING_PREDICTIONS_AI = 10;
+const PREMIUM_MAX_RUNNING_PREDICTIONS_COMPOSITE = 5;
+
+export function resolvePlanBaseQuotaDefaults(plan: EffectivePlan): {
+  maxRunningBots: number;
+  maxRunningPredictionsAi: number;
+  maxRunningPredictionsComposite: number;
+} {
+  if (plan === "premium") {
+    return {
+      maxRunningBots: PREMIUM_MAX_RUNNING_BOTS,
+      maxRunningPredictionsAi: PREMIUM_MAX_RUNNING_PREDICTIONS_AI,
+      maxRunningPredictionsComposite: PREMIUM_MAX_RUNNING_PREDICTIONS_COMPOSITE
+    };
+  }
+  if (plan === "pro") {
+    return {
+      maxRunningBots: PRO_MAX_RUNNING_BOTS,
+      maxRunningPredictionsAi: PRO_MAX_RUNNING_PREDICTIONS_AI,
+      maxRunningPredictionsComposite: PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE
+    };
+  }
+  return {
+    maxRunningBots: FREE_MAX_RUNNING_BOTS,
+    maxRunningPredictionsAi: FREE_MAX_RUNNING_PREDICTIONS_AI,
+    maxRunningPredictionsComposite: FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE
+  };
+}
 const DEFAULT_BILLING_CURRENCY = "USD";
 const BILLING_PAYMENT_CONFIGURATION_ID = "arbitrum-usdc";
 const BILLING_ORDER_TTL_MS = 24 * 60 * 60 * 1000;
@@ -340,9 +393,20 @@ function normalizeStringArray(value: unknown, fallback: string[]): string[] {
 
 function isSubscriptionPlanActive(row: any, now: Date): boolean {
   if (!row) return false;
-  if (row.effectivePlan !== "PRO") return false;
-  if (!(row.proValidUntil instanceof Date)) return false;
-  return addGracePeriod(row.proValidUntil).getTime() > now.getTime();
+  if (formatPlan(row.effectivePlan) === "free") return false;
+  const validUntil = row.planValidUntil instanceof Date
+    ? row.planValidUntil
+    : row.proValidUntil instanceof Date
+      ? row.proValidUntil
+      : null;
+  if (!validUntil) return false;
+  return addGracePeriod(validUntil).getTime() > now.getTime();
+}
+
+function readPlanValidUntil(row: any): Date | null {
+  if (row?.planValidUntil instanceof Date) return row.planValidUntil;
+  if (row?.proValidUntil instanceof Date) return row.proValidUntil;
+  return null;
 }
 
 export function addBillingMonths(base: Date, months: number): Date {
@@ -797,22 +861,51 @@ export async function requireLiveArbitrumBillingBlock(
   }
 }
 
-function formatPlan(value: unknown): EffectivePlan {
-  return value === "PRO" ? "pro" : "free";
+export function formatPlan(value: unknown): EffectivePlan {
+  if (value === "PREMIUM" || value === "premium") return "premium";
+  if (value === "PRO" || value === "pro") return "pro";
+  return "free";
 }
 
-function toStrategyPlan(value: EffectivePlan): "free" | "pro" {
-  return value === "pro" ? "pro" : "free";
+function toStoredPlan(value: EffectivePlan): StoredEffectivePlan {
+  if (value === "premium") return "PREMIUM";
+  if (value === "pro") return "PRO";
+  return "FREE";
+}
+
+function toStrategyPlan(value: EffectivePlan): EffectivePlan {
+  return value;
+}
+
+export function isEnterpriseStrategyLicense(value: unknown): boolean {
+  return String(value ?? "").trim().toLowerCase() === "enterprise";
+}
+
+export function buildCommercialStrategyEntitlements(plan: EffectivePlan): {
+  plan: EffectivePlan;
+  allowedStrategyKinds: Array<"local" | "ai" | "composite">;
+  maxCompositeNodes: number;
+  aiAllowedModels: string[];
+} {
+  const allowAdvancedStrategies = plan !== "free";
+  return {
+    plan,
+    allowedStrategyKinds: allowAdvancedStrategies
+      ? ["local", "ai", "composite"]
+      : ["local"],
+    maxCompositeNodes: allowAdvancedStrategies ? 12 : 0,
+    aiAllowedModels: allowAdvancedStrategies ? ["*"] : []
+  };
 }
 
 function getDefaultMonthlyCredits(): bigint {
-  return toBigInt(process.env.BILLING_PRO_MONTHLY_AI_CREDITS ?? "10000");
+  return canonicalPackageByCode("pro_monthly").monthlyAiCredits;
 }
 
 export async function ensureBillingDefaults(): Promise<void> {
   if (!db.billingPackage || typeof db.billingPackage.upsert !== "function") return;
 
-  const proMonthlyPriceCents = normalizeInt(process.env.BILLING_PRO_MONTHLY_PRICE_CENTS ?? "2900", 2900);
+  const proMonthlyPriceCents = canonicalPackageByCode("pro_monthly").priceCents;
   const proMonthlyCredits = getDefaultMonthlyCredits();
   const entitlementTopupPriceCents = normalizeInt(
     process.env.BILLING_ENTITLEMENT_TOPUP_PRICE_CENTS ?? "1500",
@@ -845,6 +938,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       priceCents: 0,
       billingMonths: 1,
       plan: "FREE",
+      maxExchangeAccounts: FREE_MAX_EXCHANGE_ACCOUNTS,
       maxRunningBots: FREE_MAX_RUNNING_BOTS,
       maxRunningPredictionsAi: FREE_MAX_RUNNING_PREDICTIONS_AI,
       maxRunningPredictionsComposite: FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE,
@@ -871,16 +965,10 @@ export async function ensureBillingDefaults(): Promise<void> {
       priceCents: proMonthlyPriceCents,
       billingMonths: 1,
       plan: "PRO",
-      maxRunningBots: normalizeInt(process.env.BILLING_PRO_MAX_RUNNING_BOTS ?? "3", 3),
-      maxRunningPredictionsAi: normalizeInt(
-        process.env.BILLING_PRO_MAX_RUNNING_PREDICTIONS_AI ?? String(PRO_MAX_RUNNING_PREDICTIONS_AI),
-        PRO_MAX_RUNNING_PREDICTIONS_AI
-      ),
-      maxRunningPredictionsComposite: normalizeInt(
-        process.env.BILLING_PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE
-        ?? String(PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE),
-        PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE
-      ),
+      maxExchangeAccounts: null,
+      maxRunningBots: PRO_MAX_RUNNING_BOTS,
+      maxRunningPredictionsAi: PRO_MAX_RUNNING_PREDICTIONS_AI,
+      maxRunningPredictionsComposite: PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE,
       allowedExchanges: ["*"],
       monthlyAiCredits: proMonthlyCredits,
       aiCredits: 0n,
@@ -977,7 +1065,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       sortOrder: 30,
       priceCents: entitlementTopupPriceCents,
       billingMonths: 1,
-      plan: "PRO",
+      plan: null,
       maxRunningBots: null,
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
@@ -1006,7 +1094,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       sortOrder: 31,
       priceCents: entitlementBotsUnitPriceCents,
       billingMonths: 1,
-      plan: "PRO",
+      plan: null,
       maxRunningBots: null,
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
@@ -1035,7 +1123,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       sortOrder: 32,
       priceCents: entitlementAiPredictionsUnitPriceCents,
       billingMonths: 1,
-      plan: "PRO",
+      plan: null,
       maxRunningBots: null,
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
@@ -1064,7 +1152,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       sortOrder: 33,
       priceCents: entitlementCompositePredictionsUnitPriceCents,
       billingMonths: 1,
-      plan: "PRO",
+      plan: null,
       maxRunningBots: null,
       maxRunningPredictionsAi: null,
       maxRunningPredictionsComposite: null,
@@ -1090,6 +1178,7 @@ async function getOrCreateSubscription(userId: string, tx: any = db): Promise<an
       userId,
       effectivePlan: "FREE",
       status: "ACTIVE",
+      maxExchangeAccounts: freeDefaults.maxExchangeAccounts,
       maxRunningBots: freeDefaults.maxRunningBots,
       maxRunningPredictionsAi: freeDefaults.maxRunningPredictionsAi,
       maxRunningPredictionsComposite: freeDefaults.maxRunningPredictionsComposite,
@@ -1102,6 +1191,7 @@ async function getOrCreateSubscription(userId: string, tx: any = db): Promise<an
 }
 
 async function getFreePlanDefaults(tx: any = db): Promise<{
+  maxExchangeAccounts: number;
   maxRunningBots: number;
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
@@ -1111,6 +1201,7 @@ async function getFreePlanDefaults(tx: any = db): Promise<{
   const pkg = await tx.billingPackage.findUnique({
     where: { code: "free" },
     select: {
+      maxExchangeAccounts: true,
       maxRunningBots: true,
       maxRunningPredictionsAi: true,
       maxRunningPredictionsComposite: true,
@@ -1120,6 +1211,11 @@ async function getFreePlanDefaults(tx: any = db): Promise<{
   });
 
   return {
+    maxExchangeAccounts: normalizeNullableInt(
+      pkg?.maxExchangeAccounts,
+      FREE_MAX_EXCHANGE_ACCOUNTS,
+      0
+    ) ?? FREE_MAX_EXCHANGE_ACCOUNTS,
     maxRunningBots: normalizeInt(pkg?.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0),
     maxRunningPredictionsAi: normalizeNullableInt(
       pkg?.maxRunningPredictionsAi,
@@ -1136,12 +1232,12 @@ async function getFreePlanDefaults(tx: any = db): Promise<{
   };
 }
 
-export function buildPlanPackageLiveSyncWhere(plan: "FREE" | "PRO") {
+export function buildPlanPackageLiveSyncWhere(plan: StoredEffectivePlan) {
   return plan === "FREE"
     ? { effectivePlan: "FREE" as const }
     : {
-        effectivePlan: "PRO" as const,
-        // Paid terms own immutable entitlement snapshots. Only termless legacy Pro
+        effectivePlan: plan,
+        // Paid terms own immutable entitlement snapshots. Only termless legacy paid
         // subscriptions may continue to mirror the mutable package defaults.
         terms: { none: {} }
       };
@@ -1172,7 +1268,8 @@ export async function ensureAiCreditMinimumInTransaction(params: {
 
 async function syncPlanPackageToSubscriptions(pkg: {
   kind: "PLAN" | "ADDON";
-  plan: "FREE" | "PRO" | null;
+  plan: StoredEffectivePlan | null;
+  maxExchangeAccounts: number | null;
   maxRunningBots: number | null;
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
@@ -1194,6 +1291,11 @@ async function syncPlanPackageToSubscriptions(pkg: {
       data: {
         status: "ACTIVE",
         entitlementSyncPending: true,
+        maxExchangeAccounts: normalizeNullableInt(
+          pkg.maxExchangeAccounts,
+          FREE_MAX_EXCHANGE_ACCOUNTS,
+          0
+        ) ?? FREE_MAX_EXCHANGE_ACCOUNTS,
         maxRunningBots: normalizeInt(pkg.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0),
         maxRunningPredictionsAi: normalizeNullableInt(
           pkg.maxRunningPredictionsAi,
@@ -1271,26 +1373,28 @@ async function syncPlanPackageToSubscriptions(pkg: {
     return;
   }
 
-  const proWhere = buildPlanPackageLiveSyncWhere("PRO");
-  const proRows = await db.userSubscription.findMany({
-    where: proWhere,
+  const paidWhere = buildPlanPackageLiveSyncWhere(pkg.plan);
+  const paidRows = await db.userSubscription.findMany({
+    where: paidWhere,
     select: { userId: true }
   });
 
+  const paidDefaults = resolvePlanBaseQuotaDefaults(formatPlan(pkg.plan));
   await db.userSubscription.updateMany({
-    where: proWhere,
+    where: paidWhere,
     data: {
       status: "ACTIVE",
       entitlementSyncPending: true,
-      maxRunningBots: normalizeInt(pkg.maxRunningBots, 3, 0),
+      maxExchangeAccounts: normalizeNullableInt(pkg.maxExchangeAccounts, null, 0),
+      maxRunningBots: normalizeInt(pkg.maxRunningBots, paidDefaults.maxRunningBots, 0),
       maxRunningPredictionsAi: normalizeNullableInt(
         pkg.maxRunningPredictionsAi,
-        PRO_MAX_RUNNING_PREDICTIONS_AI,
+        paidDefaults.maxRunningPredictionsAi,
         0
       ),
       maxRunningPredictionsComposite: normalizeNullableInt(
         pkg.maxRunningPredictionsComposite,
-        PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE,
+        paidDefaults.maxRunningPredictionsComposite,
         0
       ),
       allowedExchanges: normalizeStringArray(pkg.allowedExchanges, ["*"]),
@@ -1298,12 +1402,13 @@ async function syncPlanPackageToSubscriptions(pkg: {
     }
   });
 
-  for (const row of proRows) {
+  const effectivePlan = formatPlan(pkg.plan);
+  for (const row of paidRows) {
     const userId = typeof row.userId === "string" ? row.userId.trim() : "";
     if (!userId) continue;
     await syncWorkspaceEntitlementsWithRetryTracking({
       userId,
-      effectivePlan: "pro"
+      effectivePlan
     });
   }
 }
@@ -1311,19 +1416,7 @@ async function syncPlanPackageToSubscriptions(pkg: {
 export async function setUserToFreePlan(params: {
   userId: string;
   syncWorkspaceEntitlements?: boolean;
-}): Promise<{
-  userId: string;
-  plan: EffectivePlan;
-  status: "active" | "grace" | "inactive";
-  proValidUntil: string | null;
-  maxRunningBots: number;
-  maxRunningPredictionsAi: number | null;
-  maxRunningPredictionsComposite: number | null;
-  allowedExchanges: string[];
-  aiCreditBalance: bigint;
-  aiCreditsUsedLifetime: bigint;
-  monthlyAiCreditsIncluded: bigint;
-}> {
+}): Promise<ResolvedEffectivePlan> {
   await ensureBillingDefaults();
 
   await runSerializableBillingConfigTransaction(db, async (tx: any) => {
@@ -1335,7 +1428,9 @@ export async function setUserToFreePlan(params: {
       data: {
         effectivePlan: "FREE",
         status: "ACTIVE",
+        planValidUntil: null,
         proValidUntil: null,
+        maxExchangeAccounts: defaults.maxExchangeAccounts,
         maxRunningBots: defaults.maxRunningBots,
         maxRunningPredictionsAi: defaults.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: defaults.maxRunningPredictionsComposite,
@@ -1391,21 +1486,20 @@ export async function syncPrimaryWorkspaceEntitlementsForUser(params: {
   const workspaceId = typeof membership?.workspaceId === "string" ? membership.workspaceId.trim() : "";
   if (!workspaceId) return;
 
-  const plan = toStrategyPlan(params.effectivePlan);
-  const isPro = plan === "pro";
-  const sub = await db.userSubscription.findUnique({
-    where: { userId: params.userId },
-    select: { monthlyAiCreditsIncluded: true }
+  const existing = await db.licenseEntitlement.findUnique({
+    where: { workspaceId },
+    select: { plan: true }
   });
-  const freeAiIncluded = !isPro && toBigInt(sub?.monthlyAiCreditsIncluded) > 0n;
-  const allowAdvancedStrategies = isPro || freeAiIncluded;
-  const allowedStrategyKinds: Array<"local" | "ai" | "composite"> = isPro
-    ? ["local", "ai", "composite"]
-    : allowAdvancedStrategies
-      ? ["local", "ai", "composite"]
-      : ["local"];
-  const maxCompositeNodes = allowAdvancedStrategies ? 12 : 0;
-  const aiAllowedModels = allowAdvancedStrategies ? ["*"] : [];
+  if (isEnterpriseStrategyLicense(existing?.plan)) {
+    return;
+  }
+
+  const {
+    plan,
+    allowedStrategyKinds,
+    maxCompositeNodes,
+    aiAllowedModels
+  } = buildCommercialStrategyEntitlements(toStrategyPlan(params.effectivePlan));
 
   await db.licenseEntitlement.upsert({
     where: { workspaceId },
@@ -1470,19 +1564,7 @@ export async function runTrackedWorkspaceEntitlementSync(params: {
   }
 }
 
-export async function resolveEffectivePlanForUser(userId: string): Promise<{
-  userId: string;
-  plan: EffectivePlan;
-  status: "active" | "grace" | "inactive";
-  proValidUntil: string | null;
-  maxRunningBots: number;
-  maxRunningPredictionsAi: number | null;
-  maxRunningPredictionsComposite: number | null;
-  allowedExchanges: string[];
-  aiCreditBalance: bigint;
-  aiCreditsUsedLifetime: bigint;
-  monthlyAiCreditsIncluded: bigint;
-}> {
+export async function resolveEffectivePlanForUser(userId: string): Promise<ResolvedEffectivePlan> {
   const now = new Date();
   let row = await getOrCreateSubscription(userId);
   let term = await db.subscriptionTerm.findFirst({
@@ -1503,7 +1585,7 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
     dueTerm
     || (term?.status === "ACTIVE" && term.endsAt <= now)
     || (term?.status === "GRACE" && term.graceEndsAt <= now)
-    || (row.effectivePlan === "PRO" && !term && !isSubscriptionPlanActive(row, now))
+    || (formatPlan(row.effectivePlan) !== "free" && !term && !isSubscriptionPlanActive(row, now))
   );
   if (lifecycleNeeded) {
     await runSubscriptionLifecycle({ now, limit: 50, userId });
@@ -1521,24 +1603,32 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
   }
 
   const legacyActiveWithoutTerm = !term && isSubscriptionPlanActive(row, now);
-  if (row.effectivePlan === "PRO" && (term || legacyActiveWithoutTerm)) {
+  const effectivePlan = term
+    ? formatPlan(readTermSnapshot(term).plan)
+    : formatPlan(row.effectivePlan);
+  const planValidUntil = readPlanValidUntil(row)
+    ?? (term?.endsAt instanceof Date ? term.endsAt : null);
+  if (effectivePlan !== "free" && (term || legacyActiveWithoutTerm)) {
+    const paidDefaults = resolvePlanBaseQuotaDefaults(effectivePlan);
     const inGrace = term
       ? term.endsAt <= now
-      : row.proValidUntil instanceof Date && row.proValidUntil <= now;
+      : planValidUntil instanceof Date && planValidUntil <= now;
     return {
       userId,
-      plan: "pro",
+      plan: effectivePlan,
       status: inGrace ? "grace" : "active",
+      planValidUntil: planValidUntil ? planValidUntil.toISOString() : null,
       proValidUntil: row.proValidUntil ? row.proValidUntil.toISOString() : null,
-      maxRunningBots: normalizeInt(row.maxRunningBots, 3, 0),
+      maxExchangeAccounts: normalizeNullableInt(row.maxExchangeAccounts, null, 0),
+      maxRunningBots: normalizeInt(row.maxRunningBots, paidDefaults.maxRunningBots, 0),
       maxRunningPredictionsAi: normalizeNullableInt(
         row.maxRunningPredictionsAi,
-        PRO_MAX_RUNNING_PREDICTIONS_AI,
+        paidDefaults.maxRunningPredictionsAi,
         0
       ),
       maxRunningPredictionsComposite: normalizeNullableInt(
         row.maxRunningPredictionsComposite,
-        PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE,
+        paidDefaults.maxRunningPredictionsComposite,
         0
       ),
       allowedExchanges: normalizeStringArray(row.allowedExchanges, ["*"]),
@@ -1552,7 +1642,13 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<{
     userId,
     plan: "free",
     status: "active",
+    planValidUntil: planValidUntil ? planValidUntil.toISOString() : null,
     proValidUntil: row.proValidUntil ? row.proValidUntil.toISOString() : null,
+    maxExchangeAccounts: normalizeNullableInt(
+      row.maxExchangeAccounts,
+      FREE_MAX_EXCHANGE_ACCOUNTS,
+      0
+    ),
     maxRunningBots: normalizeInt(row.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0),
     maxRunningPredictionsAi: normalizeNullableInt(
       row.maxRunningPredictionsAi,
@@ -1605,12 +1701,12 @@ async function resolveActiveCapacityGrantDeltas(params: {
     }
   });
 
-  const expectedScope = params.plan === "pro" ? "PRO" : "FREE";
+  const expectedScope = toStoredPlan(params.plan);
   let runningBots = 0;
   let runningPredictionsAi = 0;
   let runningPredictionsComposite = 0;
   for (const row of rows) {
-    if (row.planScope && row.planScope !== expectedScope) continue;
+    if (!isCapacityGrantScopeCompatible(expectedScope, row.planScope)) continue;
     runningBots += normalizeCapacityDelta(row.deltaRunningBots);
     runningPredictionsAi += normalizeCapacityDelta(row.deltaRunningPredictionsAi);
     runningPredictionsComposite += normalizeCapacityDelta(row.deltaRunningPredictionsComposite);
@@ -1621,6 +1717,15 @@ async function resolveActiveCapacityGrantDeltas(params: {
     runningPredictionsAi,
     runningPredictionsComposite
   };
+}
+
+export function isCapacityGrantScopeCompatible(
+  currentPlan: StoredEffectivePlan,
+  grantScope: StoredEffectivePlan | null | undefined
+): boolean {
+  if (currentPlan === "FREE") return grantScope === "FREE";
+  if (!grantScope) return true;
+  return grantScope === "PRO" || grantScope === "PREMIUM";
 }
 
 export async function resolveEffectiveQuotaForUser(
@@ -1682,7 +1787,7 @@ export async function resolveEffectiveQuotaForUser(
 
 export async function resolveQuotaUsageForUser(userId: string): Promise<QuotaUsage> {
   const [botsRunning, predictionStates] = await Promise.all([
-    db.bot.count({ where: { userId, status: "running" } }),
+    db.bot.count({ where: buildActiveBotCapacityWhere(userId) }),
     db.predictionState.findMany({
       where: { userId },
       select: {
@@ -1710,6 +1815,13 @@ export async function resolveQuotaUsageForUser(userId: string): Promise<QuotaUsa
 function exceedsLimit(limit: number | null, nextUsage: number): boolean {
   if (limit === null) return false;
   return nextUsage > limit;
+}
+
+export function predictionScheduleConsumesNewSlot(params: {
+  currentlyEnabled: boolean;
+  currentlyPaused: boolean;
+}): boolean {
+  return !params.currentlyEnabled || params.currentlyPaused;
 }
 
 export async function canCreateBot(params: {
@@ -1781,7 +1893,7 @@ export async function canEnablePredictionSchedule(params: {
     resolveEffectiveQuotaForUser(params.userId, params.caps),
     resolveQuotaUsageForUser(params.userId)
   ]);
-  if (params.kind === "local") {
+  if (params.kind === "local" || !predictionScheduleConsumesNewSlot(params)) {
     return {
       allowed: true,
       reason: "ok",
@@ -1793,10 +1905,7 @@ export async function canEnablePredictionSchedule(params: {
   const bucket = params.kind === "ai" ? usage.predictions.ai : usage.predictions.composite;
   const bucketLimits = params.kind === "ai" ? limits.predictions.ai : limits.predictions.composite;
 
-  const nextRunning =
-    params.currentlyEnabled && !params.currentlyPaused
-      ? bucket.running
-      : bucket.running + 1;
+  const nextRunning = bucket.running + 1;
   if (exceedsLimit(bucketLimits.maxRunning, nextRunning)) {
     return {
       allowed: false,
@@ -1856,6 +1965,67 @@ type CheckoutResolvedLine = {
   pkg: any;
 };
 
+export type ImmediatePremiumUpgradePricing = {
+  kind: "IMMEDIATE_PLAN_UPGRADE";
+  sourcePlan: "PRO";
+  targetPlan: "PREMIUM";
+  sourceTermId: string;
+  sourceTermEndsAt: string;
+  sourceTermGraceEndsAt: string;
+  sourcePriceCents: number;
+  targetPriceCents: number;
+  differenceCents: number;
+  billingMonths: number;
+};
+
+export function resolveImmediatePremiumUpgradePricing(params: {
+  now: Date;
+  sourcePlan: unknown;
+  targetPlan: unknown;
+  sourceTermId: string;
+  sourceTermEndsAt: Date;
+  sourceTermGraceEndsAt: Date;
+  sourcePriceCents: number;
+  targetPriceCents: number;
+  sourceBillingMonths: number;
+  targetBillingMonths: number;
+  hasScheduledTerm: boolean;
+}): ImmediatePremiumUpgradePricing | null {
+  if (params.sourcePlan !== "PRO" || params.targetPlan !== "PREMIUM") return null;
+  if (!params.sourceTermId || params.sourceTermEndsAt.getTime() <= params.now.getTime()) {
+    throw new Error("premium_upgrade_active_term_required");
+  }
+  if (params.hasScheduledTerm) throw new Error("premium_upgrade_scheduled_term_conflict");
+  if (
+    !Number.isSafeInteger(params.sourceBillingMonths)
+    || !Number.isSafeInteger(params.targetBillingMonths)
+    || params.sourceBillingMonths < 1
+    || params.sourceBillingMonths !== params.targetBillingMonths
+  ) {
+    throw new Error("premium_upgrade_term_mismatch");
+  }
+  if (
+    !Number.isSafeInteger(params.sourcePriceCents)
+    || !Number.isSafeInteger(params.targetPriceCents)
+    || params.sourcePriceCents < 1
+    || params.targetPriceCents <= params.sourcePriceCents
+  ) {
+    throw new Error("premium_upgrade_price_evidence_invalid");
+  }
+  return {
+    kind: "IMMEDIATE_PLAN_UPGRADE",
+    sourcePlan: "PRO",
+    targetPlan: "PREMIUM",
+    sourceTermId: params.sourceTermId,
+    sourceTermEndsAt: params.sourceTermEndsAt.toISOString(),
+    sourceTermGraceEndsAt: params.sourceTermGraceEndsAt.toISOString(),
+    sourcePriceCents: params.sourcePriceCents,
+    targetPriceCents: params.targetPriceCents,
+    differenceCents: params.targetPriceCents - params.sourcePriceCents,
+    billingMonths: params.targetBillingMonths
+  };
+}
+
 export function calculateBillingCartAmountCents(
   lines: Array<{ lineAmountCents: number }>
 ): number {
@@ -1906,6 +2076,7 @@ function buildPackageSnapshot(pkg: any): Record<string, unknown> {
     addonType,
     plan: pkg.plan ?? null,
     billingMonths: normalizeInt(pkg.billingMonths, 1, 1),
+    maxExchangeAccounts: pkg.maxExchangeAccounts ?? null,
     maxRunningBots: pkg.maxRunningBots ?? null,
     maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
     maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
@@ -2015,9 +2186,11 @@ async function resolveCheckoutLines(params: {
 
   const planLines = lines.filter((line) => line.kind === "plan");
   if (planLines.length > 1) throw new Error("cart_plan_count_invalid");
-  const hasProPlanInCart = planLines.some((line) => line.pkg.plan === "PRO");
+  const hasPaidPlanInCart = planLines.some(
+    (line) => line.pkg.plan === "PRO" || line.pkg.plan === "PREMIUM"
+  );
   const resolved = await resolveEffectivePlanForUser(params.userId);
-  const canUsePaidTopups = resolved.plan === "pro" || hasProPlanInCart;
+  const canUsePaidTopups = resolved.plan !== "free" || hasPaidPlanInCart;
 
   if (lines.some((line) => line.kind === "addon") && !canUsePaidTopups) {
     throw new Error("cart_capacity_requires_pro");
@@ -2029,10 +2202,131 @@ async function resolveCheckoutLines(params: {
   return lines;
 }
 
-function fingerprintCheckoutLines(lines: CheckoutResolvedLine[], applyUliqDiscount = false): string {
+function readStoredPlan(value: unknown): StoredEffectivePlan | null {
+  if (value === "FREE" || value === "PRO" || value === "PREMIUM") return value;
+  if (value === "free") return "FREE";
+  if (value === "pro") return "PRO";
+  if (value === "premium") return "PREMIUM";
+  return null;
+}
+
+function readPositiveInt(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function readTermPlanPriceEvidence(term: any, expectedPlan: StoredEffectivePlan): {
+  priceCents: number;
+  billingMonths: number;
+} | null {
+  const termSnapshot = asRecord(term?.entitlementSnapshot);
+  const sourceOrderItems = Array.isArray(term?.order?.items) ? term.order.items : [];
+  const sourcePlanItem = sourceOrderItems.find((item: any) => {
+    const itemSnapshot = asRecord(item.packageSnapshot);
+    const itemPlan = readStoredPlan(itemSnapshot.plan ?? item.pkg?.plan);
+    const itemKind = item.kindSnapshot ?? itemSnapshot.kind ?? item.pkg?.kind;
+    return (itemKind === "PLAN" || itemKind === "plan") && itemPlan === expectedPlan;
+  }) ?? null;
+  const sourceItemSnapshot = asRecord(sourcePlanItem?.packageSnapshot);
+  const sourcePackageCode = String(
+    termSnapshot.packageCode ?? sourceItemSnapshot.code ?? sourcePlanItem?.pkg?.code ?? ""
+  );
+  const canonicalCode = expectedPlan === "PRO" && sourcePackageCode === "pro_monthly"
+    ? "pro_monthly"
+    : expectedPlan === "PREMIUM" && sourcePackageCode === "premium_monthly"
+      ? "premium_monthly"
+      : null;
+  const canonicalSource = canonicalCode ? canonicalPackageByCode(canonicalCode) : null;
+  const priceCents = readPositiveInt(termSnapshot.priceCents)
+    ?? readPositiveInt(sourcePlanItem?.unitPriceCents)
+    ?? readPositiveInt(sourceItemSnapshot.priceCents)
+    ?? canonicalSource?.priceCents
+    ?? null;
+  const billingMonths = readPositiveInt(termSnapshot.billingMonths)
+    ?? readPositiveInt(sourceItemSnapshot.billingMonths)
+    ?? readPositiveInt(sourcePlanItem?.pkg?.billingMonths)
+    ?? canonicalSource?.billingMonths
+    ?? null;
+  return priceCents === null || billingMonths === null ? null : { priceCents, billingMonths };
+}
+
+async function resolveImmediatePremiumUpgradeForCheckout(params: {
+  userId: string;
+  lines: CheckoutResolvedLine[];
+  now: Date;
+}): Promise<ImmediatePremiumUpgradePricing | null> {
+  const targetLine = params.lines.find(
+    (line) => line.kind === "plan" && readStoredPlan(line.pkg?.plan) === "PREMIUM"
+  );
+  if (!targetLine) return null;
+
+  const resolved = await resolveEffectivePlanForUser(params.userId);
+  if (resolved.plan !== "pro") return null;
+
+  const [sourceTerm, scheduledTerm] = await Promise.all([
+    db.subscriptionTerm.findFirst({
+      where: {
+        userId: params.userId,
+        status: "ACTIVE",
+        startsAt: { lte: params.now },
+        endsAt: { gt: params.now }
+      },
+      include: {
+        order: {
+          include: {
+            items: {
+              include: { pkg: true },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+            }
+          }
+        }
+      },
+      orderBy: [{ startsAt: "desc" }, { createdAt: "desc" }]
+    }),
+    db.subscriptionTerm.findFirst({
+      where: { userId: params.userId, status: "SCHEDULED" },
+      select: { id: true }
+    })
+  ]);
+  if (!sourceTerm) throw new Error("premium_upgrade_active_term_required");
+
+  const termSnapshot = asRecord(sourceTerm.entitlementSnapshot);
+  const sourcePlan = readStoredPlan(sourceTerm.plan ?? termSnapshot.plan);
+  if (sourcePlan !== "PRO") throw new Error("premium_upgrade_active_term_required");
+
+  const sourcePriceEvidence = readTermPlanPriceEvidence(sourceTerm, "PRO");
+  if (!sourcePriceEvidence) {
+    throw new Error("premium_upgrade_price_evidence_invalid");
+  }
+
+  const pricing = resolveImmediatePremiumUpgradePricing({
+    now: params.now,
+    sourcePlan,
+    targetPlan: readStoredPlan(targetLine.pkg?.plan),
+    sourceTermId: String(sourceTerm.id),
+    sourceTermEndsAt: sourceTerm.endsAt,
+    sourceTermGraceEndsAt: sourceTerm.graceEndsAt,
+    sourcePriceCents: sourcePriceEvidence.priceCents,
+    targetPriceCents: targetLine.unitPriceCents,
+    sourceBillingMonths: sourcePriceEvidence.billingMonths,
+    targetBillingMonths: normalizeInt(targetLine.pkg?.billingMonths, 1, 1),
+    hasScheduledTerm: Boolean(scheduledTerm)
+  });
+  if (!pricing) return null;
+  targetLine.unitPriceCents = pricing.differenceCents;
+  targetLine.lineAmountCents = pricing.differenceCents * targetLine.quantity;
+  return pricing;
+}
+
+function fingerprintCheckoutLines(
+  lines: CheckoutResolvedLine[],
+  applyUliqDiscount = false,
+  upgrade: ImmediatePremiumUpgradePricing | null = null
+): string {
   const canonical = lines
-    .map((line) => `${line.packageId}:${line.quantity}`)
+    .map((line) => `${line.packageId}:${line.quantity}:${line.unitPriceCents}`)
     .sort()
+    .concat(upgrade ? `upgrade:${upgrade.sourceTermId}:${upgrade.differenceCents}` : "upgrade:none")
     .concat(`uliq:${applyUliqDiscount ? "requested" : "none"}`)
     .join("|");
   return crypto.createHash("sha256").update(canonical).digest("hex");
@@ -2091,18 +2385,23 @@ function buildCheckoutOrderItems(lines: CheckoutResolvedLine[]): any[] {
 
 function buildDiscountedCheckoutOrderItems(
   lines: CheckoutResolvedLine[],
-  prepared: PreparedUliqBillingBenefit | null
+  prepared: PreparedUliqBillingBenefit | null,
+  eligibleLineIndexes: number[] = []
 ): any[] {
-  const allocations = prepared
-    ? allocateUliqDiscountAcrossLines(
-      lines.map((line) => line.lineAmountCents),
-      prepared.discountAmountCents
-    )
-    : lines.map((line) => ({
+  const allocations = lines.map((line) => ({
       baseAmountCents: line.lineAmountCents,
       discountAmountCents: 0,
       finalAmountCents: line.lineAmountCents
     }));
+  if (prepared && eligibleLineIndexes.length > 0) {
+    const eligibleAllocations = allocateUliqDiscountAcrossLines(
+      eligibleLineIndexes.map((index) => lines[index].lineAmountCents),
+      prepared.discountAmountCents
+    );
+    eligibleLineIndexes.forEach((lineIndex, allocationIndex) => {
+      allocations[lineIndex] = eligibleAllocations[allocationIndex];
+    });
+  }
   return buildCheckoutOrderItems(lines).map((item, index) => ({
     ...item,
     baseAmountCents: allocations[index].baseAmountCents,
@@ -2228,14 +2527,19 @@ export async function createBillingCheckout(params: {
 
   await ensureBillingDefaults();
   const lines = await resolveCheckoutLines({ userId: params.userId, items: params.items });
+  const now = new Date();
+  const immediateUpgrade = await resolveImmediatePremiumUpgradeForCheckout({
+    userId: params.userId,
+    lines,
+    now
+  });
   const baseAmountCents = requirePayableBillingCartAmountCents(calculateBillingCartAmountCents(lines));
   const planLine = lines.find((line) => line.kind === "plan");
   const anchorPackageId = planLine?.packageId ?? lines[0]?.packageId;
   if (!anchorPackageId) throw new Error("cart_empty");
 
-  const now = new Date();
   const applyUliqDiscount = params.applyUliqDiscount === true;
-  const cartFingerprint = fingerprintCheckoutLines(lines, applyUliqDiscount);
+  const cartFingerprint = fingerprintCheckoutLines(lines, applyUliqDiscount, immediateUpgrade);
   const openOrder = await findOpenArbitrumOrderForUser(params.userId, now);
   if (openOrder) {
     if (openOrder.cartFingerprint !== cartFingerprint) throw new Error("open_order_cart_mismatch");
@@ -2244,25 +2548,30 @@ export async function createBillingCheckout(params: {
 
   const merchantOrderId = `ULIQUID_${crypto.randomUUID()}`;
   const currency = lines[0]?.currency ?? DEFAULT_BILLING_CURRENCY;
-  const uliqBenefit = applyUliqDiscount
+  const uliqSelection = applyUliqDiscount ? resolveUliqDiscountSelection(lines) : null;
+  const eligibleUliqBaseAmountCents = uliqSelection
+    ? uliqSelection.eligibleLineIndexes.reduce((sum, index) => sum + lines[index].lineAmountCents, 0)
+    : 0;
+  const uliqBenefit = uliqSelection
     ? await prepareUliqBillingBenefit({
       db,
       userId: params.userId,
-      baseAmountCents,
-      benefitType: selectUliqBenefitType(lines),
+      baseAmountCents: eligibleUliqBaseAmountCents,
+      benefitType: uliqSelection.benefitType,
       now
     })
     : null;
-  const amountCents = uliqBenefit?.finalAmountCents ?? baseAmountCents;
+  const amountCents = baseAmountCents - (uliqBenefit?.discountAmountCents ?? 0);
   const createPayload = {
     merchantOrderId,
     checkoutMode: "arbitrum_usdc",
+    upgrade: immediateUpgrade,
     uliqBenefit: uliqBenefit ? {
       tier: uliqBenefit.tierSnapshot,
       discountBps: uliqBenefit.discountBps,
-      baseAmountCents,
+      baseAmountCents: uliqBenefit.baseAmountCents,
       discountAmountCents: uliqBenefit.discountAmountCents,
-      finalAmountCents: uliqBenefit.finalAmountCents,
+      finalAmountCents: amountCents,
       entitlementSnapshotId: uliqBenefit.entitlementSnapshotId,
       priceSnapshotId: uliqBenefit.priceSnapshotId,
       asOfBlock: uliqBenefit.asOfBlock.toString(),
@@ -2338,7 +2647,13 @@ export async function createBillingCheckout(params: {
           uliqPriceSnapshotId: uliqBenefit?.priceSnapshotId ?? null,
           uliqWalletAddress: uliqBenefit?.walletAddress ?? null,
           uliqAsOfBlock: uliqBenefit?.asOfBlock ?? null,
-          items: { create: buildDiscountedCheckoutOrderItems(lines, uliqBenefit) },
+          items: {
+            create: buildDiscountedCheckoutOrderItems(
+              lines,
+              uliqBenefit,
+              uliqSelection?.eligibleLineIndexes ?? []
+            )
+          },
           expectedSenderAddress,
           expectedAmountRaw
         },
@@ -3395,8 +3710,10 @@ type ApplyPackageData = {
   kind: "PLAN" | "ADDON";
   publicKind: BillingPackageKind;
   addonType: BillingAddonType | null;
-  plan: "FREE" | "PRO" | null;
+  plan: StoredEffectivePlan | null;
   billingMonths: number;
+  priceCents: number;
+  maxExchangeAccounts: number | null;
   maxRunningBots: number | null;
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
@@ -3429,7 +3746,9 @@ function normalizeApplyPackageData(params: {
   const addonType = rawAddonType ?? deriveAddonTypeFromPackage(params.pkg ?? { ...params.snapshot, kind });
 
   const rawPlan = read("plan");
-  const plan = rawPlan === "PRO" || rawPlan === "FREE" ? rawPlan : null;
+  const plan = rawPlan === "FREE" || rawPlan === "PRO" || rawPlan === "PREMIUM"
+    ? rawPlan
+    : null;
 
   return {
     id: String(read("id") ?? params.pkg?.id ?? ""),
@@ -3440,6 +3759,12 @@ function normalizeApplyPackageData(params: {
     addonType,
     plan,
     billingMonths: normalizeInt(read("billingMonths"), normalizeInt(params.pkg?.billingMonths, 1, 1), 1),
+    priceCents: normalizeInt(read("priceCents"), normalizeInt(params.pkg?.priceCents, 0, 0), 0),
+    maxExchangeAccounts: normalizeNullableInt(
+      read("maxExchangeAccounts"),
+      params.pkg?.maxExchangeAccounts ?? null,
+      0
+    ),
     maxRunningBots: normalizeNullableInt(read("maxRunningBots"), params.pkg?.maxRunningBots ?? null, 0),
     maxRunningPredictionsAi: normalizeNullableInt(
       read("maxRunningPredictionsAi"),
@@ -3506,6 +3831,9 @@ function buildTermEntitlementSnapshot(lines: ApplyOrderLine[], plan: ApplyPackag
     plan: plan.plan ?? "PRO",
     packageId: plan.id,
     packageCode: plan.code,
+    billingMonths: plan.billingMonths,
+    priceCents: plan.priceCents,
+    maxExchangeAccounts: plan.maxExchangeAccounts,
     maxRunningBots: plan.maxRunningBots,
     maxRunningPredictionsAi: plan.maxRunningPredictionsAi,
     maxRunningPredictionsComposite: plan.maxRunningPredictionsComposite,
@@ -3521,6 +3849,8 @@ function buildTermEntitlementSnapshot(lines: ApplyOrderLine[], plan: ApplyPackag
         addonType: line.pkg.addonType,
         plan: line.pkg.plan,
         billingMonths: line.pkg.billingMonths,
+        priceCents: line.pkg.priceCents,
+        maxExchangeAccounts: line.pkg.maxExchangeAccounts,
         maxRunningBots: line.pkg.maxRunningBots,
         maxRunningPredictionsAi: line.pkg.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: line.pkg.maxRunningPredictionsComposite,
@@ -3536,7 +3866,8 @@ function buildTermEntitlementSnapshot(lines: ApplyOrderLine[], plan: ApplyPackag
 }
 
 function readTermSnapshot(term: any): {
-  plan: "PRO" | "FREE";
+  plan: StoredEffectivePlan;
+  maxExchangeAccounts: number | null;
   maxRunningBots: number;
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
@@ -3545,7 +3876,13 @@ function readTermSnapshot(term: any): {
   lines: ApplyOrderLine[];
 } {
   const snapshot = asRecord(term?.entitlementSnapshot);
+  const rawPlan = term?.plan ?? snapshot.plan;
+  const plan = rawPlan === "FREE" || rawPlan === "PRO" || rawPlan === "PREMIUM"
+    ? rawPlan
+    : null;
+  if (!plan) throw new Error("subscription_term_plan_invalid");
   const rawLines = Array.isArray(snapshot.lines) ? snapshot.lines : [];
+  const planDefaults = resolvePlanBaseQuotaDefaults(formatPlan(plan));
   const lines: ApplyOrderLine[] = rawLines.map((rawLine: unknown) => {
     const line = asRecord(rawLine);
     const pkg = asRecord(line.package);
@@ -3559,21 +3896,104 @@ function readTermSnapshot(term: any): {
     };
   });
   return {
-    plan: snapshot.plan === "FREE" ? "FREE" : "PRO",
-    maxRunningBots: normalizeInt(snapshot.maxRunningBots, 3, 0),
+    plan,
+    maxExchangeAccounts: normalizeNullableInt(snapshot.maxExchangeAccounts, null, 0),
+    maxRunningBots: normalizeInt(snapshot.maxRunningBots, planDefaults.maxRunningBots, 0),
     maxRunningPredictionsAi: normalizeNullableInt(
       snapshot.maxRunningPredictionsAi,
-      PRO_MAX_RUNNING_PREDICTIONS_AI,
+      planDefaults.maxRunningPredictionsAi,
       0
     ),
     maxRunningPredictionsComposite: normalizeNullableInt(
       snapshot.maxRunningPredictionsComposite,
-      PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE,
+      planDefaults.maxRunningPredictionsComposite,
       0
     ),
     allowedExchanges: normalizeStringArray(snapshot.allowedExchanges, ["*"]),
     monthlyAiCredits: toBigInt(snapshot.monthlyAiCredits ?? term?.monthlyAiCredits),
     lines
+  };
+}
+
+function readImmediatePremiumUpgradeMetadata(value: unknown): ImmediatePremiumUpgradePricing | null {
+  const payload = asRecord(value);
+  const raw = asRecord(payload.upgrade);
+  if (raw.kind !== "IMMEDIATE_PLAN_UPGRADE") return null;
+  const sourceTermId = typeof raw.sourceTermId === "string" ? raw.sourceTermId : "";
+  const sourceTermEndsAt = typeof raw.sourceTermEndsAt === "string" ? raw.sourceTermEndsAt : "";
+  const sourceTermGraceEndsAt = typeof raw.sourceTermGraceEndsAt === "string"
+    ? raw.sourceTermGraceEndsAt
+    : "";
+  const sourcePriceCents = readPositiveInt(raw.sourcePriceCents);
+  const targetPriceCents = readPositiveInt(raw.targetPriceCents);
+  const differenceCents = readPositiveInt(raw.differenceCents);
+  const billingMonths = readPositiveInt(raw.billingMonths);
+  if (
+    raw.sourcePlan !== "PRO"
+    || raw.targetPlan !== "PREMIUM"
+    || !sourceTermId
+    || !sourceTermEndsAt
+    || !sourceTermGraceEndsAt
+    || Number.isNaN(Date.parse(sourceTermEndsAt))
+    || Number.isNaN(Date.parse(sourceTermGraceEndsAt))
+    || sourcePriceCents === null
+    || targetPriceCents === null
+    || differenceCents === null
+    || billingMonths === null
+    || targetPriceCents - sourcePriceCents !== differenceCents
+  ) {
+    throw new Error("confirmed_order_upgrade_metadata_invalid");
+  }
+  return {
+    kind: "IMMEDIATE_PLAN_UPGRADE",
+    sourcePlan: "PRO",
+    targetPlan: "PREMIUM",
+    sourceTermId,
+    sourceTermEndsAt,
+    sourceTermGraceEndsAt,
+    sourcePriceCents,
+    targetPriceCents,
+    differenceCents,
+    billingMonths
+  };
+}
+
+function buildImmediatePremiumUpgradeSnapshot(params: {
+  sourceTerm: any;
+  orderLines: ApplyOrderLine[];
+  targetPlanLine: ApplyOrderLine;
+  upgrade: ImmediatePremiumUpgradePricing;
+  paidAt: Date;
+}): Record<string, unknown> {
+  const sourceSnapshot = asRecord(params.sourceTerm.entitlementSnapshot);
+  const previousAddonLines = readTermSnapshot(params.sourceTerm).lines.filter(
+    (line) => line.pkg.publicKind === "addon"
+  );
+  const newAddonLines = params.orderLines.filter((line) => line.pkg.publicKind === "addon");
+  const priorHistory = Array.isArray(sourceSnapshot.upgradeHistory)
+    ? sourceSnapshot.upgradeHistory.slice(-19)
+    : [];
+  return {
+    ...sourceSnapshot,
+    ...buildTermEntitlementSnapshot(
+      [params.targetPlanLine, ...previousAddonLines, ...newAddonLines],
+      params.targetPlanLine.pkg
+    ),
+    schemaVersion: "billing-entitlement/v3",
+    upgradeHistory: [
+      ...priorHistory,
+      {
+        kind: params.upgrade.kind,
+        sourcePlan: params.upgrade.sourcePlan,
+        targetPlan: params.upgrade.targetPlan,
+        sourceTermId: params.upgrade.sourceTermId,
+        sourcePriceCents: params.upgrade.sourcePriceCents,
+        targetPriceCents: params.upgrade.targetPriceCents,
+        differenceCents: params.upgrade.differenceCents,
+        billingMonths: params.upgrade.billingMonths,
+        paidAt: params.paidAt.toISOString()
+      }
+    ]
   };
 }
 
@@ -3756,7 +4176,7 @@ export async function resolveCapacityAddonTargetTermInTransaction(params: {
 }
 
 export function hasPaidCapacityAddonTarget(activeTerm: unknown, effectivePlan: unknown): boolean {
-  return Boolean(activeTerm) || effectivePlan === "PRO";
+  return Boolean(activeTerm) || effectivePlan === "PRO" || effectivePlan === "PREMIUM";
 }
 
 async function finalizeConfirmedBillingOrder(
@@ -3786,9 +4206,14 @@ async function finalizeConfirmedBillingOrder(
     const bRank = b.pkg.kind === "PLAN" ? 0 : 1;
     return aRank - bRank;
   });
-  if (applyLines.length === 0 || applyLines.some((line) => !line.pkg.id || !line.pkg.code)) {
+  if (
+    applyLines.length === 0
+    || applyLines.some((line) => !line.pkg.id || !line.pkg.code)
+    || applyLines.some((line) => line.pkg.publicKind === "plan" && !line.pkg.plan)
+  ) {
     throw new Error("confirmed_order_invalid_cart");
   }
+  const immediateUpgrade = readImmediatePremiumUpgradeMetadata(order.createPayload);
 
   const now = paidAt;
   let scheduledTermId: string | null = null;
@@ -3796,6 +4221,9 @@ async function finalizeConfirmedBillingOrder(
   let forceFree = false;
   let finalizationCommitted = false;
   await db.$transaction(async (tx: any) => {
+    if (typeof tx.$queryRaw === "function") {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`billing-subscription:${order.userId}`}, 0))`;
+    }
     const currentOrder = await tx.billingOrder.findUnique({
       where: { id: order.id },
       select: { status: true }
@@ -3812,6 +4240,120 @@ async function finalizeConfirmedBillingOrder(
 
     if (planLine?.pkg.plan === "FREE") {
       forceFree = true;
+    } else if (planLine && immediateUpgrade) {
+      if (
+        planLine.pkg.plan !== "PREMIUM"
+        || planLine.pkg.billingMonths !== immediateUpgrade.billingMonths
+        || planLine.pkg.priceCents !== immediateUpgrade.targetPriceCents
+      ) {
+        throw new Error("confirmed_order_upgrade_metadata_invalid");
+      }
+      const planOrderItem = order.items.find((item: any) => {
+        const snapshot = asRecord(item.packageSnapshot);
+        const kind = item.kindSnapshot ?? snapshot.kind ?? item.pkg?.kind;
+        return kind === "PLAN" || kind === "plan";
+      });
+      if (normalizeInt(planOrderItem?.unitPriceCents, 0, 0) !== immediateUpgrade.differenceCents) {
+        throw new Error("confirmed_order_upgrade_metadata_invalid");
+      }
+      const [sourceTerm, scheduledConflict] = await Promise.all([
+        tx.subscriptionTerm.findUnique({ where: { id: immediateUpgrade.sourceTermId } }),
+        tx.subscriptionTerm.findFirst({
+          where: {
+            userId: order.userId,
+            status: "SCHEDULED",
+            id: { not: immediateUpgrade.sourceTermId }
+          },
+          select: { id: true }
+        })
+      ]);
+      const sourceSnapshot = sourceTerm ? readTermSnapshot(sourceTerm) : null;
+      if (
+        !sourceTerm
+        || sourceTerm.userId !== order.userId
+        || sourceTerm.subscriptionId !== existingSub.id
+        || sourceSnapshot?.plan !== "PRO"
+        || sourceTerm.status !== "ACTIVE"
+        || sourceTerm.endsAt.getTime() <= now.getTime()
+        || sourceTerm.endsAt.toISOString() !== immediateUpgrade.sourceTermEndsAt
+        || sourceTerm.graceEndsAt.toISOString() !== immediateUpgrade.sourceTermGraceEndsAt
+        || scheduledConflict
+      ) {
+        throw new Error("premium_upgrade_source_term_changed");
+      }
+
+      const upgradedTerm = await tx.subscriptionTerm.updateMany({
+        where: {
+          id: sourceTerm.id,
+          userId: order.userId,
+          subscriptionId: existingSub.id,
+          status: "ACTIVE",
+          endsAt: sourceTerm.endsAt,
+          graceEndsAt: sourceTerm.graceEndsAt
+        },
+        data: {
+          plan: "PREMIUM",
+          entitlementSnapshot: buildImmediatePremiumUpgradeSnapshot({
+            sourceTerm,
+            orderLines: applyLines,
+            targetPlanLine: planLine,
+            upgrade: immediateUpgrade,
+            paidAt: now
+          }),
+          monthlyAiCredits: planLine.pkg.monthlyAiCredits
+        }
+      });
+      if (upgradedTerm.count !== 1) throw new Error("premium_upgrade_source_term_changed");
+      await tx.userSubscription.update({
+        where: { id: existingSub.id },
+        data: {
+          effectivePlan: "PREMIUM",
+          status: "ACTIVE",
+          planValidUntil: sourceTerm.endsAt,
+          proValidUntil: sourceTerm.endsAt,
+          maxExchangeAccounts: planLine.pkg.maxExchangeAccounts,
+          maxRunningBots: planLine.pkg.maxRunningBots,
+          maxRunningPredictionsAi: planLine.pkg.maxRunningPredictionsAi,
+          maxRunningPredictionsComposite: planLine.pkg.maxRunningPredictionsComposite,
+          allowedExchanges: planLine.pkg.allowedExchanges,
+          monthlyAiCreditsIncluded: planLine.pkg.monthlyAiCredits,
+          entitlementSyncPending: true
+        }
+      });
+
+      for (const [index, line] of applyLines.entries()) {
+        if (line.pkg.publicKind !== "addon") continue;
+        const quantity = normalizeInt(line.quantity, 1, 1);
+        if (line.pkg.addonType === "ai_credits") {
+          await applyAiLedgerCreditInTransaction({
+            tx,
+            userId: order.userId,
+            subscriptionId: existingSub.id,
+            orderId: order.id,
+            reason: "TOPUP",
+            delta: line.pkg.aiCredits * BigInt(quantity),
+            idempotencyKey: `order:${order.id}:topup:${index}`,
+            meta: { packageId: line.pkg.id, packageCode: line.pkg.code, quantity, merchantOrderId }
+          });
+          continue;
+        }
+        await tx.subscriptionCapacityGrant.create({
+          data: {
+            userId: order.userId,
+            subscriptionId: existingSub.id,
+            orderId: order.id,
+            termId: sourceTerm.id,
+            sourceKey: `order:${order.id}:capacity:${index}`,
+            planScope: "PREMIUM",
+            deltaRunningBots: normalizeCapacityDelta(line.pkg.deltaRunningBots) * quantity,
+            deltaRunningPredictionsAi: normalizeCapacityDelta(line.pkg.deltaRunningPredictionsAi) * quantity,
+            deltaRunningPredictionsComposite: normalizeCapacityDelta(
+              line.pkg.deltaRunningPredictionsComposite
+            ) * quantity,
+            validUntil: sourceTerm.graceEndsAt
+          }
+        });
+      }
     } else if (planLine) {
       const latestTerm = await tx.subscriptionTerm.findFirst({
         where: { userId: order.userId },
@@ -3822,13 +4364,14 @@ async function finalizeConfirmedBillingOrder(
         now,
         billingMonths: months,
         latestTerm,
-        legacyValidUntil: existingSub.proValidUntil
+        legacyValidUntil: readPlanValidUntil(existingSub)
       });
       const term = await tx.subscriptionTerm.create({
         data: {
           userId: order.userId,
           subscriptionId: existingSub.id,
           orderId: order.id,
+          plan: planLine.pkg.plan,
           status: "SCHEDULED",
           startsAt,
           endsAt,
@@ -3842,11 +4385,15 @@ async function finalizeConfirmedBillingOrder(
         const activated = await activateSubscriptionTermInTransaction(tx, term.id, now);
         if (!activated) throw new Error("term_activation_failed");
       }
-      const currentValidUntil = existingSub.proValidUntil instanceof Date ? existingSub.proValidUntil : null;
+      const currentValidUntil = readPlanValidUntil(existingSub);
       if (!currentValidUntil || endsAt > currentValidUntil) {
         await tx.userSubscription.update({
           where: { id: existingSub.id },
-          data: { proValidUntil: endsAt }
+          data: {
+            planValidUntil: endsAt,
+            // Compatibility cache for existing consumers during the rollout.
+            proValidUntil: endsAt
+          }
         });
       }
     } else {
@@ -3857,9 +4404,10 @@ async function finalizeConfirmedBillingOrder(
       });
       const activeTerm = target.term;
       lifecycleRunRequired = target.activated > 0;
+      const existingPlanValidUntil = readPlanValidUntil(existingSub);
       const validUntil = activeTerm?.graceEndsAt
-        ?? (existingSub.proValidUntil instanceof Date && addGracePeriod(existingSub.proValidUntil) > now
-          ? addGracePeriod(existingSub.proValidUntil)
+        ?? (existingPlanValidUntil && addGracePeriod(existingPlanValidUntil) > now
+          ? addGracePeriod(existingPlanValidUntil)
           : null);
       if (!validUntil || !hasPaidCapacityAddonTarget(activeTerm, existingSub.effectivePlan)) {
         throw new Error("paid_plan_required_for_capacity_topup");
@@ -3886,7 +4434,7 @@ async function finalizeConfirmedBillingOrder(
             orderId: order.id,
             termId: activeTerm?.id ?? null,
             sourceKey: `order:${order.id}:capacity:${index}`,
-            planScope: "PRO",
+            planScope: activeTerm?.plan ?? existingSub.effectivePlan,
             deltaRunningBots: normalizeCapacityDelta(line.pkg.deltaRunningBots) * quantity,
             deltaRunningPredictionsAi: normalizeCapacityDelta(line.pkg.deltaRunningPredictionsAi) * quantity,
             deltaRunningPredictionsComposite: normalizeCapacityDelta(
@@ -3985,6 +4533,7 @@ export async function activateSubscriptionTermInTransaction(
       data: {
         effectivePlan: snapshot.plan,
         status: "ACTIVE",
+        maxExchangeAccounts: snapshot.maxExchangeAccounts,
         maxRunningBots: snapshot.maxRunningBots,
         maxRunningPredictionsAi: snapshot.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: snapshot.maxRunningPredictionsComposite,
@@ -4009,7 +4558,7 @@ export async function activateSubscriptionTermInTransaction(
           orderId: term.orderId,
           termId: term.id,
           sourceKey: `term:${term.id}:capacity:${index}`,
-          planScope: "PRO",
+          planScope: snapshot.plan,
           deltaRunningBots: normalizeCapacityDelta(line.pkg.deltaRunningBots) * quantity,
           deltaRunningPredictionsAi: normalizeCapacityDelta(line.pkg.deltaRunningPredictionsAi) * quantity,
           deltaRunningPredictionsComposite: normalizeCapacityDelta(
@@ -4208,6 +4757,7 @@ async function synchronizeSubscriptionLifecycleForUser(userId: string, now: Date
       orderBy: { startsAt: "desc" }
     });
     if (currentTerm) {
+      const snapshot = readTermSnapshot(currentTerm);
       const inGrace = currentTerm.endsAt <= now;
       if (inGrace && currentTerm.status === "ACTIVE") {
         await tx.subscriptionTerm.updateMany({
@@ -4223,13 +4773,14 @@ async function synchronizeSubscriptionLifecycleForUser(userId: string, now: Date
       await tx.userSubscription.update({
         where: { id: sub.id },
         data: {
-          effectivePlan: "PRO",
+          effectivePlan: snapshot.plan,
           status: inGrace ? "GRACE" : "ACTIVE",
+          planValidUntil: furthest?.endsAt ?? currentTerm.endsAt,
           proValidUntil: furthest?.endsAt ?? currentTerm.endsAt,
           entitlementSyncPending: true
         }
       });
-      return "pro";
+      return formatPlan(snapshot.plan);
     }
 
     const defaults = await getFreePlanDefaults(tx);
@@ -4238,7 +4789,9 @@ async function synchronizeSubscriptionLifecycleForUser(userId: string, now: Date
       data: {
         effectivePlan: "FREE",
         status: "ACTIVE",
+        planValidUntil: null,
         proValidUntil: null,
+        maxExchangeAccounts: defaults.maxExchangeAccounts,
         maxRunningBots: defaults.maxRunningBots,
         maxRunningPredictionsAi: defaults.maxRunningPredictionsAi,
         maxRunningPredictionsComposite: defaults.maxRunningPredictionsComposite,
@@ -4371,8 +4924,14 @@ export async function runSubscriptionLifecycle(params?: {
   if (!params?.userId) {
     const legacyExpired = await db.userSubscription.findMany({
       where: {
-        effectivePlan: "PRO",
-        proValidUntil: { lte: new Date(now.getTime() - BILLING_GRACE_PERIOD_MS) },
+        effectivePlan: { in: ["PRO", "PREMIUM"] },
+        OR: [
+          { planValidUntil: { lte: new Date(now.getTime() - BILLING_GRACE_PERIOD_MS) } },
+          {
+            planValidUntil: null,
+            proValidUntil: { lte: new Date(now.getTime() - BILLING_GRACE_PERIOD_MS) }
+          }
+        ],
         terms: { none: {} }
       },
       select: { userId: true },
@@ -4383,7 +4942,10 @@ export async function runSubscriptionLifecycle(params?: {
       where: {
         OR: [
           { entitlementSyncPending: true },
-          { effectivePlan: "PRO", status: { in: ["ACTIVE", "GRACE"] } }
+          {
+            effectivePlan: { in: ["PRO", "PREMIUM"] },
+            status: { in: ["ACTIVE", "GRACE"] }
+          }
         ]
       },
       select: { userId: true },
@@ -4402,7 +4964,7 @@ export async function runSubscriptionLifecycle(params?: {
         select: { effectivePlan: true }
       });
       const plan = await synchronizeSubscriptionLifecycleForUser(userId, now);
-      if (before?.effectivePlan === "PRO" && plan === "free") downgraded += 1;
+      if (formatPlan(before?.effectivePlan) !== "free" && plan === "free") downgraded += 1;
       await syncWorkspaceEntitlementsWithRetryTracking({ userId, effectivePlan: plan });
     } catch (error) {
       logger.warn("billing_subscription_user_sync_failed", {
@@ -4416,7 +4978,9 @@ export async function runSubscriptionLifecycle(params?: {
 
 export async function getSubscriptionSummary(userId: string): Promise<{
   plan: EffectivePlan;
+  planDisplayName: "Free" | "Pro" | "Premium";
   status: "active" | "grace" | "inactive";
+  planValidUntil: string | null;
   proValidUntil: string | null;
   graceEndsAt: string | null;
   scheduledTerm: {
@@ -4427,6 +4991,7 @@ export async function getSubscriptionSummary(userId: string): Promise<{
     graceEndsAt: string;
   } | null;
   limits: {
+    maxExchangeAccounts: number | null;
     maxRunningBots: number;
     allowedExchanges: string[];
     bots: {
@@ -4461,7 +5026,27 @@ export async function getSubscriptionSummary(userId: string): Promise<{
       };
     };
   };
+  quotaBreakdown: {
+    base: {
+      runningBots: number;
+      runningPredictionsAi: number | null;
+      runningPredictionsComposite: number | null;
+    };
+    addon: {
+      runningBots: number;
+      runningPredictionsAi: number;
+      runningPredictionsComposite: number;
+    };
+    effective: {
+      runningBots: number;
+      runningPredictionsAi: number | null;
+      runningPredictionsComposite: number | null;
+    };
+  };
+  exchangeAccounts: { used: number; max: number | null; paperExcluded: true };
+  upgradePreview: ImmediatePremiumUpgradePricing | null;
   ai: { creditBalance: string; creditsUsedLifetime: string; monthlyIncludedCredits: string; billingEnabled: boolean };
+  planCatalog: any[];
   packages: any[];
   orders: any[];
 }> {
@@ -4469,9 +5054,11 @@ export async function getSubscriptionSummary(userId: string): Promise<{
   await expireStalePendingBillingOrders(userId);
   const resolved = await resolveEffectivePlanForUser(userId);
   const now = new Date();
-  const [limits, usage, packages, orders, currentTerm, scheduledTerm] = await Promise.all([
+  const [limits, usage, capacityAddon, exchangeAccountsUsed, packages, orders, currentTerm, scheduledTerm] = await Promise.all([
     resolveEffectiveQuotaForUser(userId),
     resolveQuotaUsageForUser(userId),
+    resolveActiveCapacityGrantDeltas({ userId, plan: resolved.plan, now }),
+    db.exchangeAccount.count({ where: buildRealExchangeAccountCapacityWhere(userId) }),
     listActiveBillingPackages(),
     db.billingOrder.findMany({
       where: { userId },
@@ -4511,6 +5098,16 @@ export async function getSubscriptionSummary(userId: string): Promise<{
         startsAt: { lte: now },
         graceEndsAt: { gt: now }
       },
+      include: {
+        order: {
+          include: {
+            items: {
+              include: { pkg: true },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+            }
+          }
+        }
+      },
       orderBy: { startsAt: "desc" }
     }),
     db.subscriptionTerm.findFirst({
@@ -4519,9 +5116,36 @@ export async function getSubscriptionSummary(userId: string): Promise<{
     })
   ]);
 
+  let upgradePreview: ImmediatePremiumUpgradePricing | null = null;
+  if (resolved.plan === "pro" && currentTerm?.status === "ACTIVE" && !scheduledTerm) {
+    const sourceEvidence = readTermPlanPriceEvidence(currentTerm, "PRO");
+    const target = canonicalPackageByCode("premium_monthly");
+    if (sourceEvidence) {
+      try {
+        upgradePreview = resolveImmediatePremiumUpgradePricing({
+          now,
+          sourcePlan: readStoredPlan(currentTerm.plan ?? asRecord(currentTerm.entitlementSnapshot).plan),
+          targetPlan: target.plan,
+          sourceTermId: String(currentTerm.id),
+          sourceTermEndsAt: currentTerm.endsAt,
+          sourceTermGraceEndsAt: currentTerm.graceEndsAt,
+          sourcePriceCents: sourceEvidence.priceCents,
+          targetPriceCents: target.priceCents,
+          sourceBillingMonths: sourceEvidence.billingMonths,
+          targetBillingMonths: target.billingMonths,
+          hasScheduledTerm: false
+        });
+      } catch {
+        upgradePreview = null;
+      }
+    }
+  }
+
   return {
     plan: resolved.plan,
+    planDisplayName: resolved.plan === "premium" ? "Premium" : resolved.plan === "pro" ? "Pro" : "Free",
     status: resolved.status,
+    planValidUntil: resolved.planValidUntil,
     proValidUntil: resolved.proValidUntil,
     graceEndsAt: currentTerm?.graceEndsAt instanceof Date
       ? currentTerm.graceEndsAt.toISOString()
@@ -4534,6 +5158,7 @@ export async function getSubscriptionSummary(userId: string): Promise<{
       graceEndsAt: scheduledTerm.graceEndsAt.toISOString()
     } : null,
     limits: {
+      maxExchangeAccounts: resolved.maxExchangeAccounts,
       maxRunningBots: limits.bots.maxRunning,
       allowedExchanges: resolved.allowedExchanges,
       bots: {
@@ -4568,12 +5193,55 @@ export async function getSubscriptionSummary(userId: string): Promise<{
         }
       }
     },
+    quotaBreakdown: {
+      base: {
+        runningBots: resolved.maxRunningBots,
+        runningPredictionsAi: resolved.maxRunningPredictionsAi,
+        runningPredictionsComposite: resolved.maxRunningPredictionsComposite
+      },
+      addon: {
+        runningBots: capacityAddon.runningBots,
+        runningPredictionsAi: capacityAddon.runningPredictionsAi,
+        runningPredictionsComposite: capacityAddon.runningPredictionsComposite
+      },
+      effective: {
+        runningBots: limits.bots.maxRunning,
+        runningPredictionsAi: limits.predictions.ai.maxRunning,
+        runningPredictionsComposite: limits.predictions.composite.maxRunning
+      }
+    },
+    exchangeAccounts: {
+      used: exchangeAccountsUsed,
+      max: resolved.maxExchangeAccounts,
+      paperExcluded: true
+    },
+    upgradePreview,
     ai: {
       creditBalance: resolved.aiCreditBalance.toString(),
       creditsUsedLifetime: resolved.aiCreditsUsedLifetime.toString(),
       monthlyIncludedCredits: resolved.monthlyAiCreditsIncluded.toString(),
       billingEnabled: await isAiCreditBillingEnabled()
     },
+    planCatalog: CANONICAL_STAGE4_PACKAGES
+      .filter((item) => item.kind === "PLAN")
+      .map((item) => {
+        const livePackage = packages.find((pkg: any) => pkg.code === item.code) ?? null;
+        return {
+          code: item.code,
+          name: item.name,
+          description: item.description,
+          plan: formatPlan(item.plan),
+          priceCents: item.priceCents,
+          billingMonths: item.billingMonths,
+          maxExchangeAccounts: item.maxExchangeAccounts,
+          maxRunningBots: item.maxRunningBots,
+          maxRunningPredictionsAi: item.maxRunningPredictionsAi,
+          maxRunningPredictionsComposite: item.maxRunningPredictionsComposite,
+          monthlyAiCredits: item.monthlyAiCredits.toString(),
+          packageId: livePackage?.id ?? null,
+          purchasable: Boolean(livePackage && isBillingPackagePurchasable(livePackage))
+        };
+      }),
     packages,
     orders
   };
@@ -4778,7 +5446,7 @@ export function validateBillingPackageConfiguration(data: {
   if (data.kind !== "PLAN" && data.kind !== "ADDON") throw new Error("package_kind_invalid");
   if (data.kind === "PLAN") {
     if (!data.plan) throw new Error("package_plan_required");
-    if (data.plan === "PRO" && data.priceCents < 1) {
+    if ((data.plan === "PRO" || data.plan === "PREMIUM") && data.priceCents < 1) {
       throw new Error("package_active_price_required");
     }
     return;
@@ -4807,6 +5475,7 @@ export async function upsertBillingPackage(params: {
   priceCents: number;
   billingMonths: number;
   plan: EffectivePlan | null;
+  maxExchangeAccounts?: number | null;
   maxRunningBots: number | null;
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
@@ -4856,7 +5525,11 @@ export async function upsertBillingPackage(params: {
     sortOrder: normalizeInt(params.sortOrder, 0, 0),
     priceCents: normalizeInt(params.priceCents, 0, 0),
     billingMonths: normalizeInt(params.billingMonths, 1, 1),
-    plan: isPlan ? (params.plan === "pro" ? "PRO" : params.plan === "free" ? "FREE" : null) : null,
+    plan: isPlan ? (params.plan ? toStoredPlan(params.plan) : null) : null,
+    maxExchangeAccounts:
+      isPlan && params.maxExchangeAccounts !== null && params.maxExchangeAccounts !== undefined
+        ? normalizeInt(params.maxExchangeAccounts, 0, 0)
+        : null,
     maxRunningBots:
       isPlan && params.maxRunningBots !== null ? normalizeInt(params.maxRunningBots, 0, 0) : null,
     maxRunningPredictionsAi:

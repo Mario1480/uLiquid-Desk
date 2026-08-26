@@ -36,8 +36,10 @@ function normalizeIdList(value: unknown): string[] {
   return out;
 }
 
-function normalizePlan(value: unknown): "free" | "pro" | "enterprise" | null {
-  if (value === "free" || value === "pro" || value === "enterprise") return value;
+function normalizePlan(value: unknown): "free" | "pro" | "premium" | "enterprise" | null {
+  if (value === "free" || value === "pro" || value === "premium" || value === "enterprise") {
+    return value;
+  }
   return null;
 }
 

@@ -10,6 +10,18 @@ test("validateBotPluginConfigValue accepts valid config", () => {
   assert.deepEqual(result, { ok: true });
 });
 
+test("validateBotPluginConfigValue accepts Premium policy snapshots", () => {
+  const result = validateBotPluginConfigValue({
+    version: 1,
+    policySnapshot: {
+      plan: "premium",
+      allowedPluginIds: null,
+      evaluatedAt: new Date().toISOString()
+    }
+  });
+  assert.deepEqual(result, { ok: true });
+});
+
 test("normalizeBotPluginConfig compacts invalid values", () => {
   const normalized = normalizeBotPluginConfig({
     enabled: [" core.signal.legacy_dummy ", ""],

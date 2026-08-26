@@ -12,6 +12,7 @@ import {
   billingAmountCentsToUsdcRaw,
   billingDiscoveryRetryAt,
   buildActiveBillingPackageWhere,
+  buildCommercialStrategyEntitlements,
   buildDueSubscriptionAiGrantOrderBy,
   buildPlanPackageLiveSyncWhere,
   buildSubscriptionMonthlyGrantSchedule,
@@ -20,16 +21,19 @@ import {
   createBillingOrderWithTreasurySnapshotCas,
   cutoffCapacityGrantValidity,
   ensureAiCreditMinimumInTransaction,
+  formatPlan,
   getVerifiedBillingPaymentTimestamp,
   getBillingDiscoveryScanRange,
   inspectArbitrumUsdcRpc,
   hasPaidCapacityAddonTarget,
+  isEnterpriseStrategyLicense,
   isWithinLatePaymentRecoveryHorizon,
   isBillingPackagePurchasable,
   matchBillingDiscoveryTransactionHashes,
   mergeBillingFeatureFlags,
   planSubscriptionTermWindow,
   parseBillingDbBigInt,
+  predictionScheduleConsumesNewSlot,
   persistBillingDiscoveryTransition,
   persistBillingDiscoveryCandidate,
   persistBillingVerificationTransition,
@@ -40,7 +44,9 @@ import {
   requirePayableBillingCartAmountCents,
   resolveBillingOrderFinalizationDecision,
   resolveBillingPackageCreditAmounts,
+  resolvePlanBaseQuotaDefaults,
   resolveCapacityAddonTargetTermInTransaction,
+  resolveImmediatePremiumUpgradePricing,
   runConfirmedBillingFinalization,
   runDueSubscriptionTermAiCycle,
   runSerializableBillingConfigTransaction,
@@ -56,10 +62,113 @@ const RECIPIENT = "0x2222222222222222222222222222222222222222";
 const HASH_A = `0x${"aa".repeat(32)}`;
 const HASH_B = `0x${"bb".repeat(32)}`;
 
+test("commercial plan base quotas match the approved Free, Pro and Premium matrix", () => {
+  assert.deepEqual(resolvePlanBaseQuotaDefaults("free"), {
+    maxRunningBots: 2,
+    maxRunningPredictionsAi: 0,
+    maxRunningPredictionsComposite: 0
+  });
+  assert.deepEqual(resolvePlanBaseQuotaDefaults("pro"), {
+    maxRunningBots: 5,
+    maxRunningPredictionsAi: 3,
+    maxRunningPredictionsComposite: 2
+  });
+  assert.deepEqual(resolvePlanBaseQuotaDefaults("premium"), {
+    maxRunningBots: 15,
+    maxRunningPredictionsAi: 10,
+    maxRunningPredictionsComposite: 5
+  });
+});
+
+test("an already running schedule does not consume another slot after downgrade", () => {
+  assert.equal(predictionScheduleConsumesNewSlot({ currentlyEnabled: true, currentlyPaused: false }), false);
+  assert.equal(predictionScheduleConsumesNewSlot({ currentlyEnabled: true, currentlyPaused: true }), true);
+  assert.equal(predictionScheduleConsumesNewSlot({ currentlyEnabled: false, currentlyPaused: false }), true);
+});
+
 test("uses UTC calendar-month semantics and clamps month-end renewals", () => {
   assert.equal(addBillingMonths(new Date("2024-01-31T12:00:00.000Z"), 1).toISOString(), "2024-02-29T12:00:00.000Z");
   assert.equal(addBillingMonths(new Date("2024-01-31T12:00:00.000Z"), 2).toISOString(), "2024-03-31T12:00:00.000Z");
   assert.equal(addBillingMonths(new Date("2025-01-31T12:00:00.000Z"), 1).toISOString(), "2025-02-28T12:00:00.000Z");
+});
+
+test("Pro to Premium charges the full package difference and preserves the paid term window", async (t) => {
+  const now = new Date("2026-08-26T10:00:00.000Z");
+  const endsAt = new Date("2027-08-01T10:00:00.000Z");
+  const graceEndsAt = new Date("2027-08-04T10:00:00.000Z");
+  const result = resolveImmediatePremiumUpgradePricing({
+    now,
+    sourcePlan: "PRO",
+    targetPlan: "PREMIUM",
+    sourceTermId: "term_annual_pro",
+    sourceTermEndsAt: endsAt,
+    sourceTermGraceEndsAt: graceEndsAt,
+    sourcePriceCents: 29_000,
+    targetPriceCents: 69_000,
+    sourceBillingMonths: 12,
+    targetBillingMonths: 12,
+    hasScheduledTerm: false
+  });
+  assert.deepEqual(result, {
+    kind: "IMMEDIATE_PLAN_UPGRADE",
+    sourcePlan: "PRO",
+    targetPlan: "PREMIUM",
+    sourceTermId: "term_annual_pro",
+    sourceTermEndsAt: endsAt.toISOString(),
+    sourceTermGraceEndsAt: graceEndsAt.toISOString(),
+    sourcePriceCents: 29_000,
+    targetPriceCents: 69_000,
+    differenceCents: 40_000,
+    billingMonths: 12
+  });
+
+  await t.test("is not used for renewals or downgrades", () => {
+    assert.equal(resolveImmediatePremiumUpgradePricing({
+      now,
+      sourcePlan: "PREMIUM",
+      targetPlan: "PRO",
+      sourceTermId: "term_1",
+      sourceTermEndsAt: endsAt,
+      sourceTermGraceEndsAt: graceEndsAt,
+      sourcePriceCents: 69_000,
+      targetPriceCents: 29_000,
+      sourceBillingMonths: 12,
+      targetBillingMonths: 12,
+      hasScheduledTerm: false
+    }), null);
+  });
+
+  await t.test("fails closed for expired terms, mismatched durations and queued terms", () => {
+    const base = {
+      now,
+      sourcePlan: "PRO",
+      targetPlan: "PREMIUM",
+      sourceTermId: "term_1",
+      sourceTermEndsAt: endsAt,
+      sourceTermGraceEndsAt: graceEndsAt,
+      sourcePriceCents: 2_900,
+      targetPriceCents: 6_900,
+      sourceBillingMonths: 1,
+      targetBillingMonths: 1,
+      hasScheduledTerm: false
+    };
+    assert.throws(
+      () => resolveImmediatePremiumUpgradePricing({ ...base, sourceTermEndsAt: now }),
+      /premium_upgrade_active_term_required/
+    );
+    assert.throws(
+      () => resolveImmediatePremiumUpgradePricing({ ...base, targetBillingMonths: 12 }),
+      /premium_upgrade_term_mismatch/
+    );
+    assert.throws(
+      () => resolveImmediatePremiumUpgradePricing({ ...base, hasScheduledTerm: true }),
+      /premium_upgrade_scheduled_term_conflict/
+    );
+    assert.throws(
+      () => resolveImmediatePremiumUpgradePricing({ ...base, sourcePriceCents: 6_900 }),
+      /premium_upgrade_price_evidence_invalid/
+    );
+  });
 });
 
 test("schedules early, repeated and grace-period renewals after the paid chain", async (t) => {
@@ -302,6 +411,21 @@ test("migration enforces replay, concurrent-checkout and lifecycle idempotency c
   assert.match(sql, /grant_row\."valid_until" = term_row\."ends_at"/);
   assert.match(sql, /SET\s+"term_id" = term_row\."id",\s+"valid_until" = term_row\."grace_ends_at"/);
   assert.doesNotMatch(sql, /ELSE grant_row\."valid_until"/);
+});
+
+test("Premium foundation migration is additive and does not activate a package", async () => {
+  const migrationUrl = new URL(
+    "../../../../prisma/migrations/20260825120000_premium_plan_entitlement_foundation/migration.sql",
+    import.meta.url
+  );
+  const sql = await readFile(migrationUrl, "utf8");
+  assert.match(sql, /ALTER TYPE "EffectivePlan" ADD VALUE IF NOT EXISTS 'PREMIUM'/);
+  assert.match(sql, /ADD COLUMN "plan_valid_until" TIMESTAMP\(3\)/);
+  assert.match(sql, /ADD COLUMN "max_exchange_accounts" INTEGER/);
+  assert.match(sql, /ALTER TABLE "subscription_terms"\s+ADD COLUMN "plan" "EffectivePlan"/);
+  assert.match(sql, /user_subscriptions_effective_plan_valid_until_idx/);
+  assert.doesNotMatch(sql, /INSERT INTO "billing_packages"/);
+  assert.doesNotMatch(sql, /DROP (?:TABLE|COLUMN|TYPE)/);
 });
 
 test("a crash after receipt persistence resumes idempotent finalization without another RPC receipt", () => {
@@ -650,12 +774,39 @@ test("one corrupt payment cannot block later reconciliation rows", async () => {
   assert.deepEqual(tracked, ["bad"]);
 });
 
-test("paid term snapshots are excluded from mutable Pro package live-sync", () => {
+test("paid term snapshots are excluded from mutable package live-sync", () => {
   assert.deepEqual(buildPlanPackageLiveSyncWhere("PRO"), {
     effectivePlan: "PRO",
     terms: { none: {} }
   });
+  assert.deepEqual(buildPlanPackageLiveSyncWhere("PREMIUM"), {
+    effectivePlan: "PREMIUM",
+    terms: { none: {} }
+  });
   assert.deepEqual(buildPlanPackageLiveSyncWhere("FREE"), { effectivePlan: "FREE" });
+});
+
+test("stored billing plans normalize Premium and unknown values fail safe", () => {
+  assert.equal(formatPlan("PRO"), "pro");
+  assert.equal(formatPlan("PREMIUM"), "premium");
+  assert.equal(formatPlan("legacy_paid_unknown"), "free");
+});
+
+test("commercial entitlement sync keeps credits separate and preserves Enterprise", () => {
+  assert.deepEqual(buildCommercialStrategyEntitlements("free"), {
+    plan: "free",
+    allowedStrategyKinds: ["local"],
+    maxCompositeNodes: 0,
+    aiAllowedModels: []
+  });
+  assert.deepEqual(buildCommercialStrategyEntitlements("premium"), {
+    plan: "premium",
+    allowedStrategyKinds: ["local", "ai", "composite"],
+    maxCompositeNodes: 12,
+    aiAllowedModels: ["*"]
+  });
+  assert.equal(isEnterpriseStrategyLicense("Enterprise"), true);
+  assert.equal(isEnterpriseStrategyLicense("premium"), false);
 });
 
 test("admin adjustments and free minimum grants use atomic balance operations", async () => {
@@ -784,6 +935,54 @@ test("term activation persists entitlements before independently retrying AI cre
   assert.equal(await activateSubscriptionTermInTransaction(tx, term.id, startsAt), true);
   assert.equal(subscriptionData.effectivePlan, "PRO");
   assert.equal(subscriptionData.monthlyAiCreditsIncluded, 10n);
+  assert.equal(aiScheduleData.aiGrantCyclesApplied, 0);
+  assert.equal(aiScheduleData.nextAiGrantAt.toISOString(), startsAt.toISOString());
+  assert.equal("aiCreditLedger" in tx, false);
+});
+
+test("Premium term activation applies 15/10/5 quotas and schedules the 30k monthly credit cycle", async () => {
+  const startsAt = new Date("2026-08-01T00:00:00.000Z");
+  const term = {
+    id: "term_premium",
+    userId: "user_premium",
+    subscriptionId: "sub_premium",
+    orderId: "order_premium",
+    plan: "PREMIUM",
+    startsAt,
+    endsAt: new Date("2026-09-01T00:00:00.000Z"),
+    graceEndsAt: new Date("2026-09-04T00:00:00.000Z"),
+    entitlementSnapshot: {
+      plan: "PREMIUM",
+      maxExchangeAccounts: null,
+      maxRunningBots: 15,
+      maxRunningPredictionsAi: 10,
+      maxRunningPredictionsComposite: 5,
+      allowedExchanges: ["*"],
+      monthlyAiCredits: "30000",
+      lines: []
+    }
+  };
+  let subscriptionData: any = null;
+  let aiScheduleData: any = null;
+  const tx = {
+    subscriptionTerm: {
+      async updateMany() { return { count: 1 }; },
+      async findUnique() { return term; },
+      async findMany() { return []; },
+      async update({ data }: any) { aiScheduleData = data; return { ...term, ...data }; }
+    },
+    userSubscription: {
+      async update({ data }: any) { subscriptionData = data; return data; }
+    }
+  };
+
+  assert.equal(await activateSubscriptionTermInTransaction(tx, term.id, startsAt), true);
+  assert.equal(subscriptionData.effectivePlan, "PREMIUM");
+  assert.equal(subscriptionData.maxExchangeAccounts, null);
+  assert.equal(subscriptionData.maxRunningBots, 15);
+  assert.equal(subscriptionData.maxRunningPredictionsAi, 10);
+  assert.equal(subscriptionData.maxRunningPredictionsComposite, 5);
+  assert.equal(subscriptionData.monthlyAiCreditsIncluded, 30_000n);
   assert.equal(aiScheduleData.aiGrantCyclesApplied, 0);
   assert.equal(aiScheduleData.nextAiGrantAt.toISOString(), startsAt.toISOString());
   assert.equal("aiCreditLedger" in tx, false);
@@ -956,6 +1155,7 @@ test("an overdue paid term is activated before a capacity add-on selects its tar
   assert.equal(target.activated, 1);
   assert.equal(hasPaidCapacityAddonTarget(target.term, "FREE"), true);
   assert.equal(hasPaidCapacityAddonTarget(null, "PRO"), true);
+  assert.equal(hasPaidCapacityAddonTarget(null, "PREMIUM"), true);
   assert.equal(hasPaidCapacityAddonTarget(null, "FREE"), false);
 });
 
@@ -1152,6 +1352,15 @@ test("active paid packages require a positive price and a meaningful add-on valu
   assert.doesNotThrow(() => validateBillingPackageConfiguration(pro));
   assert.throws(
     () => validateBillingPackageConfiguration({ ...pro, priceCents: 0 }),
+    /package_active_price_required/
+  );
+  assert.doesNotThrow(() => validateBillingPackageConfiguration({
+    ...pro,
+    plan: "PREMIUM",
+    priceCents: 6900
+  }));
+  assert.throws(
+    () => validateBillingPackageConfiguration({ ...pro, plan: "PREMIUM", priceCents: 0 }),
     /package_active_price_required/
   );
   assert.doesNotThrow(() => validateBillingPackageConfiguration({

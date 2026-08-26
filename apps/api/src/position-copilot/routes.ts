@@ -1,6 +1,11 @@
 import express from "express";
 import { z } from "zod";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import {
+  isPositionCopilotRuntimeEnabled,
+  isPositionMonitoringRuntimeEnabled
+} from "../ai/featureFlags.js";
 import type { AiChatResult, CallAiChatOptions, ChatMessage } from "../ai/provider.js";
 import {
   buildPositionCopilotSnapshot,
@@ -29,6 +34,15 @@ type RegisterPositionCopilotRoutesDeps = {
     routeTab: "positions";
     tags: string[];
   }): Promise<void>;
+  resolvePlanCapabilitiesForUserId(input: {
+    userId: string;
+  }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+  isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
+  sendCapabilityDenied(
+    res: express.Response,
+    params: { capability: CapabilityKey; currentPlan: PlanTier; legacyCode?: string }
+  ): express.Response;
+  hasAdminBackendAccess?: (user: { id: string; email: string }) => Promise<boolean>;
 };
 
 const settingsSchema = z.object({
@@ -111,7 +125,43 @@ function notificationSeverity(riskLevel: string): "info" | "warn" | "error" | "c
 }
 
 export function registerPositionCopilotRoutes(app: express.Express, deps: RegisterPositionCopilotRoutesDeps) {
+  function requireRuntimeGateOrRespond(
+    res: express.Response,
+    feature: "copilot" | "monitoring"
+  ): boolean {
+    const enabled = feature === "copilot"
+      ? isPositionCopilotRuntimeEnabled()
+      : isPositionMonitoringRuntimeEnabled();
+    if (enabled) return true;
+    res.status(403).json({
+      error: feature === "copilot"
+        ? "position_copilot_feature_disabled"
+        : "position_monitoring_feature_disabled"
+    });
+    return false;
+  }
+
+  async function requireCapabilityOrRespond(
+    res: express.Response,
+    capability: "product.ai_position_copilot" | "product.ai_position_monitoring"
+  ): Promise<boolean> {
+    const user = getUserFromLocals(res);
+    if (deps.hasAdminBackendAccess && (await deps.hasAdminBackendAccess(user))) return true;
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
+    if (deps.isCapabilityAllowed(capabilityContext.capabilities, capability)) return true;
+    deps.sendCapabilityDenied(res, {
+      capability,
+      currentPlan: capabilityContext.plan,
+      legacyCode: capability === "product.ai_position_copilot"
+        ? "position_copilot_not_available"
+        : "position_monitoring_not_available"
+    });
+    return false;
+  }
+
   app.get("/api/position-copilot/settings", requireAuth, async (_req, res) => {
+    if (!requireRuntimeGateOrRespond(res, "copilot")) return;
+    if (!(await requireCapabilityOrRespond(res, "product.ai_position_copilot"))) return;
     try {
       const user = getUserFromLocals(res);
       return res.json(await loadPositionCopilotSettings(deps.db, user.id));
@@ -121,9 +171,15 @@ export function registerPositionCopilotRoutes(app: express.Express, deps: Regist
   });
 
   app.put("/api/position-copilot/settings", requireAuth, async (req, res) => {
+    if (!requireRuntimeGateOrRespond(res, "copilot")) return;
+    if (!(await requireCapabilityOrRespond(res, "product.ai_position_copilot"))) return;
     const parsed = settingsSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    if (parsed.data.mode !== "off") {
+      if (!requireRuntimeGateOrRespond(res, "monitoring")) return;
+      if (!(await requireCapabilityOrRespond(res, "product.ai_position_monitoring"))) return;
     }
     try {
       const user = getUserFromLocals(res);
@@ -134,9 +190,15 @@ export function registerPositionCopilotRoutes(app: express.Express, deps: Regist
   });
 
   app.post("/api/position-copilot/analyze", requireAuth, async (req, res) => {
+    if (!requireRuntimeGateOrRespond(res, "copilot")) return;
+    if (!(await requireCapabilityOrRespond(res, "product.ai_position_copilot"))) return;
     const parsed = analyzeSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    if (parsed.data.trigger !== "manual") {
+      if (!requireRuntimeGateOrRespond(res, "monitoring")) return;
+      if (!(await requireCapabilityOrRespond(res, "product.ai_position_monitoring"))) return;
     }
 
     const user = getUserFromLocals(res);

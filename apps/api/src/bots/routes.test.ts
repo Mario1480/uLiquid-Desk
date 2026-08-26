@@ -288,6 +288,7 @@ test("POST /bots does not auto-create BotVault for normal bots", async () => {
 test("admin backend access bypasses product gate and start license when starting bots", async () => {
   const app = createFakeApp();
   let startLicenseChecked = false;
+  let serializedAdmissionCalled = false;
 
   registerBotRoutes(app as any, {
     db: {
@@ -363,6 +364,19 @@ test("admin backend access bypasses product gate and start license when starting
         reason: "should_have_been_bypassed"
       };
     },
+    admitBotStartForUser: async ({ bypass, transition }: any) => {
+      serializedAdmissionCalled = true;
+      assert.equal(bypass, true);
+      const value = await transition({
+        bot: {
+          update: async (input: any) => ({ id: input.where.id, status: input.data.status })
+        },
+        botRuntime: {
+          upsert: async () => null
+        }
+      }, { id: "bot_1", status: "stopped" });
+      return { outcome: "allowed", value, runningBots: 0, alreadyRunning: false };
+    },
     enqueueBotRun: async () => ({ jobId: "job_1", queued: true }),
     MEXC_PERP_ENABLED: true
   } as any);
@@ -375,6 +389,7 @@ test("admin backend access bypasses product gate and start license when starting
   assert.equal(res.statusCode, 200);
   assert.equal(res.body?.status, "running");
   assert.equal(startLicenseChecked, false);
+  assert.equal(serializedAdmissionCalled, true);
 });
 
 test("POST /bots/:id/start ignores existing BotVault readiness for normal bots", async () => {

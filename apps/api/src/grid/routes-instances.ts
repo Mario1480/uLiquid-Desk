@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import {
   buildOrderReferenceIdentity,
   collectCanonicalOrderReferenceKeys,
@@ -24,6 +25,29 @@ import {
   isBotVaultRuntimeModelRow,
   resolveBotVaultRuntimeModel
 } from "@mm/core";
+import {
+  isGridProvisioningActionAllowed,
+  isGridProvisioningOnchainActionType,
+  type GridProvisioningAction
+} from "./provisioningAuthorization.js";
+import type { OnchainActionService } from "../vaults/onchainAction.service.js";
+
+const gridProvisioningBuildSchema = z.object({
+  amountUsd: z.number().positive().optional(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const gridProvisioningSubmitSchema = z.object({
+  txHash: z.string().trim().regex(/^0x[a-fA-F0-9]{64}$/)
+});
+
+const gridProvisioningFailSchema = z.object({
+  txHash: z.string().trim().regex(/^0x[a-fA-F0-9]{64}$/).optional()
+});
+
+const gridOnchainActionListSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(25)
+});
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const logger = deps.logger ?? defaultLogger;
@@ -408,6 +432,46 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     return pilotAccess.allowed || executionContext.allowLiveHyperliquid
       ? new Set([...shared.allowedGridExchanges, "hyperliquid"])
       : shared.allowedGridExchanges;
+  }
+
+  async function resolveBotAdmissionBypass(user: { id: string; email?: string | null }): Promise<boolean> {
+    if (!deps.hasAdminBackendAccess) return false;
+    try {
+      return Boolean(await deps.hasAdminBackendAccess({
+        id: user.id,
+        email: String(user.email ?? "")
+      }));
+    } catch {
+      return false;
+    }
+  }
+
+  async function loadGridProvisioningContext(params: {
+    userId: string;
+    instanceId: string;
+  }): Promise<{ botVaultId: string; phase: string | null } | null> {
+    const row = await deps.loadGridInstanceForUser({
+      db: deps.db,
+      userId: params.userId,
+      instanceId: params.instanceId
+    });
+    if (!row) return null;
+    const mapped = shared.mapGridInstanceRow(row);
+    const botVaultId = String(
+      asRecord(asRecord(row).botVault).id
+      ?? asRecord(asRecord(mapped).botVault).id
+      ?? ""
+    ).trim();
+    if (!botVaultId) return null;
+    const phase = String(asRecord(asRecord(mapped).provisioningStatus).phase ?? "").trim().toLowerCase() || null;
+    return { botVaultId, phase };
+  }
+
+  function gridProvisioningErrorStatus(error: unknown): number {
+    const reason = String(asRecord(error).message ?? error).toLowerCase();
+    if (reason.includes("not_found")) return 404;
+    if (reason.includes("invalid_") || reason.includes("required")) return 400;
+    return 409;
   }
 
   function buildGridStartVaultErrorPayload(error: {
@@ -1398,6 +1462,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         await deps.gridLifecycle.startGridInstanceNow({
           row,
           userId: user.id,
+          bypassBotAdmission: await resolveBotAdmissionBypass(user),
           allowedExchanges: allowHyperliquid ? new Set([...shared.allowedGridExchanges, "hyperliquid"]) : shared.allowedGridExchanges
         });
       } catch (startError) {
@@ -1672,6 +1737,191 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     }
   });
 
+  app.get("/grid/onchain/actions", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    if (!deps.onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = gridOnchainActionListSchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const [mode, items, botVaultRows] = await Promise.all([
+        deps.onchainActionService.getMode(),
+        deps.onchainActionService.listActionsForUser({
+          userId: user.id,
+          limit: Math.min(200, parsed.data.limit * 4)
+        }),
+        deps.db.botVault.findMany({
+          where: { userId: user.id, gridInstanceId: { not: null } },
+          select: { id: true }
+        })
+      ]);
+      const gridBotVaultIds = new Set(
+        (Array.isArray(botVaultRows) ? botVaultRows : [])
+          .map((row: unknown) => String(asRecord(row).id))
+      );
+      const gridItems = (items as Awaited<ReturnType<OnchainActionService["listActionsForUser"]>>)
+        .filter((item) => (
+          gridBotVaultIds.has(String(item.botVaultId ?? ""))
+          && isGridProvisioningOnchainActionType(item.actionType)
+        ))
+        .slice(0, parsed.data.limit);
+      return res.json({ mode, items: gridItems });
+    } catch (error) {
+      return res.status(gridProvisioningErrorStatus(error)).json({
+        error: "grid_onchain_actions_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  async function handleGridProvisioningBuild(params: {
+    req: Request;
+    res: Response;
+    action: GridProvisioningAction;
+  }) {
+    const { req, res } = params;
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    if (!deps.onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = gridProvisioningBuildSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const user = getUserFromLocals(res);
+    const context = await loadGridProvisioningContext({
+      userId: user.id,
+      instanceId: String(req.params.id ?? "")
+    });
+    if (!context) return res.status(404).json({ error: "grid_instance_or_bot_vault_not_found" });
+    if (!isGridProvisioningActionAllowed({ action: params.action, phase: context.phase })) {
+      return res.status(409).json({
+        error: "grid_provisioning_action_not_allowed",
+        phase: context.phase,
+        action: params.action
+      });
+    }
+    try {
+      const result = params.action === "reserve"
+        ? await deps.onchainActionService.buildReserveForBotVault({
+            userId: user.id,
+            botVaultId: context.botVaultId,
+            amountUsd: parsed.data.amountUsd,
+            actionKey: parsed.data.actionKey
+          })
+        : await deps.onchainActionService.buildFundBotVaultOnHyperCore({
+            userId: user.id,
+            botVaultId: context.botVaultId,
+            amountUsd: parsed.data.amountUsd,
+            actionKey: parsed.data.actionKey
+          });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      return res.status(gridProvisioningErrorStatus(error)).json({
+        error: "grid_provisioning_build_failed",
+        reason: String(error)
+      });
+    }
+  }
+
+  app.post("/grid/instances/:id/onchain/reserve-tx", requireAuth, async (req, res) => (
+    handleGridProvisioningBuild({ req, res, action: "reserve" })
+  ));
+
+  app.post("/grid/instances/:id/onchain/fund-hypercore-tx", requireAuth, async (req, res) => (
+    handleGridProvisioningBuild({ req, res, action: "fund_hypercore" })
+  ));
+
+  app.post("/grid/instances/:id/onchain/actions/:actionId/submit-tx", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    if (!deps.onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = gridProvisioningSubmitSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const user = getUserFromLocals(res);
+    const context = await loadGridProvisioningContext({
+      userId: user.id,
+      instanceId: String(req.params.id ?? "")
+    });
+    if (!context) return res.status(404).json({ error: "grid_instance_or_bot_vault_not_found" });
+    const action = await deps.db.onchainAction.findFirst({
+      where: {
+        id: String(req.params.actionId ?? ""),
+        userId: user.id,
+        botVaultId: context.botVaultId
+      },
+      select: { id: true, actionType: true }
+    });
+    if (!action || !isGridProvisioningOnchainActionType(action.actionType)) {
+      return res.status(404).json({ error: "grid_provisioning_action_not_found" });
+    }
+    try {
+      const updated = await deps.onchainActionService.submitActionTxHash({
+        userId: user.id,
+        actionId: action.id,
+        txHash: parsed.data.txHash
+      });
+      return res.json({ ok: true, action: updated });
+    } catch (error) {
+      return res.status(gridProvisioningErrorStatus(error)).json({
+        error: "grid_provisioning_submit_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.post("/grid/instances/:id/onchain/actions/:actionId/fail-tx", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    if (!deps.onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = gridProvisioningFailSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const user = getUserFromLocals(res);
+    const context = await loadGridProvisioningContext({
+      userId: user.id,
+      instanceId: String(req.params.id ?? "")
+    });
+    if (!context) return res.status(404).json({ error: "grid_instance_or_bot_vault_not_found" });
+    const action = await deps.db.onchainAction.findFirst({
+      where: {
+        id: String(req.params.actionId ?? ""),
+        userId: user.id,
+        botVaultId: context.botVaultId
+      },
+      select: { id: true, actionType: true }
+    });
+    if (!action || !isGridProvisioningOnchainActionType(action.actionType)) {
+      return res.status(404).json({ error: "grid_provisioning_action_not_found" });
+    }
+    try {
+      const updated = await deps.onchainActionService.markActionFailed({
+        userId: user.id,
+        actionId: action.id,
+        txHash: parsed.data.txHash
+      });
+      return res.json({ ok: true, action: updated });
+    } catch (error) {
+      return res.status(gridProvisioningErrorStatus(error)).json({
+        error: "grid_provisioning_fail_failed",
+        reason: String(error)
+      });
+    }
+  });
+
   app.post("/grid/instances/:id/start", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
@@ -1691,6 +1941,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const started = await deps.gridLifecycle.startGridInstanceNow({
         row,
         userId: user.id,
+        bypassBotAdmission: await resolveBotAdmissionBypass(user),
         allowedExchanges
       });
       return res.json({ ok: true, ...started });
@@ -1776,6 +2027,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const started = await deps.gridLifecycle.startGridInstanceNow({
         row,
         userId: user.id,
+        bypassBotAdmission: await resolveBotAdmissionBypass(user),
         allowedExchanges
       });
       return res.json({ ok: true, ...started });

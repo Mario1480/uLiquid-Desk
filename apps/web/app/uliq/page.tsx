@@ -15,6 +15,12 @@ import {
   requestWalletWatchAsset,
   ULIQ_TOKEN_IMAGE_PATH
 } from "../../src/wallet/watchAsset";
+import {
+  finalizedClaimAmountRaw,
+  isPendingClaimTransaction,
+  pendingClaimMatchesWallet,
+  type PendingClaimTransaction
+} from "../../src/uliq/pendingClaim";
 
 type PresaleOverview = {
   chainId: number;
@@ -141,6 +147,7 @@ type TransactionResult = {
 
 const PENDING_FINALIZE_TX_STORAGE_KEY = "uliquid.uliq.pendingFinalizeTxHashes.v1";
 const PENDING_WITHDRAW_TX_STORAGE_KEY = "uliquid.uliq.pendingWithdrawTxHashes.v1";
+const PENDING_CLAIM_TX_STORAGE_KEY = "uliquid.uliq.pendingClaimTransaction.v1";
 const PURCHASE_TRACKING_REQUEST_TIMEOUT_MS = 5_000;
 
 async function purchaseTrackingRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -179,6 +186,26 @@ function writePendingTxHashes(storageKey: string, value: Record<string, Hex>): v
     window.localStorage.setItem(storageKey, JSON.stringify(value));
   } catch {
     // The contract-state preflight remains the safety fallback if browser storage is unavailable.
+  }
+}
+
+function readPendingClaimTransaction(): PendingClaimTransaction | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(PENDING_CLAIM_TX_STORAGE_KEY) ?? "null");
+    return isPendingClaimTransaction(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingClaimTransaction(value: PendingClaimTransaction | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (value) window.localStorage.setItem(PENDING_CLAIM_TX_STORAGE_KEY, JSON.stringify(value));
+    else window.localStorage.removeItem(PENDING_CLAIM_TX_STORAGE_KEY);
+  } catch {
+    // The finalized released amount remains the safety fallback if browser storage is unavailable.
   }
 }
 
@@ -234,6 +261,7 @@ function UliqHubContent() {
   const [lastTxHash, setLastTxHash] = useState<Hex | null>(null);
   const [pendingFinalizeTxHashes, setPendingFinalizeTxHashes] = useState<Record<string, Hex>>({});
   const [pendingWithdrawTxHashes, setPendingWithdrawTxHashes] = useState<Record<string, Hex>>({});
+  const [pendingClaimTransaction, setPendingClaimTransaction] = useState<PendingClaimTransaction | null>(null);
   const publicEnabled = process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true";
   const paymentTokenAddress = overview?.paymentTokenAddress && isAddress(overview.paymentTokenAddress)
     ? overview.paymentTokenAddress as Address
@@ -250,6 +278,11 @@ function UliqHubContent() {
   const linkedWallet = me?.walletAddress?.toLowerCase() ?? "";
   const walletMatches = Boolean(address && linkedWallet && address.toLowerCase() === linkedWallet);
   const canSign = publicEnabled && isConnected && walletMatches;
+  const pendingClaimForCurrentWallet = pendingClaimMatchesWallet(
+    pendingClaimTransaction,
+    overview?.chainId,
+    address
+  ) ? pendingClaimTransaction : null;
 
   const rememberPendingFinalize = useCallback((key: string, hash: Hex) => {
     setPendingFinalizeTxHashes((current) => {
@@ -287,6 +320,22 @@ function UliqHubContent() {
     });
   }, []);
 
+  const rememberPendingClaim = useCallback((pending: PendingClaimTransaction) => {
+    const normalized = {
+      ...pending,
+      contractAddress: pending.contractAddress.toLowerCase() as `0x${string}`,
+      walletAddress: pending.walletAddress.toLowerCase() as `0x${string}`,
+      transactionHash: pending.transactionHash.toLowerCase() as Hex
+    };
+    setPendingClaimTransaction(normalized);
+    writePendingClaimTransaction(normalized);
+  }, []);
+
+  const forgetPendingClaim = useCallback(() => {
+    setPendingClaimTransaction(null);
+    writePendingClaimTransaction(null);
+  }, []);
+
   const load = useCallback(async () => {
     if (!publicEnabled) {
       setLoading(false);
@@ -316,7 +365,7 @@ function UliqHubContent() {
   )));
 
   useEffect(() => {
-    if (!hasPendingPurchaseTracking) return;
+    if (!hasPendingPurchaseTracking && !pendingClaimForCurrentWallet) return;
     const timer = window.setInterval(() => { void load(); }, 10_000);
     const refreshOnFocus = () => { void load(); };
     window.addEventListener("focus", refreshOnFocus);
@@ -324,12 +373,45 @@ function UliqHubContent() {
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshOnFocus);
     };
-  }, [hasPendingPurchaseTracking, load]);
+  }, [hasPendingPurchaseTracking, load, pendingClaimForCurrentWallet]);
 
   useEffect(() => {
     setPendingFinalizeTxHashes(readPendingTxHashes(PENDING_FINALIZE_TX_STORAGE_KEY));
     setPendingWithdrawTxHashes(readPendingTxHashes(PENDING_WITHDRAW_TX_STORAGE_KEY));
+    setPendingClaimTransaction(readPendingClaimTransaction());
   }, []);
+
+  useEffect(() => {
+    if (!pendingClaimForCurrentWallet || !vesting) return;
+    setLastTxHash(pendingClaimForCurrentWallet.transactionHash);
+    const claimedAmountRaw = finalizedClaimAmountRaw(pendingClaimForCurrentWallet, vesting.releasedRaw);
+    if (!claimedAmountRaw) return;
+    setNotice(t("vesting.claimFinalized", { amount: formatRaw(claimedAmountRaw, 18) }));
+    forgetPendingClaim();
+  }, [forgetPendingClaim, pendingClaimForCurrentWallet, t, vesting]);
+
+  useEffect(() => {
+    if (!pendingClaimForCurrentWallet) return;
+    let cancelled = false;
+    const checkReceipt = () => {
+      void getTransactionReceipt(wagmiConfig, {
+        chainId: pendingClaimForCurrentWallet.chainId,
+        hash: pendingClaimForCurrentWallet.transactionHash
+      }).then((receipt) => {
+        if (cancelled || receipt.status !== "reverted") return;
+        forgetPendingClaim();
+        setError(t("messages.txReverted"));
+      }).catch(() => {
+        // A missing receipt remains fail-closed until the transaction or finalized read resolves it.
+      });
+    };
+    checkReceipt();
+    const timer = window.setInterval(checkReceipt, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [forgetPendingClaim, pendingClaimForCurrentWallet, t]);
 
   useEffect(() => {
     if (!overview || !me) return;
@@ -637,6 +719,32 @@ function UliqHubContent() {
     }
   }
 
+  async function claimVesting(): Promise<string> {
+    if (!vesting || !address) throw new Error(t("messages.walletRequired"));
+    const prepared = await apiPost<PreparedTx>("/uliq/vesting/claim/prepare", {});
+    const pendingBase = {
+      chainId: prepared.chainId,
+      contractAddress: prepared.to,
+      walletAddress: address,
+      releasedRawBefore: vesting.releasedRaw,
+      submittedAt: new Date().toISOString()
+    };
+    const result = await executeTransaction(
+      prepared,
+      t("vesting.claim"),
+      (transactionHash) => rememberPendingClaim({ ...pendingBase, transactionHash }),
+      forgetPendingClaim
+    );
+    if (result.replacementReason === "cancelled") {
+      forgetPendingClaim();
+      throw new Error(t("messages.txCancelled"));
+    }
+    if (result.receiptHash !== result.submittedHash) {
+      rememberPendingClaim({ ...pendingBase, transactionHash: result.receiptHash });
+    }
+    return t("vesting.claimPending");
+  }
+
   async function lockTokens() {
     const amountRaw = parsePositiveAmount(lockAmount, 18);
     const prepared = await apiPost<{ approval: PreparedTx; lock: PreparedTx }>("/uliq/locking/lock/prepare", {
@@ -759,7 +867,8 @@ function UliqHubContent() {
             </div>
             <div className="uliqSchedule"><span>{t("vesting.schedule")}</span><strong>{formatDate(vesting.vestingStart, locale)} → {formatDate(vesting.vestingEnd, locale)}</strong></div>
             {!vesting.vestingStart ? <div className="uiNotice uiNotice-info">{t("vesting.waiting")}</div> : <div className="uliqProgress" aria-label={`${vestingProgress}%`}><span style={{ width: `${Math.min(100, vestingProgress)}%` }} /></div>}
-            <button type="button" className="btn btnPrimary" disabled={!canSign || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null} onClick={() => void runAction("claim", () => executePrepared("/uliq/vesting/claim/prepare", {}, t("vesting.claim")))}><AppIcon name="withdraw" /> {t("vesting.claim")}</button>
+            {pendingClaimForCurrentWallet ? <div className="uiNotice uiNotice-info">{t("vesting.claimPending")}</div> : null}
+            <button type="button" className="btn btnPrimary" disabled={!canSign || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null || Boolean(pendingClaimForCurrentWallet)} onClick={() => void runAction("claim", claimVesting)}><AppIcon name="withdraw" /> {t(pendingClaimForCurrentWallet ? "vesting.claimPendingButton" : "vesting.claim")}</button>
           </section>
         ) : null}
 

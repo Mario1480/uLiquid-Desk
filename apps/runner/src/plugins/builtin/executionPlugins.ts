@@ -57,7 +57,7 @@ export const builtinExecutionPlugins: RunnerExecutionPlugin[] = [
       kind: "execution",
       version: "1.0.0",
       description: "Built-in grid execution mode",
-      minPlan: "pro",
+      minPlan: "free",
       defaultEnabled: true,
       capabilities: ["runner.execution", "execution.grid"]
     },
@@ -85,7 +85,7 @@ export const builtinExecutionPlugins: RunnerExecutionPlugin[] = [
       kind: "execution",
       version: "1.0.0",
       description: "Built-in futures grid execution mode",
-      minPlan: "pro",
+      minPlan: "free",
       defaultEnabled: true,
       capabilities: ["runner.execution", "execution.futures_grid"]
     },
@@ -113,7 +113,7 @@ export const builtinExecutionPlugins: RunnerExecutionPlugin[] = [
       kind: "execution",
       version: "1.0.0",
       description: "Built-in prediction copier execution mode",
-      minPlan: "pro",
+      minPlan: "free",
       defaultEnabled: true,
       capabilities: ["runner.execution", "prediction.copier"]
     },

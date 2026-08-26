@@ -36,7 +36,7 @@ export type RegisterBotRoutesDeps = {
   encodeTradeHistoryCursor(entryTs: Date, id: string): string;
   computeRealizedPnlPct(input: { side: string; entryPrice: number | null; exitPrice: number | null }): number | null;
   classifyOutcomeFromClose(input: { exitReason: string | null | undefined }): string;
-  resolvePlanCapabilitiesForUserId(params: { userId: string }): Promise<{ plan: "free" | "pro" | "enterprise"; capabilities: Record<string, boolean>; capabilitySnapshot: unknown }>;
+  resolvePlanCapabilitiesForUserId(params: { userId: string }): Promise<{ plan: "free" | "pro" | "premium" | "enterprise"; capabilities: Record<string, boolean>; capabilitySnapshot: unknown }>;
   isCapabilityAllowed(capabilities: Record<string, boolean>, capability: string): boolean;
   sendCapabilityDenied(res: express.Response, params: { capability: string; currentPlan: string; legacyCode?: string }): express.Response;
   resolveMarketDataTradingAccount(userId: string, exchangeAccountId: string): Promise<any>;
@@ -78,7 +78,7 @@ export type RegisterBotRoutesDeps = {
   readPredictionSourceSnapshotFromState(sourceState: any): Record<string, unknown> | null;
   normalizeCopierTimeframe(value: unknown): string | null;
   writePredictionCopierRootConfig(paramsJson: unknown, root: Record<string, unknown>, forceNested?: boolean): Record<string, unknown>;
-  buildPluginPolicySnapshot(plan: "free" | "pro" | "enterprise", capabilitySnapshot?: unknown): Record<string, unknown>;
+  buildPluginPolicySnapshot(plan: "free" | "pro" | "premium" | "enterprise", capabilitySnapshot?: unknown): Record<string, unknown>;
   attachPluginPolicySnapshot(paramsJson: Record<string, unknown>, snapshot: Record<string, unknown>): Record<string, unknown>;
   evaluateAccessSectionBypassForUser(user: { id: string }): Promise<boolean>;
   canCreateBotForUser(params: { userId: string; bypass: boolean }): Promise<{ allowed: boolean; limit: number | null; usage: number; remaining: number | null }>;
@@ -89,6 +89,16 @@ export type RegisterBotRoutesDeps = {
   enqueueBotRun(botId: string): Promise<any>;
   cancelBotRun(botId: string): Promise<any>;
   getAccessSectionSettings(): Promise<any>;
+  admitBotStartForUser<T>(params: {
+    userId: string;
+    botId: string;
+    bypass: boolean;
+    transition: (tx: any, bot: any) => Promise<T>;
+  }): Promise<
+    | { outcome: "allowed"; value: T; runningBots: number; alreadyRunning: boolean }
+    | { outcome: "denied"; reason: string; runningBots: number; alreadyRunning: boolean }
+    | { outcome: "not_found" }
+  >;
   enforceBotStartLicense(params: any): Promise<{ allowed: boolean; reason?: string }>;
   MEXC_PERP_ENABLED: boolean;
   ManualTradingError: new (message: string, status?: number, code?: string) => Error;
@@ -1237,19 +1247,49 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     if (JSON.stringify(paramsJsonWithPluginPolicy) !== JSON.stringify(bot.futuresConfig.paramsJson)) {
       bot = await deps.db.bot.update({ where: { id: bot.id }, data: { futuresConfig: { update: { paramsJson: paramsJsonWithPluginPolicy } } }, include: { futuresConfig: true } });
     }
-    const runningBots = await deps.db.bot.count({ where: { userId: user.id, status: "running" } });
-    if (!bypass) {
-      const decision = await deps.enforceBotStartLicense({
+    let updated: any;
+    if (typeof deps.admitBotStartForUser === "function") {
+      const admission = await deps.admitBotStartForUser({
         userId: user.id,
-        exchange: bot.exchange,
-        runningBots,
-        isAlreadyRunning: bot.status === "running",
-        quotaCaps: null
+        botId: bot.id,
+        bypass,
+        transition: async (tx) => {
+          const transitioned = await tx.bot.update({
+            where: { id: bot.id },
+            data: { status: "running", lastError: null }
+          });
+          await tx.botRuntime.upsert({
+            where: { botId: bot.id },
+            update: { status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() },
+            create: { botId: bot.id, status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() }
+          });
+          return transitioned;
+        }
       });
-      if (!decision.allowed) return res.status(403).json({ error: "license_blocked", reason: decision.reason });
+      if (admission.outcome === "not_found") {
+        return res.status(404).json({ error: "bot_not_found" });
+      }
+      if (admission.outcome === "denied") {
+        return res.status(403).json({ error: "license_blocked", reason: admission.reason });
+      }
+      updated = admission.value;
+    } else {
+      // Compatibility for isolated route tests; production wiring always supplies
+      // the serialized admission service.
+      const runningBots = await deps.db.bot.count({ where: { userId: user.id, status: "running" } });
+      if (!bypass) {
+        const decision = await deps.enforceBotStartLicense({
+          userId: user.id,
+          exchange: bot.exchange,
+          runningBots,
+          isAlreadyRunning: bot.status === "running",
+          quotaCaps: null
+        });
+        if (!decision.allowed) return res.status(403).json({ error: "license_blocked", reason: decision.reason });
+      }
+      updated = await deps.db.bot.update({ where: { id: bot.id }, data: { status: "running", lastError: null } });
+      await deps.db.botRuntime.upsert({ where: { botId: bot.id }, update: { status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() }, create: { botId: bot.id, status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() } });
     }
-    const updated = await deps.db.bot.update({ where: { id: bot.id }, data: { status: "running", lastError: null } });
-    await deps.db.botRuntime.upsert({ where: { botId: bot.id }, update: { status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() }, create: { botId: bot.id, status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() } });
     try {
       await deps.enqueueBotRun(bot.id);
     } catch (error) {

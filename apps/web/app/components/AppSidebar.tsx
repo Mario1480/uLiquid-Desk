@@ -225,7 +225,7 @@ export default function AppSidebar({
     const capitalItems: SidebarItem[] = [];
     const operationsItems: SidebarItem[] = [];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
-    const aiPredictionsEnabled = isProductFeatureAllowed(featureGates, "ai_predictions") || hasPlatformAdminAccess;
+    const aiPredictionBuilderEnabled = isProductFeatureAllowed(featureGates, "ai_prediction_builder") || hasPlatformAdminAccess;
     const aiAgentEnabled = isProductFeatureAllowed(featureGates, "ai_agent_chat") || hasPlatformAdminAccess;
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
@@ -289,7 +289,7 @@ export default function AppSidebar({
       });
     }
 
-    if (visibility.strategy && aiPredictionsEnabled) {
+    if (visibility.strategy && aiPredictionBuilderEnabled) {
       aiItems.push({
         key: "prediction-builder",
         label: tNav("predictionBuilder"),

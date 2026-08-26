@@ -8,7 +8,7 @@ import { z } from "zod";
 const pluginIdSchema = z.string().trim().min(1).max(160);
 
 const pluginPolicySnapshotSchema = z.object({
-  plan: z.enum(["free", "pro", "enterprise"]),
+  plan: z.enum(["free", "pro", "premium", "enterprise"]),
   allowedPluginIds: z.array(pluginIdSchema).max(500).nullable(),
   evaluatedAt: z.string().trim().datetime(),
   capabilitySnapshot: z.object({

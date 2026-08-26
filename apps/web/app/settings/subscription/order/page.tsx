@@ -367,9 +367,15 @@ function SubscriptionOrderPageContent() {
       setPayload(subscription);
       setMe(account);
 
-      const requestedOrderId = typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("order")
+      const query = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search)
         : null;
+      const requestedOrderId = query?.get("order") ?? null;
+      const requestedPlan = query?.get("plan") ?? null;
+      const requestedPlanPackage = subscription.packages.find(
+        (pkg) => pkg.kind === "plan" && pkg.plan === requestedPlan && pkg.isActive
+      );
+      if (requestedPlanPackage) setSelectedPlanId(requestedPlanPackage.id);
       const resumeCandidates = subscription.orders.map((order) => ({
         order,
         status: order.status,
@@ -408,7 +414,14 @@ function SubscriptionOrderPageContent() {
     return () => window.clearInterval(timer);
   }, [activeCheckout?.orderId, paymentStage]);
 
-  const canSelectAddons = payload?.plan === "pro" || Boolean(selectedPlanId);
+  const canSelectAddons = (payload?.plan !== undefined && payload.plan !== "free") || Boolean(selectedPlanId);
+  const isImmediatePremiumUpgrade = Boolean(
+    payload?.plan === "pro"
+    && selectedPlanPackage?.plan === "premium"
+    && payload.upgradePreview?.kind === "IMMEDIATE_PLAN_UPGRADE"
+    && payload.upgradePreview.targetPriceCents === selectedPlanPackage.priceCents
+    && payload.upgradePreview.billingMonths === selectedPlanPackage.billingMonths
+  );
   const cartItems = useMemo<CartItemPayload[]>(() => {
     const out: CartItemPayload[] = [];
     if (selectedPlanId) out.push({ packageId: selectedPlanId, quantity: 1 });
@@ -428,17 +441,20 @@ function SubscriptionOrderPageContent() {
       .map((item) => {
         const pkg = byId.get(item.packageId);
         if (!pkg) return null;
+        const unitPriceCents = pkg.kind === "plan" && isImmediatePremiumUpgrade
+          ? payload.upgradePreview?.differenceCents ?? pkg.priceCents
+          : pkg.priceCents;
         return {
           packageId: pkg.id,
           name: pkg.name,
           quantity: item.quantity,
-          unitPriceCents: pkg.priceCents,
-          lineAmountCents: pkg.priceCents * item.quantity,
+          unitPriceCents,
+          lineAmountCents: unitPriceCents * item.quantity,
           kind: pkg.kind
         } satisfies CartLine;
       })
       .filter((line): line is CartLine => Boolean(line));
-  }, [cartItems, payload]);
+  }, [cartItems, isImmediatePremiumUpgrade, payload]);
 
   const planLine = cartLines.find((line) => line.kind === "plan") ?? null;
   const addonLines = cartLines.filter((line) => line.kind === "addon");
@@ -505,7 +521,11 @@ function SubscriptionOrderPageContent() {
         open_billing_order_conflict: "openOrderConflict",
         open_order_conflict: "openOrderConflict",
         open_order_cart_mismatch: "openOrderConflict",
-        open_order_exists: "openOrderConflict"
+        open_order_exists: "openOrderConflict",
+        premium_upgrade_active_term_required: "premiumUpgradeUnavailable",
+        premium_upgrade_scheduled_term_conflict: "premiumUpgradeScheduledConflict",
+        premium_upgrade_term_mismatch: "premiumUpgradeTermMismatch",
+        premium_upgrade_price_evidence_invalid: "premiumUpgradeUnavailable"
       };
       setMessage(code?.startsWith("uliq_")
         ? tUliq("unavailable")
@@ -765,6 +785,14 @@ function SubscriptionOrderPageContent() {
                   <div>{t("order.includedPredictionsAi", { running: selectedPlanPackage.maxRunningPredictionsAi ?? 0 })}</div>
                   <div>{t("order.includedPredictionsComposite", { running: selectedPlanPackage.maxRunningPredictionsComposite ?? 0 })}</div>
                   <div>{t("order.includedAiTokens", { tokens: selectedPlanPackage.monthlyAiCredits })}</div>
+                  {isImmediatePremiumUpgrade && payload?.upgradePreview ? (
+                    <div className="uiNotice uiNotice-success">
+                      {t("order.immediateUpgrade", {
+                        amount: centsToCurrency(payload.upgradePreview.differenceCents),
+                        endsAt: new Date(payload.upgradePreview.sourceTermEndsAt).toLocaleDateString(locale)
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -836,7 +864,7 @@ function SubscriptionOrderPageContent() {
                     ))}
                   </div>
                   <div className="subscriptionOrderSummaryDivider" />
-                  <div className="subscriptionOrderSummaryItem"><span>{t("order.planPrice")}</span><span>{centsToCurrency(planPrice)}</span></div>
+                  <div className="subscriptionOrderSummaryItem"><span>{t(isImmediatePremiumUpgrade ? "order.upgradeDifference" : "order.planPrice")}</span><span>{centsToCurrency(planPrice)}</span></div>
                   <div className="subscriptionOrderSummaryItem"><span>{t("order.addonsPrice")}</span><span>{centsToCurrency(addonsPrice)}</span></div>
                   <div className="subscriptionOrderSummaryDivider" />
                   <div className="subscriptionOrderSummaryItem subscriptionOrderSummaryStrong"><span>{t("order.checkoutTotal")}</span><span>{centsToCurrency(checkoutTotal)}</span></div>

@@ -65,7 +65,10 @@
     "claimable": "Claimable",
     "vested": "Vested",
     "schedule": "Zeitraum",
-    "claim": "Claim vorbereiten",
+    "claim": "Claimen",
+    "claimPendingButton": "Finalität ausstehend",
+    "claimPending": "Claim bestätigt · Finalität ausstehend. Die Freigabe wird automatisch aktualisiert.",
+    "claimFinalized": "Claim finalisiert · {amount} ULIQ wurden freigegeben.",
     "waiting": "Wartet auf den globalen DEX-Launch-Zeitpunkt. Bis dahin ist keine Vesting-Freigabe verfügbar."
   },
   "locking": {

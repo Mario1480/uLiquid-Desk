@@ -513,7 +513,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/builder/chat", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     if (!(await deps.isStrategyFeatureEnabledForUser(user))) {
       return res.status(403).json({ error: "forbidden" });
     }
@@ -596,7 +596,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/builder/preview", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     if (!(await deps.isStrategyFeatureEnabledForUser(user))) {
       return res.status(403).json({ error: "forbidden" });
     }
@@ -637,7 +637,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/builder/save", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     if (!(await deps.isStrategyFeatureEnabledForUser(user))) {
       return res.status(403).json({ error: "forbidden" });
     }
@@ -692,7 +692,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/generate-preview", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });
@@ -734,7 +734,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/chat", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });
@@ -787,7 +787,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/generate-save", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });
@@ -866,7 +866,7 @@ export function registerStrategyWriteRoutes(
 
   app.put("/settings/ai-prompts/own/:id", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });
@@ -952,7 +952,7 @@ export function registerStrategyWriteRoutes(
 
   app.delete("/settings/ai-prompts/own/:id", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
-    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    if (!(await requireProductCapability(res, "product.ai_prediction_builder"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });

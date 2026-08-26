@@ -6,6 +6,8 @@ The production AI path is OpenAI-only. The API key is read from the existing enc
 
 AI output remains analysis-only. This rollout does not enable autonomous exchange actions.
 
+Commercial recurring grants are 0 AI Credits for Free, 10,000 per month for Pro and 30,000 per month for Premium. A confirmed immediate Pro-to-Premium difference-payment changes the recurring amount on the existing term without resetting balances, reservations, ledger history, grant-cycle counters or the next scheduled grant. It does not mint a retroactive partial-cycle credit; the Premium amount applies at the next unchanged monthly grant cycle.
+
 ## Deployment order
 
 1. Back up Postgres and verify no AI agent run is active.

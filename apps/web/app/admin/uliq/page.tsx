@@ -602,17 +602,17 @@ function UliqAdminPageContent() {
             <AdminNotice tone="warning">{t("externalPoolNotice")}</AdminNotice>
             <ol className="uliqLaunchSteps">
               <li>
-                <span>1</span>
+                <span className="uliqLaunchStepIndex">1</span>
                 <div><strong>{t("stepDexPending")}</strong><small>{t("stepDexPendingHint")}</small></div>
                 <AdminStatusBadge value={["DEX_PENDING", "DEX_LAUNCHED", "COMPLETED"].includes(data.overview.state) ? "completed" : "pending"} />
               </li>
               <li>
-                <span>2</span>
+                <span className="uliqLaunchStepIndex">2</span>
                 <div><strong>{t("stepSchedule")}</strong><small>{data.overview.dexLaunchTimestamp ? new Date(data.overview.dexLaunchTimestamp).toLocaleString(locale) : t("stepScheduleHint")}</small></div>
                 <AdminStatusBadge value={data.overview.dexLaunchTimestamp ? "completed" : "pending"} />
               </li>
               <li>
-                <span>3</span>
+                <span className="uliqLaunchStepIndex">3</span>
                 <div><strong>{t("stepFinality")}</strong><small>{["DEX_LAUNCHED", "COMPLETED"].includes(data.overview.state) ? t("confirmation.finalized") : activeDexTracking ? dexTrackingLabel(activeDexTracking.confirmationStatus) : t("stepFinalityHint")}</small></div>
                 <AdminStatusBadge value={["DEX_LAUNCHED", "COMPLETED"].includes(data.overview.state) ? "finalized" : activeDexTracking?.confirmationStatus ?? "pending"} />
               </li>

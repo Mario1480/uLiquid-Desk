@@ -11,7 +11,15 @@ import type {
 
 export const PRODUCT_FEATURE_KEYS = [
   "ai_predictions",
+  "ai_prediction_builder",
+  "market_intelligence",
+  "market_intelligence_advanced",
   "ai_agent_chat",
+  "ai_agent_account_reads",
+  "ai_agent_custom_profiles",
+  "ai_position_copilot",
+  "ai_position_monitoring",
+  "ai_multi_exchange_analysis",
   "local_strategies",
   "composite_strategies",
   "grid_bots",
@@ -39,10 +47,50 @@ const PRODUCT_FEATURE_DEFINITIONS: Record<ProductFeatureKey, ProductFeatureDefin
     capability: "product.ai_predictions",
     title: "AI predictions"
   },
+  ai_prediction_builder: {
+    key: "ai_prediction_builder",
+    capability: "product.ai_prediction_builder",
+    title: "AI prediction builder"
+  },
+  market_intelligence: {
+    key: "market_intelligence",
+    capability: "product.market_intelligence",
+    title: "Market Intelligence"
+  },
+  market_intelligence_advanced: {
+    key: "market_intelligence_advanced",
+    capability: "product.market_intelligence_advanced",
+    title: "Advanced Market Intelligence"
+  },
   ai_agent_chat: {
     key: "ai_agent_chat",
     capability: "product.ai_agent_chat",
     title: "AI Agent Chat"
+  },
+  ai_agent_account_reads: {
+    key: "ai_agent_account_reads",
+    capability: "product.ai_agent_account_reads",
+    title: "AI agent account reads"
+  },
+  ai_agent_custom_profiles: {
+    key: "ai_agent_custom_profiles",
+    capability: "product.ai_agent_custom_profiles",
+    title: "Custom AI agent profiles"
+  },
+  ai_position_copilot: {
+    key: "ai_position_copilot",
+    capability: "product.ai_position_copilot",
+    title: "Position Copilot"
+  },
+  ai_position_monitoring: {
+    key: "ai_position_monitoring",
+    capability: "product.ai_position_monitoring",
+    title: "AI position monitoring"
+  },
+  ai_multi_exchange_analysis: {
+    key: "ai_multi_exchange_analysis",
+    capability: "product.ai_multi_exchange_analysis",
+    title: "Multi-exchange AI analysis"
   },
   local_strategies: {
     key: "local_strategies",

@@ -112,7 +112,7 @@ type StrategyRef = {
 };
 
 type StrategyEntitlements = {
-  plan: "free" | "pro" | "enterprise";
+  plan: "free" | "pro" | "premium" | "enterprise";
   allowedStrategyKinds: StrategyKind[];
   allowedStrategyIds: string[] | null;
   maxCompositeNodes: number;

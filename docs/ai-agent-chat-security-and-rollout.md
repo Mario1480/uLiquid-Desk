@@ -1,6 +1,6 @@
 # AI Agent Chat – Security, Operations and Rollout
 
-Stand: 2026-08-02
+Stand: 2026-08-26
 
 ## Scope
 
@@ -14,6 +14,8 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 - `AI_AGENT_TRADE_DRAFTS_ENABLED` remains off. The read-only runtime rejects draft and execution action levels even when configuration is incorrect.
 - `AI_AGENT_CHAT_TIMEOUT_MS` controls the complete agent run window and defaults to 90 seconds. `API_AGENT_CHAT_REQUEST_TIMEOUT_MS` defaults to 120 seconds so the HTTP layer remains open longer than the run budget.
 - Product capabilities `product.ai_agent_chat`, `product.ai_agent_account_reads` and `product.ai_agent_custom_profiles` are evaluated on every request. Admin preview bypasses the product license only; it does not bypass the environment master gate.
+- Pro unlocks Agent Chat and the public-data Market Analyst profile. Premium is required for Position Copilot, private account reads, position monitoring, multi-exchange private analysis and user-defined profiles.
+- An explicit Enterprise strategy license inherits Premium product capabilities, but never bypasses `AI_AGENT_CHAT_ENABLED`, `AI_AGENT_ACCOUNT_READS_ENABLED`, ownership checks or the read-only runtime policy.
 
 ## Enforced boundaries
 

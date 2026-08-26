@@ -35,6 +35,25 @@ test("adminBillingPackageSchema accepts plan credit fields as numbers or strings
   }
 });
 
+test("adminBillingPackageSchema accepts the Premium entitlement contract", () => {
+  const parsed = adminBillingPackageSchema.safeParse({
+    code: "premium_monthly",
+    name: "Premium Monthly",
+    kind: "plan",
+    isActive: false,
+    priceCents: 6900,
+    billingMonths: 1,
+    plan: "premium",
+    maxExchangeAccounts: null,
+    maxRunningBots: 15,
+    maxRunningPredictionsAi: 10,
+    maxRunningPredictionsComposite: 5,
+    allowedExchanges: ["*"],
+    monthlyAiCredits: "30000"
+  });
+  assert.equal(parsed.success, true);
+});
+
 test("adminBillingPackageSchema accepts add-on credit fields as numbers or strings", () => {
   const parsed = adminBillingPackageSchema.safeParse({
     code: "ai_credits_250k",

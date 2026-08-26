@@ -462,6 +462,7 @@
         "predictionsAi": "AI-Predictions",
         "predictionsComposite": "Composite-Predictions",
         "exchanges": "Erlaubte Exchanges",
+        "exchangeAccounts": "Echte Exchange-Konten",
         "aiBalance": "Verfügbare AI Credits",
         "aiReserved": "Reservierte AI Credits",
         "aiMonthlyIncluded": "Monatlich enthaltene AI Credits",
@@ -472,7 +473,8 @@
       },
       "plans": {
         "free": "FREE",
-        "pro": "PRO"
+        "pro": "PRO",
+        "premium": "PREMIUM"
       },
       "states": {
         "active": "Aktiv",
@@ -486,17 +488,41 @@
       },
       "features": {
         "proPlan": "Pro-Plan",
+        "premiumPlan": "Premium-Plan",
         "aiBilling": "AI-Billing aktiv",
         "aiTopup": "AI-Topups verfügbar",
         "capacityTopup": "Kapazitäts-Topups verfügbar"
       },
       "running": "laufend",
+      "quotaBreakdown": "Basis {base} + Add-on {addon}",
+      "paperExcluded": "Paper-Konten werden nicht gezählt",
       "total": "gesamt",
       "unlimited": "unbegrenzt",
       "fallbackMode": "Billing-Fallback-Modus aktiv ({reason}).",
       "upgradeTitle": "Add-ons upgraden",
       "upgradeDescription": "Öffne die Order-Seite, um Pläne zu kaufen/verlängern und Add-on-Pakete zu buchen.",
       "openOrderPage": "Order / Upgrade öffnen"
+    },
+    "pricing": {
+      "eyebrow": "Pläne",
+      "title": "Free, Pro und Premium",
+      "description": "Vergleiche die zentral aufgelösten Planlimits. Add-ons werden separat auf deine Basiskapazität addiert.",
+      "current": "Aktuell",
+      "forever": "dauerhaft",
+      "perMonth": "pro Monat",
+      "botSlots": "{count} laufende Bot-Slots",
+      "aiSchedules": "{count} AI-Prediction-Schedules",
+      "compositeSchedules": "{count} Composite-Schedules",
+      "aiCredits": "{count} AI Credits pro Monat",
+      "exchangeUnlimited": "Echte Exchange-Konten unbegrenzt",
+      "exchangeLimit": "{count} echtes Exchange-Konto",
+      "immediateDifference": "Sofort-Upgrade für {amount}; Vertragsende {endsAt} bleibt bestehen.",
+      "upgradePro": "Auf Pro upgraden",
+      "upgradePremium": "Auf Premium upgraden",
+      "activePlan": "Dein aktiver Plan",
+      "manualReview": "Für diesen Vertrag ist eine manuelle Upgrade-Prüfung erforderlich.",
+      "lowerPlan": "Unter deinem aktuellen Plan",
+      "notPurchasable": "Checkout noch nicht freigeschaltet"
     },
     "credits": {
       "limitsTitle": "AI-Credit-Limits",
@@ -586,6 +612,8 @@
       "clearCapacityAddons": "Add-ons zurücksetzen",
       "addonsRequirePro": "Wähle zuerst einen Pro-Plan oder nutze ein bereits aktives Pro-Abo, um Add-ons hinzuzufügen.",
       "planPrice": "Planpreis für die gewählte Laufzeit",
+      "upgradeDifference": "Differenz für sofortiges Upgrade",
+      "immediateUpgrade": "Premium wird nach bestätigter Zahlung von {amount} sofort aktiv. Das Vertragsende {endsAt} bleibt unverändert.",
       "addonsPrice": "Add-ons in diesem Checkout",
       "checkoutTotal": "Gesamtzahlung",
       "monthsSuffix": "Monat(e)",
@@ -653,6 +681,9 @@
         "paidPlanRequiredForCapacityTopup": "Für Kapazitäts-Topups ist ein aktiver Paid-Plan erforderlich.",
         "paymentConfigMissing": "Die Arbitrum-USDC-Zahlung ist noch nicht vollständig konfiguriert.",
         "openOrderConflict": "Es gibt bereits eine offene Zahlung mit einem anderen Warenkorb. Setze sie fort, brich sie ab oder warte auf den Ablauf.",
+        "premiumUpgradeUnavailable": "Das sofortige Premium-Upgrade kann für diesen Vertrag nicht sicher bepreist werden. Bitte wende dich an den Support.",
+        "premiumUpgradeScheduledConflict": "Für diesen Vertrag ist bereits eine Folgeperiode geplant. Das sofortige Upgrade benötigt zuerst eine manuelle Prüfung.",
+        "premiumUpgradeTermMismatch": "Pro- und Premium-Paket haben unterschiedliche Laufzeiten. Das Upgrade kann nicht automatisch abgerechnet werden.",
         "walletUnavailable": "Die Wallet-Verbindung ist derzeit nicht verfügbar.",
         "walletNotLinked": "Verknüpfe zuerst eine Wallet in den Einstellungen.",
         "walletNotConnected": "Verbinde zuerst deine Wallet.",

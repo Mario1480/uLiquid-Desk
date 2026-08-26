@@ -4,6 +4,7 @@ import type { ActiveFuturesBot } from "../db.js";
 import {
   EXECUTION_PLUGIN_ID_DCA,
   EXECUTION_PLUGIN_ID_FUTURES_ENGINE_LEGACY,
+  EXECUTION_PLUGIN_ID_FUTURES_GRID,
   EXECUTION_PLUGIN_ID_PREDICTION_COPIER,
   EXECUTION_PLUGIN_ID_SIMPLE
 } from "./builtin/executionPlugins.js";
@@ -81,6 +82,75 @@ test("plugin resolution honors enabled plugin list with ordering", () => {
   assert.equal(resolved.signal.selectedPluginId, SIGNAL_PLUGIN_ID_PREDICTION_COPIER);
   assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_PREDICTION_COPIER);
   assert.equal(resolved.signalSource.selectedPluginId, SIGNAL_SOURCE_PLUGIN_ID_NONE);
+});
+
+test("plugin resolution accepts Premium policy snapshots", () => {
+  const bot = makeBot({
+    paramsJson: {
+      plugins: {
+        version: 1,
+        enabled: [
+          SIGNAL_PLUGIN_ID_PREDICTION_COPIER,
+          EXECUTION_PLUGIN_ID_PREDICTION_COPIER
+        ],
+        policySnapshot: {
+          plan: "premium",
+          allowedPluginIds: null,
+          evaluatedAt: new Date().toISOString()
+        }
+      }
+    }
+  });
+
+  const resolved = resolveRunnerPluginsForBot(bot);
+  assert.equal(resolved.signal.selectedPluginId, SIGNAL_PLUGIN_ID_PREDICTION_COPIER);
+  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_PREDICTION_COPIER);
+});
+
+test("Free policy resolves Prediction Copier plugins end-to-end", () => {
+  const resolved = resolveRunnerPluginsForBot(makeBot({
+    strategyKey: "prediction_copier",
+    paramsJson: {
+      plugins: {
+        version: 1,
+        enabled: [
+          SIGNAL_PLUGIN_ID_PREDICTION_COPIER,
+          EXECUTION_PLUGIN_ID_PREDICTION_COPIER,
+          SIGNAL_SOURCE_PLUGIN_ID_PREDICTION_STATE
+        ],
+        policySnapshot: {
+          plan: "free",
+          allowedPluginIds: null,
+          evaluatedAt: new Date().toISOString()
+        }
+      }
+    }
+  }));
+
+  assert.equal(resolved.signal.selectedPluginId, SIGNAL_PLUGIN_ID_PREDICTION_COPIER);
+  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_PREDICTION_COPIER);
+  assert.equal(resolved.signalSource.selectedPluginId, SIGNAL_SOURCE_PLUGIN_ID_PREDICTION_STATE);
+  assert.equal(resolved.diagnostics.some((item) => item.type === "PLUGIN_DISABLED_BY_POLICY"), false);
+});
+
+test("Free policy resolves futures Grid execution", () => {
+  const resolved = resolveRunnerPluginsForBot(makeBot({
+    strategyKey: "futures_grid",
+    paramsJson: {
+      plugins: {
+        version: 1,
+        enabled: [EXECUTION_PLUGIN_ID_FUTURES_GRID],
+        policySnapshot: {
+          plan: "free",
+          allowedPluginIds: null,
+          evaluatedAt: new Date().toISOString()
+        }
+      }
+    }
+  }));
+
+  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_FUTURES_GRID);
+  assert.equal(resolved.diagnostics.some((item) => item.type === "PLUGIN_DISABLED_BY_POLICY"), false);
 });
 
 test("plugin resolution enforces policy snapshot and falls back", () => {

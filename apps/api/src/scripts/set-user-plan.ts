@@ -5,32 +5,21 @@ import {
   resolveEffectivePlanForUser,
   syncPrimaryWorkspaceEntitlementsForUser
 } from "../billing/service.js";
+import { canonicalPackageByCode } from "../billing/canonicalPackages.js";
 
-type PlanArg = "free" | "pro";
-
-const FREE_DEFAULTS = {
-  maxRunningBots: 1,
-  allowedExchanges: ["*"]
-};
-
-const PRO_DEFAULTS = {
-  maxRunningBots: 3,
-  allowedExchanges: ["*"],
-  billingMonths: 1,
-  monthlyAiCredits: 1_000_000n
-};
+type PlanArg = "free" | "pro" | "premium";
 
 function printUsage(): void {
   // eslint-disable-next-line no-console
   console.log(
     [
       "Usage:",
-      "  npm -w apps/api run set-user-plan -- --email <user@email> [--plan free|pro] [--months 1] [--token-grant 1000000] [--skip-sync]",
+      "  npm -w apps/api run set-user-plan -- --email <user@email> --plan free|pro|premium [--months 1] [--token-grant 0] [--skip-sync]",
       "",
       "Examples:",
       "  npm -w apps/api run set-user-plan -- --email admin@uliquid.vip --plan free",
       "  npm -w apps/api run set-user-plan -- --email admin@uliquid.vip --plan pro --months 1",
-      "  npm -w apps/api run set-user-plan -- --email admin@uliquid.vip --plan pro --token-grant 0"
+      "  npm -w apps/api run set-user-plan -- --email admin@uliquid.vip --plan premium --months 1 --token-grant 0"
     ].join("\n")
   );
 }
@@ -51,8 +40,9 @@ function hasFlag(name: string): boolean {
 }
 
 function parsePlan(value: string | undefined): PlanArg {
-  const normalized = String(value ?? "free").trim().toLowerCase();
-  return normalized === "pro" ? "pro" : "free";
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "free" || normalized === "pro" || normalized === "premium") return normalized;
+  throw new Error("invalid_required_arg_plan");
 }
 
 function toPositiveInt(value: unknown, fallback: number): number {
@@ -78,14 +68,6 @@ function toNonNegativeBigInt(value: string | undefined, fallback: bigint): bigin
   if (!value) return fallback;
   const parsed = toBigInt(value, fallback);
   return parsed < 0n ? 0n : parsed;
-}
-
-function normalizeStringArray(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) return [...fallback];
-  const out = value
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter(Boolean);
-  return out.length > 0 ? out : [...fallback];
 }
 
 function addMonths(base: Date, months: number): Date {
@@ -128,15 +110,13 @@ async function main() {
     throw new Error(`user_not_found:${email}`);
   }
 
-  const [freePkg, proPkg] = await Promise.all([
-    prisma.billingPackage.findUnique({ where: { code: "free" } }),
-    prisma.billingPackage.findUnique({ where: { code: "pro_monthly" } })
-  ]);
+  const paidPackageCode = plan === "premium" ? "premium_monthly" : "pro_monthly";
+  const paidPkg = plan === "free"
+    ? null
+    : await prisma.billingPackage.findUnique({ where: { code: paidPackageCode } });
 
   if (plan === "free") {
-    const freeRunning = toPositiveInt(freePkg?.maxRunningBots, FREE_DEFAULTS.maxRunningBots);
-    const freeExchanges = normalizeStringArray(freePkg?.allowedExchanges, FREE_DEFAULTS.allowedExchanges);
-    const freeMonthlyIncluded = toBigInt(freePkg?.monthlyAiCredits);
+    const freePkg = canonicalPackageByCode("free");
 
     await prisma.$transaction(async (tx) => {
       const existing = await tx.userSubscription.findUnique({
@@ -148,58 +128,55 @@ async function main() {
         }
       });
       const balance = toBigInt(existing?.aiCreditBalance);
-      const nextBalance = balance < freeMonthlyIncluded ? freeMonthlyIncluded : balance;
       const usedLifetime = toBigInt(existing?.aiCreditsUsedLifetime);
 
-      const updated = await tx.userSubscription.upsert({
+      await tx.userSubscription.upsert({
         where: { userId: user.id },
         create: {
           userId: user.id,
           effectivePlan: "FREE",
           status: "ACTIVE",
+          planValidUntil: null,
           proValidUntil: null,
-          maxRunningBots: freeRunning,
-          allowedExchanges: freeExchanges,
-          aiCreditBalance: nextBalance,
+          maxExchangeAccounts: freePkg.maxExchangeAccounts,
+          maxRunningBots: freePkg.maxRunningBots ?? 2,
+          maxRunningPredictionsAi: freePkg.maxRunningPredictionsAi,
+          maxRunningPredictionsComposite: freePkg.maxRunningPredictionsComposite,
+          allowedExchanges: [...freePkg.allowedExchanges],
+          aiCreditBalance: balance,
           aiCreditsUsedLifetime: usedLifetime,
-          monthlyAiCreditsIncluded: freeMonthlyIncluded
+          monthlyAiCreditsIncluded: freePkg.monthlyAiCredits
         },
         update: {
           effectivePlan: "FREE",
           status: "ACTIVE",
+          planValidUntil: null,
           proValidUntil: null,
-          maxRunningBots: freeRunning,
-          allowedExchanges: freeExchanges,
-          aiCreditBalance: nextBalance,
-          monthlyAiCreditsIncluded: freeMonthlyIncluded
+          maxExchangeAccounts: freePkg.maxExchangeAccounts,
+          maxRunningBots: freePkg.maxRunningBots ?? 2,
+          maxRunningPredictionsAi: freePkg.maxRunningPredictionsAi,
+          maxRunningPredictionsComposite: freePkg.maxRunningPredictionsComposite,
+          allowedExchanges: [...freePkg.allowedExchanges],
+          aiCreditBalance: balance,
+          monthlyAiCreditsIncluded: freePkg.monthlyAiCredits
         }
       });
-
-      const grant = nextBalance - balance;
-      if (grant > 0n) {
-        await tx.aiCreditLedger.create({
-          data: {
-            userId: user.id,
-            subscriptionId: updated.id,
-            reason: "MONTHLY_GRANT",
-            deltaCredits: grant,
-            balanceAfterCredits: nextBalance,
-            meta: {
-              source: "set-user-plan-script",
-              packageCode: "free",
-              email: user.email
-            }
-          }
-        });
-      }
     });
   } else {
-    const proRunning = toPositiveInt(proPkg?.maxRunningBots, PRO_DEFAULTS.maxRunningBots);
-    const proExchanges = normalizeStringArray(proPkg?.allowedExchanges, PRO_DEFAULTS.allowedExchanges);
-    const monthlyIncluded = toBigInt(proPkg?.monthlyAiCredits, PRO_DEFAULTS.monthlyAiCredits);
-    const defaultMonths = toPositiveInt(proPkg?.billingMonths, PRO_DEFAULTS.billingMonths);
+    if (!paidPkg || paidPkg.plan !== (plan === "premium" ? "PREMIUM" : "PRO")) {
+      throw new Error(`canonical_paid_package_missing:${plan}`);
+    }
+    const canonicalPaidPkg = canonicalPackageByCode(paidPackageCode);
+    const paidRunning = canonicalPaidPkg.maxRunningBots ?? (plan === "premium" ? 15 : 5);
+    const paidAi = canonicalPaidPkg.maxRunningPredictionsAi;
+    const paidComposite = canonicalPaidPkg.maxRunningPredictionsComposite;
+    const paidExchanges = [...canonicalPaidPkg.allowedExchanges];
+    const monthlyIncluded = canonicalPaidPkg.monthlyAiCredits;
+    const defaultMonths = canonicalPaidPkg.billingMonths;
     const months = toPositiveInt(readArg("--months"), defaultMonths);
-    const tokenGrant = toNonNegativeBigInt(readArg("--token-grant"), monthlyIncluded);
+    // Plan assignment and AI-credit grants are independent. Credits require an
+    // explicit operator value and never inherit a hidden fallback.
+    const tokenGrant = toNonNegativeBigInt(readArg("--token-grant"), 0n);
     const now = new Date();
 
     await prisma.$transaction(async (tx) => {
@@ -207,6 +184,7 @@ async function main() {
         where: { userId: user.id },
         select: {
           id: true,
+          planValidUntil: true,
           proValidUntil: true,
           aiCreditBalance: true,
           aiCreditsUsedLifetime: true
@@ -216,9 +194,11 @@ async function main() {
       const currentBalance = toBigInt(existing?.aiCreditBalance);
       const usedLifetime = toBigInt(existing?.aiCreditsUsedLifetime);
       const startAt =
-        existing?.proValidUntil instanceof Date && existing.proValidUntil.getTime() > now.getTime()
-          ? existing.proValidUntil
-          : now;
+        existing?.planValidUntil instanceof Date && existing.planValidUntil.getTime() > now.getTime()
+          ? existing.planValidUntil
+          : existing?.proValidUntil instanceof Date && existing.proValidUntil.getTime() > now.getTime()
+            ? existing.proValidUntil
+            : now;
       const nextValidUntil = addMonths(startAt, months);
       const nextBalance = currentBalance + tokenGrant;
 
@@ -226,21 +206,29 @@ async function main() {
         where: { userId: user.id },
         create: {
           userId: user.id,
-          effectivePlan: "PRO",
+          effectivePlan: plan === "premium" ? "PREMIUM" : "PRO",
           status: "ACTIVE",
+          planValidUntil: nextValidUntil,
           proValidUntil: nextValidUntil,
-          maxRunningBots: proRunning,
-          allowedExchanges: proExchanges,
+          maxExchangeAccounts: null,
+          maxRunningBots: paidRunning,
+          maxRunningPredictionsAi: paidAi,
+          maxRunningPredictionsComposite: paidComposite,
+          allowedExchanges: paidExchanges,
           aiCreditBalance: nextBalance,
           aiCreditsUsedLifetime: usedLifetime,
           monthlyAiCreditsIncluded: monthlyIncluded
         },
         update: {
-          effectivePlan: "PRO",
+          effectivePlan: plan === "premium" ? "PREMIUM" : "PRO",
           status: "ACTIVE",
+          planValidUntil: nextValidUntil,
           proValidUntil: nextValidUntil,
-          maxRunningBots: proRunning,
-          allowedExchanges: proExchanges,
+          maxExchangeAccounts: null,
+          maxRunningBots: paidRunning,
+          maxRunningPredictionsAi: paidAi,
+          maxRunningPredictionsComposite: paidComposite,
+          allowedExchanges: paidExchanges,
           aiCreditBalance: nextBalance,
           monthlyAiCreditsIncluded: monthlyIncluded
         }
@@ -300,7 +288,9 @@ async function main() {
     requestedPlan: plan,
     effectivePlan: resolved.plan,
     status: resolved.status,
+    planValidUntil: resolved.planValidUntil,
     proValidUntil: resolved.proValidUntil,
+    maxExchangeAccounts: resolved.maxExchangeAccounts,
     maxRunningBots: resolved.maxRunningBots,
     allowedExchanges: resolved.allowedExchanges,
     aiCreditBalance: resolved.aiCreditBalance.toString(),

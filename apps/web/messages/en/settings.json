@@ -462,6 +462,7 @@
         "predictionsAi": "AI predictions",
         "predictionsComposite": "Composite predictions",
         "exchanges": "Allowed exchanges",
+        "exchangeAccounts": "Real exchange accounts",
         "aiBalance": "Available AI Credits",
         "aiReserved": "Reserved AI Credits",
         "aiMonthlyIncluded": "Monthly included AI Credits",
@@ -472,7 +473,8 @@
       },
       "plans": {
         "free": "FREE",
-        "pro": "PRO"
+        "pro": "PRO",
+        "premium": "PREMIUM"
       },
       "states": {
         "active": "Active",
@@ -486,17 +488,41 @@
       },
       "features": {
         "proPlan": "Pro plan",
+        "premiumPlan": "Premium plan",
         "aiBilling": "AI billing enabled",
         "aiTopup": "AI topups available",
         "capacityTopup": "Capacity topups available"
       },
       "running": "running",
+      "quotaBreakdown": "Base {base} + add-on {addon}",
+      "paperExcluded": "Paper accounts are not counted",
       "total": "total",
       "unlimited": "unlimited",
       "fallbackMode": "Billing fallback mode active ({reason}).",
       "upgradeTitle": "Upgrade Add-ons",
       "upgradeDescription": "Open the order page to buy or renew plans and purchase add-on packages.",
       "openOrderPage": "Open order / upgrade"
+    },
+    "pricing": {
+      "eyebrow": "Plans",
+      "title": "Free, Pro and Premium",
+      "description": "Compare centrally resolved plan limits. Add-ons are shown separately from base capacity.",
+      "current": "Current",
+      "forever": "forever",
+      "perMonth": "per month",
+      "botSlots": "{count} running bot slots",
+      "aiSchedules": "{count} AI prediction schedules",
+      "compositeSchedules": "{count} composite schedules",
+      "aiCredits": "{count} AI Credits per month",
+      "exchangeUnlimited": "Unlimited real exchange accounts",
+      "exchangeLimit": "{count} real exchange account",
+      "immediateDifference": "Immediate upgrade for {amount}; your term still ends on {endsAt}.",
+      "upgradePro": "Upgrade to Pro",
+      "upgradePremium": "Upgrade to Premium",
+      "activePlan": "Your active plan",
+      "manualReview": "This contract requires a manual upgrade review.",
+      "lowerPlan": "Below your current plan",
+      "notPurchasable": "Checkout not enabled yet"
     },
     "credits": {
       "limitsTitle": "AI Credit limits",
@@ -586,6 +612,8 @@
       "clearCapacityAddons": "Reset add-ons",
       "addonsRequirePro": "Select a Pro plan first or use an already active Pro subscription to add add-ons.",
       "planPrice": "Plan price for the selected term",
+      "upgradeDifference": "Difference for immediate upgrade",
+      "immediateUpgrade": "Premium activates immediately after the {amount} payment is confirmed. Your existing term end, {endsAt}, stays unchanged.",
       "addonsPrice": "Add-ons in this checkout",
       "checkoutTotal": "Total payment",
       "monthsSuffix": "month(s)",
@@ -653,6 +681,9 @@
         "paidPlanRequiredForCapacityTopup": "An active paid plan is required for capacity topups.",
         "paymentConfigMissing": "Arbitrum USDC payments are not fully configured yet.",
         "openOrderConflict": "There is already an open payment for a different cart. Continue or cancel it first, or wait until it expires.",
+        "premiumUpgradeUnavailable": "This contract cannot be priced safely for an immediate Premium upgrade. Please contact support.",
+        "premiumUpgradeScheduledConflict": "A future term is already scheduled. The immediate upgrade needs manual review first.",
+        "premiumUpgradeTermMismatch": "The Pro and Premium packages use different term lengths, so the upgrade cannot be billed automatically.",
         "walletUnavailable": "Wallet connection is currently unavailable.",
         "walletNotLinked": "Link a wallet in Settings first.",
         "walletNotConnected": "Connect your wallet first.",

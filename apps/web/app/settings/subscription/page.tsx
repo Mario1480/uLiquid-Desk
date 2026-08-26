@@ -232,6 +232,79 @@ export default function SubscriptionPage() {
         <div className="card subscriptionPortalLoading">{tCommon("loading")}</div>
       ) : model ? (
         <>
+          <section className="subscriptionPricingSection" aria-labelledby="subscription-pricing-title">
+            <div className="subscriptionPricingHeading">
+              <div>
+                <p className="subscriptionPortalEyebrow">{t("pricing.eyebrow")}</p>
+                <h3 id="subscription-pricing-title">{t("pricing.title")}</h3>
+              </div>
+              <p className="subscriptionPortalMuted">{t("pricing.description")}</p>
+            </div>
+            <div className="subscriptionPricingGrid">
+              {(payload?.planCatalog ?? []).map((plan) => {
+                const current = plan.plan === model.plan;
+                const planRank = plan.plan === "premium" ? 2 : plan.plan === "pro" ? 1 : 0;
+                const currentRank = model.plan === "premium" ? 2 : model.plan === "pro" ? 1 : 0;
+                const premiumUpgrade = model.plan === "pro" && plan.plan === "premium"
+                  ? payload?.upgradePreview ?? null
+                  : null;
+                const canOpenCheckout = Boolean(
+                  payload?.billingEnabled
+                  && plan.purchasable
+                  && !current
+                  && planRank > currentRank
+                  && (plan.plan !== "premium" || model.plan !== "pro" || premiumUpgrade)
+                );
+                return (
+                  <article key={plan.code} className={`card subscriptionPricingCard ${plan.plan === "premium" ? "subscriptionPricingCardPremium" : ""}`}>
+                    <div className="subscriptionPricingCardHead">
+                      <div>
+                        <span className="subscriptionPricingPlan">{t(`license.plans.${plan.plan}`)}</span>
+                        <p>{plan.description}</p>
+                      </div>
+                      {current ? <span className="badge">{t("pricing.current")}</span> : null}
+                    </div>
+                    <div className="subscriptionPricingPrice">
+                      <strong>{centsToCurrency(plan.priceCents)}</strong>
+                      <span>{plan.priceCents === 0 ? t("pricing.forever") : t("pricing.perMonth")}</span>
+                    </div>
+                    <div className="subscriptionPricingFacts">
+                      <span>{t("pricing.botSlots", { count: plan.maxRunningBots })}</span>
+                      <span>{t("pricing.aiSchedules", { count: plan.maxRunningPredictionsAi })}</span>
+                      <span>{t("pricing.compositeSchedules", { count: plan.maxRunningPredictionsComposite })}</span>
+                      <span>{t("pricing.aiCredits", { count: plan.monthlyAiCredits })}</span>
+                      <span>{plan.maxExchangeAccounts === null ? t("pricing.exchangeUnlimited") : t("pricing.exchangeLimit", { count: plan.maxExchangeAccounts })}</span>
+                    </div>
+                    {premiumUpgrade ? (
+                      <div className="subscriptionPricingUpgradeNote">
+                        {t("pricing.immediateDifference", {
+                          amount: centsToCurrency(premiumUpgrade.differenceCents),
+                          endsAt: new Date(premiumUpgrade.sourceTermEndsAt).toLocaleDateString(locale)
+                        })}
+                      </div>
+                    ) : null}
+                    {canOpenCheckout ? (
+                      <Link href={`${withLocalePath("/settings/subscription/order", locale)}?plan=${encodeURIComponent(plan.plan)}`} className="btn btnPrimary subscriptionPricingAction">
+                        <AppIcon name="billing" />
+                        {plan.plan === "premium" ? t("pricing.upgradePremium") : t("pricing.upgradePro")}
+                      </Link>
+                    ) : current ? (
+                      <span className="subscriptionPricingUnavailable">{t("pricing.activePlan")}</span>
+                    ) : (
+                      <span className="subscriptionPricingUnavailable">
+                        {plan.plan === "premium" && model.plan === "pro" && !premiumUpgrade
+                          ? t("pricing.manualReview")
+                          : planRank < currentRank
+                            ? t("pricing.lowerPlan")
+                          : t("pricing.notPurchasable")}
+                      </span>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
           <div className="subscriptionPortalGrid">
             <div className="card subscriptionPortalCard">
               <div className="subscriptionCardHead">
@@ -246,7 +319,7 @@ export default function SubscriptionPage() {
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.plan")}</span>
-                <b>{model.plan === "pro" ? t("license.plans.pro") : t("license.plans.free")}</b>
+                <b>{t(`license.plans.${model.plan}`)}</b>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.validUntil")}</span>
@@ -294,27 +367,31 @@ export default function SubscriptionPage() {
               <div className="subscriptionCardTitle">{t("license.cards.limits")}</div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.bots")}</span>
-                <span>
-                  {model.limits.bots.running}/{model.limits.bots.maxRunning} {t("license.running")}
+                <span className="subscriptionQuotaValue">
+                  <strong>{model.limits.bots.running}/{model.limits.bots.maxRunning} {t("license.running")}</strong>
+                  {payload?.quotaBreakdown ? <small>{t("license.quotaBreakdown", { base: payload.quotaBreakdown.base.runningBots, addon: payload.quotaBreakdown.addon.runningBots })}</small> : null}
                 </span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.predictionsAi")}</span>
-                <span>
-                  {model.limits.predictionsAi.running}/
-                  {model.limits.predictionsAi.maxRunning ?? t("license.unlimited")} {t("license.running")}
+                <span className="subscriptionQuotaValue">
+                  <strong>{model.limits.predictionsAi.running}/{model.limits.predictionsAi.maxRunning ?? t("license.unlimited")} {t("license.running")}</strong>
+                  {payload?.quotaBreakdown ? <small>{t("license.quotaBreakdown", { base: payload.quotaBreakdown.base.runningPredictionsAi ?? t("license.unlimited"), addon: payload.quotaBreakdown.addon.runningPredictionsAi })}</small> : null}
                 </span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.predictionsComposite")}</span>
-                <span>
-                  {model.limits.predictionsComposite.running}/
-                  {model.limits.predictionsComposite.maxRunning ?? t("license.unlimited")} {t("license.running")}
+                <span className="subscriptionQuotaValue">
+                  <strong>{model.limits.predictionsComposite.running}/{model.limits.predictionsComposite.maxRunning ?? t("license.unlimited")} {t("license.running")}</strong>
+                  {payload?.quotaBreakdown ? <small>{t("license.quotaBreakdown", { base: payload.quotaBreakdown.base.runningPredictionsComposite ?? t("license.unlimited"), addon: payload.quotaBreakdown.addon.runningPredictionsComposite })}</small> : null}
                 </span>
               </div>
               <div className="subscriptionPortalFieldRow">
-                <span>{t("license.labels.exchanges")}</span>
-                <span>{model.limits.exchanges.join(", ") || "-"}</span>
+                <span>{t("license.labels.exchangeAccounts")}</span>
+                <span className="subscriptionQuotaValue">
+                  <strong>{payload?.exchangeAccounts?.used ?? 0}/{payload?.exchangeAccounts?.max ?? t("license.unlimited")}</strong>
+                  <small>{t("license.paperExcluded")}</small>
+                </span>
               </div>
             </div>
 
@@ -323,6 +400,9 @@ export default function SubscriptionPage() {
               <div className="subscriptionFeatureWrap">
                 <span className={`subscriptionFeatureBadge ${model.features.proPlan ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.proPlan")}
+                </span>
+                <span className={`subscriptionFeatureBadge ${model.features.premiumPlan ? "subscriptionFeatureBadgeOn" : ""}`}>
+                  {t("license.features.premiumPlan")}
                 </span>
                 <span className={`subscriptionFeatureBadge ${model.features.aiBillingEnabled ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.aiBilling")}

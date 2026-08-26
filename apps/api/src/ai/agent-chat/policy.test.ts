@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { wrapUntrustedAiPayload } from "../safety/toolPolicy.js";
-import { resolveAgentChatFeatureAccess } from "./policy.js";
+import { resolveBuiltinAgentProfile } from "./profiles.js";
+import {
+  assertProfileAccess,
+  resolveAgentChatFeatureAccess
+} from "./policy.js";
 
 function resolve(capabilities: Record<string, boolean>, isAdmin = false) {
   return resolveAgentChatFeatureAccess({
@@ -9,6 +13,11 @@ function resolve(capabilities: Record<string, boolean>, isAdmin = false) {
     isAdmin,
     isCapabilityAllowed: (values, key) => values[key] === true
   });
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }
 
 test("trade drafts stay closed unless both the explicit gate and capability are enabled", () => {
@@ -23,9 +32,9 @@ test("trade drafts stay closed unless both the explicit gate and capability are 
     assert.equal(access.chat, true);
     assert.equal(access.tradeDrafts, false);
   } finally {
-    process.env.NODE_ENV = previousNodeEnv;
-    process.env.AI_AGENT_CHAT_ENABLED = previousChat;
-    process.env.AI_AGENT_TRADE_DRAFTS_ENABLED = previousDrafts;
+    restoreEnv("NODE_ENV", previousNodeEnv);
+    restoreEnv("AI_AGENT_CHAT_ENABLED", previousChat);
+    restoreEnv("AI_AGENT_TRADE_DRAFTS_ENABLED", previousDrafts);
   }
 });
 
@@ -35,7 +44,7 @@ test("admin preview does not bypass the environment master gate", () => {
   try {
     assert.equal(resolve({}, true).chat, false);
   } finally {
-    process.env.AI_AGENT_CHAT_ENABLED = previous;
+    restoreEnv("AI_AGENT_CHAT_ENABLED", previous);
   }
 });
 
@@ -50,8 +59,8 @@ test("Agent Chat requires the router and Responses API rollout gates", () => {
     process.env.AI_RESPONSES_API_AGENT = "false";
     assert.equal(resolve({ "product.ai_agent_chat": true }).chat, false);
   } finally {
-    process.env.AI_MODEL_ROUTER_V1 = previousRouter;
-    process.env.AI_RESPONSES_API_AGENT = previousResponses;
+    restoreEnv("AI_MODEL_ROUTER_V1", previousRouter);
+    restoreEnv("AI_RESPONSES_API_AGENT", previousResponses);
   }
 });
 
@@ -60,21 +69,105 @@ test("Position Copilot account reads require the production gate and plan capabi
   const previousRouter = process.env.AI_MODEL_ROUTER_V1;
   const previousResponses = process.env.AI_RESPONSES_API_AGENT;
   const previousAccountReads = process.env.AI_AGENT_ACCOUNT_READS_ENABLED;
+  const previousPositionCopilot = process.env.AI_POSITION_COPILOT_ENABLED;
   process.env.AI_AGENT_CHAT_ENABLED = "true";
   process.env.AI_MODEL_ROUTER_V1 = "true";
   process.env.AI_RESPONSES_API_AGENT = "true";
   process.env.AI_AGENT_ACCOUNT_READS_ENABLED = "true";
+  process.env.AI_POSITION_COPILOT_ENABLED = "true";
   try {
-    assert.equal(resolve({ "product.ai_agent_chat": true, "product.ai_agent_account_reads": true }).accountReads, true);
+    const premium = {
+      "product.ai_agent_chat": true,
+      "product.ai_agent_account_reads": true,
+      "product.ai_position_copilot": true
+    };
+    assert.equal(resolve(premium).accountReads, true);
+    assert.equal(resolve(premium).positionCopilot, true);
     assert.equal(resolve({ "product.ai_agent_chat": true }).accountReads, false);
+    assert.equal(resolve({ "product.ai_agent_chat": true, "product.ai_agent_account_reads": true }).positionCopilot, false);
     assert.equal(resolve({}, true).accountReads, true);
+    assert.equal(resolve({}, true).positionCopilot, true);
     process.env.AI_AGENT_ACCOUNT_READS_ENABLED = "false";
-    assert.equal(resolve({ "product.ai_agent_chat": true, "product.ai_agent_account_reads": true }).accountReads, false);
+    assert.equal(resolve(premium).accountReads, false);
+    assert.equal(resolve(premium).positionCopilot, false);
+    process.env.AI_AGENT_ACCOUNT_READS_ENABLED = "true";
+    process.env.AI_POSITION_COPILOT_ENABLED = "false";
+    assert.equal(resolve(premium).accountReads, true);
+    assert.equal(resolve(premium).positionCopilot, false);
+    assert.equal(resolve({}, true).positionCopilot, false);
   } finally {
-    process.env.AI_AGENT_CHAT_ENABLED = previousChat;
-    process.env.AI_MODEL_ROUTER_V1 = previousRouter;
-    process.env.AI_RESPONSES_API_AGENT = previousResponses;
-    process.env.AI_AGENT_ACCOUNT_READS_ENABLED = previousAccountReads;
+    restoreEnv("AI_AGENT_CHAT_ENABLED", previousChat);
+    restoreEnv("AI_MODEL_ROUTER_V1", previousRouter);
+    restoreEnv("AI_RESPONSES_API_AGENT", previousResponses);
+    restoreEnv("AI_AGENT_ACCOUNT_READS_ENABLED", previousAccountReads);
+    restoreEnv("AI_POSITION_COPILOT_ENABLED", previousPositionCopilot);
+  }
+});
+
+test("multi-exchange private analysis requires its capability and operator gate", () => {
+  const previousChat = process.env.AI_AGENT_CHAT_ENABLED;
+  const previousRouter = process.env.AI_MODEL_ROUTER_V1;
+  const previousResponses = process.env.AI_RESPONSES_API_AGENT;
+  const previousAccountReads = process.env.AI_AGENT_ACCOUNT_READS_ENABLED;
+  const previousMulti = process.env.AI_AGENT_MULTI_EXCHANGE_ANALYSIS_ENABLED;
+  process.env.AI_AGENT_CHAT_ENABLED = "true";
+  process.env.AI_MODEL_ROUTER_V1 = "true";
+  process.env.AI_RESPONSES_API_AGENT = "true";
+  process.env.AI_AGENT_ACCOUNT_READS_ENABLED = "true";
+  process.env.AI_AGENT_MULTI_EXCHANGE_ANALYSIS_ENABLED = "true";
+  try {
+    const accountReadOnly = { "product.ai_agent_account_reads": true };
+    const premium = {
+      ...accountReadOnly,
+      "product.ai_multi_exchange_analysis": true
+    };
+    assert.equal(resolve(accountReadOnly).multiExchangeAnalysis, false);
+    assert.equal(resolve(premium).multiExchangeAnalysis, true);
+    process.env.AI_AGENT_MULTI_EXCHANGE_ANALYSIS_ENABLED = "false";
+    assert.equal(resolve(premium).multiExchangeAnalysis, false);
+    assert.equal(resolve({}, true).multiExchangeAnalysis, false);
+  } finally {
+    restoreEnv("AI_AGENT_CHAT_ENABLED", previousChat);
+    restoreEnv("AI_MODEL_ROUTER_V1", previousRouter);
+    restoreEnv("AI_RESPONSES_API_AGENT", previousResponses);
+    restoreEnv("AI_AGENT_ACCOUNT_READS_ENABLED", previousAccountReads);
+    restoreEnv("AI_AGENT_MULTI_EXCHANGE_ANALYSIS_ENABLED", previousMulti);
+  }
+});
+
+test("Market Analyst is Pro-capable while every Position Copilot profile is checked server-side", () => {
+  const previousChat = process.env.AI_AGENT_CHAT_ENABLED;
+  const previousRouter = process.env.AI_MODEL_ROUTER_V1;
+  const previousResponses = process.env.AI_RESPONSES_API_AGENT;
+  const previousAccountReads = process.env.AI_AGENT_ACCOUNT_READS_ENABLED;
+  const previousPosition = process.env.AI_POSITION_COPILOT_ENABLED;
+  process.env.AI_AGENT_CHAT_ENABLED = "true";
+  process.env.AI_MODEL_ROUTER_V1 = "true";
+  process.env.AI_RESPONSES_API_AGENT = "true";
+  process.env.AI_AGENT_ACCOUNT_READS_ENABLED = "true";
+  process.env.AI_POSITION_COPILOT_ENABLED = "true";
+  try {
+    const proAccess = resolve({ "product.ai_agent_chat": true });
+    assert.doesNotThrow(() => assertProfileAccess(resolveBuiltinAgentProfile("market_analyst"), proAccess));
+    assert.throws(
+      () => assertProfileAccess(resolveBuiltinAgentProfile("position_copilot"), proAccess),
+      /Position Copilot is disabled/
+    );
+
+    const premiumAccess = resolve({
+      "product.ai_agent_chat": true,
+      "product.ai_agent_account_reads": true,
+      "product.ai_position_copilot": true
+    });
+    assert.doesNotThrow(() => (
+      assertProfileAccess(resolveBuiltinAgentProfile("position_copilot"), premiumAccess)
+    ));
+  } finally {
+    restoreEnv("AI_AGENT_CHAT_ENABLED", previousChat);
+    restoreEnv("AI_MODEL_ROUTER_V1", previousRouter);
+    restoreEnv("AI_RESPONSES_API_AGENT", previousResponses);
+    restoreEnv("AI_AGENT_ACCOUNT_READS_ENABLED", previousAccountReads);
+    restoreEnv("AI_POSITION_COPILOT_ENABLED", previousPosition);
   }
 });
 

@@ -1328,7 +1328,8 @@
         "hint": "Set for plan packages. Leave empty for add-ons.",
         "none": "None",
         "free": "Free",
-        "pro": "Pro"
+        "pro": "Pro",
+        "premium": "Premium"
       },
       "sortOrder": {
         "label": "Sort order",
@@ -1341,6 +1342,11 @@
       "billingMonths": {
         "label": "Billing period (months)",
         "hint": "How many months are granted per successful payment."
+      },
+      "maxExchangeAccounts": {
+        "label": "Max real exchange accounts",
+        "hint": "Leave empty for commercially unlimited. Paper accounts are not counted.",
+        "placeholder": "Unlimited"
       },
       "maxRunningBots": {
         "label": "Max running bots",

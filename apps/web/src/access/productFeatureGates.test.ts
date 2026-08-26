@@ -27,7 +27,9 @@ test("product feature gate helpers respect explicit allow/deny values", () => {
   };
 
   assert.equal(isProductFeatureAllowed(featureGates, "ai_predictions"), false);
-  assert.equal(isProductFeatureAllowed(featureGates, "vaults"), true);
+  assert.equal(isProductFeatureAllowed(featureGates, "vaults"), false);
+  assert.equal(isProductFeatureAllowed(featureGates, "vaults", true), true);
   assert.equal(anyStrategyProductFeatureAllowed(featureGates), true);
   assert.equal(titleForProductFeature("grid_bots"), "Grid bots");
+  assert.equal(titleForProductFeature("ai_position_copilot"), "Position Copilot");
 });

@@ -31,7 +31,6 @@ import {
   isAiModelAllowed,
   isStrategyIdAllowed,
   isStrategyKindAllowed,
-  resolveCapabilityPlanForStrategyEntitlements,
   resolveStrategyEntitlementsForWorkspace,
   isLicenseEnforcementEnabled
 } from "./license.js";
@@ -53,12 +52,18 @@ import {
   updateNotificationDestinationsSettingsForUser,
   updateNotificationPluginSettingsForUser
 } from "./plugins/notificationSettings.js";
-import { buildPluginPolicySnapshot, normalizePlanTier } from "./plugins/policy.js";
+import { buildPluginPolicySnapshot } from "./plugins/policy.js";
 import {
   isCapabilityAllowed,
   resolveCapabilitiesForPlan,
   sendCapabilityDenied
 } from "./capabilities/guard.js";
+import { resolveBillingAuthoritativeCapabilityPlan } from "./capabilities/entitlementContext.js";
+import {
+  admitBotStart,
+  createExchangeAccountWithQuota,
+  mutatePredictionScheduleWithQuota
+} from "./admission/quotaAdmission.js";
 import {
   adjustAiCreditBalanceByAdmin,
   canCreateBot as canCreateBotWithQuota,
@@ -3232,6 +3237,68 @@ async function canCreateBotForUser(params: {
   };
 }
 
+async function admitBotStartForUser<T>(params: {
+  userId: string;
+  botId: string;
+  bypass: boolean;
+  transition: (tx: any, bot: any) => Promise<T>;
+}) {
+  return admitBotStart({
+    database: db,
+    userId: params.userId,
+    botId: params.botId,
+    bypass: params.bypass,
+    check: async ({ bot, runningBots, alreadyRunning }) => enforceBotStartLicense({
+      userId: params.userId,
+      exchange: String(bot.exchange ?? ""),
+      runningBots,
+      isAlreadyRunning: alreadyRunning,
+      quotaCaps: null
+    }),
+    transition: params.transition
+  });
+}
+
+async function createExchangeAccountWithAdmission<T>(params: {
+  userId: string;
+  exchange: string;
+  create: (tx: any) => Promise<T>;
+}) {
+  return createExchangeAccountWithQuota({
+    database: db,
+    userId: params.userId,
+    exchange: params.exchange,
+    resolveLimit: async () => (await resolveEffectivePlanForUser(params.userId)).maxExchangeAccounts,
+    create: params.create
+  });
+}
+
+async function mutatePredictionScheduleForUser<T>(params: {
+  userId: string;
+  kind: "local" | "ai" | "composite";
+  targetStateId: string | null;
+  bypass: boolean;
+  enforceLimit: boolean;
+  mutate: (tx: any) => Promise<T>;
+}) {
+  return mutatePredictionScheduleWithQuota({
+    database: db,
+    userId: params.userId,
+    kind: params.kind,
+    targetStateId: params.targetStateId,
+    bypass: params.bypass,
+    enforceLimit: params.enforceLimit,
+    check: ({ currentlyEnabled, currentlyPaused }) => canEnablePredictionSchedule({
+      userId: params.userId,
+      kind: params.kind,
+      currentlyEnabled,
+      currentlyPaused,
+      caps: null
+    }),
+    mutate: params.mutate
+  });
+}
+
 async function canCreatePredictionForUser(params: {
   userId: string;
   bypass: boolean;
@@ -4136,10 +4203,17 @@ async function resolvePlanCapabilitiesForUserId(params: {
   userId: string;
   policySnapshot?: { capabilitySnapshot?: unknown } | null;
 }) {
-  const entitlements = await resolveStrategyEntitlementsForUserId(params.userId);
-  const plan = normalizePlanTier(
-    resolveCapabilityPlanForStrategyEntitlements(entitlements)
-  );
+  const workspaceId = await resolveWorkspaceIdForUserId(params.userId);
+  const [entitlements, billing] = await Promise.all([
+    resolveStrategyEntitlementsForWorkspace({
+      workspaceId: workspaceId ?? "unknown"
+    }),
+    resolveEffectivePlanForUser(params.userId).catch(() => ({ plan: "free" as const }))
+  ]);
+  const plan = resolveBillingAuthoritativeCapabilityPlan({
+    billingPlan: billing.plan,
+    strategyPlan: entitlements.plan
+  });
   const resolved = await resolveCapabilitiesForPlan({
     plan,
     policySnapshot: params.policySnapshot ?? null
@@ -6100,6 +6174,7 @@ async function generateAutoPredictionForUser(
 
     const stateRow = await persistPredictionState({
       existingStateId,
+      bypassScheduleQuota: Boolean(options?.hasAdminBackendAccess || options?.isSuperadmin),
       stateData,
       scope: {
         userId,
@@ -8314,8 +8389,8 @@ async function findPredictionStateIdByLegacyScope(params: {
   marketType: PredictionMarketType;
   timeframe: PredictionTimeframe;
   signalMode: PredictionSignalMode;
-}): Promise<string | null> {
-  const row = await db.predictionState.findFirst({
+}, database: any = db): Promise<string | null> {
+  const row = await database.predictionState.findFirst({
     where: {
       userId: params.userId,
       exchange: params.exchange,
@@ -8333,6 +8408,7 @@ async function findPredictionStateIdByLegacyScope(params: {
 async function persistPredictionState(params: {
   existingStateId: string | null;
   stateData: Record<string, unknown>;
+  bypassScheduleQuota?: boolean;
   scope: {
     userId: string;
     exchange: string;
@@ -8343,40 +8419,66 @@ async function persistPredictionState(params: {
     signalMode: PredictionSignalMode;
   };
 }): Promise<{ id: string }> {
-  if (params.existingStateId) {
+  const persist = async (database: any): Promise<{ id: string }> => {
+    if (params.existingStateId) {
+      try {
+        return await database.predictionState.update({
+          where: { id: params.existingStateId },
+          data: params.stateData,
+          select: { id: true }
+        });
+      } catch (error) {
+        if ((error as any)?.code !== "P2025") {
+          throw error;
+        }
+      }
+    }
+
     try {
-      return await db.predictionState.update({
-        where: { id: params.existingStateId },
+      return await database.predictionState.create({
         data: params.stateData,
         select: { id: true }
       });
     } catch (error) {
-      if ((error as any)?.code !== "P2025") {
+      if ((error as any)?.code !== "P2002") {
         throw error;
       }
+
+      const legacyStateId = await findPredictionStateIdByLegacyScope(params.scope, database);
+      if (!legacyStateId) {
+        throw error;
+      }
+      return database.predictionState.update({
+        where: { id: legacyStateId },
+        data: params.stateData,
+        select: { id: true }
+      });
     }
+  };
+
+  const autoScheduleEnabled = Boolean(params.stateData.autoScheduleEnabled);
+  const autoSchedulePaused = Boolean(params.stateData.autoSchedulePaused);
+  if (!autoScheduleEnabled || autoSchedulePaused) {
+    return persist(db);
   }
 
-  try {
-    return await db.predictionState.create({
-      data: params.stateData,
-      select: { id: true }
-    });
-  } catch (error) {
-    if ((error as any)?.code !== "P2002") {
-      throw error;
-    }
-
-    const legacyStateId = await findPredictionStateIdByLegacyScope(params.scope);
-    if (!legacyStateId) {
-      throw error;
-    }
-    return await db.predictionState.update({
-      where: { id: legacyStateId },
-      data: params.stateData,
-      select: { id: true }
-    });
+  const bucket = resolvePredictionLimitBucketFromStateRow({
+    featuresSnapshot: params.stateData.featuresSnapshot,
+    signalMode: params.stateData.signalMode
+  });
+  const admission = await mutatePredictionScheduleForUser({
+    userId: params.scope.userId,
+    kind: predictionQuotaKindFromBucket(bucket),
+    targetStateId: params.existingStateId,
+    bypass: Boolean(params.bypassScheduleQuota),
+    enforceLimit: true,
+    mutate: persist
+  });
+  if (admission.outcome === "denied") {
+    const reason = String(admission.check?.reason ?? "prediction_schedule_limit_exceeded");
+    throw new ManualTradingError(reason, 403, reason);
   }
+  return admission.value;
 }
 
 let predictionAutoTimer: NodeJS.Timeout | null = null;
@@ -9021,6 +9123,7 @@ async function bootstrapPredictionStateFromHistory() {
 
     await persistPredictionState({
       existingStateId: existingId,
+      bypassScheduleQuota: true,
       stateData: {
         ...toPredictionStateStrategyScope(strategyRef),
         exchange,
@@ -11241,7 +11344,7 @@ function readAiPromptLicensePolicyPublic() {
 }
 
 type StrategyEntitlementsPublic = {
-  plan: "free" | "pro" | "enterprise";
+  plan: "free" | "pro" | "premium" | "enterprise";
   allowedStrategyKinds: Array<"local" | "ai" | "composite">;
   allowedStrategyIds: string[] | null;
   maxCompositeNodes: number;
@@ -11751,6 +11854,7 @@ registerPredictionLifecycleRoutes(app, {
   resolvePredictionLimitBucketFromStrategy,
   predictionQuotaKindFromBucket,
   canEnablePredictionSchedule,
+  mutatePredictionScheduleForUser,
   asRecord,
   findPredictionTemplateRowIds,
   normalizeSymbolInput,
@@ -11792,6 +11896,10 @@ registerEconomicCalendarRoutes(app, {
 registerMarketIntelligenceRoutes(app, {
   db,
   requireSuperadmin,
+  hasAdminBackendAccess,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied,
   refreshJob: marketIntelligenceRefreshJob
 });
 registerGridVaultRouteGroup({
@@ -11808,6 +11916,7 @@ registerGridVaultRouteGroup({
   resolvePlanCapabilitiesForUserId,
   isCapabilityAllowed,
   sendCapabilityDenied,
+  admitBotStartForUser,
   enqueueBotRun: async (botId: string) => {
     await enqueueBotRun(botId);
   },
@@ -11934,7 +12043,11 @@ registerManualTradingMarketDataRoutes(app, {
 registerPositionCopilotRoutes(app, {
   db,
   callAiChat,
-  dispatchPositionCopilotNotification
+  dispatchPositionCopilotNotification,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied,
+  hasAdminBackendAccess
 });
 
 registerAgentChatRoutes(app, {
@@ -11995,6 +12108,7 @@ registerExchangeAccountRoutes(app, {
   isBinanceEnabledAtRuntime,
   isBingxEnabledAtRuntime,
   getAllowedExchangeValues,
+  createExchangeAccountWithAdmission,
   listPaperMarketDataAccountIds,
   setPaperMarketDataAccountId,
   clearPaperMarketDataAccountId,
@@ -12471,6 +12585,7 @@ registerBotRoutes(app, {
   enqueueBotRun,
   cancelBotRun,
   getAccessSectionSettings,
+  admitBotStartForUser,
   enforceBotStartLicense,
   MEXC_PERP_ENABLED,
   ManualTradingError,

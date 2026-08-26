@@ -65,7 +65,10 @@
     "claimable": "Claimable",
     "vested": "Vested",
     "schedule": "Schedule",
-    "claim": "Prepare claim",
+    "claim": "Claim",
+    "claimPendingButton": "Finality pending",
+    "claimPending": "Claim confirmed · Finality pending. The released amount will update automatically.",
+    "claimFinalized": "Claim finalized · {amount} ULIQ were released.",
     "waiting": "Waiting for the global DEX launch timestamp. No vesting release is available yet."
   },
   "locking": {

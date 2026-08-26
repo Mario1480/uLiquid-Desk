@@ -1,5 +1,6 @@
 import type express from "express";
 import type { Express } from "express";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { getMarketIntelligenceService } from "../services/marketIntelligence/service.js";
@@ -21,15 +22,41 @@ export function registerMarketIntelligenceRoutes(
   deps: {
     db: any;
     requireSuperadmin: (res: express.Response) => Promise<boolean>;
+    hasAdminBackendAccess?: (user: { id: string; email: string }) => Promise<boolean>;
+    resolvePlanCapabilitiesForUserId(input: {
+      userId: string;
+    }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+    isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
+    sendCapabilityDenied(
+      res: express.Response,
+      params: { capability: CapabilityKey; currentPlan: PlanTier; legacyCode?: string }
+    ): express.Response;
+    service?: ReturnType<typeof getMarketIntelligenceService>;
     refreshJob?: {
       runCycle: (reason: "startup" | "scheduled" | "manual", scope?: "all" | "news" | "economic_calendar") => Promise<void>;
       getStatus: () => unknown;
     };
   }
 ) {
-  const service = getMarketIntelligenceService(deps.db);
+  const service = deps.service ?? getMarketIntelligenceService(deps.db);
+
+  async function requireMarketIntelligenceOrRespond(res: express.Response): Promise<boolean> {
+    const user = getUserFromLocals(res);
+    if (deps.hasAdminBackendAccess && (await deps.hasAdminBackendAccess(user))) return true;
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
+    if (deps.isCapabilityAllowed(capabilityContext.capabilities, "product.market_intelligence")) {
+      return true;
+    }
+    deps.sendCapabilityDenied(res, {
+      capability: "product.market_intelligence",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "market_intelligence_not_available"
+    });
+    return false;
+  }
 
   app.get("/market-intelligence/context", requireAuth, async (req, res) => {
+    if (!(await requireMarketIntelligenceOrRespond(res))) return;
     const parsed = contextQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
     try {
@@ -40,6 +67,7 @@ export function registerMarketIntelligenceRoutes(
   });
 
   app.get("/market-intelligence/summary", requireAuth, async (req, res) => {
+    if (!(await requireMarketIntelligenceOrRespond(res))) return;
     const parsed = contextQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
     try {
@@ -54,6 +82,7 @@ export function registerMarketIntelligenceRoutes(
   });
 
   app.get("/market-intelligence/providers", requireAuth, async (_req, res) => {
+    if (!(await requireMarketIntelligenceOrRespond(res))) return;
     return res.json({
       items: await service.getProviderStates(),
       generatedAt: new Date().toISOString()

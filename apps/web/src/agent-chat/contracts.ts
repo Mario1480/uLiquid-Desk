@@ -30,7 +30,14 @@ export type AgentSkill = {
 export type AgentAccount = { id: string; exchange: string; label: string; updatedAt: string };
 
 export type AgentProfilesResponse = {
-  featureAccess: { chat: boolean; accountReads: boolean; customProfiles: boolean; tradeDrafts: boolean };
+  featureAccess: {
+    chat: boolean;
+    accountReads: boolean;
+    customProfiles: boolean;
+    positionCopilot: boolean;
+    multiExchangeAnalysis: boolean;
+    tradeDrafts: boolean;
+  };
   plan: string;
   profiles: AgentProfile[];
   skills: AgentSkill[];

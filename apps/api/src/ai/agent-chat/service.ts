@@ -3,7 +3,13 @@ import type { AiChatResult, CallAiChatOptions, ChatMessage } from "../provider.j
 import { normalizeStoredAgentMessages } from "./answer.js";
 import { AgentChatError } from "./errors.js";
 import { assertProfileSkillsAllowed, BUILTIN_AGENT_PROFILES, resolveBuiltinAgentProfile } from "./profiles.js";
-import { assertAgentChatAccess, assertProfileAccess, resolveAgentChatFeatureAccess, type AgentChatFeatureAccess } from "./policy.js";
+import {
+  assertAgentChatAccess,
+  assertProfileAccess,
+  canAccessAgentProfile,
+  resolveAgentChatFeatureAccess,
+  type AgentChatFeatureAccess
+} from "./policy.js";
 import { runAgentChat } from "./runtime.js";
 import { profileMutationSchema } from "./schemas.js";
 import { listAgentSkillDescriptors } from "./skills.js";
@@ -70,10 +76,14 @@ export class AgentChatService {
       access.customProfiles ? this.deps.db.aiAgentProfile.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } }) : [],
       access.accountReads ? this.deps.db.exchangeAccount.findMany({ where: { userId: user.id }, select: { id: true, exchange: true, label: true, updatedAt: true }, orderBy: { updatedAt: "desc" } }) : []
     ]);
+    const visibleProfiles = [
+      ...Object.values(BUILTIN_AGENT_PROFILES),
+      ...customRows.map(normalizeCustomProfile)
+    ].filter((profile) => canAccessAgentProfile(profile, access));
     return {
       featureAccess: access,
       plan,
-      profiles: [...Object.values(BUILTIN_AGENT_PROFILES).filter((profile) => profile.actionLevel !== "account_read" || access.accountReads), ...customRows.map(normalizeCustomProfile)],
+      profiles: visibleProfiles,
       skills: listAgentSkillDescriptors().map((skill) => ({ id: skill.id, title: skill.title, description: skill.description, category: skill.category, accessLevel: skill.accessLevel, sideEffect: skill.sideEffect, supportedMarketTypes: skill.supportedMarketTypes })),
       accounts
     };
@@ -87,7 +97,13 @@ export class AgentChatService {
     if (!parsed.success) throw new AgentChatError("agent_chat_message_invalid", 400, "Invalid agent profile.");
     const input = parsed.data;
     assertProfileSkillsAllowed(input);
+    if (input.baseProfileKey === "position_copilot" && !access.positionCopilot) {
+      throw new AgentChatError("agent_chat_feature_disabled", 403, "Position Copilot is disabled.");
+    }
     if (input.actionLevel === "account_read" && !access.accountReads) throw new AgentChatError("agent_chat_feature_disabled", 403);
+    if (input.allowedExchangeAccountIds.length > 1 && !access.multiExchangeAnalysis) {
+      throw new AgentChatError("agent_chat_feature_disabled", 403, "Multi-exchange analysis is disabled.");
+    }
     if (input.allowedExchangeAccountIds.length > 0) {
       const count = await this.deps.db.exchangeAccount.count({ where: { userId: user.id, id: { in: input.allowedExchangeAccountIds } } });
       if (count !== input.allowedExchangeAccountIds.length) throw new AgentChatError("agent_chat_account_access_denied", 403);

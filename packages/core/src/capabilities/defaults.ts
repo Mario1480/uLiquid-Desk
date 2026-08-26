@@ -9,8 +9,12 @@ const FREE_TRUE: CapabilityKey[] = [
   "plugin.exchange_extension",
   "plugin.notification.telegram",
   "execution.mode.simple",
+  "execution.mode.grid",
   "strategy.kind.local",
+  "strategy.kind.prediction_copier",
+  "strategy.kind.futures_grid",
   "product.local_strategies",
+  "product.grid_bots",
   "product.paper_trading",
   "product.admin_advanced",
   "notification.send.trade",
@@ -22,25 +26,30 @@ const PRO_TRUE: CapabilityKey[] = [
   ...FREE_TRUE,
   "plugin.notification.webhook",
   "execution.mode.dca",
-  "execution.mode.grid",
   "execution.mode.dip_reversion",
   "backtesting.run",
   "backtesting.compare",
   "strategy.kind.ai",
   "strategy.kind.composite",
-  "strategy.kind.prediction_copier",
-  "strategy.kind.futures_grid",
   "strategy.model.advanced",
   "product.ai_predictions",
+  "product.ai_prediction_builder",
+  "product.market_intelligence",
   "product.ai_agent_chat",
-  "product.ai_agent_account_reads",
-  "product.ai_agent_custom_profiles",
   "product.composite_strategies",
-  "product.grid_bots",
   "product.vaults"
 ];
 
-const ENTERPRISE_TRUE: CapabilityKey[] = [...PRO_TRUE];
+const PREMIUM_TRUE: CapabilityKey[] = [
+  ...PRO_TRUE,
+  "product.market_intelligence_advanced",
+  "product.ai_agent_account_reads",
+  "product.ai_agent_custom_profiles",
+  "product.ai_position_copilot",
+  "product.ai_position_monitoring",
+  "product.ai_multi_exchange_analysis"
+];
+const ENTERPRISE_TRUE: CapabilityKey[] = [...PREMIUM_TRUE];
 
 function buildCapabilityMap(trueKeys: CapabilityKey[]): PlanCapabilities {
   const row: Partial<PlanCapabilities> = {};
@@ -54,6 +63,7 @@ function buildCapabilityMap(trueKeys: CapabilityKey[]): PlanCapabilities {
 export const PLAN_CAPABILITIES_DEFAULTS: Record<PlanTier, PlanCapabilities> = {
   free: buildCapabilityMap(FREE_TRUE),
   pro: buildCapabilityMap(PRO_TRUE),
+  premium: buildCapabilityMap(PREMIUM_TRUE),
   enterprise: buildCapabilityMap(ENTERPRISE_TRUE)
 };
 

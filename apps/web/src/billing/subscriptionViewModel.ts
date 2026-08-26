@@ -1,6 +1,7 @@
 import type { ProductFeatureGateMap } from "../access/productFeatureGates";
 
 export type BillingPackageKind = "plan" | "addon";
+export type CommercialPlan = "free" | "pro" | "premium";
 export type BillingAddonType =
   | "running_bots"
   | "running_predictions_ai"
@@ -18,7 +19,8 @@ export type BillingPackage = {
   sortOrder: number;
   priceCents: number;
   billingMonths: number;
-  plan: "free" | "pro" | null;
+  plan: CommercialPlan | null;
+  maxExchangeAccounts: number | null;
   maxRunningBots: number | null;
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
@@ -28,6 +30,35 @@ export type BillingPackage = {
   deltaRunningBots: number | null;
   deltaRunningPredictionsAi: number | null;
   deltaRunningPredictionsComposite: number | null;
+};
+
+export type PlanCatalogItem = {
+  code: string;
+  name: string;
+  description: string | null;
+  plan: CommercialPlan;
+  priceCents: number;
+  billingMonths: number;
+  maxExchangeAccounts: number | null;
+  maxRunningBots: number;
+  maxRunningPredictionsAi: number;
+  maxRunningPredictionsComposite: number;
+  monthlyAiCredits: string;
+  packageId: string | null;
+  purchasable: boolean;
+};
+
+export type ImmediateUpgradePreview = {
+  kind: "IMMEDIATE_PLAN_UPGRADE";
+  sourcePlan: "PRO";
+  targetPlan: "PREMIUM";
+  sourceTermId: string;
+  sourceTermEndsAt: string;
+  sourceTermGraceEndsAt: string;
+  sourcePriceCents: number;
+  targetPriceCents: number;
+  differenceCents: number;
+  billingMonths: number;
 };
 
 export type BillingOrderStatus =
@@ -113,57 +144,83 @@ export type UliqBenefitSnapshot = {
   expiresAt: string | null;
 };
 
+export type SubscriptionLimits = {
+  maxExchangeAccounts: number | null;
+  maxRunningBots: number;
+  allowedExchanges: string[];
+  bots: {
+    maxRunning: number;
+  };
+  predictions: {
+    local: {
+      maxRunning: number | null;
+    };
+    ai: {
+      maxRunning: number | null;
+    };
+    composite: {
+      maxRunning: number | null;
+    };
+  };
+};
+
+export type SubscriptionUsage = {
+  runningBots: number;
+  bots: {
+    running: number;
+  };
+  predictions: {
+    local: {
+      running: number;
+    };
+    ai: {
+      running: number;
+    };
+    composite: {
+      running: number;
+    };
+  };
+};
+
+export type ResolvedEntitlementContextPayload = {
+  commercialPlan: CommercialPlan;
+  capabilityPlan: CommercialPlan | "enterprise";
+  enterpriseOverride: boolean;
+  capabilities: Record<string, boolean>;
+  capabilitySnapshot: unknown;
+  quotas: SubscriptionLimits;
+  usage: SubscriptionUsage;
+};
+
 export type SubscriptionPayload = {
   billingEnabled: boolean;
-  plan: "free" | "pro";
+  plan: CommercialPlan;
+  planDisplayName?: string;
   status: "active" | "grace" | "inactive";
+  planValidUntil: string | null;
   proValidUntil: string | null;
   graceEndsAt?: string | null;
   scheduledTerm?: SubscriptionTermSummary | null;
   fallbackReason?: string | null;
   capabilities?: Record<string, boolean>;
   featureGates?: ProductFeatureGateMap;
-  limits: {
-    maxRunningBots: number;
-    allowedExchanges: string[];
-    bots: {
-      maxRunning: number;
-    };
-    predictions: {
-      local: {
-        maxRunning: number | null;
-      };
-      ai: {
-        maxRunning: number | null;
-      };
-      composite: {
-        maxRunning: number | null;
-      };
-    };
+  entitlements?: ResolvedEntitlementContextPayload;
+  limits: SubscriptionLimits;
+  usage: SubscriptionUsage;
+  quotaBreakdown?: {
+    base: { runningBots: number; runningPredictionsAi: number | null; runningPredictionsComposite: number | null };
+    addon: { runningBots: number; runningPredictionsAi: number; runningPredictionsComposite: number };
+    effective: { runningBots: number; runningPredictionsAi: number | null; runningPredictionsComposite: number | null };
   };
-  usage: {
-    runningBots: number;
-    bots: {
-      running: number;
-    };
-    predictions: {
-      local: {
-        running: number;
-      };
-      ai: {
-        running: number;
-      };
-      composite: {
-        running: number;
-      };
-    };
-  };
+  exchangeAccounts?: { used: number; max: number | null; paperExcluded: boolean };
+  upgradePreview?: ImmediateUpgradePreview | null;
   ai: {
     creditBalance: string;
     creditsUsedLifetime: string;
     monthlyIncludedCredits: string;
     billingEnabled: boolean;
   };
+  planCatalog?: PlanCatalogItem[];
   packages: BillingPackage[];
   orders: BillingOrder[];
 };
@@ -184,8 +241,9 @@ export type ServerInfoPayload = {
 };
 
 export type LicensePageModel = {
-  plan: "free" | "pro";
+  plan: CommercialPlan;
   status: "active" | "grace" | "inactive";
+  planValidUntil: string | null;
   proValidUntil: string | null;
   graceEndsAt: string | null;
   scheduledTerm: SubscriptionTermSummary | null;
@@ -207,6 +265,7 @@ export type LicensePageModel = {
       running: number;
       maxRunning: number | null;
     };
+    maxExchangeAccounts: number | null;
     exchanges: string[];
   };
   ai: {
@@ -216,6 +275,7 @@ export type LicensePageModel = {
   };
   features: {
     proPlan: boolean;
+    premiumPlan: boolean;
     aiBillingEnabled: boolean;
     addonsAvailable: boolean;
     fallbackMode: boolean;
@@ -247,10 +307,10 @@ function sortPackages(a: BillingPackage, b: BillingPackage): number {
 export function buildOrderPageModel(payload: SubscriptionPayload | null): OrderPageModel {
   const all = Array.isArray(payload?.packages) ? payload?.packages : [];
   const planPackages = all
-    .filter((pkg) => pkg.kind === "plan" && pkg.plan === "pro")
+    .filter((pkg) => pkg.isActive && pkg.kind === "plan" && pkg.plan !== null && pkg.plan !== "free")
     .sort(sortPackages);
   const addonPackages = all
-    .filter((pkg) => pkg.kind === "addon")
+    .filter((pkg) => pkg.isActive && pkg.kind === "addon")
     .sort(sortPackages);
   return {
     planPackages,
@@ -271,6 +331,7 @@ export function buildLicensePageModel(
   return {
     plan: payload.plan,
     status: payload.status,
+    planValidUntil: payload.planValidUntil,
     proValidUntil: payload.proValidUntil,
     graceEndsAt: payload.graceEndsAt ?? null,
     scheduledTerm: payload.scheduledTerm ?? null,
@@ -305,6 +366,7 @@ export function buildLicensePageModel(
         running: payload.usage.predictions.composite.running,
         maxRunning: payload.limits.predictions.composite.maxRunning
       },
+      maxExchangeAccounts: payload.limits.maxExchangeAccounts,
       exchanges: payload.limits.allowedExchanges
     },
     ai: {
@@ -313,7 +375,8 @@ export function buildLicensePageModel(
       usedLifetime: payload.ai.creditsUsedLifetime
     },
     features: {
-      proPlan: payload.plan === "pro",
+      proPlan: payload.plan !== "free",
+      premiumPlan: payload.plan === "premium",
       aiBillingEnabled: Boolean(payload.ai.billingEnabled),
       addonsAvailable,
       fallbackMode: Boolean(payload.fallbackReason)

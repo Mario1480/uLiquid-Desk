@@ -23,6 +23,7 @@ import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.
 import { getEffectiveVaultExecutionProvider } from "../vaults/executionProvider.settings.js";
 import { resolveGridHyperliquidPilotAccess } from "../vaults/gridHyperliquidPilot.settings.js";
 import { isSuperadminEmail } from "../auth/superadmin.js";
+import type { BotStartAdmissionHandler } from "../admission/quotaAdmission.js";
 
 const gridModeSchema = z.enum(["long", "short", "neutral", "cross"]);
 const gridPriceModeSchema = z.enum(["arithmetic", "geometric"]);
@@ -1334,6 +1335,7 @@ type RegisterGridRoutesDeps = {
       legacyCode?: string;
     }
   ) => express.Response;
+  admitBotStartForUser: BotStartAdmissionHandler;
   enqueueBotRun: (botId: string) => Promise<void>;
   cancelBotRun: (botId: string) => Promise<void>;
   vaultService: VaultService;
@@ -1675,7 +1677,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     botVaultRuntimeService: deps.botVaultRuntimeService ?? null,
     botVaultV3Service: deps.botVaultV3Service ?? null,
     resolveVenueContext: deps.resolveVenueContext,
-    allowedGridExchanges
+    allowedGridExchanges,
+    admitBotStartForUser: deps.admitBotStartForUser
   });
 
   function isAdminGridDraftPreviewExchangeAllowed(exchange: unknown): boolean {

@@ -266,6 +266,14 @@ export type RegisterExchangeAccountRoutesDeps = {
   isBinanceEnabledAtRuntime(): boolean;
   isBingxEnabledAtRuntime(): boolean;
   getAllowedExchangeValues(): Promise<string[]>;
+  createExchangeAccountWithAdmission<T>(params: {
+    userId: string;
+    exchange: string;
+    create: (tx: any) => Promise<T>;
+  }): Promise<
+    | { outcome: "allowed"; value: T; limit: number | null; usage: number; counted: boolean }
+    | { outcome: "denied"; reason: "max_exchange_accounts_exceeded"; limit: number; usage: number; counted: true }
+  >;
   listPaperMarketDataAccountIds(exchangeAccountIds: string[]): Promise<Record<string, string | null>>;
   setPaperMarketDataAccountId(exchangeAccountId: string, marketDataExchangeAccountId: string): Promise<void>;
   clearPaperMarketDataAccountId(exchangeAccountId: string): Promise<void>;
@@ -685,7 +693,7 @@ export function registerExchangeAccountRoutes(
       }
     }
 
-    const created = await deps.db.exchangeAccount.create({
+    const createAccount = (tx: any) => tx.exchangeAccount.create({
       data: {
         userId: user.id,
         exchange: requestedExchange,
@@ -697,6 +705,33 @@ export function registerExchangeAccountRoutes(
         credentialsExpiryNoticeSentAt: null
       }
     });
+    const admission = typeof deps.createExchangeAccountWithAdmission === "function"
+      ? await deps.createExchangeAccountWithAdmission({
+          userId: user.id,
+          exchange: requestedExchange,
+          create: createAccount
+        })
+      : {
+          outcome: "allowed" as const,
+          value: await createAccount(deps.db),
+          limit: null,
+          usage: 0,
+          counted: requestedExchange !== "paper"
+        };
+    if (admission.outcome === "denied") {
+      return res.status(403).json({
+        error: admission.reason,
+        code: admission.reason,
+        message: admission.reason,
+        details: {
+          limit: admission.limit,
+          usage: admission.usage,
+          remaining: 0,
+          paperAccountsExcluded: true
+        }
+      });
+    }
+    const created = admission.value;
 
     if (requestedExchange === "paper" && marketDataExchangeAccountId) {
       await deps.setPaperMarketDataAccountId(created.id, marketDataExchangeAccountId);

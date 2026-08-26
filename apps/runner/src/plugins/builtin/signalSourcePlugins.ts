@@ -34,7 +34,7 @@ export const builtinSignalSourcePlugins: RunnerSignalSourcePlugin[] = [
       kind: "signal_source",
       version: "1.0.0",
       description: "Built-in prediction state signal source",
-      minPlan: "pro",
+      minPlan: "free",
       defaultEnabled: true,
       capabilities: ["runner.signal_source", "prediction.state"]
     },

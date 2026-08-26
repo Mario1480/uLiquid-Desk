@@ -1,17 +1,21 @@
 import type { CapabilityKey, PlanCapabilities } from "@mm/core";
 import { AgentChatError } from "./errors.js";
 import type { ResolvedAgentProfile } from "./contracts.js";
-
-function readFlag(name: string, developmentDefault: boolean): boolean {
-  const raw = process.env[name];
-  if (raw === undefined || raw === "") return process.env.NODE_ENV !== "production" && developmentDefault;
-  return ["1", "true", "on", "yes"].includes(raw.trim().toLowerCase());
-}
+import {
+  isAgentAccountReadsRuntimeEnabled,
+  isAgentChatRuntimeEnabled,
+  isAgentCustomProfilesRuntimeEnabled,
+  isAgentTradeDraftsRuntimeEnabled,
+  isMultiExchangeAnalysisRuntimeEnabled,
+  isPositionCopilotRuntimeEnabled
+} from "../featureFlags.js";
 
 export type AgentChatFeatureAccess = {
   chat: boolean;
   accountReads: boolean;
   customProfiles: boolean;
+  positionCopilot: boolean;
+  multiExchangeAnalysis: boolean;
   tradeDrafts: boolean;
 };
 
@@ -20,21 +24,25 @@ export function resolveAgentChatFeatureAccess(params: {
   isAdmin: boolean;
   isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
 }): AgentChatFeatureAccess {
-  const masterEnabled = readFlag("AI_AGENT_CHAT_ENABLED", true);
-  const routerEnabled = readFlag("AI_MODEL_ROUTER_V1", true);
-  const responsesEnabled = readFlag("AI_RESPONSES_API_AGENT", true);
-  const agentEnabled = masterEnabled && routerEnabled && responsesEnabled;
+  const agentEnabled = isAgentChatRuntimeEnabled();
   const capability = (key: CapabilityKey) => params.isCapabilityAllowed(params.capabilities, key);
+  const accountReads = agentEnabled
+    && isAgentAccountReadsRuntimeEnabled()
+    && (params.isAdmin || capability("product.ai_agent_account_reads"));
   return {
     chat: agentEnabled && (params.isAdmin || capability("product.ai_agent_chat")),
-    accountReads: agentEnabled
-      && readFlag("AI_AGENT_ACCOUNT_READS_ENABLED", true)
-      && (params.isAdmin || capability("product.ai_agent_account_reads")),
+    accountReads,
     customProfiles: agentEnabled
-      && readFlag("AI_AGENT_CUSTOM_PROFILES_ENABLED", true)
+      && isAgentCustomProfilesRuntimeEnabled()
       && (params.isAdmin || capability("product.ai_agent_custom_profiles")),
+    positionCopilot: accountReads
+      && isPositionCopilotRuntimeEnabled()
+      && (params.isAdmin || capability("product.ai_position_copilot")),
+    multiExchangeAnalysis: accountReads
+      && isMultiExchangeAnalysisRuntimeEnabled()
+      && (params.isAdmin || capability("product.ai_multi_exchange_analysis")),
     tradeDrafts: agentEnabled
-      && readFlag("AI_AGENT_TRADE_DRAFTS_ENABLED", false)
+      && isAgentTradeDraftsRuntimeEnabled()
       && capability("product.ai_agent_trade_drafts")
   };
 }
@@ -43,8 +51,22 @@ export function assertAgentChatAccess(access: AgentChatFeatureAccess): void {
   if (!access.chat) throw new AgentChatError("agent_chat_feature_disabled", 403);
 }
 
+export function canAccessAgentProfile(
+  profile: ResolvedAgentProfile,
+  access: AgentChatFeatureAccess
+): boolean {
+  if (!access.chat) return false;
+  if (profile.baseProfileKey === "position_copilot" && !access.positionCopilot) return false;
+  if (profile.actionLevel === "account_read" && !access.accountReads) return false;
+  if (profile.actionLevel === "draft_actions") return false;
+  return true;
+}
+
 export function assertProfileAccess(profile: ResolvedAgentProfile, access: AgentChatFeatureAccess): void {
   assertAgentChatAccess(access);
+  if (profile.baseProfileKey === "position_copilot" && !access.positionCopilot) {
+    throw new AgentChatError("agent_chat_feature_disabled", 403, "Position Copilot is disabled.");
+  }
   if (profile.actionLevel === "account_read" && !access.accountReads) {
     throw new AgentChatError("agent_chat_feature_disabled", 403, "Agent account reads are disabled.");
   }

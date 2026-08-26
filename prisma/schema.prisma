@@ -21,6 +21,7 @@ enum FuturesMarginMode {
 enum EffectivePlan {
   FREE
   PRO
+  PREMIUM
 }
 
 enum SubscriptionStatus {
@@ -985,7 +986,9 @@ model UserSubscription {
   user                           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   effectivePlan                  EffectivePlan      @default(FREE) @map("effective_plan")
   status                         SubscriptionStatus @default(INACTIVE)
+  planValidUntil                 DateTime?          @map("plan_valid_until")
   proValidUntil                  DateTime?          @map("pro_valid_until")
+  maxExchangeAccounts            Int?               @map("max_exchange_accounts")
   maxRunningBots                 Int                @default(1) @map("max_running_bots")
   maxRunningPredictionsAi        Int?               @map("max_running_predictions_ai")
   maxRunningPredictionsComposite Int?               @map("max_running_predictions_composite")
@@ -1012,6 +1015,7 @@ model UserSubscription {
   licenseOperationalState LicenseOperationalState?
 
   @@index([effectivePlan, proValidUntil], map: "user_subscriptions_plan_valid_until_idx")
+  @@index([effectivePlan, planValidUntil], map: "user_subscriptions_effective_plan_valid_until_idx")
   @@index([entitlementSyncPending, updatedAt], map: "user_subscriptions_entitlement_sync_pending_idx")
   @@map("user_subscriptions")
 }
@@ -1028,6 +1032,7 @@ model BillingPackage {
   priceCents                       Int                @default(0) @map("price_cents")
   billingMonths                    Int                @default(1) @map("billing_months")
   plan                             EffectivePlan?     @default(PRO)
+  maxExchangeAccounts              Int?               @map("max_exchange_accounts")
   maxRunningBots                   Int?               @map("max_running_bots")
   maxRunningPredictionsAi          Int?               @map("max_running_predictions_ai")
   maxRunningPredictionsComposite   Int?               @map("max_running_predictions_composite")
@@ -1169,6 +1174,7 @@ model SubscriptionTerm {
   subscription         UserSubscription       @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   orderId              String?                @unique @map("order_id")
   order                BillingOrder?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  plan                 EffectivePlan?
   status               SubscriptionTermStatus @default(SCHEDULED)
   startsAt             DateTime               @map("starts_at")
   endsAt               DateTime               @map("ends_at")

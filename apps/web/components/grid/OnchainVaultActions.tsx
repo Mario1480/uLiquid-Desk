@@ -160,7 +160,10 @@ type ActionFlowState =
   | "pending_confirmations"
   | "confirmed";
 
-export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
+export function useOnchainActionFlow(
+  onAfterSuccess?: () => Promise<void> | void,
+  routing?: { actionsPath?: string }
+) {
   const t = useTranslations("grid.onchain");
   const { address, isConnected } = useAccount();
   const connection = useConnection();
@@ -188,11 +191,12 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
   );
   const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
   const canSignLiveActions = mode !== "offchain_shadow" && isConnected && walletMatches && !chainMismatch;
+  const actionsPath = routing?.actionsPath ?? "/vaults/onchain/actions?limit=25";
 
   async function load() {
     const [me, onchain] = await Promise.all([
       apiGet<MeResponse>("/auth/me"),
-      apiGet<UserOnchainActionsResponse>("/vaults/onchain/actions?limit=25")
+      apiGet<UserOnchainActionsResponse>(actionsPath)
     ]);
     const walletAddress = String(me?.walletAddress ?? me?.user?.walletAddress ?? "").trim();
     setLinkedWalletAddress(walletAddress || null);
@@ -288,8 +292,8 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
     }
   }
 
-  async function markActionFailed(actionId: string, txHash?: string) {
-    await apiPost(`/vaults/onchain/actions/${encodeURIComponent(actionId)}/fail-tx`, {
+  async function markActionFailed(actionId: string, txHash?: string, failPath?: string) {
+    await apiPost(failPath ?? `/vaults/onchain/actions/${encodeURIComponent(actionId)}/fail-tx`, {
       txHash
     }).catch(() => undefined);
   }
@@ -298,6 +302,8 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
     busyKey: string;
     buildPath: string;
     body: Record<string, unknown>;
+    submitPath?: (actionId: string) => string;
+    failPath?: (actionId: string) => string;
   }) {
     setBusyKey(params.busyKey);
     setFlowState("requesting_tx");
@@ -319,7 +325,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
         gas: resolveGasOverride(built.action.actionType, built.txRequest)
       });
       setFlowState("submitting_tx_hash");
-      await apiPost(`/vaults/onchain/actions/${encodeURIComponent(built.action.id)}/submit-tx`, {
+      await apiPost(params.submitPath?.(built.action.id) ?? `/vaults/onchain/actions/${encodeURIComponent(built.action.id)}/submit-tx`, {
         txHash,
         idempotencyKey: createIdempotencyKey(`submit-onchain-tx:${built.action.id}`)
       });
@@ -338,7 +344,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       return true;
     } catch (actionError) {
       if (built?.action?.id && txHash) {
-        await markActionFailed(built.action.id, txHash);
+        await markActionFailed(built.action.id, txHash, params.failPath?.(built.action.id));
         await load().catch(() => undefined);
         await Promise.resolve(onAfterSuccess?.()).catch(() => undefined);
       }
@@ -357,6 +363,8 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
     awaitConfirmation?: boolean;
     pendingNotice?: string;
     confirmedNotice?: string;
+    submitPath?: (actionId: string) => string;
+    failPath?: (actionId: string) => string;
   }) {
     setBusyKey(params.busyKey);
     setFlowState("awaiting_wallet_signature");
@@ -377,7 +385,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       });
       txSubmitted = true;
       setFlowState("submitting_tx_hash");
-      await apiPost(`/vaults/onchain/actions/${encodeURIComponent(params.built.action.id)}/submit-tx`, {
+      await apiPost(params.submitPath?.(params.built.action.id) ?? `/vaults/onchain/actions/${encodeURIComponent(params.built.action.id)}/submit-tx`, {
         txHash,
         idempotencyKey: createIdempotencyKey(`submit-onchain-tx:${params.built.action.id}`)
       });
@@ -401,7 +409,11 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       return true;
     } catch (actionError) {
       if (txSubmitted && txHash) {
-        await markActionFailed(params.built.action.id, txHash);
+        await markActionFailed(
+          params.built.action.id,
+          txHash,
+          params.failPath?.(params.built.action.id)
+        );
         await load().catch(() => undefined);
         await Promise.resolve(onAfterSuccess?.()).catch(() => undefined);
       }

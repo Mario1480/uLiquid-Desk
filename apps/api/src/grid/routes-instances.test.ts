@@ -702,6 +702,111 @@ test("POST /grid/instances/:id/start returns activation blocker metadata when Bo
   });
 });
 
+test("grid-scoped reserve build requires owned instance relationship and exact phase", async () => {
+  const app = createFakeApp();
+  let reserved: any = null;
+  registerGridInstanceRoutes(app as any, {
+    loadGridInstanceForUser: async ({ userId, instanceId }: any) => ({
+      id: instanceId,
+      userId,
+      botVault: { id: "bot_vault_1" }
+    }),
+    onchainActionService: {
+      async buildReserveForBotVault(input: any) {
+        reserved = input;
+        return { mode: "onchain_live", action: { id: "action_1" }, txRequest: { to: "0x1" } };
+      }
+    },
+    db: {}
+  } as any, {
+    ...createShared(),
+    mapGridInstanceRow: (row: any) => ({
+      ...row,
+      provisioningStatus: { phase: "pending_reserve_signature" }
+    })
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/onchain/reserve-tx");
+  const res = createMockRes();
+  await handler({
+    params: { id: "grid_1" },
+    body: { amountUsd: 12, actionKey: "grid:reserve:1" }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(reserved, {
+    userId: "user_1",
+    botVaultId: "bot_vault_1",
+    amountUsd: 12,
+    actionKey: "grid:reserve:1"
+  });
+});
+
+test("grid-scoped reserve build rejects a non-provisioning phase", async () => {
+  const app = createFakeApp();
+  let called = false;
+  registerGridInstanceRoutes(app as any, {
+    loadGridInstanceForUser: async () => ({ id: "grid_1", botVault: { id: "bot_vault_1" } }),
+    onchainActionService: {
+      async buildReserveForBotVault() {
+        called = true;
+      }
+    },
+    db: {}
+  } as any, {
+    ...createShared(),
+    mapGridInstanceRow: (row: any) => ({
+      ...row,
+      provisioningStatus: { phase: "running" }
+    })
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/onchain/reserve-tx");
+  const res = createMockRes();
+  await handler({ params: { id: "grid_1" }, body: {} }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "grid_provisioning_action_not_allowed");
+  assert.equal(called, false);
+});
+
+test("grid-scoped tx submission rejects unrelated vault action types", async () => {
+  const app = createFakeApp();
+  let submitted = false;
+  registerGridInstanceRoutes(app as any, {
+    loadGridInstanceForUser: async () => ({ id: "grid_1", botVault: { id: "bot_vault_1" } }),
+    onchainActionService: {
+      async submitActionTxHash() {
+        submitted = true;
+      }
+    },
+    db: {
+      onchainAction: {
+        async findFirst() {
+          return { id: "action_1", actionType: "claim_from_bot_vault" };
+        }
+      }
+    }
+  } as any, {
+    ...createShared(),
+    mapGridInstanceRow: (row: any) => ({
+      ...row,
+      provisioningStatus: { phase: "pending_reserve_signature" }
+    })
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/onchain/actions/:actionId/submit-tx");
+  const res = createMockRes();
+  await handler({
+    params: { id: "grid_1", actionId: "action_1" },
+    body: { txHash: `0x${"a".repeat(64)}` }
+  }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body?.error, "grid_provisioning_action_not_found");
+  assert.equal(submitted, false);
+});
+
 test("POST /grid/templates/:id/instances blocks hyperliquid bots below the runner-equivalent venue minimums", async () => {
   const app = createFakeApp();
   let transactionCalled = false;

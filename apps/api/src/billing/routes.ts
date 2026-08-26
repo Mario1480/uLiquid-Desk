@@ -7,6 +7,7 @@ import {
   type PlanTier
 } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { createResolvedEntitlementContext } from "../capabilities/entitlementContext.js";
 
 const subscriptionCheckoutSchema = z.union([
   z.object({
@@ -87,7 +88,8 @@ export const adminBillingPackageSchema = z.object({
   sortOrder: z.number().int().min(0).max(1_000_000).optional(),
   priceCents: z.number().int().min(0).max(1_000_000_000),
   billingMonths: z.number().int().min(1).max(36).optional(),
-  plan: z.enum(["free", "pro"]).nullable().optional(),
+  plan: z.enum(["free", "pro", "premium"]).nullable().optional(),
+  maxExchangeAccounts: z.number().int().min(0).max(100_000).nullable().optional(),
   maxRunningBots: z.number().int().min(0).max(100_000).nullable().optional(),
   maxRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
   maxRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
@@ -285,57 +287,58 @@ function mapSubscriptionOrderForResponse(input: any) {
 function buildBillingDisabledResponse() {
   const plan = "free" as const;
   const capabilities = getDefaultPlanCapabilities(plan);
+  const limits = {
+    maxExchangeAccounts: 1,
+    maxRunningBots: 2,
+    allowedExchanges: ["*"],
+    bots: { maxRunning: 2 },
+    predictions: {
+      local: { maxRunning: null },
+      ai: { maxRunning: 0 },
+      composite: { maxRunning: 0 }
+    }
+  };
+  const usage = {
+    runningBots: 0,
+    bots: { running: 0 },
+    predictions: {
+      local: { running: 0 },
+      ai: { running: 0 },
+      composite: { running: 0 }
+    }
+  };
   return {
     billingEnabled: false,
     plan,
+    planDisplayName: "Free",
     status: "active",
+    planValidUntil: null,
     proValidUntil: null,
     capabilities,
-    featureGates: resolveProductFeatureGates({
-      plan,
-      capabilities
+    featureGates: resolveProductFeatureGates({ plan, capabilities }),
+    entitlements: createResolvedEntitlementContext({
+      billingPlan: plan,
+      strategyPlan: plan,
+      capabilities,
+      quotas: limits,
+      usage
     }),
-    limits: {
-      maxRunningBots: 1,
-      allowedExchanges: ["*"],
-      bots: {
-        maxRunning: 1
-      },
-      predictions: {
-        local: {
-          maxRunning: null
-        },
-        ai: {
-          maxRunning: null
-        },
-        composite: {
-          maxRunning: null
-        }
-      }
+    limits,
+    usage,
+    quotaBreakdown: {
+      base: { runningBots: 2, runningPredictionsAi: 0, runningPredictionsComposite: 0 },
+      addon: { runningBots: 0, runningPredictionsAi: 0, runningPredictionsComposite: 0 },
+      effective: { runningBots: 2, runningPredictionsAi: 0, runningPredictionsComposite: 0 }
     },
-    usage: {
-      runningBots: 0,
-      bots: {
-        running: 0
-      },
-      predictions: {
-        local: {
-          running: 0
-        },
-        ai: {
-          running: 0
-        },
-        composite: {
-          running: 0
-        }
-      }
-    },
+    exchangeAccounts: { used: 0, max: 1, paperExcluded: true },
+    upgradePreview: null,
     ai: {
       creditBalance: "0",
       creditsUsedLifetime: "0",
       monthlyIncludedCredits: "0",
       billingEnabled: false
     },
+    planCatalog: [],
     packages: [],
     orders: []
   };
@@ -354,7 +357,11 @@ export type RegisterBillingRoutesDeps = {
   getSubscriptionSummary(userId: string): Promise<any>;
   resolvePlanCapabilitiesForUserId(input: {
     userId: string;
-  }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+  }): Promise<{
+    plan: PlanTier;
+    capabilities: PlanCapabilities;
+    capabilitySnapshot?: unknown;
+  }>;
   adjustAiCreditBalanceByAdmin(params: { userId: string; deltaCredits: string; note: string; actorUserId: string }): Promise<{ balance: bigint }>;
   isBillingEnabled(): Promise<boolean>;
   listSubscriptionOrders(userId: string): Promise<any[]>;
@@ -445,6 +452,10 @@ function mapBillingRouteError(error: unknown): { status: number; body: Record<st
     reason === "cart_capacity_requires_pro"
     || reason === "pro_required_for_topup"
     || reason === "paid_plan_required_for_capacity_topup"
+    || reason === "premium_upgrade_active_term_required"
+    || reason === "premium_upgrade_scheduled_term_conflict"
+    || reason === "premium_upgrade_term_mismatch"
+    || reason === "premium_upgrade_price_evidence_invalid"
     || reason === "open_order_cart_mismatch"
     || reason === "open_order_exists"
     || reason === "order_not_payable"
@@ -626,7 +637,8 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
         sortOrder: Number(pkg.sortOrder ?? 0),
         priceCents: Number(pkg.priceCents ?? 0),
         billingMonths: Number(pkg.billingMonths ?? 1),
-        plan: pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
+        plan: pkg.plan === "PREMIUM" ? "premium" : pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
+        maxExchangeAccounts: pkg.maxExchangeAccounts ?? null,
         maxRunningBots: pkg.maxRunningBots ?? null,
         maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
         maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
@@ -743,9 +755,18 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
       const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
         userId: user.id
       });
+      const entitlementContext = createResolvedEntitlementContext({
+        billingPlan: summary.plan,
+        strategyPlan: capabilityContext.plan,
+        capabilities: capabilityContext.capabilities,
+        capabilitySnapshot: capabilityContext.capabilitySnapshot,
+        quotas: summary.limits,
+        usage: summary.usage
+      });
       return res.json({
         billingEnabled,
         ...summary,
+        entitlements: entitlementContext,
         capabilities: capabilityContext.capabilities,
         featureGates: resolveProductFeatureGates({
           plan: capabilityContext.plan,
@@ -762,7 +783,8 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
           sortOrder: Number(pkg.sortOrder ?? 0),
           priceCents: Number(pkg.priceCents ?? 0),
           billingMonths: Number(pkg.billingMonths ?? 1),
-          plan: pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
+          plan: pkg.plan === "PREMIUM" ? "premium" : pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
+          maxExchangeAccounts: pkg.maxExchangeAccounts ?? null,
           maxRunningBots: pkg.maxRunningBots ?? null,
           maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
           maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,

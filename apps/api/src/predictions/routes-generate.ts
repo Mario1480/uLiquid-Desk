@@ -571,6 +571,7 @@ export function registerPredictionGenerateRoutes(
       };
       const stateRow = await deps.persistPredictionState({
         existingStateId,
+        bypassScheduleQuota: Boolean(userCtx.hasAdminBackendAccess),
         stateData: statePayload,
         scope: {
           userId: user.id,

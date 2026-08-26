@@ -77,7 +77,7 @@ export function registerStrategyReadRoutes(
   }
 
   app.get("/settings/ai-prompts/own", requireAuth, async (_req, res) => {
-    const access = await resolveProductCapabilityAccess(res, "product.ai_predictions");
+    const access = await resolveProductCapabilityAccess(res, "product.ai_prediction_builder");
     const user = access.user;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!access.allowed || !strategyFeatureEnabled) {

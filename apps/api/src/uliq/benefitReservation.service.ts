@@ -5,6 +5,11 @@ import { parseDatabaseUint256Decimal } from "./uint256.js";
 
 export type UliqBenefitType = "SUBSCRIPTION_DISCOUNT" | "AI_CREDIT_DISCOUNT";
 
+export type UliqDiscountSelection = {
+  benefitType: UliqBenefitType;
+  eligibleLineIndexes: number[];
+};
+
 export type PreparedUliqBillingBenefit = UliqDiscountAllocation & {
   userId: string;
   walletAddress: string;
@@ -25,11 +30,33 @@ function centsToUsdDecimal(cents: number): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
 }
 
-export function selectUliqBenefitType(lines: Array<{ kind: string; addonType?: string | null }>): UliqBenefitType {
-  const onlyAiCredits = lines.length > 0 && lines.every((line) => (
-    String(line.kind).toLowerCase() === "addon" && line.addonType === "ai_credits"
-  ));
-  return onlyAiCredits ? "AI_CREDIT_DISCOUNT" : "SUBSCRIPTION_DISCOUNT";
+export function resolveUliqDiscountSelection(
+  lines: Array<{ kind: string; addonType?: string | null }>
+): UliqDiscountSelection | null {
+  const subscriptionIndexes: number[] = [];
+  const aiCreditIndexes: number[] = [];
+  lines.forEach((line, index) => {
+    const kind = String(line.kind).toLowerCase();
+    if (kind === "plan") subscriptionIndexes.push(index);
+    if (kind === "addon" && line.addonType === "ai_credits") aiCreditIndexes.push(index);
+  });
+  if (subscriptionIndexes.length > 0 && aiCreditIndexes.length > 0) {
+    throw new Error("uliq_mixed_discount_types_not_supported");
+  }
+  if (subscriptionIndexes.length > 0) {
+    return { benefitType: "SUBSCRIPTION_DISCOUNT", eligibleLineIndexes: subscriptionIndexes };
+  }
+  if (aiCreditIndexes.length > 0) {
+    return { benefitType: "AI_CREDIT_DISCOUNT", eligibleLineIndexes: aiCreditIndexes };
+  }
+  // Capacity add-ons have no ULIQ discount in the approved v1 pricing model.
+  return null;
+}
+
+export function selectUliqBenefitType(
+  lines: Array<{ kind: string; addonType?: string | null }>
+): UliqBenefitType | null {
+  return resolveUliqDiscountSelection(lines)?.benefitType ?? null;
 }
 
 export async function prepareUliqBillingBenefit(params: {

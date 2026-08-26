@@ -31,6 +31,17 @@ export type RegisterPredictionLifecycleRoutesDeps = {
     currentlyPaused: boolean;
     caps: any;
   }): Promise<any>;
+  mutatePredictionScheduleForUser<T>(params: {
+    userId: string;
+    kind: "local" | "ai" | "composite";
+    targetStateId: string | null;
+    bypass: boolean;
+    enforceLimit: boolean;
+    mutate: (tx: any) => Promise<T>;
+  }): Promise<
+    | { outcome: "allowed"; value: T; check: any | null }
+    | { outcome: "denied"; check: any }
+  >;
   asRecord(value: unknown): Record<string, any>;
   findPredictionTemplateRowIds(userId: string, input: {
     symbol: string;
@@ -87,42 +98,41 @@ export function registerPredictionLifecycleRoutes(
       if (stateRow) {
         const snapshot = deps.asRecord(stateRow.featuresSnapshot);
         const signalMode = deps.readStateSignalMode(stateRow.signalMode, snapshot);
-        if (!body.data.paused && !bypass) {
-          const limitBucket = deps.resolvePredictionLimitBucketFromStrategy({
-            strategyRef: deps.readPredictionStrategyRef(snapshot),
-            signalMode
-          });
-          const scheduleCheck = await deps.canEnablePredictionSchedule({
-            userId: user.id,
-            kind: deps.predictionQuotaKindFromBucket(limitBucket),
-            currentlyEnabled: Boolean(stateRow.autoScheduleEnabled),
-            currentlyPaused: Boolean(stateRow.autoSchedulePaused),
-            caps: null
-          });
-          if (!scheduleCheck.allowed) {
-            return res.status(403).json({
-              error: scheduleCheck.reason,
-              code: scheduleCheck.reason,
-              message: scheduleCheck.reason,
-              details: {
-                limits: scheduleCheck.limits.predictions,
-                usage: scheduleCheck.usage.predictions
-              }
-            });
-          }
-        }
-        await deps.db.predictionState.update({
-          where: { id: stateRow.id },
-          data: {
-            autoScheduleEnabled: true,
-            autoSchedulePaused: body.data.paused,
-            featuresSnapshot: {
-              ...snapshot,
-              autoScheduleEnabled: true,
-              autoSchedulePaused: body.data.paused
-            }
-          }
+        const limitBucket = deps.resolvePredictionLimitBucketFromStrategy({
+          strategyRef: deps.readPredictionStrategyRef(snapshot),
+          signalMode
         });
+        const scheduleAdmission = await deps.mutatePredictionScheduleForUser({
+          userId: user.id,
+          kind: deps.predictionQuotaKindFromBucket(limitBucket),
+          targetStateId: stateRow.id,
+          bypass,
+          enforceLimit: !body.data.paused,
+          mutate: (tx) => tx.predictionState.update({
+            where: { id: stateRow.id },
+            data: {
+              autoScheduleEnabled: true,
+              autoSchedulePaused: body.data.paused,
+              featuresSnapshot: {
+                ...snapshot,
+                autoScheduleEnabled: true,
+                autoSchedulePaused: body.data.paused
+              }
+            }
+          })
+        });
+        if (scheduleAdmission.outcome === "denied") {
+          const scheduleCheck = scheduleAdmission.check;
+          return res.status(403).json({
+            error: scheduleCheck.reason,
+            code: scheduleCheck.reason,
+            message: scheduleCheck.reason,
+            details: {
+              limits: scheduleCheck.limits.predictions,
+              usage: scheduleCheck.usage.predictions
+            }
+          });
+        }
         deps.predictionTriggerDebounceState.delete(stateRow.id);
 
         const normalizedSymbol = deps.normalizeSymbolInput(stateRow.symbol);

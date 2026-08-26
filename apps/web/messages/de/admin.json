@@ -1328,7 +1328,8 @@
         "hint": "Fuer Plan-Pakete setzen. Bei Add-ons leer lassen.",
         "none": "Keine",
         "free": "Free",
-        "pro": "Pro"
+        "pro": "Pro",
+        "premium": "Premium"
       },
       "sortOrder": {
         "label": "Sortierung",
@@ -1341,6 +1342,11 @@
       "billingMonths": {
         "label": "Laufzeit (Monate)",
         "hint": "Wie viele Monate pro erfolgreicher Zahlung gutgeschrieben werden."
+      },
+      "maxExchangeAccounts": {
+        "label": "Max. echte Exchange-Konten",
+        "hint": "Leeres Feld bedeutet kommerziell unbegrenzt. Paper-Konten werden nicht gezählt.",
+        "placeholder": "Unbegrenzt"
       },
       "maxRunningBots": {
         "label": "Max. laufende Bots",

@@ -216,7 +216,7 @@
   border-bottom: 0;
 }
 
-.uliqLaunchSteps li > span {
+.uliqLaunchStepIndex {
   display: grid;
   width: 24px;
   height: 24px;

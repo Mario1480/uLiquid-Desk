@@ -5,6 +5,7 @@ import {
   createUliqBenefitReservationInTransaction,
   expireUliqBenefitReservations,
   releaseOpenUliqReservationsForWalletChange,
+  resolveUliqDiscountSelection,
   type PreparedUliqBillingBenefit
 } from "./benefitReservation.service.js";
 
@@ -27,6 +28,30 @@ const prepared: PreparedUliqBillingBenefit = {
   priceQualityStatus: "HEALTHY",
   degradationReason: null
 };
+
+test("ULIQ discounts exclude capacity add-ons and reject mixed subscription/AI discount classes", () => {
+  assert.equal(resolveUliqDiscountSelection([
+    { kind: "addon", addonType: "running_bots" }
+  ]), null);
+  assert.deepEqual(resolveUliqDiscountSelection([
+    { kind: "plan", addonType: null },
+    { kind: "addon", addonType: "running_bots" }
+  ]), {
+    benefitType: "SUBSCRIPTION_DISCOUNT",
+    eligibleLineIndexes: [0]
+  });
+  assert.deepEqual(resolveUliqDiscountSelection([
+    { kind: "addon", addonType: "ai_credits" },
+    { kind: "addon", addonType: "running_predictions_ai" }
+  ]), {
+    benefitType: "AI_CREDIT_DISCOUNT",
+    eligibleLineIndexes: [0]
+  });
+  assert.throws(() => resolveUliqDiscountSelection([
+    { kind: "plan", addonType: null },
+    { kind: "addon", addonType: "ai_credits" }
+  ]), /uliq_mixed_discount_types_not_supported/);
+});
 
 test("reservation creation binds exact wallet/snapshots and ten-minute expiry", async () => {
   let createData: any = null;

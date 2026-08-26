@@ -92,6 +92,31 @@ test("strategy entitlement defaults per plan", () => {
   assert.deepEqual(pro.allowedStrategyKinds, ["local", "ai", "composite"]);
   assert.equal(pro.maxCompositeNodes, 12);
   assert.equal(pro.aiAllowedModels, null);
+
+  const premium = getDefaultStrategyEntitlements("premium");
+  assert.deepEqual(premium, pro);
+
+  const enterprise = getDefaultStrategyEntitlements("enterprise");
+  assert.equal(enterprise.maxCompositeNodes, 64);
+});
+
+test("unknown strategy plans fail safe to Free", async () => {
+  const prevPlan = process.env.STRATEGY_LICENSE_DEFAULT_PLAN;
+  process.env.STRATEGY_LICENSE_DEFAULT_PLAN = "legacy_paid_unknown";
+
+  const resolved = await resolveStrategyEntitlementsForWorkspace({
+    workspaceId: "ws_unknown_plan",
+    deps: {
+      fetchByWorkspaceId: async () => ({
+        workspaceId: "ws_unknown_plan",
+        plan: "legacy_paid_unknown"
+      })
+    }
+  });
+  assert.equal(resolved.plan, "free");
+  assert.deepEqual(resolved.allowedStrategyKinds, ["local"]);
+
+  process.env.STRATEGY_LICENSE_DEFAULT_PLAN = prevPlan;
 });
 
 test("strategy kind and id allowlist matching", () => {

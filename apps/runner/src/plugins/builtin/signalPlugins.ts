@@ -28,7 +28,7 @@ export const builtinSignalPlugins: RunnerSignalPlugin[] = [
       kind: "signal",
       version: "1.0.0",
       description: "Built-in prediction copier signal engine",
-      minPlan: "pro",
+      minPlan: "free",
       defaultEnabled: true,
       capabilities: ["runner.signal", "prediction.copier"]
     },

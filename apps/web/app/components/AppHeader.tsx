@@ -234,7 +234,7 @@ export default function AppHeader({
       { key: "dashboard", label: tNav("dashboard"), href: withLocalePath("/dashboard", locale) }
     ];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
-    const aiPredictionsEnabled = isProductFeatureAllowed(featureGates, "ai_predictions") || hasPlatformAdminAccess;
+    const aiPredictionBuilderEnabled = isProductFeatureAllowed(featureGates, "ai_prediction_builder") || hasPlatformAdminAccess;
     const aiAgentEnabled = isProductFeatureAllowed(featureGates, "ai_agent_chat") || hasPlatformAdminAccess;
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
@@ -253,7 +253,7 @@ export default function AppHeader({
     if (aiAgentEnabled) {
       items.push({ key: "agent-chat", label: tNav("agentChat"), href: withLocalePath("/agent-chat", locale) });
     }
-    if (visibility.strategy && aiPredictionsEnabled) {
+    if (visibility.strategy && aiPredictionBuilderEnabled) {
       items.push({ key: "prediction-builder", label: tNav("predictionBuilder"), href: withLocalePath("/strategies", locale) });
     }
     if (visibility.economicCalendar) {

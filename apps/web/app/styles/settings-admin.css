@@ -26,6 +26,114 @@
   color: var(--muted);
   font-size: 13px;
 }
+.subscriptionPricingSection {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+.subscriptionPricingHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+.subscriptionPricingHeading h3 {
+  margin: 4px 0 0;
+  font-size: clamp(20px, 2.2vw, 28px);
+}
+.subscriptionPricingHeading > p {
+  max-width: 560px;
+  margin: 0;
+}
+.subscriptionPricingGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.subscriptionPricingCard {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: 330px;
+  padding: 18px;
+  overflow: hidden;
+}
+.subscriptionPricingCardPremium {
+  border-color: rgba(45, 212, 191, 0.35);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(45, 212, 191, 0.13), transparent 42%),
+    rgba(8, 20, 34, 0.9);
+}
+.subscriptionPricingCardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.subscriptionPricingCardHead p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.subscriptionPricingPlan {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+}
+.subscriptionPricingPrice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.subscriptionPricingPrice strong {
+  font-size: 26px;
+  letter-spacing: -0.04em;
+}
+.subscriptionPricingPrice span,
+.subscriptionPricingUnavailable {
+  color: var(--muted);
+  font-size: 12px;
+}
+.subscriptionPricingFacts {
+  display: grid;
+  gap: 7px;
+  color: rgba(226, 238, 247, 0.88);
+  font-size: 12px;
+}
+.subscriptionPricingFacts span::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 8px 2px 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.subscriptionPricingUpgradeNote {
+  padding: 9px 10px;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 10px;
+  background: rgba(45, 212, 191, 0.08);
+  color: #ccfbf1;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.subscriptionPricingAction,
+.subscriptionPricingUnavailable {
+  align-self: end;
+  margin-top: auto;
+}
+.subscriptionQuotaValue {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  text-align: right;
+}
+.subscriptionQuotaValue small {
+  color: var(--muted);
+  font-size: 10px;
+}
 .subscriptionPortalLoading {
   padding: 12px;
   font-size: 13px;
@@ -265,6 +373,16 @@
   font-size: 12px;
 }
 @media (max-width: 900px) {
+  .subscriptionPricingHeading {
+    display: grid;
+    align-items: start;
+  }
+  .subscriptionPricingGrid {
+    grid-template-columns: 1fr;
+  }
+  .subscriptionPricingCard {
+    min-height: 0;
+  }
   .subscriptionCreditLimitFields {
     grid-template-columns: 1fr;
   }

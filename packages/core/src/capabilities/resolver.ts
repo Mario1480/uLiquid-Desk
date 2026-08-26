@@ -11,12 +11,15 @@ import {
 } from "./types.js";
 
 export function normalizePlanTier(value: unknown): PlanTier {
-  if (value === "free" || value === "pro" || value === "enterprise") return value;
-  return "pro";
+  if (value === "free" || value === "pro" || value === "premium" || value === "enterprise") {
+    return value;
+  }
+  return "free";
 }
 
 export function planRank(plan: PlanTier): number {
-  if (plan === "enterprise") return 3;
+  if (plan === "enterprise") return 4;
+  if (plan === "premium") return 3;
   if (plan === "pro") return 2;
   return 1;
 }
@@ -98,6 +101,7 @@ export function hasCapability(capabilities: PlanCapabilities, key: CapabilityKey
 export function requiredPlanForCapability(key: CapabilityKey): PlanTier | null {
   if (PLAN_ORDERED_BY_STRENGTH.free[key]) return "free";
   if (PLAN_ORDERED_BY_STRENGTH.pro[key]) return "pro";
+  if (PLAN_ORDERED_BY_STRENGTH.premium[key]) return "premium";
   if (PLAN_ORDERED_BY_STRENGTH.enterprise[key]) return "enterprise";
   return null;
 }
@@ -105,6 +109,7 @@ export function requiredPlanForCapability(key: CapabilityKey): PlanTier | null {
 const PLAN_ORDERED_BY_STRENGTH = {
   free: getDefaultPlanCapabilities("free"),
   pro: getDefaultPlanCapabilities("pro"),
+  premium: getDefaultPlanCapabilities("premium"),
   enterprise: getDefaultPlanCapabilities("enterprise")
 } as const;
 

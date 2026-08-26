@@ -36,7 +36,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "signal",
     version: "1.0.0",
     description: "Built-in prediction copier signal engine",
-    minPlan: "pro",
+    minPlan: "free",
     defaultEnabled: true,
     capabilities: ["runner.signal", "prediction.copier"]
   },
@@ -63,9 +63,18 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "execution",
     version: "1.0.0",
     description: "Built-in grid execution mode",
-    minPlan: "pro",
+    minPlan: "free",
     defaultEnabled: true,
     capabilities: ["runner.execution", "execution.grid"]
+  },
+  {
+    id: "core.execution.futures_grid",
+    kind: "execution",
+    version: "1.0.0",
+    description: "Built-in futures grid execution mode",
+    minPlan: "free",
+    defaultEnabled: true,
+    capabilities: ["runner.execution", "execution.futures_grid"]
   },
   {
     id: "core.execution.dip_reversion",
@@ -90,7 +99,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "execution",
     version: "1.0.0",
     description: "Built-in prediction copier execution mode",
-    minPlan: "pro",
+    minPlan: "free",
     defaultEnabled: true,
     capabilities: ["runner.execution", "prediction.copier"]
   },
@@ -108,7 +117,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "signal_source",
     version: "1.0.0",
     description: "Built-in prediction state signal source",
-    minPlan: "pro",
+    minPlan: "free",
     defaultEnabled: true,
     capabilities: ["runner.signal_source", "prediction.state"]
   },

@@ -9,7 +9,7 @@ export type Entitlements = {
   allowedExchanges: string[];
 };
 
-export type StrategyLicensePlan = "free" | "pro" | "enterprise";
+export type StrategyLicensePlan = "free" | "pro" | "premium" | "enterprise";
 export type StrategyLicenseKind = "local" | "ai" | "composite";
 
 export type StrategyEntitlements = {
@@ -92,6 +92,11 @@ const STRATEGY_PLAN_DEFAULTS: Record<
     maxCompositeNodes: 12,
     aiAllowedModels: null
   },
+  premium: {
+    allowedStrategyKinds: ["local", "ai", "composite"],
+    maxCompositeNodes: 12,
+    aiAllowedModels: null
+  },
   enterprise: {
     allowedStrategyKinds: ["local", "ai", "composite"],
     maxCompositeNodes: 64,
@@ -140,8 +145,10 @@ function normalizeOptionalStringArray(value: unknown): string[] | null {
 }
 
 function normalizePlan(value: unknown): StrategyLicensePlan {
-  if (value === "free" || value === "pro" || value === "enterprise") return value;
-  return "pro";
+  if (value === "free" || value === "pro" || value === "premium" || value === "enterprise") {
+    return value;
+  }
+  return "free";
 }
 
 function normalizeMoney(value: unknown): number | null {
@@ -193,10 +200,15 @@ export function getDefaultStrategyPlan(
   raw: string | null | undefined = process.env.STRATEGY_LICENSE_DEFAULT_PLAN
 ): StrategyLicensePlan {
   const normalized = normalize(raw);
-  if (normalized === "free" || normalized === "pro" || normalized === "enterprise") {
+  if (
+    normalized === "free"
+    || normalized === "pro"
+    || normalized === "premium"
+    || normalized === "enterprise"
+  ) {
     return normalized;
   }
-  return "pro";
+  return "free";
 }
 
 export function getDefaultStrategyEntitlements(

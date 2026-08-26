@@ -1,4 +1,4 @@
-export type PlanTier = "free" | "pro" | "enterprise";
+export type PlanTier = "free" | "pro" | "premium" | "enterprise";
 
 export const CAPABILITY_KEYS = [
   "plugin.signal",
@@ -21,10 +21,16 @@ export const CAPABILITY_KEYS = [
   "strategy.kind.futures_grid",
   "strategy.model.advanced",
   "product.ai_predictions",
+  "product.ai_prediction_builder",
+  "product.market_intelligence",
+  "product.market_intelligence_advanced",
   "product.ai_agent_chat",
   "product.ai_agent_account_reads",
   "product.ai_agent_custom_profiles",
   "product.ai_agent_trade_drafts",
+  "product.ai_position_copilot",
+  "product.ai_position_monitoring",
+  "product.ai_multi_exchange_analysis",
   "product.local_strategies",
   "product.composite_strategies",
   "product.grid_bots",

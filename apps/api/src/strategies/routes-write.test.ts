@@ -90,7 +90,7 @@ function validPredictionTemplateDraft() {
   };
 }
 
-test("user AI prompt generation preview is denied when AI predictions gate is disabled", async () => {
+test("user AI prompt generation preview is denied when Prediction Builder gate is disabled", async () => {
   const app = createFakeApp();
 
   registerStrategyWriteRoutes(app as any, {
@@ -98,7 +98,7 @@ test("user AI prompt generation preview is denied when AI predictions gate is di
     resolvePlanCapabilitiesForUserId: async () => ({
       plan: "free",
       capabilities: {
-        "product.ai_predictions": false
+        "product.ai_prediction_builder": false
       }
     }),
     isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
@@ -127,7 +127,7 @@ test("user AI prompt generation preview is denied when AI predictions gate is di
   );
 
   assert.equal(res.statusCode, 403);
-  assert.equal(res.body?.capability, "product.ai_predictions");
+  assert.equal(res.body?.capability, "product.ai_prediction_builder");
 });
 
 test("admin AI prompt generation preview bypasses product gate when admin backend access is enabled", async () => {
@@ -201,7 +201,7 @@ test("user AI prompt chat returns AI builder response", async () => {
     resolvePlanCapabilitiesForUserId: async () => ({
       plan: "pro",
       capabilities: {
-        "product.ai_predictions": true
+        "product.ai_prediction_builder": true
       }
     }),
     isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
@@ -289,7 +289,7 @@ test("user AI prompt update edits an existing own prompt", async () => {
     resolvePlanCapabilitiesForUserId: async () => ({
       plan: "pro",
       capabilities: {
-        "product.ai_predictions": true
+        "product.ai_prediction_builder": true
       }
     }),
     isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
@@ -388,7 +388,7 @@ test("prediction builder preview validates the draft without creating live state
     readUserFromLocals: (res: any) => res.locals.user,
     resolvePlanCapabilitiesForUserId: async () => ({
       plan: "pro",
-      capabilities: { "product.ai_predictions": true }
+      capabilities: { "product.ai_prediction_builder": true }
     }),
     isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) => capabilities[capability] === true,
     sendCapabilityDenied: (res: any) => res.status(403).json({ error: "forbidden" }),
@@ -422,7 +422,7 @@ test("prediction builder chat returns only a validated draft tool proposal", asy
     readUserFromLocals: (res: any) => res.locals.user,
     resolvePlanCapabilitiesForUserId: async () => ({
       plan: "pro",
-      capabilities: { "product.ai_predictions": true }
+      capabilities: { "product.ai_prediction_builder": true }
     }),
     isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) => capabilities[capability] === true,
     sendCapabilityDenied: (res: any) => res.status(403).json({ error: "forbidden" }),
@@ -473,7 +473,7 @@ test("prediction builder save requires explicit analysis-only confirmation", asy
     readUserFromLocals: (res: any) => res.locals.user,
     resolvePlanCapabilitiesForUserId: async () => ({
       plan: "pro",
-      capabilities: { "product.ai_predictions": true }
+      capabilities: { "product.ai_prediction_builder": true }
     }),
     isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) => capabilities[capability] === true,
     sendCapabilityDenied: (res: any) => res.status(403).json({ error: "forbidden" }),

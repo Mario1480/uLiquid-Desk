@@ -107,6 +107,8 @@ Die Reauth-Sitzung ist kurzlebig und wird beim Treasury-Write atomar verbraucht.
 - Bezahlte Laufzeiten werden als `SubscriptionTerm` mit Start, Ende, Karenzende und Entitlement-Snapshot gespeichert.
 - Eine Verlängerung vor Vertragsende oder während der Karenz beginnt exakt am bisherigen Vertragsende.
 - Weitere Verlängerungen werden an das Ende des letzten geplanten Terms angehängt.
+- Ein Pro-zu-Premium-Upgrade innerhalb eines aktiven Terms ist eine Ausnahme: Nach bestätigter Zahlung der vollständigen Paketpreisdifferenz wird derselbe Term sofort auf Premium umgestellt. Start, Ende, Karenzende, bestehende Kapazitätsgrants, AI-Balance, Ledger und Grant-Zyklusmarker bleiben unverändert.
+- Die Upgrade-Berechnung benötigt unveränderlichen Preis- und Laufzeitnachweis des aktiven Pro-Terms. Pro- und Premium-Paket müssen dieselbe Laufzeit haben; bei fehlender Evidenz oder bereits geplanter Folgeperiode schlägt der Checkout geschlossen fehl und verlangt manuelle Prüfung.
 - Nach Ablauf der Karenz beginnt ein Neukauf zum bestätigten Zahlungszeitpunkt.
 - Zukünftige Limits, Add-ons und AI-Inklusivtokens werden erst am Termstart wirksam.
 - Rechte und Add-ons des alten Terms gelten in seiner dreitägigen Karenz weiter, enden aber beim Start eines Folgeterms.

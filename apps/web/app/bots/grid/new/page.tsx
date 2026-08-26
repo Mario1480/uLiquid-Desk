@@ -170,10 +170,12 @@ function GridBotsCreatePageContent() {
       hypercoreProvisionTriggeredRef.current = true;
       const completed = await flow.executeAction({
         busyKey: "fund-hypercore-grid-bot-create",
-        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/fund-hypercore-tx`,
+        buildPath: `/grid/instances/${encodeURIComponent(instanceId)}/onchain/fund-hypercore-tx`,
         body: {
           actionKey: createIdempotencyKey(`grid_hypercore_funding:${botVaultId}`)
-        }
+        },
+        submitPath: (actionId) => `/grid/instances/${encodeURIComponent(instanceId)}/onchain/actions/${encodeURIComponent(actionId)}/submit-tx`,
+        failPath: (actionId) => `/grid/instances/${encodeURIComponent(instanceId)}/onchain/actions/${encodeURIComponent(actionId)}/fail-tx`
       });
       if (!completed) hypercoreProvisionTriggeredRef.current = false;
       return;
@@ -185,10 +187,12 @@ function GridBotsCreatePageContent() {
       reserveProvisionTriggeredRef.current = true;
       const completed = await flow.executeAction({
         busyKey: "reserve-grid-bot-create",
-        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/reserve-tx`,
+        buildPath: `/grid/instances/${encodeURIComponent(instanceId)}/onchain/reserve-tx`,
         body: {
           actionKey: createIdempotencyKey(`grid_reserve_provision:${botVaultId}`)
-        }
+        },
+        submitPath: (actionId) => `/grid/instances/${encodeURIComponent(instanceId)}/onchain/actions/${encodeURIComponent(actionId)}/submit-tx`,
+        failPath: (actionId) => `/grid/instances/${encodeURIComponent(instanceId)}/onchain/actions/${encodeURIComponent(actionId)}/fail-tx`
       });
       if (!completed) reserveProvisionTriggeredRef.current = false;
       return;
@@ -204,7 +208,7 @@ function GridBotsCreatePageContent() {
     const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
     if (latest) setCreatedInstance(latest);
     await continueProvisioning(latest, createdInstanceId);
-  });
+  }, { actionsPath: "/grid/onchain/actions?limit=25" });
   const provisioningSignaturePhase = normalizeGridProvisioningPhase(createdInstance?.provisioningStatus?.phase);
   const canResumeProvisioningSignature = Boolean(
     createdInstanceId
@@ -318,7 +322,7 @@ function GridBotsCreatePageContent() {
         apiGet<{ items: GridTemplate[] }>("/grid/templates"),
         apiGet<{ items: ExchangeAccount[] }>("/exchange-accounts?purpose=execution"),
         apiGet<GridPilotAccess>("/grid/pilot-access"),
-        apiGet<{ items: BotVaultSnapshot[] }>("/vaults/bot-vaults?reusableOnly=true")
+        apiGet<{ items: BotVaultSnapshot[] }>("/vaults/bot-vaults?reusableOnly=true").catch(() => ({ items: [] }))
       ]);
       const templateItems = Array.isArray(templateResponse.items) ? templateResponse.items : [];
       const reusableVaultItems = Array.isArray(botVaultResponse.items) ? botVaultResponse.items : [];
@@ -534,7 +538,9 @@ function GridBotsCreatePageContent() {
           },
           onBeforeTxSubmittedError: async () => {
             await cleanupPendingProvisioningInstance(instanceId || null);
-          }
+          },
+          submitPath: (actionId) => `/grid/instances/${encodeURIComponent(instanceId)}/onchain/actions/${encodeURIComponent(actionId)}/submit-tx`,
+          failPath: (actionId) => `/grid/instances/${encodeURIComponent(instanceId)}/onchain/actions/${encodeURIComponent(actionId)}/fail-tx`
         });
         setNotice(null);
       } else {

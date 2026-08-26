@@ -28,7 +28,8 @@ type BillingPackage = {
   sortOrder: number;
   priceCents: number;
   billingMonths: number;
-  plan: "free" | "pro" | null;
+  plan: "free" | "pro" | "premium" | null;
+  maxExchangeAccounts: number | null;
   maxRunningBots: number | null;
   maxRunningPredictionsAi: number | null;
   maxRunningPredictionsComposite: number | null;
@@ -81,7 +82,8 @@ type PackageDraft = {
   sortOrder: number;
   priceCents: number;
   billingMonths: number;
-  plan: "free" | "pro" | "";
+  plan: "free" | "pro" | "premium" | "";
+  maxExchangeAccounts: number | "";
   maxRunningBots: number | "";
   maxRunningPredictionsAi: number | "";
   maxRunningPredictionsComposite: number | "";
@@ -122,6 +124,7 @@ function toDraft(pkg: BillingPackage): PackageDraft {
     priceCents: pkg.priceCents,
     billingMonths: pkg.billingMonths,
     plan: pkg.plan ?? "",
+    maxExchangeAccounts: pkg.maxExchangeAccounts ?? "",
     maxRunningBots: pkg.maxRunningBots ?? "",
     maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? "",
     maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? "",
@@ -146,11 +149,12 @@ function emptyDraft(): PackageDraft {
     priceCents: 2900,
     billingMonths: 1,
     plan: "pro",
-    maxRunningBots: 3,
+    maxExchangeAccounts: "",
+    maxRunningBots: 5,
     maxRunningPredictionsAi: 3,
     maxRunningPredictionsComposite: 2,
     allowedExchanges: "*",
-    monthlyAiCredits: "1000000",
+    monthlyAiCredits: "10000",
     aiCredits: "0",
     deltaRunningBots: "",
     deltaRunningPredictionsAi: "",
@@ -184,6 +188,7 @@ function buildPayload(draft: PackageDraft) {
     priceCents: Number(draft.priceCents) || 0,
     billingMonths: Number(draft.billingMonths) || 1,
     plan: isPlan ? (draft.plan || null) : null,
+    maxExchangeAccounts: isPlan ? toNonNegativeInt(draft.maxExchangeAccounts) : null,
     maxRunningBots: isPlan ? toNonNegativeInt(draft.maxRunningBots) : null,
     maxRunningPredictionsAi: isPlan ? toNonNegativeInt(draft.maxRunningPredictionsAi) : null,
     maxRunningPredictionsComposite: isPlan
@@ -771,7 +776,7 @@ function PackageForm({
             <select className="input" value={draft.kind} onChange={(event) => updateKind(event.target.value as "plan" | "addon")}><option value="plan">{t("fields.kind.plan")}</option><option value="addon">{t("fields.kind.addon")}</option></select>
           </FormField>
           {isPlan ? (
-            <FormField label={t("fields.plan.label")} hint={t("fields.plan.hint")}><select className="input" value={draft.plan} onChange={(event) => setDraft({ ...draft, plan: event.target.value as "free" | "pro" | "" })}><option value="">{t("fields.plan.none")}</option><option value="free">{t("fields.plan.free")}</option><option value="pro">{t("fields.plan.pro")}</option></select></FormField>
+            <FormField label={t("fields.plan.label")} hint={t("fields.plan.hint")}><select className="input" value={draft.plan} onChange={(event) => setDraft({ ...draft, plan: event.target.value as "free" | "pro" | "premium" | "" })}><option value="">{t("fields.plan.none")}</option><option value="free">{t("fields.plan.free")}</option><option value="pro">{t("fields.plan.pro")}</option><option value="premium">{t("fields.plan.premium")}</option></select></FormField>
           ) : (
             <FormField label={t("fields.addonType.label")} hint={t("fields.addonType.hint")}><select className="input" value={draft.addonType} onChange={(event) => setDraft({ ...draft, addonType: event.target.value as BillingAddonType })}><option value="running_bots">{t("fields.addonType.runningBots")}</option><option value="running_predictions_ai">{t("fields.addonType.runningPredictionsAi")}</option><option value="running_predictions_composite">{t("fields.addonType.runningPredictionsComposite")}</option><option value="ai_credits">{t("fields.addonType.aiCredits")}</option></select></FormField>
           )}
@@ -793,11 +798,12 @@ function PackageForm({
         <div className="adminFormGridCompact">
           {isPlan ? (
             <>
-              <FormField label={t("fields.maxRunningBots.label")} hint={t("fields.maxRunningBots.hint")}><input className="input" value={draft.maxRunningBots} placeholder="3" onChange={(event) => setDraft({ ...draft, maxRunningBots: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
+              <FormField label={t("fields.maxExchangeAccounts.label")} hint={t("fields.maxExchangeAccounts.hint")}><input className="input" value={draft.maxExchangeAccounts} placeholder={t("fields.maxExchangeAccounts.placeholder")} onChange={(event) => setDraft({ ...draft, maxExchangeAccounts: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
+              <FormField label={t("fields.maxRunningBots.label")} hint={t("fields.maxRunningBots.hint")}><input className="input" value={draft.maxRunningBots} placeholder="5" onChange={(event) => setDraft({ ...draft, maxRunningBots: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
               <FormField label={t("fields.maxRunningPredictionsAi.label")} hint={t("fields.maxRunningPredictionsAi.hint")}><input className="input" value={draft.maxRunningPredictionsAi} placeholder="3" onChange={(event) => setDraft({ ...draft, maxRunningPredictionsAi: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
               <FormField label={t("fields.maxRunningPredictionsComposite.label")} hint={t("fields.maxRunningPredictionsComposite.hint")}><input className="input" value={draft.maxRunningPredictionsComposite} placeholder="2" onChange={(event) => setDraft({ ...draft, maxRunningPredictionsComposite: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
               <FormField label={t("fields.allowedExchanges.label")} hint={t("fields.allowedExchanges.hint")}><input className="input" value={draft.allowedExchanges} placeholder="*" onChange={(event) => setDraft({ ...draft, allowedExchanges: event.target.value })} /></FormField>
-              <FormField label={t("fields.monthlyAiCredits.label")} hint={t("fields.monthlyAiCredits.hint")}><input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.monthlyAiCredits} placeholder="1000000" onChange={(event) => setDraft({ ...draft, monthlyAiCredits: event.target.value })} /></FormField>
+              <FormField label={t("fields.monthlyAiCredits.label")} hint={t("fields.monthlyAiCredits.hint")}><input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.monthlyAiCredits} placeholder="10000" onChange={(event) => setDraft({ ...draft, monthlyAiCredits: event.target.value })} /></FormField>
             </>
           ) : null}
           {!isPlan && draft.addonType === "ai_credits" ? <FormField label={t("fields.aiCredits.label")} hint={t("fields.aiCredits.hint")}><input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.aiCredits} placeholder="250000" onChange={(event) => setDraft({ ...draft, aiCredits: event.target.value })} /></FormField> : null}

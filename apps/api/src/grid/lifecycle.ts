@@ -33,6 +33,7 @@ import {
   GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY,
   parseVaultSafetyControls
 } from "../vaults/safetyControls.js";
+import type { BotStartAdmissionHandler } from "../admission/quotaAdmission.js";
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -83,6 +84,7 @@ type GridLifecycleDeps = {
   resolveVenueContext: ResolveVenueContext;
   computeGridPreviewAndAllocation?: typeof computeGridPreviewAndAllocation;
   allowedGridExchanges: Set<string>;
+  admitBotStartForUser?: BotStartAdmissionHandler;
 };
 
 function resolveBotVaultRuntimeService(deps: GridLifecycleDeps): BotVaultRuntimeService | BotVaultV3Service | null {
@@ -358,6 +360,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       row: any;
       userId: string;
       allowedExchanges?: Set<string>;
+      bypassBotAdmission?: boolean;
     }): Promise<{ id: string; state: "running"; botId: string }> {
       const row = params.row;
       const previousState = String(row.state ?? "").trim().toLowerCase();
@@ -708,13 +711,38 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         throw buildGridStartManualError(blocker);
       }
 
-      await deps.db.$transaction([
-        deps.db.gridBotInstance.update({
-          where: { id: row.id },
-          data: { state: "running", archivedAt: null, archivedReason: null, stateJson: nextStateJson }
-        }),
-        deps.db.bot.update({ where: { id: row.botId }, data: { status: "running", lastError: null } })
-      ]);
+      if (deps.admitBotStartForUser) {
+        const admission = await deps.admitBotStartForUser({
+          userId: params.userId,
+          botId: String(row.botId),
+          bypass: Boolean(params.bypassBotAdmission),
+          transition: async (tx) => {
+            await tx.gridBotInstance.update({
+              where: { id: row.id },
+              data: { state: "running", archivedAt: null, archivedReason: null, stateJson: nextStateJson }
+            });
+            return tx.bot.update({
+              where: { id: row.botId },
+              data: { status: "running", lastError: null }
+            });
+          }
+        });
+        if (admission.outcome === "not_found") {
+          throw new ManualTradingError("grid bot not found", 404, "grid_bot_not_found");
+        }
+        if (admission.outcome === "denied") {
+          throw new ManualTradingError(admission.reason, 403, admission.reason);
+        }
+      } else {
+        // Direct lifecycle unit tests may omit the application admission wiring.
+        await deps.db.$transaction([
+          deps.db.gridBotInstance.update({
+            where: { id: row.id },
+            data: { state: "running", archivedAt: null, archivedReason: null, stateJson: nextStateJson }
+          }),
+          deps.db.bot.update({ where: { id: row.botId }, data: { status: "running", lastError: null } })
+        ]);
+      }
       return { id: row.id, state: "running", botId: row.botId };
     }
 

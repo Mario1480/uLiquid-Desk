@@ -163,6 +163,55 @@ test("hyperliquid exchange account creation starts credential rotation timer", a
   assert.equal(createdData?.credentialsExpiryNoticeSentAt, null);
 });
 
+test("real exchange account creation returns the serialized commercial limit", async () => {
+  const app = createFakeApp();
+  let createCalled = false;
+
+  registerExchangeAccountRoutes(app as any, {
+    db: {},
+    encryptSecret: (value: string) => `enc:${value}`,
+    decryptSecret: (value: string) => value,
+    maskSecret: (value: string) => value,
+    normalizeExchangeValue: (value: string) => value.trim().toLowerCase(),
+    isMexcEnabledAtRuntime: () => true,
+    isBinanceEnabledAtRuntime: () => true,
+    isBingxEnabledAtRuntime: () => true,
+    getAllowedExchangeValues: async () => ["bitget"],
+    createExchangeAccountWithAdmission: async ({ create }: any) => {
+      createCalled = typeof create === "function";
+      return {
+        outcome: "denied",
+        reason: "max_exchange_accounts_exceeded",
+        limit: 1,
+        usage: 1,
+        counted: true
+      };
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "/exchange-accounts");
+  const res = createMockRes();
+  await handler({
+    body: {
+      exchange: "bitget",
+      label: "Second",
+      apiKey: "key",
+      apiSecret: "secret",
+      passphrase: "pass"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.code, "max_exchange_accounts_exceeded");
+  assert.deepEqual(res.body?.details, {
+    limit: 1,
+    usage: 1,
+    remaining: 0,
+    paperAccountsExcluded: true
+  });
+  assert.equal(createCalled, true);
+});
+
 test("hyperliquid label-only update preserves credential rotation timer", async () => {
   const app = createFakeApp();
   let updatedData: any = null;
