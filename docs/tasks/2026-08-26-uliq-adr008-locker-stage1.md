@@ -69,3 +69,47 @@ Date: 2026-08-27
 - ULIQ indexer cursor: block `302563264`, failure count `0`.
 - Latest reconciliation: `OK`, mismatch count `0`.
 - No lock events or active lock positions existed at switch time, as expected.
+
+## First-lock indexer recovery
+
+Date: 2026-08-27
+
+- Scope: isolated staging on Hostinger VPS `1286926`; API and database
+  migration only.
+- Deployment commit: `4da16781a6ae3287d08dff0c1dfc48eed978fc33` on
+  `codex/uliq-lock-duration-fix`.
+- The first real lock transaction
+  `0x5ca39badc9da440f16433be2501d0e3bebbd7bd34e61f2e9c69c09f5e15fb80e`
+  was already finalized at block `302572939`.
+- Root cause: the historical database constraint accepted only `30`, `90`
+  and `180` days, while ADR-008 and the deployed locker use `31`, `184` and
+  `366` days.
+- Migration `20260827143000_uliq_lock_duration_constraint_v1` expanded the
+  projection constraint to `30`, `31`, `90`, `180`, `184` and `366` days.
+  Historical projection values remain readable; new API and contract actions
+  continue to accept only the ADR-008 terms.
+- Pre-migration database backup:
+  `/root/uliq-staging-pre-lock-duration-fix-20260827T142422Z.dump`
+  (`sha256:fbc6810ff8b2b20dfddddeb39f5c1dc23b5c3ede4440be18603ce6822233e9da`,
+  mode `0600`).
+- Rollback API image: `uliquid-desk-api:rollback-lock-duration-20260827T142422Z`
+  (`sha256:f80078cf356cd5a142ecb94cb8d871e1ff52fa7c485099888c90deec65a3f91a`).
+- New API image:
+  `sha256:d70003e4ddd180ffd2ab05ffc062b7a1751dd0fa06e54b3164771f081cd6e9ca`.
+- Only the API container was recreated. Web, Runner, Postgres, Redis and the
+  strategy service retained their existing containers.
+- Migration completed without rollback; the validated database constraint is
+  `duration_days = ANY (ARRAY[30, 31, 90, 180, 184, 366])`.
+- Lock ID `1` is projected as `ACTIVE` for
+  `0x4165Df9092aD2adffFE6A63ad10863F696cac125`, amount `100000 ULIQ`, duration
+  `31` days, unlock at `2026-09-27T13:48:27Z`.
+- `TokensLocked` and the corresponding `Transfer` event are `FINALIZED`.
+- ULIQ indexer cursor passed the lock block at `302573079`; failure count is
+  `0` and the previous constraint error is cleared.
+- Automatic reconciliation recovered to `OK`, mismatch count `0`, at finalized
+  block `302580224`.
+- API container health is `healthy` with restart count `0`; public `/health`
+  and `/uliq/presale` both returned HTTP `200`.
+- Runtime flags remained unchanged: locking enabled, discounts disabled. No
+  onchain action, wallet signature, env change, Web deploy or Runner deploy was
+  part of this recovery.
