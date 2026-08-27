@@ -13,6 +13,12 @@ import {
   type DexLaunchConfirmationStatus,
   type DexLaunchTracking
 } from "../../../src/uliq/adminDexLaunch";
+import {
+  applyUliqBenefitPreset,
+  buildUliqTierBenefitRequest,
+  createUliqTierBenefitDraft,
+  type UliqTierBenefitDraft
+} from "../../../src/uliq/tierBenefits";
 import { AppIcon } from "../../components/AppIcon";
 import ReauthDialog from "../../components/ReauthDialog";
 import Web3Providers from "../../components/Web3Providers";
@@ -109,6 +115,11 @@ type AdminUliqPayload = {
       configured: boolean;
     }>;
   };
+  benefitPreset: Array<{
+    code: string;
+    subscriptionDiscountBps: number;
+    aiDiscountBps: number;
+  }>;
   alerts: Array<{ id: string; severity: string; status: string; message: string; createdAt: string }>;
   audit: Array<{ id: string; action: string; actorUserId: string; createdAt: string }>;
 };
@@ -118,7 +129,7 @@ type SafePreparation = {
   preflight: Record<string, unknown>;
 };
 
-type ReauthAction = "dex-pending" | "dex-prepare" | "dex-submit" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
+type ReauthAction = "dex-pending" | "dex-prepare" | "dex-submit" | "tier-benefits" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
 
 const DEX_LAUNCH_TRACKING_STORAGE_KEY = "uliquid.uliq.admin.dexLaunchTracking.v1";
 
@@ -184,6 +195,8 @@ function UliqAdminPageContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [dexLaunchTime, setDexLaunchTime] = useState(initialDexTime);
   const [treasuryInput, setTreasuryInput] = useState("");
+  const [tierBenefitDrafts, setTierBenefitDrafts] = useState<UliqTierBenefitDraft[]>([]);
+  const [tierBenefitReason, setTierBenefitReason] = useState("");
   const [poolReady, setPoolReady] = useState(false);
   const [reauthOpen, setReauthOpen] = useState(false);
   const [reauthAction, setReauthAction] = useState<ReauthAction>("dex-submit");
@@ -202,6 +215,7 @@ function UliqAdminPageContent() {
       setData(payload);
       if (!options?.silent) {
         setTreasuryInput(payload.treasury.desiredTreasury ?? payload.treasury.activeTreasury ?? "");
+        setTierBenefitDrafts(payload.tiers.map(createUliqTierBenefitDraft));
       }
       return payload;
     } catch (loadError) {
@@ -434,6 +448,22 @@ function UliqAdminPageContent() {
     setNotice(t("treasurySaved"));
   }
 
+  async function saveTierBenefits() {
+    let payload;
+    try {
+      payload = buildUliqTierBenefitRequest(tierBenefitDrafts, tierBenefitReason);
+    } catch (validationError) {
+      const code = validationError instanceof Error ? validationError.message : "";
+      if (code === "uliq_tier_benefit_reason_required") throw new Error(t("tierBenefitsReasonRequired"));
+      if (code === "uliq_tier_benefit_ai_cap_required") throw new Error(t("tierBenefitsAiCapRequired"));
+      throw new Error(t("tierBenefitsInvalid"));
+    }
+    const response = await apiPut<{ version: number }>("/admin/uliq/tier-benefits", payload);
+    setTierBenefitReason("");
+    await load();
+    setNotice(t("tierBenefitsSaved", { version: response.version }));
+  }
+
   async function prepareTreasuryAction(action: "treasury-propose" | "treasury-accept" | "treasury-cancel") {
     const route = {
       "treasury-propose": "/admin/uliq/treasury/propose/prepare",
@@ -459,6 +489,7 @@ function UliqAdminPageContent() {
     if (reauthAction === "dex-pending") return prepareDexPending();
     if (reauthAction === "dex-prepare") return prepareSafeTransaction(false);
     if (reauthAction === "dex-submit") return prepareSafeTransaction(true);
+    if (reauthAction === "tier-benefits") return saveTierBenefits();
     if (reauthAction === "treasury-save") return saveTreasury();
     return prepareTreasuryAction(reauthAction);
   }
@@ -551,6 +582,41 @@ function UliqAdminPageContent() {
             <div className="adminKeyValueList">
               {data.tiers.map((tier) => <div className="adminKeyValueRow" key={tier.id}><strong>{tier.code} · v{tier.version}</strong><span>${tier.minUsdValue} · Sub {tier.subscriptionDiscountBps / 100}% · AI {tier.aiDiscountBps / 100}%</span></div>)}
             </div>
+            <div className="adminToolbarRow">
+              <button type="button" className="btn" onClick={() => setTierBenefitDrafts((current) => applyUliqBenefitPreset(current, data.benefitPreset))}>
+                <AppIcon name="refresh" /> {t("tierBenefitsApplyPreset")}
+              </button>
+            </div>
+            <div className="adminListStack">
+              {tierBenefitDrafts.map((draft, index) => (
+                <div className="adminFormGridCompact" key={draft.code}>
+                  <label className="adminFormField">
+                    <span className="adminFormFieldLabel">{draft.code}</span>
+                    <span className="adminFormFieldHint">{t("tierBenefitsVersioned")}</span>
+                  </label>
+                  <label className="adminFormField">
+                    <span className="adminFormFieldLabel">{t("tierBenefitsSubscriptionPercent")}</span>
+                    <input className="input" inputMode="decimal" value={draft.subscriptionDiscountPercent} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subscriptionDiscountPercent: event.target.value } : item))} />
+                  </label>
+                  <label className="adminFormField">
+                    <span className="adminFormFieldLabel">{t("tierBenefitsAiPercent")}</span>
+                    <input className="input" inputMode="decimal" value={draft.aiDiscountPercent} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, aiDiscountPercent: event.target.value } : item))} />
+                  </label>
+                  <label className="adminFormField">
+                    <span className="adminFormFieldLabel">{t("tierBenefitsAiCap")}</span>
+                    <input className="input" inputMode="decimal" value={draft.aiCreditDiscountMonthlyUsd} placeholder={t("tierBenefitsAiCapPlaceholder")} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, aiCreditDiscountMonthlyUsd: event.target.value } : item))} />
+                  </label>
+                </div>
+              ))}
+            </div>
+            <label className="adminFormField">
+              <span className="adminFormFieldLabel">{t("tierBenefitsReason")}</span>
+              <input className="input" value={tierBenefitReason} placeholder={t("tierBenefitsReasonPlaceholder")} onChange={(event) => setTierBenefitReason(event.target.value)} />
+              <span className="adminFormFieldHint">{t("tierBenefitsCapHint")}</span>
+            </label>
+            <button type="button" className="btn btnPrimary" onClick={() => requestReauth("tier-benefits")} disabled={tierBenefitDrafts.length === 0 || tierBenefitReason.trim().length < 8}>
+              <AppIcon name="save" /> {t("tierBenefitsSave")}
+            </button>
           </AdminDetailSection>
 
           <AdminDetailSection title={t("lockGateTitle")} description={t("lockGateDescription")}>

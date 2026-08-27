@@ -2,6 +2,7 @@ import type express from "express";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { ULIQ_APPROVED_TESTNET_BENEFIT_BPS } from "./benefitConfig.js";
 import { getUliqFeatureFlags } from "./config.js";
 import { UliqPresaleService, ULIQ_LOCK_TERMS } from "./presale.service.js";
 import { normalizeUliqTreasuryAddress, UliqTreasuryService } from "./treasury.service.js";
@@ -21,6 +22,15 @@ const tierBenefitConfigSchema = z.object({
   if (new Set(value.tiers.map((tier) => tier.code)).size !== value.tiers.length) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tiers"], message: "Tier codes must be unique" });
   }
+  value.tiers.forEach((tier, index) => {
+    if (tier.aiDiscountBps > 0 && (!tier.aiCreditDiscountMonthlyCents || tier.aiCreditDiscountMonthlyCents <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tiers", index, "aiCreditDiscountMonthlyCents"],
+        message: "A positive AI discount requires a positive monthly cap"
+      });
+    }
+  });
 });
 
 function jsonSafe(value: unknown): any {
@@ -86,7 +96,7 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       }),
       deps.db.uliqVestingPosition.aggregate({ _sum: { allocatedRaw: true, releasedRaw: true }, _count: { _all: true } }),
       deps.db.uliqLockPosition.aggregate({ where: { status: "ACTIVE" }, _sum: { amountRaw: true }, _count: { _all: true } }),
-      deps.db.uliqTierConfig.findMany({ where: { enabled: true }, orderBy: [{ version: "desc" }, { minUsdValue: "asc" }] }),
+      deps.db.uliqTierConfig.findMany({ where: { enabled: true, effectiveUntil: null }, orderBy: [{ version: "desc" }, { minUsdValue: "asc" }] }),
       deps.db.platformAlert.findMany({ where: { source: { startsWith: "uliq" } }, orderBy: { createdAt: "desc" }, take: 20 }),
       deps.db.adminAuditEvent.findMany({ where: { targetType: { in: ["uliq_presale", "uliq_treasury", "uliq_tier_config"] } }, orderBy: { createdAt: "desc" }, take: 20 })
     ]);
@@ -119,6 +129,7 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
           )
         }))
       },
+      benefitPreset: ULIQ_APPROVED_TESTNET_BENEFIT_BPS,
       alerts,
       audit
     }));

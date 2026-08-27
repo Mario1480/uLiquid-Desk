@@ -97,10 +97,65 @@ test("ULIQ admin overview serializes Prisma Decimal values as JSON strings", asy
     assert.equal(response.body.stats.purchases[0]._sum.usdcAmountRaw, "10000000");
     assert.equal(response.body.stats.vesting._sum.allocatedRaw, "7500");
     assert.equal(response.body.tiers[0].minUsdValue, "0");
+    assert.deepEqual(response.body.benefitPreset, [
+      { code: "BASIC", subscriptionDiscountBps: 0, aiDiscountBps: 0 },
+      { code: "BRONZE", subscriptionDiscountBps: 0, aiDiscountBps: 500 },
+      { code: "SILVER", subscriptionDiscountBps: 500, aiDiscountBps: 1_000 },
+      { code: "GOLD", subscriptionDiscountBps: 1_000, aiDiscountBps: 1_500 },
+      { code: "PLATINUM", subscriptionDiscountBps: 1_500, aiDiscountBps: 2_000 }
+    ]);
     assert.equal(response.body.reconciliation.asOfBlock, "123");
     assert.equal(JSON.stringify(response.body).includes('"s":'), false);
     assert.equal(JSON.stringify(response.body).includes('"e":'), false);
     assert.equal(JSON.stringify(response.body).includes('"d":'), false);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
+
+test("ULIQ tier benefit changes fail closed when an AI discount has no monthly cap", async () => {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_ADMIN_ENABLED = "true";
+  try {
+    let transactionCalled = false;
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: {
+        $transaction: async () => {
+          transactionCalled = true;
+          throw new Error("transaction_must_not_run");
+        }
+      },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => true,
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => { await next(); },
+      recordAdminAuditEvent: async () => undefined
+    });
+
+    const handlers = app.putRoutes.get("/admin/uliq/tier-benefits");
+    assert.ok(handlers);
+    const response = mockResponse();
+    await run(handlers!.slice(1), {
+      body: {
+        reason: "Reject missing monthly cap",
+        tiers: [{
+          code: "BRONZE",
+          subscriptionDiscountBps: 0,
+          aiDiscountBps: 500,
+          aiCreditDiscountMonthlyCents: null
+        }]
+      }
+    }, response);
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "invalid_payload");
+    assert.equal(transactionCalled, false);
   } finally {
     if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
     else process.env.ULIQ_ENABLED = previousEnabled;

@@ -348,6 +348,11 @@ test("checkout forwards explicit ULIQ opt-in and returns the exact reservation s
     baseAmountCents: 10_000,
     discountAmountCents: 1_500,
     finalAmountCents: 8_500,
+    lockGateVersion: null,
+    requiredBenefitUntil: null,
+    requiredLockedRaw: null,
+    qualifyingLockedRaw: null,
+    qualifyingLockIds: [],
     expiresAt: "2026-08-22T12:10:00.000Z"
   });
   assert.equal(res.body.payment.amountRaw, "85000000");
