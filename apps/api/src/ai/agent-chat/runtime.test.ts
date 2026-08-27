@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { toAgentChatError } from "./errors.js";
 import { resolveBuiltinAgentProfile } from "./profiles.js";
-import { AGENT_CHAT_RESPONSE_FORMAT, buildSystemMessage, resolveAgentRunTimeoutMs } from "./runtime.js";
+import {
+  AGENT_CHAT_RESPONSE_FORMAT,
+  buildSystemMessage,
+  resolveAgentChatReservationRouting,
+  resolveAgentRunTimeoutMs
+} from "./runtime.js";
 
 test("agent chat run timeout leaves enough time for provider and tool iterations", () => {
   assert.equal(resolveAgentRunTimeoutMs(undefined), 90_000);
@@ -10,6 +15,20 @@ test("agent chat run timeout leaves enough time for provider and tool iterations
   assert.equal(resolveAgentRunTimeoutMs("1000"), 30_000);
   assert.equal(resolveAgentRunTimeoutMs("999999"), 180_000);
   assert.equal(resolveAgentRunTimeoutMs("invalid"), 90_000);
+});
+
+test("agent chat credit reservation uses the tighter runtime budget", () => {
+  const routing = resolveAgentChatReservationRouting({
+    modelClass: "analysis",
+    model: "gpt-5.6-terra",
+    reasoningEffort: "medium",
+    maxOutputTokens: 10_000,
+    maxToolRounds: 8,
+    reasonCode: "multi_source_analysis"
+  });
+
+  assert.equal(routing.maxOutputTokens, 2_200);
+  assert.equal(routing.maxToolRounds, 4);
 });
 
 test("agent chat requests a JSON object envelope from the Responses API", () => {
