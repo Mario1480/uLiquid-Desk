@@ -58,7 +58,7 @@
 
 - alle Contracts auf Arbitrum Sepolia mit 6-Decimal-Test-USDC.
 - kompletter Purchase -> Withdrawal und Purchase -> Finalization Flow.
-- 25/75, 9-Monats-Vesting via Time Warp und 31/184/366 Locks einschließlich Extension.
+- 25/75, 9-Monats-Vesting via Time Warp und 32/185/367 Locks einschließlich Extension.
 - Reorg-, Indexer-Restart-, RPC-Failover- und Reconciliation-Proben.
 - Safe-/Role- und Incident-Runbook-Probe.
 
@@ -172,7 +172,7 @@ Claim von 100.000 ULIQ:
 
 ### F. Locking
 
-Lock von 150.000 Wallet-ULIQ für initial 31, 184 oder 366 Tage:
+Lock von 150.000 Wallet-ULIQ für initial 32, 185 oder 367 Tage:
 
 - vorher: wallet 350k, vesting 650k, locked 0, eligible 1m.
 - nachher: wallet 200k, vesting 650k, locked 150k, eligible 1m.
@@ -367,7 +367,7 @@ Die folgenden Bewertungen unterscheiden lokale Test-Evidence, den oben dokumenti
 | C Withdrawal/Refund | PASS lokal / BLOCKED legal | Testnet-Escrow-Refund ist getestet; Production-Safeguarding bleibt ADR-001-blockiert. |
 | D Sale Cancellation | BLOCKED | finale Cancellation-Policy bleibt ADR-001-blockiert und wurde nicht irreversibel vorimplementiert. |
 | E Vesting Start/Claim | PASS lokal | globaler einmaliger Start, 270-Tage-Testnet-Vesting und Claim-Accounting getestet. |
-| F Locking | PASS lokal / NOT DEPLOYED | 31/184/366 Tage und nicht verkürzende Extension sind lokal getestet; kein Early Withdraw, keine Rewards. Neuer Testnet-Contract noch nicht deployt. |
+| F Locking | PASS lokal / REPLACEMENT NOT DEPLOYED | Der bisherige Testnet-Locker verwendet 31/184/366 Tage. Der vorbereitete Replacement-Locker mit 32/185/367 Tagen und nicht verkürzender Extension ist lokal getestet; kein Early Withdraw, keine Rewards. |
 | G Blockkonsistenz | PASS lokal / PARTIAL Sepolia | finalized Dual-RPC-Head und ein Block-Snapshot; `10^27` wurde lokal und beim Staging-Replay verlustfrei verarbeitet. Vollständiger Catch-up bleibt offen. |
 | H Tier/Price Mode | PASS lokal / BLOCKED DEX | Referenz-, Observation-, Degradation- und Held-Tier-Gates getestet; echte Pool-/TWAP-Quelle fehlt. |
 | I Subscription-/AI-Discount | PASS lokal / CONFIG OPEN | Lock-/Term-Gate, exakte Cent-Mathematik, Reservation und USDC-Settlement integriert; produktive Tier-BPS/AI-Caps sind noch zu konfigurieren, Platform Fee unverändert. |

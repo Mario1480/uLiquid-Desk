@@ -131,7 +131,7 @@ Billing Order und Line Items speichern rekonstruierbar:
 - Quote Expiry.
 - Holding-Tier ohne Lock: Feature Access aktiv, monetärer Discount abgelehnt.
 - Lock-Betrag unter/auf 25-%-Schwelle sowie Ablauf eine Sekunde vor/exakt am Term-Ende.
-- aggregierte Locks, abgelaufene Locks und 31/184/366-Tage-Initiallaufzeiten.
+- aggregierte Locks, abgelaufene Locks, historische 31/184/366-Projektionen und neue 32/185/367-Tage-Initiallaufzeiten.
 - 1/6/12-Kalendermonatsgrenzen, Leap Year und angehängte Early Renewals.
 - Extension qualifiziert erst nach kanonischer Finalisierung; Reorg invalidiert die Evidence.
 - AI-Discount ohne aktive rabattierte Subscription beziehungsweise ohne gültigen Monats-Cap.

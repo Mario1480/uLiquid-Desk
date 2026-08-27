@@ -101,7 +101,7 @@ Die Discount-BPS und Feature Flags werden versioniert in `UliqTierConfig` gepfle
 
 ## Locking Benefits
 
-- unterstützte initiale Laufzeiten: 31, 184 und 366 Tage, dargestellt als 1, 6 und 12 Monate.
+- unterstützte initiale Laufzeiten: 32, 185 und 367 Tage, dargestellt als 1, 6 und 12 Monate plus einen Tag Abwicklungspuffer.
 - Locking erzeugt keine zusätzlichen eligible ULIQ.
 - Locking verändert weder Tier noch Discount-Stufe. Es aktiviert den vorhandenen Tier-Discount nur für den konkreten Produktzeitraum.
 - keine APY-, Reward- oder Revenue-Share-Semantik.

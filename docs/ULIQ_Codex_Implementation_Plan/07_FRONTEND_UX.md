@@ -138,11 +138,11 @@ Nach Finalisierung:
 ## Locking Page
 
 - verfügbare unlocked Wallet-ULIQ.
-- feste initiale Perioden 31, 184 und 366 Tage, dargestellt als 1, 6 und 12 Monate.
+- feste initiale Perioden 32, 185 und 367 Tage, dargestellt als 1, 6 und 12 Monate plus einen Tag Abwicklungspuffer.
 - erwartete Produkt-Benefits, niemals Yield/APY/Rewards oder zusätzliche Laufzeit-Multiplikatoren.
-- exaktes Unlock Date und verbleibende Abdeckung vor Bestätigung.
+- exaktes Unlock Date und nicht auf volle Tage aufgerundete verbleibende Abdeckung vor Bestätigung.
 - pro Lock sichtbare Qualifikation für monatliche, sechsmonatige und jährliche Käufe.
-- bei unzureichender Laufzeit benötigtes Datum und direkte Vorbereitung einer nicht verkürzenden Extension.
+- bei unzureichender Laufzeit konkrete Fehlzeit, benötigtes Datum und direkte Vorbereitung einer nicht verkürzenden Extension.
 - aktive, abgelaufene und withdrawn Locks.
 - Lock/Extend/Withdraw Tx Progress mit Receipt-, Finality- und Indexer-State.
 - Hinweis, dass Locking eligible ULIQ nicht erhöht und nur den bereits bestehenden Tier-Discount aktiviert.

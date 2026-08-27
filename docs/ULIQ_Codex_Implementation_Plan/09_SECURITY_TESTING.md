@@ -33,7 +33,7 @@
 - Forced/versehentlich zusätzliche ULIQ im Presale werden vom Unsold-Release nicht erfasst.
 - globales 9-Monats-Vesting vor/am/nach Start.
 - mehrere Purchases und Claims pro Wallet.
-- Lock 31/184/366, vorzeitiger Withdraw, doppelter Withdraw, mehrere Locks und wiederholte nicht verkürzende Extension.
+- Lock 32/185/367, vorzeitiger Withdraw, doppelter Withdraw, mehrere Locks und wiederholte nicht verkürzende Extension.
 - Access Control, Zwei-Schritt-Ownership, Safe-Rollen und Pause-Semantik.
 - Pause blockiert Kauf, aber nicht zulässige Withdrawals, Finalisierungen und Reads.
 - getrennte Treasury-/Ecosystem-/Marketing-/Liquidity-Safes sowie Team-/Presale-Vesting-Budgets.

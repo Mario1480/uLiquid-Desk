@@ -87,9 +87,9 @@ test("ULIQ purchase quote and preparation remain disabled until the sale is ACTI
 test("ULIQ lock preparation exposes only 1, 6 and 12 month initial terms", async () => {
   const service = new UliqPresaleService(createDb(), config, createRpc(2n));
   const expected = new Map([
-    [31, 31n * 24n * 60n * 60n],
-    [184, 184n * 24n * 60n * 60n],
-    [366, 366n * 24n * 60n * 60n]
+    [32, 32n * 24n * 60n * 60n],
+    [185, 185n * 24n * 60n * 60n],
+    [367, 367n * 24n * 60n * 60n]
   ]);
   for (const [durationDays, durationSeconds] of expected) {
     const prepared = await service.prepareLock({
@@ -101,10 +101,68 @@ test("ULIQ lock preparation exposes only 1, 6 and 12 month initial terms", async
     assert.equal(decoded.functionName, "lock");
     assert.deepEqual(decoded.args, [1_000_000_000_000_000_000n, durationSeconds]);
   }
-  await assert.rejects(
-    service.prepareLock({ userId: "user-1", amountRaw: "1", durationDays: 30 }),
-    /unsupported_lock_duration/
-  );
+  for (const unsupportedDurationDays of [30, 31, 184, 366]) {
+    await assert.rejects(
+      service.prepareLock({ userId: "user-1", amountRaw: "1", durationDays: unsupportedDurationDays }),
+      /unsupported_lock_duration/
+    );
+  }
+});
+
+test("ULIQ lock coverage keeps a transaction buffer for a new monthly term", async () => {
+  const asOf = new Date("2026-08-27T14:50:00.000Z");
+  const startedAt = new Date(asOf.getTime() - 60 * 60 * 1_000);
+  const bufferedUnlockAt = new Date(startedAt.getTime() + 32 * 24 * 60 * 60 * 1_000);
+  const legacyUnlockAt = new Date(startedAt.getTime() + 31 * 24 * 60 * 60 * 1_000);
+  const client = {
+    getBlock: async () => ({
+      number: 123n,
+      hash: BLOCK_HASH,
+      timestamp: BigInt(Math.floor(asOf.getTime() / 1_000))
+    }),
+    readContract: async (request: { functionName: string }) => {
+      if (request.functionName === "lockedBalanceOf") return 200n;
+      throw new Error(`unexpected_read_${request.functionName}`);
+    }
+  };
+  const lockRow = (id: string, durationDays: number, unlockAt: Date) => ({
+    id,
+    chainId: config.chainId,
+    contractAddress: config.contracts.locker.toLowerCase(),
+    lockIdOnchain: id,
+    walletAddress: WALLET.toLowerCase(),
+    amountRaw: "100",
+    durationDays,
+    startAt: startedAt,
+    originalUnlockAt: unlockAt,
+    unlockAt,
+    lastExtendedAt: null,
+    extensionCount: 0,
+    withdrawnAt: null,
+    status: "ACTIVE",
+    asOfBlock: 123n,
+    blockHash: BLOCK_HASH,
+    createdAt: startedAt,
+    updatedAt: startedAt
+  });
+  const db = {
+    user: { findUnique: async () => ({ walletAddress: WALLET }) },
+    uliqLockPosition: {
+      findMany: async () => [
+        lockRow("1", 32, bufferedUnlockAt),
+        lockRow("2", 31, legacyUnlockAt)
+      ]
+    }
+  };
+  const service = new UliqPresaleService(db, config, { primary: client, secondary: client } as any);
+  const result = await service.getLocks("user-1");
+
+  assert.equal(result.coverageTerms[0].requiredUntil, "2026-09-27T14:50:00.000Z");
+  assert.equal(result.positions[0].remainingCoverageSeconds, 32 * 24 * 60 * 60 - 60 * 60);
+  assert.equal(result.positions[0].qualifiesFor["1"], true);
+  assert.equal(result.positions[1].qualifiesFor["1"], false);
+  assert.equal(result.positions[0].qualifiesFor["6"], false);
+  assert.equal(result.positions[0].qualifiesFor["12"], false);
 });
 
 test("ULIQ lock extension preparation uses finalized owner/expiry and returns unsigned calldata", async () => {

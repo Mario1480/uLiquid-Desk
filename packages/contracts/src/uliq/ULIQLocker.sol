@@ -10,9 +10,10 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 contract ULIQLocker is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint64 public constant ONE_MONTH = 31 days;
-    uint64 public constant SIX_MONTHS = 184 days;
-    uint64 public constant TWELVE_MONTHS = 366 days;
+    /// @dev Product term plus one operational day for transaction confirmation and checkout.
+    uint64 public constant ONE_MONTH = 32 days;
+    uint64 public constant SIX_MONTHS = 185 days;
+    uint64 public constant TWELVE_MONTHS = 367 days;
 
     struct LockPosition {
         address owner;
@@ -38,19 +39,10 @@ contract ULIQLocker is ReentrancyGuard {
     error LockExpiryNotIncreasing();
 
     event TokensLocked(
-        uint256 indexed lockId,
-        address indexed owner,
-        uint256 amount,
-        uint64 durationSeconds,
-        uint64 unlockAt
+        uint256 indexed lockId, address indexed owner, uint256 amount, uint64 durationSeconds, uint64 unlockAt
     );
     event TokensUnlocked(uint256 indexed lockId, address indexed owner, uint256 amount);
-    event LockExtended(
-        uint256 indexed lockId,
-        address indexed owner,
-        uint64 previousUnlockAt,
-        uint64 newUnlockAt
-    );
+    event LockExtended(uint256 indexed lockId, address indexed owner, uint64 previousUnlockAt, uint64 newUnlockAt);
 
     constructor(address token_) {
         if (token_ == address(0)) revert ZeroAddress();
@@ -65,11 +57,7 @@ contract ULIQLocker is ReentrancyGuard {
         uint64 startedAt = uint64(block.timestamp);
         uint64 unlockAt = startedAt + durationSeconds;
         locks[lockId] = LockPosition({
-            owner: msg.sender,
-            amount: amount,
-            startedAt: startedAt,
-            unlockAt: unlockAt,
-            withdrawn: false
+            owner: msg.sender, amount: amount, startedAt: startedAt, unlockAt: unlockAt, withdrawn: false
         });
         lockedBalanceOf[msg.sender] += amount;
         totalLocked += amount;
@@ -111,7 +99,6 @@ contract ULIQLocker is ReentrancyGuard {
     }
 
     function _isSupportedDuration(uint64 durationSeconds) private pure returns (bool) {
-        return durationSeconds == ONE_MONTH || durationSeconds == SIX_MONTHS
-            || durationSeconds == TWELVE_MONTHS;
+        return durationSeconds == ONE_MONTH || durationSeconds == SIX_MONTHS || durationSeconds == TWELVE_MONTHS;
     }
 }

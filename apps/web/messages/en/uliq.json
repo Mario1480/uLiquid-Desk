@@ -73,14 +73,14 @@
   },
   "locking": {
     "title": "Utility locking",
-    "description": "Pure utility locking for 1, 6, or 12 months — without APY, rewards, or distributions. A longer term does not increase the discount.",
+    "description": "Pure utility locking for 1, 6, or 12 months plus a 1-day processing buffer — without APY, rewards, or distributions. A longer term does not increase the discount.",
     "balance": "Locked balance",
     "amount": "ULIQ amount",
     "available": "Available wallet ULIQ",
     "duration": "Duration",
     "lock": "Approve & lock",
     "positions": "Lock positions",
-    "positionsDescription": "Finalized lock terms and their current coverage for new subscription terms.",
+    "positionsDescription": "Finalized lock terms and their coverage for a subscription starting now.",
     "unlock": "Unlock",
     "unlockAt": "Unlock available",
     "remaining": "Remaining term",
@@ -100,7 +100,8 @@
     },
     "coverage": {
       "covered": "{term} covered",
-      "short": "{term} not covered"
+      "short": "{term} not covered",
+      "shortfall": "{term} · {duration} short"
     },
     "empty": "No indexed lock positions yet."
   },

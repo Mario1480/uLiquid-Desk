@@ -21,6 +21,7 @@ import {
   pendingClaimMatchesWallet,
   type PendingClaimTransaction
 } from "../../src/uliq/pendingClaim";
+import { formatLockDuration, lockCoverageShortfallSeconds } from "../../src/uliq/lockCoverage";
 
 type PresaleOverview = {
   chainId: number;
@@ -126,13 +127,13 @@ type Locks = {
   positions: LockPosition[];
   supportedDurations: Array<{
     billingMonths: 1 | 6 | 12;
-    durationDays: 31 | 184 | 366;
+    durationDays: 32 | 185 | 367;
     label: string;
   }>;
   supportedDurationsDays: number[];
   coverageTerms: Array<{
     billingMonths: 1 | 6 | 12;
-    durationDays: 31 | 184 | 366;
+    durationDays: 32 | 185 | 367;
     label: string;
     requiredUntil: string;
   }>;
@@ -272,7 +273,7 @@ function UliqHubContent() {
   const [purchaseAmount, setPurchaseAmount] = useState("");
   const [quote, setQuote] = useState<PurchaseQuote | null>(null);
   const [lockAmount, setLockAmount] = useState("");
-  const [lockDuration, setLockDuration] = useState(31);
+  const [lockDuration, setLockDuration] = useState(32);
   const [extensionTerms, setExtensionTerms] = useState<Record<string, 0 | 1 | 6 | 12>>({});
   const [checkoutRequiredUntil, setCheckoutRequiredUntil] = useState<string | null>(null);
   const [lastTxHash, setLastTxHash] = useState<Hex | null>(null);
@@ -990,11 +991,20 @@ function UliqHubContent() {
             <dl>
               <div><dt>{t("locking.amount")}</dt><dd>{formatRaw(position.amountRaw, 18)} ULIQ</dd></div>
               <div><dt>{t("locking.unlockAt")}</dt><dd>{formatDate(position.unlockAt, locale)}</dd></div>
-              <div><dt>{t("locking.remaining")}</dt><dd>{t("locking.remainingDays", { days: Math.ceil(position.remainingCoverageSeconds / 86_400) })}</dd></div>
+              <div><dt>{t("locking.remaining")}</dt><dd>{formatLockDuration(position.remainingCoverageSeconds, locale)}</dd></div>
               <div><dt>{t("locking.extensions")}</dt><dd>{position.extensionCount}</dd></div>
             </dl>
             <div className="uliqCoverageBadges">
-              {locks.coverageTerms.map((term) => <span key={term.billingMonths} className={`uiStatusBadge uiStatusBadge-${position.qualifiesFor[String(term.billingMonths)] ? "success" : "warning"}`}>{t(`locking.coverage.${position.qualifiesFor[String(term.billingMonths)] ? "covered" : "short"}`, { term: t(`locking.terms.${term.billingMonths}`) })}</span>)}
+              {locks.coverageTerms.map((term) => {
+                const covered = position.qualifiesFor[String(term.billingMonths)];
+                const shortfallSeconds = lockCoverageShortfallSeconds(position.unlockAt, term.requiredUntil);
+                return <span key={term.billingMonths} className={`uiStatusBadge uiStatusBadge-${covered ? "success" : "warning"}`}>{covered
+                  ? t("locking.coverage.covered", { term: t(`locking.terms.${term.billingMonths}`) })
+                  : t(shortfallSeconds == null ? "locking.coverage.short" : "locking.coverage.shortfall", {
+                    term: t(`locking.terms.${term.billingMonths}`),
+                    duration: shortfallSeconds == null ? "" : formatLockDuration(shortfallSeconds, locale)
+                  })}</span>;
+              })}
             </div>
             {position.status !== "WITHDRAWN" ? <div className="uliqLockActions">
               <label><span>{t("locking.extendFor")}</span><select className="input" value={selectedMonths} onChange={(event) => setExtensionTerms((current) => ({ ...current, [position.id]: Number(event.target.value) as 0 | 1 | 6 | 12 }))}>{checkoutRequiredUntil ? <option value={0}>{t("locking.requiredCheckoutTerm")} · {formatDate(checkoutRequiredUntil, locale)}</option> : null}{locks.coverageTerms.map((term) => <option key={term.billingMonths} value={term.billingMonths}>{t(`locking.terms.${term.billingMonths}`)} · {formatDate(term.requiredUntil, locale)}</option>)}</select></label>

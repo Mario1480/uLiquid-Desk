@@ -140,11 +140,12 @@ Withdrawal:
 ## `ULIQLocker.sol`
 
 - akzeptiert nur frei verfügbare ULIQ aus der User-Wallet.
-- feste initiale MVP-Perioden: 31, 184 oder 366 Tage, produktseitig als 1, 6 oder 12 Monate bezeichnet.
+- feste initiale MVP-Perioden: 32, 185 oder 367 Tage, produktseitig als 1, 6 oder 12 Monate bezeichnet; der jeweils zusätzliche Tag ist ein transparenter Abwicklungspuffer für Bestätigung, Finalität und Checkout.
 - keine freie Laufzeitwahl.
 - kein APY, keine Token Rewards und keine USDC Rewards.
 - mehrere Locks pro Wallet erhalten eindeutige Lock IDs.
 - ein Lock speichert amount, owner, start und unlockAt; der exakte Timestamp ist für die Benefit-Abdeckung autoritativ.
+- der Abwicklungspuffer ändert die exakte Benefit-Prüfung nicht; ein Lock muss den vollständigen, ab Checkout geplanten Vertragszeitraum weiterhin bis mindestens `requiredBenefitUntil` abdecken.
 - der Owner kann eine nicht withdrawn Position mit `extendLock(lockId, newUnlockAt)` ausschließlich auf einen strikt späteren Timestamp verlängern.
 - Extension verändert weder ursprünglichen Start/Betrag noch `lockedBalanceOf` oder `totalLocked` und emittiert `LockExtended` mit altem/neuem Ablauf.
 - Withdraw ist nach `unlockAt` einmalig möglich und emittiert ein Event.

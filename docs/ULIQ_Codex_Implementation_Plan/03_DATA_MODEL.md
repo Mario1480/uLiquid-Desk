@@ -105,7 +105,7 @@ Der Sale Read State speichert beziehungsweise projiziert zusätzlich `pendingPur
 - `lockIdOnchain`
 - `walletAddress`
 - `amountRaw` als `Decimal(78,0)`
-- `durationDays`: ausschließlich initial 31, 184 oder 366
+- `durationDays`: neue initiale Locks ausschließlich 32, 185 oder 367; historische Projektionen mit 30/31/90/180/184/366 bleiben lesbar
 - `startAt`, `originalUnlockAt`, `unlockAt`, `withdrawnAt`
 - `lastExtendedAt`, `extensionCount`; Extensions ändern Originalwerte und Betrag nicht
 - `status`

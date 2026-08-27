@@ -22,7 +22,7 @@ const purchaseTrackingReplacementSchema = z.object({
   reason: z.enum(["cancelled", "replaced", "repriced"]).optional()
 });
 const purchaseIdSchema = z.object({ purchaseId: uint256Schema });
-const lockSchema = z.object({ amountRaw: uint256Schema, durationDays: z.union([z.literal(31), z.literal(184), z.literal(366)]) });
+const lockSchema = z.object({ amountRaw: uint256Schema, durationDays: z.union([z.literal(32), z.literal(185), z.literal(367)]) });
 const lockIdSchema = z.object({ lockId: uint256Schema });
 const lockExtensionSchema = lockIdSchema.extend({ newUnlockAt: uint256Schema });
 

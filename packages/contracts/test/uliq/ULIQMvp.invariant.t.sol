@@ -125,7 +125,7 @@ contract ULIQLockerHandler {
         uint256 balance = token.balanceOf(address(this));
         if (balance == 0) return;
         uint256 amount = 1 + (uint256(rawAmount) % balance);
-        uint64[3] memory terms = [uint64(31 days), uint64(184 days), uint64(366 days)];
+        uint64[3] memory terms = [uint64(32 days), uint64(185 days), uint64(367 days)];
         lockIds.push(locker.lock(amount, terms[rawTerm % terms.length]));
     }
 
@@ -135,7 +135,7 @@ contract ULIQLockerHandler {
         (,,,, bool withdrawn) = locker.locks(lockId);
         if (withdrawn) return;
         (,,, uint64 unlockAt,) = locker.locks(lockId);
-        uint64 extension = uint64(1 + (uint256(rawExtension) % 366 days));
+        uint64 extension = uint64(1 + (uint256(rawExtension) % 367 days));
         locker.extendLock(lockId, unlockAt + extension);
     }
 }

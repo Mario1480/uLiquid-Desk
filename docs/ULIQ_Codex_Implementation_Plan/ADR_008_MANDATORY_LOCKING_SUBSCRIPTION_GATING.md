@@ -4,6 +4,10 @@
 
 `ACCEPTED FOR TESTNET MVP`
 
+Amended 2026-08-27: initial terms include one transparent operational day so
+receipt, finality, indexing and checkout do not consume the entire coverage
+buffer before a calendar term can begin.
+
 ADR-001 bleibt `BLOCKED / LEGAL REVIEW REQUIRED`. Diese Entscheidung autorisiert weder Production Contracts noch Arbitrum-One-Deployment.
 
 ## Context
@@ -38,7 +42,8 @@ Holding und Locking haben unterschiedliche Aufgaben: Der finalisierte Bestand be
 
 ### Laufzeiten und Verlängerung
 
-- Unterstützte initiale Laufzeiten sind 31, 184 und 366 Tage und werden im Produkt als 1, 6 und 12 Kalendermonate dargestellt.
+- Unterstützte initiale Laufzeiten sind 32, 185 und 367 Tage und werden im Produkt als 1, 6 und 12 Kalendermonate plus einen Tag Abwicklungspuffer dargestellt.
+- Der Abwicklungspuffer ist kein Benefit-Multiplikator und ersetzt keine exakte Laufzeitprüfung. Autoritativ bleibt `lock.unlockAt >= requiredBenefitUntil`.
 - Die tatsächlichen Timestamps sind autoritativ. Die Auswahl einer nominellen Laufzeit allein beweist keine Abdeckung.
 - `extendLock(lockId, newUnlockAt)` darf ausschließlich durch den Owner für eine existierende, nicht withdrawn Position aufgerufen werden.
 - `newUnlockAt` muss strikt größer als der aktuelle Wert sein. Startzeit, ursprünglicher Ablauf, Betrag, `lockedBalanceOf` und `totalLocked` bleiben unverändert.
@@ -94,7 +99,7 @@ Holding und Locking haben unterschiedliche Aufgaben: Der finalisierte Bestand be
 - Holding ohne Lock lässt Feature Access bestehen, lehnt aber einen rabattierten Checkout strukturiert ab.
 - Der qualifizierende Betrag erreicht mindestens 25 % des aktuellen Tier-Minimums.
 - Kein rabattierter Subscription-Zeitraum endet nach dem qualifizierenden Lock.
-- 1/6/12-Monats-Käufe verwenden kalendarische Term-Enden; initiale Locks bleiben 31/184/366 Tage.
+- 1/6/12-Monats-Käufe verwenden kalendarische Term-Enden; neue initiale Locks verwenden 32/185/367 Tage einschließlich eines Tages Abwicklungspuffer.
 - Extension kann niemals verkürzen oder Locked Balances verändern.
 - AI-Discount ohne aktive rabattierte Subscription oder gültigen Monats-Cap wird fail-closed abgelehnt.
 - Platform-Fee-Discount bleibt 0; Standardpreis-USDC-Checkout bleibt verfügbar.

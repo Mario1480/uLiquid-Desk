@@ -53,7 +53,7 @@ Damit ist die Implementierung lokal deploy-ready, aber noch nicht `READY FOR EXT
 - DEX Launch ist erst bei `pendingPurchaseCount == 0` zulässig.
 - Finalisierte, noch nicht freigegebene Presale-Vesting-ULIQ zählen für Utility.
 - Eligible ULIQ nach Finalisierung: `wallet + unreleased vesting + locked`, wobei jeder Token exakt einmal zählt.
-- Initiale Lock-Zeiträume im MVP: 31, 184 oder 366 Tage, dargestellt als 1, 6 oder 12 Monate; der exakte `unlockAt`-Timestamp ist autoritativ. Locks dürfen nur verlängert, nie verkürzt werden. Kein APY und keine Rewards.
+- Initiale Lock-Zeiträume im MVP: 32, 185 oder 367 Tage, dargestellt als 1, 6 oder 12 Monate plus einen Tag Abwicklungspuffer; der exakte `unlockAt`-Timestamp ist autoritativ. Locks dürfen nur verlängert, nie verkürzt werden. Kein APY und keine Rewards.
 - ERC20Permit wird verwendet.
 - Optionaler externer Launchpad-Sale ist nicht Teil des MVP.
 
@@ -61,7 +61,7 @@ Testnet-V2-Nachweis (kein Production-Entscheid): Auf Arbitrum Sepolia wird jeder
 
 Testnet-V3-Contract-Follow-up (kein Deployment- oder Production-Entscheid): Der Übergang `ENDED -> DEX_PENDING` ist erst bei `pendingPurchaseCount == 0` möglich und gibt dann atomar exakt die unverkaufte Presale-Allokation an `paymentCustody.treasury()` frei. `cancelEmptySale()` verwendet dieselbe aktive Treasury und ist für einen leeren Sale aus `READY`, `ACTIVE` oder `PAUSED` verfügbar, damit eine bereits finanzierte, aber nie aktivierte Instanz ihr Inventar nicht dauerhaft bindet. Dies ist kein generischer Sweep: zusätzliche, nicht zur Presale-Allokation gehörende ULIQ werden nicht mitübertragen. Das Indexer-Event erzeugt für die Treasury einen regulären `WALLET_TRANSFER`-Provenienz-Lot; dessen Alter autorisiert ab ADR-008 keinen monetären Benefit. Implementierungsstand 2026-08-24: lokal implementiert und getestet; das bestehende V2-Testnet-Deployment bleibt unverändert und ein neuer Contract-Deploy benötigt eine separate Freigabe.
 
-Testnet-ADR-008-Follow-up (kein Deployment- oder Production-Entscheid): Locker, API, Indexer, Billing-Gating und UI unterstützen 31/184/366 Tage, nicht verkürzbare Extensions und die 25-%-Abdeckung bis zum exakten Produktlaufzeitende. Migration, Contract-Neudeploy, Runtime-Aktivierung und Staging-E2E benötigen weiterhin jeweils separate Freigaben.
+Testnet-ADR-008-Follow-up (kein Deployment- oder Production-Entscheid): Der vorbereitete Replacement-Locker, API, Indexer, Billing-Gating und UI unterstützen 32/185/367 Tage einschließlich eines Tages Abwicklungspuffer, nicht verkürzbare Extensions und die 25-%-Abdeckung bis zum exakten Produktlaufzeitende. Migration, Contract-Neudeploy, Runtime-Aktivierung und Staging-E2E benötigen weiterhin jeweils separate Freigaben.
 
 ## MVP Utility
 

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { ULIQ_LOCK_TERMS } from "./presale.service.js";
 
-const migration = readFileSync(
+const durationConstraintMigration = readFileSync(
   new URL(
     "../../../../prisma/migrations/20260827143000_uliq_lock_duration_constraint_v1/migration.sql",
     import.meta.url
@@ -11,23 +11,31 @@ const migration = readFileSync(
   "utf8"
 );
 
+const durationBufferMigration = readFileSync(
+  new URL(
+    "../../../../prisma/migrations/20260827153000_uliq_lock_duration_buffer_v1/migration.sql",
+    import.meta.url
+  ),
+  "utf8"
+);
+
 test("ADR-008 migration replaces and validates the lock-duration constraint", () => {
   assert.match(
-    migration,
+    durationConstraintMigration,
     /DROP CONSTRAINT IF EXISTS "uliq_lock_positions_duration_allowed"/
   );
   assert.match(
-    migration,
+    durationConstraintMigration,
     /ADD CONSTRAINT "uliq_lock_positions_duration_allowed"[^;]+NOT VALID/
   );
   assert.match(
-    migration,
+    durationConstraintMigration,
     /VALIDATE CONSTRAINT "uliq_lock_positions_duration_allowed"/
   );
 });
 
-test("ADR-008 migration admits every active lock term and preserves legacy projections", () => {
-  const allowedMatch = migration.match(/"duration_days" IN [(]([0-9, ]+)[)]/);
+test("buffer migration admits every active lock term and preserves historical projections", () => {
+  const allowedMatch = durationBufferMigration.match(/"duration_days" IN [(]([0-9, ]+)[)]/);
   assert.ok(allowedMatch, "duration constraint must declare its allowed day values");
 
   const allowedDays = new Set(
@@ -37,11 +45,26 @@ test("ADR-008 migration admits every active lock term and preserves legacy proje
   );
   const activeDays = ULIQ_LOCK_TERMS.map((term) => term.durationDays);
 
-  assert.deepEqual(activeDays, [31, 184, 366]);
+  assert.deepEqual(activeDays, [32, 185, 367]);
   for (const durationDays of activeDays) {
     assert.equal(allowedDays.has(durationDays), true);
   }
-  for (const legacyDurationDays of [30, 90, 180]) {
+  for (const legacyDurationDays of [30, 31, 90, 180, 184, 366]) {
     assert.equal(allowedDays.has(legacyDurationDays), true);
   }
+});
+
+test("buffer migration replaces and validates the lock-duration constraint", () => {
+  assert.match(
+    durationBufferMigration,
+    /DROP CONSTRAINT IF EXISTS "uliq_lock_positions_duration_allowed"/
+  );
+  assert.match(
+    durationBufferMigration,
+    /ADD CONSTRAINT "uliq_lock_positions_duration_allowed"[^;]+NOT VALID/
+  );
+  assert.match(
+    durationBufferMigration,
+    /VALIDATE CONSTRAINT "uliq_lock_positions_duration_allowed"/
+  );
 });

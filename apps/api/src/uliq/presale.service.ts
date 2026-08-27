@@ -20,14 +20,14 @@ const SALE_STATES = [
 
 const PURCHASE_STATES = ["PENDING_WITHDRAWAL", "WITHDRAWN", "FINALIZED"] as const;
 export const ULIQ_LOCK_DURATIONS: Record<number, bigint> = {
-  31: 31n * 24n * 60n * 60n,
-  184: 184n * 24n * 60n * 60n,
-  366: 366n * 24n * 60n * 60n
+  32: 32n * 24n * 60n * 60n,
+  185: 185n * 24n * 60n * 60n,
+  367: 367n * 24n * 60n * 60n
 };
 export const ULIQ_LOCK_TERMS = [
-  { billingMonths: 1, durationDays: 31, label: "1_MONTH" },
-  { billingMonths: 6, durationDays: 184, label: "6_MONTHS" },
-  { billingMonths: 12, durationDays: 366, label: "12_MONTHS" }
+  { billingMonths: 1, durationDays: 32, label: "1_MONTH" },
+  { billingMonths: 6, durationDays: 185, label: "6_MONTHS" },
+  { billingMonths: 12, durationDays: 367, label: "12_MONTHS" }
 ] as const;
 
 function timestamp(value: bigint): string | null {
