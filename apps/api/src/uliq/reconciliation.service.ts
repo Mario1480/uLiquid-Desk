@@ -1,5 +1,5 @@
 import { uliqLockerAbi, uliqPaymentCustodyAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
-import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
+import { getUliqLockerAddresses, getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
 import { parseDatabaseUint256Decimal } from "./uint256.js";
 
@@ -65,14 +65,26 @@ export class UliqReconciliationService {
       });
       for (const user of users) {
         const walletAddress = String(user.walletAddress).toLowerCase() as `0x${string}`;
+        const lockerAddresses = getUliqLockerAddresses(this.config);
+        const lockerAddressesNormalized = lockerAddresses.map((address) => address.toLowerCase());
         const [onchain, vesting, locks, lockPositions] = await Promise.all([
           withUliqRpcFailover(this.rpc, async (client) => {
-            const [walletRaw, vestingRaw, lockedRaw] = await Promise.all([
+            const [walletRaw, vestingRaw, lockedBalances] = await Promise.all([
               client.readContract({ address: this.config.contracts.token, abi: uliqTokenAbi, functionName: "balanceOf", args: [walletAddress], blockNumber: head.number }),
               client.readContract({ address: this.config.contracts.vesting, abi: uliqVestingAbi, functionName: "unreleased", args: [walletAddress], blockNumber: head.number }),
-              client.readContract({ address: this.config.contracts.locker, abi: uliqLockerAbi, functionName: "lockedBalanceOf", args: [walletAddress], blockNumber: head.number })
+              Promise.all(lockerAddresses.map((address) => client.readContract({
+                address,
+                abi: uliqLockerAbi,
+                functionName: "lockedBalanceOf",
+                args: [walletAddress],
+                blockNumber: head.number
+              })))
             ]);
-            return { walletRaw: BigInt(walletRaw), vestingRaw: BigInt(vestingRaw), lockedRaw: BigInt(lockedRaw) };
+            return {
+              walletRaw: BigInt(walletRaw),
+              vestingRaw: BigInt(vestingRaw),
+              lockedRaw: lockedBalances.reduce((total, value) => total + BigInt(value), 0n)
+            };
           }),
           this.db.uliqVestingPosition.findUnique({
             where: {
@@ -86,7 +98,7 @@ export class UliqReconciliationService {
           this.db.uliqLockPosition.aggregate({
             where: {
               chainId: this.config.chainId,
-              contractAddress: this.config.contracts.locker.toLowerCase(),
+              contractAddress: { in: lockerAddressesNormalized },
               walletAddress,
               status: { in: ["ACTIVE", "MATURED"] }
             },
@@ -95,7 +107,7 @@ export class UliqReconciliationService {
           this.db.uliqLockPosition.findMany({
             where: {
               chainId: this.config.chainId,
-              contractAddress: this.config.contracts.locker.toLowerCase(),
+              contractAddress: { in: lockerAddressesNormalized },
               walletAddress,
               status: { in: ["ACTIVE", "MATURED"] }
             },
@@ -117,7 +129,7 @@ export class UliqReconciliationService {
         for (const position of lockPositions) {
           const lockId = parseDatabaseUint256Decimal(position.lockIdOnchain, "lock_id_onchain");
           const contractLock = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
-            address: this.config.contracts.locker,
+            address: String(position.contractAddress) as `0x${string}`,
             abi: uliqLockerAbi,
             functionName: "locks",
             args: [lockId],

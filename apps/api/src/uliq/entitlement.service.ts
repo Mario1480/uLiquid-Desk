@@ -2,6 +2,7 @@ import { type PublicClient } from "viem";
 import { uliqLockerAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
 import {
   ULIQ_ENTITLEMENT_TTL_MS,
+  getUliqLockerAddresses,
   getUliqRuntimeConfig,
   type UliqRuntimeConfig
 } from "./config.js";
@@ -148,7 +149,7 @@ async function readBalancesAtBlock(params: {
   wallet: `0x${string}`;
   blockNumber: bigint;
 }) {
-  const [walletRaw, vestingRaw, lockedRaw, dexLaunchTimestamp] = await Promise.all([
+  const [walletRaw, vestingRaw, lockedBalances, dexLaunchTimestamp] = await Promise.all([
     params.client.readContract({
       address: params.config.contracts.token,
       abi: uliqTokenAbi,
@@ -163,13 +164,13 @@ async function readBalancesAtBlock(params: {
       args: [params.wallet],
       blockNumber: params.blockNumber
     }),
-    params.client.readContract({
-      address: params.config.contracts.locker,
+    Promise.all(getUliqLockerAddresses(params.config).map((address) => params.client.readContract({
+      address,
       abi: uliqLockerAbi,
       functionName: "lockedBalanceOf",
       args: [params.wallet],
       blockNumber: params.blockNumber
-    }),
+    }))),
     params.client.readContract({
       address: params.config.contracts.presale,
       abi: uliqPresaleAbi,
@@ -177,6 +178,7 @@ async function readBalancesAtBlock(params: {
       blockNumber: params.blockNumber
     })
   ]);
+  const lockedRaw = lockedBalances.reduce((total, value) => total + BigInt(value), 0n);
   return { walletRaw, vestingRaw, lockedRaw, dexLaunchTimestamp };
 }
 

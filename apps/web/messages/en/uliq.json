@@ -81,6 +81,7 @@
     "lock": "Approve & lock",
     "positions": "Lock positions",
     "positionsDescription": "Finalized lock terms and their coverage for a subscription starting now.",
+    "legacy": "EXISTING LOCKER",
     "unlock": "Unlock",
     "unlockAt": "Unlock available",
     "remaining": "Remaining term",

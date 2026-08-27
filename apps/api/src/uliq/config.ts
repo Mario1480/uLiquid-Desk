@@ -30,6 +30,7 @@ export type UliqRuntimeConfig = {
   startBlock: bigint;
   confirmations: number;
   contracts: UliqContractAddresses;
+  legacyLockers?: readonly `0x${string}`[];
 };
 
 function enabled(value: string | undefined): boolean {
@@ -40,6 +41,32 @@ function requireAddress(value: string | undefined, name: string): `0x${string}` 
   const normalized = String(value ?? "").trim();
   if (!isAddress(normalized)) throw new Error(`uliq_config_invalid_${name}`);
   return getAddress(normalized);
+}
+
+function optionalAddressList(value: string | undefined, name: string): `0x${string}`[] {
+  const entries = String(value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => requireAddress(entry, name));
+  const normalized = entries.map((entry) => entry.toLowerCase());
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`uliq_config_duplicate_${name}`);
+  }
+  return entries;
+}
+
+export function getUliqLockerAddresses(config: UliqRuntimeConfig): readonly `0x${string}`[] {
+  const active = config.contracts.locker;
+  return [
+    active,
+    ...(config.legacyLockers ?? []).filter((address) => address.toLowerCase() !== active.toLowerCase())
+  ];
+}
+
+export function isUliqLockerAddress(config: UliqRuntimeConfig, address: string): boolean {
+  const normalized = address.toLowerCase();
+  return getUliqLockerAddresses(config).some((candidate) => candidate.toLowerCase() === normalized);
 }
 
 function requireRpcUrl(value: string | undefined, name: string): string {
@@ -94,6 +121,12 @@ export function getUliqRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Uliq
   const rawStartBlock = String(env.ULIQ_START_BLOCK ?? "").trim();
   if (!/^\d+$/.test(rawStartBlock)) throw new Error("uliq_config_invalid_start_block");
 
+  const locker = requireAddress(env.ULIQ_LOCKER_ADDRESS, "locker_address");
+  const legacyLockers = optionalAddressList(env.ULIQ_LEGACY_LOCKER_ADDRESSES, "legacy_locker_addresses");
+  if (legacyLockers.some((address) => address.toLowerCase() === locker.toLowerCase())) {
+    throw new Error("uliq_config_duplicate_active_legacy_locker");
+  }
+
   return {
     chainId: ULIQ_TESTNET_CHAIN_ID,
     flags,
@@ -105,9 +138,10 @@ export function getUliqRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Uliq
       token: requireAddress(env.ULIQ_TOKEN_ADDRESS, "token_address"),
       presale: requireAddress(env.ULIQ_PRESALE_ADDRESS, "presale_address"),
       vesting: requireAddress(env.ULIQ_VESTING_ADDRESS, "vesting_address"),
-      locker: requireAddress(env.ULIQ_LOCKER_ADDRESS, "locker_address"),
+      locker,
       paymentCustody: requireAddress(env.ULIQ_PAYMENT_CUSTODY_ADDRESS, "payment_custody_address"),
       usdc: requireAddress(env.ULIQ_USDC_ADDRESS, "usdc_address")
-    }
+    },
+    legacyLockers
   };
 }

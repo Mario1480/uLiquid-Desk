@@ -64,6 +64,13 @@ test("ULIQ runtime accepts only Arbitrum Sepolia with distinct RPCs", () => {
   };
   assert.equal(getUliqRuntimeConfig(base).chainId, 421614);
   assert.equal(getUliqRuntimeConfig(base).startBlock, 123n);
+  assert.deepEqual(getUliqRuntimeConfig({
+    ...base,
+    ULIQ_LEGACY_LOCKER_ADDRESSES: "0x2222222222222222222222222222222222222222,0x3333333333333333333333333333333333333333"
+  }).legacyLockers, [
+    "0x2222222222222222222222222222222222222222",
+    "0x3333333333333333333333333333333333333333"
+  ]);
   assert.equal(getUliqRuntimeConfig({
     ...base,
     NODE_ENV: "production",
@@ -73,5 +80,16 @@ test("ULIQ runtime accepts only Arbitrum Sepolia with distinct RPCs", () => {
   assert.throws(
     () => getUliqRuntimeConfig({ ...base, ULIQ_RPC_SECONDARY_URL: base.ULIQ_RPC_PRIMARY_URL }),
     /uliq_distinct_rpc_required/
+  );
+  assert.throws(
+    () => getUliqRuntimeConfig({ ...base, ULIQ_LEGACY_LOCKER_ADDRESSES: ADDRESS }),
+    /uliq_config_duplicate_active_legacy_locker/
+  );
+  assert.throws(
+    () => getUliqRuntimeConfig({
+      ...base,
+      ULIQ_LEGACY_LOCKER_ADDRESSES: "0x2222222222222222222222222222222222222222,0x2222222222222222222222222222222222222222"
+    }),
+    /uliq_config_duplicate_legacy_locker_addresses/
   );
 });

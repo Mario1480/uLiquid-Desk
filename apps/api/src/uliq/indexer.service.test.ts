@@ -117,6 +117,7 @@ test("reorg invalidation releases quotes and reverses consumed benefits with an 
 test("holding provenance survives locker transitions but consumes ordinary and unknown exits", () => {
   const completeConfig = {
     ...config,
+    legacyLockers: ["0x7777777777777777777777777777777777777777"],
     contracts: {
       token: "0x1111111111111111111111111111111111111111",
       presale: "0x2222222222222222222222222222222222222222",
@@ -128,7 +129,9 @@ test("holding provenance survives locker transitions but consumes ordinary and u
   };
   const wallet = "0x6666666666666666666666666666666666666666";
   assert.equal(shouldConsumeHoldingTransfer({ from: wallet, to: completeConfig.contracts.locker, config: completeConfig }), false);
-  assert.equal(shouldConsumeHoldingTransfer({ from: wallet, to: "0x7777777777777777777777777777777777777777", config: completeConfig }), true);
+  assert.equal(shouldConsumeHoldingTransfer({ from: wallet, to: completeConfig.legacyLockers[0], config: completeConfig }), false);
+  assert.equal(shouldConsumeHoldingTransfer({ from: completeConfig.legacyLockers[0], to: wallet, config: completeConfig }), false);
+  assert.equal(shouldConsumeHoldingTransfer({ from: wallet, to: "0x9999999999999999999999999999999999999999", config: completeConfig }), true);
   assert.equal(shouldConsumeHoldingTransfer({ from: wallet, to: completeConfig.contracts.presale, config: completeConfig }), true);
   assert.equal(shouldConsumeHoldingTransfer({ from: completeConfig.contracts.vesting, to: wallet, config: completeConfig }), false);
 });

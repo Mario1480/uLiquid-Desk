@@ -110,6 +110,7 @@ type Vesting = {
 
 type LockPosition = {
   id: string;
+  contractAddress: string;
   lockIdOnchain: string;
   amountRaw: string;
   durationDays: number;
@@ -123,6 +124,8 @@ type LockPosition = {
 };
 
 type Locks = {
+  activeLockerAddress: string;
+  legacyLockerAddresses: string[];
   lockedBalanceRaw: string;
   positions: LockPosition[];
   supportedDurations: Array<{
@@ -799,6 +802,7 @@ function UliqHubContent() {
     }
     const prepared = await apiPost<{ transaction: PreparedTx }>("/uliq/locking/extend/prepare", {
       lockId: position.lockIdOnchain,
+      contractAddress: position.contractAddress,
       newUnlockAt: String(Math.floor(requiredUntilMs / 1_000))
     });
     const result = await executeTransaction(prepared.transaction, t("locking.extend"));
@@ -987,7 +991,7 @@ function UliqHubContent() {
             : locks.coverageTerms.find((term) => term.billingMonths === selectedMonths)?.requiredUntil ?? null;
           const extensionNeeded = Boolean(selectedRequiredUntil && new Date(position.unlockAt).getTime() < new Date(selectedRequiredUntil).getTime());
           return <article key={position.id} className="uliqPositionCard">
-            <div><strong>Lock #{position.lockIdOnchain}</strong><span className={`uiStatusBadge uiStatusBadge-${statusTone(position.status)}`}>{position.status}</span></div>
+            <div><strong>Lock #{position.lockIdOnchain}</strong><span className="uliqStatusGroup">{position.contractAddress.toLowerCase() !== locks.activeLockerAddress.toLowerCase() ? <span className="uiStatusBadge uiStatusBadge-warning">{t("locking.legacy")}</span> : null}<span className={`uiStatusBadge uiStatusBadge-${statusTone(position.status)}`}>{position.status}</span></span></div>
             <dl>
               <div><dt>{t("locking.amount")}</dt><dd>{formatRaw(position.amountRaw, 18)} ULIQ</dd></div>
               <div><dt>{t("locking.unlockAt")}</dt><dd>{formatDate(position.unlockAt, locale)}</dd></div>
@@ -1009,7 +1013,7 @@ function UliqHubContent() {
             {position.status !== "WITHDRAWN" ? <div className="uliqLockActions">
               <label><span>{t("locking.extendFor")}</span><select className="input" value={selectedMonths} onChange={(event) => setExtensionTerms((current) => ({ ...current, [position.id]: Number(event.target.value) as 0 | 1 | 6 | 12 }))}>{checkoutRequiredUntil ? <option value={0}>{t("locking.requiredCheckoutTerm")} · {formatDate(checkoutRequiredUntil, locale)}</option> : null}{locks.coverageTerms.map((term) => <option key={term.billingMonths} value={term.billingMonths}>{t(`locking.terms.${term.billingMonths}`)} · {formatDate(term.requiredUntil, locale)}</option>)}</select></label>
               <button type="button" className="btn" disabled={!canSign || busy !== null || !extensionNeeded} onClick={() => void runAction(`extend-${position.id}`, () => extendLock(position))}><AppIcon name="refresh" /> {t("locking.extend")}</button>
-              <button type="button" className="btn" disabled={!canSign || new Date(position.unlockAt).getTime() > Date.now() || busy !== null} onClick={() => void runAction(`unlock-${position.id}`, () => executePrepared("/uliq/locking/unlock/prepare", { lockId: position.lockIdOnchain }, t("locking.unlock")))}><AppIcon name="withdraw" /> {t("locking.unlock")}</button>
+              <button type="button" className="btn" disabled={!canSign || new Date(position.unlockAt).getTime() > Date.now() || busy !== null} onClick={() => void runAction(`unlock-${position.id}`, () => executePrepared("/uliq/locking/unlock/prepare", { lockId: position.lockIdOnchain, contractAddress: position.contractAddress }, t("locking.unlock")))}><AppIcon name="withdraw" /> {t("locking.unlock")}</button>
             </div> : null}
           </article>;
         })}</div> : <div className="uiEmptyState">{t("locking.empty")}</div>}

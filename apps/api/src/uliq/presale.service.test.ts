@@ -10,6 +10,7 @@ const WALLET = "0x2222222222222222222222222222222222222222" as const;
 const PAYMENT_CUSTODY = "0x3333333333333333333333333333333333333333" as const;
 const OWNER = "0x4444444444444444444444444444444444444444" as const;
 const TREASURY = "0x5555555555555555555555555555555555555555" as const;
+const LEGACY_LOCKER = "0x6666666666666666666666666666666666666666" as const;
 const BLOCK_HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
 
 const config: UliqRuntimeConfig = {
@@ -179,6 +180,7 @@ test("ULIQ lock extension preparation uses finalized owner/expiry and returns un
   const prepared = await service.prepareLockExtension({
     userId: "user-1",
     lockId: "7",
+    contractAddress: config.contracts.locker,
     newUnlockAt: newUnlockAt.toString()
   });
   assert.equal(prepared.transaction.expectedSender, WALLET.toLowerCase());
@@ -189,8 +191,82 @@ test("ULIQ lock extension preparation uses finalized owner/expiry and returns un
   assert.equal(Object.prototype.hasOwnProperty.call(prepared, "signature"), false);
 
   await assert.rejects(
-    service.prepareLockExtension({ userId: "user-1", lockId: "7", newUnlockAt: currentUnlockAt.toString() }),
+    service.prepareLockExtension({
+      userId: "user-1",
+      lockId: "7",
+      contractAddress: config.contracts.locker,
+      newUnlockAt: currentUnlockAt.toString()
+    }),
     /lock_expiry_not_increasing/
+  );
+});
+
+test("ULIQ legacy locks remain visible and transactions target their exact locker", async () => {
+  const legacyConfig: UliqRuntimeConfig = { ...config, legacyLockers: [LEGACY_LOCKER] };
+  const currentUnlockAt = 1_800_000_000n;
+  const readAddresses: string[] = [];
+  const client = {
+    getBlock: async () => ({ number: 123n, hash: BLOCK_HASH, timestamp: 1_787_418_172n }),
+    readContract: async (request: { address: string; functionName: string }) => {
+      readAddresses.push(request.address.toLowerCase());
+      if (request.functionName === "lockedBalanceOf") {
+        return request.address.toLowerCase() === LEGACY_LOCKER.toLowerCase() ? 200n : 100n;
+      }
+      if (request.functionName === "locks") {
+        return [WALLET, 200n, 1_700_000_000n, currentUnlockAt, false] as const;
+      }
+      throw new Error(`unexpected_read_${request.functionName}`);
+    }
+  };
+  const startedAt = new Date("2026-08-01T00:00:00.000Z");
+  const db = {
+    user: { findUnique: async () => ({ walletAddress: WALLET }) },
+    uliqLockPosition: {
+      findMany: async () => [{
+        id: "legacy-1",
+        chainId: config.chainId,
+        contractAddress: LEGACY_LOCKER.toLowerCase(),
+        lockIdOnchain: "1",
+        walletAddress: WALLET.toLowerCase(),
+        amountRaw: "200",
+        durationDays: 31,
+        startAt: startedAt,
+        originalUnlockAt: new Date(Number(currentUnlockAt) * 1_000),
+        unlockAt: new Date(Number(currentUnlockAt) * 1_000),
+        extensionCount: 0,
+        status: "ACTIVE",
+        asOfBlock: 123n,
+        blockHash: BLOCK_HASH
+      }]
+    }
+  };
+  const service = new UliqPresaleService(db, legacyConfig, { primary: client, secondary: client } as any);
+
+  const locks = await service.getLocks("user-1");
+  assert.equal(locks.lockedBalanceRaw, "300");
+  assert.equal(locks.activeLockerAddress, config.contracts.locker);
+  assert.deepEqual(locks.legacyLockerAddresses, [LEGACY_LOCKER]);
+  assert.equal(locks.positions[0].contractAddress, LEGACY_LOCKER.toLowerCase());
+  assert.ok(readAddresses.includes(config.contracts.locker.toLowerCase()));
+  assert.ok(readAddresses.includes(LEGACY_LOCKER.toLowerCase()));
+
+  const preparedUnlock = await service.prepareUnlock({
+    userId: "user-1",
+    lockId: "1",
+    contractAddress: LEGACY_LOCKER
+  });
+  assert.equal(preparedUnlock.to, LEGACY_LOCKER);
+  const decodedUnlock = decodeFunctionData({ abi: uliqLockerAbi, data: preparedUnlock.data });
+  assert.equal(decodedUnlock.functionName, "unlock");
+  assert.deepEqual(decodedUnlock.args, [1n]);
+
+  await assert.rejects(
+    service.prepareUnlock({
+      userId: "user-1",
+      lockId: "1",
+      contractAddress: "0x7777777777777777777777777777777777777777"
+    }),
+    /invalid_locker_contract_address/
   );
 });
 

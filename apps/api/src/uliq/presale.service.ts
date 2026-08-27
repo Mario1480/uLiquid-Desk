@@ -1,6 +1,6 @@
 import { encodeFunctionData, zeroAddress, type PublicClient } from "viem";
 import { uliqLockerAbi, uliqPaymentCustodyAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
-import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
+import { getUliqLockerAddresses, getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
 import { mapUliqPurchaseTrackingForApi } from "./purchaseTracking.service.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
 import { databaseUint256Decimal, normalizeUliqAddress, parseUint256Decimal } from "./uint256.js";
@@ -36,6 +36,15 @@ function timestamp(value: bigint): string | null {
 
 function transactionRequest(chainId: number, to: `0x${string}`, data: `0x${string}`, expectedSender?: string) {
   return { chainId, to, data, value: "0", expectedSender: expectedSender ?? null };
+}
+
+function configuredLockerAddress(config: UliqRuntimeConfig, value: unknown): `0x${string}` {
+  const requested = normalizeUliqAddress(value, "locker_contract_address");
+  const configured = getUliqLockerAddresses(config).find((address) => (
+    address.toLowerCase() === requested.toLowerCase()
+  ));
+  if (!configured) throw new Error("invalid_locker_contract_address");
+  return configured;
 }
 
 async function readPresaleAtBlock(client: PublicClient, config: UliqRuntimeConfig, blockNumber: bigint) {
@@ -264,17 +273,20 @@ export class UliqPresaleService {
   async getLocks(userId: string) {
     const wallet = await this.requireWallet(userId);
     const head = await getConsistentFinalizedBlock(this.rpc);
-    const read = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
-      address: this.config.contracts.locker,
-      abi: uliqLockerAbi,
-      functionName: "lockedBalanceOf",
-      args: [wallet],
-      blockNumber: head.number
-    }));
+    const lockerAddresses = getUliqLockerAddresses(this.config);
+    const read = await withUliqRpcFailover(this.rpc, (client) => Promise.all(lockerAddresses.map((address) => (
+      client.readContract({
+        address,
+        abi: uliqLockerAbi,
+        functionName: "lockedBalanceOf",
+        args: [wallet],
+        blockNumber: head.number
+      })
+    ))));
     const positions = await this.db.uliqLockPosition.findMany({
       where: {
         chainId: this.config.chainId,
-        contractAddress: this.config.contracts.locker.toLowerCase(),
+        contractAddress: { in: lockerAddresses.map((address) => address.toLowerCase()) },
         walletAddress: wallet,
         status: { not: "ORPHANED" }
       },
@@ -287,7 +299,9 @@ export class UliqPresaleService {
     }));
     return {
       walletAddress: wallet,
-      lockedBalanceRaw: BigInt(read.value).toString(),
+      activeLockerAddress: this.config.contracts.locker,
+      legacyLockerAddresses: this.config.legacyLockers ?? [],
+      lockedBalanceRaw: read.value.reduce((total, value) => total + BigInt(value), 0n).toString(),
       positions: positions.map((row: any) => {
         const unlockAt = row.unlockAt instanceof Date ? row.unlockAt : new Date(row.unlockAt);
         return {
@@ -329,24 +343,37 @@ export class UliqPresaleService {
     };
   }
 
-  async prepareUnlock(params: { userId: string; lockId: unknown }) {
+  async prepareUnlock(params: { userId: string; lockId: unknown; contractAddress: unknown }) {
     const wallet = await this.requireWallet(params.userId);
     const lockId = parseUint256Decimal(params.lockId, "lock_id");
-    return transactionRequest(this.config.chainId, this.config.contracts.locker, encodeFunctionData({
+    const lockerAddress = configuredLockerAddress(this.config, params.contractAddress);
+    const head = await getConsistentFinalizedBlock(this.rpc);
+    const read = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
+      address: lockerAddress,
+      abi: uliqLockerAbi,
+      functionName: "locks",
+      args: [lockId],
+      blockNumber: head.number
+    }));
+    const [owner, , , , withdrawn] = read.value;
+    if (String(owner).toLowerCase() !== wallet) throw new Error("lock_wallet_mismatch");
+    if (Boolean(withdrawn)) throw new Error("lock_already_withdrawn");
+    return transactionRequest(this.config.chainId, lockerAddress, encodeFunctionData({
       abi: uliqLockerAbi,
       functionName: "unlock",
       args: [lockId]
     }), wallet);
   }
 
-  async prepareLockExtension(params: { userId: string; lockId: unknown; newUnlockAt: unknown }) {
+  async prepareLockExtension(params: { userId: string; lockId: unknown; contractAddress: unknown; newUnlockAt: unknown }) {
     const wallet = await this.requireWallet(params.userId);
     const lockId = parseUint256Decimal(params.lockId, "lock_id");
+    const lockerAddress = configuredLockerAddress(this.config, params.contractAddress);
     const newUnlockAt = parseUint256Decimal(params.newUnlockAt, "new_unlock_at");
     if (newUnlockAt > (1n << 64n) - 1n) throw new Error("invalid_lock_extension_timestamp");
     const head = await getConsistentFinalizedBlock(this.rpc);
     const read = await withUliqRpcFailover(this.rpc, (client) => client.readContract({
-      address: this.config.contracts.locker,
+      address: lockerAddress,
       abi: uliqLockerAbi,
       functionName: "locks",
       args: [lockId],
@@ -357,7 +384,7 @@ export class UliqPresaleService {
     if (Boolean(withdrawn)) throw new Error("lock_already_withdrawn");
     if (newUnlockAt <= BigInt(currentUnlockAt)) throw new Error("lock_expiry_not_increasing");
     return {
-      transaction: transactionRequest(this.config.chainId, this.config.contracts.locker, encodeFunctionData({
+      transaction: transactionRequest(this.config.chainId, lockerAddress, encodeFunctionData({
         abi: uliqLockerAbi,
         functionName: "extendLock",
         args: [lockId, newUnlockAt]

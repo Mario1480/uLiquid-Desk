@@ -81,6 +81,7 @@
     "lock": "Approval & Locken",
     "positions": "Lock-Positionen",
     "positionsDescription": "Finalisierte Lock-Laufzeiten und ihre Abdeckung für einen ab jetzt beginnenden Vertrag.",
+    "legacy": "BESTEHENDER LOCKER",
     "unlock": "Entsperren",
     "unlockAt": "Entsperrbar ab",
     "remaining": "Restlaufzeit",

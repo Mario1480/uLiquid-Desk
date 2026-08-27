@@ -14,6 +14,7 @@ const purchaseSchema = z.object({
   minUliqAllocationRaw: uint256Schema
 });
 const transactionHashSchema = z.string().trim().regex(/^0x[0-9a-fA-F]{64}$/);
+const contractAddressSchema = z.string().trim().regex(/^0x[0-9a-fA-F]{40}$/);
 const purchaseTrackingSchema = purchaseSchema.extend({ transactionHash: transactionHashSchema });
 const purchaseTrackingRefreshSchema = z.object({ transactionHash: transactionHashSchema });
 const purchaseTrackingReplacementSchema = z.object({
@@ -23,7 +24,7 @@ const purchaseTrackingReplacementSchema = z.object({
 });
 const purchaseIdSchema = z.object({ purchaseId: uint256Schema });
 const lockSchema = z.object({ amountRaw: uint256Schema, durationDays: z.union([z.literal(32), z.literal(185), z.literal(367)]) });
-const lockIdSchema = z.object({ lockId: uint256Schema });
+const lockIdSchema = z.object({ lockId: uint256Schema, contractAddress: contractAddressSchema });
 const lockExtensionSchema = lockIdSchema.extend({ newUnlockAt: uint256Schema });
 
 function mapError(error: unknown): { status: number; error: string } {

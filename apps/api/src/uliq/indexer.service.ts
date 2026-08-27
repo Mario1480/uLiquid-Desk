@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
 import { decodeEventLog, zeroAddress, type Log, type PublicClient } from "viem";
 import { uliqLockerAbi, uliqPaymentCustodyAbi, uliqPresaleAbi, uliqTokenAbi, uliqVestingAbi } from "./abi.js";
-import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
+import {
+  getUliqLockerAddresses,
+  getUliqRuntimeConfig,
+  isUliqLockerAddress,
+  type UliqRuntimeConfig
+} from "./config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, type UliqRpcPair } from "./rpc.js";
 import { parseDatabaseUint256Decimal } from "./uint256.js";
 
@@ -55,11 +60,11 @@ export function shouldConsumeHoldingTransfer(params: {
   const sourcesWithoutIndependentLots = new Set([
     params.config.contracts.presale.toLowerCase(),
     params.config.contracts.vesting.toLowerCase(),
-    params.config.contracts.locker.toLowerCase()
+    ...getUliqLockerAddresses(params.config).map((address) => address.toLowerCase())
   ]);
   return from !== zeroAddress
     && !sourcesWithoutIndependentLots.has(from)
-    && to !== params.config.contracts.locker.toLowerCase();
+    && !getUliqLockerAddresses(params.config).some((address) => address.toLowerCase() === to);
 }
 
 export function decodeUliqLog(log: IndexerLog, config: UliqRuntimeConfig): DecodedUliqEvent | null {
@@ -70,7 +75,7 @@ export function decodeUliqLog(log: IndexerLog, config: UliqRuntimeConfig): Decod
       ? uliqPresaleAbi
       : address === config.contracts.vesting.toLowerCase()
         ? uliqVestingAbi
-        : address === config.contracts.locker.toLowerCase()
+        : isUliqLockerAddress(config, address)
           ? uliqLockerAbi
           : address === config.contracts.paymentCustody.toLowerCase()
             ? uliqPaymentCustodyAbi
@@ -319,7 +324,7 @@ export async function projectUliqEvent(params: {
     }
   }
 
-  if (contractAddress === config.contracts.locker.toLowerCase()) {
+  if (isUliqLockerAddress(config, contractAddress)) {
     const walletAddress = normalizedAddress(args.owner);
     if (decoded.eventName === "TokensLocked") {
       const durationSeconds = Number(args.durationSeconds);
@@ -386,7 +391,7 @@ export async function projectUliqEvent(params: {
     const internalContracts = new Set([
       config.contracts.presale.toLowerCase(),
       config.contracts.vesting.toLowerCase(),
-      config.contracts.locker.toLowerCase()
+      ...getUliqLockerAddresses(config).map((address) => address.toLowerCase())
     ]);
     if (shouldConsumeHoldingTransfer({ from, to, config })) {
       await consumeHoldingLots(tx, config, from, amount);
@@ -608,8 +613,11 @@ export class UliqIndexerService {
     const toBlock = fromBlock + DEFAULT_MAX_BLOCK_SPAN - 1n < finalized.number
       ? fromBlock + DEFAULT_MAX_BLOCK_SPAN - 1n
       : finalized.number;
-    const addresses = Object.values(this.config.contracts).filter((address, index, all) => (
-      index === all.indexOf(address)
+    const addresses = [
+      ...Object.values(this.config.contracts),
+      ...getUliqLockerAddresses(this.config)
+    ].filter((address, index, all) => (
+      index === all.findIndex((candidate) => candidate.toLowerCase() === address.toLowerCase())
       && address !== this.config.contracts.usdc
     ));
     const logs = await this.rpc.primary.getLogs({ address: addresses, fromBlock, toBlock }) as IndexerLog[];
