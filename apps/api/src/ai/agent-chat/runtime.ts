@@ -6,7 +6,7 @@ import {
   reserveAiCredits,
   settleAiRun
 } from "../credits/creditService.js";
-import { routeOpenAiModel } from "../credits/modelRouter.js";
+import { routeOpenAiModel, type AiRoutingDecision } from "../credits/modelRouter.js";
 import {
   assertAiOutputWithinBoundary,
   buildAiAgentSystemMessage,
@@ -61,6 +61,14 @@ const DEFAULT_BUDGET = {
   timeoutMs: resolveAgentRunTimeoutMs(),
   maxOutputTokens: 2_200
 } as const;
+
+export function resolveAgentChatReservationRouting(routing: AiRoutingDecision): AiRoutingDecision {
+  return {
+    ...routing,
+    maxToolRounds: Math.min(routing.maxToolRounds, DEFAULT_BUDGET.maxToolIterations),
+    maxOutputTokens: Math.min(routing.maxOutputTokens, DEFAULT_BUDGET.maxOutputTokens)
+  };
+}
 
 export const AGENT_CHAT_RESPONSE_FORMAT: NonNullable<CallAiChatOptions["responseFormat"]> = {
   type: "json_schema",
@@ -159,7 +167,11 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
   }, configuredModelRouting.models);
   const billingEnabled = await isAiCreditBillingEnabledForDatabase(params.db);
   const estimate = billingEnabled
-    ? await estimateAiRunReservation({ database: params.db, routing, expectedInputTokens })
+    ? await estimateAiRunReservation({
+      database: params.db,
+      routing: resolveAgentChatReservationRouting(routing),
+      expectedInputTokens
+    })
     : null;
   const run = await params.db.aiAgentRun.create({
     data: {
