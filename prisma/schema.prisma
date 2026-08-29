@@ -396,6 +396,7 @@ model ExchangeAccount {
   id                            String                                @id @default(cuid())
   userId                        String
   user                          User                                  @relation(fields: [userId], references: [id])
+  systemKey                     String?                               @unique @map("system_key")
   exchange                      String
   label                         String
   apiKeyEnc                     String
@@ -812,6 +813,7 @@ model User {
   aiAgentConversations                 AiAgentConversation[]
   aiAgentRuns                          AiAgentRun[]
   subscription                         UserSubscription?
+  adminPlanOverride                    AdminPlanOverride?
   billingOrders                        BillingOrder[]
   aiCreditLedger                       AiCreditLedger[]
   aiCreditReservations                 AiCreditReservation[]
@@ -1018,6 +1020,25 @@ model UserSubscription {
   @@index([effectivePlan, planValidUntil], map: "user_subscriptions_effective_plan_valid_until_idx")
   @@index([entitlementSyncPending, updatedAt], map: "user_subscriptions_entitlement_sync_pending_idx")
   @@map("user_subscriptions")
+}
+
+model AdminPlanOverride {
+  id              String        @id @default(cuid())
+  userId          String        @unique @map("user_id")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan            EffectivePlan
+  validUntil      DateTime      @map("valid_until")
+  reason          String
+  active          Boolean       @default(true)
+  grantedByUserId String        @map("granted_by_user_id")
+  grantedAt       DateTime      @default(now()) @map("granted_at")
+  revokedByUserId String?       @map("revoked_by_user_id")
+  revokedAt       DateTime?     @map("revoked_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([active, validUntil], map: "admin_plan_overrides_active_valid_until_idx")
+  @@map("admin_plan_overrides")
 }
 
 model BillingPackage {
@@ -2167,6 +2188,7 @@ model OnchainIndexedEvent {
   payload         Json?
   canonicalStatus OnchainCanonicalStatus @default(OBSERVED) @map("canonical_status")
   confirmations   Int                    @default(0)
+  blockTimestamp  DateTime?              @map("block_timestamp")
   confirmedAt     DateTime?              @map("confirmed_at")
   finalizedAt     DateTime?              @map("finalized_at")
   orphanedAt      DateTime?              @map("orphaned_at")
@@ -2176,6 +2198,7 @@ model OnchainIndexedEvent {
   @@unique([chainId, transactionHash, logIndex], map: "onchain_indexed_events_chain_tx_log_key")
   @@index([chainId, blockNumber, logIndex], map: "onchain_indexed_events_chain_block_log_idx")
   @@index([chainId, canonicalStatus, blockNumber], map: "onchain_indexed_events_chain_status_block_idx")
+  @@index([chainId, blockTimestamp(sort: Desc)], map: "onchain_indexed_events_chain_timestamp_idx")
   @@index([eventName, createdAt(sort: Desc)], map: "onchain_indexed_events_name_created_idx")
   @@map("onchain_indexed_events")
 }

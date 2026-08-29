@@ -132,10 +132,16 @@ export default function AppSidebar({
             tradingDesk: accessResult.value.visibility.tradingDesk !== false,
             bots: accessResult.value.visibility.bots !== false,
             gridBots: accessResult.value.visibility.gridBots !== false,
+            agentChat: accessResult.value.visibility.agentChat !== false,
             predictionsDashboard: accessResult.value.visibility.predictionsDashboard !== false,
+            marketIntelligence: accessResult.value.visibility.marketIntelligence !== false,
             economicCalendar: accessResult.value.visibility.economicCalendar !== false,
             news: accessResult.value.visibility.news !== false,
-            strategy: accessResult.value.visibility.strategy !== false
+            strategy: accessResult.value.visibility.strategy !== false,
+            accounts: accessResult.value.visibility.accounts !== false,
+            uliq: accessResult.value.visibility.uliq !== false,
+            walletFunding: accessResult.value.visibility.walletFunding !== false,
+            vaults: accessResult.value.visibility.vaults !== false
           });
       } else {
         setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
@@ -227,7 +233,6 @@ export default function AppSidebar({
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
     const aiPredictionBuilderEnabled = isProductFeatureAllowed(featureGates, "ai_prediction_builder") || hasPlatformAdminAccess;
     const aiAgentEnabled = isProductFeatureAllowed(featureGates, "ai_agent_chat") || hasPlatformAdminAccess;
-    const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     deskItems.push({
       key: "dashboard",
@@ -269,7 +274,7 @@ export default function AppSidebar({
       });
     }
 
-    if (aiAgentEnabled) {
+    if (visibility.agentChat && aiAgentEnabled) {
       aiItems.push({
         key: "agent-chat",
         label: tNav("agentChat"),
@@ -299,7 +304,7 @@ export default function AppSidebar({
       });
     }
 
-    if (visibility.economicCalendar) {
+    if (visibility.marketIntelligence) {
       deskItems.push({
         key: "market-intelligence",
         label: tNav("marketIntelligence"),
@@ -308,6 +313,9 @@ export default function AppSidebar({
         active: pathnameWithoutLocale.startsWith("/market-intelligence")
       });
 
+    }
+
+    if (visibility.economicCalendar) {
       deskItems.push({
         key: "calendar",
         label: tSidebar("calendarShort"),
@@ -327,15 +335,17 @@ export default function AppSidebar({
       });
     }
 
-    capitalItems.push({
-      key: "accounts",
-      label: tNav("accounts"),
-      href: hrefFor("/accounts"),
-      icon: "accounts",
-      active: pathnameWithoutLocale.startsWith("/accounts")
-    });
+    if (visibility.accounts) {
+      capitalItems.push({
+        key: "accounts",
+        label: tNav("accounts"),
+        href: hrefFor("/accounts"),
+        icon: "accounts",
+        active: pathnameWithoutLocale.startsWith("/accounts")
+      });
+    }
 
-    if (process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true") {
+    if (visibility.uliq && process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true") {
       capitalItems.push({
         key: "uliq",
         label: tNav("uliq"),
@@ -345,21 +355,25 @@ export default function AppSidebar({
       });
     }
 
-    capitalItems.push({
-      key: "wallet",
-      label: tNav("wallet"),
-      href: hrefFor("/wallet"),
-      icon: "wallet",
-      active: pathnameWithoutLocale.startsWith("/wallet") || pathnameWithoutLocale.startsWith("/funding")
-    });
+    if (visibility.walletFunding) {
+      capitalItems.push({
+        key: "wallet",
+        label: tNav("wallet"),
+        href: hrefFor("/wallet"),
+        icon: "wallet",
+        active: pathnameWithoutLocale.startsWith("/wallet") || pathnameWithoutLocale.startsWith("/funding")
+      });
+    }
 
-    capitalItems.push({
-      key: "vaults",
-      label: tNav("vaults"),
-      href: hrefFor("/vaults"),
-      icon: "vaults",
-      active: pathnameWithoutLocale.startsWith("/vaults")
-    });
+    if (visibility.vaults) {
+      capitalItems.push({
+        key: "vaults",
+        label: tNav("vaults"),
+        href: hrefFor("/vaults"),
+        icon: "vaults",
+        active: pathnameWithoutLocale.startsWith("/vaults")
+      });
+    }
 
     operationsItems.push({
       key: "settings",
@@ -369,7 +383,7 @@ export default function AppSidebar({
       active: pathnameWithoutLocale.startsWith("/settings")
     });
 
-    if (hasPlatformAdminAccess && adminEnabled) {
+    if (hasPlatformAdminAccess) {
       operationsItems.push({
         key: "admin",
         label: tNav("admin"),

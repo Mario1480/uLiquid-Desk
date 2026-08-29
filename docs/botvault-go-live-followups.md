@@ -44,20 +44,20 @@ gebunden.
 
 ## Live-Evidence 2026-05-21 bis 2026-05-25
 
-- `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
+- `docs/archive/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
   - HYPE-Reserve-Automation, Reconciliation-Autostart und Close-Recovery
     wurden live nachgezogen.
   - Close final: `CLOSE_ONLY`, `execution_status=closed`,
     `funding_status=settled`, `hypercore_funding_status=withdrawn`,
     Reconciliation `ok`, keine offenen Orders/Positionen.
-- `docs/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`
+- `docs/archive/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`
   - Drei BotVault-V4-Starts liefen bis `running`.
   - Der dritte Start nach Optimierungen lief ohne manuelle Intervention, ohne
     neues `query exceeds max block range 1000` Warning, mit Initial Seed und
     offenen Grid-Orders.
   - Grid-Overview Loading Hotfix wurde deployed, damit die Liste nicht mehr auf
     langsame Detail-/Stats-Requests wartet.
-- `docs/tasks/2026-05-25-funding-vault-live-start.md`
+- `docs/archive/tasks/2026-05-25-funding-vault-live-start.md`
   - FundingVault-backed Launch lief nach Operator-Rotation erfolgreich durch.
   - Root Cause fuer erste Fehlversuche war ein onchain/DB Operator-Mismatch
     (`only_operator`), kein BotVault-V4-Fundingfehler.

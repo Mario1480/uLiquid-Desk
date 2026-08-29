@@ -10,13 +10,13 @@ Live evidence status 2026-05-25:
 
 - Wallet/User-funded BotVault V4 start -> Grid running -> Initial Seed is
   covered by the 2026-05-23 production runs in
-  `docs/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`.
+  `docs/archive/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`.
 - Wallet/User-funded close/settlement is covered by the 2026-05-21 production
   close recovery in
-  `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`.
+  `docs/archive/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`.
 - FundingVault-backed BotVault V4 launch -> Grid running -> Initial Seed is
   covered by
-  `docs/tasks/2026-05-25-funding-vault-live-start.md`.
+  `docs/archive/tasks/2026-05-25-funding-vault-live-start.md`.
 - Still needs explicit live evidence before broad public go-live: controlled
   profit claim, FundingVault-backed close/settlement, deliberately observed
   pending/recovery paths, alert delivery, and 24-48h long-run review.

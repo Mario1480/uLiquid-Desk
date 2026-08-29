@@ -43,6 +43,7 @@ export default function RegisterPage() {
   const [step, setStep] = useState<"register" | "verify">("register");
   const [referralCode, setReferralCode] = useState("");
   const [legalAcknowledged, setLegalAcknowledged] = useState(false);
+  const [companyWebsite, setCompanyWebsite] = useState("");
 
   const registerPath = useMemo(() => withLocalePath("/register", locale), [locale]);
 
@@ -70,6 +71,7 @@ export default function RegisterPage() {
           email,
           password,
           referralCode: referralCode.trim() || undefined,
+          companyWebsite,
           legalAcknowledgementAccepted: legalAcknowledged,
           legalAcknowledgementVersion: LEGAL_ACKNOWLEDGEMENT_VERSION
         });
@@ -125,6 +127,18 @@ export default function RegisterPage() {
       <div className="card authCard">
         <LegalRiskNotice />
         <form onSubmit={submit} className="authForm">
+          <div className="authHoneypot" aria-hidden="true">
+            <label htmlFor="companyWebsite">Company website</label>
+            <input
+              id="companyWebsite"
+              name="companyWebsite"
+              type="text"
+              value={companyWebsite}
+              onChange={(event) => setCompanyWebsite(event.target.value)}
+              autoComplete="off"
+              tabIndex={-1}
+            />
+          </div>
           <label className="authLabel">
             {t("email")}
             <input

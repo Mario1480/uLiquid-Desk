@@ -18,6 +18,14 @@ Passend zur bestehenden API-Infrastruktur ohne zusätzliches `/api`-Prefix:
   - immediatePct und vestingPct.
   - Vesting-/DEX-Launch-State.
   - Indexer-Freshness und Degradation-Hinweis.
+- `GET /uliq/presale/rounds`
+  - additive, round-ready Hülle um die bestehende konfigurierte Runde.
+  - liefert aktuell ausschließlich `round-1`; eine zweite Runde wird nicht aus UI-Annahmen erzeugt.
+  - bestehendes `GET /uliq/presale` bleibt kompatibel erhalten.
+- `GET /uliq/activity?limit=&cursor=`
+  - authentifizierte, walletisolierte Activity aus kanonisch finalisierten ULIQ-Events.
+  - cursor-basierte Reihenfolge nach Blocknummer und Log Index.
+  - kennzeichnet den Verlauf als partiell, solange historische Events keinen Onchain-Block-Timestamp besitzen.
 - `GET /uliq/presale/me`
   - ausschließlich für die serverseitig verknüpfte User-Wallet.
   - Purchases mit `PENDING_WITHDRAWAL`, `WITHDRAWN` oder `FINALIZED`.

@@ -66,6 +66,7 @@ function createDeps(overrides: Partial<RegisterSystemRoutesDeps> = {}): Register
     marketIntelligenceRefreshJob: job,
     economicCalendarDailyTelegramJob: job,
     requireSuperadmin: async () => true,
+    getTrafficControlHealth: async () => ({ store: "redis", productionFallback: false }),
     ...overrides
   };
 }
@@ -97,6 +98,7 @@ test("admin health details stay behind auth middleware", async () => {
   assert.deepEqual(res.body?.jobs?.vaultAccounting, { ok: true });
   assert.deepEqual(res.body?.jobs?.marketIntelligenceRefresh, { ok: true });
   assert.deepEqual(res.body?.jobs?.economicCalendarDailyTelegram, { ok: true });
+  assert.deepEqual(res.body?.trafficControl, { store: "redis", productionFallback: false });
 });
 
 test("public system settings omit orchestration internals", async () => {

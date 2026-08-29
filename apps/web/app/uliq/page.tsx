@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { erc20Abi, formatUnits, isAddress, parseUnits, type Address, type Hex } from "viem";
 import { useAccount, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
 import { getTransactionReceipt, waitForTransactionReceipt } from "wagmi/actions";
@@ -22,6 +24,8 @@ import {
   type PendingClaimTransaction
 } from "../../src/uliq/pendingClaim";
 import { formatLockDuration, lockCoverageShortfallSeconds } from "../../src/uliq/lockCoverage";
+import { deriveUliqHubPresentation } from "../../src/uliq/hubPresentation";
+import { withLocalePath, type AppLocale } from "../../i18n/config";
 
 type PresaleOverview = {
   chainId: number;
@@ -40,6 +44,35 @@ type PresaleOverview = {
   referencePriceUsd: string;
   asOfBlock: string;
   blockHash: string;
+};
+
+type PresaleRounds = {
+  currentRoundId: string;
+  rounds: Array<PresaleOverview & {
+    id: string;
+    number: number;
+    label: string;
+    isCurrent: boolean;
+    purchaseEnabled: boolean;
+  }>;
+};
+
+type ActivityItem = {
+  id: string;
+  type: "PRESALE_PURCHASED" | "PRESALE_WITHDRAWN" | "PRESALE_FINALIZED" | "VESTING_CLAIMED" | "TOKENS_LOCKED" | "LOCK_EXTENDED" | "TOKENS_UNLOCKED" | "UNKNOWN";
+  transactionHash: string;
+  blockNumber: string;
+  occurredAt: string;
+  amountRaw: string | null;
+  asset: "ULIQ" | "USDC";
+  referenceId: string | null;
+};
+
+type ActivityResponse = {
+  walletAddress: string;
+  items: ActivityItem[];
+  nextCursor: string | null;
+  partial: boolean;
 };
 
 type Purchase = {
@@ -261,6 +294,8 @@ function statusTone(value: string): string {
 function UliqHubContent() {
   const t = useTranslations("uliq");
   const locale = useLocale();
+  const pathname = usePathname();
+  const router = useRouter();
   const { address, chainId, connector, isConnected } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { sendTransactionAsync } = useSendTransaction();
@@ -269,6 +304,9 @@ function UliqHubContent() {
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
   const [vesting, setVesting] = useState<Vesting | null>(null);
   const [locks, setLocks] = useState<Locks | null>(null);
+  const [rounds, setRounds] = useState<PresaleRounds | null>(null);
+  const [activity, setActivity] = useState<ActivityResponse | null>(null);
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -372,12 +410,14 @@ function UliqHubContent() {
       return;
     }
     setError(null);
-    const [overviewResult, meResult, entitlementResult, vestingResult, locksResult] = await Promise.allSettled([
+    const [overviewResult, meResult, entitlementResult, vestingResult, locksResult, roundsResult, activityResult] = await Promise.allSettled([
       apiGet<PresaleOverview>("/uliq/presale"),
       apiGet<UserPresale>("/uliq/me"),
       apiGet<Entitlement>("/uliq/entitlement"),
       apiGet<Vesting>("/uliq/vesting"),
-      apiGet<Locks>("/uliq/locking")
+      apiGet<Locks>("/uliq/locking"),
+      apiGet<PresaleRounds>("/uliq/presale/rounds"),
+      apiGet<ActivityResponse>("/uliq/activity?limit=25")
     ]);
     if (overviewResult.status === "fulfilled") setOverview(overviewResult.value);
     else setError(errorMessage(overviewResult.reason));
@@ -385,6 +425,8 @@ function UliqHubContent() {
     if (entitlementResult.status === "fulfilled") setEntitlement(entitlementResult.value);
     if (vestingResult.status === "fulfilled") setVesting(vestingResult.value);
     if (locksResult.status === "fulfilled") setLocks(locksResult.value);
+    if (roundsResult.status === "fulfilled") setRounds(roundsResult.value);
+    if (activityResult.status === "fulfilled") setActivity(activityResult.value);
     setLoading(false);
   }, [publicEnabled]);
 
@@ -505,6 +547,31 @@ function UliqHubContent() {
     : 0;
   const trackedPurchases = me?.trackedPurchases ?? [];
   const hasPurchaseHistory = Boolean(me && (me.purchases.length > 0 || trackedPurchases.length > 0));
+  const activeView = pathname.endsWith("/presale")
+    ? "presale"
+    : pathname.endsWith("/vesting")
+      ? "vesting"
+      : pathname.endsWith("/locking")
+        ? "locking"
+        : "overview";
+  const hubPresentation = useMemo(() => deriveUliqHubPresentation({
+    saleState: overview?.state,
+    vestingEnd: vesting?.vestingEnd,
+    unreleasedRaw: vesting?.unreleasedRaw,
+    claimableRaw: vesting?.claimableRaw,
+    purchaseStatuses: me?.purchases.map((purchaseRow) => purchaseRow.status),
+    trackedPurchaseStatuses: trackedPurchases.map((purchaseRow) => purchaseRow.confirmationStatus),
+    pendingClaim: Boolean(pendingClaimForCurrentWallet),
+    lockPositionCount: locks?.positions.length
+  }), [locks?.positions.length, me?.purchases, overview?.state, pendingClaimForCurrentWallet, trackedPurchases, vesting]);
+
+  useEffect(() => {
+    if (loading) return;
+    if ((activeView === "presale" && !hubPresentation.presaleVisible)
+      || (activeView === "vesting" && !hubPresentation.vestingVisible)) {
+      router.replace(withLocalePath("/uliq", locale as AppLocale));
+    }
+  }, [activeView, hubPresentation.presaleVisible, hubPresentation.vestingVisible, loading, locale, router]);
 
   function trackingPresentation(purchase: TrackedPurchase): { label: string; message: string; noticeTone: string } {
     const usdc = formatRaw(purchase.usdcAmountRaw ?? purchase.maxUsdcAmountRaw, 6, 2);
@@ -844,7 +911,58 @@ function UliqHubContent() {
         <div className="uiNotice uiNotice-warning">{t("walletMismatch", { wallet: linkedWallet })}</div>
       ) : null}
 
-      {overview ? (
+      <nav className="uliqRouteTabs" aria-label={t("tabs.label")}>
+        <Link className={activeView === "overview" ? "isActive" : ""} href={withLocalePath("/uliq", locale as AppLocale)}><AppIcon name="dashboard" /> {t("tabs.overview")}</Link>
+        {hubPresentation.presaleVisible ? <Link className={activeView === "presale" ? "isActive" : ""} href={withLocalePath("/uliq/presale", locale as AppLocale)}><AppIcon name="billing" /> {t("tabs.presale")}</Link> : null}
+        {hubPresentation.vestingVisible ? <Link className={activeView === "vesting" ? "isActive" : ""} href={withLocalePath("/uliq/vesting", locale as AppLocale)}><AppIcon name="withdraw" /> {t("tabs.vesting")}</Link> : null}
+        <Link className={activeView === "locking" ? "isActive" : ""} href={withLocalePath("/uliq/locking", locale as AppLocale)}><AppIcon name="shield" /> {t("tabs.locked")}</Link>
+      </nav>
+
+      {activeView === "overview" ? <>
+        <section className="uliqSummaryGrid" aria-label={t("overview.summary")}>
+          <div><span className="uliqSummaryIcon uliqSummaryIcon-info"><AppIcon name="exchange" /></span><span>{t("entitlement.eligible")}</span><strong>{formatRaw(entitlement?.eligibleRaw, 18)} ULIQ</strong></div>
+          <div><span className="uliqSummaryIcon uliqSummaryIcon-tier"><AppIcon name="favorite" /></span><span>{t("entitlement.tier")}</span><strong>{entitlement?.effectiveTier ?? "–"}</strong></div>
+          <div><span className="uliqSummaryIcon uliqSummaryIcon-success"><AppIcon name="withdraw" /></span><span>{t("vesting.claimable")}</span><strong>{formatRaw(vesting?.claimableRaw, 18)} ULIQ</strong></div>
+          <div><span className="uliqSummaryIcon uliqSummaryIcon-warning"><AppIcon name="shield" /></span><span>{t("entitlement.locked")}</span><strong>{formatRaw(entitlement?.lockedRaw, 18)} ULIQ</strong></div>
+        </section>
+
+        <section className="uliqLifecycle" aria-label={t("overview.lifecycle")}>
+          <div><span className={`uliqLifecycleIcon uiStatusBadge-${statusTone(rounds?.rounds[0]?.state ?? overview?.state ?? "")}`}><AppIcon name="check" /></span><span>{rounds?.rounds[0]?.label ?? t("rounds.round1")}</span><strong>{(rounds?.rounds[0]?.state ?? overview?.state ?? "–").replaceAll("_", " ")}</strong></div>
+          <div><span className="uliqLifecycleIcon uiStatusBadge-success"><AppIcon name="refresh" /></span><span>{t("tabs.vesting")}</span><strong>{hubPresentation.vestingVisible ? `${vestingProgress.toFixed(2)}%` : t("overview.completed")}</strong></div>
+          <div><span className="uliqLifecycleIcon uiStatusBadge-warning"><AppIcon name="shield" /></span><span>{t("overview.locks")}</span><strong>{t("overview.activeCount", { count: locks?.positions.filter((position) => position.status === "ACTIVE").length ?? 0 })}</strong></div>
+        </section>
+
+        <div className="uliqOverviewGrid">
+          <section className="uiSection uliqNextAction">
+            <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><span className="uliqSectionEyebrow">{t("overview.nextAction")}</span><h2 className="uiSectionTitle">{t(`overview.actions.${hubPresentation.nextAction}.title`)}</h2><p className="uiSectionDescription">{t(`overview.actions.${hubPresentation.nextAction}.description`)}</p></div><span className="uliqNextActionIcon"><AppIcon name={hubPresentation.nextAction === "CLAIM_VESTING" ? "withdraw" : hubPresentation.nextAction === "BUY_ROUND" ? "wallet" : hubPresentation.nextAction === "MANAGE_LOCK" ? "shield" : "refresh"} /></span></div>
+            {hubPresentation.nextAction === "CLAIM_VESTING" ? <>
+              <div className="uliqNextActionAmount">{formatRaw(vesting?.claimableRaw, 18)} ULIQ</div>
+              <button type="button" className="btn btnPrimary" disabled={!canSign || !vesting || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null || Boolean(pendingClaimForCurrentWallet)} onClick={() => void runAction("claim", claimVesting)}><AppIcon name="withdraw" /> {t(pendingClaimForCurrentWallet ? "vesting.claimPendingButton" : "vesting.claim")}</button>
+            </> : hubPresentation.nextAction === "NONE" ? null : <Link className="btn btnPrimary" href={withLocalePath(hubPresentation.nextAction === "MANAGE_LOCK" ? "/uliq/locking" : "/uliq/presale", locale as AppLocale)}><AppIcon name="open" /> {t(`overview.actions.${hubPresentation.nextAction}.cta`)}</Link>}
+          </section>
+
+          {entitlement ? <section className="uiSection">
+            <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("overview.benefits")}</h2></div><span className={`uiStatusBadge uiStatusBadge-${statusTone(entitlement.priceQualityStatus)}`}>{entitlement.priceQualityStatus}</span></div>
+            <div className="uliqDetailList uliqOverviewBenefits">
+              <div><span>{t("entitlement.tier")}</span><strong>{entitlement.effectiveTier}</strong></div>
+              <div><span>{t("entitlement.discounts")}</span><strong>{entitlement.subscriptionDiscountBps / 100}% / {entitlement.aiDiscountBps / 100}%</strong></div>
+              <div><span>{t("entitlement.validUntil")}</span><strong>{formatDate(entitlement.validUntil, locale)}</strong></div>
+              <div><span>{t("overview.activeLocks")}</span><strong>{locks?.positions.filter((position) => position.status === "ACTIVE").length ?? 0}</strong></div>
+            </div>
+          </section> : null}
+        </div>
+
+        <section className="uiSection uliqActivitySection">
+          <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><div className="uliqActivityTitle"><h2 className="uiSectionTitle">{t("activity.title")}</h2>{activity?.partial ? <span className="uiStatusBadge uiStatusBadge-info">{t("activity.partial")}</span> : null}</div><p className="uiSectionDescription">{t("activity.description")}</p></div>{(activity?.items.length ?? 0) > 5 ? <button type="button" className="btn btnGhost" onClick={() => setActivityExpanded((value) => !value)}>{t(activityExpanded ? "activity.showLess" : "activity.viewAll")}</button> : null}</div>
+          {activity?.items.length ? <div className="uliqActivityList">{activity.items.slice(0, activityExpanded ? 25 : 5).map((item) => {
+            const activityIcon = item.type === "VESTING_CLAIMED" || item.type === "TOKENS_UNLOCKED" ? "withdraw" : item.type === "TOKENS_LOCKED" ? "shield" : item.type === "LOCK_EXTENDED" ? "refresh" : item.type === "PRESALE_WITHDRAWN" ? "restore" : "check";
+            const tone = item.type === "PRESALE_WITHDRAWN" ? "danger" : item.type === "TOKENS_LOCKED" || item.type === "LOCK_EXTENDED" ? "warning" : "success";
+            return <article key={item.id} className="uliqActivityRow"><span className={`uliqActivityIcon uliqActivityIcon-${tone}`}><AppIcon name={activityIcon} /></span><div><strong>{t(`activity.types.${item.type}.title`)}</strong><span>{t(`activity.types.${item.type}.description`, { id: item.referenceId ?? "–" })}</span></div><time dateTime={item.occurredAt}>{formatDate(item.occurredAt, locale)}</time><div className="uliqActivityAmount">{item.amountRaw ? `${formatRaw(item.amountRaw, item.asset === "USDC" ? 6 : 18)} ${item.asset}` : t("activity.statusOnly")}</div><a className="btn btnIcon" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${item.transactionHash}`} target="_blank" rel="noreferrer" aria-label={t("purchases.transaction")}><AppIcon name="external" /></a></article>;
+          })}</div> : <div className="uiEmptyState">{t("activity.empty")}</div>}
+        </section>
+      </> : null}
+
+      {activeView === "presale" && overview ? (
         <section className="uiSection">
           <div className="uiSectionHeader">
             <div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("sale.title")}</h2><p className="uiSectionDescription">{t("sale.description")}</p></div>
@@ -865,7 +983,7 @@ function UliqHubContent() {
         </section>
       ) : null}
 
-      <div className="uliqTwoColumn">
+      {activeView === "presale" && saleActive ? <div className="uliqTwoColumn uliqSingleView">
         <section className="uiSection">
           <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("purchase.title")}</h2><p className="uiSectionDescription">{t("purchase.description")}</p></div></div>
           {overview && !saleActive ? <div className="uiNotice uiNotice-warning">{t("purchase.inactive", { state: overview.state })}</div> : null}
@@ -884,30 +1002,10 @@ function UliqHubContent() {
           <div className="uiNotice uiNotice-info">{t("purchase.pending")}</div>
         </section>
 
-        {entitlement ? (
-          <section className="uiSection">
-            <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("entitlement.title")}</h2><p className="uiSectionDescription">{t("entitlement.description")}</p></div><span className={`uiStatusBadge uiStatusBadge-${statusTone(entitlement.priceQualityStatus)}`}>{entitlement.priceQualityStatus}</span></div>
-            <div className="uliqDetailList">
-              <div><span>{t("entitlement.tier")}</span><strong>{entitlement.effectiveTier}</strong></div>
-              <div><span>{t("entitlement.eligible")}</span><strong>{formatRaw(entitlement.eligibleRaw, 18)} ULIQ</strong></div>
-              <div><span>{t("entitlement.wallet")}</span><strong>{formatRaw(entitlement.walletRaw, 18)} ULIQ</strong></div>
-              <div><span>{t("entitlement.vesting")}</span><strong>{formatRaw(entitlement.vestingRaw, 18)} ULIQ</strong></div>
-              <div><span>{t("entitlement.locked")}</span><strong>{formatRaw(entitlement.lockedRaw, 18)} ULIQ</strong></div>
-              <div><span>{t("entitlement.monetary")}</span><strong>{formatRaw(entitlement.monetaryEligibleRaw, 18)} ULIQ</strong></div>
-              <div><span>{t("entitlement.pending")}</span><strong>{formatRaw(entitlement.pendingPresaleRaw, 18)} ULIQ</strong></div>
-              <div><span>{t("entitlement.price")}</span><strong>${entitlement.referencePriceUsd} · {entitlement.priceMode}</strong></div>
-              <div><span>{t("entitlement.discounts")}</span><strong>{entitlement.subscriptionDiscountBps / 100}% / {entitlement.aiDiscountBps / 100}%</strong></div>
-              <div><span>{t("entitlement.validUntil")}</span><strong>{formatDate(entitlement.validUntil, locale)}</strong></div>
-              <div><span>{t("entitlement.benefits")}</span><strong>{activeBenefits.length ? activeBenefits.join(", ") : t("entitlement.none")}</strong></div>
-            </div>
-            <div className="uiNotice uiNotice-info">{t("locking.discountGate")}</div>
-            {entitlement.degradationReason ? <div className="uiNotice uiNotice-warning">{entitlement.degradationReason}</div> : null}
-          </section>
-        ) : null}
-      </div>
+      </div> : null}
 
-      <div className="uliqTwoColumn">
-        {vesting ? (
+      <div className="uliqTwoColumn uliqSingleView">
+        {activeView === "vesting" && vesting ? (
           <section className="uiSection">
             <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("vesting.title")}</h2><p className="uiSectionDescription">{t("vesting.description")}</p></div></div>
             <div className="uliqMetricGrid uliqMetricGridCompact">
@@ -924,7 +1022,7 @@ function UliqHubContent() {
           </section>
         ) : null}
 
-        {locks ? (
+        {activeView === "locking" && locks ? (
           <section className="uiSection">
             <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("locking.title")}</h2><p className="uiSectionDescription">{t("locking.description")}</p></div><strong>{formatRaw(locks.lockedBalanceRaw, 18)} ULIQ</strong></div>
             <div className="uliqFormRow uliqLockForm">
@@ -937,7 +1035,7 @@ function UliqHubContent() {
         ) : null}
       </div>
 
-      <section className="uiSection">
+      {activeView === "presale" ? <section className="uiSection">
         <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("purchases.title")}</h2><p className="uiSectionDescription">{t("connected")}: <span className="uliqMono">{linkedWallet || "–"}</span></p></div></div>
         {hasPurchaseHistory ? <div className="uliqPositionList">
           {trackedPurchases.map((trackedPurchase) => {
@@ -979,9 +1077,9 @@ function UliqHubContent() {
           </article>;
           })}
         </div> : <div className="uiEmptyState">{t("purchases.empty")}</div>}
-      </section>
+      </section> : null}
 
-      {locks ? <section className="uiSection">
+      {activeView === "locking" && locks ? <section className="uiSection">
         <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("locking.positions")}</h2><p className="uiSectionDescription">{t("locking.positionsDescription")}</p></div></div>
         {checkoutRequiredUntil ? <div className="uiNotice uiNotice-info">{t("locking.checkoutRequiredUntil", { until: formatDate(checkoutRequiredUntil, locale) })}</div> : null}
         {locks.positions.length ? <div className="uliqPositionList">{locks.positions.map((position) => {

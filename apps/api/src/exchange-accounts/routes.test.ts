@@ -118,6 +118,44 @@ test("paper exchange account creation is denied when paper trading gate is disab
   assert.equal(res.body?.capability, "product.paper_trading");
 });
 
+test("default paper endpoint provisions the system-managed Binance public account idempotently", async () => {
+  const app = createFakeApp();
+  let calls = 0;
+  registerExchangeAccountRoutes(app as any, {
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: { "product.paper_trading": true }
+    }),
+    isCapabilityAllowed: () => true,
+    sendCapabilityDenied: (res: any) => res,
+    ensureDefaultPaperTradingAccount: async (userId: string) => {
+      calls += 1;
+      return {
+        id: "paper_system_1",
+        userId,
+        exchange: "paper",
+        label: "Paper · Binance Public Data",
+        systemKey: `default-paper:${userId}`,
+        createdAt: new Date("2026-08-29T12:00:00.000Z"),
+        updatedAt: new Date("2026-08-29T12:00:00.000Z")
+      };
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "/exchange-accounts/default-paper");
+  const first = createMockRes();
+  const second = createMockRes();
+  await handler({}, first);
+  await handler({}, second);
+
+  assert.equal(calls, 2);
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.body?.id, "paper_system_1");
+  assert.equal(first.body?.systemManaged, true);
+  assert.equal(first.body?.marketDataExchange, "binance");
+  assert.equal(second.body?.id, first.body?.id);
+});
+
 test("hyperliquid exchange account creation starts credential rotation timer", async () => {
   const app = createFakeApp();
   let createdData: any = null;

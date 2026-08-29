@@ -3,7 +3,7 @@
 ## Context
 
 - User from previous run: `cmn4a70gc0dyap62e5febk3z7`
-- Previous live doc: `docs/tasks/2026-05-20-grid-bot-vault-api-fixes.md`
+- Previous live doc: `docs/archive/tasks/2026-05-20-grid-bot-vault-api-fixes.md`
 - Previous V4 Grid instance: `cmpdy5e8z025ynz1x9z5qhy8i`
 - Previous BotVault: `cmpdy5eaf0260nz1x3euq34qe`
 - Previous BotVault address: `0x42B2552366585F90CbD87bf5F8481e4d86104Ec4`

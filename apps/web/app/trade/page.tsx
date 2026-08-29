@@ -46,6 +46,7 @@ type ExchangeAccountItem = {
   marketDataExchange?: string | null;
   supportsSpotManual?: boolean;
   supportsPerpManual?: boolean;
+  systemManaged?: boolean;
 };
 
 type TradingSettings = {
@@ -1405,6 +1406,7 @@ function TradePageContent() {
     setLoading(true);
     setError(null);
     try {
+      await apiPost("/exchange-accounts/default-paper", {}).catch(() => null);
       const [accountPayload, settings] = await Promise.all([
         apiGet<{ items: ExchangeAccountItem[] }>("/exchange-accounts?purpose=execution"),
         apiGet<TradingSettings>("/api/trading/settings")
@@ -1414,15 +1416,18 @@ function TradePageContent() {
       setAccounts(accountRows);
 
       const queryAccountId = searchParams.get("exchangeAccountId");
-      const preferredAccount =
+      const explicitAccount =
         preferredAccountId ??
         prefillPayload?.accountId ??
         queryAccountId ??
-        settings.exchangeAccountId ??
         "";
-      const chosenAccount = accountRows.some((row) => row.id === preferredAccount)
-        ? preferredAccount
-        : (accountRows[0]?.id ?? "");
+      const savedRealAccount = accountRows.find(
+        (row) => row.id === settings.exchangeAccountId && !row.systemManaged
+      );
+      const fallbackAccount = accountRows.find((row) => !row.systemManaged) ?? accountRows[0] ?? null;
+      const chosenAccount = accountRows.some((row) => row.id === explicitAccount)
+        ? explicitAccount
+        : (savedRealAccount?.id ?? fallbackAccount?.id ?? "");
 
       setSelectedAccountId(chosenAccount);
 

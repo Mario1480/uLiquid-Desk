@@ -67,3 +67,7 @@ export const wagmiConfig = appKitAdapter?.wagmiConfig ?? fallbackWagmiConfig;
 export const TARGET_CHAIN = targetChain;
 export const TARGET_CHAIN_ID = targetChainId;
 export const TARGET_CHAIN_NAME = targetChainName;
+export const HEADER_SWITCH_CHAINS = supportedChains.filter(
+  (chain) => chain.id === 999 || chain.id === 42161
+);
+export const SUPPORTED_CHAINS = supportedChains;

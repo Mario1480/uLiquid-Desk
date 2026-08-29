@@ -187,7 +187,7 @@ WHERE o."provider" = 'ARBITRUM_USDC'
 ORDER BY o."updated_at" ASC;
 ```
 
-Receipt, Order-Snapshot, Treasury-Revision, Entscheidung und Freigabe werden unter `docs/tasks/YYYY-MM-DD-*.md` als Evidence festgehalten. Die Order bleibt in Version 1 absichtlich `REVIEW_REQUIRED`: Es gibt keinen Admin-Endpunkt, der sie automatisch erneut aktiviert oder als bezahlt umschreibt. Refund oder eine manuelle Entitlement-Korrektur sind separate kapitalrelevante Aktionen und benötigen eine ausdrückliche Freigabe sowie einen eigenen Audit-Nachweis. Vor einem breiten Public-Go-live ist ein expliziter, idempotenter Resolve-/Refund-Workflow ein eigenes Release-Gate.
+Receipt, Order-Snapshot, Treasury-Revision, Entscheidung und Freigabe werden unter `docs/archive/tasks/YYYY-MM-DD-*.md` als Evidence festgehalten. Die Order bleibt in Version 1 absichtlich `REVIEW_REQUIRED`: Es gibt keinen Admin-Endpunkt, der sie automatisch erneut aktiviert oder als bezahlt umschreibt. Refund oder eine manuelle Entitlement-Korrektur sind separate kapitalrelevante Aktionen und benötigen eine ausdrückliche Freigabe sowie einen eigenen Audit-Nachweis. Vor einem breiten Public-Go-live ist ein expliziter, idempotenter Resolve-/Refund-Workflow ein eigenes Release-Gate.
 
 ## Legacy-CCPayment
 

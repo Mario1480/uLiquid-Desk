@@ -70,10 +70,16 @@ const accessSectionVisibilitySchema = z.object({
   tradingDesk: z.boolean().default(true),
   bots: z.boolean().default(true),
   gridBots: z.boolean().default(true),
+  agentChat: z.boolean().default(true),
   predictionsDashboard: z.boolean().default(true),
+  marketIntelligence: z.boolean().default(true),
   economicCalendar: z.boolean().default(true),
   news: z.boolean().default(true),
-  strategy: z.boolean().default(true)
+  strategy: z.boolean().default(true),
+  accounts: z.boolean().default(true),
+  uliq: z.boolean().default(true),
+  walletFunding: z.boolean().default(true),
+  vaults: z.boolean().default(true)
 });
 
 const accessSectionMaintenanceSchema = z.object({

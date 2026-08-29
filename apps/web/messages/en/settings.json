@@ -237,7 +237,8 @@
       "lastUsed": "Last used",
       "equity": "Equity",
       "available": "Available",
-      "lastSyncError": "Last sync error"
+      "lastSyncError": "Last sync error",
+      "systemManaged": "System managed"
     },
     "credential": {
       "healthy": "Healthy",

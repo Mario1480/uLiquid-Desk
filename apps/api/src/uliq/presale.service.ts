@@ -108,6 +108,21 @@ export class UliqPresaleService {
     };
   }
 
+  async getRounds() {
+    const overview = await this.getOverview();
+    return {
+      currentRoundId: "round-1",
+      rounds: [{
+        id: "round-1",
+        number: 1,
+        label: "Round 1",
+        isCurrent: true,
+        purchaseEnabled: overview.state === "ACTIVE",
+        ...overview
+      }]
+    };
+  }
+
   async getForUser(userId: string) {
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { walletAddress: true } });
     if (!user?.walletAddress) throw new Error("wallet_not_linked");

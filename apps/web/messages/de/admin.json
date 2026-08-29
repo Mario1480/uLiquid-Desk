@@ -124,10 +124,16 @@
       "tradingDesk": "Trading Desk",
       "bots": "Bots",
       "gridBots": "Grid Bots",
+      "agentChat": "AI Agent Chat",
       "predictionsDashboard": "Predictions Dashboard",
+      "marketIntelligence": "Market Intelligence",
       "economicCalendar": "Wirtschaftskalender",
       "news": "News",
-      "strategy": "Strategie-Generator (User)"
+      "strategy": "Prediction Builder",
+      "accounts": "Accounts",
+      "uliq": "ULIQ",
+      "walletFunding": "Wallet & Funding",
+      "vaults": "Vaults"
     },
     "limits": {
       "bots": "Bots",

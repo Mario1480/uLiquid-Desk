@@ -4,11 +4,19 @@ import { SESSION_COOKIE } from "./auth/cookies.js";
 import {
   createIdempotencyMiddleware,
   createRateLimitMiddleware,
+  getTrafficControlHealth,
   readIdempotencyKey,
   rateLimitByBodyEmailOrIp,
   rateLimitByIp,
   rateLimitBySessionOrIp
 } from "./trafficControl.js";
+
+test("traffic-control health exposes the active backing store", async () => {
+  const health = await getTrafficControlHealth();
+  assert.equal(health.store === "redis" || health.store === "memory", true);
+  assert.equal(typeof health.redisConfigured, "boolean");
+  assert.equal(typeof health.productionFallback, "boolean");
+});
 
 function createReqRes(params?: {
   ip?: string;

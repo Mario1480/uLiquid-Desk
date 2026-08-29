@@ -19,6 +19,10 @@ import {
 
 const OTP_MAX_ATTEMPTS = Math.max(1, Number(process.env.AUTH_OTP_MAX_ATTEMPTS ?? "5"));
 
+export function isRegistrationHoneypotTriggered(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 export function buildOtpFailureUpdate(
   otp: { attemptCount?: number | null; expiresAt: Date },
   maxAttempts = OTP_MAX_ATTEMPTS
@@ -46,6 +50,7 @@ export type RegisterAuthRoutesDeps = {
   toSafeUser(user: any): any;
   ensureWorkspaceMembership(userId: string, email: string): Promise<any>;
   setUserToFreePlan(params: { userId: string; syncWorkspaceEntitlements: boolean }): Promise<any>;
+  ensureDefaultPaperTradingAccount(userId: string): Promise<any>;
   resolveEffectivePlanForUser(userId: string): Promise<{ plan: string }>;
   syncPrimaryWorkspaceEntitlementsForUser(params: { userId: string; effectivePlan: string }): Promise<void>;
   resolveUserContext(user: { id: string; email: string }): Promise<any>;
@@ -208,6 +213,18 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
+    if (isRegistrationHoneypotTriggered(parsed.data.companyWebsite)) {
+      logger.warn("auth_registration_honeypot_triggered", {
+        correlationId: getCorrelationId(res),
+        ip: requestIp(req)
+      });
+      return res.status(201).json({
+        ok: true,
+        pendingVerification: true,
+        email: parsed.data.email.toLowerCase(),
+        expiresInMinutes: deps.EMAIL_VERIFICATION_OTP_TTL_MIN
+      });
+    }
     const legalAcknowledgementError = validateLegalAcknowledgementInput(parsed.data);
     if (legalAcknowledgementError) {
       return res.status(400).json({ error: legalAcknowledgementError });
@@ -258,6 +275,14 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
       await deps.setUserToFreePlan({ userId: user.id, syncWorkspaceEntitlements: true });
     } catch {
       // ignore billing sync issues during registration
+    }
+    try {
+      await deps.ensureDefaultPaperTradingAccount(user.id);
+    } catch (error) {
+      logger.warn("auth_default_paper_account_provision_failed", {
+        userId: user.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
     const issued = await issueEmailVerificationCode(user);
     return res.status(201).json({

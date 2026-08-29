@@ -7,7 +7,7 @@
 - Bot name: `Vault Test Bot (BTCUSDC)`
 - Exchange: `hyperliquid`
 - Symbol: `BTCUSDC`
-- Previous live monitoring doc: `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
+- Previous live monitoring doc: `docs/archive/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
 
 ## Baseline Before New Start
 

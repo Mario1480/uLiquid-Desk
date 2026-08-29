@@ -40,6 +40,7 @@ type ExchangeAccountItem = {
   credentialsExpiresAt?: string | null;
   credentialsExpiresInDays?: number | null;
   credentialExpiryState?: "healthy" | "warning" | "expired" | null;
+  systemManaged?: boolean;
 };
 
 type ExchangeOption = {
@@ -438,7 +439,8 @@ export default function ExchangeAccountsPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <strong>{account.label}</strong>
                       <span className="badge">{exchangeLabel(option, account.exchange)}</span>
-                      {renderCredentialStatus(account)}
+                    {renderCredentialStatus(account)}
+                    {account.systemManaged ? <span className="badge badgeOk">{t("list.systemManaged")}</span> : null}
                     </div>
                     <div className="settingsMutedText">
                       {t("fields.apiKey")}: {account.apiKeyMasked || "****"} · {t("list.lastUsed")}: {formatDateTime(account.lastUsedAt)}
@@ -521,14 +523,18 @@ export default function ExchangeAccountsPage() {
                       <AppIcon name="refresh" />
                       {syncingId === account.id ? t("actions.testing") : t("actions.test")}
                     </button>
-                    <button className="btn" type="button" onClick={() => startEditingAccount(account)}>
-                      <AppIcon name="edit" />
-                      {t("actions.edit")}
-                    </button>
-                    <button className="btn btnStop" type="button" onClick={() => setDeleteId(account.id)} disabled={deletingId === account.id}>
-                      <AppIcon name="delete" />
-                      {deletingId === account.id ? tCommon("deleting") : t("actions.delete")}
-                    </button>
+                    {!account.systemManaged ? (
+                      <>
+                        <button className="btn" type="button" onClick={() => startEditingAccount(account)}>
+                          <AppIcon name="edit" />
+                          {t("actions.edit")}
+                        </button>
+                        <button className="btn btnStop" type="button" onClick={() => setDeleteId(account.id)} disabled={deletingId === account.id}>
+                          <AppIcon name="delete" />
+                          {deletingId === account.id ? tCommon("deleting") : t("actions.delete")}
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               );

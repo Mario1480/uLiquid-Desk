@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiGet, apiPost } from "../../../lib/api";
+import { apiDelete, apiGet, apiPost } from "../../../lib/api";
+import { AppIcon } from "../../components/AppIcon";
+import AdminConfirmDialog from "../_components/AdminConfirmDialog";
 import AdminEmptyState from "../_components/AdminEmptyState";
 import AdminFilterBar from "../_components/AdminFilterBar";
 import AdminPageHeader from "../_components/AdminPageHeader";
@@ -21,6 +23,9 @@ type UsersResponse = {
     workspaceCount: number;
     botCount: number;
     licenseStatus: string;
+    commercialPlan: { plan: string; validUntil: string | null };
+    manualPlanOverride: { plan: string; validUntil: string | null; reason: string; active: boolean } | null;
+    effectivePlan: { plan: string; validUntil: string | null };
     lastLoginAt: string | null;
     lastActiveAt: string | null;
     createdAt: string | null;
@@ -59,6 +64,22 @@ function normalizeUsersResponse(input: any): UsersResponse {
       workspaceCount: Number(item?.workspaceCount ?? item?.workspaceMemberships ?? 0),
       botCount: Number(item?.botCount ?? item?.bots ?? 0),
       licenseStatus: String(item?.licenseStatus ?? "unknown"),
+      commercialPlan: {
+        plan: String(item?.commercialPlan?.plan ?? "free"),
+        validUntil: typeof item?.commercialPlan?.validUntil === "string" ? item.commercialPlan.validUntil : null
+      },
+      manualPlanOverride: item?.manualPlanOverride
+        ? {
+            plan: String(item.manualPlanOverride.plan ?? "free"),
+            validUntil: typeof item.manualPlanOverride.validUntil === "string" ? item.manualPlanOverride.validUntil : null,
+            reason: String(item.manualPlanOverride.reason ?? ""),
+            active: Boolean(item.manualPlanOverride.active)
+          }
+        : null,
+      effectivePlan: {
+        plan: String(item?.effectivePlan?.plan ?? item?.commercialPlan?.plan ?? "free"),
+        validUntil: typeof item?.effectivePlan?.validUntil === "string" ? item.effectivePlan.validUntil : null
+      },
       lastLoginAt: typeof item?.lastLoginAt === "string" ? item.lastLoginAt : null,
       lastActiveAt: typeof item?.lastActiveAt === "string" ? item.lastActiveAt : null,
       createdAt: typeof item?.createdAt === "string" ? item.createdAt : null,
@@ -98,6 +119,9 @@ export default function AdminUsersPage() {
   const [creating, setCreating] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<UsersResponse["items"][number] | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -105,11 +129,14 @@ export default function AdminUsersPage() {
       setLoading(true);
       setError(null);
       try {
-        const next = normalizeUsersResponse(await apiGet<any>(
-          `/admin/users${buildQuery({ page, search, status, role, licenseStatus })}`
-        ));
+        const [usersPayload, me] = await Promise.all([
+          apiGet<any>(`/admin/users${buildQuery({ page, search, status, role, licenseStatus })}`),
+          apiGet<any>("/auth/me")
+        ]);
+        const next = normalizeUsersResponse(usersPayload);
         if (!active) return;
         setData(next);
+        setCurrentUserId(String(me?.id ?? me?.user?.id ?? ""));
       } catch (loadError) {
         if (!active) return;
         setError(adminErrMsg(loadError));
@@ -156,6 +183,26 @@ export default function AdminUsersPage() {
       setError(adminErrMsg(createError));
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleDeleteUser() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiDelete(`/admin/users/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      setNotice(`User ${deleteTarget.email} deleted.`);
+      if ((data?.items.length ?? 0) === 1 && page > 1) {
+        setPage((current) => Math.max(1, current - 1));
+      } else {
+        await reloadUsers(page);
+      }
+    } catch (deleteError) {
+      setError(adminErrMsg(deleteError));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -223,7 +270,7 @@ export default function AdminUsersPage() {
       {data && data.items.length > 0 ? (
         <>
           <AdminTable
-            columns={["Email", "Name", "Status", "Role", "Legal", "Workspaces", "Bots", "License", "Last Login", "Last Active", "Created"]}
+            columns={["Email", "Name", "Status", "Role", "Legal", "Workspaces", "Bots", "Plan", "Last Login", "Last Active", "Created", "Actions"]}
           >
             {data.items.map((user) => (
               <tr
@@ -249,10 +296,36 @@ export default function AdminUsersPage() {
                 </td>
                 <td>{user.workspaceCount}</td>
                 <td>{user.botCount}</td>
-                <td><AdminStatusBadge value={user.licenseStatus} /></td>
+                <td>
+                  <AdminStatusBadge value={user.effectivePlan.plan} />
+                  <div className="settingsMutedText">commercial: {user.commercialPlan.plan}</div>
+                  {user.manualPlanOverride?.active ? (
+                    <div className="settingsMutedText">
+                      manual: {user.manualPlanOverride.plan} · {formatDateTime(user.manualPlanOverride.validUntil)}
+                    </div>
+                  ) : null}
+                </td>
                 <td>{formatDateTime(user.lastLoginAt)}</td>
                 <td>{formatDateTime(user.lastActiveAt)}</td>
                 <td>{formatDateTime(user.createdAt)}</td>
+                <td>
+                  {!user.isSuperadmin && user.id !== currentUserId ? (
+                    <button
+                      type="button"
+                      className="btn btnStop"
+                      title="Delete user"
+                      aria-label={`Delete ${user.email}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDeleteTarget(user);
+                      }}
+                    >
+                      <AppIcon name="delete" />
+                    </button>
+                  ) : (
+                    <span className="settingsMutedText">Protected</span>
+                  )}
+                </td>
               </tr>
             ))}
           </AdminTable>
@@ -268,6 +341,16 @@ export default function AdminUsersPage() {
       {!loading && data && data.items.length === 0 ? (
         <AdminEmptyState title="No users found" description="Try broadening the current search or filters." />
       ) : null}
+
+      <AdminConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete user?"
+        description={deleteTarget ? `${deleteTarget.email} and all associated user data will be deleted.` : ""}
+        confirmLabel="Delete user"
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => void handleDeleteUser()}
+      />
     </div>
   );
 }

@@ -1,15 +1,62 @@
 {
-  "eyebrow": "Arbitrum Sepolia · MVP",
-  "title": "ULIQ Testnet Hub",
-  "subtitle": "Presale, vesting, utility locking, and entitlements in one traceable testnet flow.",
+  "eyebrow": "Arbitrum Sepolia · Testnet",
+  "title": "ULIQ Hub",
+  "subtitle": "Presale, vesting, utility locking, and entitlements in one traceable flow.",
   "testnetBadge": "Testnet only",
-  "legalNotice": "Testnet / provisional. ADR-001 remains blocked; this is not a live offering or Mainnet approval.",
+  "legalNotice": "Provisional — not a live offering or Mainnet approval.",
   "refresh": "Refresh",
   "loading": "Loading ULIQ data …",
   "unavailable": "ULIQ is not enabled in this environment.",
   "walletMismatch": "Connect the server-linked wallet {wallet} on Arbitrum Sepolia.",
   "connected": "Linked wallet",
   "network": "Arbitrum Sepolia",
+  "tabs": {
+    "label": "ULIQ areas",
+    "overview": "Overview",
+    "presale": "Presale",
+    "vesting": "Vesting",
+    "locked": "Locked"
+  },
+  "rounds": {
+    "round1": "Round 1"
+  },
+  "overview": {
+    "summary": "ULIQ summary",
+    "lifecycle": "ULIQ lifecycle",
+    "completed": "Completed",
+    "locks": "Locks",
+    "activeCount": "{count} active",
+    "activeLocks": "Active locks",
+    "nextAction": "Next action",
+    "benefits": "Entitlement & benefits",
+    "actions": {
+      "RECONCILE_PURCHASE": { "title": "Purchase confirmation in progress", "description": "Receipt, finality, and indexed purchase data are being reconciled before benefits activate.", "cta": "Review purchase" },
+      "SETTLE_PURCHASE": { "title": "Settle your presale purchase", "description": "Withdraw during the open window or finalize the allocation after its deadline.", "cta": "Open purchases" },
+      "CLAIM_VESTING": { "title": "Claim vested ULIQ", "description": "A finalized portion of your presale allocation is ready to claim.", "cta": "Claim ULIQ" },
+      "BUY_ROUND": { "title": "Round 1 is open", "description": "Review the current finalized round data before preparing a testnet purchase.", "cta": "Open Round 1" },
+      "MANAGE_LOCK": { "title": "Create a utility lock", "description": "Lock ULIQ to establish coverage for eligible platform benefits.", "cta": "Manage locks" },
+      "NONE": { "title": "Everything is up to date", "description": "There is no action required for this wallet right now.", "cta": "" }
+    }
+  },
+  "activity": {
+    "title": "Recent activity",
+    "description": "Canonical, wallet-specific ULIQ events from finalized blocks.",
+    "partial": "Partial history",
+    "viewAll": "View all",
+    "showLess": "Show less",
+    "statusOnly": "Status update",
+    "empty": "No finalized ULIQ activity is available for this wallet yet.",
+    "types": {
+      "PRESALE_PURCHASED": { "title": "Presale purchase submitted", "description": "Purchase #{id} was recorded onchain." },
+      "PRESALE_WITHDRAWN": { "title": "Purchase withdrawn", "description": "Purchase #{id} was returned to the wallet." },
+      "PRESALE_FINALIZED": { "title": "Presale finalized", "description": "Round 1 allocation #{id} was finalized." },
+      "VESTING_CLAIMED": { "title": "Vested ULIQ claimed", "description": "Scheduled vesting release." },
+      "TOKENS_LOCKED": { "title": "Utility lock created", "description": "Lock #{id} is active." },
+      "LOCK_EXTENDED": { "title": "Lock extended", "description": "Lock #{id} coverage was extended." },
+      "TOKENS_UNLOCKED": { "title": "Utility lock released", "description": "Lock #{id} was unlocked." },
+      "UNKNOWN": { "title": "ULIQ activity", "description": "Finalized onchain update." }
+    }
+  },
   "token": {
     "addToWallet": "Add ULIQ to wallet"
   },

@@ -61,9 +61,9 @@ Before first real capital:
 
 Live evidence references:
 
-- `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
-- `docs/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`
-- `docs/tasks/2026-05-25-funding-vault-live-start.md`
+- `docs/archive/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md`
+- `docs/archive/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`
+- `docs/archive/tasks/2026-05-25-funding-vault-live-start.md`
 
 During incident response:
 

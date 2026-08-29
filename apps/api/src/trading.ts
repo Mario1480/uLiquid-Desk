@@ -12,7 +12,7 @@ import {
   type PaperExecutionContext,
   type PaperSimulationPolicy
 } from "./paper/policy.js";
-import { decryptSecret } from "./secret-crypto.js";
+import { decryptSecret, encryptSecret } from "./secret-crypto.js";
 
 type DbClient = typeof prisma;
 
@@ -20,6 +20,8 @@ const db = prisma as DbClient as any;
 const PAPER_EXCHANGE = "paper";
 const PAPER_MARKET_DATA_ACCOUNT_KEY_PREFIX = "paper.marketDataAccount:";
 const PAPER_STATE_KEY_PREFIX = "paper.state:";
+export const SYSTEM_BINANCE_PUBLIC_MARKET_DATA_ID = "system:binance-public";
+export const DEFAULT_PAPER_ACCOUNT_SYSTEM_KEY_PREFIX = "default-paper:";
 const DEFAULT_PAPER_BALANCE_USD = resolvePaperSimulationPolicy().startBalanceUsd;
 
 function envEnabled(name: string, fallback: boolean): boolean {
@@ -63,6 +65,7 @@ export type TradingAccount = {
   passphrase: string | null;
   botVaultAddress?: string | null;
   marketDataExchangeAccountId: string | null;
+  systemKey?: string | null;
 };
 
 export type PerpExecutionAdapter = SupportedFuturesAdapter & {
@@ -1167,7 +1170,8 @@ export async function resolveTradingAccount(userId: string, exchangeAccountId?: 
       label: true,
       apiKeyEnc: true,
       apiSecretEnc: true,
-      passphraseEnc: true
+      passphraseEnc: true,
+      systemKey: true
     }
   });
 
@@ -1197,7 +1201,8 @@ export async function resolveTradingAccount(userId: string, exchangeAccountId?: 
       apiKey: "",
       apiSecret: "",
       passphrase: null,
-      marketDataExchangeAccountId
+      marketDataExchangeAccountId,
+      systemKey: account.systemKey ?? null
     };
   }
 
@@ -1225,7 +1230,52 @@ export async function resolveTradingAccount(userId: string, exchangeAccountId?: 
     apiKey,
     apiSecret,
     passphrase,
-    marketDataExchangeAccountId: null
+    marketDataExchangeAccountId: null,
+    systemKey: account.systemKey ?? null
+  };
+}
+
+export async function ensureDefaultPaperTradingAccount(userId: string): Promise<{
+  id: string;
+  userId: string;
+  exchange: "paper";
+  label: string;
+  systemKey: string;
+  createdAt: Date;
+  updatedAt: Date;
+}> {
+  const systemKey = `${DEFAULT_PAPER_ACCOUNT_SYSTEM_KEY_PREFIX}${userId}`;
+  let account = await db.exchangeAccount.findUnique({ where: { systemKey } });
+  if (!account) {
+    try {
+      account = await db.exchangeAccount.create({
+        data: {
+          userId,
+          systemKey,
+          exchange: PAPER_EXCHANGE,
+          label: "Paper · Binance Public Data",
+          apiKeyEnc: encryptSecret("system-paper"),
+          apiSecretEnc: encryptSecret("system-paper"),
+          passphraseEnc: null
+        }
+      });
+    } catch (error) {
+      if ((error as { code?: string })?.code !== "P2002") throw error;
+      account = await db.exchangeAccount.findUnique({ where: { systemKey } });
+    }
+  }
+  if (!account || account.userId !== userId) {
+    throw new ManualTradingError("default_paper_account_conflict", 409, "default_paper_account_conflict");
+  }
+  await setPaperMarketDataAccountId(account.id, SYSTEM_BINANCE_PUBLIC_MARKET_DATA_ID);
+  return {
+    id: account.id,
+    userId: account.userId,
+    exchange: "paper",
+    label: account.label,
+    systemKey,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt
   };
 }
 
@@ -1250,7 +1300,19 @@ export async function resolveMarketDataTradingAccount(
     );
   }
 
-  const marketDataAccount = await resolveTradingAccount(userId, linkedId);
+  const marketDataAccount = linkedId === SYSTEM_BINANCE_PUBLIC_MARKET_DATA_ID
+    ? {
+        id: SYSTEM_BINANCE_PUBLIC_MARKET_DATA_ID,
+        userId,
+        exchange: "binance",
+        label: "Binance Public Data",
+        apiKey: "",
+        apiSecret: "",
+        passphrase: null,
+        marketDataExchangeAccountId: null,
+        systemKey: "binance-public-market-data"
+      }
+    : await resolveTradingAccount(userId, linkedId);
   if (isPaperExchange(marketDataAccount.exchange)) {
     throw new ManualTradingError(
       "paper_market_data_account_invalid",
@@ -2147,13 +2209,16 @@ async function fetchTickerPrice(priceReader: PerpPriceReader, symbol: string): P
 
   const readLatestCandleClose = (value: unknown): number | null => {
     if (!Array.isArray(value)) return null;
+    const staleBefore = Date.now() - Math.max(60_000, Number(process.env.PAPER_MARKET_DATA_MAX_AGE_MS ?? "120000"));
     let latestTs = Number.NEGATIVE_INFINITY;
     let latestClose: number | null = null;
     for (const entry of value) {
       if (Array.isArray(entry)) {
         const close = toNumber(entry[4]);
-        const ts = toNumber(entry[0]) ?? Number.NEGATIVE_INFINITY;
+        const rawTs = toNumber(entry[0]) ?? Number.NEGATIVE_INFINITY;
+        const ts = rawTs > 0 && rawTs < 1_000_000_000_000 ? rawTs * 1000 : rawTs;
         if (close === null || !Number.isFinite(close) || close <= 0) continue;
+        if (Number.isFinite(ts) && ts < staleBefore) continue;
         if (ts >= latestTs) {
           latestTs = ts;
           latestClose = close;
@@ -2164,9 +2229,11 @@ async function fetchTickerPrice(priceReader: PerpPriceReader, symbol: string): P
       if (!row) continue;
       const close = getNumber(row, ["close", "c", "lastPr", "last", "price"]);
       if (close === null || !Number.isFinite(close) || close <= 0) continue;
-      const ts =
+      const rawTs =
         getNumber(row, ["ts", "t", "time", "timestamp", "T"]) ??
         Number.NEGATIVE_INFINITY;
+      const ts = rawTs > 0 && rawTs < 1_000_000_000_000 ? rawTs * 1000 : rawTs;
+      if (Number.isFinite(ts) && ts < staleBefore) continue;
       if (ts >= latestTs) {
         latestTs = ts;
         latestClose = close;

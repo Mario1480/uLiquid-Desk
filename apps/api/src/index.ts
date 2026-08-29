@@ -82,10 +82,14 @@ import {
   listSubscriptionOrders,
   reconcileBillingOrderPayment,
   reconcilePendingBillingPayments,
+  getAdminPlanOverrideForUser,
+  revokeAdminPlanOverrideForUser,
+  resolveCommercialPlanForUser,
   resolveEffectivePlanForUser,
   resolveEffectiveQuotaForUser,
   runSubscriptionLifecycle,
   setUserToFreePlan,
+  setAdminPlanOverrideForUser,
   submitBillingTransaction,
   syncPrimaryWorkspaceEntitlementsForUser,
   updateArbitrumUsdcPaymentConfiguration,
@@ -251,6 +255,7 @@ import {
   editOpenOrder,
   editPaperOrder,
   editPaperSpotOrder,
+  ensureDefaultPaperTradingAccount,
   ManualTradingError,
   getPaperAccountState,
   getPaperSpotAccountState,
@@ -411,12 +416,14 @@ import { UliqPresaleService } from "./uliq/presale.service.js";
 import { UliqPurchaseTrackingService } from "./uliq/purchaseTracking.service.js";
 import { UliqTreasuryService } from "./uliq/treasury.service.js";
 import { UliqEntitlementService } from "./uliq/entitlement.service.js";
+import { UliqActivityService } from "./uliq/activity.service.js";
 import { createLazyUliqService } from "./uliq/runtime.js";
 import { releaseOpenUliqReservationsForWalletChange } from "./uliq/benefitReservation.service.js";
 import { createUliqJobs } from "./jobs/uliqJobs.js";
 import {
   createIdempotencyMiddleware,
   createRateLimitMiddleware,
+  getTrafficControlHealth,
   rateLimitByBodyEmailOrIp,
   rateLimitByIp,
   rateLimitBySessionOrIp,
@@ -641,6 +648,7 @@ const uliqPresaleService = createLazyUliqService(() => new UliqPresaleService(db
 const uliqPurchaseTrackingService = createLazyUliqService(() => new UliqPurchaseTrackingService(db));
 const uliqTreasuryService = createLazyUliqService(() => new UliqTreasuryService(db));
 const uliqEntitlementService = createLazyUliqService(() => new UliqEntitlementService(db));
+const uliqActivityService = createLazyUliqService(() => new UliqActivityService(db));
 const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db, {
   resolveTelegramConfig: async (userId) => resolveTelegramConfig(userId),
   sendTelegramMessage: async ({ botToken, chatId, text }) =>
@@ -709,14 +717,26 @@ const siweLinkRateLimit = createRateLimitMiddleware({
 });
 const authRegisterIpRateLimit = createRateLimitMiddleware({
   name: "auth_register_ip",
-  max: 5,
-  windowMs: 10 * 60_000,
+  max: Math.max(1, Number(process.env.AUTH_REGISTER_IP_MAX ?? "5")),
+  windowMs: Math.max(60_000, Number(process.env.AUTH_REGISTER_WINDOW_MS ?? String(10 * 60_000))),
   keyFn: rateLimitByIp
 });
 const authRegisterAccountRateLimit = createRateLimitMiddleware({
   name: "auth_register_account",
-  max: 3,
-  windowMs: 10 * 60_000,
+  max: Math.max(1, Number(process.env.AUTH_REGISTER_ACCOUNT_MAX ?? "3")),
+  windowMs: Math.max(60_000, Number(process.env.AUTH_REGISTER_WINDOW_MS ?? String(10 * 60_000))),
+  keyFn: rateLimitByBodyEmailOrIp
+});
+const authRegisterIpDailyRateLimit = createRateLimitMiddleware({
+  name: "auth_register_ip_daily",
+  max: Math.max(1, Number(process.env.AUTH_REGISTER_IP_DAILY_MAX ?? "30")),
+  windowMs: Math.max(60_000, Number(process.env.AUTH_REGISTER_DAILY_WINDOW_MS ?? String(24 * 60 * 60_000))),
+  keyFn: rateLimitByIp
+});
+const authRegisterAccountDailyRateLimit = createRateLimitMiddleware({
+  name: "auth_register_account_daily",
+  max: Math.max(1, Number(process.env.AUTH_REGISTER_ACCOUNT_DAILY_MAX ?? "6")),
+  windowMs: Math.max(60_000, Number(process.env.AUTH_REGISTER_DAILY_WINDOW_MS ?? String(24 * 60 * 60_000))),
   keyFn: rateLimitByBodyEmailOrIp
 });
 const authLoginIpRateLimit = createRateLimitMiddleware({
@@ -741,6 +761,12 @@ const authOtpAccountRateLimit = createRateLimitMiddleware({
   name: "auth_otp_account",
   max: 8,
   windowMs: 10 * 60_000,
+  keyFn: rateLimitByBodyEmailOrIp
+});
+const authRegisterResendAccountHourlyRateLimit = createRateLimitMiddleware({
+  name: "auth_register_resend_account_hourly",
+  max: Math.max(1, Number(process.env.AUTH_REGISTER_RESEND_ACCOUNT_HOURLY_MAX ?? "6")),
+  windowMs: Math.max(60_000, Number(process.env.AUTH_REGISTER_RESEND_WINDOW_MS ?? String(60 * 60_000))),
   keyFn: rateLimitByBodyEmailOrIp
 });
 const authPasswordResetRequestIpRateLimit = createRateLimitMiddleware({
@@ -776,8 +802,19 @@ const criticalBotMutationRateLimit = createRateLimitMiddleware({
 
 app.use("/auth/siwe/nonce", siweNonceRateLimit);
 app.use("/auth/siwe/verify", siweVerifyRateLimit);
-app.use(/^\/auth\/register\/?$/, authRegisterIpRateLimit, authRegisterAccountRateLimit);
-app.use(/^\/auth\/register\/resend\/?$/, authOtpIpRateLimit, authOtpAccountRateLimit);
+app.use(
+  /^\/auth\/register\/?$/,
+  authRegisterIpRateLimit,
+  authRegisterAccountRateLimit,
+  authRegisterIpDailyRateLimit,
+  authRegisterAccountDailyRateLimit
+);
+app.use(
+  /^\/auth\/register\/resend\/?$/,
+  authOtpIpRateLimit,
+  authOtpAccountRateLimit,
+  authRegisterResendAccountHourlyRateLimit
+);
 app.use(/^\/auth\/register\/verify\/?$/, authOtpIpRateLimit, authOtpAccountRateLimit);
 app.use(/^\/auth\/login\/?$/, authLoginIpRateLimit, authLoginAccountRateLimit);
 app.use(
@@ -873,6 +910,7 @@ app.use("/admin/users/:id/vaults/close-only-all",
 const registerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8),
+  companyWebsite: z.string().max(500).optional().default(""),
   referralCode: z.string().trim().min(4).max(64).optional(),
   legalAcknowledgementAccepted: z.boolean().optional(),
   legalAcknowledgementVersion: z.string().trim().max(64).optional().default(LEGAL_ACKNOWLEDGEMENT_VERSION)
@@ -1200,10 +1238,16 @@ const accessSectionVisibilitySchema = z.object({
   tradingDesk: z.boolean().default(true),
   bots: z.boolean().default(true),
   gridBots: z.boolean().default(true),
+  agentChat: z.boolean().default(true),
   predictionsDashboard: z.boolean().default(true),
+  marketIntelligence: z.boolean().default(true),
   economicCalendar: z.boolean().default(true),
   news: z.boolean().default(true),
-  strategy: z.boolean().default(true)
+  strategy: z.boolean().default(true),
+  accounts: z.boolean().default(true),
+  uliq: z.boolean().default(true),
+  walletFunding: z.boolean().default(true),
+  vaults: z.boolean().default(true)
 });
 
 const accessSectionLimitsSchema = z.object({
@@ -1829,10 +1873,16 @@ type AccessSectionVisibility = {
   tradingDesk: boolean;
   bots: boolean;
   gridBots: boolean;
+  agentChat: boolean;
   predictionsDashboard: boolean;
+  marketIntelligence: boolean;
   economicCalendar: boolean;
   news: boolean;
   strategy: boolean;
+  accounts: boolean;
+  uliq: boolean;
+  walletFunding: boolean;
+  vaults: boolean;
 };
 type AccessSectionLimits = {
   bots: number | null;
@@ -2172,10 +2222,16 @@ const DEFAULT_ACCESS_SECTION_SETTINGS: StoredAccessSectionSettings = {
     tradingDesk: true,
     bots: true,
     gridBots: true,
+    agentChat: true,
     predictionsDashboard: true,
+    marketIntelligence: true,
     economicCalendar: true,
     news: true,
-    strategy: true
+    strategy: true,
+    accounts: true,
+    uliq: true,
+    walletFunding: true,
+    vaults: true
   },
   limits: {
     bots: null,
@@ -3068,9 +3124,17 @@ function parseStoredAccessSectionSettings(value: unknown): StoredAccessSectionSe
         visibilityRaw.gridBots,
         DEFAULT_ACCESS_SECTION_SETTINGS.visibility.gridBots
       ),
+      agentChat: asBoolean(
+        visibilityRaw.agentChat,
+        DEFAULT_ACCESS_SECTION_SETTINGS.visibility.agentChat
+      ),
       predictionsDashboard: asBoolean(
         visibilityRaw.predictionsDashboard,
         DEFAULT_ACCESS_SECTION_SETTINGS.visibility.predictionsDashboard
+      ),
+      marketIntelligence: asBoolean(
+        visibilityRaw.marketIntelligence,
+        DEFAULT_ACCESS_SECTION_SETTINGS.visibility.marketIntelligence
       ),
       economicCalendar: asBoolean(
         visibilityRaw.economicCalendar,
@@ -3083,6 +3147,22 @@ function parseStoredAccessSectionSettings(value: unknown): StoredAccessSectionSe
       strategy: asBoolean(
         visibilityRaw.strategy,
         DEFAULT_ACCESS_SECTION_SETTINGS.visibility.strategy
+      ),
+      accounts: asBoolean(
+        visibilityRaw.accounts,
+        DEFAULT_ACCESS_SECTION_SETTINGS.visibility.accounts
+      ),
+      uliq: asBoolean(
+        visibilityRaw.uliq,
+        DEFAULT_ACCESS_SECTION_SETTINGS.visibility.uliq
+      ),
+      walletFunding: asBoolean(
+        visibilityRaw.walletFunding,
+        DEFAULT_ACCESS_SECTION_SETTINGS.visibility.walletFunding
+      ),
+      vaults: asBoolean(
+        visibilityRaw.vaults,
+        DEFAULT_ACCESS_SECTION_SETTINGS.visibility.vaults
       )
     },
     limits: {
@@ -3109,10 +3189,16 @@ function toEffectiveAccessSectionSettings(
       tradingDesk: Boolean(stored.visibility?.tradingDesk),
       bots: Boolean(stored.visibility?.bots),
       gridBots: Boolean(stored.visibility?.gridBots),
+      agentChat: stored.visibility?.agentChat !== false,
       predictionsDashboard: Boolean(stored.visibility?.predictionsDashboard),
+      marketIntelligence: stored.visibility?.marketIntelligence !== false,
       economicCalendar: Boolean(stored.visibility?.economicCalendar),
       news: Boolean(stored.visibility?.news),
-      strategy: Boolean(stored.visibility?.strategy)
+      strategy: Boolean(stored.visibility?.strategy),
+      accounts: stored.visibility?.accounts !== false,
+      uliq: stored.visibility?.uliq !== false,
+      walletFunding: stored.visibility?.walletFunding !== false,
+      vaults: stored.visibility?.vaults !== false
     },
     limits: {
       bots: normalizeAccessSectionLimit(stored.limits?.bots),
@@ -11144,7 +11230,8 @@ registerSystemRoutes(app, {
   vaultOnchainReconciliationJob,
   marketIntelligenceRefreshJob,
   economicCalendarDailyTelegramJob,
-  requireSuperadmin
+  requireSuperadmin,
+  getTrafficControlHealth
 });
 
 registerAuthRoutes(app, {
@@ -11163,6 +11250,7 @@ registerAuthRoutes(app, {
   toSafeUser,
   ensureWorkspaceMembership,
   setUserToFreePlan,
+  ensureDefaultPaperTradingAccount,
   resolveEffectivePlanForUser,
   syncPrimaryWorkspaceEntitlementsForUser,
   resolveUserContext,
@@ -12012,7 +12100,8 @@ registerSiweAuthRoutes(app, {
 registerUliqRoutes(app, {
   presaleService: uliqPresaleService,
   purchaseTrackingService: uliqPurchaseTrackingService,
-  entitlementService: uliqEntitlementService
+  entitlementService: uliqEntitlementService,
+  activityService: uliqActivityService
 });
 registerManualTradingMarketDataRoutes(app, {
   getTradingSettings,
@@ -12122,7 +12211,8 @@ registerExchangeAccountRoutes(app, {
   persistExchangeSyncFailure,
   executeExchangeSync,
   ExchangeSyncError,
-  sendManualTradingError
+  sendManualTradingError,
+  ensureDefaultPaperTradingAccount
 });
 
 registerDashboardRoutes(app, {
@@ -12364,7 +12454,10 @@ registerPlatformAdminRoutes(app, {
   getAdminBackendAccessUserIdSet,
   getAccessSectionSettings,
   getServerInfoSettings,
-  getBillingFeatureFlagsSettings
+  getBillingFeatureFlagsSettings,
+  getAdminPlanOverrideForUser,
+  resolveCommercialPlanForUser,
+  resolveEffectivePlanForUser
 });
 
 registerAdminAffiliateRoutes(app, {
@@ -12381,6 +12474,13 @@ registerAdminOperationsRoutes(app, {
   hashPassword,
   generateTempPassword,
   ensureWorkspaceMembership,
+  ensureDefaultPaperTradingAccount,
+  getAdminPlanOverrideForUser,
+  setAdminPlanOverrideForUser,
+  revokeAdminPlanOverrideForUser,
+  resolveCommercialPlanForUser,
+  resolveEffectivePlanForUser,
+  syncPrimaryWorkspaceEntitlementsForUser,
   ignoreMissingTable,
   getGlobalSettingValue,
   setGlobalSettingValue,

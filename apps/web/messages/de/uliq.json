@@ -1,15 +1,62 @@
 {
-  "eyebrow": "Arbitrum Sepolia · MVP",
-  "title": "ULIQ Testnet Hub",
-  "subtitle": "Presale, Vesting, Utility-Locking und Entitlements in einem nachvollziehbaren Testnet-Flow.",
+  "eyebrow": "Arbitrum Sepolia · Testnet",
+  "title": "ULIQ Hub",
+  "subtitle": "Presale, Vesting, Utility-Locking und Entitlements in einem nachvollziehbaren Flow.",
   "testnetBadge": "Nur Testnet",
-  "legalNotice": "Testnet / vorläufig. ADR-001 bleibt blockiert; dies ist kein Live-Angebot und keine Mainnet-Freigabe.",
+  "legalNotice": "Vorläufig — kein Live-Angebot und keine Mainnet-Freigabe.",
   "refresh": "Aktualisieren",
   "loading": "ULIQ-Daten werden geladen …",
   "unavailable": "ULIQ ist in dieser Umgebung nicht aktiviert.",
   "walletMismatch": "Verbinde die serverseitig verknüpfte Wallet {wallet} auf Arbitrum Sepolia.",
   "connected": "Verknüpfte Wallet",
   "network": "Arbitrum Sepolia",
+  "tabs": {
+    "label": "ULIQ-Bereiche",
+    "overview": "Übersicht",
+    "presale": "Presale",
+    "vesting": "Vesting",
+    "locked": "Locked"
+  },
+  "rounds": {
+    "round1": "Runde 1"
+  },
+  "overview": {
+    "summary": "ULIQ-Übersicht",
+    "lifecycle": "ULIQ-Lebenszyklus",
+    "completed": "Abgeschlossen",
+    "locks": "Locks",
+    "activeCount": "{count} aktiv",
+    "activeLocks": "Aktive Locks",
+    "nextAction": "Nächste Aktion",
+    "benefits": "Entitlement & Vorteile",
+    "actions": {
+      "RECONCILE_PURCHASE": { "title": "Kaufbestätigung läuft", "description": "Receipt, Finalität und indexierte Kaufdaten werden abgeglichen, bevor Vorteile aktiv werden.", "cta": "Kauf prüfen" },
+      "SETTLE_PURCHASE": { "title": "Presale-Kauf abschließen", "description": "Innerhalb der Frist widerrufen oder die Allocation danach finalisieren.", "cta": "Käufe öffnen" },
+      "CLAIM_VESTING": { "title": "Vested ULIQ claimen", "description": "Ein finalisierter Teil deiner Presale-Allocation kann geclaimt werden.", "cta": "ULIQ claimen" },
+      "BUY_ROUND": { "title": "Runde 1 ist geöffnet", "description": "Prüfe die finalisierten Rundendaten, bevor du einen Testnet-Kauf vorbereitest.", "cta": "Runde 1 öffnen" },
+      "MANAGE_LOCK": { "title": "Utility-Lock erstellen", "description": "Locke ULIQ, um die Abdeckung für berechtigte Plattformvorteile herzustellen.", "cta": "Locks verwalten" },
+      "NONE": { "title": "Alles ist aktuell", "description": "Für diese Wallet ist derzeit keine Aktion erforderlich.", "cta": "" }
+    }
+  },
+  "activity": {
+    "title": "Letzte Aktivitäten",
+    "description": "Kanonische, walletbezogene ULIQ-Events aus finalisierten Blöcken.",
+    "partial": "Teilweiser Verlauf",
+    "viewAll": "Alle anzeigen",
+    "showLess": "Weniger anzeigen",
+    "statusOnly": "Statusänderung",
+    "empty": "Für diese Wallet sind noch keine finalisierten ULIQ-Aktivitäten verfügbar.",
+    "types": {
+      "PRESALE_PURCHASED": { "title": "Presale-Kauf eingereicht", "description": "Kauf #{id} wurde onchain erfasst." },
+      "PRESALE_WITHDRAWN": { "title": "Kauf widerrufen", "description": "Kauf #{id} wurde an die Wallet zurückgezahlt." },
+      "PRESALE_FINALIZED": { "title": "Presale finalisiert", "description": "Allocation #{id} aus Runde 1 wurde finalisiert." },
+      "VESTING_CLAIMED": { "title": "Vested ULIQ geclaimt", "description": "Planmäßige Vesting-Freigabe." },
+      "TOKENS_LOCKED": { "title": "Utility-Lock erstellt", "description": "Lock #{id} ist aktiv." },
+      "LOCK_EXTENDED": { "title": "Lock verlängert", "description": "Die Abdeckung von Lock #{id} wurde verlängert." },
+      "TOKENS_UNLOCKED": { "title": "Utility-Lock freigegeben", "description": "Lock #{id} wurde entsperrt." },
+      "UNKNOWN": { "title": "ULIQ-Aktivität", "description": "Finalisierte Onchain-Aktualisierung." }
+    }
+  },
   "token": {
     "addToWallet": "ULIQ zu Wallet hinzufügen"
   },

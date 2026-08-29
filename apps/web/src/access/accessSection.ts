@@ -2,10 +2,16 @@ export type AccessSectionVisibility = {
   tradingDesk: boolean;
   bots: boolean;
   gridBots: boolean;
+  agentChat: boolean;
   predictionsDashboard: boolean;
+  marketIntelligence: boolean;
   economicCalendar: boolean;
   news: boolean;
   strategy: boolean;
+  accounts: boolean;
+  uliq: boolean;
+  walletFunding: boolean;
+  vaults: boolean;
 };
 
 export type AccessSectionMaintenance = {
@@ -43,10 +49,16 @@ export const DEFAULT_ACCESS_SECTION_VISIBILITY: AccessSectionVisibility = {
   tradingDesk: true,
   bots: true,
   gridBots: true,
+  agentChat: true,
   predictionsDashboard: true,
+  marketIntelligence: true,
   economicCalendar: true,
   news: true,
-  strategy: true
+  strategy: true,
+  accounts: true,
+  uliq: true,
+  walletFunding: true,
+  vaults: true
 };
 
 export const DEFAULT_ACCESS_SECTION_MAINTENANCE: AccessSectionMaintenance = {

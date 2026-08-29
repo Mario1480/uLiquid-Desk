@@ -1,116 +1,53 @@
-# uLiquid Desk – AI Agent Chat Codex Work Package
+# uLiquid Desk AI Agent Chat Implementation Packet
 
-Stand: 2026-08-02  
-Basis: hochgeladener Projektstand `uLiquid-Desk-main.zip`
+Status date: 2026-08-02
 
-## Ziel
+This packet defines the implementation path for an AI Agent Chat that can inspect portfolio and market state across supported exchanges while keeping trading execution outside the unrestricted AI tool loop.
 
-Dieses Paket beschreibt die schrittweise Umsetzung eines eigenständigen **AI Agent Chat** in uLiquid Desk. Der neue Bereich wird bewusst vom bestehenden Prediction Builder getrennt:
+## Product boundary
 
-- **Prediction Builder:** erstellt, validiert und speichert Prediction-Strategien und Templates.
-- **AI Agent Chat:** analysiert Märkte, Predictions, News, Wirtschaftsdaten, Konten und Positionen über auswählbare Skills.
-- **Prediction Copier:** bleibt eine eigenständige, deterministische und vom Nutzer konfigurierte Automations-Runtime.
-- **Execution:** bleibt außerhalb der freien AI-Tool-Schleife. In einer späteren Phase darf AI ausschließlich bestätigungspflichtige Entwürfe erstellen.
+- The agent may read normalized account, position, order, funding, prediction, and market context when the user and workspace permissions allow it.
+- The agent must expose data freshness, source, venue, and degraded-state information instead of presenting uncertain reads as current truth.
+- Trading execution is out of scope for the free-form tool loop. A later phase may produce reviewable trade drafts, but execution must remain deterministic and explicitly confirmed.
+- Secrets, exchange credentials, wallet keys, internal prompts, and cross-tenant data must never enter model context.
 
-## Wichtigste Produktentscheidung
+## Repository baseline
 
-Keine Binance-spezifische Agentenlösung in den Produktkern einbauen. uLiquid Desk erhält eine eigene börsenübergreifende Skill-Schicht. Binance, Hyperliquid, Bitget, MEXC, BingX, Paper und spätere Anbieter sind Provider hinter stabilen internen Skill-Verträgen.
+The packet builds on existing modules rather than introducing a parallel platform:
 
-```text
-User
-  → AI Agent Chat
-  → Agent Profile + Skill Policy
-  → uLiquid Skill Registry
-  → Market / Intelligence / Portfolio Services
-  → vorhandene Exchange- und Domain-Module
-  → normalisierte, auditierte Ergebnisse
-```
+- `apps/api/src/ai` for provider, policy, prompt, and tool controls.
+- `apps/api/src/exchange-accounts` and exchange services for permissioned account reads.
+- `packages/futures-exchange` for normalized multi-exchange data.
+- `apps/api/src/predictions` and `packages/strategies` for prediction context.
+- `apps/web` for the authenticated chat and Position Copilot experience.
+- Prisma models for conversations, runs, tool calls, audit state, and user settings.
 
-## Verifizierter Ausgangspunkt im Repository
+## Packet contents
 
-Bereits vorhanden und wiederzuverwenden:
+- `00-repository-assessment.md` — verified baseline and gaps.
+- `01-foundation-and-feature-gates.md` — rollout foundation and feature flags.
+- `02-multi-exchange-read-skills.md` — permissioned, normalized read capabilities.
+- `03-agent-chat-runtime-and-conversations.md` — runtime and persistence.
+- `04-agent-profiles-skills-permissions.md` — profiles, skills, and authorization.
+- `05-agent-chat-ui-ux.md` — web experience.
+- `06-position-copilot-integration.md` — read-only position analysis.
+- `07-activity-audit-observability.md` — audit and operations.
+- `08-security-hardening.md` — prompt, output, secret, and tenant boundaries.
+- `09-testing-and-rollout.md` — tests and staged release.
+- `10-trade-drafts-and-approvals-future.md` — future confirmed-draft boundary.
+- `11-api-and-data-contracts.md` — API and persistence contracts.
+- `12-codex-agent-workstreams.md` — implementation workstreams.
+- `13-definition-of-done.md` — acceptance and release gates.
+- `CODEX-MASTER-PROMPT.md` — execution prompt for the packet.
 
-- `apps/api/src/ai/provider.ts` – OpenAI-kompatible Provider-Anbindung.
-- `apps/api/src/ai/agent.ts` – bestehender Tool-Loop für strukturierte Market-Signale.
-- `apps/api/src/ai/tools/index.ts` – bestehende AI-Tool-Registry, derzeit Binance-hartcodiert.
-- `apps/api/src/ai/tools/binance.ts` – öffentliche Binance-Marktdaten.
-- `apps/api/src/ai/safety/toolPolicy.ts` – serverseitige Scopes, Tool-Allowlist und Secret-Redaction.
-- `apps/api/src/position-copilot/` – read-only Position Copilot mit deterministischer Analyse, AI-Erweiterung, Cache, Dedupe und Audit.
-- `packages/exchange` – öffentliche Spot-Daten, Binance-Client und CCXT-Client.
-- `packages/futures-exchange` – Bitget, Binance, BingX, Hyperliquid, MEXC, Paper, Positionen und Execution.
-- `apps/api/src/services/marketIntelligence/` – Provider-Registry für News und Wirtschaftskalender.
-- `prisma/schema.prisma` – `AiTraceLog`, Exchange Accounts, Predictions und Nutzerbeziehungen.
-- `apps/web/app/components/AppSidebar.tsx`, `AppHeader.tsx`, `AppBreadcrumbs.tsx` – Navigation.
-- `apps/web/app/strategies/page.tsx` – bestehender Prediction Builder Chat.
-- `apps/web/app/trade/page.tsx` – bestehende Position-Copilot-UI.
+## Working rules
 
-## Nicht-Ziele für den ersten Release
+1. Read `AGENTS.md`, affected modules, and nearby tests first.
+2. Run `git status --short --branch` before editing and preserve unrelated changes.
+3. Keep each implementation step small, feature-gated, and reversible.
+4. Add server-side authorization and tenant isolation before exposing a tool to the model.
+5. Treat `read`, `analyze`, `draft`, and `execute` as separate capability classes.
+6. Record freshness and degraded-state metadata for every capital-relevant read.
+7. Run the checks defined in the relevant workstream before marking it complete.
 
-- keine autonome Orderausführung durch das Sprachmodell,
-- keine Wallet-, Vault-, Billing-, API-Key- oder Admin-Tools,
-- keine Änderung am Prediction Copier Execution Flow,
-- kein Umbau der eigenen Payment- und Wallet-Lösung,
-- kein Grid-Bot- oder Vault-Scope,
-- kein ungeprüfter Zugriff auf beliebige Exchange Account IDs,
-- keine direkten offiziellen Binance Skills als paralleler Trading-Pfad.
-
-## Empfohlene Release-Reihenfolge
-
-1. `01-foundation-and-feature-gates.md`
-2. `02-multi-exchange-read-skills.md`
-3. `03-agent-chat-runtime-and-conversations.md`
-4. `04-agent-profiles-skills-permissions.md`
-5. `05-agent-chat-ui-ux.md`
-6. `06-position-copilot-integration.md`
-7. `07-activity-audit-observability.md`
-8. `08-security-hardening.md`
-9. `09-testing-and-rollout.md`
-10. optional später: `10-trade-drafts-and-approvals-future.md`
-
-## MVP-Profile
-
-### Market Analyst
-
-Öffentliche Daten, keine Kontodaten:
-
-- OHLCV
-- Indikatoren
-- Ticker
-- Orderbuch
-- Funding Rate
-- Open Interest
-- News
-- Wirtschaftskalender
-- Predictions
-
-### Position Copilot
-
-Zusätzlich serverseitig gebundener Read-only-Zugriff auf ausgewählte Nutzerkonten und Positionen. Keine Orders und keine Konfigurationsänderungen.
-
-### Trading Assistant – spätere Phase
-
-Darf nur validierte Action Drafts erzeugen. Der Nutzer muss jeden Draft in einem separaten Review-Flow bestätigen. Der Agent erhält weiterhin keinen direkten Execution-Adapter.
-
-## Arbeitsregeln für Codex
-
-- Zuerst `AGENTS.md`, die betroffenen Module und vorhandenen Tests lesen.
-- Vor Änderungen `git status --short --branch` prüfen.
-- Fremde Working-Tree-Änderungen respektieren.
-- Kleine, nachvollziehbare Commits bzw. Arbeitsschritte.
-- Bestehende Architektur erweitern statt duplizieren.
-- Jede neue Route: Auth, Ownership, Zod-Schema, Rate Limit, Audit und stabile Fehlercodes.
-- Alle sichtbaren Texte in Deutsch und Englisch.
-- Desktop, Tablet und Mobile berücksichtigen.
-- Loading-, Empty-, Error-, Degraded- und Permission-Denied-Zustände umsetzen.
-- Keine Secrets in Prompts, Tool-Ergebnissen oder Logs.
-- Jede AI-Tool-Antwort enthält Source-, Freshness- und Degraded-Metadaten.
-
-## Paketinhalt
-
-- `CODEX-MASTER-PROMPT.md` – übergreifender Auftrag.
-- `00-repository-assessment.md` – verifizierter Ist-Zustand und Lücken.
-- `01` bis `10` – umsetzbare Agenten-Arbeitspakete.
-- `11-api-and-data-contracts.md` – vorgeschlagene Verträge und Prisma-Modelle.
-- `12-codex-agent-workstreams.md` – Parallelisierung und Abhängigkeiten.
-- `13-definition-of-done.md` – finale Akzeptanz- und Release-Checkliste.
-- `references/ai-agent-chat-mockup.png` – visuelle Referenz, nicht pixelgenau nachbauen.
+This packet remains active until its rollout, security, and acceptance gates are complete.

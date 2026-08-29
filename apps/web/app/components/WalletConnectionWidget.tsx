@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { switchChain } from "wagmi/actions";
-import { TARGET_CHAIN, TARGET_CHAIN_ID, TARGET_CHAIN_NAME, isWeb3ModalReady, wagmiConfig } from "../../lib/web3/config";
+import { HEADER_SWITCH_CHAINS, SUPPORTED_CHAINS, isWeb3ModalReady, wagmiConfig } from "../../lib/web3/config";
 import { getWeb3ModalInitState, openWeb3Modal } from "../../lib/web3/modal";
 import { AppIcon } from "./AppIcon";
 import Web3Providers from "./Web3Providers";
@@ -33,7 +33,8 @@ function WalletConnectionWidgetContent({
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const hasChainMismatch = isConnected && chainId !== TARGET_CHAIN_ID;
+  const activeChain = SUPPORTED_CHAINS.find((chain) => chain.id === chainId) ?? null;
+  const hasUnsupportedChain = isConnected && !activeChain;
   const announcedMetaMaskConnector = connectors.find((connector) =>
     connector.id === "io.metamask" ||
     (typeof connector.rdns === "string"
@@ -75,20 +76,6 @@ function WalletConnectionWidgetContent({
   }, [menuOpen]);
 
   async function handlePrimaryAction() {
-    if (hasChainMismatch) {
-      setIsSwitchPending(true);
-      try {
-        await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
-        return;
-      } catch {
-        if (modalReady) {
-          await openWeb3Modal({ view: "Networks" }).finally(onModalStateChange);
-        }
-        return;
-      } finally {
-        setIsSwitchPending(false);
-      }
-    }
     if (!isConnected) {
       setConnectionError(null);
       if (modalReady) {
@@ -127,12 +114,16 @@ function WalletConnectionWidgetContent({
     }
   }
 
-  async function handleSwitchFromMenu() {
+  async function handleSwitchFromMenu(targetChainId: number) {
     try {
-      setMenuOpen(false);
-      await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
+      setIsSwitchPending(true);
+      await switchChain(wagmiConfig, { chainId: targetChainId as any });
     } catch {
-      await openWeb3Modal({ view: "Networks" }).finally(onModalStateChange);
+      if (modalReady) {
+        await openWeb3Modal({ view: "Networks" }).finally(onModalStateChange);
+      }
+    } finally {
+      setIsSwitchPending(false);
     }
   }
 
@@ -147,13 +138,11 @@ function WalletConnectionWidgetContent({
     ? tWallet("statusConnecting")
     : !isConnected
     ? tWallet("connectWallet")
-    : hasChainMismatch
-      ? tWallet("switchToHyperEvm")
-      : shortAddress(address);
+    : shortAddress(address);
 
-  const buttonTitle = connectionError ?? (hasChainMismatch ? tWallet("wrongNetwork", { chain: TARGET_CHAIN_NAME }) : undefined);
-  const explorerUrl = address && TARGET_CHAIN.blockExplorers?.default?.url
-    ? `${TARGET_CHAIN.blockExplorers.default.url.replace(/\/$/, "")}/address/${address}`
+  const buttonTitle = connectionError ?? (hasUnsupportedChain ? tWallet("statusWrongNetwork") : activeChain?.name);
+  const explorerUrl = address && activeChain?.blockExplorers?.default?.url
+    ? `${activeChain.blockExplorers.default.url.replace(/\/$/, "")}/address/${address}`
     : null;
   const isButtonDisabled = isConnectPending || isSwitchPending || isDisconnectPending || (!isConnected && !modalReady && !injectedConnector);
 
@@ -164,7 +153,7 @@ function WalletConnectionWidgetContent({
         type="button"
         className={`appHeaderWalletTrigger ${
           isConnected
-            ? hasChainMismatch
+            ? hasUnsupportedChain
               ? "appHeaderWalletButtonWarning"
               : "appHeaderWalletButtonConnected"
             : ""
@@ -173,12 +162,12 @@ function WalletConnectionWidgetContent({
         aria-label={buttonLabel}
         onClick={() => void handlePrimaryAction()}
         disabled={isButtonDisabled}
-        aria-haspopup={(isConnected && !hasChainMismatch) || connectionError ? "dialog" : undefined}
-        aria-expanded={(isConnected && !hasChainMismatch) || connectionError ? menuOpen : undefined}
+        aria-haspopup={isConnected || connectionError ? "dialog" : undefined}
+        aria-expanded={isConnected || connectionError ? menuOpen : undefined}
       >
         <span className="appHeaderWalletIcon" aria-hidden="true"><AppIcon name="wallet" /></span>
         <span className="appHeaderWalletTriggerLabel">{buttonLabel}</span>
-        {isConnected && !hasChainMismatch ? (
+        {isConnected ? (
           <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
         ) : null}
       </button>
@@ -207,8 +196,8 @@ function WalletConnectionWidgetContent({
         >
           <div className="appHeaderMenuTitleRow">
             <div className="appHeaderMenuTitle">{tWallet("walletTitle")}</div>
-            <span className={`badge ${hasChainMismatch ? "badgeWarn" : "badgeOk"}`}>
-              {hasChainMismatch ? tWallet("statusWrongNetwork") : tWallet("statusConnected")}
+            <span className={`badge ${hasUnsupportedChain ? "badgeWarn" : "badgeOk"}`}>
+              {hasUnsupportedChain ? tWallet("statusWrongNetwork") : tWallet("statusConnected")}
             </span>
           </div>
           <div className="appHeaderWalletPanelMeta">
@@ -228,7 +217,7 @@ function WalletConnectionWidgetContent({
           </div>
           <div className="appHeaderWalletPanelMeta">
             <div className="appHeaderWalletPanelLabel">{tWallet("chain")}</div>
-            <div className="appHeaderWalletPanelValue">{hasChainMismatch ? `${chainId} -> ${TARGET_CHAIN_NAME}` : TARGET_CHAIN_NAME}</div>
+            <div className="appHeaderWalletPanelValue">{activeChain?.name ?? chainId ?? tWallet("statusWrongNetwork")}</div>
           </div>
           {explorerUrl ? (
             <a
@@ -243,17 +232,22 @@ function WalletConnectionWidgetContent({
               <span className="appHeaderWalletPanelLink">{tWallet("explorer")}</span>
             </a>
           ) : null}
-          {hasChainMismatch ? (
-            <button
-              type="button"
-              className="appHeaderMenuLink"
-              onClick={() => void handleSwitchFromMenu()}
-              disabled={isSwitchPending}
-            >
-              <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="switch" /></span>
-              <span>{isSwitchPending ? tWallet("statusSwitching") : tWallet("switchToHyperEvm")}</span>
-            </button>
-          ) : null}
+          {HEADER_SWITCH_CHAINS.map((chain) => {
+            const isCurrent = chain.id === chainId;
+            return (
+              <button
+                type="button"
+                className="appHeaderMenuLink"
+                key={chain.id}
+                onClick={() => void handleSwitchFromMenu(chain.id)}
+                disabled={isSwitchPending || isCurrent}
+              >
+                <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="switch" /></span>
+                <span>{isCurrent ? chain.name : tWallet("switchNetwork", { chain: chain.name })}</span>
+                {isCurrent ? <span className="badge badgeOk">{tWallet("statusConnected")}</span> : null}
+              </button>
+            );
+          })}
           <button
             type="button"
             className="appHeaderMenuLink appHeaderMenuLinkDanger"

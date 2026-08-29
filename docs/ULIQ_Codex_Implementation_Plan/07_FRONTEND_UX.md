@@ -19,6 +19,31 @@
 
 Admin Navigation erhält einen getrennten ULIQ-/Token-Operations-Eintrag.
 
+Die Routen sind eigenständige Produktbereiche und keine identischen Spiegel der Gesamtseite. `/uliq` zeigt eine kompakte Zusammenfassung, den kanonisch priorisierten nächsten Schritt und die letzten walletbezogenen Aktivitäten. Kauf-, Claim- und Lock-Formulare liegen ausschließlich in ihrem jeweiligen Bereich. Verborgene Deep Links leiten auf die Overview zurück.
+
+## Lifecycle Visibility
+
+- Purchase Controls existieren ausschließlich für eine konfigurierte Runde im State `ACTIVE`; nach Sale-Ende werden sie aus dem DOM entfernt.
+- Die aktuelle Konfiguration bildet ausschließlich `Round 1` ab. `Round 2` darf erst mit separat verifizierter Contract-/Zeit-/Cap-Konfiguration sichtbar werden.
+- Presale bleibt nach Sale-Ende für Purchase-Settlement, Historie und Vesting-Kontext sichtbar.
+- Presale wird erst verborgen, wenn alle konfigurierten Runden terminal, Vesting beendet, `unreleased == 0`, `claimable == 0` und keine pending/review-required Purchases vorhanden sind.
+- Vesting wird nach vollständiger Freigabe ohne pending Claim verborgen; Locking bleibt als eigenständiger Utility-Bereich verfügbar.
+- Die Overview zeigt genau eine priorisierte Next Action: Reconciliation vor Settlement, Settlement vor Claim, Claim vor aktivem Kauf und Kauf vor Lock-Einrichtung.
+
+## Recent Activity
+
+- ausschließlich kanonische `OnchainIndexedEvent`-Daten der serverseitig verknüpften Wallet.
+- Reihenfolge nach Onchain-Blockzeit, Blocknummer und Log Index; Tx-Link bleibt erhalten.
+- Events ohne persistierten Block-Timestamp erzeugen `partial: true` und niemals erfundene Datumswerte.
+- Receipt-first Purchase Tracking bleibt als vorläufige nächste Aktion sichtbar und wird nicht als finalisiertes kanonisches Event ausgegeben.
+
+## Spätere DEX-/Uniswap-Integration
+
+- Ein in-app Swap ist ein separates, nachgelagertes Gate und kein Teil des Presale-Redesigns.
+- Vor Aktivierung werden Chain, Router-/Permit2-Adressen, ULIQ/USDC-Pool, Fee Tier, Quote-/Slippage-Policy, Legal Copy und Analytics separat verifiziert.
+- Die UI erhält erst danach einen eigenen Swap-Bereich; Presale-Kauf und DEX-Swap bleiben fachlich und in der Activity klar getrennte Transaktionstypen.
+- SDK-/Router-Unterstützung ist keine Release-Freigabe und ersetzt weder Pool-Readiness noch Simulation, Wallet-Bestätigung, Receipt, Finalität oder Indexer-Reconciliation.
+
 ## ULIQ Overview
 
 Anzeigen:

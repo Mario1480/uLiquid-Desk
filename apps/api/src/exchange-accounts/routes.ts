@@ -6,6 +6,7 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { type syncExchangeAccount, ExchangeSyncError } from "../exchange-sync.js";
 import {
   createPerpExecutionAdapter,
+  SYSTEM_BINANCE_PUBLIC_MARKET_DATA_ID,
   type PerpExecutionAdapter,
   type TradingAccount
 } from "../trading.js";
@@ -29,6 +30,7 @@ type ExchangeAccountSecretsLike = {
   apiKeyEnc: string;
   apiSecretEnc: string;
   passphraseEnc: string | null;
+  systemKey?: string | null;
 };
 
 function normalizeAddress(value: string | null | undefined): string | null {
@@ -320,12 +322,44 @@ export type RegisterExchangeAccountRoutesDeps = {
     }
   ): express.Response;
   sendManualTradingError(res: express.Response, error: unknown): express.Response;
+  ensureDefaultPaperTradingAccount(userId: string): Promise<{
+    id: string;
+    exchange: "paper";
+    label: string;
+    systemKey: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
 };
 
 export function registerExchangeAccountRoutes(
   app: express.Express,
   deps: RegisterExchangeAccountRoutesDeps
 ) {
+  app.post("/exchange-accounts/default-paper", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
+    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "product.paper_trading")) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.paper_trading",
+        currentPlan: capabilityContext.plan,
+        legacyCode: "paper_trading_not_available"
+      });
+    }
+    const account = await deps.ensureDefaultPaperTradingAccount(user.id);
+    return res.json({
+      id: account.id,
+      exchange: account.exchange,
+      label: account.label,
+      systemManaged: true,
+      marketDataExchangeAccountId: SYSTEM_BINANCE_PUBLIC_MARKET_DATA_ID,
+      marketDataExchange: "binance",
+      marketDataLabel: "Binance Public Data",
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt
+    });
+  });
+
   app.get("/exchange-accounts/assets", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = exchangeAccountAssetsQuerySchema.safeParse(req.query ?? {});
@@ -408,7 +442,13 @@ export function registerExchangeAccountRoutes(
 
         if (supportsSpot) {
           const client = spotClientFactory(resolved.marketDataAccount, "/exchange-accounts/assets");
-          const balanceRows = await client.getBalances();
+          const balanceRows = selectedExchange === "paper" && Boolean(resolved.selectedAccount.systemKey)
+            ? await deps.getPaperSpotAccountState(resolved.selectedAccount, client).then((paperState) => [{
+                asset: quoteAsset,
+                available: paperState.availableMargin ?? paperState.equity ?? 0,
+                locked: 0
+              }])
+            : await client.getBalances();
           const normalized = balanceRows
             .map((balanceRow) => normalizeSpotBalanceRow(balanceRow))
             .filter((asset): asset is Omit<AccountAssetBalance, "approxUsd" | "quoteSymbol"> => Boolean(asset))
@@ -579,21 +619,29 @@ export function registerExchangeAccountRoutes(
       let signingAddress: string | null = null;
       let readAddress: string | null = null;
       let readAddressSource: "wallet" | "account_or_vault" | null = null;
+      const exchange = deps.normalizeExchangeValue(String(row.exchange ?? ""));
       try {
-        const apiKey = deps.decryptSecret(row.apiKeyEnc);
-        apiKeyMasked = deps.maskSecret(apiKey);
-        if (deps.normalizeExchangeValue(String(row.exchange ?? "")) === "hyperliquid") {
+        if (exchange === "paper") {
+          apiKeyMasked = "paper";
+        } else {
+          const apiKey = deps.decryptSecret(row.apiKeyEnc);
+          apiKeyMasked = deps.maskSecret(apiKey);
+          if (exchange === "hyperliquid") {
           signingAddress = normalizeAddress(apiKey);
           const passphrase = row.passphraseEnc ? deps.decryptSecret(row.passphraseEnc) : null;
           readAddress = normalizeAddress(passphrase) ?? signingAddress;
           readAddressSource = normalizeAddress(passphrase) ? "account_or_vault" : signingAddress ? "wallet" : null;
+          }
         }
       } catch {
         apiKeyMasked = "****";
       }
       const linkedMarketDataId = paperBindings[row.id] ?? null;
-      const linkedMarketData = linkedMarketDataId ? linkedById.get(linkedMarketDataId) ?? null : null;
-      const exchange = deps.normalizeExchangeValue(String(row.exchange ?? ""));
+      const linkedMarketData = linkedMarketDataId === SYSTEM_BINANCE_PUBLIC_MARKET_DATA_ID
+        ? { exchange: "binance", label: "Binance Public Data" }
+        : linkedMarketDataId
+          ? linkedById.get(linkedMarketDataId) ?? null
+          : null;
       const marketDataExchange = linkedMarketData?.exchange ?? exchange;
       return {
         id: row.id,
@@ -624,6 +672,7 @@ export function registerExchangeAccountRoutes(
         signingAddress,
         readAddress,
         readAddressSource,
+        systemManaged: Boolean(row.systemKey),
         ...deriveHyperliquidCredentialExpiryState({
           exchange: row.exchange,
           credentialsRotatedAt: row.credentialsRotatedAt,
@@ -767,11 +816,15 @@ export function registerExchangeAccountRoutes(
         label: true,
         apiKeyEnc: true,
         apiSecretEnc: true,
-        passphraseEnc: true
+        passphraseEnc: true,
+        systemKey: true
       }
     });
     if (!existing) {
       return res.status(404).json({ error: "exchange_account_not_found" });
+    }
+    if (existing.systemKey) {
+      return res.status(403).json({ error: "system_managed_exchange_account" });
     }
 
     const requestedExchange = deps.normalizeExchangeValue(existing.exchange);
@@ -884,6 +937,9 @@ export function registerExchangeAccountRoutes(
     const id = readRouteParam(req, "id");
     const account = await deps.db.exchangeAccount.findFirst({ where: { id, userId: user.id } });
     if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
+    if (account.systemKey) {
+      return res.status(403).json({ error: "system_managed_exchange_account" });
+    }
 
     const linkedBots = await deps.db.bot.count({ where: { userId: user.id, exchangeAccountId: id } });
     if (linkedBots > 0) {

@@ -149,10 +149,16 @@ export default function AppHeader({
           tradingDesk: accessResult.value.visibility.tradingDesk !== false,
           bots: accessResult.value.visibility.bots !== false,
           gridBots: accessResult.value.visibility.gridBots !== false,
+          agentChat: accessResult.value.visibility.agentChat !== false,
           predictionsDashboard: accessResult.value.visibility.predictionsDashboard !== false,
+          marketIntelligence: accessResult.value.visibility.marketIntelligence !== false,
           economicCalendar: accessResult.value.visibility.economicCalendar !== false,
           news: accessResult.value.visibility.news !== false,
-          strategy: accessResult.value.visibility.strategy !== false
+          strategy: accessResult.value.visibility.strategy !== false,
+          accounts: accessResult.value.visibility.accounts !== false,
+          uliq: accessResult.value.visibility.uliq !== false,
+          walletFunding: accessResult.value.visibility.walletFunding !== false,
+          vaults: accessResult.value.visibility.vaults !== false
         });
       } else {
         setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
@@ -236,7 +242,6 @@ export default function AppHeader({
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
     const aiPredictionBuilderEnabled = isProductFeatureAllowed(featureGates, "ai_prediction_builder") || hasPlatformAdminAccess;
     const aiAgentEnabled = isProductFeatureAllowed(featureGates, "ai_agent_chat") || hasPlatformAdminAccess;
-    const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     if (visibility.tradingDesk) {
       items.push({ key: "trade", label: tNav("manualTrading"), href: withLocalePath("/trade", locale) });
@@ -250,11 +255,14 @@ export default function AppHeader({
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
     }
-    if (aiAgentEnabled) {
+    if (visibility.agentChat && aiAgentEnabled) {
       items.push({ key: "agent-chat", label: tNav("agentChat"), href: withLocalePath("/agent-chat", locale) });
     }
     if (visibility.strategy && aiPredictionBuilderEnabled) {
       items.push({ key: "prediction-builder", label: tNav("predictionBuilder"), href: withLocalePath("/strategies", locale) });
+    }
+    if (visibility.marketIntelligence) {
+      items.push({ key: "market-intelligence", label: tNav("marketIntelligence"), href: withLocalePath("/market-intelligence", locale) });
     }
     if (visibility.economicCalendar) {
       items.push({ key: "calendar", label: tNav("calendar"), href: withLocalePath("/calendar", locale) });
@@ -263,11 +271,20 @@ export default function AppHeader({
       items.push({ key: "news", label: tNav("news"), href: withLocalePath("/news", locale) });
     }
 
-    items.push({ key: "accounts", label: tNav("accounts"), href: withLocalePath("/accounts", locale) });
-    items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
-    items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
+    if (visibility.accounts) {
+      items.push({ key: "accounts", label: tNav("accounts"), href: withLocalePath("/accounts", locale) });
+    }
+    if (visibility.uliq && process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true") {
+      items.push({ key: "uliq", label: tNav("uliq"), href: withLocalePath("/uliq", locale) });
+    }
+    if (visibility.walletFunding) {
+      items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
+    }
+    if (visibility.vaults) {
+      items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
+    }
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
-    if (hasPlatformAdminAccess && adminEnabled) {
+    if (hasPlatformAdminAccess) {
       items.push({ key: "admin", label: tNav("admin"), href: withLocalePath("/admin", locale) });
     }
     items.push({ key: "help", label: tNav("help"), href: withLocalePath("/help", locale) });
@@ -275,14 +292,16 @@ export default function AppHeader({
   }, [featureGates, hasPlatformAdminAccess, locale, tNav, visibility]);
 
   const username = useMemo(() => {
+    const email = userEmail.trim();
+    if (email) {
+      const at = email.indexOf("@");
+      return at > 0 ? email.slice(0, at) : email;
+    }
     const wallet = userWalletAddress.trim();
     if (/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
       return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
     }
-    const email = userEmail.trim();
-    if (!email) return tHeader("userFallback");
-    const at = email.indexOf("@");
-    return at > 0 ? email.slice(0, at) : email;
+    return tHeader("userFallback");
   }, [tHeader, userEmail, userWalletAddress]);
 
   const userSubtitle = useMemo(() => {

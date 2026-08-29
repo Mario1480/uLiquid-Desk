@@ -20,20 +20,23 @@ export type RegisterSystemRoutesDeps = {
   marketIntelligenceRefreshJob: { getStatus(): unknown };
   economicCalendarDailyTelegramJob: { getStatus(): unknown };
   requireSuperadmin(res: express.Response): Promise<boolean>;
+  getTrafficControlHealth(): Promise<unknown>;
 };
 
 async function buildHealthDetails(deps: RegisterSystemRoutesDeps) {
-  const [vaultExecutionMode, vaultSafety] = await Promise.all([
+  const [vaultExecutionMode, vaultSafety, trafficControl] = await Promise.all([
     deps.getVaultExecutionModeSettings(deps.db).catch(() => ({
       mode: "offchain_shadow"
     })),
-    deps.getVaultSafetyControlsSettings().catch(() => deps.parseVaultSafetyControls(null))
+    deps.getVaultSafetyControlsSettings().catch(() => deps.parseVaultSafetyControls(null)),
+    deps.getTrafficControlHealth().catch(() => ({ store: "unknown" }))
   ]);
   return {
     ok: true,
     service: "api",
     vaultExecutionMode: vaultExecutionMode.mode,
     vaultSafety,
+    trafficControl,
     jobs: {
       vaultAccounting: deps.vaultAccountingJob.getStatus(),
       botVaultRisk: deps.botVaultRiskJob.getStatus(),

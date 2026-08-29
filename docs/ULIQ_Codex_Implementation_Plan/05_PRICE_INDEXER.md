@@ -37,6 +37,9 @@ Nur der aktive Lease Owner darf einen Scope vorziehen. Lease Acquisition und Cur
 - Domain-Projektionen verwenden eigene idempotente Purchase-/Lock-/Vesting-IDs.
 - ein Event Batch und seine Domain-Updates werden atomar oder replaybar verarbeitet.
 - erneut gelieferte Logs sind No-Ops, solange sie zum selben canonical Block gehören.
+- `blockTimestamp` wird als nullable Onchain-Zeit am kanonischen Event persistiert und für die Activity-Sortierung verwendet.
+- neue Indexer-Batches schreiben den Timestamp direkt; historische Nullwerte werden über ein idempotentes, blockhash-validierendes Backfill ergänzt.
+- bis zum Backfill bleiben fehlende Zeitwerte sichtbar als partieller Verlauf statt über `createdAt` oder erfundene Daten ersetzt zu werden.
 
 ## Confirmations und Reorg Handling
 

@@ -57,6 +57,33 @@ function createDb() {
   };
 }
 
+test("ULIQ rounds endpoint exposes only the configured Round 1", async () => {
+  const values: Record<string, bigint> = {
+    state: 2n,
+    saleStart: 1n,
+    saleEnd: 2n,
+    withdrawalPeriodSeconds: 3_600n,
+    dexLaunchTimestamp: 0n,
+    hardCapUsdcRaw: 120_000_000_000n,
+    totalRaisedUsdcRaw: 1_000_000n,
+    totalSoldUliqRaw: 1_000_000_000_000_000_000n,
+    pendingAllocationUliqRaw: 0n,
+    pendingPurchaseCount: 0n,
+    maximumPurchasableUsdcRaw: 119_999_000_000n,
+    balanceOf: 10n
+  };
+  const client = {
+    getBlock: async () => ({ number: 123n, hash: BLOCK_HASH, timestamp: 1_787_418_172n }),
+    readContract: async (request: { functionName: string }) => values[request.functionName] ?? 0n
+  };
+  const service = new UliqPresaleService(createDb(), config, { primary: client, secondary: client } as any);
+  const result = await service.getRounds();
+  assert.equal(result.currentRoundId, "round-1");
+  assert.equal(result.rounds.length, 1);
+  assert.equal(result.rounds[0]?.number, 1);
+  assert.equal(result.rounds[0]?.purchaseEnabled, true);
+});
+
 test("ULIQ purchase quote and preparation remain disabled until the sale is ACTIVE", async () => {
   const ready = new UliqPresaleService(createDb(), config, createRpc(1n));
   await assert.rejects(() => ready.quotePurchase("100"), /uliq_sale_not_active/);

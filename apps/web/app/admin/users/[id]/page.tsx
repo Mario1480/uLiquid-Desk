@@ -25,6 +25,14 @@ type UserDetailResponse = {
   updatedAt: string | null;
   lastLoginAt: string | null;
   lastActiveAt: string | null;
+  commercialPlan: { plan: string; planValidUntil: string | null };
+  manualPlanOverride: {
+    plan: "pro" | "premium";
+    validUntil: string;
+    reason: string;
+    active: boolean;
+  } | null;
+  effectivePlan: { plan: string; planValidUntil: string | null };
   legalAcknowledgements: Array<{
     id: string;
     version: string;
@@ -161,6 +169,24 @@ export default function AdminUserDetailPage() {
   const [affiliateDraftFeeRatePct, setAffiliateDraftFeeRatePct] = useState("");
   const [affiliateDraftReason, setAffiliateDraftReason] = useState("");
   const [submittingAffiliate, setSubmittingAffiliate] = useState(false);
+  const [planDraft, setPlanDraft] = useState<"pro" | "premium">("pro");
+  const [planValidUntil, setPlanValidUntil] = useState("");
+  const [planReason, setPlanReason] = useState("");
+  const [submittingPlan, setSubmittingPlan] = useState(false);
+  const [confirmPlanRevokeOpen, setConfirmPlanRevokeOpen] = useState(false);
+
+  function addMonthsDateValue(months: number): string {
+    const date = new Date();
+    date.setMonth(date.getMonth() + months);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function applyPlanDraft(next: UserDetailResponse) {
+    const current = next.manualPlanOverride;
+    setPlanDraft(current?.plan ?? "pro");
+    setPlanReason(current?.reason ?? "");
+    setPlanValidUntil(current?.validUntil ? current.validUntil.slice(0, 10) : addMonthsDateValue(1));
+  }
 
   async function loadUser() {
     if (!userId) return;
@@ -172,6 +198,7 @@ export default function AdminUserDetailPage() {
         apiGet<UserAffiliateDetailResponse>(`/admin/users/${userId}/affiliate`)
       ]);
       setData(next);
+      applyPlanDraft(next);
       setAffiliate(nextAffiliate);
       setAffiliateDraftFeeRatePct(nextAffiliate.override ? String(nextAffiliate.override.feeRatePct) : "");
       setAffiliateDraftReason(nextAffiliate.override?.reason ?? "");
@@ -199,6 +226,7 @@ export default function AdminUserDetailPage() {
         ]);
         if (!active) return;
         setData(next);
+        applyPlanDraft(next);
         setAffiliate(nextAffiliate);
         setAffiliateDraftFeeRatePct(nextAffiliate.override ? String(nextAffiliate.override.feeRatePct) : "");
         setAffiliateDraftReason(nextAffiliate.override?.reason ?? "");
@@ -256,6 +284,47 @@ export default function AdminUserDetailPage() {
       setError(adminErrMsg(mutationError));
     } finally {
       setSubmittingAccess(false);
+    }
+  }
+
+  async function savePlanOverride(event: React.FormEvent) {
+    event.preventDefault();
+    if (!data || !planReason.trim() || !planValidUntil) return;
+    setSubmittingPlan(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPut(`/admin/users/${data.id}/plan-override`, {
+        plan: planDraft,
+        validUntil: new Date(`${planValidUntil}T23:59:59.999Z`).toISOString(),
+        reason: planReason.trim()
+      });
+      setNotice(`${planDraft === "premium" ? "Premium" : "Pro"} override saved.`);
+      await loadUser();
+    } catch (mutationError) {
+      setError(adminErrMsg(mutationError));
+    } finally {
+      setSubmittingPlan(false);
+    }
+  }
+
+  async function revokePlanOverride() {
+    if (!data || !planReason.trim()) return;
+    setConfirmPlanRevokeOpen(false);
+    setSubmittingPlan(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPut(`/admin/users/${data.id}/plan-override`, {
+        plan: null,
+        reason: planReason.trim()
+      });
+      setNotice("Manual plan override revoked; the commercial plan is effective again.");
+      await loadUser();
+    } catch (mutationError) {
+      setError(adminErrMsg(mutationError));
+    } finally {
+      setSubmittingPlan(false);
     }
   }
 
@@ -465,20 +534,59 @@ export default function AdminUserDetailPage() {
             </AdminDetailSection>
 
             <AdminDetailSection title="License" description="Effective plan, operational verification state and current subscription posture.">
-              {data.license ? (
+              <div className="adminListStack">
                 <div className="adminKeyValueList">
-                  <div className="adminKeyValueRow"><span>Plan</span><strong>{data.license.effectivePlan}</strong></div>
-                  <div className="adminKeyValueRow"><span>Status</span><AdminStatusBadge value={data.license.derivedStatus} /></div>
-                  <div className="adminKeyValueRow"><span>Valid Until</span><strong>{formatDateTime(data.license.proValidUntil)}</strong></div>
-                  <div className="adminKeyValueRow"><span>Verification</span><strong>{data.license.operational?.verificationStatus ?? "unknown"}</strong></div>
-                  <div className="adminKeyValueRow"><span>Instance ID</span><strong>{data.license.operational?.instanceId ?? "—"}</strong></div>
-                  {data.license.operational?.verificationError ? (
-                    <div className="settingsAlert settingsAlertError">{data.license.operational.verificationError}</div>
+                  <div className="adminKeyValueRow"><span>Commercial Plan</span><strong>{data.commercialPlan.plan}</strong></div>
+                  <div className="adminKeyValueRow"><span>Manual Override</span><strong>{data.manualPlanOverride?.active ? data.manualPlanOverride.plan : "—"}</strong></div>
+                  <div className="adminKeyValueRow"><span>Effective Plan</span><AdminStatusBadge value={data.effectivePlan.plan} /></div>
+                  <div className="adminKeyValueRow"><span>Override Valid Until</span><strong>{formatDateTime(data.manualPlanOverride?.validUntil ?? null)}</strong></div>
+                  {data.license ? (
+                    <>
+                      <div className="adminKeyValueRow"><span>Status</span><AdminStatusBadge value={data.license.derivedStatus} /></div>
+                      <div className="adminKeyValueRow"><span>Commercial Valid Until</span><strong>{formatDateTime(data.license.proValidUntil)}</strong></div>
+                      <div className="adminKeyValueRow"><span>Verification</span><strong>{data.license.operational?.verificationStatus ?? "unknown"}</strong></div>
+                      <div className="adminKeyValueRow"><span>Instance ID</span><strong>{data.license.operational?.instanceId ?? "—"}</strong></div>
+                      {data.license.operational?.verificationError ? (
+                        <div className="settingsAlert settingsAlertError">{data.license.operational.verificationError}</div>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
-              ) : (
-                <AdminEmptyState title="No license data" description="This user does not currently have a subscription record." />
-              )}
+                <form className="adminInlineForm" onSubmit={savePlanOverride}>
+                  <div className="adminFilterGrid">
+                    <label className="settingsField">
+                      <span className="settingsFieldLabel">Manual plan</span>
+                      <select className="input" value={planDraft} onChange={(event) => setPlanDraft(event.target.value as "pro" | "premium")}>
+                        <option value="pro">Pro</option>
+                        <option value="premium">Premium</option>
+                      </select>
+                    </label>
+                    <label className="settingsField">
+                      <span className="settingsFieldLabel">Valid until</span>
+                      <input className="input" type="date" min={new Date().toISOString().slice(0, 10)} value={planValidUntil} onChange={(event) => setPlanValidUntil(event.target.value)} />
+                    </label>
+                    <label className="settingsField">
+                      <span className="settingsFieldLabel">Reason (required)</span>
+                      <input className="input" value={planReason} onChange={(event) => setPlanReason(event.target.value)} placeholder="Reason for manual access" />
+                    </label>
+                  </div>
+                  <div className="adminInlineActions">
+                    {[1, 3, 12].map((months) => (
+                      <button className="btn" type="button" key={months} onClick={() => setPlanValidUntil(addMonthsDateValue(months))}>
+                        {months} month{months === 1 ? "" : "s"}
+                      </button>
+                    ))}
+                    <AdminActionButton icon="save" variant="primary" type="submit" disabled={!planReason.trim() || !planValidUntil} loading={submittingPlan} loadingLabel="Saving...">
+                      Save override
+                    </AdminActionButton>
+                    {data.manualPlanOverride?.active ? (
+                      <AdminActionButton icon="remove" variant="danger" type="button" disabled={!planReason.trim()} onClick={() => setConfirmPlanRevokeOpen(true)}>
+                        Revoke override
+                      </AdminActionButton>
+                    ) : null}
+                  </div>
+                </form>
+              </div>
             </AdminDetailSection>
           </div>
 
@@ -615,6 +723,15 @@ export default function AdminUserDetailPage() {
         loading={submittingDelete}
         onCancel={() => setConfirmDeleteOpen(false)}
         onConfirm={() => void handleDeleteUser()}
+      />
+      <AdminConfirmDialog
+        open={confirmPlanRevokeOpen}
+        title="Revoke manual plan override"
+        description="The user immediately falls back to the active commercial plan, or Free when no paid plan exists."
+        confirmLabel="Revoke override"
+        loading={submittingPlan}
+        onCancel={() => setConfirmPlanRevokeOpen(false)}
+        onConfirm={() => void revokePlanOverride()}
       />
     </div>
   );

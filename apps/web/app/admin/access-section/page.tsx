@@ -1,16 +1,32 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { AppIcon, type AppIconName } from "../../components/AppIcon";
+import AdminPageHeader from "../_components/AdminPageHeader";
 import {
   DEFAULT_ACCESS_SECTION_MAINTENANCE,
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionAdminResponse,
   type AccessSectionVisibility
 } from "../../../src/access/accessSection";
+
+const VISIBILITY_ITEMS: Array<{ key: keyof AccessSectionVisibility; icon: AppIconName }> = [
+  { key: "tradingDesk", icon: "trading" },
+  { key: "bots", icon: "bots" },
+  { key: "gridBots", icon: "grid" },
+  { key: "agentChat", icon: "ai" },
+  { key: "predictionsDashboard", icon: "predictions" },
+  { key: "strategy", icon: "strategies" },
+  { key: "marketIntelligence", icon: "performance" },
+  { key: "economicCalendar", icon: "calendar" },
+  { key: "news", icon: "news" },
+  { key: "accounts", icon: "accounts" },
+  { key: "uliq", icon: "billing" },
+  { key: "walletFunding", icon: "wallet" },
+  { key: "vaults", icon: "vaults" }
+];
 
 function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
@@ -20,8 +36,6 @@ function errMsg(error: unknown): string {
 
 export default function AdminAccessSectionPage() {
   const t = useTranslations("admin.accessSection");
-  const tCommon = useTranslations("admin.common");
-  const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
@@ -91,9 +105,8 @@ export default function AdminAccessSectionPage() {
   }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">{t("subtitle")}</div>
+    <div className="adminPageStack">
+      <AdminPageHeader eyebrow="System" title={t("title")} description={t("subtitle")} />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
@@ -106,102 +119,52 @@ export default function AdminAccessSectionPage() {
       {isSuperadmin ? (
         <section className="card settingsSection">
           <div className="settingsSectionHeader">
-            <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
+            <h3 className="adminSubsectionTitle">{t("sectionTitle")}</h3>
             <div className="settingsSectionMeta">
               {t("sourceLabel")}: {settings?.source ?? "default"} · {t("lastUpdatedLabel")}:{" "}
               {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
             </div>
           </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <h4 style={{ margin: 0 }}>{t("maintenanceTitle")}</h4>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("maintenanceHint")}</div>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="billingFeatureToggleList">
+            <label className="billingFeatureToggle">
+              <span>
+                <strong><AppIcon name="settings" /> {t("maintenanceTitle")}</strong>
+                <small>{t("maintenanceHint")}</small>
+              </span>
               <input
                 type="checkbox"
                 checked={maintenanceEnabled}
                 onChange={(event) => setMaintenanceEnabled(event.target.checked)}
+                aria-label={t("maintenanceEnabledLabel")}
               />
-              <span>{t("maintenanceEnabledLabel")}</span>
             </label>
           </div>
 
-          <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-            <h4 style={{ margin: 0 }}>{t("visibilityTitle")}</h4>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={visibility.tradingDesk}
-                onChange={(event) =>
-                  setVisibility((prev) => ({ ...prev, tradingDesk: event.target.checked }))
-                }
-              />
-              <span>{t("visibility.tradingDesk")}</span>
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={visibility.bots}
-                onChange={(event) =>
-                  setVisibility((prev) => ({ ...prev, bots: event.target.checked }))
-                }
-              />
-              <span>{t("visibility.bots")}</span>
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={visibility.gridBots}
-                onChange={(event) =>
-                  setVisibility((prev) => ({ ...prev, gridBots: event.target.checked }))
-                }
-              />
-              <span>{t("visibility.gridBots")}</span>
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={visibility.predictionsDashboard}
-                onChange={(event) =>
-                  setVisibility((prev) => ({ ...prev, predictionsDashboard: event.target.checked }))
-                }
-              />
-              <span>{t("visibility.predictionsDashboard")}</span>
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={visibility.economicCalendar}
-                onChange={(event) =>
-                  setVisibility((prev) => ({ ...prev, economicCalendar: event.target.checked }))
-                }
-              />
-              <span>{t("visibility.economicCalendar")}</span>
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={visibility.news}
-                onChange={(event) =>
-                  setVisibility((prev) => ({ ...prev, news: event.target.checked }))
-                }
-              />
-              <span>{t("visibility.news")}</span>
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={visibility.strategy}
-                onChange={(event) =>
-                  setVisibility((prev) => ({ ...prev, strategy: event.target.checked }))
-                }
-              />
-              <span>{t("visibility.strategy")}</span>
-            </label>
+          <div className="settingsSectionHeader">
+            <h4 className="adminSubsectionTitle">{t("visibilityTitle")}</h4>
+          </div>
+          <div className="billingFeatureToggleList">
+            {VISIBILITY_ITEMS.map((item) => (
+              <label className="billingFeatureToggle" key={item.key}>
+                <span>
+                  <strong><AppIcon name={item.icon} /> {t(`visibility.${item.key}` as any)}</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={visibility[item.key]}
+                  onChange={(event) => setVisibility((prev) => ({
+                    ...prev,
+                    [item.key]: event.target.checked
+                  }))}
+                />
+              </label>
+            ))}
           </div>
 
-          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+          <div className="adminInlineActions">
             <button className="btn" type="button" onClick={loadDefaults}>
+              <AppIcon name="restore" />
               {t("loadDefaults")}
             </button>
             <button
@@ -210,6 +173,7 @@ export default function AdminAccessSectionPage() {
               onClick={() => void save()}
               disabled={saving}
             >
+              <AppIcon name="save" />
               {saving ? t("saving") : t("saveSettings")}
             </button>
           </div>

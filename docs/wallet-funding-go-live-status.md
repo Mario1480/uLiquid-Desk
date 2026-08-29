@@ -70,4 +70,4 @@ sie die Rohfluesse ausserhalb des BotVault-Lifecycle absichern.
 
 - BotVault Follow-ups: `docs/botvault-go-live-followups.md`
 - GridBot Status: `docs/gridbot-go-live-status.md`
-- FundingVault Live-Start: `docs/tasks/2026-05-25-funding-vault-live-start.md`
+- FundingVault Live-Start: `docs/archive/tasks/2026-05-25-funding-vault-live-start.md`

@@ -67,3 +67,27 @@ uLiquid Desk is a trading and automation tool. Always review every order, fundin
 ## GitBook and GitHub
 
 This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.md` as the homepage, `docs/SUMMARY.md` as the navigation, and `.gitbook.yaml` in the repository root as the sync configuration.
+
+## Engineering and Operations
+
+- [Go-live master plan](go-live-master-plan.md)
+- [Go-live readiness follow-ups](go-live-readiness-followups.md)
+- [Release evidence matrix](release-evidence-matrix.md)
+- [Go-live and smoke tests](ops/go-live-and-smoke-tests.md)
+- [Runtime and deployment reference](reference/runtime-and-deployment.md)
+- [Internal documentation index](reference/internal-docs-index.md)
+
+## Archive
+
+Completed dated work records and historical implementation evidence live under [`archive/tasks`](archive/tasks/README.md). Archived evidence is retained for traceability and is not a statement of current runtime, deployment, or go-live status.
+
+Implementation plans remain in their feature area while any rollout, migration, deployment, legal, security, or production gate is open. They move to the archive only after the plan's completion status has been verified and its active conclusions have been transferred to the relevant reference or status document.
+
+## Documentation maintenance policy
+
+- Write repository documentation and READMEs in English.
+- Keep active operational truth in the relevant status, runbook, ADR, or reference document.
+- Use `docs/archive/tasks/YYYY-MM-DD-*.md` for completed task evidence.
+- Update inbound links and this index whenever documentation moves.
+- Preserve exact commands, identifiers, output, and quoted UI text in historical evidence.
+- Treat code/test, deployment/runtime, browser, transaction/finality, indexer, and reconciliation evidence as separate layers.

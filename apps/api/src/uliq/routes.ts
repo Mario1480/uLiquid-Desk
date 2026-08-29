@@ -6,6 +6,7 @@ import { UliqEntitlementService } from "./entitlement.service.js";
 import { mapUliqEntitlementForApi } from "./benefitReservation.service.js";
 import { UliqPresaleService } from "./presale.service.js";
 import { UliqPurchaseTrackingService } from "./purchaseTracking.service.js";
+import { UliqActivityService } from "./activity.service.js";
 
 const uint256Schema = z.string().trim().regex(/^(0|[1-9]\d*)$/).max(78);
 const quoteSchema = z.object({ requestedUsdcRaw: uint256Schema });
@@ -26,6 +27,10 @@ const purchaseIdSchema = z.object({ purchaseId: uint256Schema });
 const lockSchema = z.object({ amountRaw: uint256Schema, durationDays: z.union([z.literal(32), z.literal(185), z.literal(367)]) });
 const lockIdSchema = z.object({ lockId: uint256Schema, contractAddress: contractAddressSchema });
 const lockExtensionSchema = lockIdSchema.extend({ newUnlockAt: uint256Schema });
+const activityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(5),
+  cursor: z.string().trim().min(1).max(500).optional()
+});
 
 function mapError(error: unknown): { status: number; error: string } {
   const reason = error instanceof Error ? error.message : String(error);
@@ -50,6 +55,7 @@ export function registerUliqRoutes(app: express.Express, deps: {
   presaleService: UliqPresaleService;
   purchaseTrackingService: UliqPurchaseTrackingService;
   entitlementService: UliqEntitlementService;
+  activityService: UliqActivityService;
 }) {
   function allowed(flag: "presaleEnabled" | "lockingEnabled" | "enabled", res: express.Response): boolean {
     try {
@@ -69,6 +75,24 @@ export function registerUliqRoutes(app: express.Express, deps: {
     if (!allowed("presaleEnabled", res)) return;
     try { return res.json(await deps.presaleService.getOverview()); }
     catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
+  });
+
+  app.get("/uliq/presale/rounds", async (_req, res) => {
+    if (!allowed("presaleEnabled", res)) return;
+    try { return res.json(await deps.presaleService.getRounds()); }
+    catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
+  });
+
+  app.get("/uliq/activity", requireAuth, async (req, res) => {
+    if (!allowed("enabled", res)) return;
+    const parsed = activityQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+    try {
+      return res.json(await deps.activityService.listForUser({
+        userId: getUserFromLocals(res).id,
+        ...parsed.data
+      }));
+    } catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
   });
 
   app.get("/uliq/me", requireAuth, async (_req, res) => {

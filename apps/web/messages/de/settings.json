@@ -237,7 +237,8 @@
       "lastUsed": "Zuletzt genutzt",
       "equity": "Equity",
       "available": "Verfügbar",
-      "lastSyncError": "Letzter Sync-Fehler"
+      "lastSyncError": "Letzter Sync-Fehler",
+      "systemManaged": "Systemverwaltet"
     },
     "credential": {
       "healthy": "Gesund",

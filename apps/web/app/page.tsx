@@ -716,10 +716,16 @@ export default function Page() {
             tradingDesk: accessResult.value.visibility.tradingDesk !== false,
             bots: accessResult.value.visibility.bots !== false,
             gridBots: accessResult.value.visibility.gridBots !== false,
+            agentChat: accessResult.value.visibility.agentChat !== false,
             predictionsDashboard: accessResult.value.visibility.predictionsDashboard !== false,
+            marketIntelligence: accessResult.value.visibility.marketIntelligence !== false,
             economicCalendar: accessResult.value.visibility.economicCalendar !== false,
             news: accessResult.value.visibility.news !== false,
-            strategy: accessResult.value.visibility.strategy !== false
+            strategy: accessResult.value.visibility.strategy !== false,
+            accounts: accessResult.value.visibility.accounts !== false,
+            uliq: accessResult.value.visibility.uliq !== false,
+            walletFunding: accessResult.value.visibility.walletFunding !== false,
+            vaults: accessResult.value.visibility.vaults !== false
           });
         } else {
           setAccessVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
@@ -1389,13 +1395,15 @@ export default function Page() {
         <div className="card dashboardInsightCard dashboardNewsProCard dashboardWidgetCardFill">
           <div className="dashboardNewsProHead">
             <div className="dashboardNewsProTitle">{t("news.intelligenceTitle")}</div>
-            <Link href={withLocalePath("/market-intelligence", locale)} className="btn">
-              <AppIcon name="performance" />
-              {t("news.openIntelligence")}
-            </Link>
+            {accessVisibility.marketIntelligence ? (
+              <Link href={withLocalePath("/market-intelligence", locale)} className="btn">
+                <AppIcon name="performance" />
+                {t("news.openIntelligence")}
+              </Link>
+            ) : null}
           </div>
           <div className="dashboardWidgetScrollArea">
-            {marketSummary ? (
+            {accessVisibility.marketIntelligence && marketSummary ? (
               <div className="dashboardMarketSummaryStrip">
                 <span className="badge">{t("news.risk")}: {marketSummary.summary.overallRisk}</span>
                 <span className="badge">{t("news.tone")}: {marketSummary.summary.sentiment}</span>
@@ -1456,7 +1464,7 @@ export default function Page() {
       )
     },
     accounts: {
-      available: true,
+      available: accessVisibility.accounts,
       title: t("stats.exchangeAccounts"),
       render: () => (
         <div className="dashboardAccountsWidget dashboardWidgetScrollArea">
@@ -1795,7 +1803,7 @@ export default function Page() {
       )
     },
     wallet: {
-      available: true,
+      available: accessVisibility.walletFunding,
       title: t("walletCard.title"),
       render: () => <DashboardWalletCard />
     },

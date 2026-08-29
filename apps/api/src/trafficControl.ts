@@ -8,6 +8,7 @@ const RATE_LIMIT_MEMORY = new Map<string, { count: number; resetAt: number }>();
 const IDEMPOTENCY_MEMORY = new Map<string, { status: number; body: unknown; expiresAt: number }>();
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._~:-]{1,128}$/;
 let redisInitPromise: Promise<any | null> | null = null;
+let redisConnectionWarningLogged = false;
 
 function readMaxEntriesEnv(name: string, fallback: number): number {
   const parsed = Number(process.env[name] ?? "");
@@ -27,13 +28,39 @@ async function getRedis(): Promise<any | null> {
       const mod = await import("ioredis");
       const RedisCtor = (mod as any)?.default ?? mod;
       const client = new RedisCtor(redisUrl);
-      client.on("error", () => undefined);
+      client.on("error", (error: unknown) => {
+        if (redisConnectionWarningLogged) return;
+        redisConnectionWarningLogged = true;
+        logger.warn("api_traffic_control_redis_unavailable", {
+          production: process.env.NODE_ENV === "production",
+          error: String((error as any)?.message ?? error)
+        });
+      });
       return client;
     } catch {
       return null;
     }
   })();
   return redisInitPromise;
+}
+
+export async function getTrafficControlHealth(): Promise<{
+  store: "redis" | "memory";
+  redisConfigured: boolean;
+  redisStatus: string | null;
+  productionFallback: boolean;
+}> {
+  const redisConfigured = Boolean(
+    String(process.env.API_RATE_LIMIT_REDIS_URL ?? process.env.REDIS_URL ?? "").trim()
+  );
+  const redis = await getRedis();
+  const redisReady = redis?.status === "ready";
+  return {
+    store: redisReady ? "redis" : "memory",
+    redisConfigured,
+    redisStatus: redis && typeof redis.status === "string" ? redis.status : null,
+    productionFallback: process.env.NODE_ENV === "production" && !redisReady
+  };
 }
 
 function nowMs(): number {
@@ -99,14 +126,20 @@ sweepInterval.unref?.();
 async function incrementRateLimit(key: string, windowMs: number): Promise<{ count: number; resetAt: number; redis: boolean }> {
   const redis = await getRedis();
   const ttlSec = Math.max(1, Math.ceil(windowMs / 1000));
-  if (redis) {
-    const count = Number(await redis.incr(key));
-    if (count === 1) {
-      await redis.expire(key, ttlSec);
+  if (redis?.status === "ready") {
+    try {
+      const count = Number(await redis.incr(key));
+      if (count === 1) {
+        await redis.expire(key, ttlSec);
+      }
+      const ttl = Number(await redis.ttl(key));
+      const resetAt = nowMs() + Math.max(1, ttl) * 1000;
+      return { count, resetAt, redis: true };
+    } catch (error) {
+      logger.warn("api_rate_limit_redis_operation_failed", {
+        error: String((error as any)?.message ?? error)
+      });
     }
-    const ttl = Number(await redis.ttl(key));
-    const resetAt = nowMs() + Math.max(1, ttl) * 1000;
-    return { count, resetAt, redis: true };
   }
 
   const now = nowMs();

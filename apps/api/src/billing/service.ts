@@ -76,6 +76,20 @@ export type ResolvedEffectivePlan = {
   aiCreditsUsedLifetime: bigint;
   monthlyAiCreditsIncluded: bigint;
 };
+export type AdminPlanOverrideSnapshot = {
+  id: string;
+  userId: string;
+  plan: "pro" | "premium";
+  validUntil: string;
+  reason: string;
+  active: boolean;
+  grantedByUserId: string;
+  grantedAt: string;
+  revokedByUserId: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 export type BillingPackageKind = "plan" | "addon";
 export type BillingAddonType =
   | "running_bots"
@@ -1534,7 +1548,7 @@ export async function runTrackedWorkspaceEntitlementSync(params: {
   }
 }
 
-export async function resolveEffectivePlanForUser(userId: string): Promise<ResolvedEffectivePlan> {
+export async function resolveCommercialPlanForUser(userId: string): Promise<ResolvedEffectivePlan> {
   const now = new Date();
   let row = await getOrCreateSubscription(userId);
   let term = await db.subscriptionTerm.findFirst({
@@ -1635,6 +1649,123 @@ export async function resolveEffectivePlanForUser(userId: string): Promise<Resol
     aiCreditsUsedLifetime: toBigInt(row.aiCreditsUsedLifetime),
     monthlyAiCreditsIncluded: toBigInt(row.monthlyAiCreditsIncluded)
   };
+}
+
+function planRank(plan: EffectivePlan): number {
+  if (plan === "premium") return 2;
+  if (plan === "pro") return 1;
+  return 0;
+}
+
+function toAdminPlanOverrideSnapshot(row: any): AdminPlanOverrideSnapshot {
+  return {
+    id: String(row.id),
+    userId: String(row.userId),
+    plan: formatPlan(row.plan) === "premium" ? "premium" : "pro",
+    validUntil: row.validUntil.toISOString(),
+    reason: String(row.reason),
+    active: Boolean(row.active),
+    grantedByUserId: String(row.grantedByUserId),
+    grantedAt: row.grantedAt.toISOString(),
+    revokedByUserId: row.revokedByUserId ? String(row.revokedByUserId) : null,
+    revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+export async function getAdminPlanOverrideForUser(
+  userId: string,
+  options?: { includeInactive?: boolean; now?: Date }
+): Promise<AdminPlanOverrideSnapshot | null> {
+  const now = options?.now ?? new Date();
+  const row = await db.adminPlanOverride.findUnique({ where: { userId } });
+  if (!row) return null;
+  if (!options?.includeInactive && (!row.active || row.validUntil <= now)) return null;
+  const snapshot = toAdminPlanOverrideSnapshot(row);
+  return row.validUntil <= now ? { ...snapshot, active: false } : snapshot;
+}
+
+export async function setAdminPlanOverrideForUser(params: {
+  userId: string;
+  plan: "pro" | "premium";
+  validUntil: Date;
+  reason: string;
+  actorUserId: string;
+  now?: Date;
+}): Promise<AdminPlanOverrideSnapshot> {
+  const now = params.now ?? new Date();
+  const row = await db.adminPlanOverride.upsert({
+    where: { userId: params.userId },
+    update: {
+      plan: toStoredPlan(params.plan),
+      validUntil: params.validUntil,
+      reason: params.reason,
+      active: true,
+      grantedByUserId: params.actorUserId,
+      grantedAt: now,
+      revokedByUserId: null,
+      revokedAt: null
+    },
+    create: {
+      userId: params.userId,
+      plan: toStoredPlan(params.plan),
+      validUntil: params.validUntil,
+      reason: params.reason,
+      active: true,
+      grantedByUserId: params.actorUserId,
+      grantedAt: now
+    }
+  });
+  return toAdminPlanOverrideSnapshot(row);
+}
+
+export async function revokeAdminPlanOverrideForUser(params: {
+  userId: string;
+  reason: string;
+  actorUserId: string;
+  now?: Date;
+}): Promise<AdminPlanOverrideSnapshot | null> {
+  const existing = await db.adminPlanOverride.findUnique({ where: { userId: params.userId } });
+  if (!existing) return null;
+  const row = await db.adminPlanOverride.update({
+    where: { userId: params.userId },
+    data: {
+      active: false,
+      reason: params.reason,
+      revokedByUserId: params.actorUserId,
+      revokedAt: params.now ?? new Date()
+    }
+  });
+  return toAdminPlanOverrideSnapshot(row);
+}
+
+export function applyAdminPlanOverride(
+  commercial: ResolvedEffectivePlan,
+  override: AdminPlanOverrideSnapshot | null
+): ResolvedEffectivePlan {
+  if (!override || planRank(override.plan) <= planRank(commercial.plan)) return commercial;
+  const packageDefinition = canonicalPackageByCode(
+    override.plan === "premium" ? "premium_monthly" : "pro_monthly"
+  );
+  return {
+    ...commercial,
+    plan: override.plan,
+    status: "active",
+    planValidUntil: override.validUntil,
+    proValidUntil: override.validUntil,
+    maxExchangeAccounts: packageDefinition.maxExchangeAccounts,
+    maxRunningBots: packageDefinition.maxRunningBots ?? 0,
+    maxRunningPredictionsAi: packageDefinition.maxRunningPredictionsAi,
+    maxRunningPredictionsComposite: packageDefinition.maxRunningPredictionsComposite,
+    allowedExchanges: [...packageDefinition.allowedExchanges]
+  };
+}
+
+export async function resolveEffectivePlanForUser(userId: string): Promise<ResolvedEffectivePlan> {
+  const commercial = await resolveCommercialPlanForUser(userId);
+  const override = await getAdminPlanOverrideForUser(userId);
+  return applyAdminPlanOverride(commercial, override);
 }
 
 async function resolveActiveCapacityGrantDeltas(params: {
@@ -4891,6 +5022,59 @@ export async function runSubscriptionLifecycle(params?: {
   const limit = Math.max(1, Math.min(2_000, params?.limit ?? 500));
   const userFilter = params?.userId ? { userId: params.userId } : {};
   const touchedUsers = new Set<string>();
+  const expiredOverrides = await db.adminPlanOverride.findMany({
+    where: {
+      ...(params?.userId ? { userId: params.userId } : {}),
+      active: true,
+      validUntil: { lte: now }
+    },
+    select: {
+      id: true,
+      userId: true,
+      grantedByUserId: true,
+      plan: true,
+      validUntil: true
+    },
+    take: limit
+  });
+  for (const override of expiredOverrides) {
+    try {
+      const updated = await db.adminPlanOverride.updateMany({
+        where: { id: override.id, active: true, validUntil: { lte: now } },
+        data: { active: false, revokedAt: now }
+      });
+      if (updated.count > 0) {
+        touchedUsers.add(override.userId);
+        try {
+          await db.adminAuditEvent.create({
+            data: {
+              actorUserId: override.grantedByUserId,
+              action: "admin.user.plan_override_expired",
+              targetType: "user",
+              targetId: override.userId,
+              metadata: {
+                automatic: true,
+                plan: formatPlan(override.plan),
+                validUntil: override.validUntil.toISOString()
+              }
+            }
+          });
+        } catch (auditError) {
+          logger.warn("billing_admin_plan_override_expiry_audit_failed", {
+            overrideId: override.id,
+            userId: override.userId,
+            error: String((auditError as any)?.message ?? auditError)
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn("billing_admin_plan_override_expiry_failed", {
+        overrideId: override.id,
+        userId: override.userId,
+        error: String((error as any)?.message ?? error)
+      });
+    }
+  }
   const dueTerms = await db.subscriptionTerm.findMany({
     where: { ...userFilter, status: "SCHEDULED", startsAt: { lte: now } },
     select: { id: true, userId: true },
@@ -5028,9 +5212,12 @@ export async function runSubscriptionLifecycle(params?: {
         where: { userId },
         select: { effectivePlan: true }
       });
-      const plan = await synchronizeSubscriptionLifecycleForUser(userId, now);
-      if (formatPlan(before?.effectivePlan) !== "free" && plan === "free") downgraded += 1;
-      await syncWorkspaceEntitlementsWithRetryTracking({ userId, effectivePlan: plan });
+      const commercialPlan = await synchronizeSubscriptionLifecycleForUser(userId, now);
+      if (formatPlan(before?.effectivePlan) !== "free" && commercialPlan === "free") downgraded += 1;
+      const commercial = await resolveCommercialPlanForUser(userId);
+      const override = await getAdminPlanOverrideForUser(userId, { now });
+      const effective = applyAdminPlanOverride(commercial, override);
+      await syncWorkspaceEntitlementsWithRetryTracking({ userId, effectivePlan: effective.plan });
     } catch (error) {
       logger.warn("billing_subscription_user_sync_failed", {
         userId,

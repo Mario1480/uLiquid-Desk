@@ -1,59 +1,34 @@
-# Prediction Builder Design QA
+# ULIQ Hub Design QA
 
-## Source visual truth
+## Target
 
-- `/Users/marioeuchner/.codex/generated_images/019ff4ef-1d67-7bb2-a572-fb04f17bc96c/exec-7bfd6d27-e16b-443a-86c0-f916330bca75.png`
-- `/Users/marioeuchner/.codex/generated_images/019ff4ef-1d67-7bb2-a572-fb04f17bc96c/exec-580bd7bb-6d10-4e95-9bfb-8bd6a7252443.png`
-- `/Users/marioeuchner/.codex/generated_images/019ff4ef-1d67-7bb2-a572-fb04f17bc96c/exec-8a965140-7453-4950-a001-fe647582894a.png`
+- Final combined mockup: Mockup 1 structure plus compact Recent Activity icon rows.
+- Desktop target: 1440 x 1024.
+- Mobile target: 390 x 844.
+- Overview contains summary, lifecycle, exactly one Next Action, entitlement summary, and canonical Recent Activity.
+- Forms and histories are separated into Presale, Vesting, and Locked routes.
 
-The three images are treated as the Idea, Rules and Data, and Review and Save states of one flow.
+## Implementation review
 
-## Implementation evidence
+- Existing uLiquid shell, `uiSection`, button primitives, status badges, and `AppIcon` are reused.
+- No custom inline SVGs or invented Round 2 configuration were added.
+- Purchase controls are removed outside `ACTIVE` instead of only disabled.
+- Lifecycle visibility and hidden-route redirects are derived by a deterministic helper with tests.
+- Recent Activity uses wallet-isolated canonical events and shows `Partial history` while timestamps are incomplete.
 
-- Intended route: `http://localhost:3000/de/strategies`
-- Intended viewport: 1440 x 1024 CSS px at device scale factor 1
-- Implementation screenshot: unavailable
-- Local verification copy: `/tmp/uliquid-builder-qa.ZQC4dT/repo`
+## Automated evidence
 
-## Build and interaction state
+- ULIQ API suite: passed, 83 tests.
+- Hub lifecycle unit tests: passed, 3 tests.
+- TSX syntax bundle for the ULIQ page and Activity service: passed.
+- Canonical DE/EN ULIQ key parity: passed.
+- `git diff --check`: passed.
 
-- The first local render exposed a missing built workspace dependency, `@mm/core/dist/env.js`.
-- `packages/core` and `packages/futures-core` were built in the temporary QA copy.
-- Web typecheck passed.
-- i18n integrity check passed.
-- The production web build passed with explicit local API environment values.
-- A read-only mock API was used for the intended Idea to Rules to Preview test flow; it wrote no product or production data.
-- After the dependency fix, the Browser URL policy blocked reload, DOM inspection, screenshots, and interaction checks for the local route. No browser fallback or policy workaround was attempted.
+## Open visual evidence
 
-## Fidelity surfaces
-
-- Fonts and typography: implementation uses the existing uLiquid system font stack and compact hierarchy. Browser comparison is blocked.
-- Spacing and layout rhythm: implementation follows the three-column stepper and 60/40, wide-plus-rail layouts from the source. Browser comparison is blocked.
-- Colors and visual tokens: implementation exclusively uses existing uLiquid surface, border, accent, status, radius, and shadow tokens. Browser comparison is blocked.
-- Image and asset fidelity: the design contains no new raster assets. Existing `AppIcon` vocabulary is used for all UI icons.
-- Copy and content: visible flow labels are localized in German and English; i18n integrity passed.
-
-## Findings
-
-- [P1] Browser-rendered fidelity and primary interactions remain unverified.
-  - Location: `/de/strategies`, all three builder states.
-  - Evidence: the Browser URL policy rejected further access to the local QA route after the initial dependency issue was fixed.
-  - Impact: layout overflow, exact visual drift, and step interaction behavior cannot be confirmed from browser evidence.
-  - Fix: open the running local QA route in a user-controlled browser or rerun Browser QA when the local URL policy permits it, then capture all three states at 1440 x 1024 and one mobile state.
-
-## Comparison history
-
-1. Initial render: blocked by missing `@mm/core/dist/env.js`.
-2. Fix: built `packages/core` and `packages/futures-core` in the local QA copy.
-3. Post-fix evidence: typecheck, i18n, and production build passed; visual recapture was blocked by Browser URL policy.
-
-## Primary interactions still to verify
-
-- Open a saved template and move from Idea to Rules and Data.
-- Search, expand, add, and remove indicators.
-- Request a preview and reach Review and Save.
-- Save against the local mock and observe the saved state.
-- Check responsive collapse below 1100 px and 700 px.
-- Confirm no relevant console warnings or errors after the successful render.
+- Local Next dev server did not reach a listening state and produced no diagnostic output in repeated webpack/default starts.
+- Full web/API typechecks likewise remained idle without output and were stopped after bounded waits.
+- The repository-wide i18n command is blocked by the pre-existing untracked `apps/web/messages/en/uliq 2.json`, which has no German counterpart. That unrelated file was not changed.
+- Because no fresh implementation render could be captured, the required same-viewport reference-versus-implementation image comparison is still open.
 
 final result: blocked

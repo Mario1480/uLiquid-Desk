@@ -103,6 +103,9 @@ type RegisterPlatformAdminRoutesDeps = {
   getAccessSectionSettings(): Promise<any>;
   getServerInfoSettings(): Promise<any>;
   getBillingFeatureFlagsSettings(): Promise<any>;
+  getAdminPlanOverrideForUser(userId: string, options?: { includeInactive?: boolean }): Promise<any>;
+  resolveCommercialPlanForUser(userId: string): Promise<any>;
+  resolveEffectivePlanForUser(userId: string): Promise<any>;
 };
 
 type PaginationResult = {
@@ -115,6 +118,15 @@ type PaginationResult = {
 function roundMetric(value: number, decimals = 2): number {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
+}
+
+function serializeResolvedPlan(plan: any) {
+  return {
+    ...plan,
+    aiCreditBalance: plan.aiCreditBalance.toString(),
+    aiCreditsUsedLifetime: plan.aiCreditsUsedLifetime.toString(),
+    monthlyAiCreditsIncluded: plan.monthlyAiCreditsIncluded.toString()
+  };
 }
 
 function readRuntimeSystemStatus() {
@@ -819,12 +831,14 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
             select: {
               effectivePlan: true,
               status: true,
+              planValidUntil: true,
               proValidUntil: true,
               licenseOperationalState: {
                 select: { verificationStatus: true }
               }
             }
           },
+          adminPlanOverride: true,
           legalAcknowledgements: {
             select: {
               version: true,
@@ -861,6 +875,22 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         proValidUntil: isoOrNull(row.subscription?.proValidUntil),
         verificationStatus: row.subscription?.licenseOperationalState?.verificationStatus ?? null
       });
+      const storedCommercialPlan = String(row.subscription?.effectivePlan ?? "FREE").toLowerCase();
+      const commercialPlan = derivedLicenseStatus === "expired" || derivedLicenseStatus === "inactive"
+        ? "free"
+        : storedCommercialPlan;
+      const overrideActive = Boolean(
+        row.adminPlanOverride?.active
+        && row.adminPlanOverride?.validUntil instanceof Date
+        && row.adminPlanOverride.validUntil > now
+      );
+      const manualPlan = overrideActive
+        ? String(row.adminPlanOverride.plan).toLowerCase()
+        : null;
+      const effectivePlan = manualPlan === "premium"
+        || (manualPlan === "pro" && commercialPlan === "free")
+        ? manualPlan
+        : commercialPlan;
       return {
         id: row.id,
         email: row.email,
@@ -870,6 +900,28 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         workspaceCount: row._count?.workspaces ?? 0,
         botCount: row._count?.bots ?? 0,
         licenseStatus: derivedLicenseStatus,
+        commercialPlan: {
+          plan: commercialPlan,
+          validUntil: commercialPlan === "free"
+            ? null
+            : isoOrNull(row.subscription?.planValidUntil ?? row.subscription?.proValidUntil)
+        },
+        manualPlanOverride: row.adminPlanOverride
+          ? {
+              plan: String(row.adminPlanOverride.plan).toLowerCase(),
+              validUntil: isoOrNull(row.adminPlanOverride.validUntil),
+              reason: row.adminPlanOverride.reason,
+              active: overrideActive
+            }
+          : null,
+        effectivePlan: {
+          plan: effectivePlan,
+          validUntil: overrideActive && effectivePlan === manualPlan
+            ? isoOrNull(row.adminPlanOverride.validUntil)
+            : commercialPlan === "free"
+              ? null
+              : isoOrNull(row.subscription?.planValidUntil ?? row.subscription?.proValidUntil)
+        },
         lastLoginAt,
         lastActiveAt,
         createdAt: isoOrNull(row.createdAt),
@@ -987,7 +1039,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
     ]);
     if (!user) return res.status(404).json({ error: "not_found" });
 
-    const [recentAlerts, recentAdminAuditEvents, workspaceAuditEvents] = await Promise.all([
+    const [recentAlerts, recentAdminAuditEvents, workspaceAuditEvents, commercialPlan, effectivePlan, manualPlanOverride] = await Promise.all([
       deps.db.platformAlert.findMany({
         where: { userId: user.id },
         take: 10,
@@ -1042,7 +1094,10 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
           createdAt: true,
           workspace: { select: { id: true, name: true } }
         }
-      })
+      }),
+      deps.resolveCommercialPlanForUser(user.id),
+      deps.resolveEffectivePlanForUser(user.id),
+      deps.getAdminPlanOverrideForUser(user.id, { includeInactive: true })
     ]);
 
     const lastSession = Array.isArray(user.sessions) && user.sessions.length > 0 ? user.sessions[0] : null;
@@ -1060,6 +1115,9 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       updatedAt: isoOrNull(user.updatedAt),
       lastLoginAt,
       lastActiveAt,
+      commercialPlan: serializeResolvedPlan(commercialPlan),
+      manualPlanOverride,
+      effectivePlan: serializeResolvedPlan(effectivePlan),
       legalAcknowledgements: (user.legalAcknowledgements ?? []).map((acknowledgement: any) => ({
         id: acknowledgement.id,
         version: acknowledgement.version,

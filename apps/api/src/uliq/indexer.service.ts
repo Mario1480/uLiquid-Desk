@@ -654,6 +654,7 @@ export class UliqIndexerService {
             payload: {},
             canonicalStatus: "FINALIZED",
             confirmations: this.config.confirmations,
+            blockTimestamp: block.timestamp,
             confirmedAt: now,
             finalizedAt: now
           },
@@ -661,6 +662,7 @@ export class UliqIndexerService {
             blockHash: block.hash,
             parentBlockHash: block.parentHash,
             canonicalStatus: "FINALIZED",
+            blockTimestamp: block.timestamp,
             orphanedAt: null,
             finalizedAt: now
           }
@@ -691,6 +693,7 @@ export class UliqIndexerService {
             payload: decoded.args,
             canonicalStatus: "FINALIZED",
             confirmations: this.config.confirmations,
+            blockTimestamp: block.timestamp,
             confirmedAt: now,
             finalizedAt: now
           },
@@ -699,6 +702,7 @@ export class UliqIndexerService {
             parentBlockHash: block.parentHash,
             payload: decoded.args,
             canonicalStatus: "FINALIZED",
+            blockTimestamp: block.timestamp,
             orphanedAt: null,
             finalizedAt: now
           }

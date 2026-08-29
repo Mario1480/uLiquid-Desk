@@ -53,6 +53,8 @@
 - Billing-/AI-Discount UX.
 - Admin Health, Config und Safe Preparation.
 - DE/EN, mobile, responsive und Accessibility.
+- getrennte Overview-, Presale-, Vesting- und Locking-Routen mit lifecycle-gesteuerter Sichtbarkeit.
+- kanonische Recent Activity; vor Timestamp-Backfill ausdrücklich als partiell gekennzeichnet.
 
 ### Phase 7 – Arbitrum Testnet
 
@@ -352,7 +354,7 @@ Alle vier Receipts hatten Status `1`; ihre kanonischen Blockhashes stimmten beim
 
 Sourcify bestätigte für alle sechs Adressen sowohl Runtime- als auch Creation-Bytecode als `exact_match`.
 
-Die isolierte Staging-Runtime ist unter `staging.desk.uliquid.vip` und `api.staging.desk.uliquid.vip` aktiv. Beim ersten Backfill blockierte der Stage-2-Inventory-Transfer am Prisma-Decimal-String `1e+27`; Commit `04552d24` führt Datenbank-Decimals vor der `bigint`-Verarbeitung verlustfrei in ausgeschriebene Integer-Strings über. Nach dem API-only-Deploy rückte der committed Cursor von Block `300871778` zunächst auf `300872278` und damit über den letzten Stage-2-Block `300872135` vor; zwei weitere erfolgreiche Abschnitte brachten ihn auf `300873278`. `failure_count` fiel auf `0`, `last_error` und `next_retry_at` wurden geleert. Transfer `0xdc7e...c19d` und `SaleStateChanged` `0xbcfe...4339` sind `FINALIZED`; der initiale `10^27`-Lot weist nach dem Inventory-Transfer exakt `880000000000000000000000000` Raw Units Restbestand aus. Eine frische Reconciliation bei Block `300914114` war `OK` mit `0` Abweichungen; es bestand kein ULIQ-Alert. Der vollständige historische Catch-up lief zum Prüfzeitpunkt weiter und ist noch kein abgeschlossener Langlaufnachweis. Details: `docs/tasks/2026-08-22-uliq-staging-indexer-decimal-recovery.md`.
+Die isolierte Staging-Runtime ist unter `staging.desk.uliquid.vip` und `api.staging.desk.uliquid.vip` aktiv. Beim ersten Backfill blockierte der Stage-2-Inventory-Transfer am Prisma-Decimal-String `1e+27`; Commit `04552d24` führt Datenbank-Decimals vor der `bigint`-Verarbeitung verlustfrei in ausgeschriebene Integer-Strings über. Nach dem API-only-Deploy rückte der committed Cursor von Block `300871778` zunächst auf `300872278` und damit über den letzten Stage-2-Block `300872135` vor; zwei weitere erfolgreiche Abschnitte brachten ihn auf `300873278`. `failure_count` fiel auf `0`, `last_error` und `next_retry_at` wurden geleert. Transfer `0xdc7e...c19d` und `SaleStateChanged` `0xbcfe...4339` sind `FINALIZED`; der initiale `10^27`-Lot weist nach dem Inventory-Transfer exakt `880000000000000000000000000` Raw Units Restbestand aus. Eine frische Reconciliation bei Block `300914114` war `OK` mit `0` Abweichungen; es bestand kein ULIQ-Alert. Der vollständige historische Catch-up lief zum Prüfzeitpunkt weiter und ist noch kein abgeschlossener Langlaufnachweis. Details: `docs/archive/tasks/2026-08-22-uliq-staging-indexer-decimal-recovery.md`.
 
 Die öffentliche Presale-API und die authentifizierte ULIQ-Read-UI melden weiterhin `READY`, `0` Purchases und `120,000,000 ULIQ` Inventory. Noch offen: vollständiger Indexer-Catch-up, authentifizierte transaktionale Browser-E2E-Flows und die weiteren externen Release-Gates.
 

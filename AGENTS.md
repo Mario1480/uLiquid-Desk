@@ -1,261 +1,131 @@
 # uLiquid Desk Agent Project Guide
 
-Last updated: 2026-05-25
+Last updated: 2026-08-29
 
-Diese Datei ist eine Projektkarte fuer Codex-/Agenten-Arbeit in diesem Repository. Sie beschreibt, was uLiquid Desk ist, wie das Monorepo aufgebaut ist, wo zentrale Feature-Bereiche liegen und welche Checks vor Aenderungen sinnvoll sind.
+This file is the canonical repository guide for Codex and other engineering agents working in uLiquid Desk.
 
-## Grundregeln fuer Agenten
+## Core rules
 
-- Den User als `Mario` ansprechen.
-- Diese Datei ist die zentrale Agenten-Anweisung fuer das Repository.
-- `AGENDA.md` ist die Release-/Gate-Historie und nicht mit dieser Agenten-Datei zu verwechseln.
-- Vor Aenderungen kurz `git status --short --branch` pruefen und vorhandene fremde Aenderungen respektieren.
-- Unrelated Working-Tree-Aenderungen nicht anfassen, nicht zurueckdrehen und nicht mitformatieren.
-- Keine destruktiven Git-Befehle wie `git reset --hard`, `git checkout --` oder massenhaftes Loeschen verwenden, ausser Mario verlangt es eindeutig.
-- Keine echten Secrets, Private Keys, Tokens, Wallet-Seed-Phrases oder Production-Credentials in Code, Docs, Logs oder Commits schreiben.
-- Bei Unsicherheit lieber lokale Doku und Code lesen als Annahmen ueber kritische Flows zu treffen.
+- Address the user as `Mario`.
+- Communication with Mario may be in German. Repository documentation, READMEs, plans, ADRs, runbooks, task evidence, and new code comments must be written in English.
+- Preserve technical identifiers and quoted user-facing copy when translation would change behavior or historical evidence.
+- `AGENDA.md` contains release and gate history; it is not an agent instruction file.
+- Before changing files, run `git status --short --branch` and preserve unrelated worktree changes.
+- Do not revert, reformat, move, or include unrelated user changes.
+- Do not use destructive Git commands unless Mario explicitly requests them.
+- Never place real secrets, private keys, tokens, seed phrases, credentials, or production data in code, documentation, logs, or commits.
+- Prefer local documentation and code evidence over assumptions about security, trading, billing, or capital flows.
 
-## Projekt in Kurzform
+## Documentation policy
 
-uLiquid Desk ist eine multi-tenant Futures-Trading-Plattform mit Web-App, API, Runner-Worker, Exchange-Integrationen, AI-Predictions, Grid-Bots, BotVault/FundingVault-Onchain-Flows, Billing/Licensing und Admin-/Go-live-Operations.
+- English is the only language for new or materially updated repository documentation.
+- Keep active documents close to the feature they govern. Move completed implementation plans and historical task evidence to `docs/archive` only after verifying their status.
+- Do not archive a document merely because some checklist items are complete. Plans with open rollout, migration, deployment, legal, security, or production gates remain active.
+- Update inbound links and documentation indexes whenever a file moves.
+- Do not silently rewrite historical facts. Archived evidence may retain exact commands, identifiers, output, and quoted UI text.
+- Keep evidence layers explicit: code/tests, deployment/runtime, browser behavior, transaction receipt/finality, indexer state, and reconciliation are separate forms of evidence.
+- Put completed dated task evidence under `docs/archive/tasks/YYYY-MM-DD-*.md`. Keep active plans in the relevant feature area until completion.
+- Keep `docs/README.md` as the documentation index and maintenance policy. Keep `docs/SUMMARY.md` aligned with user-facing GitBook documentation.
 
-Kernfluss:
+## Project overview
 
-1. User nutzt die Next.js Web-App.
-2. Web-App spricht mit der Express API.
-3. API nutzt Prisma/Postgres, Redis, Exchange APIs, HyperEVM/Hyperliquid und interne Services.
-4. Runner verarbeitet Bot-Ausfuehrung, Grid-Order-Loop, Recovery und Reconciliation.
-5. Contracts unterstuetzen BotVault/FundingVault-Onchain-Funding, Claims, Close und Recovery.
+uLiquid Desk is a multi-tenant futures trading and automation platform with a Next.js web app, Express API, execution runner, exchange integrations, AI predictions, grid bots, BotVault/FundingVault onchain flows, billing and licensing, ULIQ testnet/staging functionality, and admin/go-live operations.
 
-## Monorepo Struktur
+Primary flow:
 
-- `apps/web`
-  Next.js Web-App. Enthalten sind App-Routes, Dashboard, Trading Desk, Bots, Grid Catalog, Predictions, Wallet/Funding, Admin UI, i18n, CSS und gemeinsame UI-Komponenten.
-- `apps/api`
-  Express API mit Auth, Admin, Billing, AI, Predictions, Trading, Exchange-Accounts, Vaults, Grid, Jobs, Telegram, Calendar, News und Prisma-Service-Logik.
-- `apps/runner`
-  Worker fuer Bot-Runtime, Grid-Execution, Prediction-Copier, Reconciliation, Recovery und Runtime-Monitoring.
-- `apps/py-strategy-service`
-  Python-Service fuer lokale/remote Strategy-Execution und Strategy-Registry.
-- `apps/quant-research`
-  Research-/Analysebereich fuer quantitative Experimente.
-- `packages/contracts`
-  Foundry Contracts und Deploy-Scripts, unter anderem BotVault/FundingVault relevante Solidity-Arbeit.
-- `packages/futures-exchange`
-  Exchange-Adapter und Futures-Exchange-Interfaces, unter anderem Bitget/Hyperliquid-Positionen, Orders, Funding und Transfers.
-- `packages/futures-core`
-  Gemeinsame Futures-Domain-Typen und Kernlogik.
-- `packages/futures-engine`
-  Trading-/Execution-Engine-Bausteine.
-- `packages/exchange`
-  Allgemeinere Exchange-Abstraktionen.
-- `packages/core`
-  Gemeinsame Core-Helfer, Lizenz-/HMAC-nahe Utilities und Shared Types.
-- `packages/db`
-  Datenbanknahe gemeinsame Utilities.
-- `packages/strategies`
-  Strategy-Typen, Registry- und Strategie-Helfer.
-- `packages/risk`
-  Risiko- und Guardrail-Logik.
-- `packages/orchestrator`
-  Orchestrierungsbausteine fuer Jobs/Bots/Runtime.
-- `packages/plugin-sdk`
-  Plugin-SDK und Typen, auch relevant fuer API/Runner-Typechecks.
-- `prisma`
-  Prisma Schema und Migrations. Neue persistierte Datenmodelle muessen hier sauber migriert werden.
-- `docs`
-  Go-live, Operations, Architektur, User Guide, CEX-Docs, Tasks und Referenzen.
-- `scripts`
-  Build, Deploy, VPS, Env-Sync, Regression und Qualitaets-Skripte.
-- `infra`
-  Infrastruktur- und Deployment-nahe Dateien.
+1. The user works in the Next.js web app.
+2. The web app calls the Express API.
+3. The API uses Prisma/PostgreSQL, Redis, exchange APIs, HyperEVM/Hyperliquid, and internal services.
+4. The runner handles bot execution, grid loops, recovery, and reconciliation.
+5. Contracts support BotVault/FundingVault funding, claims, close, and recovery.
 
-## Wichtige Web-Bereiche
+## Monorepo map
 
-- `apps/web/app/page.tsx`
-  Haupt-Dashboard.
-- `apps/web/app/trade/page.tsx`
-  Trading Desk, Orderticket, Account Summary, Positions-/Prefill-nahe UI.
-- `apps/web/app/positions` oder positionsnahe Komponenten
-  Positionsansichten, Risk-Felder wie Leverage, Margin, ROE, Liquidation.
-- `apps/web/app/bots`
-  Normale Bots, Bot-Details, Bot Settings.
-- `apps/web/app/bots/grid`
-  Laufende Grid-Bots und Grid Runtime UI.
-- `apps/web/app/bots/catalog`
-  GridBot-Katalog, Launch Drawer, Funding Source, BotVault/FundingVault Startflow.
-- `apps/web/app/predictions`
-  Prediction Dashboard, Auto-Predictions, AI/Local/Composite Strategy Auswahl.
-- `apps/web/app/settings`
-  User Settings, Subscription, Wallet-/Account-nahe Einstellungen.
-- `apps/web/app/admin`
-  Platform Admin Shell, User/License/Billing/Admin-System/Vault/AI/Grid-Template Admin.
-- `apps/web/app/components`
-  Gemeinsame App-Shell, Sidebar, Breadcrumbs, `AppIcon`, Header, Dashboard Widgets.
-- `apps/web/app/styles`
-  Feature-CSS: `shell.css`, `desk.css`, `bots-wallet.css`, `settings-admin.css`.
-- `apps/web/app/ui-system.css`
-  Globale UI-Primitives und Design-System-Kompatibilitaet.
-- `apps/web/messages`
-  next-intl Messages. Bei sichtbaren Texten i18n-Muster beachten.
+- `apps/web`: Next.js routes, dashboard, trading desk, bots, predictions, wallet/funding, admin UI, i18n, and shared UI components.
+- `apps/api`: Express API for auth, admin, billing, AI, predictions, trading, exchange accounts, vaults, grid, jobs, Telegram, calendar, news, system health, and ULIQ.
+- `apps/runner`: bot runtime, grid execution, prediction copying, reconciliation, recovery, and monitoring.
+- `apps/py-strategy-service`: Python strategy execution and registry.
+- `apps/quant-research`: quantitative research and analysis.
+- `packages/contracts`: Foundry contracts, tests, and deploy scripts.
+- `packages/futures-exchange`: exchange adapters and futures interfaces.
+- `packages/futures-core`, `packages/futures-engine`: shared futures types and execution components.
+- `packages/core`, `packages/db`, `packages/exchange`: shared core, database, and exchange utilities.
+- `packages/strategies`, `packages/risk`, `packages/orchestrator`, `packages/plugin-sdk`: strategy, risk, orchestration, and plugin modules.
+- `prisma`: canonical schema and migrations.
+- `docs`: product, engineering, user, operations, go-live, and archived evidence documentation.
+- `scripts`, `infra`: development, validation, deployment, and infrastructure helpers.
 
-## Wichtige API-Bereiche
+## Feature map
 
-- `apps/api/src/bootstrap.ts`
-  API Entry/Bootstrap.
-- `apps/api/src/index.ts`
-  Haupt-Wiring und viele Legacy-/Core-Routen. Bei grossen Aenderungen bevorzugt neue Module nutzen statt weiter aufzublaehen.
-- `apps/api/src/admin`
-  Platform Admin Routen, Vault Ops, Operations, Alerts, Admin-System.
-- `apps/api/src/auth`
-  Auth, SIWE, Permissions, Superadmin/Admin-Zugriff.
-- `apps/api/src/billing`
-  Billing, Packages, Orders und direkte Arbitrum-USDC-Zahlungen.
-- `apps/api/src/exchange-accounts`
-  Exchange Account Verwaltung, Credential Health, Venue-Konfiguration.
-- `apps/api/src/grid`
-  Grid Templates, Grid Instances, Lifecycle, Fills, Orders.
-- `apps/api/src/vaults`
-  BotVault, Funding, Profitshare, Reconciliation, Onchain Indexer, Recovery, Safety Controls.
-- `apps/api/src/ai`
-  AI Provider, Prompt Settings, Analyzer, Quality Gate, Tools.
-- `apps/api/src/predictions`
-  Prediction Refresh, State, Health und Evaluator-nahe Logik.
-- `apps/api/src/jobs`
-  Background Jobs fuer Evaluator, Vault Accounting, Reconciliation, Telegram Health usw.
-- `apps/api/src/telegram`
-  Telegram Link, Delivery und Notification-nahe Logik.
-- `apps/api/src/system`
-  System-/Health-/Ops-nahe Routen.
+### Web
 
-## Wichtige Runner-Bereiche
+- Dashboard: `apps/web/app/page.tsx`
+- Trading desk: `apps/web/app/trade`
+- Bots and grid: `apps/web/app/bots`, `apps/web/app/bots/grid`, `apps/web/app/bots/catalog`
+- Predictions: `apps/web/app/predictions`
+- Settings and accounts: `apps/web/app/settings`
+- Administration: `apps/web/app/admin`
+- Shared UI: `apps/web/app/components`, `apps/web/app/styles`, `apps/web/app/ui-system.css`
+- Translations: `apps/web/messages`
 
-- `apps/runner/src/bootstrap.ts`
-  Runner Entry.
-- `apps/runner/src/execution`
-  Execution Modes, Grid Runtime, Vault Readiness, Risk Guards, Recovery, Agent Secret Provider.
-- `apps/runner/src/grid`
-  Grid Fill Sync und Grid-spezifische Runtime-Helfer.
-- `apps/runner/src/runtime`
-  Runtime-Reconciliation und Bot Runtime Status.
-- `apps/runner/src/plugins`
-  Plugin-Aufloesung und Erweiterungspunkte.
-- `apps/runner/src/signal`
-  Signal Engines und Prediction-Copier-nahe Pfade.
+### API and runner
 
-## Wichtige Contract-/Onchain-Bereiche
+- API bootstrap: `apps/api/src/bootstrap.ts`, `apps/api/src/index.ts`
+- Auth and permissions: `apps/api/src/auth`
+- Billing: `apps/api/src/billing`
+- Exchange accounts: `apps/api/src/exchange-accounts`
+- Grid and vaults: `apps/api/src/grid`, `apps/api/src/vaults`
+- AI and predictions: `apps/api/src/ai`, `apps/api/src/predictions`
+- Admin and system: `apps/api/src/admin`, `apps/api/src/system`
+- ULIQ: `apps/api/src/uliq`
+- Runner: `apps/runner/src/execution`, `apps/runner/src/grid`, `apps/runner/src/runtime`, `apps/runner/src/signal`
 
-- `packages/contracts/src`
-  Solidity Contracts.
-- `packages/contracts/script`
-  Foundry Deploy-/Script-Dateien.
-- `packages/contracts/test`
-  Foundry Tests.
-- `docs/contracts-vps-deploy.md`
-  VPS Deploy-Kontext fuer Contracts.
-- `scripts/deploy_contracts_vps.sh`
-  Deploy Helper fuer VPS.
+### Contracts and persistence
 
-BotVault/FundingVault Aenderungen betreffen fast immer mehrere Schichten:
+- Contracts: `packages/contracts/src`
+- Contract scripts: `packages/contracts/script`
+- Contract tests: `packages/contracts/test`
+- Prisma schema and migrations: `prisma`
 
-- Contracts in `packages/contracts`
-- Prisma Models/Migrations in `prisma`
-- API Services/Routen in `apps/api/src/vaults` und `apps/api/src/grid`
-- Runner Readiness/Execution in `apps/runner/src/execution`
-- Web UI in `apps/web/app/bots`, `apps/web/app/wallet` und Admin Vault-Ops
-- Go-live/Runbook-Dokumentation in `docs`
+BotVault, FundingVault, grid, billing, and ULIQ changes can affect contracts, Prisma, API, runner, web, and operations documentation. Inspect every relevant layer before deciding a change is isolated.
 
-## Feature-Karte
+## UI rules
 
-### Admin
+- For uLiquid web UI work, read and apply `apply-uliquid-ui-design` before changing layouts, components, colors, cards, forms, navigation, admin, dashboard, wallet, or BotVault surfaces.
+- For native uLiquid iOS/SwiftUI work, use `apply-uliquid-ios-ui-design`.
+- Read nearby components and styles before editing; the existing design language has priority.
+- Use `AppIcon` from `apps/web/app/components/AppIcon.tsx`; do not add inline SVGs for normal UI icons.
+- Important action buttons should include icons.
+- Prefer existing primitives such as `uiPage`, `uiSection`, `card`, `btn`, `btnPrimary`, `AdminPageHeader`, `AdminTable`, and `AdminNotice`.
+- Follow existing i18n patterns for visible text.
+- Validate web/UI changes locally when possible, including mobile layouts and capital-related flows.
+- Slow detail, analytics, AI, or dashboard requests must not block capital-status lists.
+- Do not change routes, API response shapes, or permission logic without a concrete reason.
 
-- Web: `apps/web/app/admin`
-- API: `apps/api/src/admin`
-- Styles: `apps/web/app/styles/settings-admin.css`
-- Gemeinsame Admin-Komponenten: `apps/web/app/admin/_components`
-- System-Unterbereiche: Access, Notifications, Integrations, AI Controls, Bots/Strategies, Vault Controls.
+## Development rules
 
-### Trading & Positions
+- Use npm only; do not use pnpm or Yarn.
+- Supported Node.js version: `>=20.9.0 <21`.
+- Generate Prisma Client before root builds/typechecks when required.
+- Use `apply_patch` for scoped file edits.
+- Search references with `rg` before deleting or moving files.
+- Preserve backward compatibility and idempotency in exchange and money flows.
 
-- Web: `apps/web/app/trade`, positionsnahe Views, Dashboard Widgets.
-- API: Trading-/Exchange-Routen in `apps/api/src/index.ts`, Exchange Accounts, Futures Services.
-- Exchange Adapter: `packages/futures-exchange/src`.
-- Bei neuen Positionsfeldern immer exchangeuebergreifend denken: Bitget, Hyperliquid, Paper/Mock, spaeter weitere CEX.
+## Capital-flow and production safety
 
-### Bots & Grid Bots
+Wallet/funding, FundingVault, BotVault, grid bots, manual trading, exchange accounts, billing/profit share, ULIQ, and contracts are capital- or onchain-sensitive.
 
-- Web: `apps/web/app/bots`, `apps/web/app/bots/grid`, `apps/web/app/bots/catalog`.
-- API: `apps/api/src/grid`, `apps/api/src/vaults`, Grid-Routen in `apps/api/src/index.ts`.
-- Runner: `apps/runner/src/execution`, `apps/runner/src/grid`.
-- Python Strategy: `apps/py-strategy-service`.
+- Never perform production transactions, deployments, contract calls, operator rotations, close/recover actions, migrations, or activations without explicit authorization.
+- Review idempotency, destination-balance reconciliation, pending state, retry/backoff, recovery guidance, and audit trails for money flows.
+- A source balance or submitted receipt is not final confirmation; verify destination state and documented reconciliation.
+- Check API, runner, web, Prisma, contracts, and docs for cross-layer impact.
+- For FundingVault launches, verify onchain `operator()` against the database/agent wallet or add an explicit preflight.
+- Do not classify RPC rate limits, indexer lag, or reconciliation backoff as funding failure without evidence.
+- Consider close/recover/claim only with fresh trading reconciliation and a consistent contract/HyperCore balance picture.
 
-### AI, Predictions & Strategies
+## Go-live starting point
 
-- Web: `apps/web/app/predictions`, Admin AI Seiten, Strategy Builder.
-- API: `apps/api/src/ai`, `apps/api/src/predictions`, Local Strategy Routen.
-- Strategies Package: `packages/strategies`.
-- Python Service: `apps/py-strategy-service/strategies`.
-
-### Wallet, Funding, Vaults
-
-- Web: Wallet/Funding Seiten, Bot Catalog Launch Drawer, Dashboard Wallet Widget.
-- API: `apps/api/src/vaults`, Transfer-/Funding-/Grid Lifecycle Services.
-- Contracts: `packages/contracts`.
-- Runner: Vault readiness and funding handling in `apps/runner/src/execution`.
-
-### Billing, Licenses, Affiliate
-
-- Web: `apps/web/app/settings/subscription`, `apps/web/app/admin/billing`, Admin Licenses/Affiliate.
-- API: `apps/api/src/billing`, License/Admin Routen.
-- Prisma: License, Subscription, Billing Order, Affiliate Models.
-
-### Calendar, News, Telegram, Monitoring
-
-- Web: `apps/web/app/calendar`, `apps/web/app/news`, Settings/Admin notification pages.
-- API: Calendar/News/Telegram/System Health Routen und Jobs.
-- Ops Docs: `docs/ops`, Go-live Docs.
-
-## Design- und UI-Regeln fuer Agenten
-
-- Fuer uLiquid-Webapp-UI-Arbeit immer den Skill `apply-uliquid-ui-design` verwenden, bevor Layouts, Komponenten, Farben, Cards, Forms, Navigation oder Admin-/Dashboard-/Wallet-/BotVault-Oberflaechen angepasst werden.
-- Fuer native uLiquid-iOS-/SwiftUI-Arbeit den Skill `apply-uliquid-ios-ui-design` verwenden.
-- Vor UI-Aenderungen bestehende Komponenten, CSS-Dateien und nahe Seiten lesen; die vorhandene uLiquid-Designsprache geht vor neuen Einzelstilen.
-- Keine neuen Inline-SVGs fuer normale UI-Icons. `AppIcon` aus `apps/web/app/components/AppIcon.tsx` nutzen.
-- Buttons fuer wichtige Aktionen mit Icons versehen.
-- Bestehende UI-Primitives bevorzugen: `uiPage`, `uiSection`, `card`, `btn`, `btnPrimary`, `AdminPageHeader`, `AdminTable`, `AdminNotice`.
-- Admin-Seiten sollen konsistente Breite, linke Ausrichtung und gemeinsame Admin-Komponenten nutzen.
-- Bei sichtbaren Texten i18n-Muster und `apps/web/messages` beachten.
-- Bei Web-/UI-Aenderungen nach Moeglichkeit lokal im Browser pruefen, besonders mobile/responsive Ansichten sowie Admin-, GridBot-, Wallet- und BotVault-Flows.
-- UI-Aenderungen sollen keine langsamen Detail-, Stats-, AI- oder Dashboard-Requests zum Blocker fuer kapitalnahe Statuslisten machen.
-- Keine echten Secrets in Code, Docs oder Commits schreiben.
-- Routes, API-Response-Shapes und Berechtigungslogik nicht ohne konkreten Grund veraendern.
-
-## Entwicklungsregeln
-
-- Package Manager: nur `npm`, kein `pnpm` oder `yarn`.
-- Node Ziel: `>=20.9.0 <21`.
-- Prisma Client vor Root-Build/Typecheck generieren, Root-Skripte erledigen das teilweise automatisch.
-- Fuer Datei-Aenderungen in Agentenarbeit `apply_patch` verwenden.
-- Keine destruktiven Git-Befehle wie `git reset --hard` oder `git checkout --`, ausser der User verlangt es eindeutig.
-- Vor Loeschungen mit `rg` pruefen, ob Referenzen existieren.
-- Bei Exchange- oder Money-Flow-Aenderungen Rueckwaertskompatibilitaet und Idempotency beachten.
-
-## Capital-Flow und Production-Sicherheit
-
-Diese Bereiche sind kapital- oder onchain-relevant und brauchen besondere Vorsicht:
-
-- Wallet/Funding, FundingVault, BotVault, GridBot, Manual Trading, Exchange Accounts, Billing/Profitshare und Contracts.
-- Keine Production-Transaktionen, Deploys, Contract-Calls, Operator-Rotationen, Close-/Recover-Aktionen oder migrationsnahe Schritte stillschweigend ausfuehren.
-- Bei Money-Flows immer Idempotency, Zielbalance-Reconciliation, Pending-State, Retry/Backoff, Recovery-Hints und Audit-Trail beachten.
-- Source-Balance allein ist keine finale Bestaetigung fuer Transfers; Zielbalance und dokumentierter Reconcile-State sind entscheidend.
-- Bei BotVault/Grid/Funding-Aenderungen immer API, Runner, Web, Prisma, Contracts und Docs als moegliche Querwirkungen pruefen.
-- Bei FundingVault-Flows onchain `operator()` gegen DB/Agent-Wallet pruefen oder einen klaren Preflight einbauen, bevor ein Agent-Launch laeuft.
-- RPC Rate Limits, Indexer-Backoff und Reconciliation-Prioritaeten nicht als Funding-Fehler fehlklassifizieren.
-- Close/Recover/Claim nur mit frischer Trading-Reconciliation und sauberem Contract-/HyperCore-Balancebild weiterdenken.
-
-## Go-live Startregel
-
-Bei Go-live-, BotVault-, Funding-, Trading-, Contract- oder Production-Fragen zuerst diese Dateien pruefen:
+For go-live, BotVault, funding, trading, contract, ULIQ, or production questions, inspect:
 
 - `docs/go-live-master-plan.md`
 - `docs/go-live-readiness-followups.md`
@@ -266,71 +136,55 @@ Bei Go-live-, BotVault-, Funding-, Trading-, Contract- oder Production-Fragen zu
 - `docs/contract-readiness-checklist.md`
 - `docs/botvault-e2e-integration-test-matrix.md`
 - `docs/release-evidence-matrix.md`
-- aktuelle Nachweise unter `docs/tasks/`
+- current evidence under `docs/archive/tasks`
 
-Live-Smokes, Canaries und Betreiberbeobachtungen sollen als Evidence dokumentiert werden, bevorzugt unter `docs/tasks/YYYY-MM-DD-*.md` und danach in den passenden Go-live-Statusdocs zusammengefasst.
+Record live smokes, canaries, and operator observations as dated evidence under `docs/archive/tasks`, then summarize current conclusions in the applicable status document.
 
-## Aktueller BotVault-Stand
+## Current BotVault baseline
 
-Stand 2026-05-25:
+As of 2026-05-25:
 
-- BotVault V4 ist der aktuelle Produktionspfad.
-- Wallet/User-funded BotVault V4 Start bis Grid/BotVault `running` ist low-value live belegt.
-- Wallet/User-funded BotVault V4 Close/Settlement bis `execution_status=closed`, `funding_status=settled`, `hypercore_funding_status=withdrawn` und Reconciliation `ok` ist low-value live belegt.
-- FundingVault-backed BotVault V4 Launch bis Grid/BotVault `running` ist low-value live belegt.
-- Erste FundingVault-Fehler am 2026-05-25 waren onchain/DB Operator-Mismatch (`only_operator`), kein bekannter BotVault-V4-Code-Blocker.
-- Weiter offen vor breitem Public-Go-live: generische Wallet-Transfer-Smokes, Profit-Claim, FundingVault-backed Close/Settlement, bewusst beobachtete Pending-/Recovery-Pfade, Alert-Delivery/Runbook-Probe, GridBot-Langlauf/Restart/Cancel-Recovery, Contract-Readiness und 24-48h Betriebsauswertung.
+- BotVault V4 is the current production path.
+- Low-value wallet-funded V4 start through `running` has live evidence.
+- Low-value wallet-funded V4 close/settlement through `execution_status=closed`, `funding_status=settled`, `hypercore_funding_status=withdrawn`, and reconciliation `ok` has live evidence.
+- FundingVault-backed V4 launch through `running` has live evidence.
+- The first FundingVault failures on 2026-05-25 were caused by an onchain/database operator mismatch (`only_operator`), not a known V4 code blocker.
+- Broad public go-live still requires generic wallet transfer smokes, profit claim, FundingVault-backed close/settlement, observed pending/recovery paths, alert delivery/runbook probes, grid long-run/restart/cancel recovery, contract readiness, and a 24–48 hour operating review.
 
-## Typische Checks
-
-Root:
+## Common checks
 
 ```bash
 npm run typecheck
 npm run build
 npm run quality:any-budget
 npm run quality:vendor-charting
-```
 
-Web:
-
-```bash
 npm -w apps/web run typecheck
 npm -w apps/web run i18n:check
-```
 
-API:
-
-```bash
 npm -w apps/api run typecheck
 npm -w apps/api run test:auth
 npm -w apps/api run test:ai
 npm -w apps/api run test:vaults
 npm -w apps/api run test:grid-corewriter
-```
 
-Runner:
-
-```bash
 npm -w apps/runner run typecheck
 npm -w apps/runner run test
 npm -w apps/runner run test:vault-grid-corewriter
-```
 
-Contracts:
-
-```bash
 npm run contracts:build
 npm run contracts:test
 ```
 
-Python Strategy Service:
+Python strategy service:
 
 ```bash
-PY_STRATEGY_AUTH_TOKEN=test-token PY_GRID_AUTH_TOKEN=test-token PYTHONPATH=apps/py-strategy-service pytest -q apps/py-strategy-service
+PY_STRATEGY_AUTH_TOKEN=test-token PY_GRID_AUTH_TOKEN=test-token \
+PYTHONPATH=apps/py-strategy-service \
+pytest -q apps/py-strategy-service
 ```
 
-Repo Hygiene:
+Repository hygiene:
 
 ```bash
 git diff --check
@@ -338,65 +192,40 @@ git status --short
 rg "window\\.confirm|confirm\\(" apps/web/app/admin -g '*.tsx'
 ```
 
-## Lokaler Betrieb
-
-Docker Dev Stack:
+## Local and production orientation
 
 ```bash
 npm run docker:dev:up
 npm run docker:dev:logs
-```
-
-Direkt lokal:
-
-```bash
 npm run dev:local
 npm run dev:local:runner
-npm run dev:web
-npm run dev:api
-```
-
-Health:
-
-```bash
 curl -i http://localhost:${API_PORT:-4000}/health
 ```
 
-## Production/VPS Orientierung
+Production entry points:
 
-- Production Compose: `docker-compose.prod.yml`
-- VPS Install: `scripts/install_vps.sh`
-- Production Deploy: `scripts/deploy_prod.sh`
-- Env Sync: `scripts/sync_env_files.sh`
-- Contracts VPS Deploy: `scripts/deploy_contracts_vps.sh`
-- Production Docs: `docs/PRODUCTION_DEPLOY.md`, `docs/contracts-vps-deploy.md`, `docs/ops`
-- Kanonische Domains laut README:
-  - Web: `https://desk.uliquid.vip`
-  - API: `https://api.desk.uliquid.vip`
+- Compose: `docker-compose.prod.yml`
+- Install: `scripts/install_vps.sh`
+- Deploy: `scripts/deploy_prod.sh`
+- Environment sync: `scripts/sync_env_files.sh`
+- Contract deploy helper: `scripts/deploy_contracts_vps.sh`
+- Operations docs: `docs/PRODUCTION_DEPLOY.md`, `docs/contracts-vps-deploy.md`, `docs/ops`
+- Web: `https://desk.uliquid.vip`
+- API: `https://api.desk.uliquid.vip`
 
-## Deploy- und Push-Regel
+## Commit, push, and deploy rules
 
-- Wenn ein Agent im Terminal einen Deploy fuer Mario durchfuehrt, danach den Git-Stand pruefen und die deploy-relevanten Aenderungen zeitnah sichern.
-- Standardziel ist `main` / `origin/main`, damit deployte Aenderungen nicht nur lokal oder auf dem VPS existieren.
-- Vor Commit/Push immer `git status --short --branch` und den relevanten Diff pruefen.
-- Nur Aenderungen committen, die zum Deploy oder zur beauftragten Arbeit gehoeren; fremde/unrelated Working-Tree-Aenderungen nicht aufnehmen.
-- Keine Secrets, `.env`-Werte, Private Keys, Tokens, Dumps oder lokale Artefakte committen.
-- Wenn der Branch nicht `main` ist, `main` divergiert, Tests/Checks klar rot sind oder unrelated Aenderungen im Weg sind, nicht blind pushen, sondern Mario kurz informieren und den sicheren naechsten Schritt nennen.
-- Nach erfolgreichem Commit den Stand auf `origin/main` pushen und im Abschluss die Commit-ID, den Push-Status und die wichtigsten Deploy-/Smoke-Ergebnisse nennen.
+- After an authorized terminal deployment, inspect the Git state and preserve deploy-relevant changes promptly.
+- The default target is `main` / `origin/main`, but never push blindly when branch state, divergence, tests, or unrelated changes make that unsafe.
+- Before committing or pushing, inspect `git status --short --branch` and the relevant diff.
+- Include only changes from the authorized task. Never commit secrets, environment values, private keys, tokens, dumps, or local artifacts.
+- Report the commit ID, push result, and relevant deploy/smoke evidence after a successful deploy workflow.
 
-## Go-Live Dokumente
+## Agent restart checklist
 
-- `docs/go-live-master-plan.md`
-- `docs/go-live-readiness-followups.md`
-- `docs/ops/go-live-and-smoke-tests.md`
-- `docs/release-evidence-matrix.md`
-- `AGENDA.md` fuer release-gate-orientierte Historie
-
-## Wenn ein Agent neu startet
-
-1. `git status --short --branch` pruefen.
-2. Relevante Feature-Dateien mit `rg` suchen statt zu raten.
-3. Nahe Komponenten/CSS/Tests lesen.
-4. Kleine, scoped Aenderung machen.
-5. Passende Checks aus dieser Datei laufen lassen.
-6. Ergebnis knapp dokumentieren und offene Risiken nennen.
+1. Run `git status --short --branch`.
+2. Search relevant files and references with `rg`.
+3. Read nearby components, styles, tests, and active documentation.
+4. Make a small, scoped change.
+5. Run proportionate checks.
+6. Report the result and remaining risks clearly.

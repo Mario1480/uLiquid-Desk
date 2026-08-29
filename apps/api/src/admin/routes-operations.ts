@@ -17,6 +17,12 @@ const adminUserAdminAccessSchema = z.object({
   enabled: z.boolean().default(false)
 });
 
+const adminUserPlanOverrideSchema = z.object({
+  plan: z.enum(["pro", "premium"]).nullable(),
+  validUntil: z.string().datetime().nullable().optional(),
+  reason: z.string().trim().min(3).max(500)
+});
+
 const adminTelegramSchema = z.object({
   telegramBotToken: z.string().trim().nullable().optional(),
   systemTelegramChatId: z.string().trim().nullable().optional(),
@@ -58,6 +64,26 @@ export type RegisterAdminOperationsRoutesDeps = {
   hashPassword(password: string): Promise<string>;
   generateTempPassword(): string;
   ensureWorkspaceMembership(userId: string, email: string): Promise<{ workspaceId: string }>;
+  ensureDefaultPaperTradingAccount(userId: string): Promise<any>;
+  getAdminPlanOverrideForUser(userId: string, options?: { includeInactive?: boolean }): Promise<any>;
+  setAdminPlanOverrideForUser(params: {
+    userId: string;
+    plan: "pro" | "premium";
+    validUntil: Date;
+    reason: string;
+    actorUserId: string;
+  }): Promise<any>;
+  revokeAdminPlanOverrideForUser(params: {
+    userId: string;
+    reason: string;
+    actorUserId: string;
+  }): Promise<any>;
+  resolveCommercialPlanForUser(userId: string): Promise<any>;
+  resolveEffectivePlanForUser(userId: string): Promise<any>;
+  syncPrimaryWorkspaceEntitlementsForUser(params: {
+    userId: string;
+    effectivePlan: "free" | "pro" | "premium";
+  }): Promise<void>;
   ignoreMissingTable<T>(operation: () => Promise<T>): Promise<T | null>;
   getGlobalSettingValue(key: string): Promise<unknown>;
   setGlobalSettingValue(key: string, value: unknown): Promise<any>;
@@ -162,6 +188,11 @@ export function registerAdminOperationsRoutes(
       }
     });
     const membership = await deps.ensureWorkspaceMembership(created.id, created.email);
+    try {
+      await deps.ensureDefaultPaperTradingAccount(created.id);
+    } catch {
+      // Lazy provisioning in the Trading Desk remains available if this non-critical step fails.
+    }
     await deps.recordAdminAuditEvent({
       actorUserId: actor.id,
       action: "admin.user.created",
@@ -267,6 +298,85 @@ export function registerAdminOperationsRoutes(
       ok: true,
       userId: user.id,
       hasAdminBackendAccess: parsed.data.enabled
+    });
+  });
+
+  app.put("/admin/users/:id/plan-override", requireAuth, async (req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
+    const actor = getUserFromLocals(res);
+    const id = readRouteParam(req, "id");
+    const parsed = adminUserPlanOverrideSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const user = await deps.db.user.findUnique({
+      where: { id },
+      select: { id: true, email: true }
+    });
+    if (!user) return res.status(404).json({ error: "user_not_found" });
+
+    const before = await deps.getAdminPlanOverrideForUser(id, { includeInactive: true });
+    let manualPlanOverride = null;
+    let action = "admin.user.plan_override_revoked";
+    if (parsed.data.plan) {
+      const defaultExpiry = new Date();
+      defaultExpiry.setUTCMonth(defaultExpiry.getUTCMonth() + 1);
+      const validUntil = parsed.data.validUntil ? new Date(parsed.data.validUntil) : defaultExpiry;
+      if (validUntil <= new Date()) {
+        return res.status(400).json({ error: "plan_override_expiry_must_be_future" });
+      }
+      manualPlanOverride = await deps.setAdminPlanOverrideForUser({
+        userId: id,
+        plan: parsed.data.plan,
+        validUntil,
+        reason: parsed.data.reason,
+        actorUserId: actor.id
+      });
+      action = before?.active ? "admin.user.plan_override_updated" : "admin.user.plan_override_granted";
+    } else {
+      manualPlanOverride = await deps.revokeAdminPlanOverrideForUser({
+        userId: id,
+        reason: parsed.data.reason,
+        actorUserId: actor.id
+      });
+    }
+
+    const [commercialPlan, effectivePlan] = await Promise.all([
+      deps.resolveCommercialPlanForUser(id),
+      deps.resolveEffectivePlanForUser(id)
+    ]);
+    await deps.syncPrimaryWorkspaceEntitlementsForUser({
+      userId: id,
+      effectivePlan: effectivePlan.plan
+    });
+    await deps.recordAdminAuditEvent({
+      actorUserId: actor.id,
+      action,
+      targetType: "user",
+      targetId: id,
+      targetLabel: user.email,
+      metadata: {
+        reason: parsed.data.reason,
+        before,
+        after: manualPlanOverride,
+        commercialPlan: commercialPlan.plan,
+        effectivePlan: effectivePlan.plan
+      },
+      ip: req.ip ?? null
+    });
+
+    const serializePlan = (plan: any) => ({
+      ...plan,
+      aiCreditBalance: plan.aiCreditBalance.toString(),
+      aiCreditsUsedLifetime: plan.aiCreditsUsedLifetime.toString(),
+      monthlyAiCreditsIncluded: plan.monthlyAiCreditsIncluded.toString()
+    });
+    return res.json({
+      ok: true,
+      commercialPlan: serializePlan(commercialPlan),
+      manualPlanOverride,
+      effectivePlan: serializePlan(effectivePlan)
     });
   });
 

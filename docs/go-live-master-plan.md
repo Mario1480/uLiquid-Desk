@@ -2,7 +2,7 @@
 
 Stand: 2026-07-28
 
-Lokaler Review-Nachtrag 2026-07-28: Die technische Remediation ist unter `docs/tasks/2026-07-28-project-review-remediation.md` dokumentiert. BotVault V3 ist nach Betreiberbestätigung aus der regulären Factory-/Treasury-/Reconciliation-Auswahl entfernt. Dieser lokale Nachtrag ersetzt keine noch offene Production-, Canary-, Alert- oder 24–48-h-Betriebsevidenz.
+Lokaler Review-Nachtrag 2026-07-28: Die technische Remediation ist unter `docs/archive/tasks/2026-07-28-project-review-remediation.md` dokumentiert. BotVault V3 ist nach Betreiberbestätigung aus der regulären Factory-/Treasury-/Reconciliation-Auswahl entfernt. Dieser lokale Nachtrag ersetzt keine noch offene Production-, Canary-, Alert- oder 24–48-h-Betriebsevidenz.
 
 ## Ziel
 
@@ -104,8 +104,8 @@ Phase-3-Nachtrag 2026-05-06:
 | Wallet Funding Withdraw Canary. | Wallet/Funding | `OPEN` | Hyperliquid withdrawable -> pending -> Arbitrum Zielbalance -> confirmed | Generischer Rohfluss bleibt offen; BotVault-Close/Settlement ist live belegt. |
 | Core/EVM und Spot/Perp Transfer Canary. | Wallet/Funding | `OPEN` | Zielbalance-Anstieg um angefragten Betrag | Pending blockiert gleichen Flow bis Abschluss. |
 | Pending-Intent Cleanup/Expiry entscheiden. | Wallet/Funding | `OPEN` | Manuell akzeptiert oder Job/Runbook vorhanden | Aktuell konservativ manuell. |
-| BotVault Wallet/User-funded Start/Close Canary. | BotVault/Grid | `DONE` | HyperEVM create/fund -> HyperCore -> Perp/HYPE reserve -> Grid running -> Close/settled | Low-value Production-Evidence in `docs/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md` und `docs/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`; laut Betreiber-Stand 2026-05-25 ohne bekannten Start/Stop-Fehler. |
-| BotVault FundingVault-backed Start Canary. | BotVault/FundingVault/Grid | `DONE` | FundingVault operator ok -> launch -> reserve release -> execution ready -> Grid running | Erfolgreicher Production-Run am 2026-05-25 dokumentiert in `docs/tasks/2026-05-25-funding-vault-live-start.md`. Erster Fehler war Operator-Mismatch, kein BotVault-Code-Blocker. |
+| BotVault Wallet/User-funded Start/Close Canary. | BotVault/Grid | `DONE` | HyperEVM create/fund -> HyperCore -> Perp/HYPE reserve -> Grid running -> Close/settled | Low-value Production-Evidence in `docs/archive/tasks/2026-05-21-botvaultv4-gridbot-live-monitoring.md` und `docs/archive/tasks/2026-05-23-botvaultv4-gridbot-live-monitoring.md`; laut Betreiber-Stand 2026-05-25 ohne bekannten Start/Stop-Fehler. |
+| BotVault FundingVault-backed Start Canary. | BotVault/FundingVault/Grid | `DONE` | FundingVault operator ok -> launch -> reserve release -> execution ready -> Grid running | Erfolgreicher Production-Run am 2026-05-25 dokumentiert in `docs/archive/tasks/2026-05-25-funding-vault-live-start.md`. Erster Fehler war Operator-Mismatch, kein BotVault-Code-Blocker. |
 | BotVault Funding/Reconcile Recovery Canary. | BotVault | `IN_PROGRESS` | Pending Deposit/Withdraw, HYPE Reserve, Contract Balance, Claim/Close/Recover | Start/Close sind live belegt; Profit-Claim, bewusst erzeugte Spot-to-EVM Pending-Recovery und FundingVault-backed Close sollten noch als eigene Evidence nachgezogen werden. |
 | Bestehende Vaults normalisieren/pruefen. | BotVault | `OPEN` | Reconcile-Job oder Migration fuer alte Mischzustaende | Alte v3 Reads kompatibel halten, neue Writes v4-normalisiert. |
 | GridBot Funding/Seed/Recovery Canary. | GridBot | `IN_PROGRESS` | Funding, Seed-Pending, Restart-Recovery, Cancel-Reconcile, Fill/PnL-Reconcile | Funding und Initial Seed sind live belegt; Restart-/Cancel-/Recovery-Langlauf ueber mehrere Marktzyklen bleibt offen. |
