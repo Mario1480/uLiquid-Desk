@@ -109,8 +109,8 @@ declare global {
 }
 
 const CHART_CANDLE_FETCH_LIMIT = 1000;
+const DEFAULT_ADVANCED_CHART_CANDLE_FETCH_LIMIT = 350;
 const BINGX_CHART_CANDLE_FETCH_LIMIT = 500;
-const ADVANCED_CHART_WARMUP_CANDLE_FETCH_LIMIT = CHART_CANDLE_FETCH_LIMIT;
 const ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT = 350;
 const ADVANCED_CHART_CANDLE_CACHE_TTL_MS = 12000;
 const ADVANCED_CHART_SUBSCRIBE_POLL_MS = 30000;
@@ -185,15 +185,21 @@ function isBingxMarketDataExchange(value: string | null | undefined): boolean {
   return String(value ?? "").trim().toLowerCase() === "bingx";
 }
 
-function chartCandleFetchLimitForExchange(value: string | null | undefined): number {
-  return isBingxMarketDataExchange(value) ? BINGX_CHART_CANDLE_FETCH_LIMIT : CHART_CANDLE_FETCH_LIMIT;
+function chartCandleFetchLimitForExchange(
+  value: string | null | undefined,
+  indicatorToggles: IndicatorToggleState
+): number {
+  if (isBingxMarketDataExchange(value)) return BINGX_CHART_CANDLE_FETCH_LIMIT;
+  return indicatorToggles.ema800
+    ? CHART_CANDLE_FETCH_LIMIT
+    : DEFAULT_ADVANCED_CHART_CANDLE_FETCH_LIMIT;
 }
 
-function chartWarmupFetchLimitForExchange(value: string | null | undefined): number {
-  return Math.min(
-    chartCandleFetchLimitForExchange(value),
-    isBingxMarketDataExchange(value) ? BINGX_CHART_CANDLE_FETCH_LIMIT : ADVANCED_CHART_WARMUP_CANDLE_FETCH_LIMIT
-  );
+function chartWarmupFetchLimitForExchange(
+  value: string | null | undefined,
+  indicatorToggles: IndicatorToggleState
+): number {
+  return chartCandleFetchLimitForExchange(value, indicatorToggles);
 }
 
 function buildCandleCacheScopeKey(params: {
@@ -820,8 +826,8 @@ export function AdvancedChart({
   const [chartHeight, setChartHeight] = useState(
     Math.max(MIN_CHART_HEIGHT, Math.min(MAX_CHART_HEIGHT, Math.round(chartPreferences?.chartHeight ?? 520)))
   );
-  const candleFetchLimit = chartCandleFetchLimitForExchange(marketDataExchange);
-  const warmupCandleFetchLimit = chartWarmupFetchLimitForExchange(marketDataExchange);
+  const candleFetchLimit = chartCandleFetchLimitForExchange(marketDataExchange, indicatorToggles);
+  const warmupCandleFetchLimit = chartWarmupFetchLimitForExchange(marketDataExchange, indicatorToggles);
   const overlayCandleFetchLimit = Math.min(ADVANCED_CHART_OVERLAY_CANDLE_FETCH_LIMIT, candleFetchLimit);
   const enableRealtimeSocket = !isBingxMarketDataExchange(marketDataExchange);
   const decisionOverlayActive = showDecisionOverlay && (Boolean(prefill) || Boolean(selectedPosition));

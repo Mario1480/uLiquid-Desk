@@ -602,6 +602,15 @@ function positionsEqual(left: PositionItem[], right: PositionItem[]): boolean {
   });
 }
 
+function commitLiveStateUpdate(alreadyReady: boolean, update: () => void): void {
+  if (alreadyReady) {
+    startTransition(update);
+    return;
+  }
+
+  update();
+}
+
 function openOrdersEqual(left: OpenOrderItem[], right: OpenOrderItem[]): boolean {
   if (left === right) return true;
   if (left.length !== right.length) return false;
@@ -1381,7 +1390,7 @@ function TradePageContent() {
     const blockingFailures: string[] = [];
 
     const summaryDegraded = payload.summary?.degraded === true;
-    startTransition(() => {
+    commitLiveStateUpdate(liveTableReadyRef.current.summary, () => {
       setSummary((prev) => {
         const next = mergeAccountSummary(prev, payload.summary, {
           preserveNullNumbers: summaryDegraded,
@@ -1399,7 +1408,7 @@ function TradePageContent() {
     const positionsDegraded = payload.positions?.degraded === true;
     setPositionsDataDegraded(positionsDegraded);
     const positionItems = normalizeDeskPositions(payload.positions?.items ?? []);
-    startTransition(() => {
+    commitLiveStateUpdate(liveTableReadyRef.current.positions, () => {
       setPositions((prev) => {
         if (positionsDegraded && liveTableReadyRef.current.positions) return prev;
         return positionsEqual(prev, positionItems) ? prev : positionItems;
@@ -1413,7 +1422,7 @@ function TradePageContent() {
 
     const openOrdersDegraded = payload.openOrders?.degraded === true;
     const orderItems = normalizeDeskOpenOrders(payload.openOrders?.items ?? [], symbol);
-    startTransition(() => {
+    commitLiveStateUpdate(liveTableReadyRef.current.openOrders, () => {
       setOpenOrders((prev) => {
         if (openOrdersDegraded && liveTableReadyRef.current.openOrders) return prev;
         return openOrdersEqual(prev, orderItems) ? prev : orderItems;
@@ -1520,16 +1529,22 @@ function TradePageContent() {
     setDataBlockReason(null);
     try {
       const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
-      const symbolPayload = await apiGet<{
+      const normalizedPreferred = (preferredSymbol ?? selectedSymbol).trim().toUpperCase() || "BTCUSDT";
+      const symbolPayloadRequest = apiGet<{
         exchangeAccountId: string;
         items: SymbolItem[];
         defaultSymbol: string | null;
       }>(`/api/symbols?exchangeAccountId=${encodeURIComponent(accountId)}${marketTypeParam}`);
+      const initialLiveStateRequest = apiGet<TradingLiveStateResponse>(
+        `/api/trading/live-state?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(normalizedPreferred)}${marketTypeParam}`
+      );
+      void initialLiveStateRequest.catch(() => undefined);
+
+      const symbolPayload = await symbolPayloadRequest;
 
       const rows = symbolPayload.items ?? [];
       setSymbols(rows);
 
-      const normalizedPreferred = (preferredSymbol ?? selectedSymbol).trim().toUpperCase();
       const fallbackSymbol = symbolPayload.defaultSymbol ?? rows[0]?.symbol ?? "BTCUSDT";
       const nextSymbol = rows.some((row) => row.symbol === normalizedPreferred)
         ? normalizedPreferred
@@ -1537,9 +1552,11 @@ function TradePageContent() {
 
       setSelectedSymbol(nextSymbol);
 
-      const livePayload = await apiGet<TradingLiveStateResponse>(
-        `/api/trading/live-state?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
-      );
+      const livePayload = nextSymbol === normalizedPreferred
+        ? await initialLiveStateRequest
+        : await apiGet<TradingLiveStateResponse>(
+            `/api/trading/live-state?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
+          );
       applyTradingLiveState(livePayload, nextSymbol);
 
       await persistSettings({
