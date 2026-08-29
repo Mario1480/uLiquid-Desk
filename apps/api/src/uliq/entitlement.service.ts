@@ -7,7 +7,13 @@ import {
   type UliqRuntimeConfig
 } from "./config.js";
 import { resolveUliqPriceSnapshot, type UliqPriceDecision } from "./price.service.js";
-import { createUliqRpcPair, getConsistentFinalizedBlock, withUliqRpcFailover, type UliqRpcPair } from "./rpc.js";
+import {
+  createUliqRpcPair,
+  getConsistentBlockAt,
+  getConsistentFinalizedBlock,
+  withUliqRpcFailover,
+  type UliqRpcPair
+} from "./rpc.js";
 import {
   databaseUint256Decimal,
   formatScaledDecimal,
@@ -89,6 +95,31 @@ export function calculateEligibleUsdScaled(eligibleRaw: bigint, priceUsd: string
 
 export function calculateUntrackedEligibleRaw(eligibleRaw: bigint, trackedRaw: bigint): bigint {
   return trackedRaw < eligibleRaw ? eligibleRaw - trackedRaw : 0n;
+}
+
+export function resolveIndexerAlignedEntitlementBlock(params: {
+  finalizedBlock: bigint;
+  cursor: {
+    lastProcessedBlock: unknown;
+    failureCount?: unknown;
+    lastError?: unknown;
+  } | null;
+}): bigint {
+  if (
+    !params.cursor
+    || Number(params.cursor.failureCount ?? 0) !== 0
+    || params.cursor.lastError
+  ) return params.finalizedBlock;
+  let processedBlock: bigint;
+  try {
+    processedBlock = BigInt(String(params.cursor.lastProcessedBlock));
+  } catch {
+    return params.finalizedBlock;
+  }
+  if (processedBlock <= 0n || processedBlock >= params.finalizedBlock) {
+    return params.finalizedBlock;
+  }
+  return processedBlock;
 }
 
 export async function loadUliqTierConfigs(db: any, now = new Date()): Promise<UliqTierDecision[]> {
@@ -218,6 +249,66 @@ function mapStoredEntitlement(row: any, tier: UliqTierDecision, monetaryTier: Ul
   };
 }
 
+function mapStoredEntitlementWithTierConfigs(
+  row: any,
+  tierConfigs: UliqTierDecision[]
+): UliqEntitlement {
+  const featureTier = tierConfigs.find((tier) => tier.code === row.effectiveTier)
+    ?? resolveUliqTier(
+      calculateEligibleUsdScaled(decimalBigInt(row.featureEligibleRaw), String(row.referencePriceUsd)),
+      tierConfigs
+    );
+  const monetaryTier = resolveUliqTier(
+    calculateEligibleUsdScaled(decimalBigInt(row.monetaryEligibleRaw), String(row.referencePriceUsd)),
+    tierConfigs
+  );
+  return mapStoredEntitlement(row, featureTier, monetaryTier);
+}
+
+export async function findCanonicalUliqEntitlementSnapshotAtBlock(params: {
+  db: any;
+  userId: string;
+  walletAddress: string;
+  chainId: number;
+  asOfBlock: bigint;
+  blockHash: string;
+}): Promise<any | null> {
+  const existing = await params.db.uliqEntitlementSnapshot.findFirst({
+    where: {
+      userId: params.userId,
+      walletAddress: params.walletAddress,
+      chainId: params.chainId,
+      asOfBlock: params.asOfBlock
+    }
+  });
+  if (!existing) return null;
+  if (String(existing.blockHash).toLowerCase() !== params.blockHash.toLowerCase()) {
+    throw new Error("uliq_entitlement_snapshot_block_mismatch");
+  }
+  return existing;
+}
+
+export async function createUliqEntitlementSnapshotWithRaceRecovery(params: {
+  db: any;
+  data: Record<string, unknown>;
+}): Promise<any> {
+  try {
+    return await params.db.uliqEntitlementSnapshot.create({ data: params.data });
+  } catch (error) {
+    if (String((error as any)?.code ?? "") !== "P2002") throw error;
+    const existing = await findCanonicalUliqEntitlementSnapshotAtBlock({
+      db: params.db,
+      userId: String(params.data.userId),
+      walletAddress: String(params.data.walletAddress),
+      chainId: Number(params.data.chainId),
+      asOfBlock: BigInt(String(params.data.asOfBlock)),
+      blockHash: String(params.data.blockHash)
+    });
+    if (!existing) throw error;
+    return existing;
+  }
+}
+
 export class UliqEntitlementService {
   constructor(
     private readonly db: any,
@@ -225,7 +316,11 @@ export class UliqEntitlementService {
     private readonly rpc: UliqRpcPair = createUliqRpcPair(config)
   ) {}
 
-  async getForUser(userId: string, options: { forceRefresh?: boolean; now?: Date } = {}): Promise<UliqEntitlement> {
+  async getForUser(userId: string, options: {
+    forceRefresh?: boolean;
+    alignToIndexer?: boolean;
+    now?: Date;
+  } = {}): Promise<UliqEntitlement> {
     const now = options.now ?? new Date();
     const user = await this.db.user.findUnique({
       where: { id: userId },
@@ -241,18 +336,35 @@ export class UliqEntitlementService {
         where: { userId, walletAddress: wallet, validUntil: { gt: now } },
         orderBy: { computedAt: "desc" }
       });
-      if (cached) {
-        const featureTier = tierConfigs.find((tier) => tier.code === cached.effectiveTier)
-          ?? resolveUliqTier(calculateEligibleUsdScaled(decimalBigInt(cached.featureEligibleRaw), String(cached.referencePriceUsd)), tierConfigs);
-        const monetaryTier = resolveUliqTier(
-          calculateEligibleUsdScaled(decimalBigInt(cached.monetaryEligibleRaw), String(cached.referencePriceUsd)),
-          tierConfigs
-        );
-        return mapStoredEntitlement(cached, featureTier, monetaryTier);
-      }
+      if (cached) return mapStoredEntitlementWithTierConfigs(cached, tierConfigs);
     }
 
-    const head = await getConsistentFinalizedBlock(this.rpc);
+    const finalizedHead = await getConsistentFinalizedBlock(this.rpc);
+    let head = finalizedHead;
+    if (options.alignToIndexer) {
+      const cursor = await this.db.onchainSyncCursor.findUnique({
+        where: { id: `uliq:${this.config.chainId}:all` },
+        select: { lastProcessedBlock: true, failureCount: true, lastError: true }
+      });
+      const alignedBlockNumber = resolveIndexerAlignedEntitlementBlock({
+        finalizedBlock: finalizedHead.number,
+        cursor
+      });
+      if (alignedBlockNumber < finalizedHead.number) {
+        head = await getConsistentBlockAt(this.rpc, alignedBlockNumber);
+      }
+    }
+    const existingAtHead = await findCanonicalUliqEntitlementSnapshotAtBlock({
+      db: this.db,
+      userId,
+      walletAddress: wallet,
+      chainId: this.config.chainId,
+      asOfBlock: head.number,
+      blockHash: head.hash
+    });
+    if (existingAtHead) {
+      return mapStoredEntitlementWithTierConfigs(existingAtHead, tierConfigs);
+    }
     const read = await withUliqRpcFailover(this.rpc, (client) => readBalancesAtBlock({
       client,
       config: this.config,
@@ -310,7 +422,8 @@ export class UliqEntitlementService {
       });
     }
     const validUntil = new Date(Math.min(price.validUntil.getTime(), now.getTime() + ULIQ_ENTITLEMENT_TTL_MS));
-    const stored = await this.db.uliqEntitlementSnapshot.create({
+    const stored = await createUliqEntitlementSnapshotWithRaceRecovery({
+      db: this.db,
       data: {
         userId,
         walletAddress: wallet,

@@ -1,5 +1,6 @@
 export type UliqTierBenefitDraft = {
   code: string;
+  minUsdValue: string;
   subscriptionDiscountPercent: string;
   aiDiscountPercent: string;
   aiCreditDiscountMonthlyUsd: string;
@@ -9,6 +10,7 @@ export type UliqTierBenefitRequest = {
   reason: string;
   tiers: Array<{
     code: string;
+    minUsdValue: string;
     subscriptionDiscountBps: number;
     aiDiscountBps: number;
     aiCreditDiscountMonthlyCents: number | null;
@@ -36,6 +38,7 @@ function parseScaledInteger(value: string, scale: number, maximum: number): numb
 
 export function createUliqTierBenefitDraft(tier: {
   code: string;
+  minUsdValue: string | number;
   subscriptionDiscountBps: number;
   aiDiscountBps: number;
   monetaryBenefitCaps: { aiCreditDiscountMonthlyCents?: number | string } | null;
@@ -43,10 +46,19 @@ export function createUliqTierBenefitDraft(tier: {
   const cap = tier.monetaryBenefitCaps?.aiCreditDiscountMonthlyCents;
   return {
     code: tier.code,
+    minUsdValue: normalizeDecimalInput(tier.minUsdValue),
     subscriptionDiscountPercent: formatScaledInteger(tier.subscriptionDiscountBps, 2),
     aiDiscountPercent: formatScaledInteger(tier.aiDiscountBps, 2),
     aiCreditDiscountMonthlyUsd: cap == null ? "" : formatScaledInteger(Number(cap), 2)
   };
+}
+
+function normalizeDecimalInput(value: string | number): string {
+  const normalized = String(value).trim();
+  const match = /^(0|[1-9]\d*)(?:\.(\d+))?$/.exec(normalized);
+  if (!match) return normalized;
+  const fraction = (match[2] ?? "").replace(/0+$/, "");
+  return fraction ? `${match[1]}.${fraction}` : match[1];
 }
 
 export function applyUliqBenefitPreset(
@@ -73,9 +85,18 @@ export function buildUliqTierBenefitRequest(
   if (drafts.length === 0 || new Set(drafts.map((draft) => draft.code)).size !== drafts.length) {
     throw new Error("uliq_tier_benefit_invalid_tiers");
   }
+  let previousMinimumUsdCents: number | null = null;
   return {
     reason: normalizedReason,
     tiers: drafts.map((draft) => {
+      const minUsdCents = parseScaledInteger(draft.minUsdValue, 2, Number.MAX_SAFE_INTEGER);
+      if (draft.code === "BASIC" && minUsdCents !== 0) {
+        throw new Error("uliq_tier_threshold_basic_zero");
+      }
+      if (previousMinimumUsdCents != null && minUsdCents <= previousMinimumUsdCents) {
+        throw new Error("uliq_tier_threshold_order_invalid");
+      }
+      previousMinimumUsdCents = minUsdCents;
       const subscriptionDiscountBps = parseScaledInteger(draft.subscriptionDiscountPercent, 2, 10_000);
       const aiDiscountBps = parseScaledInteger(draft.aiDiscountPercent, 2, 10_000);
       const capValue = draft.aiCreditDiscountMonthlyUsd.trim();
@@ -87,6 +108,7 @@ export function buildUliqTierBenefitRequest(
       }
       return {
         code: draft.code,
+        minUsdValue: formatScaledInteger(minUsdCents, 2),
         subscriptionDiscountBps,
         aiDiscountBps,
         aiCreditDiscountMonthlyCents

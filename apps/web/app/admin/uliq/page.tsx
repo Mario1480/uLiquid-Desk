@@ -456,6 +456,8 @@ function UliqAdminPageContent() {
       const code = validationError instanceof Error ? validationError.message : "";
       if (code === "uliq_tier_benefit_reason_required") throw new Error(t("tierBenefitsReasonRequired"));
       if (code === "uliq_tier_benefit_ai_cap_required") throw new Error(t("tierBenefitsAiCapRequired"));
+      if (code === "uliq_tier_threshold_basic_zero") throw new Error(t("tierBenefitsBasicThresholdFixed"));
+      if (code === "uliq_tier_threshold_order_invalid") throw new Error(t("tierBenefitsThresholdOrderInvalid"));
       throw new Error(t("tierBenefitsInvalid"));
     }
     const response = await apiPut<{ version: number }>("/admin/uliq/tier-benefits", payload);
@@ -595,6 +597,20 @@ function UliqAdminPageContent() {
                     <span className="adminFormFieldHint">{t("tierBenefitsVersioned")}</span>
                   </label>
                   <label className="adminFormField">
+                    <span className="adminFormFieldLabel">{t("tierBenefitsMinimumUsd")}</span>
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      value={draft.minUsdValue}
+                      disabled={draft.code === "BASIC"}
+                      aria-describedby={`uliq-tier-threshold-${draft.code}`}
+                      onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, minUsdValue: event.target.value } : item))}
+                    />
+                    <span id={`uliq-tier-threshold-${draft.code}`} className="adminFormFieldHint">
+                      {draft.code === "BASIC" ? t("tierBenefitsBasicThresholdFixed") : t("tierBenefitsThresholdHint")}
+                    </span>
+                  </label>
+                  <label className="adminFormField">
                     <span className="adminFormFieldLabel">{t("tierBenefitsSubscriptionPercent")}</span>
                     <input className="input" inputMode="decimal" value={draft.subscriptionDiscountPercent} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subscriptionDiscountPercent: event.target.value } : item))} />
                   </label>
@@ -611,10 +627,17 @@ function UliqAdminPageContent() {
             </div>
             <label className="adminFormField">
               <span className="adminFormFieldLabel">{t("tierBenefitsReason")}</span>
-              <input className="input" value={tierBenefitReason} placeholder={t("tierBenefitsReasonPlaceholder")} onChange={(event) => setTierBenefitReason(event.target.value)} />
+              <input className="input" value={tierBenefitReason} maxLength={500} placeholder={t("tierBenefitsReasonPlaceholder")} onChange={(event) => setTierBenefitReason(event.target.value)} />
+              <span className="adminFormFieldHint">{t("tierBenefitsReasonProgress", { count: tierBenefitReason.trim().length })}</span>
               <span className="adminFormFieldHint">{t("tierBenefitsCapHint")}</span>
             </label>
-            <button type="button" className="btn btnPrimary" onClick={() => requestReauth("tier-benefits")} disabled={tierBenefitDrafts.length === 0 || tierBenefitReason.trim().length < 8}>
+            <button
+              type="button"
+              className="btn btnPrimary"
+              onClick={() => requestReauth("tier-benefits")}
+              disabled={tierBenefitDrafts.length === 0 || tierBenefitReason.trim().length < 8}
+              title={tierBenefitReason.trim().length < 8 ? t("tierBenefitsReasonRequired") : undefined}
+            >
               <AppIcon name="save" /> {t("tierBenefitsSave")}
             </button>
           </AdminDetailSection>

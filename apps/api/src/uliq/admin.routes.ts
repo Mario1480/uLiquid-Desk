@@ -14,6 +14,7 @@ const tierBenefitConfigSchema = z.object({
   reason: z.string().trim().min(8).max(500),
   tiers: z.array(z.object({
     code: z.string().trim().min(1).max(32),
+    minUsdValue: z.string().trim().regex(/^(0|[1-9]\d*)(?:\.\d{1,2})?$/).max(32),
     subscriptionDiscountBps: z.number().int().min(0).max(10_000),
     aiDiscountBps: z.number().int().min(0).max(10_000),
     aiCreditDiscountMonthlyCents: z.number().int().min(0).max(2_147_483_647).nullable()
@@ -161,11 +162,24 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
             || requested.size !== active.length
             || active.some((tier: any) => !requested.has(String(tier.code)))
           ) throw new Error("uliq_tier_config_set_mismatch");
+          let previousMinimumUsd: Prisma.Decimal | null = null;
+          for (const tier of active) {
+            const next = requested.get(String(tier.code))!;
+            const nextMinimumUsd = new Prisma.Decimal(next.minUsdValue);
+            if (String(tier.code) === "BASIC" && !nextMinimumUsd.eq(0)) {
+              throw new Error("uliq_tier_threshold_basic_zero");
+            }
+            if (previousMinimumUsd && nextMinimumUsd.lte(previousMinimumUsd)) {
+              throw new Error("uliq_tier_threshold_order_invalid");
+            }
+            previousMinimumUsd = nextMinimumUsd;
+          }
           const now = new Date();
           const nextVersion = currentVersion + 1;
           const oldValue = active.map((tier: any) => ({
             code: tier.code,
             version: tier.version,
+            minUsdValue: String(tier.minUsdValue),
             subscriptionDiscountBps: tier.subscriptionDiscountBps,
             aiDiscountBps: tier.aiDiscountBps,
             monetaryBenefitCaps: tier.monetaryBenefitCaps
@@ -181,7 +195,7 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
                 code: tier.code,
                 version: nextVersion,
                 enabled: true,
-                minUsdValue: tier.minUsdValue,
+                minUsdValue: new Prisma.Decimal(next.minUsdValue),
                 minimumLockDurationDays: null,
                 featureFlags: tier.featureFlags,
                 subscriptionDiscountBps: next.subscriptionDiscountBps,
@@ -211,7 +225,12 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
         return res.json(jsonSafe(result));
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        return res.status(reason.includes("mismatch") ? 409 : 500).json({ error: reason });
+        const status = reason.includes("mismatch")
+          ? 409
+          : reason.startsWith("uliq_tier_threshold_")
+            ? 400
+            : 500;
+        return res.status(status).json({ error: reason });
       }
     }
   );

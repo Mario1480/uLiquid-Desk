@@ -95,7 +95,7 @@ export async function prepareUliqBillingBenefit(params: {
   const entitlementService = params.entitlementService ?? new UliqEntitlementService(params.db);
   const entitlement = await entitlementService.getForUser(
     params.userId,
-    { forceRefresh: true, now }
+    { forceRefresh: true, alignToIndexer: true, now }
   );
   if (entitlement.validUntil <= now) throw new Error("uliq_entitlement_expired");
   if (entitlement.priceQualityStatus !== "HEALTHY") throw new Error("uliq_price_degraded");

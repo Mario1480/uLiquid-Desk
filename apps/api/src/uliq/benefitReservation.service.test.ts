@@ -10,6 +10,7 @@ import {
   type PreparedUliqBillingBenefit,
   UliqBenefitGateError
 } from "./benefitReservation.service.js";
+import { resolveIndexerAlignedEntitlementBlock } from "./entitlement.service.js";
 
 const now = new Date("2026-08-22T12:00:00.000Z");
 const wallet = "0x1111111111111111111111111111111111111111";
@@ -150,6 +151,65 @@ test("AI discount fails closed when the active tier has no versioned monthly cap
         && error.message === "uliq_ai_cap_unconfigured"
     );
   });
+});
+
+test("subscription discount aligns its entitlement snapshot to the finalized indexer cursor", async () => {
+  await withDiscountFlags(async () => {
+    let entitlementOptions: Record<string, unknown> | null = null;
+    const result = await prepareUliqBillingBenefit({
+      db: {},
+      userId: "user-1",
+      baseAmountCents: 1_000,
+      benefitType: "SUBSCRIPTION_DISCOUNT",
+      requiredBenefitUntil: prepared.lockDecision.requiredBenefitUntil,
+      entitlementService: {
+        getForUser: async (_userId, options) => {
+          entitlementOptions = options as Record<string, unknown>;
+          return entitlement;
+        },
+        getLockDecisionForBenefit: async () => ({
+          ...prepared.lockDecision,
+          tierCode: "GOLD",
+          tierMinimumUsd: "1500",
+          priceSnapshotId: "price-1",
+          configVersion: 1,
+          lockerContractAddress: prepared.lockerContractAddress,
+          monetaryBenefitCaps: null
+        })
+      },
+      now
+    });
+    assert.equal(result.discountAmountCents, 150);
+    assert.equal(result.finalAmountCents, 850);
+    assert.deepEqual(entitlementOptions, {
+      forceRefresh: true,
+      alignToIndexer: true,
+      now
+    });
+  });
+});
+
+test("entitlement alignment uses only clean finalized indexer evidence", () => {
+  assert.equal(resolveIndexerAlignedEntitlementBlock({
+    finalizedBlock: 120n,
+    cursor: { lastProcessedBlock: 100n, failureCount: 0, lastError: null }
+  }), 100n);
+  assert.equal(resolveIndexerAlignedEntitlementBlock({
+    finalizedBlock: 120n,
+    cursor: { lastProcessedBlock: 125n, failureCount: 0, lastError: null }
+  }), 120n);
+  assert.equal(resolveIndexerAlignedEntitlementBlock({
+    finalizedBlock: 120n,
+    cursor: { lastProcessedBlock: 100n, failureCount: 1, lastError: null }
+  }), 120n);
+  assert.equal(resolveIndexerAlignedEntitlementBlock({
+    finalizedBlock: 120n,
+    cursor: { lastProcessedBlock: 100n, failureCount: 0, lastError: "rpc_error" }
+  }), 120n);
+  assert.equal(resolveIndexerAlignedEntitlementBlock({
+    finalizedBlock: 120n,
+    cursor: null
+  }), 120n);
 });
 
 test("reservation creation binds exact wallet/snapshots and ten-minute expiry", async () => {

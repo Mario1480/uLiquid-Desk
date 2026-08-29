@@ -146,6 +146,7 @@ test("ULIQ tier benefit changes fail closed when an AI discount has no monthly c
         reason: "Reject missing monthly cap",
         tiers: [{
           code: "BRONZE",
+          minUsdValue: "100",
           subscriptionDiscountBps: 0,
           aiDiscountBps: 500,
           aiCreditDiscountMonthlyCents: null
@@ -156,6 +157,56 @@ test("ULIQ tier benefit changes fail closed when an AI discount has no monthly c
     assert.equal(response.statusCode, 400);
     assert.equal(response.body.error, "invalid_payload");
     assert.equal(transactionCalled, false);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
+
+test("ULIQ tier configuration rejects non-increasing minimum USD thresholds before version creation", async () => {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_ADMIN_ENABLED = "true";
+  try {
+    let updateCalled = false;
+    const tx = {
+      uliqTierConfig: {
+        findMany: async () => [
+          { code: "BASIC", version: 1, minUsdValue: new Prisma.Decimal("0") },
+          { code: "BRONZE", version: 1, minUsdValue: new Prisma.Decimal("100") }
+        ],
+        updateMany: async () => { updateCalled = true; }
+      }
+    };
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: { $transaction: async (runInTransaction: (client: any) => Promise<any>) => runInTransaction(tx) },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => true,
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => { await next(); },
+      recordAdminAuditEvent: async () => undefined
+    });
+
+    const handlers = app.putRoutes.get("/admin/uliq/tier-benefits");
+    assert.ok(handlers);
+    const response = mockResponse();
+    await run(handlers!.slice(1), {
+      body: {
+        reason: "Reject duplicate thresholds",
+        tiers: [
+          { code: "BASIC", minUsdValue: "0", subscriptionDiscountBps: 0, aiDiscountBps: 0, aiCreditDiscountMonthlyCents: null },
+          { code: "BRONZE", minUsdValue: "0", subscriptionDiscountBps: 0, aiDiscountBps: 0, aiCreditDiscountMonthlyCents: null }
+        ]
+      }
+    }, response);
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "uliq_tier_threshold_order_invalid");
+    assert.equal(updateCalled, false);
   } finally {
     if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
     else process.env.ULIQ_ENABLED = previousEnabled;
@@ -217,6 +268,10 @@ test("ULIQ tier benefit changes require reauth and atomically create an audited 
         assert.equal(input.tx, tx);
         assert.equal(input.action, "uliq_tier_benefits_version_created");
         assert.equal(input.metadata?.reason, "Quarterly benefit review");
+        const oldValue = input.metadata?.oldValue as Array<{ code: string; minUsdValue: string }>;
+        const newValue = input.metadata?.newValue as Array<{ code: string; minUsdValue: string }>;
+        assert.equal(oldValue[1].minUsdValue, "1500");
+        assert.equal(newValue[1].minUsdValue, "1750");
         calls.push("audit");
       }
     });
@@ -228,8 +283,8 @@ test("ULIQ tier benefit changes require reauth and atomically create an audited 
       body: {
         reason: "Quarterly benefit review",
         tiers: [
-          { code: "BASIC", subscriptionDiscountBps: 0, aiDiscountBps: 0, aiCreditDiscountMonthlyCents: null },
-          { code: "GOLD", subscriptionDiscountBps: 1_500, aiDiscountBps: 1_000, aiCreditDiscountMonthlyCents: 750 }
+          { code: "BASIC", minUsdValue: "0", subscriptionDiscountBps: 0, aiDiscountBps: 0, aiCreditDiscountMonthlyCents: null },
+          { code: "GOLD", minUsdValue: "1750", subscriptionDiscountBps: 1_500, aiDiscountBps: 1_000, aiCreditDiscountMonthlyCents: 750 }
         ]
       },
       ip: "127.0.0.1"
@@ -238,6 +293,7 @@ test("ULIQ tier benefit changes require reauth and atomically create an audited 
     assert.equal(response.statusCode, 200);
     assert.equal(response.body.version, 4);
     assert.deepEqual(calls, ["superadmin", "reauth", "transaction", "close-v3", "create:BASIC", "create:GOLD", "audit"]);
+    assert.equal(created[1].minUsdValue.toFixed(), "1750");
     assert.equal(created[1].monetaryBenefitCaps.aiCreditDiscountMonthlyCents, 750);
     assert.equal(created[1].minimumLockDurationDays, null);
     assert.equal(created[1].reason, "Quarterly benefit review");
