@@ -13,6 +13,10 @@ import {
   type TradeDeskPrefillPayload
 } from "../../src/schemas/tradeDeskPrefill";
 import {
+  isProductFeatureAllowed,
+  type ProductFeatureGateMap
+} from "../../src/access/productFeatureGates";
+import {
   createLiveTableReadiness,
   isLiveTableFailureBlocking
 } from "../../src/trade/liveDataReadiness";
@@ -159,6 +163,10 @@ type PositionCopilotResponse = {
     fallbackReason: string | null;
     notification: { sent: boolean; reason: string };
   };
+};
+
+type SubscriptionFeatureResponse = {
+  featureGates?: ProductFeatureGateMap;
 };
 
 type OpenOrderItem = {
@@ -723,6 +731,7 @@ function TradePageContent() {
   const [positions, setPositions] = useState<PositionItem[]>([]);
   const [positionsDataDegraded, setPositionsDataDegraded] = useState(false);
   const [openOrders, setOpenOrders] = useState<OpenOrderItem[]>([]);
+  const [positionCopilotEnabled, setPositionCopilotEnabled] = useState(false);
   const [copilotSettings, setCopilotSettings] = useState<PositionCopilotSettings | null>(null);
   const [copilotAnalysis, setCopilotAnalysis] = useState<PositionCopilotAnalysis | null>(null);
   const [copilotLoading, setCopilotLoading] = useState(false);
@@ -880,7 +889,7 @@ function TradePageContent() {
     trigger: "manual" | "event" | "periodic",
     options?: { silent?: boolean }
   ) => {
-    if (!copilotPosition || !selectedAccountId) return;
+    if (!positionCopilotEnabled || !copilotPosition || !selectedAccountId) return;
     const requestSequence = ++copilotRequestSequenceRef.current;
     if (!options?.silent) setCopilotLoading(true);
     setCopilotError(null);
@@ -923,7 +932,7 @@ function TradePageContent() {
     } finally {
       if (!options?.silent) setCopilotLoading(false);
     }
-  }, [copilotPosition, locale, marketType, positionsDataDegraded, selectedAccountId, summary?.degraded, summary?.updatedAt]);
+  }, [copilotPosition, locale, marketType, positionCopilotEnabled, positionsDataDegraded, selectedAccountId, summary?.degraded, summary?.updatedAt]);
 
   useEffect(() => {
     copilotRequestSequenceRef.current += 1;
@@ -931,7 +940,7 @@ function TradePageContent() {
   }, [marketType, selectedAccountId, copilotPosition?.side, copilotPosition?.symbol]);
 
   const updateCopilotSettings = useCallback(async (patch: Partial<PositionCopilotSettings>) => {
-    if (!copilotSettings) return;
+    if (!positionCopilotEnabled || !copilotSettings) return;
     const next = { ...copilotSettings, ...patch };
     setCopilotSettings(next);
     setCopilotSettingsSaving(true);
@@ -951,9 +960,34 @@ function TradePageContent() {
     } finally {
       setCopilotSettingsSaving(false);
     }
-  }, [copilotSettings]);
+  }, [copilotSettings, positionCopilotEnabled]);
 
   useEffect(() => {
+    let disposed = false;
+    apiGet<SubscriptionFeatureResponse>("/settings/subscription")
+      .then((payload) => {
+        if (!disposed) {
+          setPositionCopilotEnabled(
+            isProductFeatureAllowed(payload.featureGates, "ai_position_copilot")
+          );
+        }
+      })
+      .catch(() => {
+        if (!disposed) setPositionCopilotEnabled(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!positionCopilotEnabled) {
+      copilotRequestSequenceRef.current += 1;
+      setCopilotSettings(null);
+      setCopilotAnalysis(null);
+      setCopilotError(null);
+      return;
+    }
     let disposed = false;
     apiGet<PositionCopilotSettings>("/api/position-copilot/settings")
       .then((settings) => {
@@ -965,10 +999,10 @@ function TradePageContent() {
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [positionCopilotEnabled]);
 
   useEffect(() => {
-    if (!copilotSnapshotKey || !copilotSettings || copilotSettings.mode === "off") return;
+    if (!positionCopilotEnabled || !copilotSnapshotKey || !copilotSettings || copilotSettings.mode === "off") return;
     if (!copilotSettings.inAppEnabled && !copilotSettings.telegramEnabled) return;
     if (lastCopilotEventKeyRef.current === copilotSnapshotKey) return;
     lastCopilotEventKeyRef.current = copilotSnapshotKey;
@@ -976,15 +1010,15 @@ function TradePageContent() {
       void analyzeWithPositionCopilot("event", { silent: true });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [analyzeWithPositionCopilot, copilotSettings, copilotSnapshotKey]);
+  }, [analyzeWithPositionCopilot, copilotSettings, copilotSnapshotKey, positionCopilotEnabled]);
 
   useEffect(() => {
-    if (!copilotSettings || copilotSettings.mode !== "periodic_summary" || !copilotPosition) return;
+    if (!positionCopilotEnabled || !copilotSettings || copilotSettings.mode !== "periodic_summary" || !copilotPosition) return;
     const timer = window.setInterval(() => {
       void analyzeWithPositionCopilot("periodic", { silent: true });
     }, copilotSettings.periodicMinutes * 60_000);
     return () => window.clearInterval(timer);
-  }, [analyzeWithPositionCopilot, copilotPosition, copilotSettings]);
+  }, [analyzeWithPositionCopilot, copilotPosition, copilotSettings, positionCopilotEnabled]);
 
   const refPrice = useMemo(() => {
     const value = ticker?.mark ?? ticker?.last ?? null;
@@ -2926,6 +2960,7 @@ function TradePageContent() {
             </article>
           </section>
 
+          {positionCopilotEnabled ? (
           <section className="card tradeDeskSection tradeCopilot" aria-labelledby="position-copilot-title">
             <div className="tradeDeskSectionHeader tradeCopilotHeader">
               <div>
@@ -3039,6 +3074,7 @@ function TradePageContent() {
               <div className="tradeCopilotEmpty">{t("copilot.ready", { symbol: copilotPosition.symbol })}</div>
             )}
           </section>
+          ) : null}
 
             <section className="card tradeDeskSection" id="trade-positions">
             <div className="tradeDeskSectionHeader">
