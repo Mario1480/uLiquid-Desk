@@ -7,6 +7,13 @@ export type AdvancedChartBar = {
   volume?: number;
 };
 
+export type AdvancedHistoryPeriod = {
+  from: number;
+  to: number;
+  countBack?: number;
+  firstDataRequest?: boolean;
+};
+
 const ADVANCED_REALTIME_TRADE_CACHE_TTL_MS = 5 * 60_000;
 const ADVANCED_REALTIME_TRADE_CACHE_MAX_ENTRIES = 512;
 
@@ -38,6 +45,27 @@ export function isSaneAdvancedChartBar(bar: AdvancedChartBar | null | undefined)
   if (high < Math.max(open, close, low)) return false;
   if (low > Math.min(open, close, high)) return false;
   return Number.isFinite(bar.time) && bar.time > 0;
+}
+
+export function selectAdvancedHistoryBars<T extends { time: number }>(
+  bars: T[],
+  period: AdvancedHistoryPeriod
+): T[] {
+  const fromMs = Number(period.from) * 1000;
+  const toMs = Number(period.to) * 1000;
+  const ranged = bars.filter((bar) => bar.time >= fromMs && bar.time < toMs);
+  if (ranged.length > 0) return ranged;
+
+  // TradingView requests progressively older windows after the initial load.
+  // Returning the latest bars for those windows makes it request the same
+  // history repeatedly and can block Firefox for several seconds.
+  if (period.firstDataRequest === false) return [];
+
+  const countBack = Number(period.countBack);
+  const fallbackCount = Number.isFinite(countBack) && countBack > 0
+    ? Math.ceil(countBack)
+    : bars.length;
+  return bars.slice(-Math.max(1, fallbackCount));
 }
 
 export function buildAdvancedRealtimeTradeKey(params: {

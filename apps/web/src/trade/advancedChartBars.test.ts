@@ -7,6 +7,7 @@ import {
   normalizeAdvancedChartTimestampMs,
   rememberAdvancedRealtimeTrade,
   reconcilePolledBarWithLiveBar,
+  selectAdvancedHistoryBars,
   toAdvancedChartPrice
 } from "./advancedChartBars";
 
@@ -240,4 +241,57 @@ test("isSaneAdvancedChartBar rejects zero-wick and inconsistent candles", () => 
     low: 98,
     close: 101
   }), true);
+});
+
+test("selectAdvancedHistoryBars returns only bars inside the requested window", () => {
+  const bars = [
+    { time: 1_710_000_000_000 },
+    { time: 1_710_000_060_000 },
+    { time: 1_710_000_120_000 }
+  ];
+
+  assert.deepEqual(
+    selectAdvancedHistoryBars(bars, {
+      from: 1_710_000_060,
+      to: 1_710_000_180,
+      countBack: 2,
+      firstDataRequest: true
+    }),
+    bars.slice(1)
+  );
+});
+
+test("selectAdvancedHistoryBars stops TradingView backfill when the older window is empty", () => {
+  const bars = [
+    { time: 1_710_000_000_000 },
+    { time: 1_710_000_060_000 }
+  ];
+
+  assert.deepEqual(
+    selectAdvancedHistoryBars(bars, {
+      from: 1_709_999_000,
+      to: 1_709_999_900,
+      countBack: 300,
+      firstDataRequest: false
+    }),
+    []
+  );
+});
+
+test("selectAdvancedHistoryBars keeps a latest-bars fallback for the first request", () => {
+  const bars = [
+    { time: 1_710_000_000_000 },
+    { time: 1_710_000_060_000 },
+    { time: 1_710_000_120_000 }
+  ];
+
+  assert.deepEqual(
+    selectAdvancedHistoryBars(bars, {
+      from: 1_709_999_000,
+      to: 1_709_999_900,
+      countBack: 2,
+      firstDataRequest: true
+    }),
+    bars.slice(-2)
+  );
 });

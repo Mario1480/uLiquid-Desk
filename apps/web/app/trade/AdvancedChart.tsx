@@ -9,6 +9,7 @@ import {
   isSaneAdvancedChartBar,
   normalizeAdvancedChartTimestampMs,
   reconcilePolledBarWithLiveBar,
+  selectAdvancedHistoryBars,
   toAdvancedChartPrice
 } from "../../src/trade/advancedChartBars";
 import type {
@@ -617,12 +618,7 @@ function buildAdvancedDatafeed(params: {
 
       void fetchBars(symbolName, timeframe, limit)
         .then((bars) => {
-          const fromMs = Number(periodParams.from) * 1000;
-          const toMs = Number(periodParams.to) * 1000;
-          const ranged = bars.filter((bar) => bar.time >= fromMs && bar.time < toMs);
-          const result = ranged.length > 0
-            ? ranged
-            : bars.slice(-Math.max(1, periodParams.countBack || 300));
+          const result = selectAdvancedHistoryBars(bars, periodParams);
           const latestSeedBar = result[result.length - 1] ?? bars[bars.length - 1] ?? null;
           const historyKey = historyKeyFor(symbolName, timeframe);
           if (latestSeedBar) {
