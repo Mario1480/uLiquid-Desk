@@ -1,5 +1,6 @@
 import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import type { AiChatResult, CallAiChatOptions, ChatMessage } from "../provider.js";
+import { redactAiSafetySecrets } from "../safety/toolPolicy.js";
 import { normalizeStoredAgentMessages } from "./answer.js";
 import { AgentChatError } from "./errors.js";
 import { assertProfileSkillsAllowed, BUILTIN_AGENT_PROFILES, resolveBuiltinAgentProfile } from "./profiles.js";
@@ -12,6 +13,7 @@ import {
 } from "./policy.js";
 import { runAgentChat } from "./runtime.js";
 import { profileMutationSchema } from "./schemas.js";
+import { buildAgentChatScopeResponse, classifyAgentChatScope, filterAgentChatModelHistory, type AgentChatScopeDecision } from "./scopeGuard.js";
 import { listAgentSkillDescriptors } from "./skills.js";
 import type { AgentProfileKey, ResolvedAgentProfile } from "./contracts.js";
 
@@ -171,6 +173,88 @@ export class AgentChatService {
     return this.updateConversation(user, id, { status: "archived" });
   }
 
+  private async completeScopeGuardResponse(params: {
+    userId: string;
+    conversation: any;
+    profile: ResolvedAgentProfile;
+    locale: "de" | "en";
+    idempotencyKey: string;
+    decision: Exclude<AgentChatScopeDecision, "in_scope">;
+  }) {
+    const startedAt = Date.now();
+    const content = buildAgentChatScopeResponse({
+      decision: params.decision,
+      locale: params.locale,
+      profileKey: params.profile.baseProfileKey
+    });
+    const run = await this.deps.db.aiAgentRun.create({
+      data: {
+        conversationId: params.conversation.id,
+        userId: params.userId,
+        scope: params.profile.actionLevel === "account_read" ? "agent_position" : "agent_market",
+        status: "running",
+        profileSnapshot: redactAiSafetySecrets(params.profile),
+        contextSnapshot: redactAiSafetySecrets({
+          profileKey: params.conversation.profileKey,
+          selectedVenue: params.conversation.selectedVenue,
+          selectedExchangeAccountId: params.conversation.selectedExchangeAccountId,
+          marketType: params.conversation.marketType,
+          symbol: params.conversation.symbol,
+          locale: params.locale
+        }),
+        modelClass: "utility",
+        routingDecision: { reasonCode: "agent_chat_scope_guard", decision: params.decision },
+        idempotencyKey: params.idempotencyKey
+      }
+    });
+    try {
+      const latencyMs = Date.now() - startedAt;
+      const assistantMessage = await this.deps.db.$transaction(async (tx: any) => {
+        const message = await tx.aiAgentMessage.create({
+          data: {
+            conversationId: params.conversation.id,
+            role: "assistant",
+            content,
+            blocks: [],
+            sourceRefs: []
+          }
+        });
+        await tx.aiAgentRun.update({
+          where: { id: run.id },
+          data: { status: "completed", latencyMs, completedAt: new Date() }
+        });
+        return message;
+      });
+      const subscription = await this.deps.db.userSubscription.findUnique({
+        where: { userId: params.userId },
+        select: { aiCreditBalance: true }
+      }).catch(() => null);
+      return {
+        messageId: assistantMessage.id,
+        content,
+        blocks: [],
+        citations: [],
+        run: {
+          id: run.id,
+          modelClass: "utility",
+          toolIterations: 0,
+          toolCalls: 0,
+          latencyMs,
+          degraded: false,
+          chargedCredits: "0",
+          remainingCredits: subscription ? String(subscription.aiCreditBalance ?? 0) : null,
+          skillCategories: []
+        }
+      };
+    } catch (error) {
+      await this.deps.db.aiAgentRun.update({
+        where: { id: run.id },
+        data: { status: "failed", errorCode: "agent_chat_scope_response_failed", completedAt: new Date() }
+      }).catch(() => undefined);
+      throw error;
+    }
+  }
+
   async sendMessage(user: { id: string; email: string }, conversationId: string, content: string, locale: "de" | "en", idempotencyKey: string) {
     const { access } = await this.featureAccess(user); assertAgentChatAccess(access);
     const existingRun = await this.deps.db.aiAgentRun.findUnique({ where: { idempotencyKey } });
@@ -214,9 +298,22 @@ export class AgentChatService {
       if (!conversation) throw new AgentChatError("agent_chat_conversation_not_found", 404);
       const profile = await this.validateContext(user.id, { profileId: conversation.profileId ?? `builtin:${conversation.profileKey}`, profileKey: conversation.profileKey, selectedVenue: conversation.selectedVenue, selectedExchangeAccountId: conversation.selectedExchangeAccountId, marketType: conversation.marketType, symbol: conversation.symbol }, access);
       const history = await this.deps.db.aiAgentMessage.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "desc" }, take: 10, select: { role: true, content: true } });
+      const orderedHistory = history.reverse();
+      const scopeDecision = classifyAgentChatScope({ message: content, profileKey: profile.baseProfileKey, history: orderedHistory });
+      const modelHistory = filterAgentChatModelHistory(orderedHistory, profile.baseProfileKey);
       await this.deps.db.aiAgentMessage.create({ data: { conversationId: conversation.id, role: "user", content } });
       await this.deps.db.aiAgentConversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
-      return await runAgentChat({ db: this.deps.db, callAiChat: this.deps.callAiChat, userId: user.id, conversation, profile, locale, userMessage: content, idempotencyKey, history: history.reverse() });
+      if (scopeDecision !== "in_scope") {
+        return await this.completeScopeGuardResponse({
+          userId: user.id,
+          conversation,
+          profile,
+          locale,
+          idempotencyKey,
+          decision: scopeDecision
+        });
+      }
+      return await runAgentChat({ db: this.deps.db, callAiChat: this.deps.callAiChat, userId: user.id, conversation, profile, locale, userMessage: content, idempotencyKey, history: modelHistory });
     } finally {
       activeUsers.delete(user.id);
     }

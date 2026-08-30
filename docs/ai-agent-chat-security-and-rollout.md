@@ -27,6 +27,7 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 - Account reads never fall back to another venue. Public market reads may fall back only when the requested venue is `auto`; the result and activity record mark that fallback.
 - Position risk uses `buildPositionCopilotSnapshot` and `buildDeterministicPositionAnalysis`. No nested AI call is made and deterministic warnings cannot be removed by a tool.
 - User text, market intelligence and tool results are wrapped as untrusted data. Tool arguments, results, errors and audit summaries pass through recursive secret redaction.
+- A deterministic scope guard handles clearly off-topic requests, courtesy-only messages and obvious prompt-override attempts before model routing or credit reservation. Guarded requests produce a persisted zero-credit response without exposing tools.
 - Per-user request limits, one concurrent run per user, four tool iterations, twelve calls, two calls per skill, a bounded 30-180 second run timeout (90 seconds by default) and bounded payloads constrain cost and resource abuse.
 
 ## Persistence and retention
