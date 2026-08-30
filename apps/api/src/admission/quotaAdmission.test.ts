@@ -21,13 +21,15 @@ function createSerializedFakeDatabase() {
     ["state_2", { id: "state_2", userId: "user_1", autoScheduleEnabled: false, autoSchedulePaused: false }]
   ]);
   const lockKeys: string[] = [];
+  const lockQueries: string[] = [];
   const isolationLevels: string[] = [];
   let transactionTail = Promise.resolve();
 
   const tx = {
-    async $queryRaw(_query: TemplateStringsArray, lockKey: string) {
+    async $queryRaw(query: TemplateStringsArray, lockKey: string) {
       lockKeys.push(lockKey);
-      return [{ pg_advisory_xact_lock: null }];
+      lockQueries.push(query.join("?"));
+      return [{ lock_result: "" }];
     },
     bot: {
       async findFirst({ where }: any) {
@@ -77,6 +79,7 @@ function createSerializedFakeDatabase() {
     accounts,
     predictionStates,
     lockKeys,
+    lockQueries,
     isolationLevels,
     async $transaction(work: (transaction: typeof tx) => Promise<any>, options: any) {
       isolationLevels.push(String(options?.isolationLevel ?? ""));
@@ -124,6 +127,10 @@ test("two concurrent bot starts with one free slot admit exactly one", async () 
   assert.deepEqual(database.lockKeys, [
     "quota-admission:bot:user_1",
     "quota-admission:bot:user_1"
+  ]);
+  assert.deepEqual(database.lockQueries, [
+    "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))::text AS lock_result",
+    "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))::text AS lock_result"
   ]);
 });
 
@@ -189,5 +196,9 @@ test("prediction schedule admission serializes each user and quota bucket", asyn
   assert.deepEqual(database.lockKeys, [
     "quota-admission:prediction_ai:user_1",
     "quota-admission:prediction_ai:user_1"
+  ]);
+  assert.deepEqual(database.lockQueries, [
+    "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))::text AS lock_result",
+    "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))::text AS lock_result"
   ]);
 });

@@ -50,7 +50,7 @@ export async function runQuotaAdmissionTransaction<T>(params: {
         if (typeof tx.$queryRaw !== "function") {
           throw new Error("quota_admission_lock_unavailable");
         }
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS lock_result`;
         return params.work(tx);
       }, { isolationLevel: "ReadCommitted" });
     } catch (error) {
