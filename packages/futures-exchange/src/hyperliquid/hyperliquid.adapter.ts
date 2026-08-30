@@ -20,6 +20,7 @@ import type {
 } from "../futures-exchange.interface.js";
 import type {
   ClosePositionParams,
+  EditOrderParams,
   NormalizedOrder,
   NormalizedPosition,
   PositionTpSlParams
@@ -740,6 +741,50 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
   async cancelOrder(orderId: string): Promise<CancelOrderResult> {
     return this.cancelOrderByParams({ orderId });
+  }
+
+  async editOrder(params: EditOrderParams): Promise<PlaceOrderResult> {
+    const contract = await this.requireTradeableContract(params.symbol);
+    await this.ensureSdkPerpAssetMapReady();
+    const normalizedQty = params.qty === undefined
+      ? undefined
+      : normalizeQty(params.qty, contract.stepSize);
+    if (params.qty !== undefined && (!normalizedQty || normalizedQty <= 0)) {
+      throw new Error("hyperliquid_invalid_qty");
+    }
+    if (params.price !== undefined && (!Number.isFinite(params.price) || params.price <= 0)) {
+      throw new Error("hyperliquid_invalid_price");
+    }
+
+    const updated = await this.tradeApi.modifyOrder({
+      symbol: contract.exchangeSymbol,
+      productType: this.productType,
+      szDecimals: Number(contract.raw.universe.szDecimals ?? 0),
+      orderId: params.orderId,
+      newPrice: params.price === undefined ? undefined : String(params.price),
+      newSize: normalizedQty === undefined ? undefined : String(normalizedQty),
+      newPresetStopSurplusPrice: params.takeProfitPrice == null
+        ? undefined
+        : String(params.takeProfitPrice),
+      newPresetStopLossPrice: params.stopLossPrice == null
+        ? undefined
+        : String(params.stopLossPrice)
+    }) as Partial<PlaceOrderResult> & { orderId?: string };
+    const orderId = String(updated?.orderId ?? "").trim();
+    if (!orderId) {
+      throw new Error("hyperliquid_edit_order_missing_order_id");
+    }
+    this.cacheOrderMetadata(orderId, contract.exchangeSymbol, contract.assetIndex);
+    if (typeof updated.status === "string") {
+      return updated as PlaceOrderResult;
+    }
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "venue_ack",
+      receiptStatus: "unknown",
+      orderId
+    };
   }
 
   async cancelOrderByParams(params: { orderId: string; symbol?: string }): Promise<CancelOrderResult> {

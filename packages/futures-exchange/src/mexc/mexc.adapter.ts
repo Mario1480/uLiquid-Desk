@@ -23,9 +23,14 @@ import {
   validatePrice,
   validateQty
 } from "@mm/futures-core";
-import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
+import type {
+  FuturesExchange,
+  PlaceOrderRequest,
+  PlaceOrderResult
+} from "../futures-exchange.interface.js";
 import type {
   ClosePositionParams,
+  EditOrderParams,
   NormalizedOrder,
   NormalizedPosition,
   PositionTpSlParams
@@ -144,6 +149,23 @@ function toMexcOrderSide(side: OrderSide, reduceOnly: boolean): number {
 
 function toMexcOpenType(mode: MarginMode): number {
   return mode === "isolated" ? 1 : 2;
+}
+
+function fromMexcOrderSide(value: unknown): OrderSide | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "1" || normalized === "4" || normalized === "buy") return "buy";
+  if (normalized === "2" || normalized === "3" || normalized === "sell") return "sell";
+  return null;
+}
+
+function isMexcCloseSide(value: unknown): boolean {
+  const normalized = String(value ?? "").trim();
+  return normalized === "2" || normalized === "4";
+}
+
+function isMexcLimitOrder(value: unknown): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "limit";
 }
 
 function mapPosition(raw: MexcPositionRaw): FuturesPosition {
@@ -395,7 +417,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     );
   }
 
-  async placeOrder(req: PlaceOrderRequest) {
+  private async preparePlaceOrder(req: PlaceOrderRequest): Promise<MexcPlaceOrderRequest> {
     const contract = await this.requireTradeableContract(req.symbol);
     const contractSize =
       Number.isFinite(Number(contract.contractSize)) && Number(contract.contractSize) > 0
@@ -432,7 +454,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
       if (!priceValidation.ok) throw priceValidation.error;
     }
 
-    const payload: MexcPlaceOrderRequest = {
+    return {
       symbol: contract.exchangeSymbol,
       vol: qty,
       side: toMexcOrderSide(req.side, Boolean(req.reduceOnly)),
@@ -447,7 +469,9 @@ export class MexcFuturesAdapter implements FuturesExchange {
       lossTrend: req.stopLossPrice ? 1 : undefined,
       stpMode: 0
     };
+  }
 
+  private async submitPreparedOrder(payload: MexcPlaceOrderRequest): Promise<PlaceOrderResult> {
     const result = await this.tradingApi.submitOrder(payload);
     const orderId = pickOrderId(result);
     if (!orderId) {
@@ -467,6 +491,11 @@ export class MexcFuturesAdapter implements FuturesExchange {
     };
   }
 
+  async placeOrder(req: PlaceOrderRequest): Promise<PlaceOrderResult> {
+    const payload = await this.preparePlaceOrder(req);
+    return this.submitPreparedOrder(payload);
+  }
+
   async cancelOrder(orderId: string) {
     await this.tradingApi.cancelOrder(orderId);
     return {
@@ -476,6 +505,72 @@ export class MexcFuturesAdapter implements FuturesExchange {
       receiptStatus: "unknown" as const,
       orderId
     };
+  }
+
+  async editOrder(params: EditOrderParams): Promise<PlaceOrderResult> {
+    const existingOrders = await this.listOpenOrders({ symbol: params.symbol });
+    const current = existingOrders.find((order) => order.orderId === params.orderId);
+    if (!current) {
+      throw new MexcInvalidParamsError("order_not_found", {
+        endpoint: "/api/v1/private/order/cancel",
+        method: "POST"
+      });
+    }
+
+    const raw = toRecord(current.raw);
+    const rawOrderType = raw.orderType ?? raw.type ?? current.type;
+    if (!isMexcLimitOrder(rawOrderType)) {
+      throw new MexcInvalidParamsError("order_edit_requires_regular_limit_order", {
+        endpoint: "/api/v1/private/order/create",
+        method: "POST"
+      });
+    }
+
+    const rawSide = raw.side ?? current.side;
+    const side = fromMexcOrderSide(rawSide);
+    if (!side) {
+      throw new MexcInvalidParamsError("order_edit_side_unrecognized", {
+        endpoint: "/api/v1/private/order/create",
+        method: "POST"
+      });
+    }
+
+    const qty = params.qty ?? current.qty ?? 0;
+    const price = params.price ?? current.price ?? 0;
+    const takeProfitPrice = params.takeProfitPrice === undefined
+      ? current.takeProfitPrice ?? undefined
+      : params.takeProfitPrice ?? undefined;
+    const stopLossPrice = params.stopLossPrice === undefined
+      ? current.stopLossPrice ?? undefined
+      : params.stopLossPrice ?? undefined;
+    const replacement = await this.preparePlaceOrder({
+      symbol: current.symbol || params.symbol,
+      side,
+      type: "limit",
+      qty,
+      price,
+      reduceOnly: current.reduceOnly ?? isMexcCloseSide(rawSide),
+      marginMode: toMarginMode(raw.openType ?? raw.marginMode) ?? "cross",
+      takeProfitPrice,
+      stopLossPrice
+    });
+
+    await this.cancelOrder(params.orderId);
+    try {
+      return await this.submitPreparedOrder(replacement);
+    } catch (error) {
+      throw new MexcMaintenanceError(
+        "MEXC order edit cancelled the original order but the replacement failed.",
+        {
+          endpoint: "/api/v1/private/order/create",
+          method: "POST",
+          responseBody: {
+            orderId: params.orderId,
+            cause: error instanceof Error ? error.message : String(error)
+          }
+        }
+      );
+    }
   }
 
   async setPositionTpSl(params: PositionTpSlParams): Promise<{ ok: true }> {

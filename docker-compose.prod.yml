@@ -46,6 +46,8 @@ services:
       NODE_ENV: "production"
       API_PORT: "8080"
       AI_AGENT_ACCOUNT_READS_ENABLED: ${AI_AGENT_ACCOUNT_READS_ENABLED:-true}
+      AI_POSITION_COPILOT_ENABLED: ${AI_POSITION_COPILOT_ENABLED:-true}
+      AI_POSITION_MONITORING_ENABLED: ${AI_POSITION_MONITORING_ENABLED:-true}
       DATABASE_URL: postgresql://mm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/marketmaker?schema=public&connection_limit=30&pool_timeout=30
       ORCHESTRATION_MODE: "queue"
       REDIS_URL: redis://redis:6379

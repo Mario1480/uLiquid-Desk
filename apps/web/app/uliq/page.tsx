@@ -1024,7 +1024,7 @@ function UliqHubContent() {
 
         {activeView === "locking" && locks ? (
           <section className="uiSection">
-            <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("locking.title")}</h2><p className="uiSectionDescription">{t("locking.description")}</p></div><strong>{formatRaw(locks.lockedBalanceRaw, 18)} ULIQ</strong></div>
+            <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("locking.title")}</h2><p className="uiSectionDescription">{t("locking.description")}</p></div><div className="uliqHeaderMetric"><span>{t("locking.balance")}</span><strong>{formatRaw(locks.lockedBalanceRaw, 18)} ULIQ</strong></div></div>
             <div className="uliqFormRow uliqLockForm">
               <div className="uliqAvailableBalance"><span>{t("locking.available")}</span><strong>{formatRaw(entitlement?.walletRaw, 18)} ULIQ</strong></div>
               <label><span>{t("locking.amount")}</span><input className="input" inputMode="decimal" value={lockAmount} onChange={(event) => setLockAmount(event.target.value)} placeholder="100000" /></label>

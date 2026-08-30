@@ -52,6 +52,10 @@ export default async function PrivacyPage() {
           preferences, product settings, security, and diagnostics. Disabling these technologies may prevent parts of
           the product from working.
         </p>
+        <p>
+          The current first-party inventory and retention details are listed in the{" "}
+          <Link href={withLocalePath("/cookies", locale)}>Cookie and Storage Information</Link>.
+        </p>
       </section>
 
       <section className="card legalPageSection">

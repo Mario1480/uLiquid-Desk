@@ -6132,9 +6132,12 @@
 }
 
 .predictionWizard {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-width: 0;
   width: min(920px, 100%);
-  max-height: min(860px, calc(100vh - 40px));
-  overflow: auto;
+  max-height: min(860px, calc(100dvh - 40px));
+  overflow: hidden;
   border: 1px solid var(--ui-border-strong);
   border-radius: var(--ui-radius-panel);
   background: var(--ui-surface-menu);
@@ -6166,6 +6169,17 @@
   margin: 5px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.predictionWizardHeader {
+  position: static;
+}
+
+.predictionWizardHeader,
+.predictionWizardSteps,
+.predictionWizardBody,
+.predictionWizardFooter {
+  min-width: 0;
 }
 
 .predictionDrawerClose {
@@ -6217,6 +6231,10 @@
 }
 
 .predictionWizardBody {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 0 16px 16px;
 }
 
@@ -6303,8 +6321,7 @@
 }
 
 .predictionWizardFooter {
-  position: sticky;
-  bottom: 0;
+  position: static;
   z-index: 2;
   display: flex;
   justify-content: space-between;
@@ -6436,12 +6453,14 @@
   }
 
   .predictionWizard {
-    max-height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     border-radius: 0;
   }
 
   .predictionWizardSteps {
     display: flex;
+    width: 100%;
     overflow-x: auto;
   }
 

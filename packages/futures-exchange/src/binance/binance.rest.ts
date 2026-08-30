@@ -47,8 +47,8 @@ export class BinanceRestClient {
 
   constructor(private readonly options: BinanceRestClientOptions = {}) {
     this.baseUrl = (options.restBaseUrl ?? process.env.BINANCE_PERP_BASE_URL ?? BINANCE_USDM_DEFAULT_REST_BASE_URL).replace(/\/+$/, "");
-    this.apiKey = options.apiKey;
-    this.apiSecret = options.apiSecret;
+    this.apiKey = options.apiKey?.trim();
+    this.apiSecret = options.apiSecret?.trim();
     this.recvWindowMs = options.recvWindowMs ?? Number(process.env.BINANCE_RECV_WINDOW ?? BINANCE_USDM_DEFAULT_RECV_WINDOW_MS);
     this.timeoutMs = options.timeoutMs ?? BINANCE_USDM_DEFAULT_TIMEOUT_MS;
     this.retryAttempts = options.retryAttempts ?? BINANCE_USDM_DEFAULT_RETRY_ATTEMPTS;

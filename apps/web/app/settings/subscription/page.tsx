@@ -17,7 +17,6 @@ import {
 } from "../../../src/billing/subscriptionViewModel";
 import {
   formatAiCreditAmount,
-  formatAiTokenAmount,
   isKnownAiCreditUsageScope,
   type AiCreditSummary,
   type AiCreditUsageItem,
@@ -514,25 +513,12 @@ export default function SubscriptionPage() {
                       <td>{formatMaybeDate(item.createdAt, locale)}</td>
                       <td>
                         <strong className="subscriptionAiUsageAction">{aiUsageScopeLabel(item.scope)}</strong>
-                        <span className="subscriptionAiUsageMeta">{item.scope}</span>
                       </td>
                       <td>
                         <span>{aiUsageModelClassLabel(item.modelClass)}</span>
-                        <span className="subscriptionAiUsageMeta">{item.model ?? item.provider ?? "-"}</span>
                       </td>
                       <td>
                         <span>{t("credits.callCount", { count: item.modelCallCount })}</span>
-                        <span
-                          className="subscriptionAiUsageMeta"
-                          title={t("credits.tokenBreakdown", {
-                            input: formatAiTokenAmount(item.tokenUsage.input, locale),
-                            cached: formatAiTokenAmount(item.tokenUsage.cachedInput, locale),
-                            output: formatAiTokenAmount(item.tokenUsage.output, locale),
-                            reasoning: formatAiTokenAmount(item.tokenUsage.reasoning, locale)
-                          })}
-                        >
-                          {t("credits.tokenCount", { count: formatAiTokenAmount(item.usageTotalTokens, locale) })}
-                        </span>
                       </td>
                       <td>
                         <strong className="subscriptionAiUsageCredits">{formatAiCreditAmount(item.chargedCredits, locale)}</strong>

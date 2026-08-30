@@ -37,6 +37,43 @@ function parseNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizeAssetCode(value: unknown): string | null {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return normalized || null;
+}
+
+function readBinanceSymbolIdentity(row: any): {
+  symbol: string;
+  exchangeSymbol: string;
+  baseAsset: string | null;
+  quoteAsset: string | null;
+} | null {
+  const exchangeSymbol = normalizeAssetCode(row?.symbol);
+  const baseAsset = normalizeAssetCode(row?.baseAsset);
+  const quoteAsset = normalizeAssetCode(row?.quoteAsset);
+
+  if (baseAsset && quoteAsset) {
+    return {
+      symbol: `${baseAsset}/${quoteAsset}`,
+      exchangeSymbol: exchangeSymbol ?? `${baseAsset}${quoteAsset}`,
+      baseAsset,
+      quoteAsset
+    };
+  }
+  if (!exchangeSymbol) return null;
+
+  try {
+    return {
+      symbol: fromExchangeSymbol("binance", exchangeSymbol),
+      exchangeSymbol,
+      baseAsset,
+      quoteAsset
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildQuery(params: Record<string, string | number | undefined>) {
   const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "");
   entries.sort(([a], [b]) => a.localeCompare(b));
@@ -70,12 +107,19 @@ export class BinanceRestClient {
   private readonly symbolCache = new Map<string, { symbols: string[]; ts: number }>();
   private readonly symbolCacheTtlMs = 15 * 60_000;
   private readonly recvWindow = Number(process.env.BINANCE_RECV_WINDOW || "5000");
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+  private readonly apiSecret: string;
 
   constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
-    private readonly apiSecret: string
-  ) {}
+    baseUrl: string,
+    apiKey: string,
+    apiSecret: string
+  ) {
+    this.baseUrl = baseUrl.trim().replace(/\/+$/, "");
+    this.apiKey = apiKey.trim();
+    this.apiSecret = apiSecret.trim();
+  }
 
   private static async enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const run = BinanceRestClient.queue.then(fn, fn);
@@ -190,23 +234,24 @@ export class BinanceRestClient {
     };
   }
 
-  private parseSymbolInfo(row: any): BinanceSpotSymbolInfo {
+  private parseSymbolInfo(row: any): BinanceSpotSymbolInfo | null {
     const filters = Array.isArray(row?.filters) ? row.filters : [];
     const priceFilter = filters.find((f: any) => f?.filterType === "PRICE_FILTER") ?? {};
     const lotSize = filters.find((f: any) => f?.filterType === "LOT_SIZE") ?? {};
-    const exchangeSymbol = String(row?.symbol || "").toUpperCase();
+    const identity = readBinanceSymbolIdentity(row);
+    if (!identity) return null;
     const status = String(row?.status || "").toUpperCase();
     return {
-      symbol: fromExchangeSymbol("binance", exchangeSymbol),
-      exchangeSymbol,
+      symbol: identity.symbol,
+      exchangeSymbol: identity.exchangeSymbol,
       status: status === "TRADING" ? "online" : "offline",
       tradable: status === "TRADING" && row?.isSpotTradingAllowed !== false,
       tickSize: parseNumber(priceFilter?.tickSize) || null,
       stepSize: parseNumber(lotSize?.stepSize) || null,
       minQty: parseNumber(lotSize?.minQty) || null,
       maxQty: parseNumber(lotSize?.maxQty) || null,
-      quoteAsset: row?.quoteAsset ? String(row.quoteAsset).toUpperCase() : null,
-      baseAsset: row?.baseAsset ? String(row.baseAsset).toUpperCase() : null
+      quoteAsset: identity.quoteAsset,
+      baseAsset: identity.baseAsset
     };
   }
 
@@ -237,8 +282,8 @@ export class BinanceRestClient {
     const symbols = list
       .filter((x: any) => String(x?.status || "").toUpperCase() === "TRADING")
       .filter((x: any) => x?.isSpotTradingAllowed !== false)
-      .map((x: any) => fromExchangeSymbol("binance", String(x.symbol || "")))
-      .filter(Boolean);
+      .map((x: any) => readBinanceSymbolIdentity(x)?.symbol ?? null)
+      .filter((symbol: string | null): symbol is string => symbol !== null);
 
     this.symbolCache.set("symbols", { symbols, ts: Date.now() });
     return symbols;
@@ -249,7 +294,7 @@ export class BinanceRestClient {
     const list = Array.isArray(info?.symbols) ? info.symbols : [];
     return list
       .map((row: any) => this.parseSymbolInfo(row))
-      .filter((row: BinanceSpotSymbolInfo) => Boolean(row.symbol))
+      .filter((row: BinanceSpotSymbolInfo | null): row is BinanceSpotSymbolInfo => row !== null)
       .sort((a: BinanceSpotSymbolInfo, b: BinanceSpotSymbolInfo) => a.symbol.localeCompare(b.symbol));
   }
 

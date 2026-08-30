@@ -198,7 +198,7 @@ test("futures venue capability registry exposes enforceable feature support by v
   const hyperliquid = getFuturesVenueCapabilities("hyperliquid");
   assert.deepEqual(hyperliquid.supportedPositionModes, ["one-way"]);
   assert.equal(hyperliquid.supportsVaultExecution, true);
-  assert.equal(hyperliquid.supportsOrderEditing, false);
+  assert.equal(hyperliquid.supportsOrderEditing, true);
   assert.equal(hyperliquid.supportsPositionClose, true);
   assert.equal(hyperliquid.supportsPositionTpSl, true);
 
@@ -206,10 +206,12 @@ test("futures venue capability registry exposes enforceable feature support by v
   assert.equal(paper.supportsBalanceReads, true);
   assert.equal(paper.supportsTransfers, false);
   assert.equal(paper.supportsGridExecution, true);
+  assert.equal(paper.supportsOrderEditing, true);
 
   const mexc = getFuturesVenueCapabilities("mexc");
   assert.equal(mexc.supportsPositionClose, true);
   assert.equal(mexc.supportsPositionTpSl, true);
+  assert.equal(mexc.supportsOrderEditing, true);
 
   const binance = getFuturesVenueCapabilities("binance");
   assert.equal(binance.connectorKind, "live_adapter");

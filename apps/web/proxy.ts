@@ -19,6 +19,7 @@ const PUBLIC_PATHS = [
   "/maintenance",
   "/terms",
   "/privacy",
+  "/cookies",
   "/risk-disclosure",
   "/favicon.ico"
 ];
@@ -175,13 +176,6 @@ function resolveIntegratedAdminRedirect(pathnameWithoutLocale: string): string |
   return null;
 }
 
-function setLocaleCookie(resp: NextResponse, locale: AppLocale): void {
-  resp.cookies.set(LOCALE_COOKIE_NAME, locale, {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365
-  });
-}
-
 function rewriteLocalizedRequest(req: NextRequest, internalPathname: string, locale: AppLocale): NextResponse {
   const rewriteUrl = req.nextUrl.clone();
   rewriteUrl.pathname = internalPathname;
@@ -192,16 +186,13 @@ function rewriteLocalizedRequest(req: NextRequest, internalPathname: string, loc
       headers: requestHeaders
     }
   });
-  setLocaleCookie(resp, locale);
   return resp;
 }
 
 function redirectToLocalizedPath(req: NextRequest, locale: AppLocale, pathname: string): NextResponse {
   const target = req.nextUrl.clone();
   target.pathname = withLocalePath(pathname, locale);
-  const resp = NextResponse.redirect(target);
-  setLocaleCookie(resp, locale);
-  return resp;
+  return NextResponse.redirect(target);
 }
 
 export async function proxy(req: NextRequest) {

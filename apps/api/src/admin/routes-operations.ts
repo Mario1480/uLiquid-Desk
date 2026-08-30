@@ -603,13 +603,28 @@ export function registerAdminOperationsRoutes(
       allowed.map((value) => deps.normalizeExchangeValue(String(value ?? ""))).filter(Boolean)
     );
     const runtimeEnabled = deps.getRuntimeEnabledExchangeValues();
+    const optionResponse = deps.getExchangeOptionsResponse(Array.from(normalizedAllowed));
+    const optionRows = Array.isArray(optionResponse)
+      ? optionResponse
+      : optionResponse?.options ?? [];
     const optionLabels = new Map<string, string>(
-      (deps.getExchangeOptionsResponse(Array.from(normalizedAllowed))?.options ?? [])
+      optionRows
         .map((option: any) => [
           deps.normalizeExchangeValue(String(option?.value ?? "")),
           String(option?.label ?? option?.value ?? "").trim()
         ])
         .filter((entry: [string, string]) => Boolean(entry[0]))
+    );
+    const optionProducts = new Map<string, { spot: boolean; perp: boolean }>(
+      optionRows
+        .map((option: any) => [
+          deps.normalizeExchangeValue(String(option?.value ?? "")),
+          {
+            spot: Boolean(option?.supportsSpotExecution),
+            perp: Boolean(option?.supportsPerpExecution)
+          }
+        ])
+        .filter((entry: [string, { spot: boolean; perp: boolean }]) => Boolean(entry[0]))
     );
 
     const venues = Array.from(new Set([
@@ -631,6 +646,7 @@ export function registerAdminOperationsRoutes(
         (row: any) => deps.normalizeExchangeValue(String(row?.exchange ?? "")) === venue
       );
       const capability = getFuturesVenueCapabilities(venue);
+      const products = optionProducts.get(venue) ?? { spot: false, perp: false };
       const syncErrors = accounts
         .filter((row: any) => row?.lastSyncErrorAt || row?.lastSyncErrorMessage)
         .sort((left: any, right: any) => {
@@ -679,15 +695,16 @@ export function registerAdminOperationsRoutes(
           lastSyncErrorMessage: row.lastSyncErrorMessage ? String(row.lastSyncErrorMessage) : null
         })),
         capabilities: {
-          supportsPerpExecution: capability.supportsPerpExecution,
-          supportsPositionReads: capability.supportsPositionReads,
-          supportsBalanceReads: capability.supportsBalanceReads,
-          supportsOrderEditing: capability.supportsOrderEditing,
-          supportsPositionTpSl: capability.supportsPositionTpSl,
-          supportsPositionClose: capability.supportsPositionClose,
-          supportsGridExecution: capability.supportsGridExecution,
-          supportsVaultExecution: capability.supportsVaultExecution,
-          supportsTransfers: capability.supportsTransfers
+          supportsSpotExecution: products.spot,
+          supportsPerpExecution: products.perp && capability.supportsPerpExecution,
+          supportsPositionReads: products.perp && capability.supportsPositionReads,
+          supportsBalanceReads: products.perp && capability.supportsBalanceReads,
+          supportsOrderEditing: products.perp && capability.supportsOrderEditing,
+          supportsPositionTpSl: products.perp && capability.supportsPositionTpSl,
+          supportsPositionClose: products.perp && capability.supportsPositionClose,
+          supportsGridExecution: products.perp && capability.supportsGridExecution,
+          supportsVaultExecution: products.perp && capability.supportsVaultExecution,
+          supportsTransfers: products.perp && capability.supportsTransfers
         }
       };
     });

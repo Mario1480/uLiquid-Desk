@@ -36,6 +36,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <a href={withLocalePath("/privacy", locale)} aria-label={messages.common.footer.privacy}>
                   {messages.common.footer.privacy}
                 </a>
+                <a href={withLocalePath("/cookies", locale)} aria-label={messages.common.footer.cookies}>
+                  {messages.common.footer.cookies}
+                </a>
                 <a href={withLocalePath("/terms", locale)} aria-label={messages.common.footer.terms}>
                   {messages.common.footer.terms}
                 </a>

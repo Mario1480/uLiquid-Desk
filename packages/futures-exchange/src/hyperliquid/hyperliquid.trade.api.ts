@@ -485,6 +485,8 @@ export class HyperliquidTradeApi {
       price: String(price),
       szDecimals,
       reduceOnly: toBool(detail.reduceOnly) ? "YES" : "NO",
+      presetStopSurplusPrice: payload.newPresetStopSurplusPrice,
+      presetStopLossPrice: payload.newPresetStopLossPrice,
       force: "gtc"
     });
   }

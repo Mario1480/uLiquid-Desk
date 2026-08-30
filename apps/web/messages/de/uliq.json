@@ -121,7 +121,7 @@
   "locking": {
     "title": "Utility Locking",
     "description": "Reines Utility-Locking für 1, 6 oder 12 Monate plus 1 Tag Abwicklungspuffer – ohne APY, Rewards oder Ausschüttung. Eine längere Laufzeit erhöht den Rabatt nicht.",
-    "balance": "Locked Balance",
+    "balance": "Gesperrtes Guthaben",
     "amount": "ULIQ-Betrag",
     "available": "Verfügbare Wallet-ULIQ",
     "duration": "Laufzeit",

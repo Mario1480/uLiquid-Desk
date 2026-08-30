@@ -8,6 +8,7 @@ import {
 } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { createResolvedEntitlementContext } from "../capabilities/entitlementContext.js";
+import { resolveAiRuntimeFeatureGates } from "../ai/featureFlags.js";
 import { UliqBenefitGateError } from "../uliq/benefitReservation.service.js";
 
 const subscriptionCheckoutSchema = z.union([
@@ -328,6 +329,7 @@ function buildBillingDisabledResponse() {
     proValidUntil: null,
     capabilities,
     featureGates: resolveProductFeatureGates({ plan, capabilities }),
+    runtimeFeatureGates: resolveAiRuntimeFeatureGates(),
     entitlements: createResolvedEntitlementContext({
       billingPlan: plan,
       strategyPlan: plan,
@@ -794,6 +796,7 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
           plan: capabilityContext.plan,
           capabilities: capabilityContext.capabilities as any
         }),
+        runtimeFeatureGates: resolveAiRuntimeFeatureGates(),
         packages: summary.packages.map((pkg: any) => ({
           id: pkg.id,
           code: pkg.code,

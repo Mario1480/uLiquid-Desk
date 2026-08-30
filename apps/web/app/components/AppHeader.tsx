@@ -8,10 +8,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DashboardAlert } from "../../components/dashboard/AlertsFeed";
 import { apiGet, apiPost } from "../../lib/api";
 import {
-  LOCALE_COOKIE_NAME,
   withLocalePath,
   type AppLocale
 } from "../../i18n/config";
+import { persistLocalePreference } from "../../i18n/client";
 import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
@@ -478,7 +478,7 @@ export default function AppHeader({
       setOpenMenu(null);
       return;
     }
-    document.cookie = `${LOCALE_COOKIE_NAME}=${targetLocale}; path=/; max-age=31536000`;
+    persistLocalePreference(targetLocale);
     window.location.assign(switchLocalePath(targetLocale));
   }
 

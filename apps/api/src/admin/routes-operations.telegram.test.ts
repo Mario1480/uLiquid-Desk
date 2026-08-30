@@ -69,3 +69,51 @@ test("registerAdminOperationsRoutes leaves GET /admin/users to platform admin ro
   assert.equal(app.routes.put.has("/admin/users/:id/password"), true);
   assert.equal(app.routes.delete.has("/admin/users/:id"), true);
 });
+
+test("venue health uses exchange option labels and product capabilities", async () => {
+  const app = createFakeApp();
+  const deps = {
+    requireSuperadmin: async () => true,
+    getAllowedExchangeValues: async () => ["hyperliquid", "paper"],
+    normalizeExchangeValue: (value: string) => value.trim().toLowerCase(),
+    getRuntimeEnabledExchangeValues: () => new Set(["hyperliquid", "paper"]),
+    EXCHANGE_OPTION_VALUES: new Set(["hyperliquid", "paper"]),
+    getExchangeOptionsResponse: () => [
+      {
+        value: "hyperliquid",
+        label: "Hyperliquid (Spot + Perp)",
+        supportsSpotExecution: true,
+        supportsPerpExecution: true
+      },
+      {
+        value: "paper",
+        label: "Paper (Spot + Perp Simulation)",
+        supportsSpotExecution: true,
+        supportsPerpExecution: true
+      }
+    ],
+    db: {
+      exchangeAccount: {
+        findMany: async () => []
+      }
+    }
+  };
+  registerAdminOperationsRoutes(app as any, deps as any);
+  const handlers = app.routes.get.get("/admin/venue-health/summary") ?? [];
+  const handler = handlers.at(-1);
+  let payload: any;
+  await handler?.({} as any, {
+    json(value: unknown) {
+      payload = value;
+      return value;
+    }
+  } as any);
+
+  const hyperliquid = payload.items.find((item: any) => item.venue === "hyperliquid");
+  const paper = payload.items.find((item: any) => item.venue === "paper");
+  assert.equal(hyperliquid.label, "Hyperliquid (Spot + Perp)");
+  assert.equal(hyperliquid.capabilities.supportsSpotExecution, true);
+  assert.equal(hyperliquid.capabilities.supportsOrderEditing, true);
+  assert.equal(paper.label, "Paper (Spot + Perp Simulation)");
+  assert.equal(paper.capabilities.supportsOrderEditing, true);
+});

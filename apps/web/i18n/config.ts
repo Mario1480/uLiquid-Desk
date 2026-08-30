@@ -4,6 +4,17 @@ export type AppLocale = (typeof LOCALES)[number];
 
 export const DEFAULT_LOCALE: AppLocale = "en";
 export const LOCALE_COOKIE_NAME = "utrade_locale";
+export const LOCALE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+export function buildLocalePreferenceCookie(locale: AppLocale, secure: boolean): string {
+  return [
+    `${LOCALE_COOKIE_NAME}=${encodeURIComponent(locale)}`,
+    "Path=/",
+    `Max-Age=${LOCALE_COOKIE_MAX_AGE_SECONDS}`,
+    "SameSite=Lax",
+    ...(secure ? ["Secure"] : [])
+  ].join("; ");
+}
 
 export function isLocale(value: string | null | undefined): value is AppLocale {
   if (!value) return false;

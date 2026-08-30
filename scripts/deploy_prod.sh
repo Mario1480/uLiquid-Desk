@@ -91,6 +91,10 @@ echo "==> Syncing env file with templates"
 # operator can still close the gate for a rollback by exporting false.
 export AI_AGENT_ACCOUNT_READS_ENABLED="${AI_AGENT_ACCOUNT_READS_ENABLED:-true}"
 echo "==> Agent account reads: ${AI_AGENT_ACCOUNT_READS_ENABLED}"
+export AI_POSITION_COPILOT_ENABLED="${AI_POSITION_COPILOT_ENABLED:-true}"
+export AI_POSITION_MONITORING_ENABLED="${AI_POSITION_MONITORING_ENABLED:-true}"
+echo "==> Position Copilot: ${AI_POSITION_COPILOT_ENABLED}"
+echo "==> Position monitoring: ${AI_POSITION_MONITORING_ENABLED}"
 
 if [[ "${#TARGET_SERVICES[@]}" -gt 0 ]]; then
   mapfile -t AVAILABLE_SERVICES < <(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --services)

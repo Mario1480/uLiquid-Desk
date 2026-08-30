@@ -533,6 +533,7 @@
       "unknown": "Unbekannt"
     },
     "capabilities": {
+      "supportsSpotExecution": "Spot-Execution",
       "supportsPerpExecution": "Perp-Execution",
       "supportsPositionReads": "Positions-Reads",
       "supportsBalanceReads": "Balance-Reads",

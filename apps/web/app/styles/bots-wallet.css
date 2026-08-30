@@ -33,6 +33,25 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.uliqMetricGrid > .uiMetricTile {
+  display: grid;
+  align-content: start;
+  gap: var(--ui-space-1);
+}
+
+.uliqMetricGrid > .uiMetricTile > span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.uliqMetricGrid > .uiMetricTile > strong {
+  display: block;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 .uliqProgress {
   height: 8px;
   margin-top: 14px;
@@ -64,9 +83,14 @@
   width: fit-content;
   max-width: 100%;
   overflow-x: auto;
+  scrollbar-width: none;
   border: 1px solid var(--ui-border);
   border-radius: 14px;
   background: var(--ui-surface-card);
+}
+
+.uliqRouteTabs::-webkit-scrollbar {
+  display: none;
 }
 
 .uliqRouteTabs a {
@@ -257,6 +281,20 @@
 .uliqAvailableBalance span {
   color: var(--muted);
   font-size: 11px;
+}
+
+.uliqHeaderMetric {
+  display: grid;
+  flex: 0 0 auto;
+  gap: var(--ui-space-1);
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.uliqHeaderMetric span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .uliqQuote,
@@ -477,6 +515,10 @@
 
   .uliqLockActions {
     grid-template-columns: 1fr;
+  }
+
+  .uliqHeaderMetric {
+    justify-items: start;
   }
 
   .uliqFormRow .btn,

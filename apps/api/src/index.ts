@@ -2257,8 +2257,9 @@ const EMAIL_VERIFICATION_OTP_TTL_MIN = Math.max(
 );
 
 function getMexcExchangeLabel(): string {
-  if (MEXC_SPOT_ENABLED && MEXC_PERP_ENABLED) return "MEXC (Spot + Perp)";
-  if (MEXC_SPOT_ENABLED) return "MEXC (Spot)";
+  const spotEnabled = MANUAL_TRADING_SPOT_ENABLED && MEXC_SPOT_ENABLED;
+  if (spotEnabled && MEXC_PERP_ENABLED) return "MEXC (Spot + Perp)";
+  if (spotEnabled) return "MEXC (Spot)";
   if (MEXC_PERP_ENABLED) return "MEXC (Perp)";
   return "MEXC (Disabled)";
 }
@@ -2268,8 +2269,9 @@ function isMexcEnabledAtRuntime(): boolean {
 }
 
 function getBinanceExchangeLabel(): string {
-  if (BINANCE_SPOT_ENABLED && BINANCE_PERP_ENABLED) return "Binance (Spot + Perp)";
-  if (BINANCE_SPOT_ENABLED) return "Binance (Spot)";
+  const spotEnabled = MANUAL_TRADING_SPOT_ENABLED && BINANCE_SPOT_ENABLED;
+  if (spotEnabled && BINANCE_PERP_ENABLED) return "Binance (Spot + USD-M Perp)";
+  if (spotEnabled) return "Binance (Spot)";
   if (BINANCE_PERP_ENABLED) return "Binance (USD-M Perp)";
   return "Binance (Disabled)";
 }
@@ -2279,8 +2281,9 @@ function isBinanceEnabledAtRuntime(): boolean {
 }
 
 function getBingxExchangeLabel(): string {
-  if (BINGX_SPOT_ENABLED && BINGX_PERP_ENABLED) return "BingX (Spot + USD-M Perp)";
-  if (BINGX_SPOT_ENABLED) return "BingX (Spot)";
+  const spotEnabled = MANUAL_TRADING_SPOT_ENABLED && BINGX_SPOT_ENABLED;
+  if (spotEnabled && BINGX_PERP_ENABLED) return "BingX (Spot + USD-M Perp)";
+  if (spotEnabled) return "BingX (Spot)";
   if (BINGX_PERP_ENABLED) return "BingX (USD-M Perp)";
   return "BingX (Disabled)";
 }
@@ -2290,12 +2293,44 @@ function isBingxEnabledAtRuntime(): boolean {
 }
 
 const EXCHANGE_OPTION_CATALOG = [
-  { value: "bitget", label: "Bitget (Futures)" },
-  { value: "hyperliquid", label: "Hyperliquid (Perps)" },
-  { value: "mexc", label: getMexcExchangeLabel() },
-  { value: "binance", label: getBinanceExchangeLabel() },
-  { value: "bingx", label: getBingxExchangeLabel() },
-  { value: "paper", label: "Paper (Simulated Trading)" }
+  {
+    value: "bitget",
+    label: MANUAL_TRADING_SPOT_ENABLED ? "Bitget (Spot + Perp)" : "Bitget (Perp)",
+    supportsSpotExecution: MANUAL_TRADING_SPOT_ENABLED,
+    supportsPerpExecution: true
+  },
+  {
+    value: "hyperliquid",
+    label: MANUAL_TRADING_SPOT_ENABLED ? "Hyperliquid (Spot + Perp)" : "Hyperliquid (Perp)",
+    supportsSpotExecution: MANUAL_TRADING_SPOT_ENABLED,
+    supportsPerpExecution: true
+  },
+  {
+    value: "mexc",
+    label: getMexcExchangeLabel(),
+    supportsSpotExecution: MANUAL_TRADING_SPOT_ENABLED && MEXC_SPOT_ENABLED,
+    supportsPerpExecution: MEXC_PERP_ENABLED
+  },
+  {
+    value: "binance",
+    label: getBinanceExchangeLabel(),
+    supportsSpotExecution: MANUAL_TRADING_SPOT_ENABLED && BINANCE_SPOT_ENABLED,
+    supportsPerpExecution: BINANCE_PERP_ENABLED
+  },
+  {
+    value: "bingx",
+    label: getBingxExchangeLabel(),
+    supportsSpotExecution: MANUAL_TRADING_SPOT_ENABLED && BINGX_SPOT_ENABLED,
+    supportsPerpExecution: BINGX_PERP_ENABLED
+  },
+  {
+    value: "paper",
+    label: MANUAL_TRADING_SPOT_ENABLED
+      ? "Paper (Spot + Perp Simulation)"
+      : "Paper (Perp Simulation)",
+    supportsSpotExecution: MANUAL_TRADING_SPOT_ENABLED,
+    supportsPerpExecution: true
+  }
 ] as const;
 
 type ExchangeOption = (typeof EXCHANGE_OPTION_CATALOG)[number];
@@ -3539,6 +3574,8 @@ function getExchangeOptionsResponse(allowedValues: string[]) {
   return EXCHANGE_OPTION_CATALOG.map((row) => ({
     value: row.value,
     label: row.label,
+    supportsSpotExecution: row.supportsSpotExecution,
+    supportsPerpExecution: row.supportsPerpExecution,
     enabled: runtimeEnabled.has(row.value) && allowed.has(row.value)
   }));
 }

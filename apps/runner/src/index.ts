@@ -53,7 +53,7 @@ function sleep(ms: number): Promise<void> {
 
 async function publishRunnerHeartbeat() {
   const counters = await getRunnerBotCounters();
-  await markRunnerHeartbeat(counters);
+  await markRunnerHeartbeat({ ...counters, workerId });
 }
 
 function getBotIdFromJobData(data: unknown): string | null {
@@ -334,7 +334,8 @@ async function runPollSupervisor() {
 
       await markRunnerHeartbeat({
         botsRunning: bots.length,
-        botsErrored: errored
+        botsErrored: errored,
+        workerId
       });
 
       const nowMs = Date.now();

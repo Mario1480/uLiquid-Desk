@@ -35,3 +35,13 @@ export function isPositionMonitoringRuntimeEnabled(): boolean {
 export function isMultiExchangeAnalysisRuntimeEnabled(): boolean {
   return readAiFeatureFlag("AI_AGENT_MULTI_EXCHANGE_ANALYSIS_ENABLED", true);
 }
+
+export function resolveAiRuntimeFeatureGates(): {
+  ai_position_copilot: boolean;
+  ai_position_monitoring: boolean;
+} {
+  return {
+    ai_position_copilot: isPositionCopilotRuntimeEnabled(),
+    ai_position_monitoring: isPositionMonitoringRuntimeEnabled()
+  };
+}

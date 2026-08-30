@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   SYSTEM_HEALTH_STATE_SETTING_KEY,
-  createSystemHealthTelegramJob
+  createSystemHealthTelegramJob,
+  resolveRetiredSystemHealthAlerts
 } from "./systemHealthTelegramJob.js";
 
 function createSnapshot(state: "healthy" | "unhealthy" | "skipped", message: string) {
@@ -106,6 +107,10 @@ test("systemHealthTelegramJob alerts once on incident and once on recovery", asy
     assert.equal(String(telegramMessages[0]).includes("system health alert"), true);
     assert.equal(String(telegramMessages[1]).includes("system health recovered"), true);
     assert.equal(platformAlerts[0]?.status, "resolved");
+    assert.match(String(platformAlerts[0]?.message), /Recovered: AI connection is healthy\./);
+    assert.match(String(platformAlerts[0]?.message), /Previous incident: AI upstream failed/);
+    assert.equal((platformAlerts[0]?.metadata as any)?.incident?.message, "AI upstream failed");
+    assert.equal((platformAlerts[0]?.metadata as any)?.recovery?.state, "healthy");
 
     const status = job.getStatus();
     assert.equal(status.totalCycles, 3);
@@ -119,6 +124,40 @@ test("systemHealthTelegramJob alerts once on incident and once on recovery", asy
     if (previousHealthyStreak === undefined) delete process.env.SYSTEM_HEALTH_HEALTHY_STREAK_REQUIRED;
     else process.env.SYSTEM_HEALTH_HEALTHY_STREAK_REQUIRED = previousHealthyStreak;
   }
+});
+
+test("resolveRetiredSystemHealthAlerts closes legacy FMP incidents without losing their cause", async () => {
+  const alerts: Array<Record<string, unknown>> = [{
+    id: "legacy_fmp",
+    source: "system",
+    type: "system_health",
+    title: "System health incident: fmp",
+    status: "open",
+    message: "fmp_http_429",
+    metadata: { httpStatus: 429 }
+  }];
+  const db: any = {
+    platformAlert: {
+      findMany: async () => alerts,
+      update: async ({ where, data }: any) => {
+        const index = alerts.findIndex((alert) => alert.id === where.id);
+        alerts[index] = { ...alerts[index], ...data };
+        return alerts[index];
+      }
+    }
+  };
+
+  const resolvedCount = await resolveRetiredSystemHealthAlerts(db, {
+    state: "healthy",
+    checkedAt: "2026-08-30T11:30:00.000Z",
+    message: "10 providers/sources checked; 0 unavailable; 0 degraded."
+  });
+
+  assert.equal(resolvedCount, 1);
+  assert.equal(alerts[0]?.status, "resolved");
+  assert.match(String(alerts[0]?.message), /legacy FMP monitoring was replaced/);
+  assert.equal((alerts[0]?.metadata as any)?.incident?.message, "fmp_http_429");
+  assert.equal((alerts[0]?.metadata as any)?.recovery?.reason, "replaced_by_market_intelligence");
 });
 
 test("systemHealthTelegramJob suppresses single unhealthy blips before alerting", async () => {

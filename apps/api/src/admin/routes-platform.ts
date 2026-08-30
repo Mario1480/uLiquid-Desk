@@ -248,6 +248,19 @@ function derivePlatformAlertStatus(alert: any): "open" | "acknowledged" | "resol
   return "open";
 }
 
+export function formatPlatformAlertMessage(alert: any): string {
+  const message = String(alert?.message ?? "").trim();
+  if (
+    String(alert?.type ?? "") !== "system_health"
+    || derivePlatformAlertStatus(alert) !== "resolved"
+    || /^Recovered:/i.test(message)
+  ) {
+    return message;
+  }
+
+  return `Recovered: ${message || "The health check is healthy again."} Original incident details were not retained by the legacy monitor.`;
+}
+
 function deriveRunnerStatus(lastHeartbeatAt: string | null): "online" | "offline" {
   if (!lastHeartbeatAt) return "offline";
   const diff = Date.now() - new Date(lastHeartbeatAt).getTime();
@@ -750,7 +763,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         type: alert.type,
         source: alert.source,
         title: alert.title ?? null,
-        message: alert.message,
+        message: formatPlatformAlertMessage(alert),
         createdAt: isoOrNull(alert.createdAt),
         user: alert.user ? { id: alert.user.id, email: alert.user.email } : null,
         workspace: alert.workspace ? { id: alert.workspace.id, name: alert.workspace.name } : null,
@@ -1621,7 +1634,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         type: alert.type,
         source: alert.source,
         title: alert.title ?? null,
-        message: alert.message,
+        message: formatPlatformAlertMessage(alert),
         createdAt: isoOrNull(alert.createdAt),
         updatedAt: isoOrNull(alert.updatedAt),
         user: alert.user ? { id: alert.user.id, email: alert.user.email } : null,

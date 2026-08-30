@@ -575,6 +575,41 @@ test("disabling checkout keeps the real Pro lifecycle, capabilities, packages an
   assert.equal(res.body?.packages?.[0]?.code, "pro");
 });
 
+test("subscription reports the effective Position Copilot runtime gates", async () => {
+  const previousCopilot = process.env.AI_POSITION_COPILOT_ENABLED;
+  const previousMonitoring = process.env.AI_POSITION_MONITORING_ENABLED;
+  process.env.AI_POSITION_COPILOT_ENABLED = "false";
+  process.env.AI_POSITION_MONITORING_ENABLED = "true";
+
+  try {
+    const app = createFakeApp();
+    registerBillingRoutes(app as any, createRouteDeps({
+      getSubscriptionSummary: async () => ({
+        plan: "premium",
+        packages: [],
+        orders: []
+      }),
+      resolvePlanCapabilitiesForUserId: async () => ({
+        plan: "premium",
+        capabilities: {}
+      })
+    }) as any);
+    const res = createMockRes();
+
+    await lastHandler(app, "get", "/settings/subscription")({}, res);
+
+    assert.deepEqual(res.body?.runtimeFeatureGates, {
+      ai_position_copilot: false,
+      ai_position_monitoring: true
+    });
+  } finally {
+    if (previousCopilot === undefined) delete process.env.AI_POSITION_COPILOT_ENABLED;
+    else process.env.AI_POSITION_COPILOT_ENABLED = previousCopilot;
+    if (previousMonitoring === undefined) delete process.env.AI_POSITION_MONITORING_ENABLED;
+    else process.env.AI_POSITION_MONITORING_ENABLED = previousMonitoring;
+  }
+});
+
 test("order mapping preserves service ISO timestamps for verified payments", async () => {
   const app = createFakeApp();
   const verifiedAt = "2026-08-01T12:00:00.000Z";

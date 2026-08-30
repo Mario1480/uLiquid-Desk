@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildOllamaProxyHealthUrl,
   createExternalHealthService,
-  describeOllamaHealthFailure
+  describeOllamaHealthFailure,
+  summarizeMarketIntelligenceHealth
 } from "./externalHealth.js";
 
 test("buildOllamaProxyHealthUrl maps /v1 base URLs to /health", () => {
@@ -41,6 +42,60 @@ test("describeOllamaHealthFailure falls back to provider status message otherwis
     }),
     "model not found"
   );
+});
+
+test("market intelligence remains healthy when redundant providers are degraded", () => {
+  const summary = summarizeMarketIntelligenceHealth([
+    {
+      providerId: "news_primary",
+      providerType: "news",
+      state: "healthy",
+      enabled: true,
+      checkedAt: "2026-08-30T11:00:00.000Z"
+    },
+    {
+      providerId: "news_secondary",
+      providerType: "news",
+      state: "degraded",
+      enabled: true,
+      checkedAt: "2026-08-30T11:00:00.000Z"
+    },
+    {
+      providerId: "calendar_primary",
+      providerType: "economic_calendar",
+      state: "healthy",
+      enabled: true,
+      checkedAt: "2026-08-30T11:00:00.000Z"
+    }
+  ]);
+
+  assert.equal(summary.status, "degraded");
+  assert.equal(summary.ok, true);
+  assert.equal(summary.state, "healthy");
+  assert.equal(summary.message, "3 providers/sources checked; 0 unavailable; 1 degraded.");
+});
+
+test("market intelligence becomes unhealthy only when core coverage is unavailable", () => {
+  const summary = summarizeMarketIntelligenceHealth([
+    {
+      providerId: "news_primary",
+      providerType: "news",
+      state: "healthy",
+      enabled: true,
+      checkedAt: "2026-08-30T11:00:00.000Z"
+    },
+    {
+      providerId: "calendar_primary",
+      providerType: "economic_calendar",
+      state: "unavailable",
+      enabled: true,
+      checkedAt: "2026-08-30T11:00:00.000Z"
+    }
+  ]);
+
+  assert.equal(summary.status, "unavailable");
+  assert.equal(summary.ok, false);
+  assert.equal(summary.state, "unhealthy");
 });
 
 function createAiHealthDeps(overrides: {

@@ -7,6 +7,7 @@ import {
 import { resolveGridCoreSnapshot } from "./grid/instanceSnapshot.js";
 import type { RunnerDecisionTrace } from "./runtime/decisionTrace.js";
 import { getRunnerDefaultPaperBalanceUsd } from "./runtime/paperExecution.js";
+import { buildRunnerHeartbeatPersistence } from "./runnerHeartbeat.js";
 import { decryptSecret } from "./secret-crypto.js";
 
 const db = prisma as any;
@@ -4036,23 +4037,18 @@ export async function markBotAsError(botId: string, reason: string) {
 export async function markRunnerHeartbeat(params: {
   botsRunning: number;
   botsErrored: number;
+  workerId?: string | null;
 }) {
-  await db.runnerStatus.upsert({
-    where: { id: "main" },
-    update: {
-      lastTickAt: new Date(),
-      botsRunning: params.botsRunning,
-      botsErrored: params.botsErrored,
-      version: process.env.VERSION ?? null
-    },
-    create: {
-      id: "main",
-      lastTickAt: new Date(),
-      botsRunning: params.botsRunning,
-      botsErrored: params.botsErrored,
-      version: process.env.VERSION ?? null
-    }
+  const writes = buildRunnerHeartbeatPersistence({
+    ...params,
+    version: process.env.VERSION,
+    region: process.env.RUNNER_REGION,
+    host: process.env.RUNNER_HOST ?? process.env.HOSTNAME
   });
+  await db.$transaction([
+    db.runnerStatus.upsert(writes.runnerStatus),
+    db.runnerNode.upsert(writes.runnerNode)
+  ]);
 }
 
 export async function getRunnerBotCounters(): Promise<{ botsRunning: number; botsErrored: number }> {

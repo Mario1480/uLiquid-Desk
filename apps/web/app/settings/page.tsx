@@ -9,7 +9,8 @@ import { signMessage } from "wagmi/actions";
 import { ApiError, apiGet } from "../../lib/api";
 import { buildSiweMessage, fetchSiweNonce, linkSiweWallet, shortenWalletAddress, unlinkSiweWallet } from "../../lib/auth/siwe";
 import { wagmiConfig } from "../../lib/web3/config";
-import { LOCALE_COOKIE_NAME, withLocalePath, type AppLocale } from "../../i18n/config";
+import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { persistLocalePreference } from "../../i18n/client";
 import AdminConfirmDialog from "../admin/_components/AdminConfirmDialog";
 import { AppIcon, type AppIconName } from "../components/AppIcon";
 import { Notice, PageHeader } from "../components/ui";
@@ -343,7 +344,7 @@ function SettingsHubContent() {
 
   function switchLocale(targetLocale: AppLocale) {
     if (targetLocale === locale) return;
-    document.cookie = `${LOCALE_COOKIE_NAME}=${targetLocale}; path=/; max-age=31536000`;
+    persistLocalePreference(targetLocale);
     window.location.assign(withLocalePath("/settings", targetLocale));
   }
 

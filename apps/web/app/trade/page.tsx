@@ -13,8 +13,9 @@ import {
   type TradeDeskPrefillPayload
 } from "../../src/schemas/tradeDeskPrefill";
 import {
-  isProductFeatureAllowed,
-  type ProductFeatureGateMap
+  isProductFeatureAvailable,
+  type ProductFeatureGateMap,
+  type ProductRuntimeFeatureGateMap
 } from "../../src/access/productFeatureGates";
 import {
   createLiveTableReadiness,
@@ -167,6 +168,7 @@ type PositionCopilotResponse = {
 
 type SubscriptionFeatureResponse = {
   featureGates?: ProductFeatureGateMap;
+  runtimeFeatureGates?: ProductRuntimeFeatureGateMap;
 };
 
 type OpenOrderItem = {
@@ -741,6 +743,7 @@ function TradePageContent() {
   const [positionsDataDegraded, setPositionsDataDegraded] = useState(false);
   const [openOrders, setOpenOrders] = useState<OpenOrderItem[]>([]);
   const [positionCopilotEnabled, setPositionCopilotEnabled] = useState(false);
+  const [positionMonitoringEnabled, setPositionMonitoringEnabled] = useState(false);
   const [copilotSettings, setCopilotSettings] = useState<PositionCopilotSettings | null>(null);
   const [copilotAnalysis, setCopilotAnalysis] = useState<PositionCopilotAnalysis | null>(null);
   const [copilotLoading, setCopilotLoading] = useState(false);
@@ -898,7 +901,12 @@ function TradePageContent() {
     trigger: "manual" | "event" | "periodic",
     options?: { silent?: boolean }
   ) => {
-    if (!positionCopilotEnabled || !copilotPosition || !selectedAccountId) return;
+    if (
+      !positionCopilotEnabled
+      || (trigger !== "manual" && !positionMonitoringEnabled)
+      || !copilotPosition
+      || !selectedAccountId
+    ) return;
     const requestSequence = ++copilotRequestSequenceRef.current;
     if (!options?.silent) setCopilotLoading(true);
     setCopilotError(null);
@@ -941,7 +949,7 @@ function TradePageContent() {
     } finally {
       if (!options?.silent) setCopilotLoading(false);
     }
-  }, [copilotPosition, locale, marketType, positionCopilotEnabled, positionsDataDegraded, selectedAccountId, summary?.degraded, summary?.updatedAt]);
+  }, [copilotPosition, locale, marketType, positionCopilotEnabled, positionMonitoringEnabled, positionsDataDegraded, selectedAccountId, summary?.degraded, summary?.updatedAt]);
 
   useEffect(() => {
     copilotRequestSequenceRef.current += 1;
@@ -976,13 +984,23 @@ function TradePageContent() {
     apiGet<SubscriptionFeatureResponse>("/settings/subscription")
       .then((payload) => {
         if (!disposed) {
-          setPositionCopilotEnabled(
-            isProductFeatureAllowed(payload.featureGates, "ai_position_copilot")
-          );
+          setPositionCopilotEnabled(isProductFeatureAvailable(
+            payload.featureGates,
+            payload.runtimeFeatureGates,
+            "ai_position_copilot"
+          ));
+          setPositionMonitoringEnabled(isProductFeatureAvailable(
+            payload.featureGates,
+            payload.runtimeFeatureGates,
+            "ai_position_monitoring"
+          ));
         }
       })
       .catch(() => {
-        if (!disposed) setPositionCopilotEnabled(false);
+        if (!disposed) {
+          setPositionCopilotEnabled(false);
+          setPositionMonitoringEnabled(false);
+        }
       });
     return () => {
       disposed = true;
@@ -1011,7 +1029,7 @@ function TradePageContent() {
   }, [positionCopilotEnabled]);
 
   useEffect(() => {
-    if (!positionCopilotEnabled || !copilotSnapshotKey || !copilotSettings || copilotSettings.mode === "off") return;
+    if (!positionCopilotEnabled || !positionMonitoringEnabled || !copilotSnapshotKey || !copilotSettings || copilotSettings.mode === "off") return;
     if (!copilotSettings.inAppEnabled && !copilotSettings.telegramEnabled) return;
     if (lastCopilotEventKeyRef.current === copilotSnapshotKey) return;
     lastCopilotEventKeyRef.current = copilotSnapshotKey;
@@ -1019,15 +1037,15 @@ function TradePageContent() {
       void analyzeWithPositionCopilot("event", { silent: true });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [analyzeWithPositionCopilot, copilotSettings, copilotSnapshotKey, positionCopilotEnabled]);
+  }, [analyzeWithPositionCopilot, copilotSettings, copilotSnapshotKey, positionCopilotEnabled, positionMonitoringEnabled]);
 
   useEffect(() => {
-    if (!positionCopilotEnabled || !copilotSettings || copilotSettings.mode !== "periodic_summary" || !copilotPosition) return;
+    if (!positionCopilotEnabled || !positionMonitoringEnabled || !copilotSettings || copilotSettings.mode !== "periodic_summary" || !copilotPosition) return;
     const timer = window.setInterval(() => {
       void analyzeWithPositionCopilot("periodic", { silent: true });
     }, copilotSettings.periodicMinutes * 60_000);
     return () => window.clearInterval(timer);
-  }, [analyzeWithPositionCopilot, copilotPosition, copilotSettings, positionCopilotEnabled]);
+  }, [analyzeWithPositionCopilot, copilotPosition, copilotSettings, positionCopilotEnabled, positionMonitoringEnabled]);
 
   const refPrice = useMemo(() => {
     const value = ticker?.mark ?? ticker?.last ?? null;
@@ -3018,40 +3036,42 @@ function TradePageContent() {
               </div>
             </div>
 
-            <div className="tradeCopilotSettings" aria-label={t("copilot.settingsLabel")}>
-              <label>
-                <span>{t("copilot.notificationMode")}</span>
-                <select
-                  className="select"
-                  value={copilotSettings?.mode ?? "important_changes"}
-                  disabled={!copilotSettings || copilotSettingsSaving}
-                  onChange={(event) => void updateCopilotSettings({ mode: event.target.value as PositionCopilotMode })}
-                >
-                  <option value="critical_only">{t("copilot.modes.criticalOnly")}</option>
-                  <option value="important_changes">{t("copilot.modes.importantChanges")}</option>
-                  <option value="periodic_summary">{t("copilot.modes.periodicSummary")}</option>
-                  <option value="off">{t("copilot.modes.off")}</option>
-                </select>
-              </label>
-              <label className="tradeCopilotToggle">
-                <input
-                  type="checkbox"
-                  checked={copilotSettings?.inAppEnabled ?? true}
-                  disabled={!copilotSettings || copilotSettingsSaving}
-                  onChange={(event) => void updateCopilotSettings({ inAppEnabled: event.target.checked })}
-                />
-                {t("copilot.inApp")}
-              </label>
-              <label className="tradeCopilotToggle">
-                <input
-                  type="checkbox"
-                  checked={copilotSettings?.telegramEnabled ?? false}
-                  disabled={!copilotSettings || copilotSettingsSaving}
-                  onChange={(event) => void updateCopilotSettings({ telegramEnabled: event.target.checked })}
-                />
-                {t("copilot.telegram")}
-              </label>
-            </div>
+            {positionMonitoringEnabled ? (
+              <div className="tradeCopilotSettings" aria-label={t("copilot.settingsLabel")}>
+                <label>
+                  <span>{t("copilot.notificationMode")}</span>
+                  <select
+                    className="select"
+                    value={copilotSettings?.mode ?? "important_changes"}
+                    disabled={!copilotSettings || copilotSettingsSaving}
+                    onChange={(event) => void updateCopilotSettings({ mode: event.target.value as PositionCopilotMode })}
+                  >
+                    <option value="critical_only">{t("copilot.modes.criticalOnly")}</option>
+                    <option value="important_changes">{t("copilot.modes.importantChanges")}</option>
+                    <option value="periodic_summary">{t("copilot.modes.periodicSummary")}</option>
+                    <option value="off">{t("copilot.modes.off")}</option>
+                  </select>
+                </label>
+                <label className="tradeCopilotToggle">
+                  <input
+                    type="checkbox"
+                    checked={copilotSettings?.inAppEnabled ?? true}
+                    disabled={!copilotSettings || copilotSettingsSaving}
+                    onChange={(event) => void updateCopilotSettings({ inAppEnabled: event.target.checked })}
+                  />
+                  {t("copilot.inApp")}
+                </label>
+                <label className="tradeCopilotToggle">
+                  <input
+                    type="checkbox"
+                    checked={copilotSettings?.telegramEnabled ?? false}
+                    disabled={!copilotSettings || copilotSettingsSaving}
+                    onChange={(event) => void updateCopilotSettings({ telegramEnabled: event.target.checked })}
+                  />
+                  {t("copilot.telegram")}
+                </label>
+              </div>
+            ) : null}
 
             {copilotError ? <div className="tradeCopilotError">{t("copilot.error", { error: copilotError })}</div> : null}
             {!copilotPosition ? (

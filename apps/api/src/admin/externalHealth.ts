@@ -1,4 +1,5 @@
 import { getMarketIntelligenceService } from "../services/marketIntelligence/service.js";
+import type { ProviderState } from "../services/marketIntelligence/contracts/provider.js";
 
 type ExternalHealthState = "healthy" | "unhealthy" | "skipped";
 
@@ -198,6 +199,43 @@ export function toExternalHealthCheckResult(input: {
     ...(input.source !== undefined ? { source: input.source } : {}),
     ...(typeof input.httpStatus === "number" ? { httpStatus: input.httpStatus } : {}),
     ...(input.details ? { details: input.details } : {})
+  };
+}
+
+export function summarizeMarketIntelligenceHealth(states: ProviderState[]) {
+  const active = states.filter((state) => state.enabled && (
+    state.providerType === "news" || state.providerType === "economic_calendar"
+  ));
+  const unavailable = active.filter((state) => state.state === "unavailable");
+  const degraded = active.filter((state) => state.state === "degraded");
+  const hasNews = active.some(
+    (state) => state.providerType === "news" && state.state !== "unavailable"
+  );
+  const hasCalendar = active.some(
+    (state) => state.providerType === "economic_calendar" && state.state !== "unavailable"
+  );
+  const status = active.length === 0
+    ? "disabled" as const
+    : !hasNews || !hasCalendar
+      ? "unavailable" as const
+      : unavailable.length > 0 || degraded.length > 0
+        ? "degraded" as const
+        : "ok" as const;
+
+  return {
+    active,
+    unavailable,
+    degraded,
+    status,
+    ok: status === "ok" || status === "degraded",
+    state: status === "unavailable"
+      ? "unhealthy" as const
+      : status === "disabled"
+        ? "skipped" as const
+        : "healthy" as const,
+    message: active.length === 0
+      ? "No market intelligence providers are active."
+      : `${active.length} providers/sources checked; ${unavailable.length} unavailable; ${degraded.length} degraded.`
   };
 }
 
@@ -520,29 +558,14 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
   async function checkMarketIntelligence() {
     const checkedAt = new Date().toISOString();
     const states = await getMarketIntelligenceService(deps.db).getProviderStates();
-    const active = states.filter((state) => state.enabled && (
-      state.providerType === "news" || state.providerType === "economic_calendar"
-    ));
-    const unavailable = active.filter((state) => state.state === "unavailable");
-    const degraded = active.filter((state) => state.state === "degraded");
-    const hasNews = active.some((state) => state.providerType === "news" && state.state !== "unavailable");
-    const hasCalendar = active.some((state) => state.providerType === "economic_calendar" && state.state !== "unavailable");
-    const status = active.length === 0
-      ? "disabled" as const
-      : !hasNews || !hasCalendar
-        ? "unavailable" as const
-        : unavailable.length > 0 || degraded.length > 0
-          ? "degraded" as const
-          : "ok" as const;
+    const summary = summarizeMarketIntelligenceHealth(states);
     return {
-      ok: status === "ok" || status === "degraded",
-      status,
-      state: status === "ok" ? "healthy" as const : status === "disabled" ? "skipped" as const : "unhealthy" as const,
+      ok: summary.ok,
+      status: summary.status,
+      state: summary.state,
       source: "provider_registry",
       checkedAt,
-      message: active.length === 0
-        ? "No market intelligence providers are active."
-        : `${active.length} providers/sources checked; ${unavailable.length} unavailable; ${degraded.length} degraded.`,
+      message: summary.message,
       details: {
         providers: states.map((provider) => ({
           id: provider.providerId,

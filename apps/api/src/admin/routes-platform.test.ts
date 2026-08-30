@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registerPlatformAdminRoutes } from "./routes-platform.js";
+import { formatPlatformAlertMessage, registerPlatformAdminRoutes } from "./routes-platform.js";
 
 type RouteMap = Map<string, Array<(...args: any[]) => any>>;
 
@@ -67,6 +67,25 @@ function getFinalHandler(app: ReturnType<typeof createFakeApp>, path: string) {
   if (!handlers || handlers.length === 0) throw new Error(`route_not_found:${path}`);
   return handlers[handlers.length - 1];
 }
+
+test("formatPlatformAlertMessage makes legacy recovered health incidents explicit", () => {
+  assert.equal(
+    formatPlatformAlertMessage({
+      type: "system_health",
+      status: "resolved",
+      message: "10 providers/sources checked; 0 unavailable; 0 degraded."
+    }),
+    "Recovered: 10 providers/sources checked; 0 unavailable; 0 degraded. Original incident details were not retained by the legacy monitor."
+  );
+});
+
+test("formatPlatformAlertMessage preserves new recovery messages with incident context", () => {
+  const message = "Recovered: 10 providers/sources checked; 0 unavailable; 0 degraded. Previous incident: calendar source unavailable.";
+  assert.equal(
+    formatPlatformAlertMessage({ type: "system_health", status: "resolved", message }),
+    message
+  );
+});
 
 test("GET /admin/users applies filters and pagination in Prisma queries", async () => {
   const app = createFakeApp();

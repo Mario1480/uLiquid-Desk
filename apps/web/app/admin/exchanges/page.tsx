@@ -10,6 +10,8 @@ type ExchangeOption = {
   value: string;
   label: string;
   enabled: boolean;
+  supportsSpotExecution: boolean;
+  supportsPerpExecution: boolean;
 };
 
 type VenueHealthSummaryResponse = {
@@ -34,6 +36,7 @@ type VenueHealthSummaryResponse = {
     latestSyncErrorAt: string | null;
     latestSyncErrorMessage: string | null;
     capabilities: {
+      supportsSpotExecution: boolean;
       supportsPerpExecution: boolean;
       supportsPositionReads: boolean;
       supportsBalanceReads: boolean;

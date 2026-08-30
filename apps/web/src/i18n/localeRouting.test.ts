@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildLocalePreferenceCookie,
   extractLocaleFromPathname,
   withLocalePath,
   resolvePreferredLocale
@@ -28,4 +29,15 @@ test("resolvePreferredLocale prefers cookie", () => {
 
 test("resolvePreferredLocale falls back to accept-language", () => {
   assert.equal(resolvePreferredLocale({ cookieLocale: null, acceptLanguage: "de-DE,de;q=0.8,en;q=0.7" }), "de");
+});
+
+test("buildLocalePreferenceCookie applies explicit preference safeguards", () => {
+  assert.equal(
+    buildLocalePreferenceCookie("de", true),
+    "utrade_locale=de; Path=/; Max-Age=31536000; SameSite=Lax; Secure"
+  );
+  assert.equal(
+    buildLocalePreferenceCookie("en", false),
+    "utrade_locale=en; Path=/; Max-Age=31536000; SameSite=Lax"
+  );
 });

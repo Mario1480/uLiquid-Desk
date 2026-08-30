@@ -29,6 +29,7 @@ export type ProductFeatureGateSnapshot = {
 };
 
 export type ProductFeatureGateMap = Partial<Record<ProductFeatureKey, ProductFeatureGateSnapshot>>;
+export type ProductRuntimeFeatureGateMap = Partial<Record<ProductFeatureKey, boolean>>;
 
 export function isProductFeatureAllowed(
   featureGates: ProductFeatureGateMap | null | undefined,
@@ -37,6 +38,15 @@ export function isProductFeatureAllowed(
 ): boolean {
   const gate = featureGates?.[feature];
   return typeof gate?.allowed === "boolean" ? gate.allowed : fallback;
+}
+
+export function isProductFeatureAvailable(
+  featureGates: ProductFeatureGateMap | null | undefined,
+  runtimeFeatureGates: ProductRuntimeFeatureGateMap | null | undefined,
+  feature: ProductFeatureKey
+): boolean {
+  return isProductFeatureAllowed(featureGates, feature)
+    && runtimeFeatureGates?.[feature] === true;
 }
 
 export function anyStrategyProductFeatureAllowed(

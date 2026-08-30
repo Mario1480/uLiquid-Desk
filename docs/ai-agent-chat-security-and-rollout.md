@@ -10,6 +10,8 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 
 - `AI_AGENT_CHAT_ENABLED` is the master gate and defaults to off in production.
 - `AI_AGENT_ACCOUNT_READS_ENABLED` controls private portfolio skills. Production deploys now default it to `true`; an operator can explicitly export `false` for rollback.
+- `AI_POSITION_COPILOT_ENABLED` controls read-only manual Position Copilot analysis. Production deploys default it to `true`; plan capability and account ownership checks still apply.
+- `AI_POSITION_MONITORING_ENABLED` controls automatic position-change and periodic analysis. Production deploys default it to `true`; an operator can close either Position gate explicitly for rollback.
 - `AI_AGENT_CUSTOM_PROFILES_ENABLED` controls user profile overrides.
 - `AI_AGENT_TRADE_DRAFTS_ENABLED` remains off. The read-only runtime rejects draft and execution action levels even when configuration is incorrect.
 - `AI_AGENT_CHAT_TIMEOUT_MS` controls the complete agent run window and defaults to 90 seconds. `API_AGENT_CHAT_REQUEST_TIMEOUT_MS` defaults to 120 seconds so the HTTP layer remains open longer than the run budget.
@@ -47,6 +49,8 @@ The persisted run and tool-call models expose status, provider/model, latency, t
 Set `AI_AGENT_CHAT_ENABLED=false` and restart API/web services through the normal deployment procedure. Do not roll back the additive migration solely to disable the feature. Existing conversations remain stored while API and navigation access are closed. Prediction Builder, Predictions, Prediction Copier, Trading Desk, wallets, vaults and billing do not depend on the Agent Chat tables.
 
 To close only private account reads while keeping Market Analyst available, deploy the API with `AI_AGENT_ACCOUNT_READS_ENABLED=false ./scripts/deploy_prod.sh api`.
+
+To close Position Copilot and automatic monitoring without changing plan entitlements, deploy the API with `AI_POSITION_COPILOT_ENABLED=false AI_POSITION_MONITORING_ENABLED=false ./scripts/deploy_prod.sh api`.
 
 ## Known first-release constraints
 
