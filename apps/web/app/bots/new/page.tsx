@@ -557,7 +557,10 @@ export default function NewBotPage() {
     <PredictionCreateWizard
       open
       step={BOT_WIZARD_PREDICTION_STEP[wizardStep]}
-      steps={BOT_WIZARD_STEPS.map((step) => t(`wizard.steps.${step}`))}
+      steps={BOT_WIZARD_STEPS.map((step) => ({
+        id: BOT_WIZARD_PREDICTION_STEP[step],
+        label: t(`wizard.steps.${step}`)
+      }))}
       title={t("wizard.title")}
       description={t("wizard.description")}
       backLabel={t("wizard.back")}
