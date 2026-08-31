@@ -97,6 +97,12 @@ test("ULIQ admin overview serializes Prisma Decimal values as JSON strings", asy
     assert.equal(response.body.stats.purchases[0]._sum.usdcAmountRaw, "10000000");
     assert.equal(response.body.stats.vesting._sum.allocatedRaw, "7500");
     assert.equal(response.body.tiers[0].minUsdValue, "0");
+    assert.equal(response.body.presaleSchedule.status, "NOT_CONFIGURED");
+    assert.equal(response.body.presaleSchedule.rounds[0].allocationUliq, "50000000");
+    assert.equal(response.body.presaleSchedule.rounds[0].minPurchaseUsdc, "500");
+    assert.equal(response.body.presaleSchedule.rounds[0].maxPurchaseUsdc, "10000");
+    assert.equal(response.body.presaleSchedule.rounds[1].minPurchaseUsdc, "100");
+    assert.equal(response.body.presaleSchedule.rounds[1].maxPurchaseUsdc, "5000");
     assert.deepEqual(response.body.benefitPreset, [
       { code: "BASIC", subscriptionDiscountBps: 0, aiDiscountBps: 0 },
       { code: "BRONZE", subscriptionDiscountBps: 0, aiDiscountBps: 500 },
@@ -108,6 +114,133 @@ test("ULIQ admin overview serializes Prisma Decimal values as JSON strings", asy
     assert.equal(JSON.stringify(response.body).includes('"s":'), false);
     assert.equal(JSON.stringify(response.body).includes('"e":'), false);
     assert.equal(JSON.stringify(response.body).includes('"d":'), false);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
+
+test("ULIQ presale round schedule changes require reauth and create an audited backend draft version", async () => {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_ADMIN_ENABLED = "true";
+  try {
+    const calls: string[] = [];
+    let stored: { value: unknown; updatedAt: Date } | null = null;
+    const tx = {
+      globalSetting: {
+        findUnique: async () => stored,
+        upsert: async ({ create, update }: any) => {
+          calls.push("upsert");
+          stored = {
+            value: stored ? update.value : create.value,
+            updatedAt: new Date("2026-09-01T12:00:00.000Z")
+          };
+          return stored;
+        }
+      }
+    };
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: {
+        $transaction: async (callback: (client: any) => Promise<any>) => {
+          calls.push("transaction");
+          return callback(tx);
+        }
+      },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => { calls.push("superadmin"); return true; },
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => {
+        calls.push("reauth");
+        await next();
+      },
+      recordAdminAuditEvent: async (input) => {
+        assert.equal(input.tx, tx);
+        assert.equal(input.action, "uliq_presale_round_schedule_version_created");
+        assert.equal(input.targetType, "uliq_presale_schedule");
+        assert.equal(input.targetId, "1");
+        assert.equal(input.metadata?.reason, "Initial two-round schedule");
+        calls.push("audit");
+      }
+    });
+
+    const handlers = app.putRoutes.get("/admin/uliq/presale-rounds/schedule");
+    assert.ok(handlers);
+    const response = mockResponse();
+    const start = new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000);
+    const end = new Date(start.getTime() + 14 * 24 * 60 * 60 * 1_000);
+    const secondStart = new Date(end.getTime() + 24 * 60 * 60 * 1_000);
+    const secondEnd = new Date(secondStart.getTime() + 14 * 24 * 60 * 60 * 1_000);
+    await run(handlers!.slice(1), {
+      body: {
+        reason: "Initial two-round schedule",
+        rounds: [
+          { id: "round-1", saleStart: start.toISOString(), saleEnd: end.toISOString() },
+          { id: "round-2", saleStart: secondStart.toISOString(), saleEnd: secondEnd.toISOString() }
+        ]
+      },
+      ip: "127.0.0.1"
+    }, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.version, 1);
+    assert.equal(response.body.status, "DRAFT_CONFIGURED");
+    assert.equal(response.body.onchainStatus, "NOT_BOUND");
+    assert.equal(response.body.rounds[0].saleStart, start.toISOString());
+    assert.equal(response.body.rounds[1].saleEnd, secondEnd.toISOString());
+    assert.deepEqual(calls, ["superadmin", "reauth", "transaction", "upsert", "audit"]);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
+
+test("ULIQ presale round schedule rejects an end before its start", async () => {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_ADMIN_ENABLED = "true";
+  try {
+    let transactionCalled = false;
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: {
+        $transaction: async () => {
+          transactionCalled = true;
+          throw new Error("transaction_must_not_run");
+        }
+      },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => true,
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => { await next(); },
+      recordAdminAuditEvent: async () => undefined
+    });
+
+    const handlers = app.putRoutes.get("/admin/uliq/presale-rounds/schedule");
+    assert.ok(handlers);
+    const response = mockResponse();
+    const start = new Date(Date.now() + 14 * 24 * 60 * 60 * 1_000).toISOString();
+    const end = new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString();
+    await run(handlers!.slice(1), {
+      body: {
+        reason: "Reject invalid dates",
+        rounds: [
+          { id: "round-1", saleStart: start, saleEnd: end },
+          { id: "round-2", saleStart: start, saleEnd: end }
+        ]
+      }
+    }, response);
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "invalid_payload");
+    assert.equal(transactionCalled, false);
   } finally {
     if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
     else process.env.ULIQ_ENABLED = previousEnabled;

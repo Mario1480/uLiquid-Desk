@@ -19,6 +19,12 @@ import {
   createUliqTierBenefitDraft,
   type UliqTierBenefitDraft
 } from "../../../src/uliq/tierBenefits";
+import {
+  isUliqPresaleScheduleValid,
+  presaleScheduleIsoToLocalValue,
+  presaleScheduleLocalValueToIso,
+  type UliqPresaleScheduleDraft
+} from "../../../src/uliq/presaleSchedule";
 import { AppIcon } from "../../components/AppIcon";
 import ReauthDialog from "../../components/ReauthDialog";
 import Web3Providers from "../../components/Web3Providers";
@@ -47,6 +53,27 @@ type AdminUliqPayload = {
       secondary: string;
       finalizedHeadAgreement: boolean;
     };
+  };
+  presaleSchedule: {
+    version: number;
+    status: "NOT_CONFIGURED" | "DRAFT_CONFIGURED" | "INVALID";
+    onchainStatus: "NOT_BOUND";
+    updatedAt: string | null;
+    rounds: Array<{
+      id: "round-1" | "round-2";
+      number: number;
+      allocationUliq: string;
+      priceUsdcPerUliq: string;
+      hardCapUsdc: string;
+      minPurchaseUsdc: string;
+      maxPurchaseUsdc: string;
+      initialUnlockBps: number;
+      cliffMonths: number;
+      vestingMonths: number;
+      predecessorRoundId: "round-1" | null;
+      saleStart: string | null;
+      saleEnd: string | null;
+    }>;
   };
   treasury: {
     desiredTreasury: string | null;
@@ -129,7 +156,7 @@ type SafePreparation = {
   preflight: Record<string, unknown>;
 };
 
-type ReauthAction = "dex-pending" | "dex-prepare" | "dex-submit" | "tier-benefits" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
+type ReauthAction = "presale-schedule" | "dex-pending" | "dex-prepare" | "dex-submit" | "tier-benefits" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
 
 const DEX_LAUNCH_TRACKING_STORAGE_KEY = "uliquid.uliq.admin.dexLaunchTracking.v1";
 
@@ -194,6 +221,8 @@ function UliqAdminPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dexLaunchTime, setDexLaunchTime] = useState(initialDexTime);
+  const [roundScheduleDrafts, setRoundScheduleDrafts] = useState<UliqPresaleScheduleDraft[]>([]);
+  const [roundScheduleReason, setRoundScheduleReason] = useState("");
   const [treasuryInput, setTreasuryInput] = useState("");
   const [tierBenefitDrafts, setTierBenefitDrafts] = useState<UliqTierBenefitDraft[]>([]);
   const [tierBenefitReason, setTierBenefitReason] = useState("");
@@ -216,6 +245,11 @@ function UliqAdminPageContent() {
       if (!options?.silent) {
         setTreasuryInput(payload.treasury.desiredTreasury ?? payload.treasury.activeTreasury ?? "");
         setTierBenefitDrafts(payload.tiers.map(createUliqTierBenefitDraft));
+        setRoundScheduleDrafts(payload.presaleSchedule.rounds.map((round) => ({
+          id: round.id,
+          saleStart: presaleScheduleIsoToLocalValue(round.saleStart),
+          saleEnd: presaleScheduleIsoToLocalValue(round.saleEnd)
+        })));
       }
       return payload;
     } catch (loadError) {
@@ -288,6 +322,7 @@ function UliqAdminPageContent() {
   const purchaseCounts = useMemo(() => Object.fromEntries(
     (data?.stats.purchases ?? []).map((row) => [row.status, row._count._all])
   ), [data]);
+  const roundScheduleValid = useMemo(() => isUliqPresaleScheduleValid(roundScheduleDrafts), [roundScheduleDrafts]);
   const parsedDexLaunchTime = new Date(dexLaunchTime);
   const dexLaunchTimeValid = !Number.isNaN(parsedDexLaunchTime.getTime()) && parsedDexLaunchTime.getTime() >= Date.now();
   const ownerMatches = Boolean(address && data?.treasury.owner && address.toLowerCase() === data.treasury.owner.toLowerCase());
@@ -466,6 +501,26 @@ function UliqAdminPageContent() {
     setNotice(t("tierBenefitsSaved", { version: response.version }));
   }
 
+  async function savePresaleSchedule() {
+    if (!roundScheduleValid) throw new Error(t("presaleScheduleInvalid"));
+    const presaleSchedule = await apiPut<AdminUliqPayload["presaleSchedule"]>("/admin/uliq/presale-rounds/schedule", {
+      reason: roundScheduleReason,
+      rounds: roundScheduleDrafts.map((round) => ({
+        id: round.id,
+        saleStart: presaleScheduleLocalValueToIso(round.saleStart),
+        saleEnd: presaleScheduleLocalValueToIso(round.saleEnd)
+      }))
+    });
+    setData((current) => current ? { ...current, presaleSchedule } : current);
+    setRoundScheduleDrafts(presaleSchedule.rounds.map((round) => ({
+      id: round.id,
+      saleStart: presaleScheduleIsoToLocalValue(round.saleStart),
+      saleEnd: presaleScheduleIsoToLocalValue(round.saleEnd)
+    })));
+    setRoundScheduleReason("");
+    setNotice(t("presaleScheduleSaved", { version: presaleSchedule.version }));
+  }
+
   async function prepareTreasuryAction(action: "treasury-propose" | "treasury-accept" | "treasury-cancel") {
     const route = {
       "treasury-propose": "/admin/uliq/treasury/propose/prepare",
@@ -488,6 +543,7 @@ function UliqAdminPageContent() {
   }
 
   async function runReauthenticatedAction() {
+    if (reauthAction === "presale-schedule") return savePresaleSchedule();
     if (reauthAction === "dex-pending") return prepareDexPending();
     if (reauthAction === "dex-prepare") return prepareSafeTransaction(false);
     if (reauthAction === "dex-submit") return prepareSafeTransaction(true);
@@ -524,6 +580,87 @@ function UliqAdminPageContent() {
             <AdminStatsCard label={t("finalized")} value={purchaseCounts.FINALIZED ?? 0} />
             <AdminStatsCard label={t("activeLocks")} value={data.stats.locks._count._all} />
           </div>
+
+          <AdminDetailSection title={t("presaleScheduleTitle")} description={t("presaleScheduleDescription")}>
+            <div className="adminToolbarRow">
+              <AdminStatusBadge value={data.presaleSchedule.status} />
+              <AdminStatusBadge value={data.presaleSchedule.onchainStatus} />
+              <span className="settingsMutedText">
+                {data.presaleSchedule.updatedAt
+                  ? t("presaleScheduleUpdated", { date: new Date(data.presaleSchedule.updatedAt).toLocaleString(locale), version: data.presaleSchedule.version })
+                  : t("presaleScheduleNotSaved")}
+              </span>
+            </div>
+            <AdminNotice tone="info">{t("presaleScheduleBackendNotice")}</AdminNotice>
+            <div className="uliqAdminRoundList">
+              {data.presaleSchedule.rounds.map((round) => {
+                const draft = roundScheduleDrafts.find((item) => item.id === round.id) ?? { id: round.id, saleStart: "", saleEnd: "" };
+                return (
+                  <div className="uliqAdminRoundRow" key={round.id}>
+                    <div className="uliqAdminRoundHeader">
+                      <div>
+                        <strong>{t("presaleRound", { number: round.number })}</strong>
+                        <small>{round.predecessorRoundId ? t("presaleRoundPredecessor") : t("presaleRoundIndependent")}</small>
+                      </div>
+                      <AdminStatusBadge value={draft.saleStart && draft.saleEnd ? "configured" : "missing"} />
+                    </div>
+                    <div className="uliqAdminRoundParameters">
+                      <div><span>{t("presaleAllocation")}</span><strong>{Number(round.allocationUliq).toLocaleString(locale)} ULIQ</strong></div>
+                      <div><span>{t("presalePrice")}</span><strong>{round.priceUsdcPerUliq} USDC</strong></div>
+                      <div><span>{t("presaleHardCap")}</span><strong>{Number(round.hardCapUsdc).toLocaleString(locale)} USDC</strong></div>
+                      <div><span>{t("presaleBuyerLimits")}</span><strong>{Number(round.minPurchaseUsdc).toLocaleString(locale)}–{Number(round.maxPurchaseUsdc).toLocaleString(locale)} USDC</strong></div>
+                      <div><span>{t("presaleUnlock")}</span><strong>{round.initialUnlockBps / 100}%</strong></div>
+                      <div><span>{t("presaleVesting")}</span><strong>{round.cliffMonths ? t("presaleVestingWithCliff", { cliff: round.cliffMonths, vesting: round.vestingMonths }) : t("presaleVestingWithoutCliff", { vesting: round.vestingMonths })}</strong></div>
+                    </div>
+                    <div className="adminFormGridCompact">
+                      <label className="adminFormField">
+                        <span className="adminFormFieldLabel">{t("presaleStart")}</span>
+                        <input
+                          className="input"
+                          type="datetime-local"
+                          min={localDateTimeMin()}
+                          value={draft.saleStart}
+                          onChange={(event) => setRoundScheduleDrafts((current) => current.map((item) => item.id === round.id ? { ...item, saleStart: event.target.value } : item))}
+                        />
+                      </label>
+                      <label className="adminFormField">
+                        <span className="adminFormFieldLabel">{t("presaleEnd")}</span>
+                        <input
+                          className="input"
+                          type="datetime-local"
+                          min={draft.saleStart || localDateTimeMin()}
+                          value={draft.saleEnd}
+                          onChange={(event) => setRoundScheduleDrafts((current) => current.map((item) => item.id === round.id ? { ...item, saleEnd: event.target.value } : item))}
+                        />
+                      </label>
+                    </div>
+                    {draft.saleStart && draft.saleEnd && new Date(draft.saleStart).getTime() >= new Date(draft.saleEnd).getTime()
+                      ? <AdminNotice tone="danger">{t("presaleRoundEndAfterStart")}</AdminNotice>
+                      : null}
+                  </div>
+                );
+              })}
+            </div>
+            <label className="adminFormField">
+              <span className="adminFormFieldLabel">{t("presaleScheduleReason")}</span>
+              <input
+                className="input"
+                value={roundScheduleReason}
+                maxLength={500}
+                placeholder={t("presaleScheduleReasonPlaceholder")}
+                onChange={(event) => setRoundScheduleReason(event.target.value)}
+              />
+              <span className="adminFormFieldHint">{t("presaleScheduleReasonProgress", { count: roundScheduleReason.trim().length })}</span>
+            </label>
+            <button
+              type="button"
+              className="btn btnPrimary"
+              onClick={() => requestReauth("presale-schedule")}
+              disabled={!roundScheduleValid || roundScheduleReason.trim().length < 8}
+            >
+              <AppIcon name="save" /> {t("presaleScheduleSave")}
+            </button>
+          </AdminDetailSection>
 
           <div className="adminDetailGrid">
             <AdminDetailSection title={t("inventory")}>

@@ -422,6 +422,57 @@
   white-space: pre-wrap;
 }
 
+.uliqAdminRoundList {
+  display: grid;
+  border-block: 1px solid var(--ui-border);
+}
+
+.uliqAdminRoundRow {
+  display: grid;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.uliqAdminRoundRow + .uliqAdminRoundRow {
+  border-top: 1px solid var(--ui-border);
+}
+
+.uliqAdminRoundHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.uliqAdminRoundHeader > div {
+  display: grid;
+  gap: 2px;
+}
+
+.uliqAdminRoundHeader small,
+.uliqAdminRoundParameters span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.uliqAdminRoundParameters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.uliqAdminRoundParameters > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.uliqAdminRoundParameters strong {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 .uliqLaunchSteps {
   display: grid;
   gap: 0;
@@ -528,6 +579,10 @@
 
   .uliqLaunchSteps li {
     grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .uliqAdminRoundParameters {
+    grid-template-columns: 1fr;
   }
 
   .uliqLaunchSteps .uiStatusBadge,

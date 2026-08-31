@@ -5,11 +5,49 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { ULIQ_APPROVED_TESTNET_BENEFIT_BPS } from "./benefitConfig.js";
 import { getUliqFeatureFlags } from "./config.js";
 import { UliqPresaleService, ULIQ_LOCK_TERMS } from "./presale.service.js";
+import {
+  getUliqPresaleRoundSchedule,
+  saveUliqPresaleRoundSchedule
+} from "./presaleRoundSchedule.js";
 import { normalizeUliqTreasuryAddress, UliqTreasuryService } from "./treasury.service.js";
 import { ULIQ_LOCK_GATE_VERSION, ULIQ_REQUIRED_LOCK_SHARE_BPS } from "./math.js";
 
 const dexLaunchSchema = z.object({ dexLaunchTimestamp: z.string().trim().regex(/^[1-9]\d*$/).max(20) });
 const treasurySchema = z.object({ desiredAddress: z.string().trim().max(42) });
+const presaleRoundScheduleSchema = z.object({
+  reason: z.string().trim().min(8).max(500),
+  rounds: z.tuple([
+    z.object({
+      id: z.literal("round-1"),
+      saleStart: z.string().datetime({ offset: true }),
+      saleEnd: z.string().datetime({ offset: true })
+    }),
+    z.object({
+      id: z.literal("round-2"),
+      saleStart: z.string().datetime({ offset: true }),
+      saleEnd: z.string().datetime({ offset: true })
+    })
+  ])
+}).superRefine((value, ctx) => {
+  value.rounds.forEach((round, index) => {
+    const start = new Date(round.saleStart).getTime();
+    const end = new Date(round.saleEnd).getTime();
+    if (start >= end) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rounds", index, "saleEnd"],
+        message: "Sale end must be later than sale start"
+      });
+    }
+    if (end <= Date.now()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rounds", index, "saleEnd"],
+        message: "Sale end must be in the future"
+      });
+    }
+  });
+});
 const tierBenefitConfigSchema = z.object({
   reason: z.string().trim().min(8).max(500),
   tiers: z.array(z.object({
@@ -83,9 +121,10 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
 
   app.get("/admin/uliq", requireAuth, requireSuperadmin, async (_req, res) => {
     if (!enabled(res)) return;
-    const [overview, treasury, cursor, reconciliation, reservations, price, purchases, vesting, locks, tiers, alerts, audit] = await Promise.all([
+    const [overview, treasury, presaleSchedule, cursor, reconciliation, reservations, price, purchases, vesting, locks, tiers, alerts, audit] = await Promise.all([
       deps.presaleService.getOverview(),
       deps.treasuryService.getState(),
+      getUliqPresaleRoundSchedule(deps.db),
       deps.db.onchainSyncCursor.findFirst({ where: { id: { startsWith: "uliq:" } }, orderBy: { updatedAt: "desc" } }),
       deps.db.uliqReconciliationRun.findFirst({ orderBy: { startedAt: "desc" } }),
       deps.db.uliqBenefitReservation.groupBy({ by: ["status"], _count: { _all: true } }),
@@ -99,11 +138,12 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       deps.db.uliqLockPosition.aggregate({ where: { status: "ACTIVE" }, _sum: { amountRaw: true }, _count: { _all: true } }),
       deps.db.uliqTierConfig.findMany({ where: { enabled: true, effectiveUntil: null }, orderBy: [{ version: "desc" }, { minUsdValue: "asc" }] }),
       deps.db.platformAlert.findMany({ where: { source: { startsWith: "uliq" } }, orderBy: { createdAt: "desc" }, take: 20 }),
-      deps.db.adminAuditEvent.findMany({ where: { targetType: { in: ["uliq_presale", "uliq_treasury", "uliq_tier_config"] } }, orderBy: { createdAt: "desc" }, take: 20 })
+      deps.db.adminAuditEvent.findMany({ where: { targetType: { in: ["uliq_presale", "uliq_presale_schedule", "uliq_treasury", "uliq_tier_config"] } }, orderBy: { createdAt: "desc" }, take: 20 })
     ]);
     return res.json(jsonSafe({
       overview,
       treasury,
+      presaleSchedule,
       indexer: cursor,
       reconciliation,
       reservations,
@@ -135,6 +175,48 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       audit
     }));
   });
+
+  app.put(
+    "/admin/uliq/presale-rounds/schedule",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!enabled(res)) return;
+      const parsed = presaleRoundScheduleSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const actor = getUserFromLocals(res);
+        const result = await deps.db.$transaction(async (tx: any) => {
+          const oldValue = await getUliqPresaleRoundSchedule(tx);
+          const newValue = await saveUliqPresaleRoundSchedule({
+            db: tx,
+            rounds: parsed.data.rounds,
+            reason: parsed.data.reason,
+            actorUserId: actor.id
+          });
+          await deps.recordAdminAuditEvent({
+            tx,
+            actorUserId: actor.id,
+            action: "uliq_presale_round_schedule_version_created",
+            targetType: "uliq_presale_schedule",
+            targetId: String(newValue.version),
+            metadata: {
+              reason: parsed.data.reason,
+              oldValue,
+              newValue
+            },
+            ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+          });
+          return newValue;
+        });
+        return res.json(result);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(500).json({ error: reason });
+      }
+    }
+  );
 
   app.put(
     "/admin/uliq/tier-benefits",

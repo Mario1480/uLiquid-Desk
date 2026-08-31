@@ -64,6 +64,13 @@ The minimum applies to each accepted purchase. The maximum is cumulative per wal
 - Round 2 releases the remaining 75% linearly over nine months from listing.
 - Claims are pull-based, beneficiary-bound, and do not change total eligible ULIQ when the application reconciles wallet plus unreleased vesting correctly.
 
+### Admin scheduling boundary
+
+- The admin API stores the desired `saleStart` and `saleEnd` for both rounds as a versioned, reauthenticated, audited backend draft.
+- Allocation, price, hard cap, buyer limits, unlock share, cliff, duration, and predecessor remain read-only values sourced from this ADR.
+- The backend draft does not configure a contract, mark a round ready, activate a sale, sign, or broadcast a transaction.
+- Onchain preparation and reconciliation remain disabled until both reviewed Mainnet round addresses and the production role model are configured.
+
 ### Unsold inventory
 
 Unsold ULIQ remains isolated in its round contract. The review draft contains no automatic treasury release or generic recovery function. Reallocation, burn, rollover, or treasury release requires a later explicit decision and a reviewed implementation before any production deployment.
