@@ -1,19 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { AppIcon } from "../components/AppIcon";
 import { PageHeader } from "../components/ui";
+import { PredictionDetailDrawer } from "../../components/predictions";
 
 type Horizon = "intraday" | "24h" | "7d";
 type ProviderState = {
   providerId: string;
   providerType: string;
   state: "healthy" | "degraded" | "unavailable" | "disabled";
-  enabled: boolean;
+  enabled?: boolean;
   message?: string;
   staleDataAgeSeconds?: number;
 };
@@ -49,6 +51,24 @@ type MarketSummaryResponse = {
     warnings: string[];
   };
 };
+type SavedMarketIntelligenceAnalysis = {
+  id: string;
+  horizon: Horizon;
+  responseLanguage: "de" | "en";
+  title: string;
+  overallRisk: "low" | "moderate" | "high" | "unknown";
+  sentiment: "bearish" | "neutral" | "bullish" | "mixed";
+  degraded: boolean;
+  generatedAt: string;
+  createdAt: string;
+  payload: {
+    report: MarketSummaryResponse;
+    context: {
+      dataAgeSeconds: number | null;
+      providerStates: ProviderState[];
+    };
+  };
+};
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
@@ -65,11 +85,15 @@ function stateBadgeClass(state: ProviderState["state"]): string {
 export default function MarketIntelligencePage() {
   const t = useTranslations("system.marketIntelligence");
   const locale = useLocale() as AppLocale;
+  const searchParams = useSearchParams();
   const [horizon, setHorizon] = useState<Horizon>("7d");
   const [payload, setPayload] = useState<MarketSummaryResponse | null>(null);
   const [providers, setProviders] = useState<ProviderState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [analyses, setAnalyses] = useState<SavedMarketIntelligenceAnalysis[]>([]);
+  const [analysesLoading, setAnalysesLoading] = useState(true);
+  const [selectedAnalysis, setSelectedAnalysis] = useState<SavedMarketIntelligenceAnalysis | null>(null);
 
   async function load() {
     setLoading(true);
@@ -88,14 +112,49 @@ export default function MarketIntelligencePage() {
     }
   }
 
+  async function loadAnalyses() {
+    setAnalysesLoading(true);
+    try {
+      const response = await apiGet<{ items?: SavedMarketIntelligenceAnalysis[] }>(
+        "/market-intelligence/analyses?limit=20"
+      );
+      setAnalyses(Array.isArray(response.items) ? response.items : []);
+    } catch {
+      setAnalyses([]);
+    } finally {
+      setAnalysesLoading(false);
+    }
+  }
+
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [horizon]);
 
+  useEffect(() => {
+    void loadAnalyses();
+  }, []);
+
+  useEffect(() => {
+    const analysisId = searchParams.get("analysis");
+    if (!analysisId) return;
+    const listed = analyses.find((analysis) => analysis.id === analysisId);
+    if (listed) {
+      setSelectedAnalysis(listed);
+      return;
+    }
+    void apiGet<{ analysis: SavedMarketIntelligenceAnalysis }>(
+      `/market-intelligence/analyses/${encodeURIComponent(analysisId)}`
+    ).then((response) => setSelectedAnalysis(response.analysis)).catch(() => undefined);
+  }, [analyses, searchParams]);
+
   const citations = useMemo(
     () => new Map((payload?.citations ?? []).map((citation) => [citation.id, citation])),
     [payload]
+  );
+  const selectedCitations = useMemo(
+    () => new Map((selectedAnalysis?.payload.report.citations ?? []).map((citation) => [citation.id, citation])),
+    [selectedAnalysis]
   );
   const healthyProviders = providers.filter((provider) => provider.state === "healthy").length;
   const incomplete = payload?.meta.degraded || providers.some((provider) => provider.state === "unavailable" || provider.state === "degraded");
@@ -244,9 +303,9 @@ export default function MarketIntelligencePage() {
           </section>
 
           <div className="marketIntelligenceActions">
-            <Link href={withLocalePath("/predictions", locale)} className="btn btnPrimary">
-              <AppIcon name="predictions" />
-              {t("createPrediction")}
+            <Link href={`${withLocalePath("/predictions", locale)}?create=market-intelligence`} className="btn btnPrimary">
+              <AppIcon name="create" />
+              {t("createAnalysis")}
             </Link>
             <Link href={withLocalePath("/news", locale)} className="btn">
               <AppIcon name="news" />
@@ -255,6 +314,125 @@ export default function MarketIntelligencePage() {
           </div>
         </aside>
       </div>
+
+      <section className="uiSection marketIntelligenceHistory">
+        <div className="uiSectionHeader">
+          <div>
+            <h2>{t("savedAnalysesTitle")}</h2>
+            <p>{t("savedAnalysesDescription")}</p>
+          </div>
+          <Link href={`${withLocalePath("/predictions", locale)}?create=market-intelligence`} className="btn">
+            <AppIcon name="create" />
+            {t("createAnalysis")}
+          </Link>
+        </div>
+        {analysesLoading ? <div className="uiEmptyState">{t("savedAnalysesLoading")}</div> : null}
+        {!analysesLoading && analyses.length === 0 ? <div className="uiEmptyState">{t("savedAnalysesEmpty")}</div> : null}
+        <div className="marketIntelligenceHistoryList">
+          {analyses.map((analysis) => (
+            <button key={analysis.id} type="button" onClick={() => setSelectedAnalysis(analysis)}>
+              <div>
+                <strong>{analysis.title}</strong>
+                <span>{new Date(analysis.generatedAt).toLocaleString()} · {t(`horizons.${analysis.horizon}`)}</span>
+              </div>
+              <span className="badge">{analysis.overallRisk}</span>
+              <span className="badge">{analysis.sentiment}</span>
+              {analysis.degraded ? <span className="uiStatusBadge uiStatusBadge-warning">{t("degraded")}</span> : null}
+              <AppIcon name="chevronRight" />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {selectedAnalysis ? (
+        <PredictionDetailDrawer
+          title={selectedAnalysis.title}
+          subtitle={`${t(`horizons.${selectedAnalysis.horizon}`)} · ${new Date(selectedAnalysis.generatedAt).toLocaleString()}`}
+          closeLabel={t("close")}
+          onClose={() => setSelectedAnalysis(null)}
+        >
+          <div className="marketIntelligenceAnalysisDetail">
+            {selectedAnalysis.degraded ? <div className="uiNotice uiNotice-warning">{t("savedAnalysisDegraded")}</div> : null}
+            <section className="marketIntelligenceMetrics" aria-label={t("overviewTitle")}>
+              <div className="uiMetricTile"><span>{t("risk")}</span><strong>{selectedAnalysis.overallRisk}</strong></div>
+              <div className="uiMetricTile"><span>{t("tone")}</span><strong>{selectedAnalysis.sentiment}</strong></div>
+              <div className="uiMetricTile"><span>{t("dataAge")}</span><strong>{selectedAnalysis.payload.context.dataAgeSeconds ?? "–"}s</strong></div>
+            </section>
+            <section className="uiSection">
+              <div className="uiSectionHeader"><h2>{t("driversTitle")}</h2></div>
+              <div className="marketDriverList">
+                {selectedAnalysis.payload.report.summary.highlights.map((highlight, index) => (
+                  <article className="marketDriverRow" key={`${highlight.headline}-${index}`}>
+                    <div className="marketDriverHeader">
+                      <span className="badge">{highlight.type}</span>
+                      <span className="badge">{highlight.importance}</span>
+                      <span className="badge">{highlight.inference ? t("inference") : t("fact")}</span>
+                    </div>
+                    <h3>{highlight.headline}</h3>
+                    <p>{highlight.explanation}</p>
+                    <div className="marketSourceLinks">
+                      {highlight.sourceIds.map((sourceId) => {
+                        const source = selectedCitations.get(sourceId);
+                        return source?.sourceUrl ? (
+                          <a key={sourceId} href={source.sourceUrl} target="_blank" rel="noreferrer" className="btn">
+                            <AppIcon name="open" />{source.sourceName}
+                          </a>
+                        ) : null;
+                      })}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="uiSection">
+              <div className="uiSectionHeader"><h2>{t("upcomingTitle")}</h2></div>
+              <div className="marketUpcomingList">
+                {selectedAnalysis.payload.report.summary.upcomingRisks.map((risk, index) => (
+                  <div className="marketUpcomingRow" key={`${risk.label}-${index}`}>
+                    <AppIcon name="calendar" />
+                    <div>
+                      <strong>{risk.label}</strong>
+                      <span>{risk.scheduledAt ? new Date(risk.scheduledAt).toLocaleString() : t("timeUnknown")}</span>
+                      <div className="marketUpcomingSources">
+                        {risk.sourceIds.map((sourceId) => {
+                          const source = selectedCitations.get(sourceId);
+                          return source?.sourceUrl ? (
+                            <a key={sourceId} href={source.sourceUrl} target="_blank" rel="noreferrer">
+                              <AppIcon name="open" />{source.sourceName}
+                            </a>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            {selectedAnalysis.payload.report.summary.uncertainties.length > 0 ? (
+              <section className="uiSection">
+                <div className="uiSectionHeader"><h2>{t("uncertaintiesTitle")}</h2></div>
+                <ul className="marketUncertaintyList">
+                  {selectedAnalysis.payload.report.summary.uncertainties.map((entry, index) => <li key={`${entry}-${index}`}>{entry}</li>)}
+                </ul>
+              </section>
+            ) : null}
+            <section className="uiSection">
+              <div className="uiSectionHeader"><h2>{t("providerTitle")}</h2></div>
+              <div className="marketProviderList">
+                {selectedAnalysis.payload.context.providerStates.map((provider) => (
+                  <div className="marketProviderRow" key={`${provider.providerType}-${provider.providerId}`}>
+                    <div><strong>{provider.providerId}</strong><span>{provider.providerType}</span></div>
+                    <span className={`uiStatusBadge ${stateBadgeClass(provider.state)}`}>{provider.state}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="predictionIndicatorMeta">
+                {t("model")}: {selectedAnalysis.payload.report.meta.model} · {t("generated")}: {new Date(selectedAnalysis.generatedAt).toLocaleString()}
+              </p>
+            </section>
+          </div>
+        </PredictionDetailDrawer>
+      ) : null}
     </div>
   );
 }

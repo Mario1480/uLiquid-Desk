@@ -6260,6 +6260,8 @@
   display: none;
 }
 
+.predictionWizardBody[data-step="type"] [data-wizard-section="type"],
+.predictionWizardBody[data-step="scope"] [data-wizard-section="scope"],
 .predictionWizardBody[data-step="market"] [data-wizard-section="market"],
 .predictionWizardBody[data-step="analysis"] [data-wizard-section="analysis"],
 .predictionWizardBody[data-step="advanced"] [data-wizard-section="advanced"] {
@@ -6278,6 +6280,100 @@
   grid-column: 1 / -1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.predictionAnalysisKindGrid {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.predictionAnalysisKindOption {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-control);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.predictionAnalysisKindOption > svg {
+  grid-row: 1 / span 2;
+  margin-top: 2px;
+}
+
+.predictionAnalysisKindOption strong,
+.predictionAnalysisKindOption span {
+  min-width: 0;
+}
+
+.predictionAnalysisKindOption span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.predictionAnalysisKindOptionActive {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+
+.predictionIntelligenceHorizon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.predictionWizardReviewWide {
+  grid-column: 1 / -1;
+}
+
+.predictionWizardReviewWide small {
+  color: var(--color-warning);
+  font-size: 12px;
+}
+
+.predictionIntelligenceSnapshotMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.predictionIntelligenceSnapshotList {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.predictionIntelligenceSnapshotList > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.predictionIntelligenceSnapshotList > div:last-child {
+  border-bottom: 0;
+}
+
+.predictionIntelligenceSnapshotList > div > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.predictionIntelligenceSnapshotList span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .predictionWizardReview > div,
@@ -6433,6 +6529,9 @@
 }
 
 @media (max-width: 720px) {
+  .predictionAnalysisKindGrid {
+    grid-template-columns: 1fr;
+  }
   .predictionTabs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6978,6 +7077,51 @@
   flex: 0 0 auto;
 }
 
+.marketIntelligenceHistoryList {
+  display: grid;
+  margin-top: 6px;
+}
+
+.marketIntelligenceHistoryList > button {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 4px;
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.marketIntelligenceHistoryList > button:hover,
+.marketIntelligenceHistoryList > button:focus-visible {
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.marketIntelligenceHistoryList > button > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.marketIntelligenceHistoryList > button > div > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.marketIntelligenceAnalysisDetail {
+  display: grid;
+  gap: 12px;
+}
+
+.marketIntelligenceAnalysisDetail .marketIntelligenceMetrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 @media (max-width: 980px) {
   .marketIntelligenceMetrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6996,6 +7140,19 @@
   .marketIntelligenceToolbar .btn,
   .marketIntelligenceActions .btn {
     flex: 1 1 auto;
+  }
+
+  .marketIntelligenceHistoryList > button {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .marketIntelligenceHistoryList > button > .badge,
+  .marketIntelligenceHistoryList > button > .uiStatusBadge {
+    display: none;
+  }
+
+  .marketIntelligenceAnalysisDetail .marketIntelligenceMetrics {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

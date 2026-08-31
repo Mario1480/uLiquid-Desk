@@ -1,5 +1,5 @@
 export { default as ActivePredictions } from "./ActivePredictions";
-export { default as PredictionCreateWizard, PREDICTION_WIZARD_STEPS } from "./PredictionCreateWizard";
+export { default as PredictionCreateWizard } from "./PredictionCreateWizard";
 export type { PredictionWizardStep } from "./PredictionCreateWizard";
 export { default as PredictionCopierEligibility } from "./PredictionCopierEligibility";
 export { default as PredictionDetailDrawer } from "./PredictionDetailDrawer";

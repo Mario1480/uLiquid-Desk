@@ -5546,6 +5546,7 @@ type PredictionGenerateAutoInput = {
   leverage?: number;
   modelVersionBase?: string;
   responseLanguage?: unknown;
+  includeMarketIntelligence?: boolean;
   aiPromptTemplateId?: string | null;
   compositeStrategyId?: string | null;
   strategyRef?: {
@@ -5587,6 +5588,15 @@ async function generateAutoPredictionForUser(
   compositeStrategyName: string | null;
   strategyRef: PredictionStrategyRef | null;
   responseLanguage: ResponseLanguage;
+  marketIntelligence: {
+    requested: boolean;
+    used: boolean;
+    degraded: boolean;
+    dataAgeSeconds: number | null;
+    factCount: number;
+    eventCount: number;
+    warnings: string[];
+  };
   existing?: boolean;
   existingStateId?: string | null;
 }> {
@@ -5840,6 +5850,12 @@ async function generateAutoPredictionForUser(
       });
       if (existingState) {
         const existingSnapshot = asRecord(existingState.featuresSnapshot);
+        const existingMarketIntelligenceSnapshot = asRecord(existingSnapshot?.marketIntelligence) ?? {};
+        const existingMarketIntelligencePolicy = existingSnapshot?.marketIntelligencePolicy;
+        const existingIncludesMarketIntelligence = existingMarketIntelligencePolicy === "include"
+          || (existingMarketIntelligencePolicy !== "exclude" && Boolean(existingSnapshot?.marketIntelligence));
+        const requestedMarketIntelligence = payload.includeMarketIntelligence === true;
+        const shouldReuseExistingState = existingIncludesMarketIntelligence === requestedMarketIntelligence;
         const existingStrategyRef = readPredictionStrategyRef(existingSnapshot);
         const existingSignal: PredictionSignal =
           existingState.signal === "up" || existingState.signal === "down" || existingState.signal === "neutral"
@@ -5865,44 +5881,67 @@ async function generateAutoPredictionForUser(
           };
         const existingTags = normalizeTagList(existingState.tags);
         const existingKeyDrivers = normalizeKeyDriverList(existingState.keyDrivers);
-        return {
-          persisted: false,
-          existing: true,
-          existingStateId: existingState.id,
-          prediction: {
-            signal: existingSignal,
-            expectedMovePct: existingExpectedMovePct,
-            confidence: existingConfidence
-          },
-          timeframe: existingTimeframe,
-          directionPreference: parseDirectionPreference(existingState.directionPreference),
-          confidenceTargetPct: Number.isFinite(Number(existingState.confidenceTargetPct))
-            ? clamp(Number(existingState.confidenceTargetPct), 0, 100)
-            : effectiveConfidenceTargetPct,
-          signalSource: existingSignalSource,
-          signalMode: existingSignalMode,
-          explanation: {
-            explanation:
-              typeof existingState.explanation === "string" && existingState.explanation.trim()
-                ? existingState.explanation
-                : "Existing prediction schedule reused for this scope.",
-            tags: existingTags,
-            keyDrivers: existingKeyDrivers,
-            aiPrediction: existingAiPrediction,
-            disclaimer: "grounded_features_only"
-          },
-          modelVersion: existingState.modelVersion,
-          predictionId: null,
-          tsCreated: existingState.tsUpdated.toISOString(),
-          aiPromptTemplateId: readAiPromptTemplateId(existingSnapshot),
-          aiPromptTemplateName: readAiPromptTemplateName(existingSnapshot),
-          localStrategyId: readLocalStrategyId(existingSnapshot),
-          localStrategyName: readLocalStrategyName(existingSnapshot),
-          compositeStrategyId: readCompositeStrategyId(existingSnapshot),
-          compositeStrategyName: readCompositeStrategyName(existingSnapshot),
-          strategyRef: existingStrategyRef,
-          responseLanguage: existingResponseLanguage
-        };
+        const existingMarketIntelligenceFacts = Array.isArray(existingMarketIntelligenceSnapshot.highImpactNews)
+          ? existingMarketIntelligenceSnapshot.highImpactNews
+          : [];
+        const existingMarketIntelligenceEvents = Array.isArray(existingMarketIntelligenceSnapshot.upcomingHighImpactEvents)
+          ? existingMarketIntelligenceSnapshot.upcomingHighImpactEvents
+          : [];
+        const existingMarketIntelligenceWarnings = Array.isArray(existingMarketIntelligenceSnapshot.warnings)
+          ? existingMarketIntelligenceSnapshot.warnings.map((entry) => String(entry)).slice(0, 5)
+          : [];
+        if (shouldReuseExistingState) {
+          return {
+            persisted: false,
+            existing: true,
+            existingStateId: existingState.id,
+            prediction: {
+              signal: existingSignal,
+              expectedMovePct: existingExpectedMovePct,
+              confidence: existingConfidence
+            },
+            timeframe: existingTimeframe,
+            directionPreference: parseDirectionPreference(existingState.directionPreference),
+            confidenceTargetPct: Number.isFinite(Number(existingState.confidenceTargetPct))
+              ? clamp(Number(existingState.confidenceTargetPct), 0, 100)
+              : effectiveConfidenceTargetPct,
+            signalSource: existingSignalSource,
+            signalMode: existingSignalMode,
+            explanation: {
+              explanation:
+                typeof existingState.explanation === "string" && existingState.explanation.trim()
+                  ? existingState.explanation
+                  : "Existing prediction schedule reused for this scope.",
+              tags: existingTags,
+              keyDrivers: existingKeyDrivers,
+              aiPrediction: existingAiPrediction,
+              disclaimer: "grounded_features_only"
+            },
+            modelVersion: existingState.modelVersion,
+            predictionId: null,
+            tsCreated: existingState.tsUpdated.toISOString(),
+            aiPromptTemplateId: readAiPromptTemplateId(existingSnapshot),
+            aiPromptTemplateName: readAiPromptTemplateName(existingSnapshot),
+            localStrategyId: readLocalStrategyId(existingSnapshot),
+            localStrategyName: readLocalStrategyName(existingSnapshot),
+            compositeStrategyId: readCompositeStrategyId(existingSnapshot),
+            compositeStrategyName: readCompositeStrategyName(existingSnapshot),
+            strategyRef: existingStrategyRef,
+            responseLanguage: existingResponseLanguage,
+            marketIntelligence: {
+              requested: requestedMarketIntelligence,
+              used: requestedMarketIntelligence
+                && existingMarketIntelligenceFacts.length + existingMarketIntelligenceEvents.length > 0,
+              degraded: requestedMarketIntelligence && existingMarketIntelligenceSnapshot.degraded === true,
+              dataAgeSeconds: Number.isFinite(Number(existingMarketIntelligenceSnapshot.dataAgeSeconds))
+                ? Math.max(0, Math.trunc(Number(existingMarketIntelligenceSnapshot.dataAgeSeconds)))
+                : null,
+              factCount: existingMarketIntelligenceFacts.length,
+              eventCount: existingMarketIntelligenceEvents.length,
+              warnings: existingMarketIntelligenceWarnings
+            }
+          };
+        }
       }
     }
     const predictionCreateAccess = await canCreatePredictionForUser({
@@ -6135,26 +6174,53 @@ async function generateAutoPredictionForUser(
       inferred.featureSnapshot,
       newsBlackout
     );
-    try {
-      inferred.featureSnapshot.marketIntelligence = await getMarketIntelligenceService(db)
-        .getPredictionContext({ symbol: canonicalSymbol, horizon: "24h" });
-    } catch (error) {
-      inferred.featureSnapshot.marketIntelligence = {
-        schemaVersion: "market-intelligence-context/v1",
-        symbol: canonicalSymbol,
-        generatedAt: new Date().toISOString(),
-        dataAgeSeconds: null,
-        degraded: true,
-        warnings: ["market_intelligence_context_unavailable"],
-        facts: [],
-        upcomingHighImpactEvents: [],
-        providerStates: []
-      };
-      logger.warn("prediction_market_intelligence_context_failed", {
-        symbol: canonicalSymbol,
-        reason: String(error)
-      });
+    const includeMarketIntelligence = payload.includeMarketIntelligence === true;
+    inferred.featureSnapshot.marketIntelligencePolicy = includeMarketIntelligence ? "include" : "exclude";
+    if (includeMarketIntelligence) {
+      try {
+        inferred.featureSnapshot.marketIntelligence = await getMarketIntelligenceService(db)
+          .getPredictionContext({ symbol: canonicalSymbol, horizon: "24h" });
+      } catch (error) {
+        inferred.featureSnapshot.marketIntelligence = {
+          schemaVersion: "market-intelligence-context/v1",
+          symbol: canonicalSymbol,
+          generatedAt: new Date().toISOString(),
+          dataAgeSeconds: null,
+          degraded: true,
+          warnings: ["market_intelligence_context_unavailable"],
+          facts: [],
+          upcomingHighImpactEvents: [],
+          providerStates: []
+        };
+        logger.warn("prediction_market_intelligence_context_failed", {
+          symbol: canonicalSymbol,
+          reason: String(error)
+        });
+      }
+    } else {
+      delete inferred.featureSnapshot.marketIntelligence;
     }
+    const marketIntelligenceSnapshot = asRecord(inferred.featureSnapshot.marketIntelligence) ?? {};
+    const marketIntelligenceFacts = Array.isArray(marketIntelligenceSnapshot.facts)
+      ? marketIntelligenceSnapshot.facts
+      : [];
+    const marketIntelligenceEvents = Array.isArray(marketIntelligenceSnapshot.upcomingHighImpactEvents)
+      ? marketIntelligenceSnapshot.upcomingHighImpactEvents
+      : [];
+    const marketIntelligenceWarnings = Array.isArray(marketIntelligenceSnapshot.warnings)
+      ? marketIntelligenceSnapshot.warnings.map((entry) => String(entry)).slice(0, 5)
+      : [];
+    const marketIntelligenceUsage = {
+      requested: includeMarketIntelligence,
+      used: includeMarketIntelligence && marketIntelligenceFacts.length + marketIntelligenceEvents.length > 0,
+      degraded: includeMarketIntelligence && marketIntelligenceSnapshot.degraded === true,
+      dataAgeSeconds: Number.isFinite(Number(marketIntelligenceSnapshot.dataAgeSeconds))
+        ? Math.max(0, Math.trunc(Number(marketIntelligenceSnapshot.dataAgeSeconds)))
+        : null,
+      factCount: marketIntelligenceFacts.length,
+      eventCount: marketIntelligenceEvents.length,
+      warnings: marketIntelligenceWarnings
+    };
     const globalNewsRiskBlockEnabled = await readGlobalNewsRiskEnforcement();
     const strategyNewsRiskMode = resolveStrategyNewsRiskMode({
       strategyRef: strategyRefForInitialSnapshot,
@@ -6401,6 +6467,7 @@ async function generateAutoPredictionForUser(
       compositeStrategyId: selectedCompositeStrategy?.id ?? null,
       compositeStrategyName: selectedCompositeStrategy?.name ?? null,
       responseLanguage,
+      marketIntelligence: marketIntelligenceUsage,
       strategyRef: selectedStrategyRef
         ? {
             kind: selectedStrategyRef.kind,
@@ -9777,25 +9844,40 @@ async function refreshPredictionStateForTemplate(params: {
       inferred.featureSnapshot,
       newsBlackout
     );
-    try {
-      inferred.featureSnapshot.marketIntelligence = await getMarketIntelligenceService(db)
-        .getPredictionContext({ symbol: template.symbol, horizon: "24h" });
-    } catch (error) {
-      inferred.featureSnapshot.marketIntelligence = {
-        schemaVersion: "market-intelligence-context/v1",
-        symbol: template.symbol,
-        generatedAt: new Date().toISOString(),
-        dataAgeSeconds: null,
-        degraded: true,
-        warnings: ["market_intelligence_context_unavailable"],
-        facts: [],
-        upcomingHighImpactEvents: [],
-        providerStates: []
-      };
-      logger.warn("prediction_market_intelligence_context_failed", {
-        symbol: template.symbol,
-        reason: String(error)
-      });
+    const priorFeatureSnapshot = asRecord(template.featureSnapshot) ?? {};
+    const priorMarketIntelligencePolicy = priorFeatureSnapshot.marketIntelligencePolicy;
+    const wantsMarketIntelligence = priorMarketIntelligencePolicy === "include"
+      || (priorMarketIntelligencePolicy !== "exclude" && Boolean(priorFeatureSnapshot.marketIntelligence));
+    const marketIntelligenceEntitled = wantsMarketIntelligence
+      ? await resolvePlanCapabilitiesForUserId({ userId: template.userId })
+          .then((context) => isCapabilityAllowed(context.capabilities, "product.market_intelligence"))
+          .catch(() => false)
+      : false;
+    const includeMarketIntelligence = wantsMarketIntelligence && marketIntelligenceEntitled;
+    inferred.featureSnapshot.marketIntelligencePolicy = wantsMarketIntelligence ? "include" : "exclude";
+    if (includeMarketIntelligence) {
+      try {
+        inferred.featureSnapshot.marketIntelligence = await getMarketIntelligenceService(db)
+          .getPredictionContext({ symbol: template.symbol, horizon: "24h" });
+      } catch (error) {
+        inferred.featureSnapshot.marketIntelligence = {
+          schemaVersion: "market-intelligence-context/v1",
+          symbol: template.symbol,
+          generatedAt: new Date().toISOString(),
+          dataAgeSeconds: null,
+          degraded: true,
+          warnings: ["market_intelligence_context_unavailable"],
+          facts: [],
+          upcomingHighImpactEvents: [],
+          providerStates: []
+        };
+        logger.warn("prediction_market_intelligence_context_failed", {
+          symbol: template.symbol,
+          reason: String(error)
+        });
+      }
+    } else {
+      delete inferred.featureSnapshot.marketIntelligence;
     }
 
     const prevStateRow = await db.predictionState.findUnique({

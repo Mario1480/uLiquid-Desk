@@ -812,6 +812,7 @@ model User {
   aiAgentProfiles                      AiAgentProfile[]
   aiAgentConversations                 AiAgentConversation[]
   aiAgentRuns                          AiAgentRun[]
+  marketIntelligenceAnalyses           MarketIntelligenceAnalysis[]
   subscription                         UserSubscription?
   adminPlanOverride                    AdminPlanOverride?
   billingOrders                        BillingOrder[]
@@ -3025,6 +3026,30 @@ model MarketSummaryCache {
   @@unique([sourceClusterHash, promptVersion, model, horizon], map: "market_summary_cache_identity_key")
   @@index([expiresAt])
   @@map("market_summary_cache")
+}
+
+model MarketIntelligenceAnalysis {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  requestId         String   @map("request_id")
+  horizon           String
+  responseLanguage  String   @default("en") @map("response_language")
+  title             String
+  overallRisk       String   @map("overall_risk")
+  sentiment         String
+  degraded          Boolean  @default(false)
+  payload           Json
+  sourceClusterHash String   @map("source_cluster_hash")
+  promptVersion     String   @map("prompt_version")
+  model             String
+  generatedAt       DateTime @map("generated_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, requestId], map: "market_intelligence_analyses_user_request_key")
+  @@index([userId, createdAt(sort: Desc)], map: "market_intelligence_analyses_user_created_idx")
+  @@map("market_intelligence_analyses")
 }
 
 model PredictionState {

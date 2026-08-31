@@ -3,13 +3,13 @@
 import type { ReactNode } from "react";
 import { AppIcon } from "../../app/components/AppIcon";
 
-export const PREDICTION_WIZARD_STEPS = ["market", "analysis", "advanced", "review", "generate"] as const;
+export const PREDICTION_WIZARD_STEPS = ["type", "market", "analysis", "advanced", "scope", "review", "generate"] as const;
 export type PredictionWizardStep = (typeof PREDICTION_WIZARD_STEPS)[number];
 
 type PredictionCreateWizardProps = {
   open: boolean;
   step: PredictionWizardStep;
-  steps: string[];
+  steps: Array<{ id: PredictionWizardStep; label: string }>;
   title: string;
   description: string;
   backLabel: string;
@@ -28,9 +28,9 @@ type PredictionCreateWizardProps = {
 
 export default function PredictionCreateWizard(props: PredictionCreateWizardProps) {
   if (!props.open) return <>{props.children}</>;
-  const stepIndex = PREDICTION_WIZARD_STEPS.indexOf(props.step);
+  const stepIndex = Math.max(0, props.steps.findIndex((entry) => entry.id === props.step));
   const isFirst = stepIndex === 0;
-  const isLast = stepIndex === PREDICTION_WIZARD_STEPS.length - 1;
+  const isLast = stepIndex === props.steps.length - 1;
 
   return (
     <div className="predictionWizardBackdrop" role="presentation" onMouseDown={props.onClose}>
@@ -43,7 +43,7 @@ export default function PredictionCreateWizard(props: PredictionCreateWizardProp
       >
         <header className="predictionWizardHeader">
           <div>
-            <div className="predictionSectionEyebrow">{props.steps[stepIndex]}</div>
+            <div className="predictionSectionEyebrow">{props.steps[stepIndex]?.label}</div>
             <h2 id="prediction-wizard-title" className="predictionWizardTitle">{props.title}</h2>
             <p className="predictionWizardDescription">{props.description}</p>
           </div>
@@ -52,9 +52,9 @@ export default function PredictionCreateWizard(props: PredictionCreateWizardProp
           </button>
         </header>
         <ol className="predictionWizardSteps" aria-label={props.title}>
-          {props.steps.map((label, index) => (
-            <li key={label} className={index === stepIndex ? "predictionWizardStepActive" : index < stepIndex ? "predictionWizardStepDone" : ""}>
-              <span>{index + 1}</span>{label}
+          {props.steps.map((entry, index) => (
+            <li key={entry.id} className={index === stepIndex ? "predictionWizardStepActive" : index < stepIndex ? "predictionWizardStepDone" : ""}>
+              <span>{index + 1}</span>{entry.label}
             </li>
           ))}
         </ol>

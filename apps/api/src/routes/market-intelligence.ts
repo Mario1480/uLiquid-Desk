@@ -3,12 +3,24 @@ import type { Express } from "express";
 import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import { getMarketIntelligenceService } from "../services/marketIntelligence/service.js";
+import {
+  getMarketIntelligenceService,
+  MarketIntelligenceInsufficientDataError
+} from "../services/marketIntelligence/service.js";
 
 const horizonSchema = z.enum(["intraday", "24h", "7d"]);
 const contextQuerySchema = z.object({
   symbol: z.string().trim().max(32).optional(),
   horizon: horizonSchema.default("24h")
+});
+const analysisCreateSchema = z.object({
+  requestId: z.string().uuid(),
+  horizon: horizonSchema.default("24h"),
+  responseLanguage: z.enum(["de", "en"]).default("en")
+});
+const analysisListSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().trim().min(1).max(191).optional()
 });
 const providerUpdateSchema = z.object({
   enabled: z.boolean().optional(),
@@ -87,6 +99,48 @@ export function registerMarketIntelligenceRoutes(
       items: await service.getProviderStates(),
       generatedAt: new Date().toISOString()
     });
+  });
+
+  app.post("/market-intelligence/analyses", requireAuth, async (req, res) => {
+    if (!(await requireMarketIntelligenceOrRespond(res))) return;
+    const parsed = analysisCreateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    const user = getUserFromLocals(res);
+    try {
+      const result = await service.createAnalysis({ userId: user.id, ...parsed.data });
+      return res.status(result.existing ? 200 : 201).json(result);
+    } catch (error) {
+      if (error instanceof MarketIntelligenceInsufficientDataError) {
+        return res.status(503).json({ error: "market_intelligence_insufficient_data" });
+      }
+      return res.status(503).json({ error: "market_intelligence_analysis_failed", reason: String(error) });
+    }
+  });
+
+  app.get("/market-intelligence/analyses", requireAuth, async (req, res) => {
+    if (!(await requireMarketIntelligenceOrRespond(res))) return;
+    const parsed = analysisListSchema.safeParse(req.query ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+    const user = getUserFromLocals(res);
+    try {
+      return res.json(await service.listAnalyses({ userId: user.id, ...parsed.data }));
+    } catch (error) {
+      return res.status(503).json({ error: "market_intelligence_analyses_unavailable", reason: String(error) });
+    }
+  });
+
+  app.get("/market-intelligence/analyses/:id", requireAuth, async (req, res) => {
+    if (!(await requireMarketIntelligenceOrRespond(res))) return;
+    const analysisId = String(req.params.id ?? "").trim();
+    if (!analysisId || analysisId.length > 191) return res.status(400).json({ error: "invalid_analysis_id" });
+    const user = getUserFromLocals(res);
+    try {
+      const analysis = await service.getAnalysis({ userId: user.id, analysisId });
+      if (!analysis) return res.status(404).json({ error: "market_intelligence_analysis_not_found" });
+      return res.json({ analysis });
+    } catch (error) {
+      return res.status(503).json({ error: "market_intelligence_analysis_unavailable", reason: String(error) });
+    }
   });
 
   app.get("/news/:id", requireAuth, async (req, res) => {

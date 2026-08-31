@@ -32,6 +32,10 @@ tool.
 6. The market summary is deterministic by default. Optional AI generation is
    schema-validated, citation-validated, cached by source-cluster hash and has
    no executable tools.
+7. Authenticated users with the Market Intelligence capability can save an
+   immutable, symbol-free analysis snapshot. Saved analyses retain only the
+   grounded summary, citation metadata, provider state and generation metadata;
+   they do not create a prediction, schedule or trading action.
 
 ## Reviewed primary sources
 
@@ -112,10 +116,16 @@ billing/provider configuration first.
 - `GET /market-intelligence/context`
 - `GET /market-intelligence/summary`
 - `GET /market-intelligence/providers`
+- `POST /market-intelligence/analyses`
+- `GET /market-intelligence/analyses`
+- `GET /market-intelligence/analyses/:id`
 - `GET /admin/market-intelligence/providers`
 - `PUT /admin/market-intelligence/providers/:providerId`
 - `POST /admin/market-intelligence/refresh`
 - User UI: `/market-intelligence`
+- Prediction creation offers a combined strategy-plus-intelligence mode and a
+  symbol-free Market Intelligence analysis mode. Combined predictions persist
+  the exact intelligence context used in their feature snapshot.
 - Economic Calendar UI: defaults to both supported regions (`USD`, `EUR`) and all impact levels, merges the next-event/blackout summary across selected regions, and migrates legacy single-region preferences once to preference version 2
 - Admin UI: `/admin/providers` (includes refresh and daily Telegram job status)
 - User notification UI: manual economic-calendar Telegram send plus the last successful delivery timestamp

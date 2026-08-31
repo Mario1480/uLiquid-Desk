@@ -48,6 +48,7 @@ const predictionGenerateAutoSchema = z.object({
   leverage: z.number().int().min(1).max(125).optional(),
   modelVersionBase: z.string().trim().min(1).optional(),
   responseLanguage: z.unknown().optional(),
+  includeMarketIntelligence: z.boolean().default(false),
   aiPromptTemplateId: z.string().trim().min(1).max(128).nullish(),
   compositeStrategyId: z.string().trim().min(1).max(160).nullish(),
   strategyRef: z.object({
@@ -714,6 +715,16 @@ export function registerPredictionGenerateRoutes(
         legacyCode: "strategy_license_blocked"
       });
     }
+    if (
+      payload.includeMarketIntelligence
+      && !deps.isCapabilityAllowed(capabilityContext.capabilities, "product.market_intelligence")
+    ) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.market_intelligence",
+        currentPlan: capabilityContext.plan,
+        legacyCode: "market_intelligence_not_available"
+      });
+    }
     const userCtx = await deps.resolveUserContext(user);
 
     try {
@@ -748,7 +759,8 @@ export function registerPredictionGenerateRoutes(
         localStrategyName: created.localStrategyName,
         compositeStrategyId: created.compositeStrategyId,
         compositeStrategyName: created.compositeStrategyName,
-        strategyRef: created.strategyRef
+        strategyRef: created.strategyRef,
+        marketIntelligence: created.marketIntelligence
       });
     } catch (error) {
       return deps.sendManualTradingError(res, error);

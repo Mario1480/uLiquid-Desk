@@ -10,8 +10,32 @@
   "wizard": {
     "title": "Neue Analyse",
     "description": "Markt und Analyse getrennt konfigurieren und vor der Generierung prüfen.",
-    "steps": { "market": "Markt", "analysis": "Analysetyp", "advanced": "Erweiterte Einstellungen", "review": "Prüfen", "generate": "Generieren" },
-    "analysisHorizon": "Analyse-Horizont", "analysisHorizonHint": "Dauer der Thesis-Auswertung; unabhängig vom Candle-Zeitrahmen.", "back": "Zurück", "next": "Weiter", "close": "Schließen", "generate": "Analyse generieren", "readyTitle": "Bereit zur Generierung", "readyDescription": "Die Generierung erstellt oder aktualisiert einen Prognose-Zeitplan. Sie platziert keine Order und aktiviert den Prediction Copier nicht."
+    "marketIntelligenceTitle": "Market-Intelligence-Analyse",
+    "marketIntelligenceDescription": "Erstellt einen gespeicherten, marktweiten Bericht aus belegten Nachrichten und Wirtschaftsterminen — ohne Handelssymbol oder Orderfunktion.",
+    "steps": { "type": "Analyseart", "market": "Markt", "analysis": "Analysetyp", "advanced": "Erweiterte Einstellungen", "scope": "Zeitraum", "review": "Prüfen", "generate": "Generieren" },
+    "types": {
+      "tradingTitle": "Trading-Analyse mit Market Intelligence",
+      "tradingDescription": "Kombiniert Exchange-Marktdaten und Strategieauswertung mit relevanten Nachrichten und High-Impact-Terminen.",
+      "marketIntelligenceTitle": "Nur Market Intelligence",
+      "marketIntelligenceDescription": "Erstellt einen marktweiten, gespeicherten Bericht ohne Symbol, Trading-Signal oder Kursziele."
+    },
+    "analysisType": "Analyseart",
+    "analysisHorizon": "Analyse-Horizont",
+    "analysisHorizonHint": "Dauer der Thesis-Auswertung; unabhängig vom Candle-Zeitrahmen.",
+    "intelligenceHorizon": "Intelligence-Zeitraum",
+    "intelligenceHorizonHint": "Bestimmt, wie weit Nachrichten zurück und bevorstehende Ereignisse voraus betrachtet werden.",
+    "intelligenceHorizons": { "intraday": "Intraday", "24h": "24 Stunden", "7d": "7 Tage" },
+    "symbol": "Symbol",
+    "notRequired": "Nicht erforderlich",
+    "marketIntelligenceContext": "Market-Intelligence-Kontext",
+    "contextLoading": "Kontext wird geladen...",
+    "contextSummary": "{facts} Fakten und {events} High-Impact-Termine werden berücksichtigt.",
+    "contextUnavailable": "Aktuell ist kein belegter Intelligence-Kontext verfügbar; die Trading-Analyse bleibt möglich.",
+    "contextDegraded": "Mindestens eine Quelle ist eingeschränkt oder die Daten sind veraltet.",
+    "marketIntelligenceUnavailable": "Market Intelligence ist für deinen aktuellen Tarif nicht verfügbar.",
+    "intelligenceReadyTitle": "Bereit für den gespeicherten Bericht",
+    "intelligenceReadyDescription": "Der Bericht wird als unveränderlicher Snapshot mit Quellen und Provider-Status gespeichert. Er erzeugt keine Trading-Aktion.",
+    "back": "Zurück", "next": "Weiter", "close": "Schließen", "generate": "Analyse generieren", "readyTitle": "Bereit zur Generierung", "readyDescription": "Die Generierung erstellt oder aktualisiert einen Prognose-Zeitplan. Sie platziert keine Order und aktiviert den Prediction Copier nicht."
   },
   "active": {
     "direction": "Prognoserichtung", "confidence": "Konfidenz", "entryZone": "Entry-Zone", "stop": "Stop", "targets": "Ziele", "currentPrice": "Aktueller Preis", "currentOutcome": "Zwischenstatus", "finalEvaluation": "Finale Auswertung", "notFinal": "Nicht final"
@@ -275,6 +299,10 @@
     "indicators": "Indikatoren",
     "noIndicators": "Für diese Prognose liegen keine Indikatordaten vor.",
     "strategyDebug": "Strategie-Debug",
+    "marketIntelligenceEyebrow": "Belegter Kontext",
+    "marketIntelligenceTitle": "Verwendete Market Intelligence",
+    "marketIntelligenceDegraded": "Der gespeicherte Intelligence-Snapshot ist unvollständig oder enthält veraltete Quellen.",
+    "factsCount": "{count} Fakten",
     "timelineEyebrow": "Zeitverlauf",
     "recentChanges": "Letzte Änderungen",
     "eventsCount": "{count} Events",

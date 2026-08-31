@@ -1,4 +1,9 @@
 import { logger } from "../../logger.js";
+import {
+  marketIntelligenceAnalysisPayloadSchema,
+  type MarketIntelligenceAnalysisPayload,
+  type MarketIntelligenceAnalysisRecord
+} from "./contracts/analysis.js";
 import type { EconomicCalendarProvider, EconomicEvent } from "./contracts/economicCalendar.js";
 import type { NewsCategory, NewsItem, NewsProvider } from "./contracts/news.js";
 import type { AggregatedResponseMeta, ProviderState } from "./contracts/provider.js";
@@ -39,6 +44,42 @@ function asDate(value: unknown): Date {
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((entry) => String(entry)).filter(Boolean) : [];
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+function toAnalysisRecord(row: any): MarketIntelligenceAnalysisRecord | null {
+  const payload = marketIntelligenceAnalysisPayloadSchema.safeParse(row?.payload);
+  if (!payload.success) return null;
+  const horizon = row.horizon === "intraday" || row.horizon === "7d" ? row.horizon : "24h";
+  const responseLanguage = row.responseLanguage === "de" ? "de" : "en";
+  const overallRisk = ["low", "moderate", "high", "unknown"].includes(String(row.overallRisk))
+    ? row.overallRisk
+    : "unknown";
+  const sentiment = ["bearish", "neutral", "bullish", "mixed"].includes(String(row.sentiment))
+    ? row.sentiment
+    : "neutral";
+  return {
+    id: String(row.id),
+    horizon,
+    responseLanguage,
+    title: String(row.title),
+    overallRisk,
+    sentiment,
+    degraded: row.degraded === true,
+    generatedAt: asDate(row.generatedAt).toISOString(),
+    createdAt: asDate(row.createdAt).toISOString(),
+    payload: payload.data
+  };
+}
+
+export class MarketIntelligenceInsufficientDataError extends Error {
+  constructor() {
+    super("market_intelligence_insufficient_data");
+    this.name = "MarketIntelligenceInsufficientDataError";
+  }
 }
 
 function toNewsItem(row: any): NewsItem {
@@ -706,9 +747,12 @@ export class MarketIntelligenceService {
     };
   }
 
-  async getDailySummary(input: { symbol?: string; horizon?: "intraday" | "24h" | "7d"; billingUserId?: string | null }): Promise<GroundedMarketSummary> {
-    const context = await this.getMarketContext(input);
-    const horizon = input.horizon ?? "24h";
+  private async getDailySummaryForContext(input: {
+    context: Awaited<ReturnType<MarketIntelligenceService["getMarketContext"]>>;
+    horizon: "intraday" | "24h" | "7d";
+    billingUserId?: string | null;
+  }): Promise<GroundedMarketSummary> {
+    const { context, horizon } = input;
     const sourceClusterHash = buildMarketSummarySourceClusterHash({
       news: context.news,
       events: context.events,
@@ -770,6 +814,115 @@ export class MarketIntelligenceService {
       logger.warn("market_intelligence_summary_cache_write_failed", { reason: String(error) });
     }
     return generated;
+  }
+
+  async getDailySummary(input: { symbol?: string; horizon?: "intraday" | "24h" | "7d"; billingUserId?: string | null }): Promise<GroundedMarketSummary> {
+    const horizon = input.horizon ?? "24h";
+    const context = await this.getMarketContext({ symbol: input.symbol, horizon });
+    return this.getDailySummaryForContext({ context, horizon, billingUserId: input.billingUserId });
+  }
+
+  async createAnalysis(input: {
+    userId: string;
+    requestId: string;
+    horizon: "intraday" | "24h" | "7d";
+    responseLanguage: "de" | "en";
+  }): Promise<{ analysis: MarketIntelligenceAnalysisRecord; existing: boolean }> {
+    const identity = { userId_requestId: { userId: input.userId, requestId: input.requestId } };
+    const existingRow = await this.db?.marketIntelligenceAnalysis?.findUnique?.({ where: identity });
+    const existing = toAnalysisRecord(existingRow);
+    if (existing) return { analysis: existing, existing: true };
+
+    const context = await this.getMarketContext({ horizon: input.horizon });
+    if (context.news.length === 0 && context.events.length === 0) {
+      throw new MarketIntelligenceInsufficientDataError();
+    }
+    const report = await this.getDailySummaryForContext({
+      context,
+      horizon: input.horizon,
+      billingUserId: input.userId
+    });
+    const payload: MarketIntelligenceAnalysisPayload = marketIntelligenceAnalysisPayloadSchema.parse({
+      report,
+      context: {
+        dataAgeSeconds: context.dataAgeSeconds,
+        providerStates: context.providerStates.map((state) => ({
+          providerId: state.providerId,
+          providerType: state.providerType,
+          state: state.state,
+          checkedAt: state.checkedAt,
+          ...(state.message ? { message: state.message } : {}),
+          ...(state.staleDataAgeSeconds !== undefined
+            ? { staleDataAgeSeconds: state.staleDataAgeSeconds }
+            : {})
+        }))
+      }
+    });
+    const data = {
+      userId: input.userId,
+      requestId: input.requestId,
+      horizon: input.horizon,
+      responseLanguage: input.responseLanguage,
+      title: report.summary.title,
+      overallRisk: report.summary.overallRisk,
+      sentiment: report.summary.sentiment,
+      degraded: report.meta.degraded,
+      payload,
+      sourceClusterHash: report.meta.sourceClusterHash,
+      promptVersion: report.meta.promptVersion,
+      model: report.meta.model,
+      generatedAt: new Date(report.summary.generatedAt)
+    };
+    try {
+      const createdRow = await this.db.marketIntelligenceAnalysis.create({ data });
+      const analysis = toAnalysisRecord(createdRow);
+      if (!analysis) throw new Error("market_intelligence_analysis_payload_invalid");
+      logger.info("market_intelligence_analysis_created", {
+        analysis_id: analysis.id,
+        user_id: input.userId,
+        horizon: input.horizon,
+        degraded: analysis.degraded,
+        model: report.meta.model,
+        citation_count: report.citations.length
+      });
+      return { analysis, existing: false };
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const winnerRow = await this.db.marketIntelligenceAnalysis.findUnique({ where: identity });
+      const winner = toAnalysisRecord(winnerRow);
+      if (!winner) throw error;
+      return { analysis: winner, existing: true };
+    }
+  }
+
+  async listAnalyses(input: {
+    userId: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ items: MarketIntelligenceAnalysisRecord[]; nextCursor: string | null }> {
+    const limit = Math.min(50, Math.max(1, Math.trunc(input.limit ?? 20)));
+    const rows = await this.db?.marketIntelligenceAnalysis?.findMany?.({
+      where: { userId: input.userId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {})
+    }) ?? [];
+    const hasMore = rows.length > limit;
+    const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+    const items = visibleRows
+      .map(toAnalysisRecord)
+      .filter((entry: MarketIntelligenceAnalysisRecord | null): entry is MarketIntelligenceAnalysisRecord => Boolean(entry));
+    return {
+      items,
+      nextCursor: hasMore && visibleRows.length > 0 ? String(visibleRows[visibleRows.length - 1].id) : null
+    };
+  }
+
+  async getAnalysis(input: { userId: string; analysisId: string }): Promise<MarketIntelligenceAnalysisRecord | null> {
+    const row = await this.db?.marketIntelligenceAnalysis?.findFirst?.({
+      where: { id: input.analysisId, userId: input.userId }
+    });
+    return toAnalysisRecord(row);
   }
 
   async getProviderStates(): Promise<ProviderState[]> {

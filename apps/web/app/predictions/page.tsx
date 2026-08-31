@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
@@ -37,7 +37,6 @@ import {
   PredictionHistory,
   PredictionPerformance,
   PredictionsOverview,
-  PREDICTION_WIZARD_STEPS,
   averageConfidence,
   buildPredictionCopierReviewHref,
   type PredictionsView,
@@ -57,6 +56,16 @@ type SignalSource = "local" | "ai";
 type CreateSignalMode = "local_only" | "ai_only" | "both";
 type PredictionRefreshStatus = "ok" | "degraded";
 type PredictionActionState = "ready" | "disagreement" | "below_target" | "neutral" | "no_account" | "degraded";
+type AnalysisKind = "trading_with_intelligence" | "market_intelligence";
+type MarketIntelligenceHorizon = "intraday" | "24h" | "7d";
+
+type MarketIntelligencePreview = {
+  dataAgeSeconds: number | null;
+  degraded: boolean;
+  warnings: string[];
+  news: Array<{ id: string; title: string; sourceName: string; sourceUrl: string }>;
+  events: Array<{ id: string; title: string; scheduledAt: string; sourceName: string }>;
+};
 
 type AiPredictionSummary = {
   signal: PredictionSignal;
@@ -938,6 +947,7 @@ export default function PredictionsPage() {
   const tCommon = useTranslations("common");
   const locale = useLocale() as AppLocale;
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const modeLabels = useMemo(
     () => ({
@@ -985,7 +995,12 @@ export default function PredictionsPage() {
   const [runningStatusFilter, setRunningStatusFilter] = useState<RunningStatusFilter>("all");
   const [activeView, setActiveView] = useState<PredictionsView>("overview");
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardStep, setWizardStep] = useState<PredictionWizardStep>("market");
+  const [wizardStep, setWizardStep] = useState<PredictionWizardStep>("type");
+  const [analysisKind, setAnalysisKind] = useState<AnalysisKind>("trading_with_intelligence");
+  const [marketIntelligenceHorizon, setMarketIntelligenceHorizon] = useState<MarketIntelligenceHorizon>("24h");
+  const [creatingMarketIntelligence, setCreatingMarketIntelligence] = useState(false);
+  const [marketIntelligencePreview, setMarketIntelligencePreview] = useState<MarketIntelligencePreview | null>(null);
+  const [marketIntelligencePreviewLoading, setMarketIntelligencePreviewLoading] = useState(false);
 
   const [accounts, setAccounts] = useState<ExchangeAccountItem[]>([]);
   const [createAccountId, setCreateAccountId] = useState("");
@@ -1305,6 +1320,11 @@ export default function PredictionsPage() {
     }
   }
 
+  const marketIntelligenceAllowed = isProductFeatureAllowed(
+    subscriptionQuota?.featureGates,
+    "market_intelligence"
+  );
+
   useEffect(() => {
     void loadPredictions();
     void loadRunningPredictions();
@@ -1317,6 +1337,45 @@ export default function PredictionsPage() {
     void loadPredictionDefaults();
     void loadSubscriptionQuota();
   }, []);
+
+  useEffect(() => {
+    if (!subscriptionQuota || searchParams.get("create") !== "market-intelligence") return;
+    if (marketIntelligenceAllowed) {
+      setAnalysisKind("market_intelligence");
+      setWizardStep("scope");
+      setWizardOpen(true);
+    }
+    router.replace(withLocalePath("/predictions", locale), { scroll: false });
+  }, [locale, marketIntelligenceAllowed, router, searchParams, subscriptionQuota]);
+
+  useEffect(() => {
+    if (
+      !wizardOpen
+      || wizardStep !== "review"
+      || analysisKind !== "trading_with_intelligence"
+      || !marketIntelligenceAllowed
+    ) {
+      setMarketIntelligencePreview(null);
+      return;
+    }
+    let cancelled = false;
+    setMarketIntelligencePreviewLoading(true);
+    void apiGet<MarketIntelligencePreview>(
+      `/market-intelligence/context?symbol=${encodeURIComponent(newSymbol)}&horizon=24h`
+    )
+      .then((payload) => {
+        if (!cancelled) setMarketIntelligencePreview(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setMarketIntelligencePreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMarketIntelligencePreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisKind, marketIntelligenceAllowed, newSymbol, wizardOpen, wizardStep]);
 
   useEffect(() => {
     setNewResponseLanguage(responseLanguageFromLocale(locale));
@@ -1515,6 +1574,24 @@ export default function PredictionsPage() {
     selectedCreateFeatureKey
   );
   const createBlockedFeatureTitle = titleForProductFeature(selectedCreateFeatureKey);
+  const wizardSteps = useMemo<Array<{ id: PredictionWizardStep; label: string }>>(
+    () => analysisKind === "market_intelligence"
+      ? [
+          { id: "type", label: tPred("wizard.steps.type") },
+          { id: "scope", label: tPred("wizard.steps.scope") },
+          { id: "review", label: tPred("wizard.steps.review") },
+          { id: "generate", label: tPred("wizard.steps.generate") }
+        ]
+      : [
+          { id: "type", label: tPred("wizard.steps.type") },
+          { id: "market", label: tPred("wizard.steps.market") },
+          { id: "analysis", label: tPred("wizard.steps.analysis") },
+          { id: "advanced", label: tPred("wizard.steps.advanced") },
+          { id: "review", label: tPred("wizard.steps.review") },
+          { id: "generate", label: tPred("wizard.steps.generate") }
+        ],
+    [analysisKind, tPred]
+  );
 
   useEffect(() => {
     const selected = decodeStrategySelectValue(newStrategySelectValue);
@@ -1716,6 +1793,7 @@ export default function PredictionsPage() {
   }, [evaluatedPerformanceRows]);
 
   function openPredictionWizard(row?: PredictionListItem) {
+    setAnalysisKind("trading_with_intelligence");
     if (row) {
       setNewSymbol(row.symbol);
       setNewMarketType(row.marketType);
@@ -1723,12 +1801,23 @@ export default function PredictionsPage() {
       if (row.accountId) setCreateAccountId(row.accountId);
       if (row.strategyRef) setNewStrategySelectValue(encodeStrategySelectValue(row.strategyRef));
     }
-    setWizardStep("market");
+    setWizardStep(row ? "market" : "type");
     setWizardOpen(true);
+  }
+
+  function closeAnalysisWizard() {
+    setWizardOpen(false);
+    setAnalysisKind("trading_with_intelligence");
+    setWizardStep("type");
+    setActionError(null);
   }
 
   function nextPredictionWizardStep() {
     setActionError(null);
+    if (wizardStep === "type" && analysisKind === "market_intelligence" && !marketIntelligenceAllowed) {
+      setActionError(tPred("wizard.marketIntelligenceUnavailable"));
+      return;
+    }
     if (wizardStep === "market" && (!createAccountId || !newSymbol.trim())) {
       setActionError(
         !createAccountId
@@ -1744,13 +1833,31 @@ export default function PredictionsPage() {
         return;
       }
     }
-    const currentIndex = PREDICTION_WIZARD_STEPS.indexOf(wizardStep);
-    setWizardStep(PREDICTION_WIZARD_STEPS[Math.min(currentIndex + 1, PREDICTION_WIZARD_STEPS.length - 1)]);
+    const currentIndex = wizardSteps.findIndex((entry) => entry.id === wizardStep);
+    setWizardStep(wizardSteps[Math.min(currentIndex + 1, wizardSteps.length - 1)]?.id ?? "type");
   }
 
   function previousPredictionWizardStep() {
-    const currentIndex = PREDICTION_WIZARD_STEPS.indexOf(wizardStep);
-    setWizardStep(PREDICTION_WIZARD_STEPS[Math.max(0, currentIndex - 1)]);
+    const currentIndex = wizardSteps.findIndex((entry) => entry.id === wizardStep);
+    setWizardStep(wizardSteps[Math.max(0, currentIndex - 1)]?.id ?? "type");
+  }
+
+  async function createMarketIntelligenceAnalysis() {
+    setActionError(null);
+    setCreatingMarketIntelligence(true);
+    try {
+      const result = await apiPost<{ analysis: { id: string } }>("/market-intelligence/analyses", {
+        requestId: crypto.randomUUID(),
+        horizon: marketIntelligenceHorizon,
+        responseLanguage: newResponseLanguage
+      });
+      setWizardOpen(false);
+      router.push(`${withLocalePath("/market-intelligence", locale)}?analysis=${encodeURIComponent(result.analysis.id)}`);
+    } catch (error) {
+      setActionError(errMsg(error));
+    } finally {
+      setCreatingMarketIntelligence(false);
+    }
   }
 
   async function sendToDesk(id: string) {
@@ -1921,6 +2028,7 @@ export default function PredictionsPage() {
         aiPromptTemplateId: selectedStrategyRef?.kind === "ai" ? selectedStrategyRef.id : undefined,
         compositeStrategyId: selectedStrategyRef?.kind === "composite" ? selectedStrategyRef.id : undefined,
         responseLanguage: newResponseLanguage,
+        includeMarketIntelligence: marketIntelligenceAllowed,
         leverage: newMarketType === "perp" ? Math.trunc(leverage) : undefined
       });
       const modeLabel =
@@ -1969,7 +2077,8 @@ export default function PredictionsPage() {
         loadSubscriptionQuota()
       ]);
       setWizardOpen(false);
-      setWizardStep("market");
+      setAnalysisKind("trading_with_intelligence");
+      setWizardStep("type");
       setActiveView("overview");
     } catch (e) {
       setActionError(quotaErrorMessage(e, tPred) ?? errMsg(e));
@@ -2081,6 +2190,16 @@ export default function PredictionsPage() {
     const strategyRef = row.strategyRef ?? normalizeStrategyRef(detailSnapshot.strategyRef);
     const strategyRunOutput = asRecord(detailSnapshot.strategyRunOutput);
     const strategyRunDebug = asRecord(detailSnapshot.strategyRunDebug);
+    const marketIntelligenceSnapshot = asRecord(detailSnapshot.marketIntelligence);
+    const marketIntelligenceFacts = Array.isArray(marketIntelligenceSnapshot.facts)
+      ? marketIntelligenceSnapshot.facts.map(asRecord)
+      : [];
+    const marketIntelligenceEvents = Array.isArray(marketIntelligenceSnapshot.upcomingHighImpactEvents)
+      ? marketIntelligenceSnapshot.upcomingHighImpactEvents.map(asRecord)
+      : [];
+    const marketIntelligenceWarnings = Array.isArray(marketIntelligenceSnapshot.warnings)
+      ? marketIntelligenceSnapshot.warnings.map((entry) => String(entry))
+      : [];
     const effectiveSource = getEffectiveRowSource(row, signalSource);
     const activeSignal = resolveSignal(row, effectiveSource);
     const activeConfidence = resolveConfidence(row, effectiveSource);
@@ -2384,6 +2503,54 @@ export default function PredictionsPage() {
           ) : null}
         </div>
 
+        {marketIntelligenceAllowed && (
+          detailSnapshot.marketIntelligencePolicy === "include"
+          || marketIntelligenceFacts.length > 0
+          || marketIntelligenceEvents.length > 0
+        ) ? (
+          <div className="card predictionDetailPanel">
+            <div className="predictionDetailHeaderCopy">
+              <span className="predictionSectionEyebrow">{tPred("detail.marketIntelligenceEyebrow")}</span>
+              <strong>{tPred("detail.marketIntelligenceTitle")}</strong>
+            </div>
+            {marketIntelligenceSnapshot.degraded === true ? (
+              <div className="uiNotice uiNotice-warning">{tPred("detail.marketIntelligenceDegraded")}</div>
+            ) : null}
+            <div className="predictionIntelligenceSnapshotMeta">
+              <span className="badge">{tPred("detail.factsCount", { count: marketIntelligenceFacts.length })}</span>
+              <span className="badge">{tPred("detail.eventsCount", { count: marketIntelligenceEvents.length })}</span>
+              <span className="badge">
+                {typeof marketIntelligenceSnapshot.generatedAt === "string"
+                  ? new Date(marketIntelligenceSnapshot.generatedAt).toLocaleString()
+                  : tPred("misc.na")}
+              </span>
+            </div>
+            <div className="predictionIntelligenceSnapshotList">
+              {marketIntelligenceFacts.map((fact, index) => (
+                <div key={String(fact.id ?? index)}>
+                  <AppIcon name="news" />
+                  <div>
+                    <strong>{String(fact.title ?? tPred("misc.na"))}</strong>
+                    <span>{String(fact.sourceName ?? tPred("misc.na"))}</span>
+                  </div>
+                </div>
+              ))}
+              {marketIntelligenceEvents.map((event, index) => (
+                <div key={String(event.id ?? index)}>
+                  <AppIcon name="calendar" />
+                  <div>
+                    <strong>{String(event.title ?? tPred("misc.na"))}</strong>
+                    <span>{typeof event.scheduledAt === "string" ? new Date(event.scheduledAt).toLocaleString() : tPred("misc.na")}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {marketIntelligenceWarnings.length > 0 ? (
+              <p className="predictionIndicatorMeta">{marketIntelligenceWarnings.join(" · ")}</p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="card predictionDetailPanel predictionDecisionPanel">
           <div className="predictionDetailHeaderCopy">
             <span className="predictionSectionEyebrow">{tPred("detail.tradePlanEyebrow")}</span>
@@ -2627,37 +2794,37 @@ export default function PredictionsPage() {
       <PredictionCreateWizard
         open={wizardOpen}
         step={wizardStep}
-        steps={[
-          tPred("wizard.steps.market"),
-          tPred("wizard.steps.analysis"),
-          tPred("wizard.steps.advanced"),
-          tPred("wizard.steps.review"),
-          tPred("wizard.steps.generate")
-        ]}
-        title={tPred("wizard.title")}
-        description={tPred("wizard.description")}
+        steps={wizardSteps}
+        title={analysisKind === "market_intelligence" ? tPred("wizard.marketIntelligenceTitle") : tPred("wizard.title")}
+        description={analysisKind === "market_intelligence" ? tPred("wizard.marketIntelligenceDescription") : tPred("wizard.description")}
         backLabel={tPred("wizard.back")}
         nextLabel={tPred("wizard.next")}
         closeLabel={tPred("wizard.close")}
         generateLabel={tPred("wizard.generate")}
         generatingLabel={tPred("create.creating")}
-        canGenerate={!createBlockedByLimit && !createBlockedByFeature}
-        generating={creating}
+        canGenerate={analysisKind === "market_intelligence"
+          ? marketIntelligenceAllowed
+          : !createBlockedByLimit && !createBlockedByFeature}
+        generating={analysisKind === "market_intelligence" ? creatingMarketIntelligence : creating}
         onBack={previousPredictionWizardStep}
         onNext={nextPredictionWizardStep}
-        onClose={() => setWizardOpen(false)}
-        onGenerate={() => void createPrediction()}
+        onClose={closeAnalysisWizard}
+        onGenerate={() => analysisKind === "market_intelligence"
+          ? void createMarketIntelligenceAnalysis()
+          : void createPrediction()}
       >
       <ActivePredictions active>
       <section className={`card predictionsSection predictionCreateSection ${wizardOpen ? "predictionCreateWizardMode" : "predictionActiveSchedulesMode"}`}>
         <div className="predictionCreateHeader">
           <div>
-            <div className="predictionCreateTitle">{tPred("create.title")}</div>
+            <div className="predictionCreateTitle">
+              {analysisKind === "market_intelligence" ? tPred("wizard.marketIntelligenceTitle") : tPred("create.title")}
+            </div>
             <div className="predictionsSectionHint">
-              {tPred("create.hint")}
+              {analysisKind === "market_intelligence" ? tPred("wizard.marketIntelligenceDescription") : tPred("create.hint")}
             </div>
           </div>
-          <div className="predictionCreateHeaderActions">
+          {analysisKind === "trading_with_intelligence" ? <div className="predictionCreateHeaderActions">
             <Link className="btn btnPrimary predictionManageStrategiesButton" href={withLocalePath("/strategies", locale)}>
               <AppIcon name="strategies" />
               {tPred("create.manageStrategies")}
@@ -2673,9 +2840,50 @@ export default function PredictionsPage() {
                 {tPred("create.signalModeShort")}: {createSignalModeLabel} ({createSignalModeScopeLabel})
               </StatusBadge>
             </div>
-          </div>
+          </div> : null}
         </div>
         <div className="predictionCreateGrid">
+          <div className="predictionAnalysisKindGrid" data-wizard-section="type">
+            <button
+              type="button"
+              className={`predictionAnalysisKindOption ${analysisKind === "trading_with_intelligence" ? "predictionAnalysisKindOptionActive" : ""}`}
+              onClick={() => setAnalysisKind("trading_with_intelligence")}
+            >
+              <AppIcon name="predictions" />
+              <strong>{marketIntelligenceAllowed ? tPred("wizard.types.tradingTitle") : tPred("create.title")}</strong>
+              <span>{marketIntelligenceAllowed ? tPred("wizard.types.tradingDescription") : tPred("create.hint")}</span>
+            </button>
+            {marketIntelligenceAllowed ? (
+              <button
+                type="button"
+                className={`predictionAnalysisKindOption ${analysisKind === "market_intelligence" ? "predictionAnalysisKindOptionActive" : ""}`}
+                onClick={() => setAnalysisKind("market_intelligence")}
+              >
+                <AppIcon name="news" />
+                <strong>{tPred("wizard.types.marketIntelligenceTitle")}</strong>
+                <span>{tPred("wizard.types.marketIntelligenceDescription")}</span>
+              </button>
+            ) : null}
+          </div>
+
+          <div className="predictionCreateField" data-wizard-section="scope">
+            <div className="predictionCreateLabel">{tPred("wizard.intelligenceHorizon")}</div>
+            <div className="predictionCreateHint">{tPred("wizard.intelligenceHorizonHint")}</div>
+            <div className="predictionIntelligenceHorizon" role="group" aria-label={tPred("wizard.intelligenceHorizon") }>
+              {(["intraday", "24h", "7d"] as MarketIntelligenceHorizon[]).map((horizon) => (
+                <button
+                  key={horizon}
+                  type="button"
+                  className={`btn ${marketIntelligenceHorizon === horizon ? "btnPrimary" : ""}`}
+                  aria-pressed={marketIntelligenceHorizon === horizon}
+                  onClick={() => setMarketIntelligenceHorizon(horizon)}
+                >
+                  {tPred(`wizard.intelligenceHorizons.${horizon}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <label className="predictionCreateField predictionCreateFieldPrompt" data-wizard-section="analysis">
             <div className="predictionCreateLabel">{tPred("create.strategy")}</div>
             <div className="predictionCreateHint">
@@ -2870,23 +3078,47 @@ export default function PredictionsPage() {
           </label>
 
           <div className="predictionWizardReview" data-wizard-section="review">
-            <div><span>{tPred("create.exchangeAccount")}</span><strong>{accounts.find((account) => account.id === createAccountId)?.label ?? tPred("misc.na")}</strong></div>
-            <div><span>{tPred("create.pair")}</span><strong>{newSymbol} · {newMarketType}</strong></div>
-            <div><span>{tPred("create.timeframe")}</span><strong>{effectiveCreateTimeframe}</strong></div>
-            <div><span>{tPred("wizard.analysisHorizon")}</span><strong>{fmtMs(newHorizonMs)}</strong></div>
-            <div><span>{tPred("create.strategy")}</span><strong>{strategyRefLabel(selectedStrategyRef, {
-              aiPromptTemplateName: selectedPrompt?.name ?? null,
-              localStrategyName: selectedLocalStrategy?.name ?? null,
-              compositeStrategyName: selectedCompositeStrategy?.name ?? null
-            })}</strong></div>
-            <div><span>{tPred("create.signalMode")}</span><strong>{createSignalModeLabel}</strong></div>
+            {analysisKind === "market_intelligence" ? (
+              <>
+                <div><span>{tPred("wizard.analysisType")}</span><strong>{tPred("wizard.types.marketIntelligenceTitle")}</strong></div>
+                <div><span>{tPred("wizard.intelligenceHorizon")}</span><strong>{tPred(`wizard.intelligenceHorizons.${marketIntelligenceHorizon}`)}</strong></div>
+                <div><span>{tPred("wizard.symbol")}</span><strong>{tPred("wizard.notRequired")}</strong></div>
+              </>
+            ) : (
+              <>
+                <div><span>{tPred("create.exchangeAccount")}</span><strong>{accounts.find((account) => account.id === createAccountId)?.label ?? tPred("misc.na")}</strong></div>
+                <div><span>{tPred("create.pair")}</span><strong>{newSymbol} · {newMarketType}</strong></div>
+                <div><span>{tPred("create.timeframe")}</span><strong>{effectiveCreateTimeframe}</strong></div>
+                <div><span>{tPred("wizard.analysisHorizon")}</span><strong>{fmtMs(newHorizonMs)}</strong></div>
+                <div><span>{tPred("create.strategy")}</span><strong>{strategyRefLabel(selectedStrategyRef, {
+                  aiPromptTemplateName: selectedPrompt?.name ?? null,
+                  localStrategyName: selectedLocalStrategy?.name ?? null,
+                  compositeStrategyName: selectedCompositeStrategy?.name ?? null
+                })}</strong></div>
+                <div><span>{tPred("create.signalMode")}</span><strong>{createSignalModeLabel}</strong></div>
+                <div className="predictionWizardReviewWide">
+                  <span>{tPred("wizard.marketIntelligenceContext")}</span>
+                  <strong>
+                    {marketIntelligencePreviewLoading
+                      ? tPred("wizard.contextLoading")
+                      : marketIntelligencePreview
+                        ? tPred("wizard.contextSummary", {
+                            facts: marketIntelligencePreview.news.length,
+                            events: marketIntelligencePreview.events.length
+                          })
+                        : tPred("wizard.contextUnavailable")}
+                  </strong>
+                  {marketIntelligencePreview?.degraded ? <small>{tPred("wizard.contextDegraded")}</small> : null}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="predictionWizardGenerate" data-wizard-section="generate">
-            <AppIcon name="ai" />
+            <AppIcon name={analysisKind === "market_intelligence" ? "news" : "ai"} />
             <div>
-              <strong>{tPred("wizard.readyTitle")}</strong>
-              <p>{tPred("wizard.readyDescription")}</p>
+              <strong>{analysisKind === "market_intelligence" ? tPred("wizard.intelligenceReadyTitle") : tPred("wizard.readyTitle")}</strong>
+              <p>{analysisKind === "market_intelligence" ? tPred("wizard.intelligenceReadyDescription") : tPred("wizard.readyDescription")}</p>
             </div>
           </div>
         </div>
@@ -2896,37 +3128,37 @@ export default function PredictionsPage() {
             {wizardOpen && actionError ? (
               <div className="predictionCreateAlert predictionCreateAlertWarn">{actionError}</div>
             ) : null}
-            {symbolsError ? (
+            {analysisKind === "trading_with_intelligence" && symbolsError ? (
               <div className="predictionCreateAlert predictionCreateAlertWarn">
                 {tPred("create.pairsLoadFailed")}: {symbolsError}
               </div>
             ) : null}
-            {createBlockedByFeature ? (
+            {analysisKind === "trading_with_intelligence" && createBlockedByFeature ? (
               <div className="predictionCreateAlert predictionCreateAlertWarn">
                 {tCommon("licenseGate.body", { feature: createBlockedFeatureTitle })}
               </div>
             ) : null}
-            {aiKindAllowed && !publicAiPromptsLoading && allowedAiPrompts.length === 0 ? (
+            {analysisKind === "trading_with_intelligence" && aiKindAllowed && !publicAiPromptsLoading && allowedAiPrompts.length === 0 ? (
               <div className="predictionCreateAlert predictionCreateAlertInfo">
                 {tPred("create.noPublicPrompts")}
               </div>
             ) : null}
-            {aiKindAllowed && ownStrategyFeatureEnabled && !ownAiPromptsLoading && allowedOwnAiPrompts.length === 0 ? (
+            {analysisKind === "trading_with_intelligence" && aiKindAllowed && ownStrategyFeatureEnabled && !ownAiPromptsLoading && allowedOwnAiPrompts.length === 0 ? (
               <div className="predictionCreateAlert predictionCreateAlertInfo">
                 {tPred("create.noOwnStrategies")}
               </div>
             ) : null}
-            {localKindAllowed && !localStrategiesLoading && allowedLocalStrategies.length === 0 ? (
+            {analysisKind === "trading_with_intelligence" && localKindAllowed && !localStrategiesLoading && allowedLocalStrategies.length === 0 ? (
               <div className="predictionCreateAlert predictionCreateAlertInfo">
                 {tPred("create.noLocalStrategies")}
               </div>
             ) : null}
-            {compositeKindAllowed && !compositeStrategiesLoading && allowedCompositeStrategies.length === 0 ? (
+            {analysisKind === "trading_with_intelligence" && compositeKindAllowed && !compositeStrategiesLoading && allowedCompositeStrategies.length === 0 ? (
               <div className="predictionCreateAlert predictionCreateAlertInfo">
                 {tPred("create.noCompositeStrategies")}
               </div>
             ) : null}
-            {subscriptionQuota ? (
+            {analysisKind === "trading_with_intelligence" && subscriptionQuota ? (
               <div className={createBlockedByLimit ? "predictionCreateAlert predictionCreateAlertWarn" : "predictionCreateAlert predictionCreateAlertInfo"}>
                 {tPred("create.limitStatus", {
                   bucket:

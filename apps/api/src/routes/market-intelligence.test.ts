@@ -1,17 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { registerMarketIntelligenceRoutes } from "./market-intelligence.js";
+import { MarketIntelligenceInsufficientDataError } from "../services/marketIntelligence/service.js";
 
 function createFakeApp() {
   const getRoutes = new Map<string, any[]>();
+  const postRoutes = new Map<string, any[]>();
   return {
     get(path: string, ...handlers: any[]) {
       getRoutes.set(path, handlers);
     },
     put() {},
-    post() {},
+    post(path: string, ...handlers: any[]) {
+      postRoutes.set(path, handlers);
+    },
     handler(path: string) {
       return getRoutes.get(path)?.at(-1);
+    },
+    postHandler(path: string) {
+      return postRoutes.get(path)?.at(-1);
     }
   };
 }
@@ -61,7 +68,10 @@ function register(params: {
       getMarketContext: async () => ({ ok: true }),
       getDailySummary: async () => ({ ok: true }),
       getProviderStates: async () => [],
-      getNewsItem: async () => null
+      getNewsItem: async () => null,
+      createAnalysis: async () => ({ analysis: { id: "analysis_1" }, existing: false }),
+      listAnalyses: async () => ({ items: [], nextCursor: null }),
+      getAnalysis: async () => null
     }
   } as any);
   return app;
@@ -127,4 +137,87 @@ test("general news detail remains outside the full Market Intelligence plan gate
   assert.equal(res.statusCode, 200);
   assert.equal(res.body?.item?.id, "news_1");
   assert.equal(capabilityResolved, false);
+});
+
+test("Market Intelligence analysis creation is idempotent and attributed to the user", async () => {
+  let createInput: any = null;
+  const app = register({
+    capabilities: { "product.market_intelligence": true },
+    service: {
+      async createAnalysis(input: any) {
+        createInput = input;
+        return { analysis: { id: "analysis_1" }, existing: false };
+      }
+    }
+  });
+  const res = createRes();
+
+  await app.postHandler("/market-intelligence/analyses")({
+    body: {
+      requestId: "5b705d3d-40f5-4f63-84af-f66de56b2642",
+      horizon: "7d",
+      responseLanguage: "de"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body?.analysis?.id, "analysis_1");
+  assert.deepEqual(createInput, {
+    userId: "user_1",
+    requestId: "5b705d3d-40f5-4f63-84af-f66de56b2642",
+    horizon: "7d",
+    responseLanguage: "de"
+  });
+});
+
+test("analysis history and detail reads remain user-owned", async () => {
+  const calls: any[] = [];
+  const app = register({
+    capabilities: { "product.market_intelligence": true },
+    service: {
+      async listAnalyses(input: any) {
+        calls.push(input);
+        return { items: [{ id: "analysis_1" }], nextCursor: null };
+      },
+      async getAnalysis(input: any) {
+        calls.push(input);
+        return { id: input.analysisId };
+      }
+    }
+  });
+  const listRes = createRes();
+  const detailRes = createRes();
+
+  await app.handler("/market-intelligence/analyses")({ query: { limit: "10" } }, listRes);
+  await app.handler("/market-intelligence/analyses/:id")({ params: { id: "analysis_1" } }, detailRes);
+
+  assert.equal(listRes.statusCode, 200);
+  assert.equal(detailRes.statusCode, 200);
+  assert.deepEqual(calls, [
+    { userId: "user_1", limit: 10 },
+    { userId: "user_1", analysisId: "analysis_1" }
+  ]);
+});
+
+test("empty Market Intelligence data does not create a saved analysis", async () => {
+  const app = register({
+    capabilities: { "product.market_intelligence": true },
+    service: {
+      async createAnalysis() {
+        throw new MarketIntelligenceInsufficientDataError();
+      }
+    }
+  });
+  const res = createRes();
+
+  await app.postHandler("/market-intelligence/analyses")({
+    body: {
+      requestId: "fbe67b64-c0e0-488a-8a42-30e9ae8745c7",
+      horizon: "24h",
+      responseLanguage: "en"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body?.error, "market_intelligence_insufficient_data");
 });

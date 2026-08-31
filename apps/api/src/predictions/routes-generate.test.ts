@@ -233,6 +233,44 @@ test("prediction auto-generate denies AI predictions when product gate is disabl
   assert.equal(res.body?.capability, "product.ai_predictions");
 });
 
+test("prediction auto-generate denies explicit Market Intelligence enrichment without its capability", async () => {
+  const app = createFakeApp();
+  registerPredictionGenerateRoutes(app as any, {
+    isSuperadminEmail: () => false,
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "pro",
+      capabilities: {
+        "product.ai_predictions": true,
+        "product.market_intelligence": false
+      }
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
+      capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "/api/predictions/generate-auto");
+  const res = createMockRes();
+  await handler({
+    body: {
+      exchangeAccountId: "acc_1",
+      symbol: "BTCUSDT",
+      marketType: "perp",
+      timeframe: "15m",
+      includeMarketIntelligence: true
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.capability, "product.market_intelligence");
+});
+
 test("manual prediction generate fails closed when history persistence fails", async () => {
   const app = createFakeApp();
   let eventCreates = 0;
