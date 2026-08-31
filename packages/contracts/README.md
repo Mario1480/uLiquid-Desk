@@ -10,6 +10,20 @@ Foundry workspace for the current onchain BotVault contracts.
 - Network guard: deployment scripts accept only local chain `31337` or Arbitrum Sepolia `421614`
 - `ULIQTestnetEscrow` is a provisional test-only custody adapter with purchase-bound refund-or-release settlement and a two-step treasury rotation. It is not a production safeguarding decision.
 
+## ULIQ two-round contract review draft
+
+ADR-009 adds an isolated review package without changing the deployed testnet MVP:
+
+- `ULIQPresaleRound.sol`: one generic non-upgradeable implementation for both accepted rounds.
+- `ULIQPresaleRoundVesting.sol`: one isolated listing-based release pool per round.
+- `ULIQGlobalListing.sol`: one shared, one-time listing timestamp gated by both rounds.
+- `ULIQPresaleRounds.t.sol`: exact parameter, lifecycle, buyer-limit, listing, and vesting tests.
+- `ULIQPresaleRounds.invariant.t.sol`: cap, wallet-limit, inventory, pending-allocation, and custody invariants.
+
+The review constants are Round 1: 50,000,000 ULIQ at 0.002 USDC, 100,000 USDC hard cap, 500/10,000 USDC buyer limits, 5% at listing, 90-day cliff, then 548-day linear vesting. Round 2: 100,000,000 ULIQ at 0.0035 USDC, 350,000 USDC hard cap, 100/5,000 USDC buyer limits, 25% at listing, then 274-day linear vesting.
+
+The implementation keeps unsold inventory in each round and includes no Mainnet deployment script. Production custody, ADR-001 legal/access/cancellation decisions, exact calendar conversion, Safe addresses, audit, API/indexer migration, and unsold-token recovery remain explicit blockers. The code and passing tests must not be described as audited or Mainnet-ready.
+
 Run the focused suite with `npm -w @mm/contracts run test:uliq`. Deployment and configuration are intentionally separate stages so addresses and ownership can be reconciled before inventory funding. No mainnet script is provided for ULIQ while ADR-001 is blocked.
 
 ### Arbitrum Sepolia deployment preflight

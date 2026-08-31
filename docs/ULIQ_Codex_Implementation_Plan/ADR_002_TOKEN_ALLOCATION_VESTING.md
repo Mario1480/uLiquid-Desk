@@ -1,5 +1,7 @@
 # ADR-002 – Token Allocation & Vesting
 
+> **Superseded in part by ADR-009:** The future production allocation now assigns 50,000,000 ULIQ to Presale Round 1, 100,000,000 ULIQ to Presale Round 2, and 190,000,000 ULIQ to Ecosystem. The single 120,000,000 ULIQ presale and 220,000,000 ULIQ Ecosystem values below remain historical testnet-plan context.
+
 ## Status
 
 `ACCEPTED`

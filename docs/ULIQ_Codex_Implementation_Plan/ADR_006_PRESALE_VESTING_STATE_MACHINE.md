@@ -1,5 +1,7 @@
 # ADR-006 – Presale & Vesting State Machine
 
+> **Superseded in part by ADR-009:** The future production review draft uses two isolated rounds, one shared listing controller, and round-specific 5/95 and 25/75 release schedules. The single-round 25/75 state-machine details below remain the current testnet MVP baseline.
+
 ## Status
 
 `ACCEPTED`

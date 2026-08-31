@@ -1,5 +1,11 @@
 # 01 – Smart Contracts
 
+## ADR-009 review-draft supersession
+
+The new review-only two-round implementation is defined by `ADR_009_TWO_ROUND_PRESALE_TOKENOMICS.md` and lives in `packages/contracts/src/uliq/ULIQPresaleRound.sol`, `ULIQPresaleRoundVesting.sol`, and `ULIQGlobalListing.sol`. It supersedes the single-round 120,000,000 ULIQ, 0.001 USDC, 25/75, nine-month presale parameters below for future production design.
+
+The existing `ULIQPresale.sol`, `ULIQPresaleVesting.sol`, testnet deployment scripts, and the remaining sections of this document continue to describe the currently deployed testnet MVP. They are not silently migrated by the review draft. ADR-001 remains the production and Mainnet gate.
+
 ## Gate
 
 Die folgenden Contracts werden spezifiziert und auf Testnet erprobt. Production-Solidity-Code, Audit-Freeze und Mainnet-Deployment bleiben `NO-GO`, bis die Legal-Blocker aus `ADR_001_LEGAL_PRESALE_MODEL.md` aufgelöst und die Refund-/Safeguarding-Regeln verbindlich sind.
