@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decodeFunctionData, encodeEventTopics } from "viem";
-import { uliqPresaleRoundAbi } from "./abi.js";
+import { decodeFunctionData, encodeAbiParameters, encodeEventTopics } from "viem";
+import { uliqPresaleRoundAbi, uliqTokenAbi } from "./abi.js";
 import type { UliqPublicPresaleConfig } from "./publicPresale.config.js";
 import { UliqPresaleRoundScheduleOnchainService } from "./presaleRoundScheduleOnchain.service.js";
 
@@ -37,8 +37,8 @@ const config: UliqPublicPresaleConfig = {
   globalListingAddress: "0x0000000000000000000000000000000000000003",
   explorerUrl: "https://arbiscan.io",
   rounds: [
-    { id: "round-1", number: 1, contractAddress: ROUND_ONE, vestingAddress: "0x0000000000000000000000000000000000000012", paymentCustodyAddress: "0x0000000000000000000000000000000000000013", expected },
-    { id: "round-2", number: 2, contractAddress: ROUND_TWO, vestingAddress: "0x0000000000000000000000000000000000000022", paymentCustodyAddress: "0x0000000000000000000000000000000000000023", expected }
+    { id: "round-1", number: 1, contractAddress: ROUND_ONE, vestingAddress: "0x0000000000000000000000000000000000000012", paymentCustodyAddress: "0x0000000000000000000000000000000000000013", inventorySourceAddress: OWNER, expected },
+    { id: "round-2", number: 2, contractAddress: ROUND_TWO, vestingAddress: "0x0000000000000000000000000000000000000022", paymentCustodyAddress: "0x0000000000000000000000000000000000000023", inventorySourceAddress: OWNER, expected }
   ],
   terms: { version: null, textHash: null, url: "/presale/terms", ready: false }
 };
@@ -114,7 +114,12 @@ function createRpc(matchesDraft: boolean) {
       if (functionName === "predecessor") return address === ROUND_ONE
         ? "0x0000000000000000000000000000000000000000"
         : ROUND_ONE;
+      if (functionName === "inventorySource") return OWNER;
+      if (functionName === "inventoryFunded") return true;
       if (functionName === "allocationCapUliqRaw" || functionName === "balanceOf") return 1n;
+      if (functionName === "pendingPurchaseCount" || functionName === "unsoldReleasedUliqRaw") return 0n;
+      if (functionName === "unsoldInventoryUliqRaw") return 1n;
+      if (functionName === "allowance") return 0n;
       if (functionName === "presale") return [
         config.rounds[0].vestingAddress,
         config.rounds[0].paymentCustodyAddress
@@ -211,4 +216,73 @@ test("READY preparation verifies bindings and inventory before creating a Safe t
   assert.equal(prepared.preflight.vestingBound, true);
   assert.equal(prepared.preflight.listingBound, true);
   assert.equal(db.actions[0].actionType, "uliq_mark_presale_round_ready");
+});
+
+test("inventory funding preparation returns ordered approval and funding Safe calls", async () => {
+  const db = createDb();
+  const rpc = createRpc(true);
+  const read = rpc.primary.readContract.bind(rpc.primary);
+  rpc.primary.readContract = async (input: any) => input.functionName === "inventoryFunded" ? false : read(input);
+  rpc.secondary = rpc.primary;
+  const service = new UliqPresaleRoundScheduleOnchainService(db, { config, rpc });
+  const prepared = await service.prepareFundInventory("round-1");
+
+  assert.equal(prepared.safeTransactions.length, 2);
+  assert.equal(decodeFunctionData({ abi: uliqTokenAbi, data: prepared.safeTransactions[0].data }).functionName, "approve");
+  assert.equal(decodeFunctionData({ abi: uliqPresaleRoundAbi, data: prepared.safeTransactions[1].data }).functionName, "fundInventory");
+  assert.equal(prepared.safeTransactions[0].expectedSender, OWNER);
+  assert.equal(prepared.preflight.inventorySourceAddress, OWNER);
+  assert.equal(db.actions[0].actionType, "uliq_fund_presale_inventory");
+});
+
+test("unsold release preparation fixes the recipient and amount from finalized onchain state", async () => {
+  const db = createDb();
+  const rpc = createRpc(true);
+  const read = rpc.primary.readContract.bind(rpc.primary);
+  rpc.primary.readContract = async (input: any) => input.functionName === "state" ? 5 : read(input);
+  rpc.secondary = rpc.primary;
+  const service = new UliqPresaleRoundScheduleOnchainService(db, { config, rpc });
+  const prepared = await service.prepareReleaseUnsold("round-1");
+  const decoded = decodeFunctionData({ abi: uliqPresaleRoundAbi, data: prepared.safeTransaction.data });
+
+  assert.equal(decoded.functionName, "releaseUnsold");
+  assert.equal(prepared.safeTransaction.expectedSender, OWNER);
+  assert.equal(prepared.preflight.inventorySourceAddress, OWNER);
+  assert.equal(prepared.preflight.unsoldInventoryUliqRaw, "1");
+  assert.equal(db.actions[0].actionType, "uliq_release_unsold_inventory");
+});
+
+test("inventory funding execution requires its event and matching finalized funding state", async () => {
+  const db = createDb();
+  const preparationRpc = createRpc(true);
+  const read = preparationRpc.primary.readContract.bind(preparationRpc.primary);
+  preparationRpc.primary.readContract = async (input: any) => input.functionName === "inventoryFunded" ? false : read(input);
+  preparationRpc.secondary = preparationRpc.primary;
+  const preparationService = new UliqPresaleRoundScheduleOnchainService(db, { config, rpc: preparationRpc });
+  const prepared = await preparationService.prepareFundInventory("round-1");
+
+  const txHash = `0x${"6".repeat(64)}` as const;
+  const receipt = {
+    status: "success",
+    blockNumber: 90n,
+    blockHash: `0x${"7".repeat(64)}` as const,
+    logs: [{
+      address: ROUND_ONE,
+      topics: encodeEventTopics({
+        abi: uliqPresaleRoundAbi,
+        eventName: "InventoryFunded",
+        args: { inventorySource: OWNER }
+      }),
+      data: encodeAbiParameters([{ type: "uint256" }], [1n])
+    }]
+  };
+  const finalizedRpc = createRpc(true);
+  finalizedRpc.primary.getTransactionReceipt = async () => receipt;
+  finalizedRpc.secondary.getTransactionReceipt = async () => receipt;
+  const service = new UliqPresaleRoundScheduleOnchainService(db, { config, rpc: finalizedRpc });
+  const action = await service.recordInventoryExecution(prepared.actionId, txHash);
+
+  assert.equal(action.status, "confirmed");
+  assert.equal(action.txHash, txHash);
+  assert.equal(action.metadata.confirmedBlockNumber, "90");
 });

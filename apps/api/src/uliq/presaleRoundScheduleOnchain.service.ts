@@ -28,6 +28,8 @@ import {
 
 const ACTION_TYPE_CONFIGURE = "uliq_configure_sale_window";
 const ACTION_TYPE_MARK_READY = "uliq_mark_presale_round_ready";
+const ACTION_TYPE_FUND_INVENTORY = "uliq_fund_presale_inventory";
+const ACTION_TYPE_RELEASE_UNSOLD = "uliq_release_unsold_inventory";
 
 type OnchainRound = {
   owner: `0x${string}`;
@@ -35,6 +37,13 @@ type OnchainRound = {
   saleStart: bigint;
   saleEnd: bigint;
   saleWindowVersion: bigint;
+  inventorySource: `0x${string}`;
+  inventoryFunded: boolean;
+  allocationCap: bigint;
+  inventory: bigint;
+  pendingPurchaseCount: bigint;
+  unsoldReleased: bigint;
+  unsoldInventory: bigint;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -85,6 +94,14 @@ function readyActionKey(
     draftVersion,
     saleWindowVersion.toString()
   ].join(":");
+}
+
+function inventoryActionKey(
+  action: "fund" | "release",
+  config: UliqPublicPresaleConfig,
+  round: UliqPublicPresaleRoundConfig
+): string {
+  return ["uliq:inventory", action, config.chainId, round.contractAddress.toLowerCase()].join(":");
 }
 
 function sameAddress(actual: unknown, expected: unknown): boolean {
@@ -148,6 +165,13 @@ export class UliqPresaleRoundScheduleOnchainService {
           saleStart: onchain.saleStart === 0n ? null : new Date(Number(onchain.saleStart) * 1_000).toISOString(),
           saleEnd: onchain.saleEnd === 0n ? null : new Date(Number(onchain.saleEnd) * 1_000).toISOString(),
           saleWindowVersion: onchain.saleWindowVersion.toString(),
+          inventorySourceAddress: onchain.inventorySource,
+          inventoryFunded: onchain.inventoryFunded,
+          inventoryUliqRaw: onchain.inventory.toString(),
+          allocationCapUliqRaw: onchain.allocationCap.toString(),
+          pendingPurchaseCount: onchain.pendingPurchaseCount.toString(),
+          unsoldReleasedUliqRaw: onchain.unsoldReleased.toString(),
+          unsoldInventoryUliqRaw: onchain.unsoldInventory.toString(),
           bindingStatus,
           actionId: pendingAction?.id ?? null,
           transactionHash: pendingAction?.txHash ?? null
@@ -263,6 +287,7 @@ export class UliqPresaleRoundScheduleOnchainService {
       [primary.vesting, round.vestingAddress, "uliq_presale_ready_vesting_mismatch"],
       [primary.globalListing, this.config.globalListingAddress, "uliq_presale_ready_listing_mismatch"],
       [primary.predecessor, expectedPredecessor, "uliq_presale_ready_predecessor_mismatch"],
+      [primary.inventorySource, round.inventorySourceAddress, "uliq_presale_ready_inventory_source_mismatch"],
       [primary.custodyPaymentToken, this.config.usdcAddress, "uliq_presale_ready_custody_token_mismatch"],
       [primary.custodyPresale, round.contractAddress, "uliq_presale_ready_custody_presale_mismatch"],
       [primary.vestingToken, this.config.tokenAddress, "uliq_presale_ready_vesting_token_mismatch"],
@@ -277,6 +302,7 @@ export class UliqPresaleRoundScheduleOnchainService {
     if (primary.allocationCap !== round.expected.allocationUliqRaw) {
       throw new Error("uliq_presale_ready_allocation_mismatch");
     }
+    if (!primary.inventoryFunded) throw new Error("uliq_presale_ready_inventory_not_funded");
     if (primary.inventory < primary.allocationCap) throw new Error("uliq_presale_ready_inventory_insufficient");
 
     const data = encodeFunctionData({ abi: uliqPresaleRoundAbi, functionName: "markReady" });
@@ -325,6 +351,221 @@ export class UliqPresaleRoundScheduleOnchainService {
         blockHash: head.hash
       }
     };
+  }
+
+  async prepareFundInventory(roundId: UliqPublicPresaleRoundId) {
+    const round = this.round(roundId);
+    const head = await getConsistentFinalizedBlock(this.rpc);
+    const onchain = await this.readRound(round, head.number);
+    if (onchain.state !== 0) throw new Error("uliq_presale_inventory_funding_state_invalid");
+    if (onchain.inventoryFunded) throw new Error("uliq_presale_inventory_already_funded");
+    if (!sameAddress(onchain.inventorySource, round.inventorySourceAddress)) {
+      throw new Error("uliq_presale_inventory_source_mismatch");
+    }
+    if (onchain.allocationCap !== round.expected.allocationUliqRaw) {
+      throw new Error("uliq_presale_inventory_allocation_mismatch");
+    }
+    if (!await this.ownerHasCode(onchain.inventorySource, head.number)) {
+      throw new Error("uliq_presale_inventory_source_not_contract");
+    }
+
+    const [allowance, sourceBalance] = await Promise.all([
+      this.readAllowance(onchain.inventorySource, round.contractAddress, head.number),
+      this.readTokenBalance(onchain.inventorySource, head.number)
+    ]);
+    if (sourceBalance < onchain.allocationCap) throw new Error("uliq_presale_inventory_source_balance_insufficient");
+    const approvalData = encodeFunctionData({
+      abi: uliqTokenAbi,
+      functionName: "approve",
+      args: [round.contractAddress, onchain.allocationCap]
+    });
+    const fundingData = encodeFunctionData({ abi: uliqPresaleRoundAbi, functionName: "fundInventory" });
+    const transactions = [];
+    if (allowance < onchain.allocationCap) {
+      transactions.push(safeTransaction(this.config.chainId, this.config.tokenAddress, approvalData, onchain.inventorySource));
+    }
+    transactions.push(safeTransaction(this.config.chainId, round.contractAddress, fundingData, onchain.inventorySource));
+
+    const key = inventoryActionKey("fund", this.config, round);
+    const action = await this.db.onchainAction.upsert({
+      where: { actionKey: key },
+      create: {
+        actionKey: key,
+        actionType: ACTION_TYPE_FUND_INVENTORY,
+        status: "prepared",
+        chainId: this.config.chainId,
+        toAddress: round.contractAddress.toLowerCase(),
+        dataHex: fundingData,
+        valueWei: "0",
+        metadata: {
+          roundId,
+          inventorySource: onchain.inventorySource.toLowerCase(),
+          allocationCapUliqRaw: onchain.allocationCap.toString(),
+          allowanceUliqRaw: allowance.toString(),
+          sourceBalanceUliqRaw: sourceBalance.toString(),
+          approvalRequired: allowance < onchain.allocationCap,
+          preparedAtBlock: head.number.toString(),
+          preparedAtBlockHash: head.hash
+        }
+      },
+      update: {}
+    });
+    return {
+      actionId: action.id,
+      safeTransaction: transactions[transactions.length - 1],
+      safeTransactions: transactions,
+      preflight: {
+        roundId,
+        state: "DRAFT",
+        inventorySourceAddress: onchain.inventorySource,
+        inventoryFunded: false,
+        allocationCapUliqRaw: onchain.allocationCap.toString(),
+        currentAllowanceUliqRaw: allowance.toString(),
+        sourceBalanceUliqRaw: sourceBalance.toString(),
+        approvalRequired: allowance < onchain.allocationCap,
+        executionOrder: allowance < onchain.allocationCap ? ["approve", "fundInventory"] : ["fundInventory"],
+        asOfBlock: head.number.toString(),
+        blockHash: head.hash
+      }
+    };
+  }
+
+  async prepareReleaseUnsold(roundId: UliqPublicPresaleRoundId) {
+    const round = this.round(roundId);
+    const head = await getConsistentFinalizedBlock(this.rpc);
+    const onchain = await this.readRound(round, head.number);
+    if (![4, 5, 6, 7].includes(onchain.state)) throw new Error("uliq_presale_unsold_release_state_invalid");
+    if (onchain.pendingPurchaseCount !== 0n) throw new Error("uliq_presale_unsold_release_pending_purchases");
+    if (onchain.unsoldReleased !== 0n) throw new Error("uliq_presale_unsold_already_released");
+    if (onchain.unsoldInventory === 0n) throw new Error("uliq_presale_unsold_inventory_empty");
+    if (!sameAddress(onchain.inventorySource, round.inventorySourceAddress)) {
+      throw new Error("uliq_presale_inventory_source_mismatch");
+    }
+    if (onchain.inventory < onchain.unsoldInventory) throw new Error("uliq_presale_unsold_inventory_insufficient");
+    if (!await this.ownerHasCode(onchain.owner, head.number)) throw new Error("uliq_presale_schedule_owner_not_contract");
+
+    const data = encodeFunctionData({ abi: uliqPresaleRoundAbi, functionName: "releaseUnsold" });
+    const key = inventoryActionKey("release", this.config, round);
+    const action = await this.db.onchainAction.upsert({
+      where: { actionKey: key },
+      create: {
+        actionKey: key,
+        actionType: ACTION_TYPE_RELEASE_UNSOLD,
+        status: "prepared",
+        chainId: this.config.chainId,
+        toAddress: round.contractAddress.toLowerCase(),
+        dataHex: data,
+        valueWei: "0",
+        metadata: {
+          roundId,
+          inventorySource: onchain.inventorySource.toLowerCase(),
+          unsoldInventoryUliqRaw: onchain.unsoldInventory.toString(),
+          owner: onchain.owner.toLowerCase(),
+          preparedAtBlock: head.number.toString(),
+          preparedAtBlockHash: head.hash
+        }
+      },
+      update: {}
+    });
+    return {
+      actionId: action.id,
+      safeTransaction: safeTransaction(this.config.chainId, round.contractAddress, data, onchain.owner),
+      safeTransactions: [safeTransaction(this.config.chainId, round.contractAddress, data, onchain.owner)],
+      preflight: {
+        roundId,
+        state: onchain.state,
+        inventorySourceAddress: onchain.inventorySource,
+        pendingPurchaseCount: "0",
+        unsoldInventoryUliqRaw: onchain.unsoldInventory.toString(),
+        asOfBlock: head.number.toString(),
+        blockHash: head.hash
+      }
+    };
+  }
+
+  async recordInventoryExecution(actionId: string, txHashInput: unknown) {
+    const txHash = transactionHash(txHashInput);
+    const action = await this.db.onchainAction.findUnique({ where: { id: actionId } });
+    const actionType = String(action?.actionType ?? "");
+    if (
+      !action
+      || (actionType !== ACTION_TYPE_FUND_INVENTORY && actionType !== ACTION_TYPE_RELEASE_UNSOLD)
+      || Number(action.chainId) !== this.config.chainId
+    ) throw new Error("uliq_presale_inventory_action_not_found");
+    const metadata = asRecord(action.metadata);
+    const roundId = String(metadata.roundId) as UliqPublicPresaleRoundId;
+    const round = this.round(roundId);
+    if (String(action.toAddress).toLowerCase() !== round.contractAddress.toLowerCase()) {
+      throw new Error("uliq_presale_inventory_action_target_mismatch");
+    }
+    const receipts = await Promise.all([
+      this.receiptOrNull(this.rpc.primary, txHash),
+      this.receiptOrNull(this.rpc.secondary, txHash)
+    ]);
+    if (!receipts[0] || !receipts[1]) {
+      return this.db.onchainAction.update({
+        where: { id: action.id },
+        data: { status: "submitted", txHash, metadata: { ...metadata, submittedAt: new Date().toISOString() } }
+      });
+    }
+    if (
+      receipts[0].status !== "success"
+      || receipts[1].status !== "success"
+      || receipts[0].blockHash.toLowerCase() !== receipts[1].blockHash.toLowerCase()
+      || receipts[0].blockNumber !== receipts[1].blockNumber
+    ) throw new Error("uliq_presale_inventory_receipt_invalid");
+
+    const expectedEvent = action.actionType === ACTION_TYPE_FUND_INVENTORY ? "InventoryFunded" : "UnsoldUliqReleased";
+    const expectedAmount = BigInt(String(
+      action.actionType === ACTION_TYPE_FUND_INVENTORY
+        ? metadata.allocationCapUliqRaw
+        : metadata.unsoldInventoryUliqRaw
+    ));
+    const matchingEvent = receipts[0].logs.some((log: any) => {
+      if (String(log.address).toLowerCase() !== round.contractAddress.toLowerCase()) return false;
+      try {
+        const decoded: any = decodeEventLog({
+          abi: uliqPresaleRoundAbi,
+          data: log.data,
+          topics: log.topics,
+          strict: true
+        });
+        return decoded.eventName === expectedEvent
+          && sameAddress(decoded.args.inventorySource, metadata.inventorySource)
+          && BigInt(decoded.args.amount) === expectedAmount;
+      } catch {
+        return false;
+      }
+    });
+    if (!matchingEvent) throw new Error("uliq_presale_inventory_event_mismatch");
+    const head = await getConsistentFinalizedBlock(this.rpc);
+    if (receipts[0].blockNumber > head.number) {
+      return this.db.onchainAction.update({
+        where: { id: action.id },
+        data: { status: "submitted", txHash, metadata: { ...metadata, submittedAt: new Date().toISOString() } }
+      });
+    }
+    const onchain = await this.readRound(round, head.number);
+    if (action.actionType === ACTION_TYPE_FUND_INVENTORY) {
+      if (!onchain.inventoryFunded || onchain.inventory < expectedAmount) {
+        throw new Error("uliq_presale_inventory_finalized_state_mismatch");
+      }
+    } else if (onchain.unsoldReleased !== expectedAmount || onchain.unsoldInventory !== 0n) {
+      throw new Error("uliq_presale_unsold_finalized_state_mismatch");
+    }
+    return this.db.onchainAction.update({
+      where: { id: action.id },
+      data: {
+        status: "confirmed",
+        txHash,
+        metadata: {
+          ...metadata,
+          confirmedAt: new Date().toISOString(),
+          confirmedBlockNumber: receipts[0].blockNumber.toString(),
+          confirmedBlockHash: receipts[0].blockHash
+        }
+      }
+    });
   }
 
   async recordExecution(actionId: string, txHashInput: unknown) {
@@ -420,21 +661,50 @@ export class UliqPresaleRoundScheduleOnchainService {
   }
 
   private async readRoundFromClient(client: any, round: UliqPublicPresaleRoundConfig, blockNumber: bigint) {
-    const [owner, state, saleStart, saleEnd, saleWindowVersion] = await Promise.all([
+    const [
+      owner,
+      state,
+      saleStart,
+      saleEnd,
+      saleWindowVersion,
+      inventorySource,
+      inventoryFunded,
+      allocationCap,
+      inventory,
+      pendingPurchaseCount,
+      unsoldReleased,
+      unsoldInventory
+    ] = await Promise.all([
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "owner", blockNumber }),
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "state", blockNumber }),
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "saleStart", blockNumber }),
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "saleEnd", blockNumber }),
-      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "saleWindowVersion", blockNumber })
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "saleWindowVersion", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "inventorySource", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "inventoryFunded", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "allocationCapUliqRaw", blockNumber }),
+      client.readContract({ address: this.config.tokenAddress, abi: uliqTokenAbi, functionName: "balanceOf", args: [round.contractAddress], blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "pendingPurchaseCount", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "unsoldReleasedUliqRaw", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "unsoldInventoryUliqRaw", blockNumber })
     ]);
     const normalizedOwner = String(owner);
+    const normalizedInventorySource = String(inventorySource);
     if (!isAddress(normalizedOwner)) throw new Error("uliq_presale_schedule_owner_invalid");
+    if (!isAddress(normalizedInventorySource)) throw new Error("uliq_presale_inventory_source_invalid");
     return {
       owner: getAddress(normalizedOwner),
       state: Number(state),
       saleStart: BigInt(saleStart),
       saleEnd: BigInt(saleEnd),
-      saleWindowVersion: BigInt(saleWindowVersion)
+      saleWindowVersion: BigInt(saleWindowVersion),
+      inventorySource: getAddress(normalizedInventorySource),
+      inventoryFunded: Boolean(inventoryFunded),
+      allocationCap: BigInt(allocationCap),
+      inventory: BigInt(inventory),
+      pendingPurchaseCount: BigInt(pendingPurchaseCount),
+      unsoldReleased: BigInt(unsoldReleased),
+      unsoldInventory: BigInt(unsoldInventory)
     };
   }
 
@@ -459,7 +729,9 @@ export class UliqPresaleRoundScheduleOnchainService {
       vestingListing,
       vestingPresale,
       listingRoundOne,
-      listingRoundTwo
+      listingRoundTwo,
+      inventorySource,
+      inventoryFunded
     ] = await Promise.all([
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "owner", blockNumber }),
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "state", blockNumber }),
@@ -480,7 +752,9 @@ export class UliqPresaleRoundScheduleOnchainService {
       client.readContract({ address: round.vestingAddress, abi: uliqPresaleRoundVestingAbi, functionName: "globalListing", blockNumber }),
       client.readContract({ address: round.vestingAddress, abi: uliqPresaleRoundVestingAbi, functionName: "presale", blockNumber }),
       client.readContract({ address: this.config.globalListingAddress, abi: uliqGlobalListingAbi, functionName: "roundOne", blockNumber }),
-      client.readContract({ address: this.config.globalListingAddress, abi: uliqGlobalListingAbi, functionName: "roundTwo", blockNumber })
+      client.readContract({ address: this.config.globalListingAddress, abi: uliqGlobalListingAbi, functionName: "roundTwo", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "inventorySource", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "inventoryFunded", blockNumber })
     ]);
     const normalizedOwner = String(owner);
     if (!isAddress(normalizedOwner)) throw new Error("uliq_presale_schedule_owner_invalid");
@@ -504,7 +778,9 @@ export class UliqPresaleRoundScheduleOnchainService {
       vestingListing: String(vestingListing),
       vestingPresale: String(vestingPresale),
       listingRoundOne: String(listingRoundOne),
-      listingRoundTwo: String(listingRoundTwo)
+      listingRoundTwo: String(listingRoundTwo),
+      inventorySource: String(inventorySource),
+      inventoryFunded: Boolean(inventoryFunded)
     };
   }
 
@@ -514,6 +790,48 @@ export class UliqPresaleRoundScheduleOnchainService {
       this.rpc.secondary.getBytecode({ address: owner, blockNumber })
     ]);
     return Boolean(primary && primary !== "0x" && secondary && secondary !== "0x" && primary === secondary);
+  }
+
+  private async readAllowance(owner: `0x${string}`, spender: `0x${string}`, blockNumber: bigint): Promise<bigint> {
+    const [primary, secondary] = await Promise.all([
+      this.rpc.primary.readContract({
+        address: this.config.tokenAddress,
+        abi: uliqTokenAbi,
+        functionName: "allowance",
+        args: [owner, spender],
+        blockNumber
+      }),
+      this.rpc.secondary.readContract({
+        address: this.config.tokenAddress,
+        abi: uliqTokenAbi,
+        functionName: "allowance",
+        args: [owner, spender],
+        blockNumber
+      })
+    ]);
+    if (BigInt(primary) !== BigInt(secondary)) throw new Error("uliq_presale_inventory_allowance_rpc_mismatch");
+    return BigInt(primary);
+  }
+
+  private async readTokenBalance(account: `0x${string}`, blockNumber: bigint): Promise<bigint> {
+    const [primary, secondary] = await Promise.all([
+      this.rpc.primary.readContract({
+        address: this.config.tokenAddress,
+        abi: uliqTokenAbi,
+        functionName: "balanceOf",
+        args: [account],
+        blockNumber
+      }),
+      this.rpc.secondary.readContract({
+        address: this.config.tokenAddress,
+        abi: uliqTokenAbi,
+        functionName: "balanceOf",
+        args: [account],
+        blockNumber
+      })
+    ]);
+    if (BigInt(primary) !== BigInt(secondary)) throw new Error("uliq_presale_inventory_balance_rpc_mismatch");
+    return BigInt(primary);
   }
 
   private async receiptOrNull(client: any, txHash: Hex): Promise<any | null> {

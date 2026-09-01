@@ -92,6 +92,13 @@ type AdminUliqPayload = {
         saleStart: string | null;
         saleEnd: string | null;
         saleWindowVersion: string;
+        inventorySourceAddress: string;
+        inventoryFunded: boolean;
+        inventoryUliqRaw: string;
+        allocationCapUliqRaw: string;
+        pendingPurchaseCount: string;
+        unsoldReleasedUliqRaw: string;
+        unsoldInventoryUliqRaw: string;
         bindingStatus: string;
         actionId: string | null;
         transactionHash: string | null;
@@ -177,10 +184,11 @@ type AdminUliqPayload = {
 type SafePreparation = {
   actionId?: string;
   safeTransaction: { chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string | null };
+  safeTransactions?: Array<{ chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string | null }>;
   preflight: Record<string, unknown>;
 };
 
-type ReauthAction = "presale-schedule" | "schedule-prepare" | "schedule-record" | "round-ready-prepare" | "dex-pending" | "dex-prepare" | "dex-submit" | "tier-benefits" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
+type ReauthAction = "presale-schedule" | "schedule-prepare" | "schedule-record" | "round-ready-prepare" | "inventory-fund-prepare" | "inventory-release-prepare" | "inventory-record" | "dex-pending" | "dex-prepare" | "dex-submit" | "tier-benefits" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
 
 const DEX_LAUNCH_TRACKING_STORAGE_KEY = "uliquid.uliq.admin.dexLaunchTracking.v1";
 
@@ -258,6 +266,9 @@ function UliqAdminPageContent() {
   const [schedulePrepareRoundId, setSchedulePrepareRoundId] = useState<"round-1" | "round-2">("round-1");
   const [scheduleActionId, setScheduleActionId] = useState<string | null>(null);
   const [scheduleExecutionHash, setScheduleExecutionHash] = useState("");
+  const [inventoryActionId, setInventoryActionId] = useState<string | null>(null);
+  const [inventoryActionRoundId, setInventoryActionRoundId] = useState<"round-1" | "round-2" | null>(null);
+  const [inventoryExecutionHash, setInventoryExecutionHash] = useState("");
   const [dexSubmitting, setDexSubmitting] = useState(false);
   const [dexTracking, setDexTracking] = useState<DexLaunchTracking | null>(null);
 
@@ -589,6 +600,32 @@ function UliqAdminPageContent() {
     setNotice(t("presaleReadyPrepared"));
   }
 
+  async function prepareInventoryAction(action: "fund" | "release") {
+    const response = await apiPost<SafePreparation>(
+      `/admin/uliq/presale-rounds/${schedulePrepareRoundId}/inventory/${action}/prepare`,
+      {}
+    );
+    setPreparation(response);
+    setPreparationLabel(t(action === "fund" ? "presaleInventoryFundingPreparedLabel" : "presaleUnsoldReleasePreparedLabel", {
+      round: schedulePrepareRoundId === "round-1" ? 1 : 2
+    }));
+    setInventoryActionId(response.actionId ?? null);
+    setInventoryActionRoundId(schedulePrepareRoundId);
+    setInventoryExecutionHash("");
+    setNotice(t(action === "fund" ? "presaleInventoryFundingPrepared" : "presaleUnsoldReleasePrepared"));
+    await load({ silent: true });
+  }
+
+  async function recordInventoryExecution() {
+    if (!inventoryActionId) throw new Error(t("presaleInventoryActionMissing"));
+    await apiPost("/admin/uliq/presale-rounds/inventory/record-execution", {
+      actionId: inventoryActionId,
+      transactionHash: inventoryExecutionHash
+    });
+    setNotice(t("presaleInventoryExecutionRecorded"));
+    await load({ silent: true });
+  }
+
   async function recordRoundScheduleExecution() {
     if (!scheduleActionId) throw new Error(t("presaleScheduleActionMissing"));
     await apiPost("/admin/uliq/presale-rounds/schedule/record-execution", {
@@ -609,6 +646,9 @@ function UliqAdminPageContent() {
     if (reauthAction === "schedule-prepare") return prepareRoundSchedule();
     if (reauthAction === "schedule-record") return recordRoundScheduleExecution();
     if (reauthAction === "round-ready-prepare") return prepareRoundReady();
+    if (reauthAction === "inventory-fund-prepare") return prepareInventoryAction("fund");
+    if (reauthAction === "inventory-release-prepare") return prepareInventoryAction("release");
+    if (reauthAction === "inventory-record") return recordInventoryExecution();
     if (reauthAction === "dex-pending") return prepareDexPending();
     if (reauthAction === "dex-prepare") return prepareSafeTransaction(false);
     if (reauthAction === "dex-submit") return prepareSafeTransaction(true);
@@ -710,7 +750,24 @@ function UliqAdminPageContent() {
                         <div className="adminKeyValueRow"><span>{t("presaleOnchainStart")}</span><strong>{round.onchain.saleStart ? new Date(round.onchain.saleStart).toLocaleString(locale) : "—"}</strong></div>
                         <div className="adminKeyValueRow"><span>{t("presaleOnchainEnd")}</span><strong>{round.onchain.saleEnd ? new Date(round.onchain.saleEnd).toLocaleString(locale) : "—"}</strong></div>
                         <div className="adminKeyValueRow"><span>{t("ownerWallet")}</span><strong className="uliqMono">{round.onchain.owner}</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleInventorySource")}</span><strong className="uliqMono">{round.onchain.inventorySourceAddress}</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleInventoryFundingStatus")}</span><AdminStatusBadge value={round.onchain.inventoryFunded ? "funded" : "not_funded"} /></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleInventoryBalance")}</span><strong>{formatToken(round.onchain.inventoryUliqRaw, 18, 0)} ULIQ</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleUnsoldInventory")}</span><strong>{formatToken(round.onchain.unsoldInventoryUliqRaw, 18, 0)} ULIQ</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleUnsoldReleased")}</span><strong>{formatToken(round.onchain.unsoldReleasedUliqRaw, 18, 0)} ULIQ</strong></div>
                       </div>
+                    ) : null}
+                    {round.onchain?.state === 0 && !round.onchain.inventoryFunded ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setSchedulePrepareRoundId(round.id);
+                          requestReauth("inventory-fund-prepare");
+                        }}
+                      >
+                        <AppIcon name="funding" /> {t("presaleInventoryFundPrepareSafe")}
+                      </button>
                     ) : null}
                     {round.onchain && ["DRAFT_ONLY", "DRIFTED", "PREPARED"].includes(round.onchain.bindingStatus) ? (
                       <button
@@ -733,9 +790,43 @@ function UliqAdminPageContent() {
                           setSchedulePrepareRoundId(round.id);
                           requestReauth("round-ready-prepare");
                         }}
+                        disabled={!round.onchain.inventoryFunded}
                       >
                         <AppIcon name="shield" /> {t("presaleReadyPrepareSafe")}
                       </button>
+                    ) : null}
+                    {round.onchain && round.onchain.state >= 4 && round.onchain.pendingPurchaseCount === "0" && round.onchain.unsoldReleasedUliqRaw === "0" && BigInt(round.onchain.unsoldInventoryUliqRaw) > 0n ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setSchedulePrepareRoundId(round.id);
+                          requestReauth("inventory-release-prepare");
+                        }}
+                      >
+                        <AppIcon name="wallet" /> {t("presaleUnsoldReleasePrepareSafe")}
+                      </button>
+                    ) : null}
+                    {inventoryActionId && inventoryActionRoundId === round.id ? (
+                      <div className="adminFormGridCompact">
+                        <label className="adminFormField">
+                          <span className="adminFormFieldLabel">{t("presaleInventoryExecutionHash")}</span>
+                          <input
+                            className="input uliqMono"
+                            value={inventoryExecutionHash}
+                            placeholder="0x…"
+                            onChange={(event) => setInventoryExecutionHash(event.target.value.trim())}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => requestReauth("inventory-record")}
+                          disabled={!/^0x[0-9a-fA-F]{64}$/.test(inventoryExecutionHash)}
+                        >
+                          <AppIcon name="audit" /> {t("presaleInventoryRecordExecution")}
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 );

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPut } from "../../../lib/api";
+import { formatUnits } from "viem";
+import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import {
   isUliqPresaleScheduleValid,
   presaleScheduleIsoToLocalValue,
@@ -38,6 +39,17 @@ type PublicPresaleAdminPayload = {
       predecessorRoundId: "round-1" | null;
       saleStart: string | null;
       saleEnd: string | null;
+      onchain?: {
+        owner: string;
+        state: number;
+        bindingStatus: string;
+        inventorySourceAddress: string;
+        inventoryFunded: boolean;
+        inventoryUliqRaw: string;
+        pendingPurchaseCount: string;
+        unsoldReleasedUliqRaw: string;
+        unsoldInventoryUliqRaw: string;
+      };
     }>;
   };
   readiness: {
@@ -50,6 +62,15 @@ type PublicPresaleAdminPayload = {
   };
 };
 
+type SafePreparation = {
+  actionId?: string;
+  safeTransaction: { chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string | null };
+  safeTransactions?: Array<{ chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string | null }>;
+  preflight: Record<string, unknown>;
+};
+
+type ReauthAction = "schedule-save" | "schedule-prepare" | "ready-prepare" | "inventory-fund" | "inventory-release" | "inventory-record";
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return String(error.payload?.error ?? error.message);
   return error instanceof Error ? error.message : String(error);
@@ -58,6 +79,10 @@ function errorMessage(error: unknown): string {
 function localDateTimeMin(): string {
   const date = new Date(Date.now() + 60_000);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function formatUliq(raw: string): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Number(formatUnits(BigInt(raw), 18)));
 }
 
 export default function PublicPresaleAdminPreview() {
@@ -70,6 +95,13 @@ export default function PublicPresaleAdminPreview() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reauthOpen, setReauthOpen] = useState(false);
+  const [reauthAction, setReauthAction] = useState<ReauthAction>("schedule-save");
+  const [selectedRoundId, setSelectedRoundId] = useState<"round-1" | "round-2">("round-1");
+  const [preparation, setPreparation] = useState<SafePreparation | null>(null);
+  const [preparationLabel, setPreparationLabel] = useState<string | null>(null);
+  const [inventoryActionId, setInventoryActionId] = useState<string | null>(null);
+  const [inventoryActionRoundId, setInventoryActionRoundId] = useState<"round-1" | "round-2" | null>(null);
+  const [inventoryExecutionHash, setInventoryExecutionHash] = useState("");
   const scheduleValid = useMemo(() => isUliqPresaleScheduleValid(drafts), [drafts]);
 
   const load = useCallback(async () => {
@@ -105,6 +137,76 @@ export default function PublicPresaleAdminPreview() {
     setData((current) => current ? { ...current, presaleSchedule } : current);
     setReason("");
     setNotice(t("presaleScheduleSaved", { version: presaleSchedule.version }));
+  }
+
+  async function prepareSchedule() {
+    if (!data?.presaleSchedule.version) throw new Error(t("presaleScheduleNotSaved"));
+    const response = await apiPost<SafePreparation>(
+      `/admin/uliq/presale-rounds/${selectedRoundId}/schedule/prepare`,
+      { draftVersion: data.presaleSchedule.version }
+    );
+    setPreparation(response);
+    setPreparationLabel(t("presaleSchedulePreparedLabel", { round: selectedRoundId === "round-1" ? 1 : 2 }));
+    setNotice(t("prepared"));
+    await load();
+  }
+
+  async function prepareReady() {
+    if (!data?.presaleSchedule.version) throw new Error(t("presaleScheduleNotSaved"));
+    const response = await apiPost<SafePreparation>(
+      `/admin/uliq/presale-rounds/${selectedRoundId}/ready/prepare`,
+      { draftVersion: data.presaleSchedule.version }
+    );
+    setPreparation(response);
+    setPreparationLabel(t("presaleReadyPreparedLabel", { round: selectedRoundId === "round-1" ? 1 : 2 }));
+    setNotice(t("presaleReadyPrepared"));
+  }
+
+  async function prepareInventory(action: "fund" | "release") {
+    const response = await apiPost<SafePreparation>(
+      `/admin/uliq/presale-rounds/${selectedRoundId}/inventory/${action}/prepare`,
+      {}
+    );
+    setPreparation(response);
+    setPreparationLabel(t(action === "fund" ? "presaleInventoryFundingPreparedLabel" : "presaleUnsoldReleasePreparedLabel", {
+      round: selectedRoundId === "round-1" ? 1 : 2
+    }));
+    setInventoryActionId(response.actionId ?? null);
+    setInventoryActionRoundId(selectedRoundId);
+    setInventoryExecutionHash("");
+    setNotice(t(action === "fund" ? "presaleInventoryFundingPrepared" : "presaleUnsoldReleasePrepared"));
+    await load();
+  }
+
+  async function recordInventoryExecution() {
+    if (!inventoryActionId) throw new Error(t("presaleInventoryActionMissing"));
+    await apiPost("/admin/uliq/presale-rounds/inventory/record-execution", {
+      actionId: inventoryActionId,
+      transactionHash: inventoryExecutionHash
+    });
+    setNotice(t("presaleInventoryExecutionRecorded"));
+    await load();
+  }
+
+  function requestReauth(action: ReauthAction, roundId?: "round-1" | "round-2") {
+    if (roundId) setSelectedRoundId(roundId);
+    setReauthAction(action);
+    setReauthOpen(true);
+  }
+
+  async function runReauthenticatedAction() {
+    if (reauthAction === "schedule-save") return saveSchedule();
+    if (reauthAction === "schedule-prepare") return prepareSchedule();
+    if (reauthAction === "ready-prepare") return prepareReady();
+    if (reauthAction === "inventory-fund") return prepareInventory("fund");
+    if (reauthAction === "inventory-release") return prepareInventory("release");
+    return recordInventoryExecution();
+  }
+
+  async function copyPayload() {
+    if (!preparation) return;
+    await navigator.clipboard.writeText(JSON.stringify(preparation, null, 2));
+    setNotice(t("copied"));
   }
 
   return (
@@ -186,6 +288,49 @@ export default function PublicPresaleAdminPreview() {
                     {draft.saleStart && draft.saleEnd && new Date(draft.saleStart).getTime() >= new Date(draft.saleEnd).getTime()
                       ? <AdminNotice tone="danger">{t("presaleRoundEndAfterStart")}</AdminNotice>
                       : null}
+                    {round.onchain ? (
+                      <div className="adminKeyValueList">
+                        <div className="adminKeyValueRow"><span>{t("ownerWallet")}</span><strong className="uliqMono">{round.onchain.owner}</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleInventorySource")}</span><strong className="uliqMono">{round.onchain.inventorySourceAddress}</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleInventoryFundingStatus")}</span><AdminStatusBadge value={round.onchain.inventoryFunded ? "funded" : "not_funded"} /></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleInventoryBalance")}</span><strong>{formatUliq(round.onchain.inventoryUliqRaw)} ULIQ</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleUnsoldInventory")}</span><strong>{formatUliq(round.onchain.unsoldInventoryUliqRaw)} ULIQ</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleUnsoldReleased")}</span><strong>{formatUliq(round.onchain.unsoldReleasedUliqRaw)} ULIQ</strong></div>
+                      </div>
+                    ) : null}
+                    <div className="adminToolbarRow">
+                      {round.onchain?.state === 0 && !round.onchain.inventoryFunded ? (
+                        <button type="button" className="btn" onClick={() => requestReauth("inventory-fund", round.id)}>
+                          <AppIcon name="funding" /> {t("presaleInventoryFundPrepareSafe")}
+                        </button>
+                      ) : null}
+                      {round.onchain && ["DRAFT_ONLY", "DRIFTED", "PREPARED"].includes(round.onchain.bindingStatus) ? (
+                        <button type="button" className="btn" onClick={() => requestReauth("schedule-prepare", round.id)} disabled={!data.presaleSchedule.version}>
+                          <AppIcon name="shield" /> {t("presaleSchedulePrepareSafe")}
+                        </button>
+                      ) : null}
+                      {round.onchain?.bindingStatus === "BOUND" && round.onchain.state === 0 ? (
+                        <button type="button" className="btn" onClick={() => requestReauth("ready-prepare", round.id)} disabled={!round.onchain.inventoryFunded}>
+                          <AppIcon name="shield" /> {t("presaleReadyPrepareSafe")}
+                        </button>
+                      ) : null}
+                      {round.onchain && round.onchain.state >= 4 && round.onchain.pendingPurchaseCount === "0" && round.onchain.unsoldReleasedUliqRaw === "0" && BigInt(round.onchain.unsoldInventoryUliqRaw) > 0n ? (
+                        <button type="button" className="btn" onClick={() => requestReauth("inventory-release", round.id)}>
+                          <AppIcon name="wallet" /> {t("presaleUnsoldReleasePrepareSafe")}
+                        </button>
+                      ) : null}
+                    </div>
+                    {inventoryActionId && inventoryActionRoundId === round.id ? (
+                      <div className="adminFormGridCompact">
+                        <label className="adminFormField">
+                          <span className="adminFormFieldLabel">{t("presaleInventoryExecutionHash")}</span>
+                          <input className="input uliqMono" value={inventoryExecutionHash} placeholder="0x…" onChange={(event) => setInventoryExecutionHash(event.target.value.trim())} />
+                        </label>
+                        <button type="button" className="btn" onClick={() => requestReauth("inventory-record", round.id)} disabled={!/^0x[0-9a-fA-F]{64}$/.test(inventoryExecutionHash)}>
+                          <AppIcon name="audit" /> {t("presaleInventoryRecordExecution")}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -204,16 +349,24 @@ export default function PublicPresaleAdminPreview() {
             <button
               type="button"
               className="btn btnPrimary"
-              onClick={() => setReauthOpen(true)}
+              onClick={() => requestReauth("schedule-save")}
               disabled={!scheduleValid || reason.trim().length < 8}
             >
               <AppIcon name="save" /> {t("presaleScheduleSave")}
             </button>
           </AdminDetailSection>
+          <AdminDetailSection title={t("payload")} description={preparationLabel ?? undefined}>
+            {preparation ? (
+              <>
+                <pre className="card uliqAdminPayload uliqMono">{JSON.stringify(preparation, null, 2)}</pre>
+                <button type="button" className="btn" onClick={() => void copyPayload()}><AppIcon name="copy" /> {t("copy")}</button>
+              </>
+            ) : <div className="settingsMutedText">{t("noPayload")}</div>}
+          </AdminDetailSection>
         </>
       ) : loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
 
-      <ReauthDialog open={reauthOpen} onClose={() => setReauthOpen(false)} onVerified={saveSchedule} />
+      <ReauthDialog open={reauthOpen} onClose={() => setReauthOpen(false)} onVerified={runReauthenticatedAction} />
     </div>
   );
 }

@@ -111,7 +111,7 @@ function environmentEnabled(value: string | undefined): boolean {
 }
 
 function publicPresaleContractsConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  const names = [
+  const contractNames = [
     "ULIQ_PUBLIC_PRESALE_TOKEN_ADDRESS",
     "ULIQ_PUBLIC_PRESALE_USDC_ADDRESS",
     "ULIQ_PUBLIC_PRESALE_GLOBAL_LISTING_ADDRESS",
@@ -122,9 +122,16 @@ function publicPresaleContractsConfigured(env: NodeJS.ProcessEnv = process.env):
     "ULIQ_PUBLIC_PRESALE_ROUND_2_VESTING_ADDRESS",
     "ULIQ_PUBLIC_PRESALE_ROUND_2_PAYMENT_CUSTODY_ADDRESS"
   ] as const;
-  const addresses = names.map((name) => String(env[name] ?? "").trim().toLowerCase());
-  return addresses.every((value) => /^0x[0-9a-f]{40}$/.test(value) && !/^0x0{40}$/.test(value))
-    && new Set(addresses).size === addresses.length;
+  const sourceNames = [
+    "ULIQ_PUBLIC_PRESALE_ROUND_1_INVENTORY_SOURCE_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_ROUND_2_INVENTORY_SOURCE_ADDRESS"
+  ] as const;
+  const contractAddresses = contractNames.map((name) => String(env[name] ?? "").trim().toLowerCase());
+  const sourceAddresses = sourceNames.map((name) => String(env[name] ?? "").trim().toLowerCase());
+  const valid = (value: string) => /^0x[0-9a-f]{40}$/.test(value) && !/^0x0{40}$/.test(value);
+  return contractAddresses.every(valid)
+    && sourceAddresses.every(valid)
+    && new Set(contractAddresses).size === contractAddresses.length;
 }
 
 function publicPresaleReadiness(env: NodeJS.ProcessEnv = process.env) {
@@ -401,6 +408,102 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
           actorUserId: actor.id,
           action: "uliq_presale_round_schedule_execution_recorded",
           targetType: "uliq_presale_schedule",
+          targetId: parsed.data.actionId,
+          metadata: { transactionHash: parsed.data.transactionHash, status: action.status },
+          ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+        });
+        return res.json(action);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(reason.includes("not_found") ? 404 : 409).json({ error: reason });
+      }
+    }
+  );
+
+  app.post(
+    "/admin/uliq/presale-rounds/:roundId/inventory/fund/prepare",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!scheduleAdminEnabled(res)) return;
+      if (!environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED) || !publicPresaleContractsConfigured()) {
+        return res.status(409).json({ error: "uliq_public_presale_onchain_not_configured" });
+      }
+      const roundId = presaleRoundIdSchema.safeParse(req.params.roundId);
+      if (!roundId.success) return res.status(400).json({ error: "invalid_payload" });
+      try {
+        const actor = getUserFromLocals(res);
+        const prepared = await getScheduleOnchainService().prepareFundInventory(roundId.data);
+        await deps.recordAdminAuditEvent({
+          actorUserId: actor.id,
+          action: "uliq_presale_inventory_funding_safe_prepared",
+          targetType: "uliq_presale_inventory",
+          targetId: prepared.actionId,
+          metadata: { roundId: roundId.data, preflight: prepared.preflight },
+          ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+        });
+        return res.json(prepared);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(reason.includes("state_invalid") || reason.includes("already_funded") ? 409 : 400).json({ error: reason });
+      }
+    }
+  );
+
+  app.post(
+    "/admin/uliq/presale-rounds/:roundId/inventory/release/prepare",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!scheduleAdminEnabled(res)) return;
+      if (!environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED) || !publicPresaleContractsConfigured()) {
+        return res.status(409).json({ error: "uliq_public_presale_onchain_not_configured" });
+      }
+      const roundId = presaleRoundIdSchema.safeParse(req.params.roundId);
+      if (!roundId.success) return res.status(400).json({ error: "invalid_payload" });
+      try {
+        const actor = getUserFromLocals(res);
+        const prepared = await getScheduleOnchainService().prepareReleaseUnsold(roundId.data);
+        await deps.recordAdminAuditEvent({
+          actorUserId: actor.id,
+          action: "uliq_presale_unsold_release_safe_prepared",
+          targetType: "uliq_presale_inventory",
+          targetId: prepared.actionId,
+          metadata: { roundId: roundId.data, preflight: prepared.preflight },
+          ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+        });
+        return res.json(prepared);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(reason.includes("state_invalid") || reason.includes("pending") || reason.includes("already_released") ? 409 : 400).json({ error: reason });
+      }
+    }
+  );
+
+  app.post(
+    "/admin/uliq/presale-rounds/inventory/record-execution",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!scheduleAdminEnabled(res)) return;
+      if (!environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED) || !publicPresaleContractsConfigured()) {
+        return res.status(409).json({ error: "uliq_public_presale_onchain_not_configured" });
+      }
+      const parsed = scheduleRecordSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const actor = getUserFromLocals(res);
+        const action = await getScheduleOnchainService().recordInventoryExecution(
+          parsed.data.actionId,
+          parsed.data.transactionHash
+        );
+        await deps.recordAdminAuditEvent({
+          actorUserId: actor.id,
+          action: "uliq_presale_inventory_execution_recorded",
+          targetType: "uliq_presale_inventory",
           targetId: parsed.data.actionId,
           metadata: { transactionHash: parsed.data.transactionHash, status: action.status },
           ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null

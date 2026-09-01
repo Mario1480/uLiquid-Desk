@@ -151,7 +151,11 @@ async function readRoundAtBlock(
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "pendingAllocationUliqRaw", blockNumber }),
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "pendingPurchaseCount", blockNumber }),
       client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "finalizedAllocationUliqRaw", blockNumber }),
-      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "withdrawnAllocationUliqRaw", blockNumber })
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "withdrawnAllocationUliqRaw", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "inventorySource", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "inventoryFunded", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "unsoldReleasedUliqRaw", blockNumber }),
+      client.readContract({ address: round.contractAddress, abi: uliqPresaleRoundAbi, functionName: "unsoldInventoryUliqRaw", blockNumber })
     ]),
     Promise.all([
       client.readContract({ address: round.vestingAddress, abi: uliqPresaleRoundVestingAbi, functionName: "token", blockNumber }),
@@ -172,6 +176,7 @@ async function readRoundAtBlock(
     [roundValues[4], round.vestingAddress, "vesting_address_mismatch"],
     [roundValues[5], config.globalListingAddress, "listing_address_mismatch"],
     [roundValues[6], expectedPredecessor, "predecessor_address_mismatch"],
+    [roundValues[22], round.inventorySourceAddress, "inventory_source_address_mismatch"],
     [vestingValues[0], config.tokenAddress, "vesting_token_address_mismatch"],
     [vestingValues[1], config.globalListingAddress, "vesting_listing_address_mismatch"],
     [vestingValues[2], round.contractAddress, "vesting_presale_address_mismatch"]
@@ -207,6 +212,10 @@ async function readRoundAtBlock(
     pendingPurchaseCount: BigInt(roundValues[19] as bigint),
     finalizedAllocationUliqRaw: BigInt(roundValues[20] as bigint),
     withdrawnAllocationUliqRaw: BigInt(roundValues[21] as bigint),
+    inventorySourceAddress: String(roundValues[22]),
+    inventoryFunded: Boolean(roundValues[23]),
+    unsoldReleasedUliqRaw: BigInt(roundValues[24] as bigint),
+    unsoldInventoryUliqRaw: BigInt(roundValues[25] as bigint),
     initialUnlockBps: BigInt(vestingValues[3]),
     cliffSeconds: BigInt(vestingValues[4] as bigint),
     linearVestingDurationSeconds: BigInt(vestingValues[5] as bigint),
@@ -286,6 +295,10 @@ export class UliqPublicPresaleService {
         pendingPurchaseCount: read.pendingPurchaseCount.toString(),
         finalizedAllocationUliqRaw: read.finalizedAllocationUliqRaw.toString(),
         withdrawnAllocationUliqRaw: read.withdrawnAllocationUliqRaw.toString(),
+        inventorySourceAddress: read.inventorySourceAddress,
+        inventoryFunded: read.inventoryFunded,
+        unsoldReleasedUliqRaw: read.unsoldReleasedUliqRaw.toString(),
+        unsoldInventoryUliqRaw: read.unsoldInventoryUliqRaw.toString(),
         initialUnlockBps: read.initialUnlockBps.toString(),
         cliffSeconds: read.cliffSeconds.toString(),
         linearVestingDurationSeconds: read.linearVestingDurationSeconds.toString()

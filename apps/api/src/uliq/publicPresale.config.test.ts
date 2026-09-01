@@ -9,9 +9,11 @@ const addresses = {
   ULIQ_PUBLIC_PRESALE_ROUND_1_ADDRESS: "0x4444444444444444444444444444444444444444",
   ULIQ_PUBLIC_PRESALE_ROUND_1_VESTING_ADDRESS: "0x5555555555555555555555555555555555555555",
   ULIQ_PUBLIC_PRESALE_ROUND_1_PAYMENT_CUSTODY_ADDRESS: "0x8888888888888888888888888888888888888888",
+  ULIQ_PUBLIC_PRESALE_ROUND_1_INVENTORY_SOURCE_ADDRESS: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   ULIQ_PUBLIC_PRESALE_ROUND_2_ADDRESS: "0x6666666666666666666666666666666666666666",
   ULIQ_PUBLIC_PRESALE_ROUND_2_VESTING_ADDRESS: "0x7777777777777777777777777777777777777777",
-  ULIQ_PUBLIC_PRESALE_ROUND_2_PAYMENT_CUSTODY_ADDRESS: "0x9999999999999999999999999999999999999999"
+  ULIQ_PUBLIC_PRESALE_ROUND_2_PAYMENT_CUSTODY_ADDRESS: "0x9999999999999999999999999999999999999999",
+  ULIQ_PUBLIC_PRESALE_ROUND_2_INVENTORY_SOURCE_ADDRESS: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 };
 
 const base = {
@@ -40,10 +42,12 @@ test("public presale config carries the approved two-round economic parameters",
   assert.equal(config.rounds[0].expected.priceUsdcRawPerUliq, 2_000n);
   assert.equal(config.rounds[0].expected.minPurchaseUsdcRaw, 500n * 10n ** 6n);
   assert.equal(config.rounds[0].expected.maxPurchaseUsdcRaw, 10_000n * 10n ** 6n);
+  assert.equal(config.rounds[0].inventorySourceAddress, addresses.ULIQ_PUBLIC_PRESALE_ROUND_1_INVENTORY_SOURCE_ADDRESS);
   assert.equal(config.rounds[1].expected.allocationUliqRaw, 100_000_000n * 10n ** 18n);
   assert.equal(config.rounds[1].expected.priceUsdcRawPerUliq, 3_500n);
   assert.equal(config.rounds[1].expected.minPurchaseUsdcRaw, 100n * 10n ** 6n);
   assert.equal(config.rounds[1].expected.maxPurchaseUsdcRaw, 5_000n * 10n ** 6n);
+  assert.equal(config.rounds[1].inventorySourceAddress, addresses.ULIQ_PUBLIC_PRESALE_ROUND_2_INVENTORY_SOURCE_ADDRESS);
 });
 
 test("purchase activation requires versioned legal text", () => {

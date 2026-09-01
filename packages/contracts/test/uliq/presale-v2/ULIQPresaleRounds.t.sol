@@ -83,6 +83,7 @@ contract ULIQPresaleRoundsTest {
             address(listing),
             address(0),
             address(this),
+            address(this),
             ROUND_ONE_HARD_CAP,
             ROUND_ONE_ALLOCATION,
             ROUND_ONE_PRICE_E6,
@@ -99,6 +100,7 @@ contract ULIQPresaleRoundsTest {
             address(listing),
             address(roundOne),
             address(this),
+            address(this),
             ROUND_TWO_HARD_CAP,
             ROUND_TWO_ALLOCATION,
             ROUND_TWO_PRICE_E6,
@@ -113,8 +115,10 @@ contract ULIQPresaleRoundsTest {
         roundOneCustody.setPresale(address(roundOne));
         roundTwoCustody.setPresale(address(roundTwo));
 
-        require(token.transfer(address(roundOne), ROUND_ONE_ALLOCATION), "round_one_inventory_failed");
-        require(token.transfer(address(roundTwo), ROUND_TWO_ALLOCATION), "round_two_inventory_failed");
+        token.approve(address(roundOne), ROUND_ONE_ALLOCATION);
+        roundOne.fundInventory();
+        token.approve(address(roundTwo), ROUND_TWO_ALLOCATION);
+        roundTwo.fundInventory();
 
         roundOneEnd = uint64(block.timestamp + 30 days);
         roundTwoEnd = uint64(uint256(roundOneEnd) + 30 days);
@@ -139,6 +143,8 @@ contract ULIQPresaleRoundsTest {
     function testAcceptedRoundParametersAndSupplyAreExact() public view {
         require(token.totalSupply() == 1_000_000_000 ether, "fixed_supply_wrong");
         require(roundOne.allocationCapUliqRaw() == ROUND_ONE_ALLOCATION, "round_one_allocation_wrong");
+        require(roundOne.inventorySource() == address(this), "round_one_inventory_source_wrong");
+        require(roundOne.inventoryFunded(), "round_one_inventory_not_funded");
         require(roundOne.hardCapUsdcRaw() == ROUND_ONE_HARD_CAP, "round_one_hard_cap_wrong");
         require(roundOne.priceUsdcRawPerUliq() == ROUND_ONE_PRICE_E6, "round_one_price_wrong");
         require(roundOne.minPurchaseUsdcRaw() == ROUND_ONE_MINIMUM, "round_one_minimum_wrong");
@@ -148,6 +154,8 @@ contract ULIQPresaleRoundsTest {
         require(roundOneVesting.linearVestingDurationSeconds() == ROUND_ONE_VESTING, "round_one_vesting_wrong");
 
         require(roundTwo.allocationCapUliqRaw() == ROUND_TWO_ALLOCATION, "round_two_allocation_wrong");
+        require(roundTwo.inventorySource() == address(this), "round_two_inventory_source_wrong");
+        require(roundTwo.inventoryFunded(), "round_two_inventory_not_funded");
         require(roundTwo.hardCapUsdcRaw() == ROUND_TWO_HARD_CAP, "round_two_hard_cap_wrong");
         require(roundTwo.priceUsdcRawPerUliq() == ROUND_TWO_PRICE_E6, "round_two_price_wrong");
         require(roundTwo.minPurchaseUsdcRaw() == ROUND_TWO_MINIMUM, "round_two_minimum_wrong");
@@ -177,6 +185,7 @@ contract ULIQPresaleRoundsTest {
             address(listing),
             address(0),
             address(this),
+            address(this),
             ROUND_ONE_HARD_CAP,
             ROUND_ONE_ALLOCATION,
             ROUND_ONE_PRICE_E6,
@@ -193,6 +202,72 @@ contract ULIQPresaleRoundsTest {
 
         draft.configureSaleWindow(1, uint64(block.timestamp + 1 days), uint64(uint256(firstEnd) + 1 days));
         require(draft.saleWindowVersion() == 2, "schedule_version_not_incremented");
+    }
+
+    function testInventoryCanOnlyBePulledOnceFromImmutableSource() public {
+        ULIQPresaleRoundVesting vesting = new ULIQPresaleRoundVesting(
+            address(token), address(listing), address(this), ROUND_ONE_INITIAL_BPS, ROUND_ONE_CLIFF, ROUND_ONE_VESTING
+        );
+        ULIQPresaleMockCustody custody = new ULIQPresaleMockCustody(address(usdc), TREASURY);
+        ULIQPresaleRound draft = new ULIQPresaleRound(
+            3,
+            address(token),
+            address(usdc),
+            address(custody),
+            address(vesting),
+            address(listing),
+            address(0),
+            address(this),
+            address(this),
+            ROUND_ONE_HARD_CAP,
+            ROUND_ONE_ALLOCATION,
+            ROUND_ONE_PRICE_E6,
+            ROUND_ONE_MINIMUM,
+            ROUND_ONE_MAXIMUM,
+            WITHDRAWAL_PERIOD
+        );
+
+        VM.prank(buyer);
+        VM.expectRevert(abi.encodeWithSelector(ULIQPresaleRound.UnauthorizedInventorySource.selector, buyer));
+        draft.fundInventory();
+
+        token.approve(address(draft), ROUND_ONE_ALLOCATION);
+        draft.fundInventory();
+        VM.expectRevert(ULIQPresaleRound.InventoryAlreadyFunded.selector);
+        draft.fundInventory();
+
+        require(draft.inventorySource() == address(this), "inventory_source_changed");
+        require(token.balanceOf(address(draft)) == ROUND_ONE_ALLOCATION, "inventory_amount_wrong");
+    }
+
+    function testMarkReadyRejectsDirectTransferWithoutSourceFunding() public {
+        ULIQPresaleRoundVesting vesting = new ULIQPresaleRoundVesting(
+            address(token), address(listing), address(this), ROUND_ONE_INITIAL_BPS, ROUND_ONE_CLIFF, ROUND_ONE_VESTING
+        );
+        ULIQPresaleMockCustody custody = new ULIQPresaleMockCustody(address(usdc), TREASURY);
+        ULIQPresaleRound draft = new ULIQPresaleRound(
+            3,
+            address(token),
+            address(usdc),
+            address(custody),
+            address(vesting),
+            address(listing),
+            address(0),
+            address(this),
+            address(this),
+            ROUND_ONE_HARD_CAP,
+            ROUND_ONE_ALLOCATION,
+            ROUND_ONE_PRICE_E6,
+            ROUND_ONE_MINIMUM,
+            ROUND_ONE_MAXIMUM,
+            WITHDRAWAL_PERIOD
+        );
+        vesting.setPresale(address(draft));
+        require(token.transfer(address(draft), ROUND_ONE_ALLOCATION), "direct_inventory_transfer_failed");
+        draft.configureSaleWindow(0, uint64(block.timestamp), uint64(block.timestamp + 10 days));
+
+        VM.expectRevert(ULIQPresaleRound.InventoryNotFunded.selector);
+        draft.markReady();
     }
 
     function testRoundTwoRequiresRoundOneToEnd() public {
@@ -326,25 +401,62 @@ contract ULIQPresaleRoundsTest {
         );
     }
 
-    function testUnsoldInventoryRemainsIsolatedForLaterExplicitDecision() public {
+    function testUnsoldInventoryReturnsExactlyOnceToImmutableSource() public {
         uint256 roundOneAllocation = _finishRoundOne(1_000 * 1e6);
         uint256 roundTwoAllocation = _finishRoundTwo(3_500 * 1e6);
         uint64 launch = uint64(block.timestamp + 1 days);
         listing.scheduleListing(launch);
 
+        uint256 sourceBalanceBefore = token.balanceOf(address(this));
+        uint256 roundOneUnsold = ROUND_ONE_ALLOCATION - roundOneAllocation;
+        uint256 roundTwoUnsold = ROUND_TWO_ALLOCATION - roundTwoAllocation;
+        VM.prank(buyer);
+        VM.expectRevert();
+        roundOne.releaseUnsold();
+        roundOne.releaseUnsold();
+        roundTwo.releaseUnsold();
+
+        require(token.balanceOf(address(roundOne)) == 0, "round_one_unsold_not_released");
+        require(token.balanceOf(address(roundTwo)) == 0, "round_two_unsold_not_released");
         require(
-            token.balanceOf(address(roundOne)) == ROUND_ONE_ALLOCATION - roundOneAllocation, "round_one_unsold_moved"
+            token.balanceOf(address(this)) == sourceBalanceBefore + roundOneUnsold + roundTwoUnsold,
+            "source_refund_wrong"
         );
+        require(roundOne.unsoldReleasedUliqRaw() == roundOneUnsold, "round_one_released_accounting_wrong");
+        require(roundTwo.unsoldReleasedUliqRaw() == roundTwoUnsold, "round_two_released_accounting_wrong");
+        require(roundOne.unsoldInventoryUliqRaw() == 0, "round_one_unsold_not_cleared");
+        require(roundTwo.unsoldInventoryUliqRaw() == 0, "round_two_unsold_not_cleared");
+
+        VM.expectRevert(ULIQPresaleRound.UnsoldInventoryAlreadyReleased.selector);
+        roundOne.releaseUnsold();
+    }
+
+    function testUnsoldReleaseWaitsForEndAndPendingFinalization() public {
+        VM.expectRevert(ULIQPresaleRound.UnsoldReleaseUnavailable.selector);
+        roundOne.releaseUnsold();
+
+        _buy(roundOne, buyer, ROUND_ONE_MINIMUM);
+        VM.warp(roundOneEnd);
+        roundOne.endSale();
+        VM.expectRevert(abi.encodeWithSelector(ULIQPresaleRound.PendingPurchasesRemain.selector, 1));
+        roundOne.releaseUnsold();
+    }
+
+    function testWithdrawnAllocationIsIncludedInUnsoldReturn() public {
+        uint256 purchaseId = _buy(roundOne, buyer, ROUND_ONE_MINIMUM);
+        VM.prank(buyer);
+        roundOne.withdrawPurchase(purchaseId);
+        VM.warp(roundOneEnd);
+        roundOne.endSale();
+
+        uint256 sourceBalanceBefore = token.balanceOf(address(this));
+        roundOne.releaseUnsold();
+
+        require(token.balanceOf(address(this)) == sourceBalanceBefore + ROUND_ONE_ALLOCATION, "withdrawn_return_wrong");
+        require(roundOne.unsoldReleasedUliqRaw() == ROUND_ONE_ALLOCATION, "withdrawn_release_accounting_wrong");
         require(
-            token.balanceOf(address(roundTwo)) == ROUND_TWO_ALLOCATION - roundTwoAllocation, "round_two_unsold_moved"
-        );
-        require(
-            roundOne.unsoldInventoryUliqRaw() == ROUND_ONE_ALLOCATION - roundOneAllocation,
-            "round_one_unsold_accounting_wrong"
-        );
-        require(
-            roundTwo.unsoldInventoryUliqRaw() == ROUND_TWO_ALLOCATION - roundTwoAllocation,
-            "round_two_unsold_accounting_wrong"
+            roundOne.withdrawnAllocationUliqRaw() == ROUND_ONE_MINIMUM * 1 ether / ROUND_ONE_PRICE_E6,
+            "withdrawn_allocation_wrong"
         );
     }
 

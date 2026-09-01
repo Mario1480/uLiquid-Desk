@@ -8,6 +8,7 @@ export type UliqPublicPresaleRoundConfig = {
   contractAddress: `0x${string}`;
   vestingAddress: `0x${string}`;
   paymentCustodyAddress: `0x${string}`;
+  inventorySourceAddress: `0x${string}`;
   expected: {
     allocationUliqRaw: bigint;
     priceUsdcRawPerUliq: bigint;
@@ -144,12 +145,14 @@ export function getUliqPublicPresaleConfig(env: NodeJS.ProcessEnv = process.env)
     {
       contractAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_1_ADDRESS, "round_1_address"),
       vestingAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_1_VESTING_ADDRESS, "round_1_vesting_address"),
-      paymentCustodyAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_1_PAYMENT_CUSTODY_ADDRESS, "round_1_payment_custody_address")
+      paymentCustodyAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_1_PAYMENT_CUSTODY_ADDRESS, "round_1_payment_custody_address"),
+      inventorySourceAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_1_INVENTORY_SOURCE_ADDRESS, "round_1_inventory_source_address")
     },
     {
       contractAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_2_ADDRESS, "round_2_address"),
       vestingAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_2_VESTING_ADDRESS, "round_2_vesting_address"),
-      paymentCustodyAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_2_PAYMENT_CUSTODY_ADDRESS, "round_2_payment_custody_address")
+      paymentCustodyAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_2_PAYMENT_CUSTODY_ADDRESS, "round_2_payment_custody_address"),
+      inventorySourceAddress: address(env.ULIQ_PUBLIC_PRESALE_ROUND_2_INVENTORY_SOURCE_ADDRESS, "round_2_inventory_source_address")
     }
   ] as const;
   const uniqueAddresses = [

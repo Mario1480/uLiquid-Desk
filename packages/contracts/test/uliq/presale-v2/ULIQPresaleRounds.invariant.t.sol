@@ -73,6 +73,7 @@ contract ULIQPresaleRoundsInvariantTest {
             address(listing),
             address(0),
             address(this),
+            address(this),
             HARD_CAP,
             ALLOCATION,
             2_000,
@@ -83,7 +84,8 @@ contract ULIQPresaleRoundsInvariantTest {
 
         vesting.setPresale(address(presale));
         custody.setPresale(address(presale));
-        require(token.transfer(address(presale), ALLOCATION), "inventory_transfer_failed");
+        token.approve(address(presale), ALLOCATION);
+        presale.fundInventory();
         presale.configureSaleWindow(0, uint64(block.timestamp), uint64(block.timestamp + 365 days));
         presale.markReady();
         presale.activateSale();

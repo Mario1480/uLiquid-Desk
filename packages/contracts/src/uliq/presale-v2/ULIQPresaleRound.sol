@@ -15,8 +15,7 @@ import {ULIQPresaleRoundVesting} from "./ULIQPresaleRoundVesting.sol";
 
 /// @title ULIQ Presale Round
 /// @notice Generic, non-upgradeable implementation deployed once per accepted ULIQ presale round.
-/// @dev Two-round review package only. The custody candidate, legal access, cancellation, and unsold-token policy
-/// remain subject to review and approval.
+/// @dev Two-round review package only. Custody and legal behavior remain subject to review and approval.
 contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLifecycle {
     using SafeERC20 for IERC20;
 
@@ -56,6 +55,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     ULIQPresaleRoundVesting public immutable vesting;
     IULIQGlobalListing public immutable globalListing;
     address public immutable predecessor;
+    address public immutable inventorySource;
     uint256 public immutable hardCapUsdcRaw;
     uint256 public immutable allocationCapUliqRaw;
     uint256 public immutable priceUsdcRawPerUliq;
@@ -74,6 +74,8 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     uint256 public pendingPurchaseCount;
     uint256 public finalizedAllocationUliqRaw;
     uint256 public withdrawnAllocationUliqRaw;
+    uint256 public unsoldReleasedUliqRaw;
+    bool public inventoryFunded;
 
     mapping(address buyer => uint256 amount) public purchasedUsdcRawByBuyer;
     mapping(uint256 purchaseId => Purchase purchase) public purchases;
@@ -98,12 +100,21 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     error WithdrawalWindowClosed();
     error WithdrawalWindowActive();
     error PendingPurchasesRemain(uint256 count);
+    error UnauthorizedInventorySource(address caller);
+    error InventoryAlreadyFunded();
+    error InventoryNotFunded();
+    error InventoryFundingMismatch(uint256 received, uint256 required);
+    error UnsoldReleaseUnavailable();
+    error UnsoldInventoryAlreadyReleased();
+    error NoUnsoldInventory();
     error ListingAlreadyScheduled();
     error ListingNotScheduled();
     error ListingNotLaunched();
 
     event SaleWindowConfigured(uint64 indexed version, uint64 indexed saleStart, uint64 indexed saleEnd);
     event SaleStateChanged(SaleState indexed previousState, SaleState indexed nextState);
+    event InventoryFunded(address indexed inventorySource, uint256 amount);
+    event UnsoldUliqReleased(address indexed inventorySource, uint256 amount);
     event PurchaseCreated(
         uint8 indexed roundId,
         uint256 indexed purchaseId,
@@ -136,6 +147,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
         address vesting_,
         address globalListing_,
         address predecessor_,
+        address inventorySource_,
         address admin,
         uint256 hardCapUsdcRaw_,
         uint256 allocationCapUliqRaw_,
@@ -146,7 +158,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     ) Ownable(admin) {
         if (
             uliq_ == address(0) || usdc_ == address(0) || paymentCustody_ == address(0) || vesting_ == address(0)
-                || globalListing_ == address(0) || admin == address(0)
+                || globalListing_ == address(0) || inventorySource_ == address(0) || admin == address(0)
         ) revert ZeroAddress();
         if (
             roundId_ == 0 || hardCapUsdcRaw_ == 0 || allocationCapUliqRaw_ == 0 || priceUsdcRawPerUliq_ == 0
@@ -172,6 +184,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
         vesting = ULIQPresaleRoundVesting(vesting_);
         globalListing = IULIQGlobalListing(globalListing_);
         predecessor = predecessor_;
+        inventorySource = inventorySource_;
         hardCapUsdcRaw = hardCapUsdcRaw_;
         allocationCapUliqRaw = allocationCapUliqRaw_;
         priceUsdcRawPerUliq = priceUsdcRawPerUliq_;
@@ -193,9 +206,26 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
         emit SaleWindowConfigured(saleWindowVersion, saleStart_, saleEnd_);
     }
 
+    /// @notice Pulls this round's exact allocation from the immutable source once.
+    /// @dev The source must approve this contract first. Direct token donations do not satisfy this funding gate.
+    function fundInventory() external nonReentrant {
+        _requireState(SaleState.DRAFT);
+        if (msg.sender != inventorySource) revert UnauthorizedInventorySource(msg.sender);
+        if (inventoryFunded) revert InventoryAlreadyFunded();
+
+        inventoryFunded = true;
+        uint256 balanceBefore = uliq.balanceOf(address(this));
+        uliq.safeTransferFrom(inventorySource, address(this), allocationCapUliqRaw);
+        uint256 received = uliq.balanceOf(address(this)) - balanceBefore;
+        if (received != allocationCapUliqRaw) revert InventoryFundingMismatch(received, allocationCapUliqRaw);
+
+        emit InventoryFunded(inventorySource, received);
+    }
+
     function markReady() external onlyOwner {
         _requireState(SaleState.DRAFT);
         if (saleEnd == 0) revert SaleWindowNotConfigured();
+        if (!inventoryFunded) revert InventoryNotFunded();
         if (vesting.presale() != address(this)) revert InvalidConfiguration();
         uint256 inventory = uliq.balanceOf(address(this));
         if (inventory < allocationCapUliqRaw) revert InsufficientInventory(inventory, allocationCapUliqRaw);
@@ -258,6 +288,26 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     function completeSale() external onlyOwner {
         _requireState(SaleState.LISTING_LAUNCHED);
         _setState(SaleState.COMPLETED);
+    }
+
+    /// @notice Returns the remaining round allocation to the exact address that funded it.
+    /// @dev No caller-controlled recipient or amount is accepted. State is updated before the token transfer.
+    function releaseUnsold() external onlyOwner nonReentrant returns (uint256 amount) {
+        if (
+            state != SaleState.ENDED && state != SaleState.LISTING_PENDING && state != SaleState.LISTING_LAUNCHED
+                && state != SaleState.COMPLETED
+        ) revert UnsoldReleaseUnavailable();
+        if (pendingPurchaseCount != 0) revert PendingPurchasesRemain(pendingPurchaseCount);
+        if (unsoldReleasedUliqRaw != 0) revert UnsoldInventoryAlreadyReleased();
+
+        amount = allocationCapUliqRaw - totalSoldUliqRaw;
+        if (amount == 0) revert NoUnsoldInventory();
+        uint256 inventory = uliq.balanceOf(address(this));
+        if (inventory < amount) revert InsufficientInventory(inventory, amount);
+
+        unsoldReleasedUliqRaw = amount;
+        uliq.safeTransfer(inventorySource, amount);
+        emit UnsoldUliqReleased(inventorySource, amount);
     }
 
     function quotePurchase(address buyer, uint256 requestedUsdcRaw)
@@ -387,7 +437,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     }
 
     function unsoldInventoryUliqRaw() external view returns (uint256) {
-        return allocationCapUliqRaw - totalSoldUliqRaw;
+        return allocationCapUliqRaw - totalSoldUliqRaw - unsoldReleasedUliqRaw;
     }
 
     function _remainingGlobalUsdcCapacity() private view returns (uint256) {

@@ -34,10 +34,11 @@ The public application path is deployed in the existing Desk web and API service
 - `NEXT_PUBLIC_ULIQ_ADMIN_VISIBLE` exposes the ULIQ Presale entry in the Superadmin navigation. It does not expose the legacy authenticated ULIQ product navigation.
 - `ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED` separately controls quote and purchase preparation.
 - Every Arbitrum One purchase runtime additionally requires `ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED=true`, regardless of `NODE_ENV`.
-- Contract addresses, two distinct RPC endpoints, deployment start block, chain, terms version, and terms hash are explicit configuration.
-- The API cross-checks immutable round parameters, round ordering, token and USDC addresses, vesting bindings, and the shared listing controller at a finalized block before purchases are enabled.
+- Contract addresses, immutable inventory-source addresses, two distinct RPC endpoints, deployment start block, chain, terms version, and terms hash are explicit configuration.
+- The API cross-checks immutable round parameters, round ordering, token and USDC addresses, inventory sources and funding state, vesting bindings, and the shared listing controller at a finalized block before purchases are enabled.
 - Backend schedule dates are display-only drafts while contract dates are unset. They never authorize a purchase or mutate a contract.
 - With complete reviewed contract configuration, Superadmin can prepare an unsigned, version-bound Safe transaction for each round's sale window and reconcile its finalized execution. After a window is bound, a separate unsigned `markReady()` preparation verifies both RPCs, custody, vesting, listing, predecessor, economic allocation, and round inventory. The API never signs or broadcasts either owner action.
+- Superadmin can prepare ordered unsigned `approve` and `fundInventory()` calls for the immutable inventory-source Safe. After an ended round has no pending purchases, it can prepare parameterless `releaseUnsold()` for the owner Safe and reconcile the finalized event, fixed recipient, amount, balances, and state. These preparations never sign or broadcast transactions.
 - The V2 automatic finalizer defaults to `OFF`, supports read-only `OBSERVE`, and in `ACTIVE` checks finalized chain time every 15 minutes. A dedicated low-balance service EOA can finalize permissionless purchases; active Mainnet mode requires separate Mainnet and Legal approval flags.
 
 ## Transaction lifecycle

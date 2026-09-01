@@ -49,6 +49,7 @@ The minimum applies to each accepted purchase. The maximum is cumulative per wal
 
 - Deploy two non-upgradeable instances of the same `ULIQPresaleRound` bytecode.
 - Each round has its own inventory, accounting, custody adapter, vesting pool, purchase identifiers, cap, and lifecycle state.
+- Each round freezes an immutable inventory-source address in its constructor. Both rounds may use the same source, but each stores and verifies it independently.
 - Price, cap, allocation, buyer limits, release share, cliff, duration, and predecessor are immutable deployment parameters.
 - `saleStart` and `saleEnd` are configurable by the owner only while the round is `DRAFT`; `markReady()` freezes them.
 - Round 2 cannot activate until Round 1 reports an ended-or-later lifecycle state.
@@ -73,7 +74,7 @@ The minimum applies to each accepted purchase. The maximum is cumulative per wal
 
 ### Unsold inventory
 
-Unsold ULIQ remains isolated in its round contract. The review draft contains no automatic treasury release or generic recovery function. Reallocation, burn, rollover, or treasury release requires a later explicit decision and a reviewed implementation before any production deployment.
+The immutable inventory source approves its round and calls `fundInventory()` once while the round is in `DRAFT`; the round pulls its exact allocation. A direct token transfer does not satisfy the readiness gate. After the round has ended and no purchases remain pending, the owner may call parameterless `releaseUnsold()` once. The contract computes the exact unsold allocation and returns it only to the same immutable source. The owner cannot select a different recipient or amount, and the return is not automatic.
 
 ## Onchain boundary
 
@@ -83,7 +84,8 @@ It intentionally does not enforce Desk registration. Wallet authentication, term
 
 ## Trust assumptions and privileged operations
 
-- The round owner can configure dates only in `DRAFT`, mark ready, activate, pause, unpause, mark listing pending, and complete the lifecycle.
+- The round owner can configure dates only in `DRAFT`, mark ready, activate, pause, unpause, mark listing pending, return unsold inventory to the immutable source, and complete the lifecycle.
+- Only the immutable inventory source can fund the round allocation.
 - The listing owner can bind the two round addresses once and schedule the global listing once.
 - The vesting owner can bind its presale address once before listing.
 - The custody adapter controls collection, refund, and treasury release semantics. `ULIQTestnetEscrow` remains test-only and must not be used as the production safeguarding decision.
@@ -107,7 +109,7 @@ The implementation accepts cliff and vesting durations in seconds. Focused revie
 1. ADR-001 legal classification, terms, withdrawal, cancellation, jurisdiction, and access-control decisions.
 2. Production USDC safeguarding and treasury-release adapter.
 3. Exact cancellation behavior for pending and finalized purchases.
-4. Explicit unsold-token recovery or reallocation policy.
+4. Independently verified inventory-source Safe addresses, thresholds, approval/funding sequence, and finalized return reconciliation.
 5. Exact month-to-second convention.
 6. Canonical Arbitrum One USDC, chain configuration, Safe addresses, signer thresholds, and role matrix.
 7. Static analysis, independent audit, findings remediation, deployment simulation, and source verification.
@@ -124,7 +126,7 @@ The implementation accepts cliff and vesting durations in seconds. Focused revie
 - Both rounds use the same immutable listing timestamp.
 - Round 1 and Round 2 follow their independent accepted release schedules without cross-round accounting.
 - Listing scheduling reverts while either round has pending purchases or is not listing-ready.
-- Unsold inventory is not moved automatically.
+- Unsold inventory is not moved automatically and can be returned only once to the immutable source after the round ends with no pending purchases.
 - No Mainnet deployment script or broadcast is added while the production gates remain open.
 
 ## 2026-09-01 public access amendment

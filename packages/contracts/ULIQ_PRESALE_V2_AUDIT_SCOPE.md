@@ -52,9 +52,12 @@ Round start and end timestamps are owner-configurable only while a round is in `
 2. Deploy one vesting contract per round, both pointing to the shared listing controller.
 3. Deploy one separately scoped production custody instance per round. A shared custody deployment would require explicit round-aware purchase-ID namespacing and a separate design review.
 4. Deploy Round 1 without a predecessor and Round 2 with Round 1 as its predecessor.
-5. Bind both rounds in `ULIQGlobalListing`, bind each vesting contract and custody implementation to its round, fund the exact inventories, configure the windows, and mark each round ready.
+5. Freeze an immutable inventory-source Safe in each round constructor. The same Safe may be used for both rounds, but the value is independently stored and verified per round.
+6. Bind both rounds in `ULIQGlobalListing`, bind each vesting contract and custody implementation to its round, approve each exact round allocation from its inventory source, call `fundInventory()`, configure the windows, and mark each round ready.
 
-The owner can configure sale windows before readiness, activate, pause, resume, mark listing-pending, complete each sale, bind the round addresses, and schedule the shared listing timestamp. Ownership is therefore a critical trust boundary and is expected to be held by independently verified Safe addresses. Buyers can withdraw only their pending purchases during the withdrawal window. Any caller can finalize an expired pending purchase, end an economically exhausted or elapsed round, and acknowledge a reached listing timestamp.
+The owner can configure sale windows before readiness, activate, pause, resume, mark listing-pending, complete each sale, release unsold inventory to its immutable source, bind the round addresses, and schedule the shared listing timestamp. Ownership is therefore a critical trust boundary and is expected to be held by independently verified Safe addresses. Buyers can withdraw only their pending purchases during the withdrawal window. Any caller can finalize an expired pending purchase, end an economically exhausted or elapsed round, and acknowledge a reached listing timestamp.
+
+Only the immutable inventory source can call `fundInventory()`, and it can do so only once while the round is in `DRAFT`. Direct token donations do not satisfy the funding gate. `releaseUnsold()` accepts no recipient or amount; it is available only after an ended state with no pending purchases and returns the exact unsold allocation once to the same immutable source. Unexpected direct ULIQ donations are not included in that amount and remain isolated.
 
 The listing contract records a timestamp; it does not create DEX liquidity, verify a DEX pool, execute a listing transaction, or validate a market price. Those operations and their evidence are external to this source set.
 
@@ -63,6 +66,7 @@ The listing contract records a timestamp; it does not create DEX liquidity, veri
 - Presale operations cannot mint ULIQ or exceed the fixed token supply.
 - Raised USDC, sold ULIQ, per-wallet purchases, and round allocation never exceed their configured caps.
 - Pending allocation is always backed by round inventory.
+- Readiness requires the exact allocation to have been pulled once from the immutable inventory source.
 - A purchase can be withdrawn or finalized, never both, and payment custody settles it at most once.
 - Direct USDC transfers are isolated as surplus and cannot be released through a purchase settlement; accounted payment liabilities remain fully backed.
 - No buyer can claim ULIQ before the shared listing timestamp.
@@ -71,6 +75,7 @@ The listing contract records a timestamp; it does not create DEX liquidity, veri
 - Each vesting pool remains independently funded and follows only its configured release schedule.
 - Reentrancy or a failing token/custody transfer cannot leave partial purchase, refund, finalization, or claim state.
 - Deployment wiring cannot substitute malicious round, vesting, listing, token, predecessor, or custody addresses.
+- Unsold inventory cannot be released before the round ends, while purchases remain pending, more than once, or to any caller-selected recipient.
 
 ## Test evidence supplied to reviewers
 
@@ -99,7 +104,7 @@ Their tests are under `test/uliq/legacy-testnet/`, and their deployment/configur
 - Obtain written Legal approval for the proposed onchain custody/safeguarding model. If rejected, freeze and audit must stop pending a replacement design.
 - Freeze the withdrawal period, exact calendar interpretation, sale timestamps, canonical USDC address, Safe addresses, thresholds, and ownership-transfer sequence.
 - Resolve ADR-001 decisions for legal access, safeguarding, cancellation, and refunds.
-- Decide and implement the unsold-token recovery policy; Presale V2 currently leaves unsold ULIQ in each round.
+- Freeze and independently verify each immutable inventory-source Safe, its owner set and threshold, then reconcile approval, funding, return receipts, events, balances, and finalized state through the admin workflow.
 - Decide whether eligibility/KYC/allowlisting is enforced off-chain or on-chain; the current contracts contain no buyer allowlist.
 - Define and review the DEX liquidity/listing procedure; the current listing controller is time-based only.
 - Add a chain-guarded, reproducible Mainnet deployment and configuration script plus bytecode/address reconciliation checks.

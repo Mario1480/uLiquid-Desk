@@ -40,6 +40,7 @@ const config: UliqPublicPresaleConfig = {
       contractAddress: ROUND_ONE,
       vestingAddress: "0x0000000000000000000000000000000000000012",
       paymentCustodyAddress: "0x0000000000000000000000000000000000000013",
+      inventorySourceAddress: "0x0000000000000000000000000000000000000099",
       expected
     },
     {
@@ -48,6 +49,7 @@ const config: UliqPublicPresaleConfig = {
       contractAddress: ROUND_TWO,
       vestingAddress: "0x0000000000000000000000000000000000000022",
       paymentCustodyAddress: "0x0000000000000000000000000000000000000023",
+      inventorySourceAddress: "0x0000000000000000000000000000000000000099",
       expected
     }
   ],
