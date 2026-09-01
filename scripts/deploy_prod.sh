@@ -100,9 +100,13 @@ echo "==> Position monitoring: ${AI_POSITION_MONITORING_ENABLED}"
 export NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED="${NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED:-true}"
 export NEXT_PUBLIC_ULIQ_ADMIN_VISIBLE="${NEXT_PUBLIC_ULIQ_ADMIN_VISIBLE:-true}"
 export ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED="${ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED:-true}"
+export ULIQ_ENABLED="${ULIQ_ENABLED:-false}"
+export NEXT_PUBLIC_ULIQ_ENABLED="${NEXT_PUBLIC_ULIQ_ENABLED:-false}"
 echo "==> ULIQ public preview: ${NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED}"
 echo "==> ULIQ admin visibility: ${NEXT_PUBLIC_ULIQ_ADMIN_VISIBLE}"
 echo "==> ULIQ schedule admin API: ${ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED}"
+echo "==> Legacy ULIQ API: ${ULIQ_ENABLED}"
+echo "==> Legacy ULIQ web: ${NEXT_PUBLIC_ULIQ_ENABLED}"
 
 if [[ "${#TARGET_SERVICES[@]}" -gt 0 ]]; then
   mapfile -t AVAILABLE_SERVICES < <(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --services)
