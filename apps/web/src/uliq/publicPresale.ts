@@ -123,7 +123,7 @@ export type PublicWalletState = {
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 
 export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPresaleOverview {
-  const token = (value: bigint, decimals: number) => (value * 10n ** BigInt(decimals)).toString();
+  const token = (value: bigint, decimals: number) => (value * BigInt(10) ** BigInt(decimals)).toString();
   const round = (input: {
     id: PublicPresaleRoundId;
     number: number;
@@ -183,11 +183,11 @@ export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPres
         allocationUliq: 50_000_000n,
         priceUsdcRawPerUliq: 2_000n,
         hardCapUsdc: 100_000n,
-        minPurchaseUsdc: 500n,
+        minPurchaseUsdc: BigInt(500),
         maxPurchaseUsdc: 10_000n,
-        initialUnlockBps: 500n,
-        cliffDays: 90n,
-        vestingDays: 548n
+        initialUnlockBps: BigInt(500),
+        cliffDays: BigInt(90),
+        vestingDays: BigInt(548)
       }),
       round({
         id: "round-2",
@@ -195,11 +195,11 @@ export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPres
         allocationUliq: 100_000_000n,
         priceUsdcRawPerUliq: 3_500n,
         hardCapUsdc: 350_000n,
-        minPurchaseUsdc: 100n,
+        minPurchaseUsdc: BigInt(100),
         maxPurchaseUsdc: 5_000n,
         initialUnlockBps: 2_500n,
-        cliffDays: 0n,
-        vestingDays: 274n
+        cliffDays: BigInt(0),
+        vestingDays: BigInt(274)
       })
     ],
     asOfBlock: "0",
@@ -214,7 +214,7 @@ export function secondsToDays(value: string): number {
 
 export function progressPercent(valueRaw: string, capRaw: string): number {
   const cap = BigInt(capRaw || "0");
-  if (cap === 0n) return 0;
+  if (cap === BigInt(0)) return 0;
   return Number(BigInt(valueRaw || "0") * 10_000n / cap) / 100;
 }
 

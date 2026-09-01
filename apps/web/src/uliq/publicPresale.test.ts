@@ -23,11 +23,11 @@ test("public presale preview exposes approved round parameters without enabling 
   assert.equal(overview.chainId, 42_161);
   assert.equal(overview.purchasesEnabled, false);
   assert.equal(overview.rounds[0]?.state, "DRAFT");
-  assert.equal(overview.rounds[0]?.allocationCapUliqRaw, (50_000_000n * 10n ** 18n).toString());
+  assert.equal(overview.rounds[0]?.allocationCapUliqRaw, (BigInt(50_000_000) * BigInt(10) ** BigInt(18)).toString());
   assert.equal(overview.rounds[0]?.priceUsdcRawPerUliq, "2000");
   assert.equal(overview.rounds[0]?.minPurchaseUsdcRaw, "500000000");
   assert.equal(overview.rounds[0]?.maxPurchaseUsdcRaw, "10000000000");
-  assert.equal(overview.rounds[1]?.allocationCapUliqRaw, (100_000_000n * 10n ** 18n).toString());
+  assert.equal(overview.rounds[1]?.allocationCapUliqRaw, (BigInt(100_000_000) * BigInt(10) ** BigInt(18)).toString());
   assert.equal(overview.rounds[1]?.priceUsdcRawPerUliq, "3500");
   assert.equal(overview.rounds[1]?.minPurchaseUsdcRaw, "100000000");
   assert.equal(overview.rounds[1]?.maxPurchaseUsdcRaw, "5000000000");

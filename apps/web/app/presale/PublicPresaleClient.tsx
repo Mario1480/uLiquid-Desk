@@ -461,10 +461,10 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
           {(walletState?.vesting ?? overview.rounds.map((round) => ({ roundId: round.id } as PublicVestingPosition))).map((position) => {
             const round = overview.rounds.find((item) => item.id === position.roundId);
             const hasData = typeof position.allocatedRaw === "string";
-            const progress = hasData && BigInt(position.allocatedRaw) > 0n ? Number(BigInt(position.vestedRaw) * 10_000n / BigInt(position.allocatedRaw)) / 100 : 0;
+            const progress = hasData && BigInt(position.allocatedRaw) > BigInt(0) ? Number(BigInt(position.vestedRaw) * BigInt(10_000) / BigInt(position.allocatedRaw)) / 100 : 0;
             return (
               <article className="uiSection publicPresaleVestingCard" key={position.roundId}>
-                <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><span className="uliqSectionEyebrow">{round ? t("rounds.round", { number: round.number }) : position.roundId}</span><h2 className="uiSectionTitle">{t("vesting.title")}</h2></div><span className={`uiStatusBadge uiStatusBadge-${BigInt(position.claimableRaw ?? "0") > 0n ? "success" : "neutral"}`}>{formatRaw(position.claimableRaw, 18)} ULIQ</span></div>
+                <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><span className="uliqSectionEyebrow">{round ? t("rounds.round", { number: round.number }) : position.roundId}</span><h2 className="uiSectionTitle">{t("vesting.title")}</h2></div><span className={`uiStatusBadge uiStatusBadge-${BigInt(position.claimableRaw ?? "0") > BigInt(0) ? "success" : "neutral"}`}>{formatRaw(position.claimableRaw, 18)} ULIQ</span></div>
                 <div className="publicPresaleMetrics">
                   <div><span>{t("vesting.allocated")}</span><strong>{formatRaw(position.allocatedRaw, 18)} ULIQ</strong></div>
                   <div><span>{t("vesting.vested")}</span><strong>{formatRaw(position.vestedRaw, 18)} ULIQ</strong></div>
@@ -478,8 +478,8 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
                   <div><dt>{t("vesting.linearStart")}</dt><dd>{formatDate(position.linearVestingStart, locale)}</dd></div>
                   <div><dt>{t("vesting.vestingEnd")}</dt><dd>{formatDate(position.vestingEnd, locale)}</dd></div>
                 </dl>
-                <button className="btn btnPrimary" type="button" disabled={!hasData || !connectedMatchesSession || BigInt(position.claimableRaw ?? "0") === 0n || busy !== null} onClick={() => void runAction(`claim:${position.roundId}`, () => claim(position), t("vesting.claimSubmitted"))}><AppIcon name="withdraw" /> {t("vesting.claim")}</button>
-                {hasData && BigInt(position.claimableRaw) === 0n ? <p className="uiSectionDescription">{t("vesting.nothing")}</p> : null}
+                <button className="btn btnPrimary" type="button" disabled={!hasData || !connectedMatchesSession || BigInt(position.claimableRaw ?? "0") === BigInt(0) || busy !== null} onClick={() => void runAction(`claim:${position.roundId}`, () => claim(position), t("vesting.claimSubmitted"))}><AppIcon name="withdraw" /> {t("vesting.claim")}</button>
+                {hasData && BigInt(position.claimableRaw) === BigInt(0) ? <p className="uiSectionDescription">{t("vesting.nothing")}</p> : null}
               </article>
             );
           })}
