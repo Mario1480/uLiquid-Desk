@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ScriptBase} from "../ScriptBase.sol";
-import {ULIQToken} from "../../src/uliq/ULIQToken.sol";
-import {ULIQPresale} from "../../src/uliq/ULIQPresale.sol";
-import {ULIQPresaleVesting} from "../../src/uliq/ULIQPresaleVesting.sol";
-import {ULIQTestnetEscrow} from "../../src/uliq/testnet/ULIQTestnetEscrow.sol";
+import {ScriptBase} from "../../ScriptBase.sol";
+import {ULIQToken} from "../../../src/uliq/shared/ULIQToken.sol";
+import {ULIQPresale} from "../../../src/uliq/legacy-testnet/ULIQPresale.sol";
+import {ULIQPresaleVesting} from "../../../src/uliq/legacy-testnet/ULIQPresaleVesting.sol";
+import {ULIQTestnetEscrow} from "../../../src/uliq/legacy-testnet/ULIQTestnetEscrow.sol";
 
-/// @notice Second deployment stage, executed by the testnet allocation-controller/admin signer.
+/// @notice Second legacy MVP deployment stage, executed by the testnet allocation-controller/admin signer.
 contract ConfigureULIQTestnet is ScriptBase {
     uint256 public constant ARBITRUM_SEPOLIA_CHAIN_ID = 421_614;
     uint256 public constant LOCAL_CHAIN_ID = 31_337;

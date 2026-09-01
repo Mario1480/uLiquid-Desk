@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-/// @notice Faucet-style six-decimal USDC mock for local and Arbitrum Sepolia ULIQ testing only.
-contract ULIQMockUSDC is ERC20 {
-    constructor() ERC20("ULIQ Test USDC", "tUSDC") {}
+/// @notice Test-only six-decimal payment token for the ULIQ two-round suite.
+contract ULIQPresaleMockUSDC is ERC20 {
+    constructor() ERC20("ULIQ Presale Mock USDC", "mUSDC") {}
 
     function decimals() public pure override returns (uint8) {
         return 6;

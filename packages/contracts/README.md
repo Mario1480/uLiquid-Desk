@@ -4,6 +4,9 @@ Foundry workspace for the current onchain BotVault contracts.
 
 ## ULIQ testnet MVP
 
+- Source: `src/uliq/legacy-testnet/`
+- Tests: `test/uliq/legacy-testnet/`
+- Deployment scripts: `script/uliq/legacy-testnet/`
 - Compiler: Solidity `0.8.30`
 - EVM target: `paris`
 - OpenZeppelin Contracts: exact `5.4.0`
@@ -12,7 +15,7 @@ Foundry workspace for the current onchain BotVault contracts.
 
 ## ULIQ two-round contract review draft
 
-ADR-009 adds an isolated review package without changing the deployed testnet MVP:
+ADR-009 adds an isolated review package under `src/uliq/presale-v2/` without changing the deployed testnet MVP. The shared token is under `src/uliq/shared/`:
 
 - `ULIQPresaleRound.sol`: one generic non-upgradeable implementation for both accepted rounds.
 - `ULIQPresaleRoundVesting.sol`: one isolated listing-based release pool per round.
@@ -24,7 +27,9 @@ The review constants are Round 1: 50,000,000 ULIQ at 0.002 USDC, 100,000 USDC ha
 
 The implementation keeps unsold inventory in each round and includes no Mainnet deployment script. Production custody, ADR-001 legal/access/cancellation decisions, exact calendar conversion, Safe addresses, audit, API/indexer migration, and unsold-token recovery remain explicit blockers. The code and passing tests must not be described as audited or Mainnet-ready.
 
-Run the focused suite with `npm -w @mm/contracts run test:uliq`. Deployment and configuration are intentionally separate stages so addresses and ownership can be reconciled before inventory funding. No mainnet script is provided for ULIQ while ADR-001 is blocked.
+The exact external-review handoff, exclusions, trust assumptions, and open blockers are documented in [`ULIQ_PRESALE_V2_AUDIT_SCOPE.md`](./ULIQ_PRESALE_V2_AUDIT_SCOPE.md).
+
+Run only the new review suite with `npm -w @mm/contracts run test:uliq:presale-v2`, only the previous MVP suite with `npm -w @mm/contracts run test:uliq:legacy-testnet`, or both with `npm -w @mm/contracts run test:uliq`. Deployment and configuration are intentionally separate stages so addresses and ownership can be reconciled before inventory funding. No Mainnet script is provided for ULIQ while ADR-001 is blocked.
 
 ### Arbitrum Sepolia deployment preflight
 

@@ -7,7 +7,8 @@ import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20P
 
 /// @title uLiquid Token
 /// @notice Network-neutral fixed-supply utility token for ULIQ.
-/// @dev The complete supply is minted once. This contract has no mint authority or proxy hooks.
+/// @dev Shared by the legacy testnet MVP and the two-round presale review package. The complete supply is minted once.
+/// This contract has no mint authority or proxy hooks.
 contract ULIQToken is ERC20, ERC20Burnable, ERC20Permit {
     uint256 public constant MAX_SUPPLY = 1_000_000_000 ether;
 

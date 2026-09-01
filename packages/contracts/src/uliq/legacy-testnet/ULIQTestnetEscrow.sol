@@ -6,9 +6,9 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IULIQPaymentCustody} from "../interfaces/IULIQPaymentCustody.sol";
+import {IULIQPaymentCustody} from "../shared/interfaces/IULIQPaymentCustody.sol";
 
-/// @title ULIQ Testnet Escrow
+/// @title ULIQ Legacy Testnet Escrow
 /// @notice TESTNET / PROVISIONAL custody adapter with purchase-bound refund or treasury settlement.
 /// @dev This contract is not a production safeguarding decision while ADR-001 remains blocked.
 contract ULIQTestnetEscrow is IULIQPaymentCustody, Ownable2Step, ReentrancyGuard {

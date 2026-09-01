@@ -7,7 +7,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-/// @title ULIQ Presale Vesting
+/// @title ULIQ Legacy Testnet Presale Vesting
 /// @notice Aggregates finalized presale allocations under one immutable global launch schedule.
 contract ULIQPresaleVesting is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;

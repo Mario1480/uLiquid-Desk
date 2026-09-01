@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ScriptBase} from "../ScriptBase.sol";
-import {ULIQLocker} from "../../src/uliq/ULIQLocker.sol";
+import {ScriptBase} from "../../ScriptBase.sol";
+import {ULIQLocker} from "../../../src/uliq/legacy-testnet/ULIQLocker.sol";
 
-/// @notice Deploys only the ADR-008 locker while preserving the existing ULIQ testnet suite.
+/// @notice Deploys only the legacy ADR-008 locker while preserving the existing ULIQ testnet suite.
 contract DeployULIQLockerTestnet is ScriptBase {
     uint256 public constant ARBITRUM_SEPOLIA_CHAIN_ID = 421_614;
     uint256 public constant LOCAL_CHAIN_ID = 31_337;

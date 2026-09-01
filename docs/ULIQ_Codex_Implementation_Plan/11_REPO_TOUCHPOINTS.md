@@ -25,12 +25,12 @@ Vorhanden:
 
 Geplant:
 
-- `packages/contracts/src/uliq/ULIQToken.sol`
-- `packages/contracts/src/uliq/ULIQPresale.sol`
-- `packages/contracts/src/uliq/ULIQPresaleVesting.sol`
-- `packages/contracts/src/uliq/ULIQLocker.sol`
-- `packages/contracts/script/uliq/*`
-- `packages/contracts/test/uliq/*`
+- `packages/contracts/src/uliq/shared/ULIQToken.sol`
+- `packages/contracts/src/uliq/presale-v2/*`
+- `packages/contracts/src/uliq/legacy-testnet/*`
+- `packages/contracts/script/uliq/legacy-testnet/*`
+- `packages/contracts/test/uliq/presale-v2/*`
+- `packages/contracts/test/uliq/legacy-testnet/*`
 
 Konflikte/Entscheidungen:
 

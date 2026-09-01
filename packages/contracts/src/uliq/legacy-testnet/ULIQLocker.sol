@@ -5,8 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-/// @title ULIQ Utility Locker
-/// @notice Locks wallet-held ULIQ for fixed product-benefit periods without rewards or yield.
+/// @title ULIQ Legacy Testnet Utility Locker
+/// @notice Legacy testnet implementation that locks wallet-held ULIQ for fixed product-benefit periods.
 contract ULIQLocker is ReentrancyGuard {
     using SafeERC20 for IERC20;
 

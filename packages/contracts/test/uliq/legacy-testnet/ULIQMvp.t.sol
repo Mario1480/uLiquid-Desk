@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ULIQToken} from "../../src/uliq/ULIQToken.sol";
-import {ULIQPresale} from "../../src/uliq/ULIQPresale.sol";
-import {ULIQPresaleVesting} from "../../src/uliq/ULIQPresaleVesting.sol";
-import {ULIQLocker} from "../../src/uliq/ULIQLocker.sol";
-import {ULIQTestnetEscrow} from "../../src/uliq/testnet/ULIQTestnetEscrow.sol";
-import {ULIQMockUSDC} from "../../src/uliq/testnet/ULIQMockUSDC.sol";
-import {DeployULIQTestnet} from "../../script/uliq/DeployULIQTestnet.s.sol";
+import {ULIQToken} from "../../../src/uliq/shared/ULIQToken.sol";
+import {ULIQPresale} from "../../../src/uliq/legacy-testnet/ULIQPresale.sol";
+import {ULIQPresaleVesting} from "../../../src/uliq/legacy-testnet/ULIQPresaleVesting.sol";
+import {ULIQLocker} from "../../../src/uliq/legacy-testnet/ULIQLocker.sol";
+import {ULIQTestnetEscrow} from "../../../src/uliq/legacy-testnet/ULIQTestnetEscrow.sol";
+import {ULIQMockUSDC} from "../../../src/uliq/legacy-testnet/ULIQMockUSDC.sol";
+import {DeployULIQTestnet} from "../../../script/uliq/legacy-testnet/DeployULIQTestnet.s.sol";
 
 interface VmUliq {
     function addr(uint256 privateKey) external returns (address);

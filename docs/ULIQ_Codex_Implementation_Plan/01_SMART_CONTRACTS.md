@@ -2,9 +2,9 @@
 
 ## ADR-009 review-draft supersession
 
-The new review-only two-round implementation is defined by `ADR_009_TWO_ROUND_PRESALE_TOKENOMICS.md` and lives in `packages/contracts/src/uliq/ULIQPresaleRound.sol`, `ULIQPresaleRoundVesting.sol`, and `ULIQGlobalListing.sol`. It supersedes the single-round 120,000,000 ULIQ, 0.001 USDC, 25/75, nine-month presale parameters below for future production design.
+The new review-only two-round implementation is defined by `ADR_009_TWO_ROUND_PRESALE_TOKENOMICS.md` and lives in `packages/contracts/src/uliq/presale-v2/`. Its exact audit handoff is documented in `packages/contracts/ULIQ_PRESALE_V2_AUDIT_SCOPE.md`. It supersedes the single-round 120,000,000 ULIQ, 0.001 USDC, 25/75, nine-month presale parameters below for future production design.
 
-The existing `ULIQPresale.sol`, `ULIQPresaleVesting.sol`, testnet deployment scripts, and the remaining sections of this document continue to describe the currently deployed testnet MVP. They are not silently migrated by the review draft. ADR-001 remains the production and Mainnet gate.
+The existing `ULIQPresale.sol`, `ULIQPresaleVesting.sol`, `ULIQLocker.sol`, provisional testnet custody, and testnet deployment scripts are isolated under `legacy-testnet/` directories and continue to describe the previously deployed testnet MVP. They are not silently migrated by the review draft. ADR-001 remains the production and Mainnet gate.
 
 ## Gate
 

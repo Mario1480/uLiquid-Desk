@@ -11,7 +11,8 @@ import {IULIQGlobalListing} from "./interfaces/IULIQGlobalListing.sol";
 
 /// @title ULIQ Presale Round Vesting
 /// @notice Holds one round's finalized allocations under the shared listing timestamp.
-/// @dev The initial unlock is claimable at listing. The remainder starts linear vesting after the cliff.
+/// @dev Part of the two-round review package. The initial unlock is claimable at listing. The remainder starts linear
+/// vesting after the cliff.
 contract ULIQPresaleRoundVesting is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 

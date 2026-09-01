@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ULIQGlobalListing} from "../../src/uliq/ULIQGlobalListing.sol";
-import {ULIQPresaleRound} from "../../src/uliq/ULIQPresaleRound.sol";
-import {ULIQPresaleRoundVesting} from "../../src/uliq/ULIQPresaleRoundVesting.sol";
-import {ULIQToken} from "../../src/uliq/ULIQToken.sol";
-import {ULIQMockUSDC} from "../../src/uliq/testnet/ULIQMockUSDC.sol";
-import {ULIQTestnetEscrow} from "../../src/uliq/testnet/ULIQTestnetEscrow.sol";
+import {ULIQGlobalListing} from "../../../src/uliq/presale-v2/ULIQGlobalListing.sol";
+import {ULIQPresaleRound} from "../../../src/uliq/presale-v2/ULIQPresaleRound.sol";
+import {ULIQPresaleRoundVesting} from "../../../src/uliq/presale-v2/ULIQPresaleRoundVesting.sol";
+import {ULIQToken} from "../../../src/uliq/shared/ULIQToken.sol";
+import {ULIQPresaleMockUSDC} from "./fixtures/ULIQPresaleMockUSDC.sol";
+import {ULIQPresaleMockCustody} from "./fixtures/ULIQPresaleMockCustody.sol";
 
 contract ULIQPresaleRoundHandler {
     ULIQPresaleRound public immutable presale;
-    ULIQMockUSDC public immutable usdc;
+    ULIQPresaleMockUSDC public immutable usdc;
     uint256 public expectedPendingCount;
     uint256 public expectedPendingAllocation;
     uint256[] public purchaseIds;
 
-    constructor(ULIQPresaleRound presale_, ULIQMockUSDC usdc_, ULIQTestnetEscrow custody_) {
+    constructor(ULIQPresaleRound presale_, ULIQPresaleMockUSDC usdc_, ULIQPresaleMockCustody custody_) {
         presale = presale_;
         usdc = usdc_;
         usdc_.approve(address(custody_), type(uint256).max);
@@ -53,17 +53,17 @@ contract ULIQPresaleRoundsInvariantTest {
 
     ULIQToken internal token;
     ULIQPresaleRound internal presale;
-    ULIQTestnetEscrow internal custody;
+    ULIQPresaleMockCustody internal custody;
     ULIQPresaleRoundHandler internal handler;
     address[] private _targets;
 
     function setUp() public {
         token = new ULIQToken(address(this));
-        ULIQMockUSDC usdc = new ULIQMockUSDC();
+        ULIQPresaleMockUSDC usdc = new ULIQPresaleMockUSDC();
         ULIQGlobalListing listing = new ULIQGlobalListing(address(this));
         ULIQPresaleRoundVesting vesting =
             new ULIQPresaleRoundVesting(address(token), address(listing), address(this), 500, 90 days, 548 days);
-        custody = new ULIQTestnetEscrow(address(usdc), address(this), address(0x7EAA5));
+        custody = new ULIQPresaleMockCustody(address(usdc), address(0x7EAA5));
         presale = new ULIQPresaleRound(
             1,
             address(token),

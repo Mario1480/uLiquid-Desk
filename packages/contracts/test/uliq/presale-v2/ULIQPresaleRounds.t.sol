@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ULIQGlobalListing} from "../../src/uliq/ULIQGlobalListing.sol";
-import {ULIQPresaleRound} from "../../src/uliq/ULIQPresaleRound.sol";
-import {ULIQPresaleRoundVesting} from "../../src/uliq/ULIQPresaleRoundVesting.sol";
-import {ULIQToken} from "../../src/uliq/ULIQToken.sol";
-import {ULIQMockUSDC} from "../../src/uliq/testnet/ULIQMockUSDC.sol";
-import {ULIQTestnetEscrow} from "../../src/uliq/testnet/ULIQTestnetEscrow.sol";
+import {ULIQGlobalListing} from "../../../src/uliq/presale-v2/ULIQGlobalListing.sol";
+import {ULIQPresaleRound} from "../../../src/uliq/presale-v2/ULIQPresaleRound.sol";
+import {ULIQPresaleRoundVesting} from "../../../src/uliq/presale-v2/ULIQPresaleRoundVesting.sol";
+import {ULIQToken} from "../../../src/uliq/shared/ULIQToken.sol";
+import {ULIQPresaleMockUSDC} from "./fixtures/ULIQPresaleMockUSDC.sol";
+import {ULIQPresaleMockCustody} from "./fixtures/ULIQPresaleMockCustody.sol";
 
 interface VmUliqRounds {
     function addr(uint256 privateKey) external returns (address);
@@ -48,12 +48,12 @@ contract ULIQPresaleRoundsTest {
 
     address internal buyer;
     ULIQToken internal token;
-    ULIQMockUSDC internal usdc;
+    ULIQPresaleMockUSDC internal usdc;
     ULIQGlobalListing internal listing;
     ULIQPresaleRoundVesting internal roundOneVesting;
     ULIQPresaleRoundVesting internal roundTwoVesting;
-    ULIQTestnetEscrow internal roundOneCustody;
-    ULIQTestnetEscrow internal roundTwoCustody;
+    ULIQPresaleMockCustody internal roundOneCustody;
+    ULIQPresaleMockCustody internal roundTwoCustody;
     ULIQPresaleRound internal roundOne;
     ULIQPresaleRound internal roundTwo;
     uint64 internal roundOneEnd;
@@ -62,7 +62,7 @@ contract ULIQPresaleRoundsTest {
     function setUp() public {
         buyer = VM.addr(BUYER_KEY);
         token = new ULIQToken(address(this));
-        usdc = new ULIQMockUSDC();
+        usdc = new ULIQPresaleMockUSDC();
         listing = new ULIQGlobalListing(address(this));
 
         roundOneVesting = new ULIQPresaleRoundVesting(
@@ -71,8 +71,8 @@ contract ULIQPresaleRoundsTest {
         roundTwoVesting = new ULIQPresaleRoundVesting(
             address(token), address(listing), address(this), ROUND_TWO_INITIAL_BPS, 0, ROUND_TWO_VESTING
         );
-        roundOneCustody = new ULIQTestnetEscrow(address(usdc), address(this), TREASURY);
-        roundTwoCustody = new ULIQTestnetEscrow(address(usdc), address(this), TREASURY);
+        roundOneCustody = new ULIQPresaleMockCustody(address(usdc), TREASURY);
+        roundTwoCustody = new ULIQPresaleMockCustody(address(usdc), TREASURY);
 
         roundOne = new ULIQPresaleRound(
             1,

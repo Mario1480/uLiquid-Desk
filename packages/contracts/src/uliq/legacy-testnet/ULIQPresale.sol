@@ -8,10 +8,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IULIQPaymentCustody} from "./interfaces/IULIQPaymentCustody.sol";
+import {IULIQPaymentCustody} from "../shared/interfaces/IULIQPaymentCustody.sol";
 import {ULIQPresaleVesting} from "./ULIQPresaleVesting.sol";
 
-/// @title ULIQ Presale
+/// @title ULIQ Legacy Testnet Presale
 /// @notice Arbitrum Sepolia MVP state machine with provisional, replaceable testnet custody.
 /// @dev This contract is not a legal or production safeguarding decision. ADR-001 remains blocked.
 contract ULIQPresale is Ownable2Step, ReentrancyGuard {

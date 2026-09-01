@@ -9,13 +9,13 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IULIQGlobalListing} from "./interfaces/IULIQGlobalListing.sol";
-import {IULIQPaymentCustody} from "./interfaces/IULIQPaymentCustody.sol";
+import {IULIQPaymentCustody} from "../shared/interfaces/IULIQPaymentCustody.sol";
 import {IULIQPresaleRoundLifecycle} from "./interfaces/IULIQPresaleRoundLifecycle.sol";
 import {ULIQPresaleRoundVesting} from "./ULIQPresaleRoundVesting.sol";
 
 /// @title ULIQ Presale Round
 /// @notice Generic, non-upgradeable implementation deployed once per accepted ULIQ presale round.
-/// @dev Review draft only. Production custody, legal access, cancellation, and unsold-token policy remain open.
+/// @dev Two-round review package only. Production custody, legal access, cancellation, and unsold-token policy remain open.
 contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLifecycle {
     using SafeERC20 for IERC20;
 

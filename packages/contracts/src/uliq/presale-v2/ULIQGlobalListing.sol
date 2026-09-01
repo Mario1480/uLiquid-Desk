@@ -7,7 +7,7 @@ import {IULIQPresaleRoundLifecycle} from "./interfaces/IULIQPresaleRoundLifecycl
 
 /// @title ULIQ Global Listing Controller
 /// @notice Stores the single listing timestamp shared by both ULIQ presale rounds.
-/// @dev Review draft only. Production use remains blocked by ADR-001 and an independent audit.
+/// @dev Two-round review package only. Production use remains blocked by ADR-001 and an independent audit.
 contract ULIQGlobalListing is Ownable2Step {
     address public roundOne;
     address public roundTwo;

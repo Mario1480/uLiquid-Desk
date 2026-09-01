@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice Replaceable custody boundary for the legally unresolved presale safeguarding model.
+/// @notice Shared custody boundary for ULIQ presale payment collection, refund, and settlement.
+/// @dev The interface does not select or approve a production custody implementation.
 interface IULIQPaymentCustody {
     function paymentToken() external view returns (address);
     function treasury() external view returns (address);
