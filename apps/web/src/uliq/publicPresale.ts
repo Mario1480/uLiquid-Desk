@@ -162,8 +162,8 @@ export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPres
     finalizedAllocationUliqRaw: "0",
     withdrawnAllocationUliqRaw: "0",
     initialUnlockBps: input.initialUnlockBps.toString(),
-    cliffSeconds: (input.cliffDays * 86_400n).toString(),
-    linearVestingDurationSeconds: (input.vestingDays * 86_400n).toString()
+    cliffSeconds: (input.cliffDays * BigInt(86_400)).toString(),
+    linearVestingDurationSeconds: (input.vestingDays * BigInt(86_400)).toString()
   });
 
   return {
@@ -180,11 +180,11 @@ export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPres
       round({
         id: "round-1",
         number: 1,
-        allocationUliq: 50_000_000n,
-        priceUsdcRawPerUliq: 2_000n,
-        hardCapUsdc: 100_000n,
+        allocationUliq: BigInt(50_000_000),
+        priceUsdcRawPerUliq: BigInt(2_000),
+        hardCapUsdc: BigInt(100_000),
         minPurchaseUsdc: BigInt(500),
-        maxPurchaseUsdc: 10_000n,
+        maxPurchaseUsdc: BigInt(10_000),
         initialUnlockBps: BigInt(500),
         cliffDays: BigInt(90),
         vestingDays: BigInt(548)
@@ -192,12 +192,12 @@ export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPres
       round({
         id: "round-2",
         number: 2,
-        allocationUliq: 100_000_000n,
-        priceUsdcRawPerUliq: 3_500n,
-        hardCapUsdc: 350_000n,
+        allocationUliq: BigInt(100_000_000),
+        priceUsdcRawPerUliq: BigInt(3_500),
+        hardCapUsdc: BigInt(350_000),
         minPurchaseUsdc: BigInt(100),
-        maxPurchaseUsdc: 5_000n,
-        initialUnlockBps: 2_500n,
+        maxPurchaseUsdc: BigInt(5_000),
+        initialUnlockBps: BigInt(2_500),
         cliffDays: BigInt(0),
         vestingDays: BigInt(274)
       })
@@ -209,13 +209,13 @@ export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPres
 }
 
 export function secondsToDays(value: string): number {
-  return Math.round(Number(BigInt(value) / 86_400n));
+  return Math.round(Number(BigInt(value) / BigInt(86_400)));
 }
 
 export function progressPercent(valueRaw: string, capRaw: string): number {
   const cap = BigInt(capRaw || "0");
   if (cap === BigInt(0)) return 0;
-  return Number(BigInt(valueRaw || "0") * 10_000n / cap) / 100;
+  return Number(BigInt(valueRaw || "0") * BigInt(10_000) / cap) / 100;
 }
 
 export function countdownLabel(target: string | null, nowMs = Date.now()): string | null {
