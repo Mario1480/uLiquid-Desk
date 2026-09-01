@@ -14,4 +14,4 @@ Dieser Index verweist auf die verbindlichen Entscheidungen im bestehenden ULIQ-P
 | [ADR-008](ADR_008_MANDATORY_LOCKING_SUBSCRIPTION_GATING.md) | Mandatory Locking & Subscription-Term Gating | `ACCEPTED FOR TESTNET MVP` |
 | [ADR-009](ADR_009_TWO_ROUND_PRESALE_TOKENOMICS.md) | Two-Round Presale & Revised Token Allocation | `ACCEPTED PARAMETERS / CONTRACT REVIEW DRAFT` |
 
-Implementation boundary: [Public Two-Round Presale Access](12_PUBLIC_PRESALE_ACCESS.md) is `IMPLEMENTED LOCALLY / ACTIVATION BLOCKED`.
+Implementation boundary: [Public Two-Round Presale Access](12_PUBLIC_PRESALE_ACCESS.md) is `PRODUCTION UI PREVIEW ACTIVE / SCHEDULE ADMIN ACTIVE / ONCHAIN ACTIVATION BLOCKED`.

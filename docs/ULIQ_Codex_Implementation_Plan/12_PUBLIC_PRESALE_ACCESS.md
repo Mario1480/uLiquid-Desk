@@ -2,9 +2,9 @@
 
 ## Status
 
-`IMPLEMENTED LOCALLY / UI PREVIEW APPROVED FOR NEXT DEPLOYMENT / ONCHAIN ACTIVATION BLOCKED`
+`PRODUCTION UI PREVIEW ACTIVE / SCHEDULE ADMIN ACTIVE / ONCHAIN ACTIVATION BLOCKED`
 
-The public application path is implemented in the existing Desk web and API services. The public read-only UI preview and the schedule-only Superadmin surface are approved to become visible with the next separately authorized deployment. This status does not authorize that deployment itself, a database migration, contract deployment, Mainnet activation, purchase activation, or any onchain transaction.
+The public application path is deployed in the existing Desk web and API services. The static public UI preview and the schedule-only Superadmin surface became active on the canonical production host on 2026-09-01 at commit `18f9960a`. The preparation migration was applied after a verified database backup. This status does not authorize contract deployment, public onchain reads, Mainnet activation, purchase activation, or any onchain transaction. Deployment evidence is recorded in [the production release note](../archive/tasks/2026-09-01-uliq-public-presale-preview-production-deploy.md).
 
 ## Product boundary
 
@@ -55,12 +55,11 @@ The public application path is implemented in the existing Desk web and API serv
 5. Migration review, backup, deployment rehearsal, and rollback plan.
 6. Staging browser E2E covering wallet verification, terms, both round parameters, quote, approval, purchase, replacement, withdrawal, permissionless finalization, vesting, claim, reload, and second-device recovery.
 7. Dual-RPC/indexer lag, reorg, reconciliation, alert, and manual-review runbook evidence.
-8. Explicit production activation approval. Static UI visibility, public onchain reads, purchases, and Mainnet approval remain separate changes. Only static UI visibility and schedule-only administration are currently approved for the next deployment.
+8. Explicit production activation approval. Static UI visibility and schedule-only administration are deployed. Public onchain reads, purchases, and Mainnet approval remain separate changes and require separate approval.
 
 ## Explicitly not completed
 
-- No migration has been applied.
-- No production server has been changed.
+- The production preparation migration and static UI preview are deployed; this is not evidence of onchain purchase readiness.
 - No contract has been deployed or called.
 - No Mainnet address, Safe, custody adapter, start block, terms version, or terms hash has been accepted.
 - No purchase flag has been enabled.
