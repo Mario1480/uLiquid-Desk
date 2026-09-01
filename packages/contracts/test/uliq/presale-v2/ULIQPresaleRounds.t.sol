@@ -118,8 +118,8 @@ contract ULIQPresaleRoundsTest {
 
         roundOneEnd = uint64(block.timestamp + 30 days);
         roundTwoEnd = uint64(uint256(roundOneEnd) + 30 days);
-        roundOne.configureSaleWindow(uint64(block.timestamp), roundOneEnd);
-        roundTwo.configureSaleWindow(roundOneEnd, roundTwoEnd);
+        roundOne.configureSaleWindow(0, uint64(block.timestamp), roundOneEnd);
+        roundTwo.configureSaleWindow(0, roundOneEnd, roundTwoEnd);
         roundOne.markReady();
         roundTwo.markReady();
         roundOne.activateSale();
@@ -160,7 +160,39 @@ contract ULIQPresaleRoundsTest {
 
     function testSaleWindowCanChangeOnlyInDraft() public {
         VM.expectRevert(ULIQPresaleRound.SaleWindowFrozen.selector);
-        roundOne.configureSaleWindow(uint64(block.timestamp), uint64(block.timestamp + 60 days));
+        roundOne.configureSaleWindow(1, uint64(block.timestamp), uint64(block.timestamp + 60 days));
+    }
+
+    function testSaleWindowVersionRejectsStaleSafeProposal() public {
+        ULIQPresaleRoundVesting vesting = new ULIQPresaleRoundVesting(
+            address(token), address(listing), address(this), ROUND_ONE_INITIAL_BPS, ROUND_ONE_CLIFF, ROUND_ONE_VESTING
+        );
+        ULIQPresaleMockCustody custody = new ULIQPresaleMockCustody(address(usdc), TREASURY);
+        ULIQPresaleRound draft = new ULIQPresaleRound(
+            3,
+            address(token),
+            address(usdc),
+            address(custody),
+            address(vesting),
+            address(listing),
+            address(0),
+            address(this),
+            ROUND_ONE_HARD_CAP,
+            ROUND_ONE_ALLOCATION,
+            ROUND_ONE_PRICE_E6,
+            ROUND_ONE_MINIMUM,
+            ROUND_ONE_MAXIMUM,
+            WITHDRAWAL_PERIOD
+        );
+        uint64 firstEnd = uint64(block.timestamp + 10 days);
+        draft.configureSaleWindow(0, uint64(block.timestamp), firstEnd);
+        require(draft.saleWindowVersion() == 1, "schedule_version_wrong");
+
+        VM.expectRevert(abi.encodeWithSelector(ULIQPresaleRound.SaleWindowVersionMismatch.selector, 0, 1));
+        draft.configureSaleWindow(0, uint64(block.timestamp + 1 days), uint64(uint256(firstEnd) + 1 days));
+
+        draft.configureSaleWindow(1, uint64(block.timestamp + 1 days), uint64(uint256(firstEnd) + 1 days));
+        require(draft.saleWindowVersion() == 2, "schedule_version_not_incremented");
     }
 
     function testRoundTwoRequiresRoundOneToEnd() public {
@@ -180,7 +212,7 @@ contract ULIQPresaleRoundsTest {
 
         VM.prank(buyer);
         VM.expectRevert();
-        roundTwo.configureSaleWindow(roundOneEnd, uint64(uint256(roundTwoEnd) + 1 days));
+        roundTwo.configureSaleWindow(1, roundOneEnd, uint64(uint256(roundTwoEnd) + 1 days));
     }
 
     function testRoundOneMinimumAndCumulativeMaximumAreEnforced() public {

@@ -9,12 +9,26 @@ import {
   getUliqPresaleRoundSchedule,
   saveUliqPresaleRoundSchedule
 } from "./presaleRoundSchedule.js";
+import { UliqPresaleRoundScheduleOnchainService } from "./presaleRoundScheduleOnchain.service.js";
 import { normalizeUliqTreasuryAddress, UliqTreasuryService } from "./treasury.service.js";
 import { ULIQ_LOCK_GATE_VERSION, ULIQ_REQUIRED_LOCK_SHARE_BPS } from "./math.js";
 
 const dexLaunchSchema = z.object({ dexLaunchTimestamp: z.string().trim().regex(/^[1-9]\d*$/).max(20) });
 const treasurySchema = z.object({ desiredAddress: z.string().trim().max(42) });
-const presaleRoundScheduleSchema = z.object({
+const presaleRoundIdSchema = z.enum(["round-1", "round-2"]);
+const schedulePrepareSchema = z.object({ draftVersion: z.number().int().min(1) });
+const scheduleRecordSchema = z.object({
+  actionId: z.string().trim().min(1).max(191),
+  transactionHash: z.string().trim().regex(/^0x[0-9a-fA-F]{64}$/)
+});
+type PresaleRoundSchedulePayload = {
+  reason: string;
+  rounds: [
+    { id: "round-1"; saleStart: string; saleEnd: string },
+    { id: "round-2"; saleStart: string; saleEnd: string }
+  ];
+};
+const presaleRoundScheduleSchema: z.ZodType<PresaleRoundSchedulePayload> = z.object({
   reason: z.string().trim().min(8).max(500),
   rounds: z.tuple([
     z.object({
@@ -47,6 +61,15 @@ const presaleRoundScheduleSchema = z.object({
       });
     }
   });
+  const firstEnd = new Date(value.rounds[0].saleEnd).getTime();
+  const secondStart = new Date(value.rounds[1].saleStart).getTime();
+  if (secondStart < firstEnd) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["rounds", 1, "saleStart"],
+      message: "Round 2 must not start before Round 1 ends"
+    });
+  }
 });
 const tierBenefitConfigSchema = z.object({
   reason: z.string().trim().min(8).max(500),
@@ -104,6 +127,17 @@ function publicPresaleContractsConfigured(env: NodeJS.ProcessEnv = process.env):
     && new Set(addresses).size === addresses.length;
 }
 
+function publicPresaleReadiness(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    publicPreviewEnabled: environmentEnabled(env.NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED),
+    apiReadsEnabled: environmentEnabled(env.ULIQ_PUBLIC_PRESALE_ENABLED),
+    contractsConfigured: publicPresaleContractsConfigured(env),
+    purchasesEnabled: environmentEnabled(env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED),
+    mainnetApproved: environmentEnabled(env.ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED),
+    legalApproved: environmentEnabled(env.ULIQ_PUBLIC_PRESALE_LEGAL_APPROVED)
+  };
+}
+
 export function registerUliqAdminRoutes(app: express.Express, deps: {
   db: any;
   presaleService: UliqPresaleService;
@@ -120,6 +154,26 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
     ip?: string | null;
   }): Promise<void>;
 }) {
+  let scheduleOnchainService: UliqPresaleRoundScheduleOnchainService | null = null;
+  const getScheduleOnchainService = () => scheduleOnchainService
+    ??= new UliqPresaleRoundScheduleOnchainService(deps.db);
+  const getScheduleState = async () => {
+    if (
+      environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED)
+      && publicPresaleContractsConfigured()
+    ) {
+      try {
+        return await getScheduleOnchainService().getState();
+      } catch {
+        return {
+          ...await getUliqPresaleRoundSchedule(deps.db),
+          onchainStatus: "INVALID",
+          onchainError: "uliq_presale_schedule_onchain_read_failed"
+        };
+      }
+    }
+    return getUliqPresaleRoundSchedule(deps.db);
+  };
   const requireSuperadmin: express.RequestHandler = (_req, res, next) => {
     void deps.requireSuperadmin(res).then((allowed) => {
       if (allowed) next();
@@ -156,7 +210,7 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
     const [overview, treasury, presaleSchedule, cursor, reconciliation, reservations, price, purchases, vesting, locks, tiers, alerts, audit] = await Promise.all([
       deps.presaleService.getOverview(),
       deps.treasuryService.getState(),
-      getUliqPresaleRoundSchedule(deps.db),
+      getScheduleState(),
       deps.db.onchainSyncCursor.findFirst({ where: { id: { startsWith: "uliq:" } }, orderBy: { updatedAt: "desc" } }),
       deps.db.uliqReconciliationRun.findFirst({ orderBy: { startedAt: "desc" } }),
       deps.db.uliqBenefitReservation.groupBy({ by: ["status"], _count: { _all: true } }),
@@ -176,6 +230,7 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       overview,
       treasury,
       presaleSchedule,
+      publicPresaleReadiness: publicPresaleReadiness(),
       indexer: cursor,
       reconciliation,
       reservations,
@@ -210,17 +265,11 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
 
   app.get("/admin/uliq/public-presale", requireAuth, requireSuperadmin, async (_req, res) => {
     if (!publicPresaleAdminEnabled(res)) return;
-    const presaleSchedule = await getUliqPresaleRoundSchedule(deps.db);
+    const presaleSchedule = await getScheduleState();
     return res.json({
       mode: "CONFIGURATION_PENDING",
       presaleSchedule,
-      readiness: {
-        publicPreviewEnabled: environmentEnabled(process.env.NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED),
-        apiReadsEnabled: environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED),
-        contractsConfigured: publicPresaleContractsConfigured(),
-        purchasesEnabled: environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED),
-        mainnetApproved: environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED)
-      }
+      readiness: publicPresaleReadiness()
     });
   });
 
@@ -262,6 +311,104 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         return res.status(500).json({ error: reason });
+      }
+    }
+  );
+
+  app.post(
+    "/admin/uliq/presale-rounds/:roundId/schedule/prepare",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!scheduleAdminEnabled(res)) return;
+      if (!environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED) || !publicPresaleContractsConfigured()) {
+        return res.status(409).json({ error: "uliq_public_presale_onchain_not_configured" });
+      }
+      const roundId = presaleRoundIdSchema.safeParse(req.params.roundId);
+      const body = schedulePrepareSchema.safeParse(req.body ?? {});
+      if (!roundId.success || !body.success) return res.status(400).json({ error: "invalid_payload" });
+      try {
+        const actor = getUserFromLocals(res);
+        const prepared = await getScheduleOnchainService().prepare(roundId.data, body.data.draftVersion);
+        await deps.recordAdminAuditEvent({
+          actorUserId: actor.id,
+          action: "uliq_presale_round_schedule_safe_prepared",
+          targetType: "uliq_presale_schedule",
+          targetId: prepared.actionId,
+          metadata: { roundId: roundId.data, draftVersion: body.data.draftVersion, preflight: prepared.preflight },
+          ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+        });
+        return res.json(prepared);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(reason.includes("stale") || reason.includes("frozen") ? 409 : 400).json({ error: reason });
+      }
+    }
+  );
+
+  app.post(
+    "/admin/uliq/presale-rounds/:roundId/ready/prepare",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!scheduleAdminEnabled(res)) return;
+      if (!environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED) || !publicPresaleContractsConfigured()) {
+        return res.status(409).json({ error: "uliq_public_presale_onchain_not_configured" });
+      }
+      const roundId = presaleRoundIdSchema.safeParse(req.params.roundId);
+      const body = schedulePrepareSchema.safeParse(req.body ?? {});
+      if (!roundId.success || !body.success) return res.status(400).json({ error: "invalid_payload" });
+      try {
+        const actor = getUserFromLocals(res);
+        const prepared = await getScheduleOnchainService().prepareMarkReady(roundId.data, body.data.draftVersion);
+        await deps.recordAdminAuditEvent({
+          actorUserId: actor.id,
+          action: "uliq_presale_round_ready_safe_prepared",
+          targetType: "uliq_presale_schedule",
+          targetId: prepared.actionId,
+          metadata: { roundId: roundId.data, draftVersion: body.data.draftVersion, preflight: prepared.preflight },
+          ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+        });
+        return res.json(prepared);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(reason.includes("stale") || reason.includes("state_invalid") ? 409 : 400).json({ error: reason });
+      }
+    }
+  );
+
+  app.post(
+    "/admin/uliq/presale-rounds/schedule/record-execution",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!scheduleAdminEnabled(res)) return;
+      if (!environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED) || !publicPresaleContractsConfigured()) {
+        return res.status(409).json({ error: "uliq_public_presale_onchain_not_configured" });
+      }
+      const parsed = scheduleRecordSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const actor = getUserFromLocals(res);
+        const action = await getScheduleOnchainService().recordExecution(
+          parsed.data.actionId,
+          parsed.data.transactionHash
+        );
+        await deps.recordAdminAuditEvent({
+          actorUserId: actor.id,
+          action: "uliq_presale_round_schedule_execution_recorded",
+          targetType: "uliq_presale_schedule",
+          targetId: parsed.data.actionId,
+          metadata: { transactionHash: parsed.data.transactionHash, status: action.status },
+          ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+        });
+        return res.json(action);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(reason.includes("not_found") ? 404 : 409).json({ error: reason });
       }
     }
   );

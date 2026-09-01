@@ -9,7 +9,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { logger } from "../logger.js";
 import { sendSerializedControllerTransaction } from "../vaults/controllerTransaction.js";
 import { uliqPresaleAbi } from "./abi.js";
-import { getUliqRuntimeConfig, type UliqRuntimeConfig } from "./config.js";
+import { getUliqRuntimeConfig } from "./config.js";
 import {
   assertUliqRpcPair,
   createUliqRpcPair,
@@ -24,6 +24,16 @@ const DEFAULT_BATCH_SIZE = 5;
 const DEFAULT_RETRY_SECONDS = 60;
 const DEFAULT_MAX_RETRY_SECONDS = 30 * 60;
 const DEFAULT_SUBMISSION_STALE_SECONDS = 30 * 60;
+const MAX_CANDIDATE_SCAN = 5_000;
+
+export type UliqAutoFinalizerConfig = {
+  chainId: number;
+  primaryRpcUrl: string;
+  secondaryRpcUrl: string;
+  contracts: {
+    presale: `0x${string}`;
+  };
+};
 
 type FinalizedHead = {
   number: bigint;
@@ -69,6 +79,7 @@ type UliqAutoFinalizerDeps = {
   settings?: UliqAutoFinalizerSettings;
   chain?: UliqAutoFinalizerChain;
   now?: () => Date;
+  privateKey?: `0x${string}`;
 };
 
 function enabled(value: string | undefined): boolean {
@@ -130,7 +141,7 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function actionKey(config: UliqRuntimeConfig, purchaseId: bigint): string {
+function actionKey(config: UliqAutoFinalizerConfig, purchaseId: bigint): string {
   return `uliq:finalize:${config.chainId}:${config.contracts.presale.toLowerCase()}:${purchaseId}`;
 }
 
@@ -155,14 +166,14 @@ function isReceiptNotFound(error: unknown): boolean {
 }
 
 export function createDefaultUliqAutoFinalizerChain(
-  config: UliqRuntimeConfig,
+  config: UliqAutoFinalizerConfig,
   rpc: UliqRpcPair = createUliqRpcPair(config),
   privateKey: `0x${string}` = normalizePrivateKey(process.env.ULIQ_FINALIZER_PRIVATE_KEY)
 ): UliqAutoFinalizerChain {
   const account = privateKeyToAccount(privateKey);
   const chain = defineChain({
     id: config.chainId,
-    name: "Arbitrum Sepolia",
+    name: config.chainId === 42161 ? "Arbitrum One" : "Arbitrum Sepolia",
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
     rpcUrls: { default: { http: [config.primaryRpcUrl] } }
   });
@@ -255,20 +266,26 @@ export function createDefaultUliqAutoFinalizerChain(
 export class UliqAutoFinalizerService {
   private readonly settings: UliqAutoFinalizerSettings;
   private readonly now: () => Date;
+  private readonly privateKey: `0x${string}` | undefined;
   private chain: UliqAutoFinalizerChain | null;
 
   constructor(
     private readonly db: any,
-    private readonly config: UliqRuntimeConfig = getUliqRuntimeConfig(),
+    private readonly config: UliqAutoFinalizerConfig = getUliqRuntimeConfig(),
     deps: UliqAutoFinalizerDeps = {}
   ) {
     this.settings = deps.settings ?? getUliqAutoFinalizerSettings();
     this.chain = deps.chain ?? null;
     this.now = deps.now ?? (() => new Date());
+    this.privateKey = deps.privateKey;
   }
 
   private getChain(): UliqAutoFinalizerChain {
-    return this.chain ??= createDefaultUliqAutoFinalizerChain(this.config);
+    return this.chain ??= createDefaultUliqAutoFinalizerChain(
+      this.config,
+      createUliqRpcPair(this.config),
+      this.privateKey ?? normalizePrivateKey(process.env.ULIQ_FINALIZER_PRIVATE_KEY)
+    );
   }
 
   private async ensureAction(purchase: any): Promise<any> {
@@ -493,13 +510,14 @@ export class UliqAutoFinalizerService {
         withdrawalDeadline: { lt: cutoff }
       },
       orderBy: [{ withdrawalDeadline: "asc" }, { purchaseBlockNumber: "asc" }, { logIndex: "asc" }],
-      take: this.settings.batchSize
+      take: MAX_CANDIDATE_SCAN
     });
     let submitted = 0;
     let alreadyFinalized = 0;
     let skipped = 0;
 
     for (const row of candidates) {
+      if (submitted >= this.settings.batchSize) break;
       const purchaseId = BigInt(String(row.purchaseIdOnchain));
       let action = await this.ensureAction(row);
       if (!this.actionMatches(action, purchaseId)) {
@@ -623,6 +641,7 @@ export class UliqAutoFinalizerService {
       submitted,
       alreadyFinalized,
       skipped,
+      hasMore: submitted >= this.settings.batchSize && candidates.length > submitted,
       reconciledConfirmed: reconciliation.confirmed,
       reconciledRetryable: reconciliation.retryable
     };

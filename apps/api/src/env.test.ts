@@ -97,3 +97,26 @@ test("assertApiEnv accepts a scoped ULIQ auto finalizer configuration", () => {
     ULIQ_AUTO_FINALIZER_BATCH_SIZE: "5"
   })));
 });
+
+test("assertApiEnv requires a dedicated key for ACTIVE public Presale finalization", () => {
+  assert.throws(
+    () => assertApiEnv(baseProductionEnv({
+      ULIQ_PUBLIC_PRESALE_ENABLED: "true",
+      ULIQ_PUBLIC_PRESALE_CHAIN_ID: "421614",
+      ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_MODE: "ACTIVE"
+    })),
+    /ULIQ_PUBLIC_PRESALE_FINALIZER_PRIVATE_KEY is required/
+  );
+});
+
+test("assertApiEnv requires explicit Mainnet approval for ACTIVE public Presale finalization", () => {
+  assert.throws(
+    () => assertApiEnv(baseProductionEnv({
+      ULIQ_PUBLIC_PRESALE_ENABLED: "true",
+      ULIQ_PUBLIC_PRESALE_CHAIN_ID: "42161",
+      ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_MODE: "ACTIVE",
+      ULIQ_PUBLIC_PRESALE_FINALIZER_PRIVATE_KEY: "2".repeat(64)
+    })),
+    /ACTIVE public Presale Mainnet finalization requires both Mainnet and Legal approval flags/
+  );
+});

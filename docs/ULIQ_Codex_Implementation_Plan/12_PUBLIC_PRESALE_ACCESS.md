@@ -37,6 +37,8 @@ The public application path is deployed in the existing Desk web and API service
 - Contract addresses, two distinct RPC endpoints, deployment start block, chain, terms version, and terms hash are explicit configuration.
 - The API cross-checks immutable round parameters, round ordering, token and USDC addresses, vesting bindings, and the shared listing controller at a finalized block before purchases are enabled.
 - Backend schedule dates are display-only drafts while contract dates are unset. They never authorize a purchase or mutate a contract.
+- With complete reviewed contract configuration, Superadmin can prepare an unsigned, version-bound Safe transaction for each round's sale window and reconcile its finalized execution. After a window is bound, a separate unsigned `markReady()` preparation verifies both RPCs, custody, vesting, listing, predecessor, economic allocation, and round inventory. The API never signs or broadcasts either owner action.
+- The V2 automatic finalizer defaults to `OFF`, supports read-only `OBSERVE`, and in `ACTIVE` checks finalized chain time every 15 minutes. A dedicated low-balance service EOA can finalize permissionless purchases; active Mainnet mode requires separate Mainnet and Legal approval flags.
 
 ## Transaction lifecycle
 
@@ -49,7 +51,7 @@ The public application path is deployed in the existing Desk web and API service
 ## Required release gates
 
 1. ADR-001 legal sign-off, including the direct-call access model and approved Presale Terms.
-2. Production custody and treasury-release decision.
+2. Written Legal approval of the proposed onchain custody, treasury-release, buyer-paid withdrawal gas, deadline, and cancellation model.
 3. Independent contract audit and remediation closure.
 4. Reviewed Arbitrum One addresses, deployment block, role matrix, Safe thresholds, and verified source code.
 5. Migration review, backup, deployment rehearsal, and rollback plan.

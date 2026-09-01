@@ -40,6 +40,7 @@ export const uliqPresaleAbi = parseAbi([
 ]);
 
 export const uliqPresaleRoundAbi = parseAbi([
+  "function owner() view returns (address)",
   "function roundId() view returns (uint8)",
   "function uliq() view returns (address)",
   "function usdc() view returns (address)",
@@ -50,6 +51,7 @@ export const uliqPresaleRoundAbi = parseAbi([
   "function state() view returns (uint8)",
   "function saleStart() view returns (uint64)",
   "function saleEnd() view returns (uint64)",
+  "function saleWindowVersion() view returns (uint64)",
   "function withdrawalPeriodSeconds() view returns (uint64)",
   "function hardCapUsdcRaw() view returns (uint256)",
   "function allocationCapUliqRaw() view returns (uint256)",
@@ -69,7 +71,9 @@ export const uliqPresaleRoundAbi = parseAbi([
   "function buy(uint256 maxUsdcAmountRaw,uint256 minUliqAllocationRaw) returns (uint256 purchaseId,uint256 acceptedUsdcRaw,uint256 uliqAllocationRaw)",
   "function withdrawPurchase(uint256 purchaseId)",
   "function finalizePurchase(uint256 purchaseId)",
-  "event SaleWindowConfigured(uint64 indexed saleStart,uint64 indexed saleEnd)",
+  "function configureSaleWindow(uint64 expectedVersion,uint64 saleStart,uint64 saleEnd)",
+  "function markReady()",
+  "event SaleWindowConfigured(uint64 indexed version,uint64 indexed saleStart,uint64 indexed saleEnd)",
   "event SaleStateChanged(uint8 indexed previousState,uint8 indexed nextState)",
   "event PurchaseCreated(uint8 indexed roundId,uint256 indexed purchaseId,address indexed buyer,uint256 usdcAmountRaw,uint256 uliqAllocationRaw,uint64 withdrawalDeadline)",
   "event PurchaseWithdrawn(uint8 indexed roundId,uint256 indexed purchaseId,address indexed buyer,uint256 usdcRefundRaw,uint256 cancelledUliqAllocationRaw)",
@@ -135,6 +139,8 @@ export const uliqPaymentCustodyAbi = parseAbi([
   "function treasury() view returns (address)",
   "function pendingTreasury() view returns (address)",
   "function balance() view returns (uint256)",
+  "function accountedBalance() view returns (uint256)",
+  "function surplusBalance() view returns (uint256)",
   "function totalCollected() view returns (uint256)",
   "function totalRefunded() view returns (uint256)",
   "function totalReleased() view returns (uint256)",

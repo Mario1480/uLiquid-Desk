@@ -21,7 +21,8 @@ export function isUliqPresaleScheduleValid(
   rounds: UliqPresaleScheduleDraft[],
   nowMs = Date.now()
 ): boolean {
-  return rounds.length === 2 && rounds.every((round) => {
+  if (rounds.length !== 2) return false;
+  const windowsValid = rounds.every((round) => {
     const start = new Date(round.saleStart).getTime();
     const end = new Date(round.saleEnd).getTime();
     return Boolean(
@@ -33,4 +34,9 @@ export function isUliqPresaleScheduleValid(
       && end > nowMs
     );
   });
+  if (!windowsValid) return false;
+  const roundOne = rounds.find((round) => round.id === "round-1");
+  const roundTwo = rounds.find((round) => round.id === "round-2");
+  if (!roundOne || !roundTwo) return false;
+  return new Date(roundTwo.saleStart).getTime() >= new Date(roundOne.saleEnd).getTime();
 }

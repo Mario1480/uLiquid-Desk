@@ -15,7 +15,8 @@ import {ULIQPresaleRoundVesting} from "./ULIQPresaleRoundVesting.sol";
 
 /// @title ULIQ Presale Round
 /// @notice Generic, non-upgradeable implementation deployed once per accepted ULIQ presale round.
-/// @dev Two-round review package only. Production custody, legal access, cancellation, and unsold-token policy remain open.
+/// @dev Two-round review package only. The custody candidate, legal access, cancellation, and unsold-token policy
+/// remain subject to review and approval.
 contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLifecycle {
     using SafeERC20 for IERC20;
 
@@ -65,6 +66,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     SaleState public state;
     uint64 public saleStart;
     uint64 public saleEnd;
+    uint64 public saleWindowVersion;
     uint256 public nextPurchaseId = 1;
     uint256 public totalRaisedUsdcRaw;
     uint256 public totalSoldUliqRaw;
@@ -82,6 +84,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     error InvalidState(SaleState expected, SaleState actual);
     error SaleWindowNotConfigured();
     error SaleWindowFrozen();
+    error SaleWindowVersionMismatch(uint64 expected, uint64 actual);
     error SaleNotActive();
     error SaleWindowClosed();
     error PredecessorNotEnded();
@@ -99,7 +102,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     error ListingNotScheduled();
     error ListingNotLaunched();
 
-    event SaleWindowConfigured(uint64 indexed saleStart, uint64 indexed saleEnd);
+    event SaleWindowConfigured(uint64 indexed version, uint64 indexed saleStart, uint64 indexed saleEnd);
     event SaleStateChanged(SaleState indexed previousState, SaleState indexed nextState);
     event PurchaseCreated(
         uint8 indexed roundId,
@@ -178,12 +181,16 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     }
 
     /// @notice Allows backend-prepared Safe calls to adjust dates until the round is marked ready.
-    function configureSaleWindow(uint64 saleStart_, uint64 saleEnd_) external onlyOwner {
+    function configureSaleWindow(uint64 expectedVersion, uint64 saleStart_, uint64 saleEnd_) external onlyOwner {
         if (state != SaleState.DRAFT) revert SaleWindowFrozen();
+        if (expectedVersion != saleWindowVersion) {
+            revert SaleWindowVersionMismatch(expectedVersion, saleWindowVersion);
+        }
         if (saleStart_ >= saleEnd_ || saleEnd_ <= block.timestamp) revert SaleWindowClosed();
         saleStart = saleStart_;
         saleEnd = saleEnd_;
-        emit SaleWindowConfigured(saleStart_, saleEnd_);
+        saleWindowVersion = expectedVersion + 1;
+        emit SaleWindowConfigured(saleWindowVersion, saleStart_, saleEnd_);
     }
 
     function markReady() external onlyOwner {

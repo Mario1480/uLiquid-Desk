@@ -8,13 +8,21 @@ Owner: Legal/Product
 
 Gate: `NO-GO` für Production-Solidity-Contracts, Mainnet-Deployment, Presale und DEX-Launch.
 
+## Technical candidate prepared on 2026-09-01
+
+The repository now contains a review candidate with one purchase-bound USDC custody contract per round, buyer-initiated refunds, permissionless post-deadline finalization, and automatic backend finalization in fail-closed `OFF`/`OBSERVE`/`ACTIVE` modes. This does not change this ADR's status.
+
+The proposed product rule is that the buyer submits and pays gas for a withdrawal. Legal must approve that rule explicitly against the requirement that a retail holder incur no fees or costs. If Legal does not approve it, Mainnet activation stops; the implementation must not silently enable sponsored withdrawals or reinterpret the requirement.
+
+Legal must also confirm whether the proposed onchain USDC custody satisfies safeguarding duties and how an individual 14-calendar-day period interacts with the end of a time-limited subscription period. Any required change to custody, cancellation, access control, or deadline semantics reopens the contract specification before audit freeze.
+
 ## Context
 
-ULIQ soll als optionaler Utility-, Membership- und Locking-Token auf Arbitrum One ausgegeben werden. Der Haupt-Presale soll direkt im uLiquid Desk stattfinden und aktuell maximal 120.000 USDC für 120.000.000 ULIQ einnehmen.
+ULIQ is planned as an optional utility, membership, and locking token on Arbitrum One. ADR-009 supersedes the earlier single-sale assumption with two Desk rounds totaling 150,000,000 ULIQ and an aggregate hard cap of 450,000 USDC.
 
-Die frühere Annahme einer sofortigen 25%-Ausgabe beim Kauf wurde verworfen. Das Zielmodell erzeugt zunächst eine pending Allocation, modelliert aktuell eine 14-tägige Withdrawal Period und aktiviert ULIQ, Vesting und Benefits erst nach Finalisierung.
+The earlier assumption of an immediate 25% transfer at purchase was rejected. The current candidate first creates a pending allocation, models a 14-day withdrawal period, finalizes the full allocation into the isolated round vesting pool, and permits no claim before the shared DEX launch.
 
-Technisch finalisiert sind die fachlichen Zustände aus ADR-006, die permissionless Finalisierung zugunsten des unveränderlichen Buyers, die atomare 25/75-Verteilung und die Invariante `pendingPurchaseCount == 0` vor DEX Launch. Diese Festlegungen ersetzen keine rechtliche Bewertung der Withdrawal-, Refund-, Safeguarding- oder Cancellation-Semantik.
+The technical candidate uses permissionless finalization for the immutable buyer, a 5% initial unlock for Round 1 and 25% for Round 2 at the shared DEX launch, and the invariant `pendingPurchaseCount == 0` before listing. These choices do not replace Legal review of withdrawal, refund, safeguarding, or cancellation semantics.
 
 Ob, in welchem Umfang und mit welchen technischen/operativen Anforderungen dieses Modell rechtlich zulässig oder erforderlich ist, muss vor Contract-Freeze verbindlich geprüft werden.
 
@@ -29,7 +37,7 @@ Ob, in welchem Umfang und mit welchen technischen/operativen Anforderungen diese
   - 0 ULIQ werden während der Withdrawal Period ausgegeben.
   - 0 ULIQ sind eligible und alle Benefits bleiben inaktiv.
   - wirksames Withdrawal führt zu Allocation Cancellation und USDC Refund nach finalen Sale Terms.
-  - Finalisierung nach anwendbarer Deadline verteilt 25 % Wallet / 75 % Vesting.
+  - Finalization after the applicable deadline records 100% in the isolated round vesting pool; Round 1 unlocks 5% and Round 2 unlocks 25% only at the shared DEX launch.
 - Die technische Working Assumption beträgt 14 Kalendertage pro Purchase. Die rechtliche Definition, Berechnung und mögliche freiwillige Verlängerung bleiben blockiert.
 - `finalizePurchase(purchaseId)` ist nach Fristablauf technisch permissionless; der Beneficiary bleibt unveränderlich der Buyer und der Caller erhält weder Tokens noch Benefits.
 - Bereits finalisierte Purchases werden bei vollständiger Sale Cancellation nicht irreversibel behandelt, bevor Legal Counsel die Semantik freigegeben hat.

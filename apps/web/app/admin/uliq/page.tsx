@@ -56,10 +56,20 @@ type AdminUliqPayload = {
       finalizedHeadAgreement: boolean;
     };
   };
+  publicPresaleReadiness: {
+    publicPreviewEnabled: boolean;
+    apiReadsEnabled: boolean;
+    contractsConfigured: boolean;
+    purchasesEnabled: boolean;
+    mainnetApproved: boolean;
+    legalApproved: boolean;
+  };
   presaleSchedule: {
     version: number;
     status: "NOT_CONFIGURED" | "DRAFT_CONFIGURED" | "INVALID";
-    onchainStatus: "NOT_BOUND";
+    onchainStatus: string;
+    chainId?: number;
+    asOfBlock?: string;
     updatedAt: string | null;
     rounds: Array<{
       id: "round-1" | "round-2";
@@ -75,6 +85,17 @@ type AdminUliqPayload = {
       predecessorRoundId: "round-1" | null;
       saleStart: string | null;
       saleEnd: string | null;
+      onchain?: {
+        contractAddress: string;
+        owner: string;
+        state: number;
+        saleStart: string | null;
+        saleEnd: string | null;
+        saleWindowVersion: string;
+        bindingStatus: string;
+        actionId: string | null;
+        transactionHash: string | null;
+      };
     }>;
   };
   treasury: {
@@ -154,11 +175,12 @@ type AdminUliqPayload = {
 };
 
 type SafePreparation = {
+  actionId?: string;
   safeTransaction: { chainId: number; to: string; data: string; value: string; operation: number; expectedSender: string | null };
   preflight: Record<string, unknown>;
 };
 
-type ReauthAction = "presale-schedule" | "dex-pending" | "dex-prepare" | "dex-submit" | "tier-benefits" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
+type ReauthAction = "presale-schedule" | "schedule-prepare" | "schedule-record" | "round-ready-prepare" | "dex-pending" | "dex-prepare" | "dex-submit" | "tier-benefits" | "treasury-save" | "treasury-propose" | "treasury-accept" | "treasury-cancel";
 
 const DEX_LAUNCH_TRACKING_STORAGE_KEY = "uliquid.uliq.admin.dexLaunchTracking.v1";
 
@@ -233,6 +255,9 @@ function UliqAdminPageContent() {
   const [reauthAction, setReauthAction] = useState<ReauthAction>("dex-submit");
   const [preparation, setPreparation] = useState<SafePreparation | null>(null);
   const [preparationLabel, setPreparationLabel] = useState<string | null>(null);
+  const [schedulePrepareRoundId, setSchedulePrepareRoundId] = useState<"round-1" | "round-2">("round-1");
+  const [scheduleActionId, setScheduleActionId] = useState<string | null>(null);
+  const [scheduleExecutionHash, setScheduleExecutionHash] = useState("");
   const [dexSubmitting, setDexSubmitting] = useState(false);
   const [dexTracking, setDexTracking] = useState<DexLaunchTracking | null>(null);
 
@@ -539,6 +564,41 @@ function UliqAdminPageContent() {
     setNotice(t("prepared"));
   }
 
+  async function prepareRoundSchedule() {
+    if (!data?.presaleSchedule.version) throw new Error(t("presaleScheduleNotSaved"));
+    const response = await apiPost<SafePreparation>(
+      `/admin/uliq/presale-rounds/${schedulePrepareRoundId}/schedule/prepare`,
+      { draftVersion: data.presaleSchedule.version }
+    );
+    setPreparation(response);
+    setPreparationLabel(t("presaleSchedulePreparedLabel", { round: schedulePrepareRoundId === "round-1" ? 1 : 2 }));
+    setScheduleActionId(response.actionId ?? null);
+    setScheduleExecutionHash("");
+    setNotice(t("prepared"));
+    await load({ silent: true });
+  }
+
+  async function prepareRoundReady() {
+    if (!data?.presaleSchedule.version) throw new Error(t("presaleScheduleNotSaved"));
+    const response = await apiPost<SafePreparation>(
+      `/admin/uliq/presale-rounds/${schedulePrepareRoundId}/ready/prepare`,
+      { draftVersion: data.presaleSchedule.version }
+    );
+    setPreparation(response);
+    setPreparationLabel(t("presaleReadyPreparedLabel", { round: schedulePrepareRoundId === "round-1" ? 1 : 2 }));
+    setNotice(t("presaleReadyPrepared"));
+  }
+
+  async function recordRoundScheduleExecution() {
+    if (!scheduleActionId) throw new Error(t("presaleScheduleActionMissing"));
+    await apiPost("/admin/uliq/presale-rounds/schedule/record-execution", {
+      actionId: scheduleActionId,
+      transactionHash: scheduleExecutionHash
+    });
+    setNotice(t("presaleScheduleExecutionRecorded"));
+    await load({ silent: true });
+  }
+
   function requestReauth(action: ReauthAction) {
     setReauthAction(action);
     setReauthOpen(true);
@@ -546,6 +606,9 @@ function UliqAdminPageContent() {
 
   async function runReauthenticatedAction() {
     if (reauthAction === "presale-schedule") return savePresaleSchedule();
+    if (reauthAction === "schedule-prepare") return prepareRoundSchedule();
+    if (reauthAction === "schedule-record") return recordRoundScheduleExecution();
+    if (reauthAction === "round-ready-prepare") return prepareRoundReady();
     if (reauthAction === "dex-pending") return prepareDexPending();
     if (reauthAction === "dex-prepare") return prepareSafeTransaction(false);
     if (reauthAction === "dex-submit") return prepareSafeTransaction(true);
@@ -581,6 +644,8 @@ function UliqAdminPageContent() {
             <AdminStatsCard label={t("withdrawals")} value={purchaseCounts.WITHDRAWN ?? 0} />
             <AdminStatsCard label={t("finalized")} value={purchaseCounts.FINALIZED ?? 0} />
             <AdminStatsCard label={t("activeLocks")} value={data.stats.locks._count._all} />
+            <AdminStatsCard label={t("mainnetApprovalStatus")} value={data.publicPresaleReadiness.mainnetApproved ? t("approved") : t("notApproved")} />
+            <AdminStatsCard label={t("legalApprovalStatus")} value={data.publicPresaleReadiness.legalApproved ? t("approved") : t("notApproved")} />
           </div>
 
           <AdminDetailSection title={t("presaleScheduleTitle")} description={t("presaleScheduleDescription")}>
@@ -604,7 +669,7 @@ function UliqAdminPageContent() {
                         <strong>{t("presaleRound", { number: round.number })}</strong>
                         <small>{round.predecessorRoundId ? t("presaleRoundPredecessor") : t("presaleRoundIndependent")}</small>
                       </div>
-                      <AdminStatusBadge value={draft.saleStart && draft.saleEnd ? "configured" : "missing"} />
+                      <AdminStatusBadge value={round.onchain?.bindingStatus ?? (draft.saleStart && draft.saleEnd ? "configured" : "missing")} />
                     </div>
                     <div className="uliqAdminRoundParameters">
                       <div><span>{t("presaleAllocation")}</span><strong>{Number(round.allocationUliq).toLocaleString(locale)} ULIQ</strong></div>
@@ -639,6 +704,39 @@ function UliqAdminPageContent() {
                     {draft.saleStart && draft.saleEnd && new Date(draft.saleStart).getTime() >= new Date(draft.saleEnd).getTime()
                       ? <AdminNotice tone="danger">{t("presaleRoundEndAfterStart")}</AdminNotice>
                       : null}
+                    {round.onchain ? (
+                      <div className="adminKeyValueList">
+                        <div className="adminKeyValueRow"><span>{t("presaleOnchainVersion")}</span><strong>{round.onchain.saleWindowVersion}</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleOnchainStart")}</span><strong>{round.onchain.saleStart ? new Date(round.onchain.saleStart).toLocaleString(locale) : "—"}</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("presaleOnchainEnd")}</span><strong>{round.onchain.saleEnd ? new Date(round.onchain.saleEnd).toLocaleString(locale) : "—"}</strong></div>
+                        <div className="adminKeyValueRow"><span>{t("ownerWallet")}</span><strong className="uliqMono">{round.onchain.owner}</strong></div>
+                      </div>
+                    ) : null}
+                    {round.onchain && ["DRAFT_ONLY", "DRIFTED", "PREPARED"].includes(round.onchain.bindingStatus) ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setSchedulePrepareRoundId(round.id);
+                          requestReauth("schedule-prepare");
+                        }}
+                        disabled={!data.presaleSchedule.version}
+                      >
+                        <AppIcon name="shield" /> {t("presaleSchedulePrepareSafe")}
+                      </button>
+                    ) : null}
+                    {round.onchain?.bindingStatus === "BOUND" && round.onchain.state === 0 ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setSchedulePrepareRoundId(round.id);
+                          requestReauth("round-ready-prepare");
+                        }}
+                      >
+                        <AppIcon name="shield" /> {t("presaleReadyPrepareSafe")}
+                      </button>
+                    ) : null}
                   </div>
                 );
               })}
@@ -662,6 +760,27 @@ function UliqAdminPageContent() {
             >
               <AppIcon name="save" /> {t("presaleScheduleSave")}
             </button>
+            {scheduleActionId ? (
+              <div className="adminFormGridCompact">
+                <label className="adminFormField">
+                  <span className="adminFormFieldLabel">{t("presaleScheduleExecutionHash")}</span>
+                  <input
+                    className="input uliqMono"
+                    value={scheduleExecutionHash}
+                    placeholder="0x…"
+                    onChange={(event) => setScheduleExecutionHash(event.target.value.trim())}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => requestReauth("schedule-record")}
+                  disabled={!/^0x[0-9a-fA-F]{64}$/.test(scheduleExecutionHash)}
+                >
+                  <AppIcon name="audit" /> {t("presaleScheduleRecordExecution")}
+                </button>
+              </div>
+            ) : null}
           </AdminDetailSection>
 
           <div className="adminDetailGrid">

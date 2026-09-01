@@ -31,3 +31,10 @@ test("presale schedule rejects a past end and invalid local input", () => {
   ], new Date("2027-01-01T00:00:00.000Z").getTime()), false);
   assert.throws(() => presaleScheduleLocalValueToIso("not-a-date"), /invalid_presale_schedule/);
 });
+
+test("presale schedule rejects a Round 2 window that overlaps Round 1", () => {
+  assert.equal(isUliqPresaleScheduleValid([
+    { id: "round-1", saleStart: "2027-01-10T09:00", saleEnd: "2027-01-20T18:00" },
+    { id: "round-2", saleStart: "2027-01-20T17:59", saleEnd: "2027-02-20T18:00" }
+  ], new Date("2027-01-01T00:00:00.000Z").getTime()), false);
+});

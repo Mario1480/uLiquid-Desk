@@ -129,7 +129,10 @@ export function getUliqPublicPresaleConfig(env: NodeJS.ProcessEnv = process.env)
   if (
     flags.purchasesEnabled
     && configuredChainId === 42161
-    && !enabled(env.ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED)
+    && (
+      !enabled(env.ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED)
+      || !enabled(env.ULIQ_PUBLIC_PRESALE_LEGAL_APPROVED)
+    )
   ) {
     throw new Error("uliq_public_presale_mainnet_activation_forbidden");
   }

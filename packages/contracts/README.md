@@ -20,12 +20,13 @@ ADR-009 adds an isolated review package under `src/uliq/presale-v2/` without cha
 - `ULIQPresaleRound.sol`: one generic non-upgradeable implementation for both accepted rounds.
 - `ULIQPresaleRoundVesting.sol`: one isolated listing-based release pool per round.
 - `ULIQGlobalListing.sol`: one shared, one-time listing timestamp gated by both rounds.
+- `ULIQPaymentCustody.sol`: one purchase-bound USDC custody candidate per round; use remains blocked by Legal approval and an independent audit.
 - `ULIQPresaleRounds.t.sol`: exact parameter, lifecycle, buyer-limit, listing, and vesting tests.
 - `ULIQPresaleRounds.invariant.t.sol`: cap, wallet-limit, inventory, pending-allocation, and custody invariants.
 
 The review constants are Round 1: 50,000,000 ULIQ at 0.002 USDC, 100,000 USDC hard cap, 500/10,000 USDC buyer limits, 5% at listing, 90-day cliff, then 548-day linear vesting. Round 2: 100,000,000 ULIQ at 0.0035 USDC, 350,000 USDC hard cap, 100/5,000 USDC buyer limits, 25% at listing, then 274-day linear vesting.
 
-The implementation keeps unsold inventory in each round and includes no Mainnet deployment script. Production custody, ADR-001 legal/access/cancellation decisions, exact calendar conversion, Safe addresses, audit, API/indexer migration, and unsold-token recovery remain explicit blockers. The code and passing tests must not be described as audited or Mainnet-ready.
+The implementation keeps unsold inventory in each round and includes no Mainnet deployment script. The proposed onchain custody model, ADR-001 legal/access/cancellation decisions, exact calendar interpretation, Safe addresses, audit, and unsold-token recovery remain explicit blockers. The code and passing tests must not be described as audited or Mainnet-ready.
 
 The exact external-review handoff, exclusions, trust assumptions, and open blockers are documented in [`ULIQ_PRESALE_V2_AUDIT_SCOPE.md`](./ULIQ_PRESALE_V2_AUDIT_SCOPE.md).
 

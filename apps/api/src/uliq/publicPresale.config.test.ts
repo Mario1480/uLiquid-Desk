@@ -61,7 +61,7 @@ test("purchase activation requires versioned legal text", () => {
   assert.equal(config.terms.ready, true);
 });
 
-test("mainnet purchase activation needs a separate approval flag in every environment", () => {
+test("mainnet purchase activation needs separate Mainnet and Legal approval flags in every environment", () => {
   const mainnet = {
     ...base,
     NODE_ENV: "development",
@@ -73,7 +73,8 @@ test("mainnet purchase activation needs a separate approval flag in every enviro
   assert.throws(() => getUliqPublicPresaleConfig(mainnet), /mainnet_activation_forbidden/);
   assert.equal(getUliqPublicPresaleConfig({
     ...mainnet,
-    ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED: "true"
+    ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED: "true",
+    ULIQ_PUBLIC_PRESALE_LEGAL_APPROVED: "true"
   }).chainId, 42161);
 });
 

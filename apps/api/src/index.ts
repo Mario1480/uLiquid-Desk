@@ -13588,6 +13588,7 @@ const apiLifecycle = createApiLifecycle({
     { name: "uliq-public-presale-tracking", start: () => uliqJobs.publicPresaleTracking.start(), stop: () => uliqJobs.publicPresaleTracking.stop() },
     { name: "uliq-public-presale-indexer", start: () => uliqJobs.publicPresaleIndexer.start(), stop: () => uliqJobs.publicPresaleIndexer.stop() },
     { name: "uliq-auto-finalizer", start: () => uliqJobs.autoFinalizer.start(), stop: () => uliqJobs.autoFinalizer.stop() },
+    { name: "uliq-public-presale-auto-finalizer", start: () => uliqJobs.publicPresaleAutoFinalizer.start(), stop: () => uliqJobs.publicPresaleAutoFinalizer.stop() },
     { name: "uliq-reconciliation", start: () => uliqJobs.reconciliation.start(), stop: () => uliqJobs.reconciliation.stop() },
     { name: "uliq-reservation-expiry", start: () => uliqJobs.reservationExpiry.start(), stop: () => uliqJobs.reservationExpiry.stop() },
     { name: "hyperliquid-api-expiry-reminder", start: () => hyperliquidApiExpiryReminderJob.start(), stop: () => hyperliquidApiExpiryReminderJob.stop() },

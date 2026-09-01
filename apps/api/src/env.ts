@@ -110,6 +110,10 @@ export function assertApiEnv(env: EnvMap = process.env): void {
     isEnvEnabled(env.PY_STRATEGY_ENABLED, false)
     || isEnvEnabled(env.PY_GRID_ENABLED, false);
   const uliqAutoFinalizerEnabled = isEnvEnabled(env.ULIQ_AUTO_FINALIZER_ENABLED, false);
+  const uliqPublicPresaleFinalizerMode = String(
+    env.ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_MODE ?? "OFF"
+  ).trim().toUpperCase();
+  const uliqPublicPresaleFinalizerActive = uliqPublicPresaleFinalizerMode === "ACTIVE";
 
   validateServiceEnv("apps/api", [
     {
@@ -191,6 +195,42 @@ export function assertApiEnv(env: EnvMap = process.env): void {
       validate: (value) => validateEvmPrivateKey(value)
     },
     {
+      names: ["ULIQ_PUBLIC_PRESALE_FINALIZER_PRIVATE_KEY"],
+      required: uliqPublicPresaleFinalizerActive,
+      message: "ULIQ_PUBLIC_PRESALE_FINALIZER_PRIVATE_KEY is required when the public Presale finalizer is ACTIVE.",
+      validate: (value) => validateEvmPrivateKey(value)
+    },
+    {
+      names: ["ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_MODE"],
+      validate: (value) => ["OFF", "OBSERVE", "ACTIVE"].includes(value.trim().toUpperCase())
+        ? null
+        : "must be OFF, OBSERVE, or ACTIVE"
+    },
+    {
+      names: ["ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_INTERVAL_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 60, 3_600)
+    },
+    {
+      names: ["ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_DRAIN_INTERVAL_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 5, 300)
+    },
+    {
+      names: ["ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_BATCH_SIZE"],
+      validate: (value) => validateIntegerRange(value, 1, 50)
+    },
+    {
+      names: ["ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_RETRY_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 5, 3_600)
+    },
+    {
+      names: ["ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_MAX_RETRY_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 30, 86_400)
+    },
+    {
+      names: ["ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_SUBMISSION_STALE_SECONDS"],
+      validate: (value) => validateIntegerRange(value, 60, 86_400)
+    },
+    {
       names: ["ULIQ_AUTO_FINALIZER_INTERVAL_SECONDS"],
       validate: (value) => validateIntegerRange(value, 5, 3_600)
     },
@@ -219,6 +259,32 @@ export function assertApiEnv(env: EnvMap = process.env): void {
     throw new Error(
       "[uLiquid Desk] apps/api environment validation failed:\n"
       + "- ULIQ_AUTO_FINALIZER_ENABLED requires ULIQ_ENABLED=true and ULIQ_PRESALE_ENABLED=true."
+    );
+  }
+
+  if (!["OFF", "OBSERVE", "ACTIVE"].includes(uliqPublicPresaleFinalizerMode)) {
+    throw new Error(
+      "[uLiquid Desk] apps/api environment validation failed:\n"
+      + "- ULIQ_PUBLIC_PRESALE_AUTO_FINALIZER_MODE must be OFF, OBSERVE, or ACTIVE."
+    );
+  }
+  if (uliqPublicPresaleFinalizerMode !== "OFF" && !isEnvEnabled(env.ULIQ_PUBLIC_PRESALE_ENABLED, false)) {
+    throw new Error(
+      "[uLiquid Desk] apps/api environment validation failed:\n"
+      + "- Public Presale auto-finalizer OBSERVE/ACTIVE requires ULIQ_PUBLIC_PRESALE_ENABLED=true."
+    );
+  }
+  if (
+    uliqPublicPresaleFinalizerActive
+    && String(env.ULIQ_PUBLIC_PRESALE_CHAIN_ID ?? "").trim() === "42161"
+    && (
+      !isEnvEnabled(env.ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED, false)
+      || !isEnvEnabled(env.ULIQ_PUBLIC_PRESALE_LEGAL_APPROVED, false)
+    )
+  ) {
+    throw new Error(
+      "[uLiquid Desk] apps/api environment validation failed:\n"
+      + "- ACTIVE public Presale Mainnet finalization requires both Mainnet and Legal approval flags."
     );
   }
 

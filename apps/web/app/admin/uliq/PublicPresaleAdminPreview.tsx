@@ -22,7 +22,7 @@ type PublicPresaleAdminPayload = {
   presaleSchedule: {
     version: number;
     status: "NOT_CONFIGURED" | "DRAFT_CONFIGURED" | "INVALID";
-    onchainStatus: "NOT_BOUND";
+    onchainStatus: string;
     updatedAt: string | null;
     rounds: Array<{
       id: "round-1" | "round-2";
@@ -46,6 +46,7 @@ type PublicPresaleAdminPayload = {
     contractsConfigured: boolean;
     purchasesEnabled: boolean;
     mainnetApproved: boolean;
+    legalApproved: boolean;
   };
 };
 
@@ -126,6 +127,7 @@ export default function PublicPresaleAdminPreview() {
             <AdminStatsCard label={t("apiReadsStatus")} value={data.readiness.apiReadsEnabled ? t("enabled") : t("disabled")} />
             <AdminStatsCard label={t("purchasesStatus")} value={data.readiness.purchasesEnabled ? t("enabled") : t("disabled")} />
             <AdminStatsCard label={t("mainnetApprovalStatus")} value={data.readiness.mainnetApproved ? t("approved") : t("notApproved")} />
+            <AdminStatsCard label={t("legalApprovalStatus")} value={data.readiness.legalApproved ? t("approved") : t("notApproved")} />
           </div>
 
           <AdminDetailSection title={t("presaleScheduleTitle")} description={t("presaleScheduleDescription")}>
