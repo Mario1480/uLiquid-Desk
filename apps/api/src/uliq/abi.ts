@@ -39,6 +39,70 @@ export const uliqPresaleAbi = parseAbi([
   "event DexLaunchTimestampSet(uint64 indexed dexLaunchTimestamp)"
 ]);
 
+export const uliqPresaleRoundAbi = parseAbi([
+  "function roundId() view returns (uint8)",
+  "function uliq() view returns (address)",
+  "function usdc() view returns (address)",
+  "function paymentCustody() view returns (address)",
+  "function vesting() view returns (address)",
+  "function globalListing() view returns (address)",
+  "function predecessor() view returns (address)",
+  "function state() view returns (uint8)",
+  "function saleStart() view returns (uint64)",
+  "function saleEnd() view returns (uint64)",
+  "function withdrawalPeriodSeconds() view returns (uint64)",
+  "function hardCapUsdcRaw() view returns (uint256)",
+  "function allocationCapUliqRaw() view returns (uint256)",
+  "function priceUsdcRawPerUliq() view returns (uint256)",
+  "function minPurchaseUsdcRaw() view returns (uint256)",
+  "function maxPurchaseUsdcRaw() view returns (uint256)",
+  "function totalRaisedUsdcRaw() view returns (uint256)",
+  "function totalSoldUliqRaw() view returns (uint256)",
+  "function pendingAllocationUliqRaw() view returns (uint256)",
+  "function pendingPurchaseCount() view returns (uint256)",
+  "function finalizedAllocationUliqRaw() view returns (uint256)",
+  "function withdrawnAllocationUliqRaw() view returns (uint256)",
+  "function purchasedUsdcRawByBuyer(address buyer) view returns (uint256)",
+  "function maximumPurchasableUsdcRaw(address buyer) view returns (uint256)",
+  "function quotePurchase(address buyer,uint256 requestedUsdcRaw) view returns (uint256 acceptedUsdcRaw,uint256 uliqAllocationRaw)",
+  "function purchases(uint256 purchaseId) view returns (address buyer,uint256 usdcAmountRaw,uint256 uliqAllocationRaw,uint64 purchasedAt,uint64 withdrawalDeadline,uint8 state)",
+  "function buy(uint256 maxUsdcAmountRaw,uint256 minUliqAllocationRaw) returns (uint256 purchaseId,uint256 acceptedUsdcRaw,uint256 uliqAllocationRaw)",
+  "function withdrawPurchase(uint256 purchaseId)",
+  "function finalizePurchase(uint256 purchaseId)",
+  "event SaleWindowConfigured(uint64 indexed saleStart,uint64 indexed saleEnd)",
+  "event SaleStateChanged(uint8 indexed previousState,uint8 indexed nextState)",
+  "event PurchaseCreated(uint8 indexed roundId,uint256 indexed purchaseId,address indexed buyer,uint256 usdcAmountRaw,uint256 uliqAllocationRaw,uint64 withdrawalDeadline)",
+  "event PurchaseWithdrawn(uint8 indexed roundId,uint256 indexed purchaseId,address indexed buyer,uint256 usdcRefundRaw,uint256 cancelledUliqAllocationRaw)",
+  "event PurchaseFinalized(uint8 indexed roundId,uint256 indexed purchaseId,address indexed buyer,address caller,uint256 initialUnlockUliqRaw,uint256 linearVestingUliqRaw)"
+]);
+
+export const uliqPresaleRoundVestingAbi = parseAbi([
+  "function token() view returns (address)",
+  "function globalListing() view returns (address)",
+  "function presale() view returns (address)",
+  "function initialUnlockBps() view returns (uint16)",
+  "function cliffSeconds() view returns (uint64)",
+  "function linearVestingDurationSeconds() view returns (uint64)",
+  "function allocated(address beneficiary) view returns (uint256)",
+  "function released(address beneficiary) view returns (uint256)",
+  "function unreleased(address beneficiary) view returns (uint256)",
+  "function vested(address beneficiary) view returns (uint256)",
+  "function claimable(address beneficiary) view returns (uint256)",
+  "function linearVestingStart() view returns (uint64)",
+  "function vestingEnd() view returns (uint64)",
+  "function claim() returns (uint256 amount)",
+  "event AllocationCreated(address indexed beneficiary,uint256 amount,uint256 allocatedTotal)",
+  "event TokensReleased(address indexed beneficiary,uint256 amount,uint256 releasedTotal)"
+]);
+
+export const uliqGlobalListingAbi = parseAbi([
+  "function roundOne() view returns (address)",
+  "function roundTwo() view returns (address)",
+  "function listingTimestamp() view returns (uint64)",
+  "event RoundsConfigured(address indexed roundOne,address indexed roundTwo)",
+  "event ListingScheduled(uint64 indexed listingTimestamp)"
+]);
+
 export const uliqVestingAbi = parseAbi([
   "function allocated(address beneficiary) view returns (uint256)",
   "function released(address beneficiary) view returns (uint256)",

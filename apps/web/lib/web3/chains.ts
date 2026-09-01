@@ -49,9 +49,14 @@ export const uliqArbitrumSepoliaChain: Chain = {
   }
 };
 
-export const supportedChains: Chain[] = web3Env.enableArbitrum
-  ? [hyperEvmChain, arbitrum, ...(web3Env.uliqTestnetEnabled ? [uliqArbitrumSepoliaChain] : [])]
-  : [hyperEvmChain, ...(web3Env.uliqTestnetEnabled ? [uliqArbitrumSepoliaChain] : [])];
+const publicPresaleUsesArbitrum = web3Env.publicPresaleEnabled && web3Env.publicPresaleChainId === arbitrum.id;
+const publicPresaleUsesArbitrumSepolia = web3Env.publicPresaleEnabled && web3Env.publicPresaleChainId === arbitrumSepolia.id;
+
+export const supportedChains: Chain[] = [
+  hyperEvmChain,
+  ...(web3Env.enableArbitrum || publicPresaleUsesArbitrum ? [arbitrum] : []),
+  ...(web3Env.uliqTestnetEnabled || publicPresaleUsesArbitrumSepolia ? [uliqArbitrumSepoliaChain] : [])
+];
 
 export const targetChain =
   supportedChains.find((chain) => chain.id === web3Env.targetChainId) ?? hyperEvmChain;

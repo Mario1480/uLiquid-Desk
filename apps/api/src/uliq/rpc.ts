@@ -1,15 +1,20 @@
 import { createPublicClient, defineChain, http, type PublicClient } from "viem";
-import { type UliqRuntimeConfig } from "./config.js";
 
 export type UliqRpcPair = {
   primary: PublicClient;
   secondary: PublicClient;
 };
 
-export function createUliqRpcPair(config: UliqRuntimeConfig): UliqRpcPair {
+type UliqRpcConfig = {
+  chainId: number;
+  primaryRpcUrl: string;
+  secondaryRpcUrl: string;
+};
+
+export function createUliqRpcPair(config: UliqRpcConfig): UliqRpcPair {
   const chain = defineChain({
     id: config.chainId,
-    name: "Arbitrum Sepolia",
+    name: config.chainId === 42161 ? "Arbitrum One" : "Arbitrum Sepolia",
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
     rpcUrls: {
       default: { http: [config.primaryRpcUrl] }
@@ -21,7 +26,7 @@ export function createUliqRpcPair(config: UliqRuntimeConfig): UliqRpcPair {
   };
 }
 
-export async function assertUliqRpcPair(config: UliqRuntimeConfig, pair: UliqRpcPair): Promise<void> {
+export async function assertUliqRpcPair(config: UliqRpcConfig, pair: UliqRpcPair): Promise<void> {
   const [primaryChainId, secondaryChainId] = await Promise.all([
     pair.primary.getChainId(),
     pair.secondary.getChainId()

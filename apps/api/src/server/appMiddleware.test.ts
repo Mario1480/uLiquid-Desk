@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE } from "../auth/cookies.js";
+import {
+  CSRF_COOKIE,
+  CSRF_HEADER,
+  PRESALE_CSRF_COOKIE,
+  PRESALE_SESSION_COOKIE,
+  SESSION_COOKIE
+} from "../auth/cookies.js";
 import { enforceSessionCsrf, resolveRequestTimeoutMs } from "./appMiddleware.js";
 
 function createReq(params: {
   method: string;
+  path?: string;
   cookies?: Record<string, string>;
   headers?: Record<string, string>;
 }) {
@@ -13,6 +20,7 @@ function createReq(params: {
   );
   return {
     method: params.method,
+    path: params.path ?? "/",
     cookies: params.cookies ?? {},
     get(name: string) {
       return headers[name.toLowerCase()];
@@ -113,6 +121,92 @@ test("enforceSessionCsrf ignores unauthenticated unsafe requests such as signed 
 
   assert.equal(nextCalled, true);
   assert.equal(res.statusCode, 200);
+});
+
+test("enforceSessionCsrf isolates public presale csrf from Desk sessions", () => {
+  const req = createReq({
+    method: "POST",
+    path: "/uliq/public/terms/accept",
+    cookies: {
+      [SESSION_COOKIE]: "desk-session",
+      [PRESALE_SESSION_COOKIE]: "presale-session",
+      [PRESALE_CSRF_COOKIE]: "presale-csrf",
+      [CSRF_COOKIE]: "desk-csrf"
+    },
+    headers: {
+      [CSRF_HEADER]: "presale-csrf"
+    }
+  });
+  const res = createRes();
+  let nextCalled = false;
+
+  enforceSessionCsrf(req as any, res as any, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+});
+
+test("enforceSessionCsrf bootstraps public presale csrf for an existing Desk session", () => {
+  const req = createReq({
+    method: "GET",
+    path: "/uliq/public/session/nonce",
+    cookies: { [SESSION_COOKIE]: "desk-session" }
+  });
+  const res = createRes();
+  let nextCalled = false;
+
+  enforceSessionCsrf(req as any, res as any, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.ok(res.cookies.some((entry) => entry.name === PRESALE_CSRF_COOKIE));
+  assert.equal(res.cookies.some((entry) => entry.name === CSRF_COOKIE), false);
+});
+
+test("enforceSessionCsrf accepts public presale verification with only a Desk session", () => {
+  const req = createReq({
+    method: "POST",
+    path: "/uliq/public/session/verify",
+    cookies: {
+      [SESSION_COOKIE]: "desk-session",
+      [PRESALE_CSRF_COOKIE]: "presale-csrf"
+    },
+    headers: { [CSRF_HEADER]: "presale-csrf" }
+  });
+  const res = createRes();
+  let nextCalled = false;
+
+  enforceSessionCsrf(req as any, res as any, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(res.statusCode, 200);
+});
+
+test("enforceSessionCsrf rejects a Desk csrf token on public presale writes", () => {
+  const req = createReq({
+    method: "POST",
+    path: "/uliq/public/terms/accept",
+    cookies: {
+      [SESSION_COOKIE]: "desk-session",
+      [PRESALE_SESSION_COOKIE]: "presale-session",
+      [PRESALE_CSRF_COOKIE]: "presale-csrf",
+      [CSRF_COOKIE]: "desk-csrf"
+    },
+    headers: { [CSRF_HEADER]: "desk-csrf" }
+  });
+  const res = createRes();
+  let nextCalled = false;
+
+  enforceSessionCsrf(req as any, res as any, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 403);
 });
 
 test("resolveRequestTimeoutMs reserves a longer window for agent chat messages", () => {

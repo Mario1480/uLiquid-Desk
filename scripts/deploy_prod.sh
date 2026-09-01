@@ -95,6 +95,14 @@ export AI_POSITION_COPILOT_ENABLED="${AI_POSITION_COPILOT_ENABLED:-true}"
 export AI_POSITION_MONITORING_ENABLED="${AI_POSITION_MONITORING_ENABLED:-true}"
 echo "==> Position Copilot: ${AI_POSITION_COPILOT_ENABLED}"
 echo "==> Position monitoring: ${AI_POSITION_MONITORING_ENABLED}"
+# Expose only the non-transactional ULIQ preview and schedule administration.
+# Public onchain reads, purchases, Mainnet approval, and legacy ULIQ remain controlled by separate fail-closed flags.
+export NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED="${NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED:-true}"
+export NEXT_PUBLIC_ULIQ_ADMIN_VISIBLE="${NEXT_PUBLIC_ULIQ_ADMIN_VISIBLE:-true}"
+export ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED="${ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED:-true}"
+echo "==> ULIQ public preview: ${NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED}"
+echo "==> ULIQ admin visibility: ${NEXT_PUBLIC_ULIQ_ADMIN_VISIBLE}"
+echo "==> ULIQ schedule admin API: ${ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED}"
 
 if [[ "${#TARGET_SERVICES[@]}" -gt 0 ]]; then
   mapfile -t AVAILABLE_SERVICES < <(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --services)

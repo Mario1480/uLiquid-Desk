@@ -126,3 +126,11 @@ The implementation accepts cliff and vesting durations in seconds. Focused revie
 - Listing scheduling reverts while either round has pending purchases or is not listing-ready.
 - Unsold inventory is not moved automatically.
 - No Mainnet deployment script or broadcast is added while the production gates remain open.
+
+## 2026-09-01 public access amendment
+
+Both accepted rounds may be exposed through public Desk-hosted routes without requiring Desk registration. The implementation reuses the Desk wallet stack, but uses a separate 24-hour SIWE session and versioned Presale Terms acknowledgement. Only the active onchain round may be purchased.
+
+The approved product scope does not add KYC, jurisdiction, allowlist, or contract-level attestation controls. This does not resolve ADR-001: Legal must explicitly approve the direct-call access model and publish the versioned Presale Terms before production purchases can be enabled. Until then, public preview may be configured separately while purchases remain fail-closed.
+
+The implementation and remaining gates are recorded in [Public Two-Round Presale Access](12_PUBLIC_PRESALE_ACCESS.md).

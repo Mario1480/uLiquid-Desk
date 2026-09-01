@@ -1505,6 +1505,39 @@ model SiweNonce {
   @@map("siwe_nonces")
 }
 
+model UliqPresaleSession {
+  id            String    @id @default(cuid())
+  tokenHash     String    @unique @map("token_hash")
+  walletAddress String    @map("wallet_address")
+  chainId       Int       @map("chain_id")
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  lastActiveAt  DateTime  @default(now()) @map("last_active_at")
+  ipAddress     String?   @map("ip_address")
+  userAgent     String?   @map("user_agent")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([walletAddress, chainId, expiresAt], map: "uliq_presale_sessions_wallet_chain_expiry_idx")
+  @@index([expiresAt, revokedAt], map: "uliq_presale_sessions_expiry_revoked_idx")
+  @@map("uliq_presale_sessions")
+}
+
+model UliqPresaleLegalAcknowledgement {
+  id            String   @id @default(cuid())
+  walletAddress String   @map("wallet_address")
+  chainId       Int      @map("chain_id")
+  version       String
+  textHash      String   @map("text_hash")
+  acceptedAt    DateTime @default(now()) @map("accepted_at")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([walletAddress, chainId, version, textHash], map: "uliq_presale_legal_wallet_chain_version_hash_key")
+  @@index([walletAddress, chainId, acceptedAt(sort: Desc)], map: "uliq_presale_legal_wallet_chain_accepted_idx")
+  @@map("uliq_presale_legal_acknowledgements")
+}
+
 model ReauthSession {
   id        String   @id @default(cuid())
   userId    String
@@ -2272,8 +2305,8 @@ model UliqPurchaseTracking {
   chainId                   Int                        @map("chain_id")
   presaleContractAddress    String                     @map("presale_contract_address")
   transactionHash           String                     @map("transaction_hash")
-  userId                    String                     @map("user_id")
-  user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                    String?                    @map("user_id")
+  user                      User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
   walletAddress             String                     @map("wallet_address")
   status                    UliqPurchaseTrackingStatus @default(SUBMITTED)
   maxUsdcAmountRaw          Decimal                    @map("max_usdc_amount_raw") @db.Decimal(78, 0)
@@ -2295,6 +2328,7 @@ model UliqPurchaseTracking {
   @@unique([chainId, transactionHash], map: "uliq_purchase_tracking_chain_tx_key")
   @@unique([chainId, presaleContractAddress, purchaseIdOnchain], map: "uliq_purchase_tracking_chain_purchase_key")
   @@index([userId, status, updatedAt(sort: Desc)], map: "uliq_purchase_tracking_user_status_updated_idx")
+  @@index([walletAddress, status, updatedAt(sort: Desc)], map: "uliq_purchase_tracking_wallet_status_updated_idx")
   @@index([status, lastCheckedAt], map: "uliq_purchase_tracking_status_checked_idx")
   @@map("uliq_purchase_trackings")
 }

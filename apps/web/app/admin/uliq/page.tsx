@@ -33,6 +33,8 @@ import AdminNotice from "../_components/AdminNotice";
 import AdminPageHeader from "../_components/AdminPageHeader";
 import AdminStatsCard from "../_components/AdminStatsCard";
 import AdminStatusBadge from "../_components/AdminStatusBadge";
+import { isUliqPublicPresaleAdminVisible } from "../../../lib/uliqPublicPresale";
+import PublicPresaleAdminPreview from "./PublicPresaleAdminPreview";
 
 type GroupedCount = { status: string; _count: { _all: number }; _sum?: Record<string, string | null> };
 type AdminUliqPayload = {
@@ -947,5 +949,8 @@ function UliqAdminPageContent() {
 }
 
 export default function UliqAdminPage() {
+  if (isUliqPublicPresaleAdminVisible() && process.env.NEXT_PUBLIC_ULIQ_ENABLED !== "true") {
+    return <PublicPresaleAdminPreview />;
+  }
   return <Web3Providers><UliqAdminPageContent /></Web3Providers>;
 }

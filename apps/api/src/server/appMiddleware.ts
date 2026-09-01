@@ -6,6 +6,8 @@ import helmet from "helmet";
 import {
   CSRF_COOKIE,
   CSRF_HEADER,
+  PRESALE_CSRF_COOKIE,
+  PRESALE_SESSION_COOKIE,
   SESSION_COOKIE,
   createCsrfToken,
   csrfCookieOptions
@@ -69,29 +71,38 @@ function timingSafeStringEqual(left: string, right: string): boolean {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function ensureCsrfCookie(req: express.Request, res: express.Response): string {
-  const current = typeof req.cookies?.[CSRF_COOKIE] === "string"
-    ? String(req.cookies[CSRF_COOKIE]).trim()
+function ensureCsrfCookie(req: express.Request, res: express.Response, cookieName = CSRF_COOKIE): string {
+  const current = typeof req.cookies?.[cookieName] === "string"
+    ? String(req.cookies[cookieName]).trim()
     : "";
   if (current) return current;
   const token = createCsrfToken();
-  res.cookie(CSRF_COOKIE, token, csrfCookieOptions(CSRF_MAX_AGE_MS));
+  res.cookie(cookieName, token, csrfCookieOptions(CSRF_MAX_AGE_MS));
   return token;
 }
 
 export function enforceSessionCsrf(req: express.Request, res: express.Response, next: express.NextFunction): void {
-  const sessionToken = typeof req.cookies?.[SESSION_COOKIE] === "string"
+  const deskSessionToken = typeof req.cookies?.[SESSION_COOKIE] === "string"
     ? String(req.cookies[SESSION_COOKIE]).trim()
     : "";
+  const presaleSessionToken = typeof req.cookies?.[PRESALE_SESSION_COOKIE] === "string"
+    ? String(req.cookies[PRESALE_SESSION_COOKIE]).trim()
+    : "";
+  const sessionToken = deskSessionToken || presaleSessionToken;
   if (!sessionToken) return next();
 
+  const presaleRequest = req.path === "/uliq/public" || req.path.startsWith("/uliq/public/");
+  const csrfCookieName = presaleRequest || (presaleSessionToken && !deskSessionToken)
+    ? PRESALE_CSRF_COOKIE
+    : CSRF_COOKIE;
+
   if (SAFE_METHODS.has(req.method.toUpperCase())) {
-    ensureCsrfCookie(req, res);
+    ensureCsrfCookie(req, res, csrfCookieName);
     return next();
   }
 
-  const csrfCookie = typeof req.cookies?.[CSRF_COOKIE] === "string"
-    ? String(req.cookies[CSRF_COOKIE]).trim()
+  const csrfCookie = typeof req.cookies?.[csrfCookieName] === "string"
+    ? String(req.cookies[csrfCookieName]).trim()
     : "";
   const csrfHeader = String(req.get(CSRF_HEADER) ?? "").trim();
   if (csrfCookie && csrfHeader && timingSafeStringEqual(csrfCookie, csrfHeader)) {
@@ -99,7 +110,7 @@ export function enforceSessionCsrf(req: express.Request, res: express.Response, 
   }
 
   if (!csrfCookie) {
-    res.cookie(CSRF_COOKIE, createCsrfToken(), csrfCookieOptions(CSRF_MAX_AGE_MS));
+    res.cookie(csrfCookieName, createCsrfToken(), csrfCookieOptions(CSRF_MAX_AGE_MS));
   }
   res.status(403).json({ error: "invalid_csrf_token" });
 }

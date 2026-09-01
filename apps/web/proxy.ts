@@ -21,6 +21,7 @@ const PUBLIC_PATHS = [
   "/privacy",
   "/cookies",
   "/risk-disclosure",
+  "/presale",
   "/favicon.ico"
 ];
 const PUBLIC_ASSET_EXTENSION_PATTERN = /\.(css|js|map|json|txt|xml|png|jpg|jpeg|svg|gif|ico|webp|avif|woff|woff2|ttf|eot|wasm)$/i;
@@ -90,7 +91,7 @@ function isPublicAssetPath(pathname: string): boolean {
 }
 
 function isPublicPath(pathname: string): boolean {
-  if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(path))) return true;
+  if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) return true;
   if (pathname.startsWith("/api") || isPublicAssetPath(pathname)) return true;
   return false;
 }

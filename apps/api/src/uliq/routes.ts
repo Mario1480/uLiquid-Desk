@@ -7,6 +7,8 @@ import { mapUliqEntitlementForApi } from "./benefitReservation.service.js";
 import { UliqPresaleService } from "./presale.service.js";
 import { UliqPurchaseTrackingService } from "./purchaseTracking.service.js";
 import { UliqActivityService } from "./activity.service.js";
+import { getUliqPublicPresaleFlags } from "./publicPresale.config.js";
+import type { UliqPublicPresaleService } from "./publicPresale.service.js";
 
 const uint256Schema = z.string().trim().regex(/^(0|[1-9]\d*)$/).max(78);
 const quoteSchema = z.object({ requestedUsdcRaw: uint256Schema });
@@ -56,11 +58,25 @@ export function registerUliqRoutes(app: express.Express, deps: {
   purchaseTrackingService: UliqPurchaseTrackingService;
   entitlementService: UliqEntitlementService;
   activityService: UliqActivityService;
+  publicPresaleService?: UliqPublicPresaleService;
 }) {
   function allowed(flag: "presaleEnabled" | "lockingEnabled" | "enabled", res: express.Response): boolean {
     try {
       const flags = getUliqFeatureFlags();
       if (!flags.enabled || !flags[flag]) {
+        res.status(404).json({ error: "not_found" });
+        return false;
+      }
+      return true;
+    } catch {
+      res.status(404).json({ error: "not_found" });
+      return false;
+    }
+  }
+
+  function publicPresaleAllowed(res: express.Response): boolean {
+    try {
+      if (!deps.publicPresaleService || !getUliqPublicPresaleFlags().enabled) {
         res.status(404).json({ error: "not_found" });
         return false;
       }
@@ -99,6 +115,13 @@ export function registerUliqRoutes(app: express.Express, deps: {
     if (!allowed("enabled", res)) return;
     try { return res.json(await deps.presaleService.getForUser(getUserFromLocals(res).id)); }
     catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
+  });
+
+  app.get("/uliq/public-presale/me", requireAuth, async (_req, res) => {
+    if (!publicPresaleAllowed(res)) return;
+    try {
+      return res.json(await deps.publicPresaleService!.getWalletStateForUser(getUserFromLocals(res).id));
+    } catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
   });
 
   app.get("/uliq/entitlement", requireAuth, async (_req, res) => {

@@ -68,6 +68,8 @@ export const TARGET_CHAIN = targetChain;
 export const TARGET_CHAIN_ID = targetChainId;
 export const TARGET_CHAIN_NAME = targetChainName;
 export const HEADER_SWITCH_CHAINS = supportedChains.filter(
-  (chain) => chain.id === 999 || chain.id === 42161
+  (chain) => chain.id === 999
+    || chain.id === 42161
+    || (web3Env.publicPresaleEnabled && chain.id === web3Env.publicPresaleChainId)
 );
 export const SUPPORTED_CHAINS = supportedChains;

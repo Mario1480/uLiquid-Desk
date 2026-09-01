@@ -6,6 +6,8 @@ export type AuthCookieNames = {
   prefix: string;
   session: string;
   csrf: string;
+  presaleSession: string;
+  presaleCsrf: string;
 };
 
 export function validateAuthCookiePrefix(value: string): string | null {
@@ -28,7 +30,9 @@ export function resolveAuthCookieNames(
   return {
     prefix,
     session: `${prefix}_session`,
-    csrf: `${prefix}_csrf`
+    csrf: `${prefix}_csrf`,
+    presaleSession: `${prefix}_presale_session`,
+    presaleCsrf: `${prefix}_presale_csrf`
   };
 }
 
@@ -38,3 +42,5 @@ const AUTH_COOKIE_NAMES = resolveAuthCookieNames(
 
 export const AUTH_SESSION_COOKIE_NAME = AUTH_COOKIE_NAMES.session;
 export const AUTH_CSRF_COOKIE_NAME = AUTH_COOKIE_NAMES.csrf;
+export const PRESALE_SESSION_COOKIE_NAME = AUTH_COOKIE_NAMES.presaleSession;
+export const PRESALE_CSRF_COOKIE_NAME = AUTH_COOKIE_NAMES.presaleCsrf;

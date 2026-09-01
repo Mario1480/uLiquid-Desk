@@ -8,6 +8,9 @@ export type AuthCookieNames = {
   csrf: string;
   reauth: string;
   siweNonce: string;
+  presaleSession: string;
+  presaleCsrf: string;
+  presaleSiweNonce: string;
 };
 
 export function validateAuthCookiePrefix(value: string): string | null {
@@ -32,6 +35,9 @@ export function resolveAuthCookieNames(
     session: `${prefix}_session`,
     csrf: `${prefix}_csrf`,
     reauth: `${prefix}_reauth`,
-    siweNonce: `${prefix}_siwe_nonce`
+    siweNonce: `${prefix}_siwe_nonce`,
+    presaleSession: `${prefix}_presale_session`,
+    presaleCsrf: `${prefix}_presale_csrf`,
+    presaleSiweNonce: `${prefix}_presale_siwe_nonce`
   };
 }

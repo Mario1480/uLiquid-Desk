@@ -411,12 +411,15 @@ import { getMarketIntelligenceService } from "./services/marketIntelligence/serv
 import { registerGridVaultRouteGroup } from "./routes/gridVaultRouteGroup.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
 import { registerUliqRoutes } from "./uliq/routes.js";
+import { registerUliqPublicPresaleRoutes } from "./uliq/publicPresale.routes.js";
 import { registerUliqAdminRoutes } from "./uliq/admin.routes.js";
 import { UliqPresaleService } from "./uliq/presale.service.js";
 import { UliqPurchaseTrackingService } from "./uliq/purchaseTracking.service.js";
 import { UliqTreasuryService } from "./uliq/treasury.service.js";
 import { UliqEntitlementService } from "./uliq/entitlement.service.js";
 import { UliqActivityService } from "./uliq/activity.service.js";
+import { UliqPublicPresaleService } from "./uliq/publicPresale.service.js";
+import { UliqPublicPresaleSessionService } from "./uliq/publicPresaleSession.service.js";
 import { createLazyUliqService } from "./uliq/runtime.js";
 import { releaseOpenUliqReservationsForWalletChange } from "./uliq/benefitReservation.service.js";
 import { createUliqJobs } from "./jobs/uliqJobs.js";
@@ -649,6 +652,8 @@ const uliqPurchaseTrackingService = createLazyUliqService(() => new UliqPurchase
 const uliqTreasuryService = createLazyUliqService(() => new UliqTreasuryService(db));
 const uliqEntitlementService = createLazyUliqService(() => new UliqEntitlementService(db));
 const uliqActivityService = createLazyUliqService(() => new UliqActivityService(db));
+const uliqPublicPresaleService = createLazyUliqService(() => new UliqPublicPresaleService(db));
+const uliqPublicPresaleSessionService = new UliqPublicPresaleSessionService(db);
 const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db, {
   resolveTelegramConfig: async (userId) => resolveTelegramConfig(userId),
   sendTelegramMessage: async ({ botToken, chatId, text }) =>
@@ -12220,7 +12225,13 @@ registerUliqRoutes(app, {
   presaleService: uliqPresaleService,
   purchaseTrackingService: uliqPurchaseTrackingService,
   entitlementService: uliqEntitlementService,
-  activityService: uliqActivityService
+  activityService: uliqActivityService,
+  publicPresaleService: uliqPublicPresaleService
+});
+registerUliqPublicPresaleRoutes(app, {
+  service: uliqPublicPresaleService,
+  sessionService: uliqPublicPresaleSessionService,
+  siweService
 });
 registerManualTradingMarketDataRoutes(app, {
   getTradingSettings,
@@ -13574,6 +13585,8 @@ const apiLifecycle = createApiLifecycle({
     { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },
     { name: "uliq-indexer", start: () => uliqJobs.indexer.start(), stop: () => uliqJobs.indexer.stop() },
     { name: "uliq-purchase-tracking", start: () => uliqJobs.purchaseTracking.start(), stop: () => uliqJobs.purchaseTracking.stop() },
+    { name: "uliq-public-presale-tracking", start: () => uliqJobs.publicPresaleTracking.start(), stop: () => uliqJobs.publicPresaleTracking.stop() },
+    { name: "uliq-public-presale-indexer", start: () => uliqJobs.publicPresaleIndexer.start(), stop: () => uliqJobs.publicPresaleIndexer.stop() },
     { name: "uliq-auto-finalizer", start: () => uliqJobs.autoFinalizer.start(), stop: () => uliqJobs.autoFinalizer.stop() },
     { name: "uliq-reconciliation", start: () => uliqJobs.reconciliation.start(), stop: () => uliqJobs.reconciliation.stop() },
     { name: "uliq-reservation-expiry", start: () => uliqJobs.reservationExpiry.start(), stop: () => uliqJobs.reservationExpiry.stop() },

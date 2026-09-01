@@ -13,14 +13,20 @@ test("auth cookie names keep legacy defaults and support an isolated environment
     session: "mm_session",
     csrf: "mm_csrf",
     reauth: "mm_reauth",
-    siweNonce: "mm_siwe_nonce"
+    siweNonce: "mm_siwe_nonce",
+    presaleSession: "mm_presale_session",
+    presaleCsrf: "mm_presale_csrf",
+    presaleSiweNonce: "mm_presale_siwe_nonce"
   });
   assert.deepEqual(resolveAuthCookieNames("mm_staging"), {
     prefix: "mm_staging",
     session: "mm_staging_session",
     csrf: "mm_staging_csrf",
     reauth: "mm_staging_reauth",
-    siweNonce: "mm_staging_siwe_nonce"
+    siweNonce: "mm_staging_siwe_nonce",
+    presaleSession: "mm_staging_presale_session",
+    presaleCsrf: "mm_staging_presale_csrf",
+    presaleSiweNonce: "mm_staging_presale_siwe_nonce"
   });
 });
 

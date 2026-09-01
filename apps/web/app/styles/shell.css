@@ -184,6 +184,11 @@
   min-width: 0;
 }
 
+.authHeaderDeskLogin {
+  min-height: 38px;
+  text-decoration: none;
+}
+
 .authHeaderLocaleSwitch {
   display: inline-flex;
   align-items: center;

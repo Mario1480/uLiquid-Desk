@@ -25,7 +25,7 @@ type TrackingRow = {
   chainId: number;
   presaleContractAddress: string;
   transactionHash: string;
-  userId: string;
+  userId: string | null;
   walletAddress: string;
   status: string;
   maxUsdcAmountRaw: unknown;

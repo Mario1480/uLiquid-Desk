@@ -27,7 +27,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileSidebarMode, setMobileSidebarMode] = useState(false);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
-  const hideChrome = CHROMELESS_ROUTES.has(pathnameWithoutLocale);
+  const hideChrome = CHROMELESS_ROUTES.has(pathnameWithoutLocale)
+    || pathnameWithoutLocale === "/presale"
+    || pathnameWithoutLocale.startsWith("/presale/");
 
   useEffect(() => {
     setSidebarOpen(false);

@@ -4,6 +4,9 @@ import { expireUliqBenefitReservations } from "../uliq/benefitReservation.servic
 import { getUliqFeatureFlags, getUliqRuntimeConfig } from "../uliq/config.js";
 import { UliqIndexerService } from "../uliq/indexer.service.js";
 import { UliqPurchaseTrackingService } from "../uliq/purchaseTracking.service.js";
+import { getUliqPublicPresaleConfig, getUliqPublicPresaleFlags } from "../uliq/publicPresale.config.js";
+import { UliqPublicPresaleIndexerService } from "../uliq/publicPresaleIndexer.service.js";
+import { UliqPublicPresaleService } from "../uliq/publicPresale.service.js";
 import { UliqReconciliationService } from "../uliq/reconciliation.service.js";
 
 type JobState = {
@@ -33,6 +36,14 @@ function autoFinalizerEnabled(): boolean {
   try {
     const flags = getUliqFeatureFlags();
     return flags.enabled && flags.presaleEnabled && getUliqAutoFinalizerSettings().enabled;
+  } catch {
+    return false;
+  }
+}
+
+function publicPresaleEnabled(): boolean {
+  try {
+    return getUliqPublicPresaleFlags().enabled;
   } catch {
     return false;
   }
@@ -93,10 +104,14 @@ export function createUliqJobs(db: any) {
   let purchaseTracking: UliqPurchaseTrackingService | null = null;
   let reconciliation: UliqReconciliationService | null = null;
   let autoFinalizer: UliqAutoFinalizerService | null = null;
+  let publicPresale: UliqPublicPresaleService | null = null;
+  let publicPresaleIndexer: UliqPublicPresaleIndexerService | null = null;
   const getIndexer = () => indexer ??= new UliqIndexerService(db, getUliqRuntimeConfig());
   const getPurchaseTracking = () => purchaseTracking ??= new UliqPurchaseTrackingService(db, getUliqRuntimeConfig());
   const getReconciliation = () => reconciliation ??= new UliqReconciliationService(db, getUliqRuntimeConfig());
   const getAutoFinalizer = () => autoFinalizer ??= new UliqAutoFinalizerService(db, getUliqRuntimeConfig());
+  const getPublicPresale = () => publicPresale ??= new UliqPublicPresaleService(db);
+  const getPublicPresaleIndexer = () => publicPresaleIndexer ??= new UliqPublicPresaleIndexerService(db);
   return {
     indexer: createPollingJob({
       name: "uliq_indexer",
@@ -126,6 +141,35 @@ export function createUliqJobs(db: any) {
       enabled: () => safeEnabled("enabled"),
       pollMs: intervalMs("ULIQ_PURCHASE_TRACKING_INTERVAL_SECONDS", 10),
       run: () => getPurchaseTracking().reconcilePending()
+    }),
+    publicPresaleTracking: createPollingJob({
+      name: "uliq_public_presale_tracking",
+      enabled: publicPresaleEnabled,
+      pollMs: intervalMs("ULIQ_PUBLIC_PRESALE_TRACKING_INTERVAL_SECONDS", 10),
+      run: () => getPublicPresale().reconcilePending()
+    }),
+    publicPresaleIndexer: createPollingJob({
+      name: "uliq_public_presale_indexer",
+      enabled: publicPresaleEnabled,
+      pollMs: intervalMs("ULIQ_PUBLIC_PRESALE_INDEXER_INTERVAL_SECONDS", 15),
+      run: async () => {
+        try {
+          return await getPublicPresaleIndexer().runOnce();
+        } catch (error) {
+          const config = getUliqPublicPresaleConfig();
+          const reason = error instanceof Error ? error.message : String(error);
+          await db.onchainSyncCursor.updateMany({
+            where: { id: `uliq-public-presale:${config.chainId}:all` },
+            data: {
+              failureCount: { increment: 1 },
+              nextRetryAt: new Date(Date.now() + 30_000),
+              lastError: reason.slice(0, 1_000),
+              leaseExpiresAt: new Date()
+            }
+          }).catch(() => undefined);
+          throw error;
+        }
+      }
     }),
     autoFinalizer: createPollingJob({
       name: "uliq_auto_finalizer",

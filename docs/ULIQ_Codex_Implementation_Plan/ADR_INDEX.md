@@ -13,3 +13,5 @@ Dieser Index verweist auf die verbindlichen Entscheidungen im bestehenden ULIQ-P
 | [ADR-007](ADR_007_ONCHAIN_DATA_INDEXER.md) | Onchain Data & Indexer | `ACCEPTED ARCHITECTURE / P1 OPERATIONAL VALUES OPEN` |
 | [ADR-008](ADR_008_MANDATORY_LOCKING_SUBSCRIPTION_GATING.md) | Mandatory Locking & Subscription-Term Gating | `ACCEPTED FOR TESTNET MVP` |
 | [ADR-009](ADR_009_TWO_ROUND_PRESALE_TOKENOMICS.md) | Two-Round Presale & Revised Token Allocation | `ACCEPTED PARAMETERS / CONTRACT REVIEW DRAFT` |
+
+Implementation boundary: [Public Two-Round Presale Access](12_PUBLIC_PRESALE_ACCESS.md) is `IMPLEMENTED LOCALLY / ACTIVATION BLOCKED`.

@@ -122,6 +122,110 @@ test("ULIQ admin overview serializes Prisma Decimal values as JSON strings", asy
   }
 });
 
+test("public Presale admin overview remains available before contract addresses are configured", async () => {
+  const previousAdmin = process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED;
+  const previousEnabled = process.env.ULIQ_PUBLIC_PRESALE_ENABLED;
+  const previousPurchases = process.env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED;
+  process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED = "true";
+  process.env.ULIQ_PUBLIC_PRESALE_ENABLED = "false";
+  process.env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED = "false";
+  try {
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: { globalSetting: { findUnique: async () => null } },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => true,
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => { await next(); },
+      recordAdminAuditEvent: async () => undefined
+    });
+
+    const handlers = app.getRoutes.get("/admin/uliq/public-presale");
+    assert.ok(handlers);
+    const response = mockResponse();
+    await run(handlers!.slice(1), {}, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.mode, "CONFIGURATION_PENDING");
+    assert.equal(response.body.presaleSchedule.status, "NOT_CONFIGURED");
+    assert.equal(response.body.presaleSchedule.rounds.length, 2);
+    assert.equal(response.body.readiness.apiReadsEnabled, false);
+    assert.equal(response.body.readiness.contractsConfigured, false);
+    assert.equal(response.body.readiness.purchasesEnabled, false);
+    assert.equal(response.body.readiness.mainnetApproved, false);
+  } finally {
+    if (previousAdmin === undefined) delete process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED;
+    else process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED = previousAdmin;
+    if (previousEnabled === undefined) delete process.env.ULIQ_PUBLIC_PRESALE_ENABLED;
+    else process.env.ULIQ_PUBLIC_PRESALE_ENABLED = previousEnabled;
+    if (previousPurchases === undefined) delete process.env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED;
+    else process.env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED = previousPurchases;
+  }
+});
+
+test("schedule-only Presale admin can save an audited draft while legacy ULIQ stays disabled", async () => {
+  const previousPublicAdmin = process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED;
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED = "true";
+  process.env.ULIQ_ENABLED = "false";
+  process.env.ULIQ_ADMIN_ENABLED = "false";
+  try {
+    let stored: { value: unknown; updatedAt: Date } | null = null;
+    const tx = {
+      globalSetting: {
+        findUnique: async () => stored,
+        upsert: async ({ create, update }: any) => {
+          stored = {
+            value: stored ? update.value : create.value,
+            updatedAt: new Date("2026-09-01T12:00:00.000Z")
+          };
+          return stored;
+        }
+      }
+    };
+    const audits: string[] = [];
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: { $transaction: async (callback: (client: any) => Promise<any>) => callback(tx) },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => true,
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => { await next(); },
+      recordAdminAuditEvent: async (input) => { audits.push(input.action); }
+    });
+
+    const handlers = app.putRoutes.get("/admin/uliq/presale-rounds/schedule");
+    assert.ok(handlers);
+    const response = mockResponse();
+    const firstStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000);
+    const firstEnd = new Date(firstStart.getTime() + 14 * 24 * 60 * 60 * 1_000);
+    const secondStart = new Date(firstEnd.getTime() + 24 * 60 * 60 * 1_000);
+    const secondEnd = new Date(secondStart.getTime() + 14 * 24 * 60 * 60 * 1_000);
+    await run(handlers!.slice(1), {
+      body: {
+        reason: "Prepare public preview schedule",
+        rounds: [
+          { id: "round-1", saleStart: firstStart.toISOString(), saleEnd: firstEnd.toISOString() },
+          { id: "round-2", saleStart: secondStart.toISOString(), saleEnd: secondEnd.toISOString() }
+        ]
+      }
+    }, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.status, "DRAFT_CONFIGURED");
+    assert.equal(response.body.version, 1);
+    assert.deepEqual(audits, ["uliq_presale_round_schedule_version_created"]);
+  } finally {
+    if (previousPublicAdmin === undefined) delete process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED;
+    else process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED = previousPublicAdmin;
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
+
 test("ULIQ presale round schedule changes require reauth and create an audited backend draft version", async () => {
   const previousEnabled = process.env.ULIQ_ENABLED;
   const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;

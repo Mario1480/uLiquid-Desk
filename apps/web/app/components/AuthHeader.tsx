@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import type { AppLocale } from "../../i18n/config";
 import { extractLocaleFromPathname, withLocalePath } from "../../i18n/config";
+import { AppIcon } from "./AppIcon";
 import ClientErrorBoundary from "./ClientErrorBoundary";
 
 const WalletConnectionWidget = dynamic(() => import("./WalletConnectionWidget"), {
@@ -28,12 +29,15 @@ export default function AuthHeader() {
   const searchParams = useSearchParams();
   const locale = useLocale() as AppLocale;
   const tHeader = useTranslations("nav.header");
+  const tPresale = useTranslations("presale.header");
   const search = searchParams.toString();
+  const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
+  const publicPresale = pathnameWithoutLocale === "/presale" || pathnameWithoutLocale.startsWith("/presale/");
 
   return (
     <header className="authHeader">
       <div className="authHeaderInner">
-        <Link href={withLocalePath("/", locale)} className="appLogo authHeaderLogo" aria-label="uLiquid Desk">
+        <Link href={withLocalePath(publicPresale ? "/presale" : "/", locale)} className="appLogo authHeaderLogo" aria-label="uLiquid Desk">
           <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appLogoMark" />
         </Link>
 
@@ -60,6 +64,13 @@ export default function AuthHeader() {
           <ClientErrorBoundary fallback={<button className="appHeaderWalletTrigger" type="button" disabled>Wallet unavailable</button>}>
             <WalletConnectionWidget />
           </ClientErrorBoundary>
+
+          {publicPresale ? (
+            <Link className="btn authHeaderDeskLogin" href={withLocalePath("/login", locale)}>
+              <AppIcon name="login" />
+              {tPresale("deskLogin")}
+            </Link>
+          ) : null}
         </div>
       </div>
     </header>

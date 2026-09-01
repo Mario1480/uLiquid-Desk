@@ -8,6 +8,9 @@ export const CSRF_COOKIE = AUTH_COOKIE_NAMES.csrf;
 export const CSRF_HEADER = "x-csrf-token";
 export const REAUTH_COOKIE = AUTH_COOKIE_NAMES.reauth;
 export const SIWE_NONCE_COOKIE = AUTH_COOKIE_NAMES.siweNonce;
+export const PRESALE_SESSION_COOKIE = AUTH_COOKIE_NAMES.presaleSession;
+export const PRESALE_CSRF_COOKIE = AUTH_COOKIE_NAMES.presaleCsrf;
+export const PRESALE_SIWE_NONCE_COOKIE = AUTH_COOKIE_NAMES.presaleSiweNonce;
 
 function cookieSecure(): boolean {
   const secureEnv = (process.env.COOKIE_SECURE ?? "").toLowerCase();

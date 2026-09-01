@@ -83,6 +83,27 @@ function jsonSafe(value: unknown): any {
   return value;
 }
 
+function environmentEnabled(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+function publicPresaleContractsConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  const names = [
+    "ULIQ_PUBLIC_PRESALE_TOKEN_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_USDC_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_GLOBAL_LISTING_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_ROUND_1_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_ROUND_1_VESTING_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_ROUND_1_PAYMENT_CUSTODY_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_ROUND_2_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_ROUND_2_VESTING_ADDRESS",
+    "ULIQ_PUBLIC_PRESALE_ROUND_2_PAYMENT_CUSTODY_ADDRESS"
+  ] as const;
+  const addresses = names.map((name) => String(env[name] ?? "").trim().toLowerCase());
+  return addresses.every((value) => /^0x[0-9a-f]{40}$/.test(value) && !/^0x0{40}$/.test(value))
+    && new Set(addresses).size === addresses.length;
+}
+
 export function registerUliqAdminRoutes(app: express.Express, deps: {
   db: any;
   presaleService: UliqPresaleService;
@@ -117,6 +138,17 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       res.status(404).json({ error: "not_found" });
       return false;
     }
+  }
+
+  function publicPresaleAdminEnabled(res: express.Response): boolean {
+    if (environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED)) return true;
+    res.status(404).json({ error: "not_found" });
+    return false;
+  }
+
+  function scheduleAdminEnabled(res: express.Response): boolean {
+    if (environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ADMIN_ENABLED)) return true;
+    return enabled(res);
   }
 
   app.get("/admin/uliq", requireAuth, requireSuperadmin, async (_req, res) => {
@@ -176,13 +208,29 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
     }));
   });
 
+  app.get("/admin/uliq/public-presale", requireAuth, requireSuperadmin, async (_req, res) => {
+    if (!publicPresaleAdminEnabled(res)) return;
+    const presaleSchedule = await getUliqPresaleRoundSchedule(deps.db);
+    return res.json({
+      mode: "CONFIGURATION_PENDING",
+      presaleSchedule,
+      readiness: {
+        publicPreviewEnabled: environmentEnabled(process.env.NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED),
+        apiReadsEnabled: environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_ENABLED),
+        contractsConfigured: publicPresaleContractsConfigured(),
+        purchasesEnabled: environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED),
+        mainnetApproved: environmentEnabled(process.env.ULIQ_PUBLIC_PRESALE_MAINNET_APPROVED)
+      }
+    });
+  });
+
   app.put(
     "/admin/uliq/presale-rounds/schedule",
     requireAuth,
     requireSuperadmin,
     deps.consumeRecentReauth,
     async (req, res) => {
-      if (!enabled(res)) return;
+      if (!scheduleAdminEnabled(res)) return;
       const parsed = presaleRoundScheduleSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
