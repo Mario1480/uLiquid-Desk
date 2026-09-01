@@ -344,17 +344,17 @@ export class UliqPublicPresaleService {
       .filter((row: any) => !canonicalHashes.has(String(row.transactionHash).toLowerCase()))
       .map(async (row: any) => {
         const round = this.config.rounds.find((item) => sameAddress(item.contractAddress, row.presaleContractAddress));
-        let onchainPurchase = null;
-        if (round && row.purchaseIdOnchain !== null && row.purchaseIdOnchain !== undefined) {
+        const onchainPurchase = await (async () => {
+          if (!round || row.purchaseIdOnchain === null || row.purchaseIdOnchain === undefined) return null;
           try {
-            onchainPurchase = await this.readPurchase(
+            return await this.readPurchase(
               round,
               parseDatabaseUint256Decimal(row.purchaseIdOnchain, "tracking_purchase_id_onchain")
             );
           } catch {
-            onchainPurchase = null;
+            return null;
           }
-        }
+        })();
         return {
           ...mapUliqPurchaseTrackingForApi(row),
           roundId: round?.id ?? null,
