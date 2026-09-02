@@ -25,9 +25,9 @@ test("product feature registry maps each feature to a capability", () => {
   const items = listProductFeatureDefinitions();
   assert.equal(items.length, 16);
   assert.equal(capabilityForProductFeature("vaults"), "product.vaults");
-  assert.equal(requiredPlanForProductFeature("grid_bots"), "free");
+  assert.equal(requiredPlanForProductFeature("grid_bots"), "pro");
   assert.equal(requiredPlanForProductFeature("ai_prediction_builder"), "pro");
-  assert.equal(requiredPlanForProductFeature("ai_position_copilot"), "premium");
+  assert.equal(requiredPlanForProductFeature("ai_position_copilot"), "pro");
   assert.equal(requiredPlanForProductFeature("market_intelligence_advanced"), "premium");
 });
 
@@ -42,7 +42,7 @@ test("free plan exposes only conservative product modules", () => {
   assert.equal(gates.ai_predictions.allowed, false);
   assert.equal(gates.ai_agent_chat.allowed, false);
   assert.equal(gates.composite_strategies.allowed, false);
-  assert.equal(gates.grid_bots.allowed, true);
+  assert.equal(gates.grid_bots.allowed, false);
   assert.equal(gates.vaults.allowed, false);
   assert.equal(gates.market_intelligence.allowed, false);
   assert.equal(gates.ai_prediction_builder.allowed, false);
@@ -59,12 +59,12 @@ test("pro plan enables advanced trading product modules", () => {
   assert.equal(gates.local_strategies.allowed, true);
   assert.equal(gates.composite_strategies.allowed, true);
   assert.equal(gates.grid_bots.allowed, true);
-  assert.equal(gates.vaults.allowed, true);
+  assert.equal(gates.vaults.allowed, false);
   assert.equal(gates.market_intelligence.allowed, true);
   assert.equal(gates.ai_prediction_builder.allowed, true);
   assert.equal(gates.ai_agent_account_reads.allowed, false);
   assert.equal(gates.ai_agent_custom_profiles.allowed, false);
-  assert.equal(gates.ai_position_copilot.allowed, false);
+  assert.equal(gates.ai_position_copilot.allowed, true);
   assert.equal(gates.ai_position_monitoring.allowed, false);
   assert.equal(gates.ai_multi_exchange_analysis.allowed, false);
   assert.equal(gates.market_intelligence_advanced.allowed, false);
@@ -82,11 +82,17 @@ test("Premium unlocks private AI and Enterprise inherits the Premium envelope", 
   assert.deepEqual(enterprise, premium);
 });
 
-test("Free Grid and Prediction Copier dependencies resolve through the shared capability registry", () => {
+test("Grid starts at Pro, Prediction Copier starts at Premium and vaults remain unavailable", () => {
   const free = getDefaultPlanCapabilities("free");
-  assert.equal(free["product.grid_bots"], true);
-  assert.equal(free["execution.mode.grid"], true);
-  assert.equal(free["strategy.kind.futures_grid"], true);
-  assert.equal(free["strategy.kind.prediction_copier"], true);
+  const pro = getDefaultPlanCapabilities("pro");
+  const premium = getDefaultPlanCapabilities("premium");
+  assert.equal(free["product.grid_bots"], false);
+  assert.equal(pro["product.grid_bots"], true);
+  assert.equal(pro["execution.mode.grid"], true);
+  assert.equal(pro["strategy.kind.futures_grid"], true);
+  assert.equal(pro["strategy.kind.prediction_copier"], false);
+  assert.equal(premium["strategy.kind.prediction_copier"], true);
   assert.equal(free["product.vaults"], false);
+  assert.equal(pro["product.vaults"], false);
+  assert.equal(premium["product.vaults"], false);
 });

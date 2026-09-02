@@ -17,17 +17,17 @@ test("Stage 4 canonical catalog matches the approved package and add-on matrix",
 
   assert.deepEqual(
     [free.priceCents, free.maxRunningBots, free.maxRunningPredictionsAi, free.maxRunningPredictionsComposite, free.monthlyAiCredits, free.maxExchangeAccounts],
-    [0, 2, 0, 0, 0n, 1]
+    [0, 1, 0, 0, 0n, 1]
   );
   assert.deepEqual(
     [pro.priceCents, pro.maxRunningBots, pro.maxRunningPredictionsAi, pro.maxRunningPredictionsComposite, pro.monthlyAiCredits, pro.maxExchangeAccounts],
-    [2_900, 5, 3, 2, 10_000n, null]
+    [2_900, 3, 3, 2, 10_000n, 5]
   );
   assert.deepEqual(
     [premium.priceCents, premium.maxRunningBots, premium.maxRunningPredictionsAi, premium.maxRunningPredictionsComposite, premium.monthlyAiCredits, premium.maxExchangeAccounts],
-    [6_900, 15, 10, 5, 30_000n, null]
+    [6_900, 10, 10, 5, 30_000n, 15]
   );
-  assert.equal(premium.isActive, false);
+  assert.equal(premium.isActive, true);
 
   const capacity = CANONICAL_STAGE4_PACKAGES.filter((item) => item.addonType?.startsWith("RUNNING_"));
   assert.equal(capacity.length, 3);
@@ -82,8 +82,8 @@ test("canonical package reconciliation creates Premium and removes exact-plan sc
   const pro = mutations.find((item) => item.id === "pkg_pro");
   const capacity = mutations.find((item) => item.id === "pkg_capacity");
   assert.equal(premium?.changedFields.includes("create"), true);
-  assert.equal(premium?.data.isActive, false);
-  assert.equal(pro?.data.maxRunningBots, 5);
+  assert.equal(premium?.data.isActive, true);
+  assert.equal(pro?.data.maxRunningBots, 3);
   assert.equal(capacity?.data.plan, null);
   assert.equal(capacity?.changedFields.includes("plan"), true);
 });
@@ -116,8 +116,8 @@ test("term plan backfill is strict, conflict-aware and preserves order/add-on ev
   assert.deepEqual(decision.mutation?.changedFields, ["plan", "entitlementSnapshot", "monthlyAiCredits"]);
   assert.equal(decision.mutation?.data.plan, "PRO");
   const snapshot = decision.mutation?.data.entitlementSnapshot as Record<string, unknown>;
-  assert.equal(snapshot.maxRunningBots, 5);
-  assert.equal(snapshot.maxExchangeAccounts, null);
+  assert.equal(snapshot.maxRunningBots, 3);
+  assert.equal(snapshot.maxExchangeAccounts, 5);
   assert.equal(snapshot.monthlyAiCredits, "10000");
   assert.equal(snapshot.priceCents, 2_900);
   assert.equal(snapshot.billingMonths, 1);
@@ -154,7 +154,7 @@ test("subscription backfill updates entitlement fields without touching balances
     terms: []
   });
   assert.equal(free.mutation?.data.maxExchangeAccounts, 1);
-  assert.equal(free.mutation?.data.maxRunningBots, 2);
+  assert.equal(free.mutation?.data.maxRunningBots, 1);
   assert.equal(free.mutation?.data.monthlyAiCreditsIncluded, 0n);
   assert.equal("aiCreditBalance" in (free.mutation?.data ?? {}), false);
 
@@ -179,8 +179,8 @@ test("subscription backfill updates entitlement fields without touching balances
       entitlementSnapshot: { plan: "PRO", packageCode: "pro_monthly" }
     }]
   });
-  assert.equal(pro.mutation?.data.maxExchangeAccounts, null);
-  assert.equal(pro.mutation?.data.maxRunningBots, 5);
+  assert.equal(pro.mutation?.data.maxExchangeAccounts, 5);
+  assert.equal(pro.mutation?.data.maxRunningBots, 3);
   assert.equal(pro.mutation?.data.planValidUntil, paidEnd);
   assert.equal(pro.mutation?.data.proValidUntil, paidEnd);
   assert.equal("aiCreditBalance" in (pro.mutation?.data ?? {}), false);
@@ -262,7 +262,7 @@ test("the default Stage 4 dry-run projects before/after aggregates without openi
   assert.equal(transactionCalls, 0);
   assert.equal(report.packages.create, CANONICAL_STAGE4_PACKAGES.length);
   assert.equal(report.aggregates.terms.before.runningBotsTotal, 3);
-  assert.equal(report.aggregates.terms.projectedAfter.runningBotsTotal, 5);
+  assert.equal(report.aggregates.terms.projectedAfter.runningBotsTotal, 3);
   assert.equal(report.aggregates.subscriptions.before.monthlyAiCreditsTotal, "5000");
   assert.equal(report.aggregates.subscriptions.projectedAfter.monthlyAiCreditsTotal, "10000");
 });

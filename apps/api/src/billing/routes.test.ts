@@ -5,6 +5,7 @@ import {
   adminBillingPackageSchema,
   registerBillingRoutes
 } from "./routes.js";
+import { CANONICAL_STAGE4_PACKAGES } from "./canonicalPackages.js";
 
 test("adminBillingPackageSchema accepts plan credit fields as numbers or strings", () => {
   const basePayload = {
@@ -40,12 +41,12 @@ test("adminBillingPackageSchema accepts the Premium entitlement contract", () =>
     code: "premium_monthly",
     name: "Premium Monthly",
     kind: "plan",
-    isActive: false,
+    isActive: true,
     priceCents: 6900,
     billingMonths: 1,
     plan: "premium",
-    maxExchangeAccounts: null,
-    maxRunningBots: 15,
+    maxExchangeAccounts: 15,
+    maxRunningBots: 10,
     maxRunningPredictionsAi: 10,
     maxRunningPredictionsComposite: 5,
     allowedExchanges: ["*"],
@@ -198,7 +199,12 @@ function createMockRes() {
   return {
     locals: { user: { id: "user_1", email: "user@example.com" } } as Record<string, any>,
     statusCode: 200,
+    headers: {} as Record<string, string>,
     body: null as any,
+    setHeader(name: string, value: string) {
+      this.headers[name.toLowerCase()] = value;
+      return this;
+    },
     status(code: number) {
       this.statusCode = code;
       return this;
@@ -209,6 +215,43 @@ function createMockRes() {
     }
   };
 }
+
+test("public pricing catalog is unauthenticated, cacheable and sanitized", async () => {
+  const app = createFakeApp();
+  registerBillingRoutes(app as any, createRouteDeps({
+    listBillingPackages: async () => CANONICAL_STAGE4_PACKAGES.map((pkg, index) => ({
+      id: `private_${index}`,
+      internalMeta: "not-public",
+      ...pkg
+    }))
+  }) as any);
+  const res = createMockRes();
+  await lastHandler(app, "get", "/public/billing/catalog")({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers["access-control-allow-origin"], "*");
+  assert.match(res.headers["cache-control"], /max-age=60/);
+  assert.equal(res.body.currency, "USDC");
+  assert.deepEqual(res.body.plans.map((plan: any) => [plan.plan, plan.priceCents]), [
+    ["free", 0],
+    ["pro", 2900],
+    ["premium", 6900]
+  ]);
+  assert.equal(res.body.plans.some((plan: any) => "id" in plan || "internalMeta" in plan), false);
+  assert.equal(res.body.addons.length, 7);
+  assert.equal(res.body.featureMatrix.some((row: any) => row.feature === "Bot Vaults" && row.values.premium === "Later"), true);
+});
+
+test("public pricing catalog returns a stable unavailable response without leaking errors", async () => {
+  const app = createFakeApp();
+  registerBillingRoutes(app as any, createRouteDeps({
+    listBillingPackages: async () => { throw new Error("database secret"); }
+  }) as any);
+  const res = createMockRes();
+  await lastHandler(app, "get", "/public/billing/catalog")({}, res);
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(res.body, { error: "pricing_catalog_unavailable" });
+});
 
 function createRouteDeps(overrides: Record<string, unknown> = {}) {
   return {

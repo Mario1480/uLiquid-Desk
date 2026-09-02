@@ -13,8 +13,8 @@ function plan(plan: "free" | "pro" | "premium"): ResolvedEffectivePlan {
     status: "active",
     planValidUntil: null,
     proValidUntil: null,
-    maxExchangeAccounts: plan === "free" ? 1 : null,
-    maxRunningBots: plan === "premium" ? 15 : plan === "pro" ? 5 : 2,
+    maxExchangeAccounts: plan === "premium" ? 15 : plan === "pro" ? 5 : 1,
+    maxRunningBots: plan === "premium" ? 10 : plan === "pro" ? 3 : 1,
     maxRunningPredictionsAi: plan === "premium" ? 10 : plan === "pro" ? 3 : 0,
     maxRunningPredictionsComposite: plan === "premium" ? 5 : plan === "pro" ? 2 : 0,
     allowedExchanges: ["*"],
@@ -44,7 +44,7 @@ function override(planValue: "pro" | "premium"): AdminPlanOverrideSnapshot {
 test("manual override upgrades Free while preserving the AI credit ledger snapshot", () => {
   const result = applyAdminPlanOverride(plan("free"), override("premium"));
   assert.equal(result.plan, "premium");
-  assert.equal(result.maxRunningBots, 15);
+  assert.equal(result.maxRunningBots, 10);
   assert.equal(result.aiCreditBalance, 321n);
   assert.equal(result.aiCreditsUsedLifetime, 123n);
   assert.equal(result.monthlyAiCreditsIncluded, 77n);

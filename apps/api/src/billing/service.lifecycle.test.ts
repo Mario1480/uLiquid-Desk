@@ -64,17 +64,17 @@ const HASH_B = `0x${"bb".repeat(32)}`;
 
 test("commercial plan base quotas match the approved Free, Pro and Premium matrix", () => {
   assert.deepEqual(resolvePlanBaseQuotaDefaults("free"), {
-    maxRunningBots: 2,
+    maxRunningBots: 1,
     maxRunningPredictionsAi: 0,
     maxRunningPredictionsComposite: 0
   });
   assert.deepEqual(resolvePlanBaseQuotaDefaults("pro"), {
-    maxRunningBots: 5,
+    maxRunningBots: 3,
     maxRunningPredictionsAi: 3,
     maxRunningPredictionsComposite: 2
   });
   assert.deepEqual(resolvePlanBaseQuotaDefaults("premium"), {
-    maxRunningBots: 15,
+    maxRunningBots: 10,
     maxRunningPredictionsAi: 10,
     maxRunningPredictionsComposite: 5
   });
@@ -942,7 +942,7 @@ test("term activation persists entitlements before independently retrying AI cre
   assert.equal("aiCreditLedger" in tx, false);
 });
 
-test("Premium term activation applies 15/10/5 quotas and schedules the 30k monthly credit cycle", async () => {
+test("Premium term activation applies 15 exchange, 10/10/5 workflow quotas and schedules the 30k monthly credit cycle", async () => {
   const startsAt = new Date("2026-08-01T00:00:00.000Z");
   const term = {
     id: "term_premium",
@@ -955,8 +955,8 @@ test("Premium term activation applies 15/10/5 quotas and schedules the 30k month
     graceEndsAt: new Date("2026-09-04T00:00:00.000Z"),
     entitlementSnapshot: {
       plan: "PREMIUM",
-      maxExchangeAccounts: null,
-      maxRunningBots: 15,
+      maxExchangeAccounts: 15,
+      maxRunningBots: 10,
       maxRunningPredictionsAi: 10,
       maxRunningPredictionsComposite: 5,
       allowedExchanges: ["*"],
@@ -980,8 +980,8 @@ test("Premium term activation applies 15/10/5 quotas and schedules the 30k month
 
   assert.equal(await activateSubscriptionTermInTransaction(tx, term.id, startsAt), true);
   assert.equal(subscriptionData.effectivePlan, "PREMIUM");
-  assert.equal(subscriptionData.maxExchangeAccounts, null);
-  assert.equal(subscriptionData.maxRunningBots, 15);
+  assert.equal(subscriptionData.maxExchangeAccounts, 15);
+  assert.equal(subscriptionData.maxRunningBots, 10);
   assert.equal(subscriptionData.maxRunningPredictionsAi, 10);
   assert.equal(subscriptionData.maxRunningPredictionsComposite, 5);
   assert.equal(subscriptionData.monthlyAiCreditsIncluded, 30_000n);

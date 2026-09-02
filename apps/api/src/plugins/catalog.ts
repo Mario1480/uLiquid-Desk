@@ -27,7 +27,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "signal",
     version: "1.0.0",
     description: "Built-in legacy dummy signal engine",
-    minPlan: "free",
+    minPlan: "premium",
     defaultEnabled: true,
     capabilities: ["runner.signal"]
   },
@@ -63,7 +63,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "execution",
     version: "1.0.0",
     description: "Built-in grid execution mode",
-    minPlan: "free",
+    minPlan: "pro",
     defaultEnabled: true,
     capabilities: ["runner.execution", "execution.grid"]
   },
@@ -72,7 +72,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "execution",
     version: "1.0.0",
     description: "Built-in futures grid execution mode",
-    minPlan: "free",
+    minPlan: "pro",
     defaultEnabled: true,
     capabilities: ["runner.execution", "execution.futures_grid"]
   },
@@ -99,7 +99,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "execution",
     version: "1.0.0",
     description: "Built-in prediction copier execution mode",
-    minPlan: "free",
+    minPlan: "premium",
     defaultEnabled: true,
     capabilities: ["runner.execution", "prediction.copier"]
   },
@@ -117,7 +117,7 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     kind: "signal_source",
     version: "1.0.0",
     description: "Built-in prediction state signal source",
-    minPlan: "free",
+    minPlan: "premium",
     defaultEnabled: true,
     capabilities: ["runner.signal_source", "prediction.state"]
   },

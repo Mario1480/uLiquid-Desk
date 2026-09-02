@@ -58,7 +58,7 @@ export const CANONICAL_STAGE4_PACKAGES: readonly CanonicalBillingPackage[] = [
     priceCents: 0,
     plan: "FREE",
     maxExchangeAccounts: 1,
-    maxRunningBots: 2,
+    maxRunningBots: 1,
     maxRunningPredictionsAi: 0,
     maxRunningPredictionsComposite: 0,
     monthlyAiCredits: 0n
@@ -71,8 +71,8 @@ export const CANONICAL_STAGE4_PACKAGES: readonly CanonicalBillingPackage[] = [
     sortOrder: 10,
     priceCents: 2_900,
     plan: "PRO",
-    maxExchangeAccounts: null,
-    maxRunningBots: 5,
+    maxExchangeAccounts: 5,
+    maxRunningBots: 3,
     maxRunningPredictionsAi: 3,
     maxRunningPredictionsComposite: 2,
     monthlyAiCredits: 10_000n
@@ -81,13 +81,12 @@ export const CANONICAL_STAGE4_PACKAGES: readonly CanonicalBillingPackage[] = [
     code: "premium_monthly",
     name: "Premium Monthly",
     description: "Monthly Premium subscription",
-    // Checkout/UI enablement is a later explicit rollout gate.
-    isActive: false,
+    isActive: true,
     sortOrder: 11,
     priceCents: 6_900,
     plan: "PREMIUM",
-    maxExchangeAccounts: null,
-    maxRunningBots: 15,
+    maxExchangeAccounts: 15,
+    maxRunningBots: 10,
     maxRunningPredictionsAi: 10,
     maxRunningPredictionsComposite: 5,
     monthlyAiCredits: 30_000n

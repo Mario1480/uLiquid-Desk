@@ -10,6 +10,7 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { createResolvedEntitlementContext } from "../capabilities/entitlementContext.js";
 import { resolveAiRuntimeFeatureGates } from "../ai/featureFlags.js";
 import { UliqBenefitGateError } from "../uliq/benefitReservation.service.js";
+import { buildPublicBillingCatalog } from "./publicCatalog.js";
 
 const subscriptionCheckoutSchema = z.union([
   z.object({
@@ -302,9 +303,9 @@ function buildBillingDisabledResponse() {
   const capabilities = getDefaultPlanCapabilities(plan);
   const limits = {
     maxExchangeAccounts: 1,
-    maxRunningBots: 2,
+    maxRunningBots: 1,
     allowedExchanges: ["*"],
-    bots: { maxRunning: 2 },
+    bots: { maxRunning: 1 },
     predictions: {
       local: { maxRunning: null },
       ai: { maxRunning: 0 },
@@ -340,9 +341,9 @@ function buildBillingDisabledResponse() {
     limits,
     usage,
     quotaBreakdown: {
-      base: { runningBots: 2, runningPredictionsAi: 0, runningPredictionsComposite: 0 },
+      base: { runningBots: 1, runningPredictionsAi: 0, runningPredictionsComposite: 0 },
       addon: { runningBots: 0, runningPredictionsAi: 0, runningPredictionsComposite: 0 },
-      effective: { runningBots: 2, runningPredictionsAi: 0, runningPredictionsComposite: 0 }
+      effective: { runningBots: 1, runningPredictionsAi: 0, runningPredictionsComposite: 0 }
     },
     exchangeAccounts: { used: 0, max: 1, paperExcluded: true },
     upgradePreview: null,
@@ -589,6 +590,17 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
     });
     return byEmail?.id ?? null;
   }
+
+  app.get("/public/billing/catalog", async (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    try {
+      const packages = await deps.listBillingPackages();
+      return res.json(buildPublicBillingCatalog(packages));
+    } catch {
+      return res.status(503).json({ error: "pricing_catalog_unavailable" });
+    }
+  });
 
   app.get("/admin/settings/billing", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;

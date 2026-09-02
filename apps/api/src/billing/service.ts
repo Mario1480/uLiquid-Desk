@@ -116,15 +116,16 @@ const DEFAULT_BILLING_FEATURE_FLAGS: BillingFeatureFlags = {
   aiCreditBillingEnabled: true
 };
 
-const FREE_MAX_RUNNING_BOTS = 2;
+const FREE_MAX_RUNNING_BOTS = 1;
 const FREE_MAX_EXCHANGE_ACCOUNTS = 1;
+const PRO_MAX_EXCHANGE_ACCOUNTS = 5;
 const FREE_ALLOWED_EXCHANGES = ["*"];
 const FREE_MAX_RUNNING_PREDICTIONS_AI = 0;
 const FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE = 0;
-const PRO_MAX_RUNNING_BOTS = 5;
+const PRO_MAX_RUNNING_BOTS = 3;
 const PRO_MAX_RUNNING_PREDICTIONS_AI = 3;
 const PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE = 2;
-const PREMIUM_MAX_RUNNING_BOTS = 15;
+const PREMIUM_MAX_RUNNING_BOTS = 10;
 const PREMIUM_MAX_RUNNING_PREDICTIONS_AI = 10;
 const PREMIUM_MAX_RUNNING_PREDICTIONS_COMPOSITE = 5;
 
@@ -935,6 +936,35 @@ export async function ensureBillingDefaults(): Promise<void> {
     }
   });
 
+  const premiumMonthly = canonicalPackageByCode("premium_monthly");
+  await db.billingPackage.upsert({
+    where: { code: premiumMonthly.code },
+    update: {},
+    create: {
+      code: premiumMonthly.code,
+      name: premiumMonthly.name,
+      description: premiumMonthly.description,
+      kind: premiumMonthly.kind,
+      addonType: premiumMonthly.addonType,
+      isActive: premiumMonthly.isActive,
+      sortOrder: premiumMonthly.sortOrder,
+      priceCents: premiumMonthly.priceCents,
+      billingMonths: premiumMonthly.billingMonths,
+      plan: premiumMonthly.plan,
+      maxExchangeAccounts: premiumMonthly.maxExchangeAccounts,
+      maxRunningBots: premiumMonthly.maxRunningBots,
+      maxRunningPredictionsAi: premiumMonthly.maxRunningPredictionsAi,
+      maxRunningPredictionsComposite: premiumMonthly.maxRunningPredictionsComposite,
+      allowedExchanges: [...premiumMonthly.allowedExchanges],
+      monthlyAiCredits: premiumMonthly.monthlyAiCredits,
+      aiCredits: premiumMonthly.aiCredits,
+      deltaRunningBots: premiumMonthly.deltaRunningBots,
+      deltaRunningPredictionsAi: premiumMonthly.deltaRunningPredictionsAi,
+      deltaRunningPredictionsComposite: premiumMonthly.deltaRunningPredictionsComposite,
+      meta: premiumMonthly.meta
+    }
+  });
+
   await db.billingPackage.upsert({
     where: { code: "pro_monthly" },
     update: { monthlyAiCredits: proMonthlyCredits },
@@ -949,7 +979,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       priceCents: proMonthlyPriceCents,
       billingMonths: 1,
       plan: "PRO",
-      maxExchangeAccounts: null,
+      maxExchangeAccounts: PRO_MAX_EXCHANGE_ACCOUNTS,
       maxRunningBots: PRO_MAX_RUNNING_BOTS,
       maxRunningPredictionsAi: PRO_MAX_RUNNING_PREDICTIONS_AI,
       maxRunningPredictionsComposite: PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE,
