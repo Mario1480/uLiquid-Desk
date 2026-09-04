@@ -314,7 +314,7 @@ export default function PublicPresaleAdminPreview() {
                           <AppIcon name="shield" /> {t("presaleReadyPrepareSafe")}
                         </button>
                       ) : null}
-                      {round.onchain && round.onchain.state >= 4 && round.onchain.pendingPurchaseCount === "0" && round.onchain.unsoldReleasedUliqRaw === "0" && BigInt(round.onchain.unsoldInventoryUliqRaw) > 0n ? (
+                      {round.onchain && round.onchain.state >= 4 && round.onchain.pendingPurchaseCount === "0" && round.onchain.unsoldReleasedUliqRaw === "0" && BigInt(round.onchain.unsoldInventoryUliqRaw) > BigInt(0) ? (
                         <button type="button" className="btn" onClick={() => requestReauth("inventory-release", round.id)}>
                           <AppIcon name="wallet" /> {t("presaleUnsoldReleasePrepareSafe")}
                         </button>
