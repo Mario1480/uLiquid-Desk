@@ -7,6 +7,27 @@ import {
   dashboardLayoutUpdateSchema,
   normalizeDashboardLayoutValue
 } from "./layout.js";
+import {
+  DASHBOARD_MARKET_SESSION_IDS,
+  DASHBOARD_TOP_MOVERS_MARKET_TYPES,
+  DASHBOARD_WATCHLIST_SYMBOLS,
+  dashboardFundingRatesKey,
+  dashboardFundingRatesUpdateSchema,
+  dashboardMarketSessionsKey,
+  dashboardMarketSessionsUpdateSchema,
+  dashboardTopMoversKey,
+  dashboardTopMoversUpdateSchema,
+  dashboardWatchlistKey,
+  dashboardWatchlistUpdateSchema,
+  loadDashboardFundingRates,
+  loadDashboardNetworkStatus,
+  loadDashboardTopMovers,
+  loadDashboardWatchlistQuotes,
+  normalizeDashboardFundingRates,
+  normalizeDashboardMarketSessions,
+  normalizeDashboardTopMovers,
+  normalizeDashboardWatchlist
+} from "./widgets.js";
 
 type DashboardPerformanceRange = "24h" | "7d" | "30d";
 type DashboardAlertSeverity = "info" | "warning" | "critical";
@@ -108,6 +129,186 @@ export type RegisterDashboardRoutesDeps = {
 };
 
 export function registerDashboardRoutes(app: express.Express, deps: RegisterDashboardRoutesDeps) {
+  app.get("/dashboard/network-status", requireAuth, async (_req, res) => {
+    try {
+      return res.json(await loadDashboardNetworkStatus());
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_network_status_unexpected_error", reason: String(error) });
+    }
+  });
+
+  app.get("/dashboard/funding-rates", requireAuth, async (_req, res) => {
+    try {
+      const user = getUserFromLocals(res);
+      const row = await deps.db.globalSetting.findUnique({
+        where: { key: dashboardFundingRatesKey(user.id) },
+        select: { value: true, updatedAt: true }
+      });
+      const symbols = normalizeDashboardFundingRates(row?.value);
+      const marketData = await loadDashboardFundingRates(symbols);
+      return res.json({
+        symbols,
+        availableSymbols: [...DASHBOARD_WATCHLIST_SYMBOLS],
+        source: "Binance USD-M",
+        preferencesUpdatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+        ...marketData
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_funding_rates_unexpected_error", reason: String(error) });
+    }
+  });
+
+  app.put("/dashboard/funding-rates", requireAuth, async (req, res) => {
+    try {
+      const parsed = dashboardFundingRatesUpdateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      const user = getUserFromLocals(res);
+      const value = { symbols: [...parsed.data.symbols] };
+      const saved = await deps.db.globalSetting.upsert({
+        where: { key: dashboardFundingRatesKey(user.id) },
+        update: { value },
+        create: { key: dashboardFundingRatesKey(user.id), value },
+        select: { updatedAt: true }
+      });
+      return res.json({
+        ...value,
+        availableSymbols: [...DASHBOARD_WATCHLIST_SYMBOLS],
+        updatedAt: saved.updatedAt instanceof Date ? saved.updatedAt.toISOString() : null
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_funding_rates_update_failed", reason: String(error) });
+    }
+  });
+
+  app.get("/dashboard/top-movers", requireAuth, async (_req, res) => {
+    try {
+      const user = getUserFromLocals(res);
+      const row = await deps.db.globalSetting.findUnique({
+        where: { key: dashboardTopMoversKey(user.id) },
+        select: { value: true, updatedAt: true }
+      });
+      const marketType = normalizeDashboardTopMovers(row?.value);
+      const marketData = await loadDashboardTopMovers(marketType);
+      return res.json({
+        marketType,
+        availableMarketTypes: [...DASHBOARD_TOP_MOVERS_MARKET_TYPES],
+        source: marketType === "spot" ? "Binance Spot" : "Binance USD-M",
+        preferencesUpdatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+        ...marketData
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_top_movers_unexpected_error", reason: String(error) });
+    }
+  });
+
+  app.put("/dashboard/top-movers", requireAuth, async (req, res) => {
+    try {
+      const parsed = dashboardTopMoversUpdateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      const user = getUserFromLocals(res);
+      const value = { marketType: parsed.data.marketType };
+      const saved = await deps.db.globalSetting.upsert({
+        where: { key: dashboardTopMoversKey(user.id) },
+        update: { value },
+        create: { key: dashboardTopMoversKey(user.id), value },
+        select: { updatedAt: true }
+      });
+      return res.json({
+        ...value,
+        availableMarketTypes: [...DASHBOARD_TOP_MOVERS_MARKET_TYPES],
+        updatedAt: saved.updatedAt instanceof Date ? saved.updatedAt.toISOString() : null
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_top_movers_update_failed", reason: String(error) });
+    }
+  });
+
+  app.get("/dashboard/market-sessions", requireAuth, async (_req, res) => {
+    try {
+      const user = getUserFromLocals(res);
+      const row = await deps.db.globalSetting.findUnique({
+        where: { key: dashboardMarketSessionsKey(user.id) },
+        select: { value: true, updatedAt: true }
+      });
+      return res.json({
+        selected: normalizeDashboardMarketSessions(row?.value),
+        available: [...DASHBOARD_MARKET_SESSION_IDS],
+        updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : null
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_market_sessions_unexpected_error", reason: String(error) });
+    }
+  });
+
+  app.put("/dashboard/market-sessions", requireAuth, async (req, res) => {
+    try {
+      const parsed = dashboardMarketSessionsUpdateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      }
+      const user = getUserFromLocals(res);
+      const value = { selected: [...parsed.data.selected] };
+      const saved = await deps.db.globalSetting.upsert({
+        where: { key: dashboardMarketSessionsKey(user.id) },
+        update: { value },
+        create: { key: dashboardMarketSessionsKey(user.id), value },
+        select: { updatedAt: true }
+      });
+      return res.json({
+        ...value,
+        available: [...DASHBOARD_MARKET_SESSION_IDS],
+        updatedAt: saved.updatedAt instanceof Date ? saved.updatedAt.toISOString() : null
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_market_sessions_update_failed", reason: String(error) });
+    }
+  });
+
+  app.get("/dashboard/watchlist", requireAuth, async (_req, res) => {
+    try {
+      const user = getUserFromLocals(res);
+      const row = await deps.db.globalSetting.findUnique({
+        where: { key: dashboardWatchlistKey(user.id) },
+        select: { value: true, updatedAt: true }
+      });
+      const symbols = normalizeDashboardWatchlist(row?.value);
+      const marketData = await loadDashboardWatchlistQuotes(symbols);
+      return res.json({
+        symbols,
+        availableSymbols: [...DASHBOARD_WATCHLIST_SYMBOLS],
+        source: "Binance Spot",
+        preferencesUpdatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+        ...marketData
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_watchlist_unexpected_error", reason: String(error) });
+    }
+  });
+
+  app.put("/dashboard/watchlist", requireAuth, async (req, res) => {
+    try {
+      const parsed = dashboardWatchlistUpdateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      }
+      const user = getUserFromLocals(res);
+      const value = { symbols: [...parsed.data.symbols] };
+      const saved = await deps.db.globalSetting.upsert({
+        where: { key: dashboardWatchlistKey(user.id) },
+        update: { value },
+        create: { key: dashboardWatchlistKey(user.id), value },
+        select: { updatedAt: true }
+      });
+      return res.json({
+        ...value,
+        availableSymbols: [...DASHBOARD_WATCHLIST_SYMBOLS],
+        updatedAt: saved.updatedAt instanceof Date ? saved.updatedAt.toISOString() : null
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "dashboard_watchlist_update_failed", reason: String(error) });
+    }
+  });
+
   app.get("/dashboard/layout", requireAuth, async (_req, res) => {
     try {
       const user = getUserFromLocals(res);

@@ -80,7 +80,7 @@ test("dashboard layout returns defaults when no user layout exists", async () =>
   assert.equal(res.body?.version, 1);
   assert.equal(res.body?.desktop?.columns, 12);
   assert.equal(Array.isArray(res.body?.items), true);
-  assert.equal(res.body?.items?.length, 11);
+  assert.equal(res.body?.items?.length, 18);
   assert.equal(res.body?.items?.[0]?.id, "alerts");
   assert.equal(res.body?.items?.some((item: any) => item.id === "affiliateProfitshare"), true);
   assert.equal(res.body?.updatedAt, null);
@@ -147,12 +147,87 @@ test("dashboard layout update stores normalized layout", async () => {
   }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.equal(savedValue?.items?.length, 11);
-  assert.equal(res.body?.items?.length, 11);
+  assert.equal(savedValue?.items?.length, 18);
+  assert.equal(res.body?.items?.length, 18);
   assert.equal(res.body?.updatedAt, "2026-03-24T12:00:00.000Z");
   assert.equal(res.body?.items?.find((item: any) => item.id === "wallet")?.w, 4);
   assert.equal(res.body?.items?.find((item: any) => item.id === "affiliateProfitshare")?.id, "affiliateProfitshare");
   assert.equal(res.body?.items?.find((item: any) => item.id === "performance")?.id, "performance");
+});
+
+test("dashboard market sessions return defaults and persist a user selection", async () => {
+  const app = createFakeApp();
+  let savedKey = "";
+  let savedValue: any = null;
+  registerDashboardRoutes(app as any, {
+    db: {
+      globalSetting: {
+        async findUnique() {
+          return null;
+        },
+        async upsert(args: any) {
+          savedKey = args.where.key;
+          savedValue = args.update.value;
+          return { updatedAt: new Date("2026-09-03T12:00:00.000Z") };
+        }
+      }
+    }
+  } as any);
+
+  const getRes = createMockRes();
+  await getFinalHandler(app, "/dashboard/market-sessions")({}, getRes);
+  assert.deepEqual(getRes.body?.selected, ["newYork", "london", "frankfurt", "tokyo"]);
+
+  const putRes = createMockRes();
+  await getFinalPutHandler(app, "/dashboard/market-sessions")({ body: { selected: ["hongKong", "tokyo"] } }, putRes);
+  assert.equal(putRes.statusCode, 200);
+  assert.equal(savedKey, "dashboard_market_sessions:user_1");
+  assert.deepEqual(savedValue, { selected: ["hongKong", "tokyo"] });
+});
+
+test("dashboard watchlist persists validated user symbols", async () => {
+  const app = createFakeApp();
+  let savedValue: any = null;
+  registerDashboardRoutes(app as any, {
+    db: {
+      globalSetting: {
+        async upsert(args: any) {
+          savedValue = args.update.value;
+          return { updatedAt: new Date("2026-09-03T12:00:00.000Z") };
+        }
+      }
+    }
+  } as any);
+
+  const res = createMockRes();
+  await getFinalPutHandler(app, "/dashboard/watchlist")({ body: { symbols: ["SOLUSDT", "BTCUSDT"] } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(savedValue, { symbols: ["SOLUSDT", "BTCUSDT"] });
+  assert.deepEqual(res.body?.symbols, ["SOLUSDT", "BTCUSDT"]);
+});
+
+test("dashboard funding rates persist validated user symbols", async () => {
+  const app = createFakeApp();
+  let savedValue: any = null;
+  registerDashboardRoutes(app as any, {
+    db: { globalSetting: { async upsert(args: any) { savedValue = args.update.value; return { updatedAt: new Date() }; } } }
+  } as any);
+  const res = createMockRes();
+  await getFinalPutHandler(app, "/dashboard/funding-rates")({ body: { symbols: ["ETHUSDT", "BTCUSDT"] } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(savedValue, { symbols: ["ETHUSDT", "BTCUSDT"] });
+});
+
+test("dashboard top movers persist the selected market type", async () => {
+  const app = createFakeApp();
+  let savedValue: any = null;
+  registerDashboardRoutes(app as any, {
+    db: { globalSetting: { async upsert(args: any) { savedValue = args.update.value; return { updatedAt: new Date() }; } } }
+  } as any);
+  const res = createMockRes();
+  await getFinalPutHandler(app, "/dashboard/top-movers")({ body: { marketType: "perp" } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(savedValue, { marketType: "perp" });
 });
 
 test("dashboard alerts suppress stale sync warnings for paper accounts", async () => {

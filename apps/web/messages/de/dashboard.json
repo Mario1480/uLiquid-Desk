@@ -196,6 +196,134 @@
       "return": "Return"
     }
   },
+  "marketSessions": {
+    "title": "Börsenzeiten",
+    "subtitle": "Reguläre Handelszeiten in der jeweiligen Ortszeit.",
+    "select": "Auswählen",
+    "cancel": "Abbrechen",
+    "save": "Auswahl speichern",
+    "saving": "Speichert...",
+    "loading": "Börsenzeiten werden geladen...",
+    "open": "Geöffnet",
+    "closed": "Geschlossen",
+    "opensIn": "Öffnet in",
+    "closesIn": "Schließt in",
+    "regularHours": "Reguläre Zeiten · Börsenfeiertage können abweichen",
+    "saveError": "Auswahl konnte nicht gespeichert werden.",
+    "exchanges": {
+      "newYork": "NYSE / Nasdaq",
+      "london": "London Stock Exchange",
+      "frankfurt": "Xetra Frankfurt",
+      "tokyo": "Tokyo Stock Exchange",
+      "hongKong": "Hong Kong Exchange"
+    },
+    "timeZones": {
+      "newYork": "New York",
+      "london": "London",
+      "frankfurt": "Frankfurt",
+      "tokyo": "Tokio",
+      "hongKong": "Hongkong"
+    }
+  },
+  "watchlist": {
+    "title": "Krypto-Watchlist",
+    "subtitle": "Favorisierte Spot-Märkte mit aktuellem 24h-Kontext.",
+    "edit": "Bearbeiten",
+    "done": "Fertig",
+    "chooseCoin": "Coin auswählen",
+    "add": "Hinzufügen",
+    "remove": "{symbol} entfernen",
+    "loading": "Kurse werden geladen...",
+    "unavailable": "Kurse sind aktuell nicht verfügbar.",
+    "low": "Tief",
+    "high": "Hoch",
+    "updated": "Aktualisiert {time}",
+    "degraded": "Marktdaten verzögert"
+  },
+  "quickActions": {
+    "title": "Schnellzugriff",
+    "subtitle": "Häufig verwendete Desk-Bereiche direkt öffnen.",
+    "trade": "Trading Desk öffnen",
+    "prediction": "Prognose erstellen",
+    "bot": "Bot erstellen",
+    "intelligence": "Market Intelligence",
+    "account": "Exchange verbinden"
+  },
+  "fundingRates": {
+    "title": "Funding Rates",
+    "subtitle": "Aktuelles USD-M-Perpetual-Funding ausgewählter Märkte.",
+    "edit": "Bearbeiten",
+    "done": "Fertig",
+    "chooseMarket": "Markt auswählen",
+    "add": "Hinzufügen",
+    "remove": "{symbol} entfernen",
+    "loading": "Funding Rates werden geladen...",
+    "unavailable": "Funding Rates sind aktuell nicht verfügbar.",
+    "longsPay": "Longs zahlen Shorts",
+    "shortsPay": "Shorts zahlen Longs",
+    "neutral": "Neutral",
+    "elevated": "Erhöht",
+    "nextIn": "Nächstes Funding in",
+    "refresh": "Aktualisierung alle 30 Sekunden",
+    "degraded": "Funding-Daten verzögert"
+  },
+  "topMovers": {
+    "title": "Top Movers",
+    "subtitle": "Größte Bewegungen liquider USDT-Märkte in den letzten 24 Stunden.",
+    "marketType": "Markttyp",
+    "spot": "Spot",
+    "perp": "Perpetual",
+    "gainers": "Gewinner",
+    "losers": "Verlierer",
+    "volume": "Volumen",
+    "loading": "Top Movers werden geladen...",
+    "unavailable": "Top Movers sind aktuell nicht verfügbar.",
+    "liquidityFilter": "Mindestens 10 Mio. USDT Volumen",
+    "degraded": "Marktdaten verzögert"
+  },
+  "portfolioAllocation": {
+    "title": "Portfolio-Aufteilung",
+    "subtitle": "Kapitalverteilung auf Spot und Futures-Margin ohne doppelte Exposure-Zählung.",
+    "filterLabel": "Exchange-Account",
+    "allAccounts": "Alle Accounts",
+    "loading": "Portfolio-Aufteilung wird geladen...",
+    "empty": "Noch keine Portfolio-Werte verfügbar.",
+    "total": "Portfolio-Equity",
+    "allocationLabel": "Portfolio-Aufteilung",
+    "segments": {
+      "spot": "Spot-Kapital",
+      "available": "Freie Futures-Margin",
+      "used": "Gebundene Margin"
+    },
+    "openExposure": "Offenes Exposure · {count} Positionen"
+  },
+  "networkStatus": {
+    "title": "Netzwerk- & Marktstatus",
+    "subtitle": "Rein lesende Verfügbarkeits- und Latenzchecks wichtiger Anbieter.",
+    "refresh": "Prüfen",
+    "loading": "Dienste werden geprüft...",
+    "unavailable": "Der Dienststatus ist aktuell nicht verfügbar.",
+    "readOnly": "Read-only-Checks · alle 30 Sekunden",
+    "checked": "Geprüft {time}",
+    "degraded": "Mindestens ein Dienst benötigt Aufmerksamkeit",
+    "marketData": "Marktdaten-API",
+    "accounts": "{count} eingerichtete Accounts",
+    "syncedStatus": "Desk-Synchronstatus",
+    "block": "Block {value}",
+    "services": {
+      "hyperEvm": "HyperEVM",
+      "hyperliquid": "Hyperliquid",
+      "arbitrum": "Arbitrum One",
+      "binanceSpot": "Binance Spot",
+      "binancePerp": "Binance USD-M",
+      "connectedExchanges": "Verbundene Exchanges"
+    },
+    "status": {
+      "operational": "Verfügbar",
+      "degraded": "Verzögert",
+      "unavailable": "Nicht verfügbar"
+    }
+  },
   "widgetMeta": {
     "agoSeconds": "vor {count}s",
     "agoMinutes": "vor {count}m",

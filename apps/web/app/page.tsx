@@ -17,6 +17,13 @@ type ExchangeAccountOverview
 import { AppIcon } from "./components/AppIcon";
 import AlertsFeed, { type DashboardAlert } from "../components/dashboard/AlertsFeed";
 import DashboardWidgetFrame from "../components/dashboard/DashboardWidgetFrame";
+import MarketSessionsWidget from "../components/dashboard/MarketSessionsWidget";
+import WatchlistWidget from "../components/dashboard/WatchlistWidget";
+import QuickActionsWidget from "../components/dashboard/QuickActionsWidget";
+import FundingRatesWidget from "../components/dashboard/FundingRatesWidget";
+import TopMoversWidget from "../components/dashboard/TopMoversWidget";
+import PortfolioAllocationWidget from "../components/dashboard/PortfolioAllocationWidget";
+import NetworkStatusWidget from "../components/dashboard/NetworkStatusWidget";
 import { HyperEvmAddressLink } from "../components/wallet/ExplorerLinks";
 import type { GridInstance } from "../components/grid/types";
 import {
@@ -1735,6 +1742,47 @@ export default function Page() {
         </div>
       )
     },
+    marketSessions: {
+      available: true,
+      title: t("marketSessions.title"),
+      render: () => <MarketSessionsWidget />
+    },
+    watchlist: {
+      available: true,
+      title: t("watchlist.title"),
+      render: () => <WatchlistWidget />
+    },
+    quickActions: {
+      available: true,
+      title: t("quickActions.title"),
+      render: () => <QuickActionsWidget visibility={accessVisibility} />
+    },
+    fundingRates: {
+      available: true,
+      title: t("fundingRates.title"),
+      render: () => <FundingRatesWidget />
+    },
+    topMovers: {
+      available: true,
+      title: t("topMovers.title"),
+      render: () => <TopMoversWidget />
+    },
+    portfolioAllocation: {
+      available: true,
+      title: t("portfolioAllocation.title"),
+      render: () => (
+        <PortfolioAllocationWidget
+          accounts={overview}
+          positions={openPositions}
+          loading={loading}
+        />
+      )
+    },
+    networkStatus: {
+      available: true,
+      title: t("networkStatus.title"),
+      render: () => <NetworkStatusWidget accounts={overview} />
+    },
     affiliateProfitshare: {
       available: true,
       title: t("affiliateProfitshare.title"),
@@ -1969,7 +2017,10 @@ export default function Page() {
     accessVisibility.bots,
     accessVisibility.economicCalendar,
     accessVisibility.gridBots,
+    accessVisibility.accounts,
+    accessVisibility.marketIntelligence,
     accessVisibility.news,
+    accessVisibility.predictionsDashboard,
     accessVisibility.tradingDesk,
     affiliateOverview,
     affiliateOverviewLoadError,

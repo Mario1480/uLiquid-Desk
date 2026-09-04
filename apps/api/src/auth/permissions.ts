@@ -55,6 +55,11 @@ export function resolvePermissionRequirementForRequest(
   }
   if (
     p === "/dashboard/layout"
+    || p === "/dashboard/network-status"
+    || p === "/dashboard/funding-rates"
+    || p === "/dashboard/top-movers"
+    || p === "/dashboard/market-sessions"
+    || p === "/dashboard/watchlist"
     || p === "/dashboard/overview"
     || p === "/dashboard/performance"
     || p === "/dashboard/risk-analysis"

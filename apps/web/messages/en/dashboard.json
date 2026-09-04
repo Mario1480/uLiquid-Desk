@@ -196,6 +196,134 @@
       "return": "Return"
     }
   },
+  "marketSessions": {
+    "title": "Market Sessions",
+    "subtitle": "Regular trading hours in each exchange's local time.",
+    "select": "Select",
+    "cancel": "Cancel",
+    "save": "Save selection",
+    "saving": "Saving...",
+    "loading": "Loading market sessions...",
+    "open": "Open",
+    "closed": "Closed",
+    "opensIn": "Opens in",
+    "closesIn": "Closes in",
+    "regularHours": "Regular hours · Exchange holidays may differ",
+    "saveError": "Selection could not be saved.",
+    "exchanges": {
+      "newYork": "NYSE / Nasdaq",
+      "london": "London Stock Exchange",
+      "frankfurt": "Xetra Frankfurt",
+      "tokyo": "Tokyo Stock Exchange",
+      "hongKong": "Hong Kong Exchange"
+    },
+    "timeZones": {
+      "newYork": "New York",
+      "london": "London",
+      "frankfurt": "Frankfurt",
+      "tokyo": "Tokyo",
+      "hongKong": "Hong Kong"
+    }
+  },
+  "watchlist": {
+    "title": "Crypto Watchlist",
+    "subtitle": "Favorite spot markets with live 24h context.",
+    "edit": "Edit",
+    "done": "Done",
+    "chooseCoin": "Choose coin",
+    "add": "Add",
+    "remove": "Remove {symbol}",
+    "loading": "Loading prices...",
+    "unavailable": "Prices are currently unavailable.",
+    "low": "Low",
+    "high": "High",
+    "updated": "Updated {time}",
+    "degraded": "Market data delayed"
+  },
+  "quickActions": {
+    "title": "Quick Actions",
+    "subtitle": "Open frequently used Desk workflows.",
+    "trade": "Open Trading Desk",
+    "prediction": "Create Prediction",
+    "bot": "Create Bot",
+    "intelligence": "Market Intelligence",
+    "account": "Connect Exchange"
+  },
+  "fundingRates": {
+    "title": "Funding Rates",
+    "subtitle": "Current USD-M perpetual funding for selected markets.",
+    "edit": "Edit",
+    "done": "Done",
+    "chooseMarket": "Choose market",
+    "add": "Add",
+    "remove": "Remove {symbol}",
+    "loading": "Loading funding rates...",
+    "unavailable": "Funding rates are currently unavailable.",
+    "longsPay": "Longs pay shorts",
+    "shortsPay": "Shorts pay longs",
+    "neutral": "Neutral",
+    "elevated": "Elevated",
+    "nextIn": "Next funding in",
+    "refresh": "Updates every 30 seconds",
+    "degraded": "Funding data delayed"
+  },
+  "topMovers": {
+    "title": "Top Movers",
+    "subtitle": "Largest liquid USDT-market moves over the last 24 hours.",
+    "marketType": "Market type",
+    "spot": "Spot",
+    "perp": "Perpetual",
+    "gainers": "Gainers",
+    "losers": "Losers",
+    "volume": "Volume",
+    "loading": "Loading top movers...",
+    "unavailable": "Top movers are currently unavailable.",
+    "liquidityFilter": "Minimum 10M USDT volume",
+    "degraded": "Market data delayed"
+  },
+  "portfolioAllocation": {
+    "title": "Portfolio Allocation",
+    "subtitle": "Capital split across spot and futures margin without double counting exposure.",
+    "filterLabel": "Exchange account",
+    "allAccounts": "All accounts",
+    "loading": "Loading portfolio allocation...",
+    "empty": "No portfolio values are available yet.",
+    "total": "Portfolio equity",
+    "allocationLabel": "Portfolio allocation",
+    "segments": {
+      "spot": "Spot capital",
+      "available": "Available futures margin",
+      "used": "Margin in use"
+    },
+    "openExposure": "Open exposure · {count} positions"
+  },
+  "networkStatus": {
+    "title": "Network & Market Status",
+    "subtitle": "Read-only availability and latency checks for critical providers.",
+    "refresh": "Refresh",
+    "loading": "Checking services...",
+    "unavailable": "Service status is currently unavailable.",
+    "readOnly": "Read-only checks · every 30 seconds",
+    "checked": "Checked {time}",
+    "degraded": "One or more services need attention",
+    "marketData": "Market data API",
+    "accounts": "{count} configured accounts",
+    "syncedStatus": "Desk sync state",
+    "block": "Block {value}",
+    "services": {
+      "hyperEvm": "HyperEVM",
+      "hyperliquid": "Hyperliquid",
+      "arbitrum": "Arbitrum One",
+      "binanceSpot": "Binance Spot",
+      "binancePerp": "Binance USD-M",
+      "connectedExchanges": "Connected Exchanges"
+    },
+    "status": {
+      "operational": "Operational",
+      "degraded": "Delayed",
+      "unavailable": "Unavailable"
+    }
+  },
   "widgetMeta": {
     "agoSeconds": "{count}s ago",
     "agoMinutes": "{count}m ago",

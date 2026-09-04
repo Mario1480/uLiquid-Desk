@@ -1331,6 +1331,565 @@
   flex: 1 1 auto;
 }
 
+.dashboardCompactWidgetHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dashboardCompactWidgetTitle {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.dashboardCompactWidgetSubtitle {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dashboardCompactWidgetFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.dashboardCompactWidgetState {
+  min-height: 140px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.dashboardWidgetInlineError {
+  color: var(--color-danger-text, #fca5a5);
+}
+
+.dashboardMarketSessionsCard,
+.dashboardWatchlistCard,
+.dashboardQuickActionsCard {
+  gap: 12px;
+}
+
+.dashboardMarketSessionsList,
+.dashboardWatchlistRows {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.dashboardMarketSessionRow,
+.dashboardWatchlistRow,
+.dashboardWatchlistEditRow {
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface-control);
+}
+
+.dashboardMarketSessionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+}
+
+.dashboardMarketSessionIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboardMarketSessionIdentity > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.dashboardMarketSessionIdentity strong,
+.dashboardWatchlistAsset strong {
+  font-size: 12px;
+}
+
+.dashboardMarketSessionIdentity span:not(.uiStatusBadge),
+.dashboardWatchlistAsset span,
+.dashboardWatchlistRange,
+.dashboardMarketSessionCountdown span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.dashboardMarketSessionCountdown {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.dashboardMarketSessionCountdown strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardWidgetSelectionPanel {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dashboardWidgetChoiceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.dashboardWidgetChoice {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-control);
+  font-size: 11px;
+}
+
+.dashboardWatchlistRow {
+  display: grid;
+  grid-template-columns: minmax(74px, 0.8fr) minmax(112px, 1fr) minmax(88px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.dashboardWatchlistRow:hover {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-card);
+}
+
+.dashboardWatchlistAsset,
+.dashboardWatchlistRange,
+.dashboardWatchlistPrice {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.dashboardWatchlistRange {
+  grid-template-columns: 1fr 1fr;
+}
+
+.dashboardWatchlistPrice {
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardWatchlistPrice strong {
+  font-size: 13px;
+}
+
+.dashboardWatchlistPrice span {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dashboardValuePositive {
+  color: var(--color-success-text, #86efac);
+}
+
+.dashboardValueNegative {
+  color: var(--color-danger-text, #fca5a5);
+}
+
+.dashboardWatchlistAddRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.dashboardWatchlistEditList {
+  display: grid;
+  gap: 7px;
+}
+
+.dashboardWatchlistEditRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.dashboardWatchlistEditRow small {
+  color: var(--muted);
+}
+
+.dashboardWatchlistRemove {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.dashboardWatchlistRemove:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dashboardQuickActionsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+
+.dashboardQuickAction {
+  min-width: 0;
+  min-height: 42px;
+  justify-content: flex-start;
+}
+
+.dashboardQuickAction span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.dashboardFundingRatesCard,
+.dashboardTopMoversCard,
+.dashboardPortfolioAllocationCard,
+.dashboardNetworkStatusCard {
+  gap: 12px;
+}
+
+.dashboardPortfolioFilter {
+  max-width: 190px;
+  min-width: 145px;
+}
+
+.dashboardPortfolioBody {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.dashboardPortfolioTotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dashboardPortfolioTotal strong {
+  color: var(--text);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardPortfolioBar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ui-surface-control);
+}
+
+.dashboardPortfolioBarSegment-spot,
+.dashboardPortfolioDot-spot {
+  background: #38bdf8;
+}
+
+.dashboardPortfolioBarSegment-available,
+.dashboardPortfolioDot-available {
+  background: #34d399;
+}
+
+.dashboardPortfolioBarSegment-used,
+.dashboardPortfolioDot-used {
+  background: #f59e0b;
+}
+
+.dashboardPortfolioLegend {
+  display: grid;
+  gap: 7px;
+}
+
+.dashboardPortfolioLegendRow {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) minmax(86px, auto) 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-control);
+  font-size: 11px;
+}
+
+.dashboardPortfolioLegendRow strong,
+.dashboardPortfolioLegendRow small {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardPortfolioLegendRow small {
+  color: var(--muted);
+}
+
+.dashboardPortfolioDot,
+.dashboardNetworkStatusPulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.dashboardPortfolioExposure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 9px;
+  border-top: 1px solid var(--ui-border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dashboardPortfolioExposure strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardNetworkStatusList {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.dashboardNetworkStatusRow {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  background: var(--ui-surface-control);
+}
+
+.dashboardNetworkStatusPulse-operational {
+  background: var(--color-success-text, #86efac);
+  box-shadow: 0 0 9px rgba(52, 211, 153, 0.55);
+}
+
+.dashboardNetworkStatusPulse-degraded {
+  background: #f59e0b;
+}
+
+.dashboardNetworkStatusPulse-unavailable {
+  background: var(--color-danger-text, #fca5a5);
+}
+
+.dashboardNetworkStatusIdentity,
+.dashboardNetworkStatusMeta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.dashboardNetworkStatusIdentity strong {
+  font-size: 12px;
+}
+
+.dashboardNetworkStatusIdentity span,
+.dashboardNetworkStatusMeta small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.dashboardNetworkStatusMeta {
+  justify-items: end;
+}
+
+.dashboardFundingRatesList {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.dashboardFundingRateRow {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.85fr) minmax(118px, 1fr) minmax(126px, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface-control);
+}
+
+.dashboardFundingRateMarket,
+.dashboardFundingRateValue,
+.dashboardFundingRateNext {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.dashboardFundingRateMarket strong,
+.dashboardFundingRateValue strong,
+.dashboardFundingRateNext strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboardFundingRateMarket span,
+.dashboardFundingRateValue span,
+.dashboardFundingRateNext > span:not(.uiStatusBadge) {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.dashboardFundingRateNext {
+  justify-items: end;
+}
+
+.dashboardTopMoversTabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dashboardTopMoversGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.dashboardTopMoversColumn {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.dashboardTopMoversColumnTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.dashboardTopMoverRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(66px, 0.8fr) minmax(54px, 0.6fr) minmax(70px, 0.8fr) minmax(58px, auto);
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  background: var(--ui-surface-control);
+  color: inherit;
+  font-size: 11px;
+  text-decoration: none;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.dashboardTopMoverRow:hover {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-card);
+}
+
+.dashboardTopMoverRank {
+  color: var(--muted);
+  text-align: center;
+}
+
+.dashboardTopMoverAsset {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.dashboardTopMoverAsset strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboardTopMoverAsset small,
+.dashboardTopMoverVolume {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.dashboardTopMoverPrice,
+.dashboardTopMoverVolume,
+.dashboardTopMoverRow > strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .dashboardWidgetChoiceGrid,
+  .dashboardQuickActionsGrid,
+  .dashboardTopMoversGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboardWatchlistRow {
+    grid-template-columns: minmax(70px, 1fr) minmax(88px, auto);
+  }
+
+  .dashboardWatchlistRange {
+    display: none;
+  }
+
+  .dashboardFundingRateRow {
+    grid-template-columns: minmax(78px, 0.8fr) minmax(104px, 1fr) minmax(112px, auto);
+    gap: 8px;
+  }
+
+  .dashboardTopMoverRow {
+    grid-template-columns: 20px minmax(70px, 1fr) minmax(54px, 0.6fr) minmax(58px, auto);
+  }
+
+  .dashboardTopMoverPrice {
+    display: none;
+  }
+}
+
 .dashboardAccountsWidget {
   display: grid;
   gap: 12px;

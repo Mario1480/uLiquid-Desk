@@ -65,6 +65,15 @@ test("dashboard routes map to dashboard and live exposure permissions", () => {
   const liveExposureRead = { any: ["trading.manual_market", "trading.manual_limit"] };
 
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/layout", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/network-status", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/funding-rates", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("PUT", "/dashboard/funding-rates", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/top-movers", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("PUT", "/dashboard/top-movers", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/market-sessions", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("PUT", "/dashboard/market-sessions", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/watchlist", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("PUT", "/dashboard/watchlist", {}), dashboardRead);
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/overview", {}), dashboardRead);
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/performance", {}), dashboardRead);
   assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/risk-analysis", {}), dashboardRead);

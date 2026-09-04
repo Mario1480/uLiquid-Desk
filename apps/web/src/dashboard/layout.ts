@@ -14,7 +14,14 @@ export const DASHBOARD_WIDGET_IDS = [
   "gridBotsOverview",
   "wallet",
   "affiliateProfitshare",
-  "openPositions"
+  "openPositions",
+  "marketSessions",
+  "watchlist",
+  "quickActions",
+  "fundingRates",
+  "topMovers",
+  "portfolioAllocation",
+  "networkStatus"
 ] as const;
 
 export type DashboardWidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
@@ -41,6 +48,7 @@ export type DashboardLayoutResponse = {
 
 export type DashboardWidgetIconKey =
   | "overview"
+  | "performance"
   | "riskAlerts"
   | "calendar"
   | "news"
@@ -49,7 +57,11 @@ export type DashboardWidgetIconKey =
   | "wallet"
   | "manualTrading"
   | "bots"
-  | "affiliate";
+  | "affiliate"
+  | "exchange"
+  | "favorite"
+  | "quickActions";
+
 
 export type DashboardWidgetRegistryEntry = {
   id: DashboardWidgetId;
@@ -136,6 +148,55 @@ export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetRegistryEntry[] = [
     anchorId: "widget-open-positions",
     icon: "manualTrading",
     defaultSize: { w: 8, h: 3 }
+  },
+  {
+    id: "marketSessions",
+    titleKey: "marketSessions.title",
+    anchorId: "widget-market-sessions",
+    icon: "exchange",
+    defaultSize: { w: 4, h: 3 }
+  },
+  {
+    id: "watchlist",
+    titleKey: "watchlist.title",
+    anchorId: "widget-watchlist",
+    icon: "favorite",
+    defaultSize: { w: 4, h: 3 }
+  },
+  {
+    id: "quickActions",
+    titleKey: "quickActions.title",
+    anchorId: "widget-quick-actions",
+    icon: "quickActions",
+    defaultSize: { w: 4, h: 3 }
+  },
+  {
+    id: "fundingRates",
+    titleKey: "fundingRates.title",
+    anchorId: "widget-funding-rates",
+    icon: "marketContext",
+    defaultSize: { w: 6, h: 4 }
+  },
+  {
+    id: "topMovers",
+    titleKey: "topMovers.title",
+    anchorId: "widget-top-movers",
+    icon: "performance",
+    defaultSize: { w: 6, h: 4 }
+  },
+  {
+    id: "portfolioAllocation",
+    titleKey: "portfolioAllocation.title",
+    anchorId: "widget-portfolio-allocation",
+    icon: "accounts",
+    defaultSize: { w: 6, h: 4 }
+  },
+  {
+    id: "networkStatus",
+    titleKey: "networkStatus.title",
+    anchorId: "widget-network-status",
+    icon: "exchange",
+    defaultSize: { w: 6, h: 4 }
   }
 ];
 
@@ -164,7 +225,14 @@ const DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
   { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
   { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
   { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 },
-  { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 }
+  { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 },
+  { id: "marketSessions", visible: true, x: 0, y: 24, w: 4, h: 3 },
+  { id: "watchlist", visible: true, x: 4, y: 24, w: 4, h: 3 },
+  { id: "quickActions", visible: true, x: 8, y: 24, w: 4, h: 3 },
+  { id: "fundingRates", visible: true, x: 0, y: 27, w: 6, h: 4 },
+  { id: "topMovers", visible: true, x: 6, y: 27, w: 6, h: 4 },
+  { id: "portfolioAllocation", visible: true, x: 0, y: 31, w: 6, h: 4 },
+  { id: "networkStatus", visible: true, x: 6, y: 31, w: 6, h: 4 }
 ];
 
 function layoutItemsEqual(left: DashboardLayoutItem[], right: DashboardLayoutItem[]): boolean {
@@ -249,13 +317,17 @@ export function normalizeDashboardLayout(value: Partial<DashboardLayoutResponse>
     });
   }
 
+  const matchesLegacyLayout = layoutItemsEqual(
+    sortDashboardLayoutItems(parsedItems),
+    sortDashboardLayoutItems(LEGACY_DEFAULT_LAYOUT_ITEMS)
+  );
   const merged = DASHBOARD_WIDGET_IDS.map((id) => parsedItems.find((item) => item.id === id) ?? defaultItem(id));
   const nextItems = sortDashboardLayoutItems(merged);
 
   return {
     version: DASHBOARD_LAYOUT_VERSION,
     desktop: base.desktop,
-    items: layoutItemsEqual(nextItems, sortDashboardLayoutItems(LEGACY_DEFAULT_LAYOUT_ITEMS))
+    items: matchesLegacyLayout
       ? DEFAULT_LAYOUT_ITEMS.map((item) => ({ ...item }))
       : nextItems,
     updatedAt: value?.updatedAt ?? null

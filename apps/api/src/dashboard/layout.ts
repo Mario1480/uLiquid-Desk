@@ -17,7 +17,14 @@ export const DASHBOARD_WIDGET_IDS = [
   "gridBotsOverview",
   "wallet",
   "affiliateProfitshare",
-  "openPositions"
+  "openPositions",
+  "marketSessions",
+  "watchlist",
+  "quickActions",
+  "fundingRates",
+  "topMovers",
+  "portfolioAllocation",
+  "networkStatus"
 ] as const;
 
 export type DashboardWidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
@@ -127,7 +134,14 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
     { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
     { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
     { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 },
-    { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 }
+    { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 },
+    { id: "marketSessions", visible: true, x: 0, y: 24, w: 4, h: 3 },
+    { id: "watchlist", visible: true, x: 4, y: 24, w: 4, h: 3 },
+    { id: "quickActions", visible: true, x: 8, y: 24, w: 4, h: 3 },
+    { id: "fundingRates", visible: true, x: 0, y: 27, w: 6, h: 4 },
+    { id: "topMovers", visible: true, x: 6, y: 27, w: 6, h: 4 },
+    { id: "portfolioAllocation", visible: true, x: 0, y: 31, w: 6, h: 4 },
+    { id: "networkStatus", visible: true, x: 6, y: 31, w: 6, h: 4 }
   ]
 };
 
@@ -185,6 +199,10 @@ export function normalizeDashboardLayoutValue(value: unknown): DashboardLayoutRe
     parsedItems.push(parsed.data);
   }
 
+  const matchesLegacyLayout = layoutItemsEqual(
+    sortDashboardLayoutItems(parsedItems),
+    sortDashboardLayoutItems(LEGACY_DEFAULT_DASHBOARD_LAYOUT.items)
+  );
   const merged = DASHBOARD_WIDGET_IDS.map((id) => {
     const existing = parsedItems.find((item) => item.id === id);
     return existing ? { ...existing } : cloneDefaultItem(id);
@@ -198,7 +216,7 @@ export function normalizeDashboardLayoutValue(value: unknown): DashboardLayoutRe
       gap: DASHBOARD_LAYOUT_GAP,
       rowHeight: DASHBOARD_LAYOUT_ROW_HEIGHT
     },
-    items: layoutItemsEqual(nextItems, sortDashboardLayoutItems(LEGACY_DEFAULT_DASHBOARD_LAYOUT.items))
+    items: matchesLegacyLayout
       ? DEFAULT_DASHBOARD_LAYOUT.items.map((item) => ({ ...item }))
       : nextItems
   };
