@@ -2,7 +2,8 @@ import { logger } from "../logger.js";
 import { getUliqAutoFinalizerSettings, UliqAutoFinalizerService } from "./autoFinalizer.service.js";
 import {
   getUliqPublicPresaleConfig,
-  type UliqPublicPresaleConfig
+  type UliqPublicPresaleConfig,
+  type UliqPublicPresaleRoundId
 } from "./publicPresale.config.js";
 import { createUliqRpcPair, getConsistentFinalizedBlock, type UliqRpcPair } from "./rpc.js";
 
@@ -257,7 +258,7 @@ export class UliqPublicPresaleAutoFinalizerService {
   private async observe(): Promise<Record<string, unknown>> {
     const head = await getConsistentFinalizedBlock(this.rpc);
     const cutoff = new Date(Number(head.timestamp) * 1_000);
-    const rounds = [];
+    const rounds: Array<{ roundId: UliqPublicPresaleRoundId; eligible: number }> = [];
     for (const round of this.config.rounds) {
       const candidates = await this.db.uliqPresalePurchase.findMany({
         where: {

@@ -127,7 +127,7 @@ export function buildPublicBillingCatalog(packages: readonly any[], now = new Da
       && plan.maxRunningPredictionsComposite === expected[4]
       && plan.monthlyAiCredits === expected[5];
   });
-  const expectedAddons = new Map([
+  const expectedAddons: ReadonlyMap<string, readonly [number, string, number, number, number]> = new Map([
     ["capacity_topup_bots_unit", [500, "0", 1, 0, 0]],
     ["capacity_topup_ai_predictions_unit", [500, "0", 0, 1, 0]],
     ["capacity_topup_composite_predictions_unit", [500, "0", 0, 0, 1]],

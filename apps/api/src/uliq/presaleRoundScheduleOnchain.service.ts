@@ -46,6 +46,27 @@ type OnchainRound = {
   unsoldInventory: bigint;
 };
 
+type ScheduleRoundState = Awaited<ReturnType<typeof getUliqPresaleRoundSchedule>>["rounds"][number] & {
+  onchain: {
+    contractAddress: `0x${string}`;
+    owner: `0x${string}`;
+    state: number;
+    saleStart: string | null;
+    saleEnd: string | null;
+    saleWindowVersion: string;
+    inventorySourceAddress: `0x${string}`;
+    inventoryFunded: boolean;
+    inventoryUliqRaw: string;
+    allocationCapUliqRaw: string;
+    pendingPurchaseCount: string;
+    unsoldReleasedUliqRaw: string;
+    unsoldInventoryUliqRaw: string;
+    bindingStatus: string;
+    actionId: string | null;
+    transactionHash: string | null;
+  };
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -133,7 +154,7 @@ export class UliqPresaleRoundScheduleOnchainService {
   async getState() {
     const schedule = await getUliqPresaleRoundSchedule(this.db);
     const head = await getConsistentFinalizedBlock(this.rpc);
-    const rounds = [];
+    const rounds: ScheduleRoundState[] = [];
     for (const round of this.config.rounds) {
       const draft = schedule.rounds.find((entry) => entry.id === round.id)!;
       const onchain = await this.readRound(round, head.number);
@@ -380,7 +401,7 @@ export class UliqPresaleRoundScheduleOnchainService {
       args: [round.contractAddress, onchain.allocationCap]
     });
     const fundingData = encodeFunctionData({ abi: uliqPresaleRoundAbi, functionName: "fundInventory" });
-    const transactions = [];
+    const transactions: Array<ReturnType<typeof safeTransaction>> = [];
     if (allowance < onchain.allocationCap) {
       transactions.push(safeTransaction(this.config.chainId, this.config.tokenAddress, approvalData, onchain.inventorySource));
     }

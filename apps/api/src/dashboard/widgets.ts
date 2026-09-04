@@ -366,8 +366,11 @@ async function probeRpcService(
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
       signal: AbortSignal.timeout(4_000)
     });
-    const payload = response.ok ? await response.json() : null;
-    const rawBlock = typeof payload?.result === "string" ? payload.result : "";
+    const payload: unknown = response.ok ? await response.json() : null;
+    const payloadRecord = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload as Record<string, unknown>
+      : null;
+    const rawBlock = typeof payloadRecord?.result === "string" ? payloadRecord.result : "";
     const blockNumber = /^0x[0-9a-f]+$/i.test(rawBlock) ? Number.parseInt(rawBlock.slice(2), 16) : null;
     const latencyMs = Math.max(0, Date.now() - startedAt);
     return {
