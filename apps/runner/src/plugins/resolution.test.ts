@@ -70,7 +70,7 @@ test("plugin resolution honors enabled plugin list with ordering", () => {
           EXECUTION_PLUGIN_ID_PREDICTION_COPIER
         ],
         policySnapshot: {
-          plan: "pro",
+          plan: "premium",
           allowedPluginIds: null,
           evaluatedAt: new Date().toISOString()
         }
@@ -107,7 +107,7 @@ test("plugin resolution accepts Premium policy snapshots", () => {
   assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_PREDICTION_COPIER);
 });
 
-test("Free policy resolves Prediction Copier plugins end-to-end", () => {
+test("Free policy blocks Prediction Copier plugins end-to-end", () => {
   const resolved = resolveRunnerPluginsForBot(makeBot({
     strategyKey: "prediction_copier",
     paramsJson: {
@@ -127,13 +127,13 @@ test("Free policy resolves Prediction Copier plugins end-to-end", () => {
     }
   }));
 
-  assert.equal(resolved.signal.selectedPluginId, SIGNAL_PLUGIN_ID_PREDICTION_COPIER);
-  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_PREDICTION_COPIER);
-  assert.equal(resolved.signalSource.selectedPluginId, SIGNAL_SOURCE_PLUGIN_ID_PREDICTION_STATE);
-  assert.equal(resolved.diagnostics.some((item) => item.type === "PLUGIN_DISABLED_BY_POLICY"), false);
+  assert.equal(resolved.signal.selectedPluginId, SIGNAL_PLUGIN_ID_LEGACY_DUMMY);
+  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_FUTURES_ENGINE_LEGACY);
+  assert.equal(resolved.signalSource.selectedPluginId, SIGNAL_SOURCE_PLUGIN_ID_NONE);
+  assert.equal(resolved.diagnostics.some((item) => item.type === "PLUGIN_DISABLED_BY_POLICY"), true);
 });
 
-test("Free policy resolves futures Grid execution", () => {
+test("Free policy blocks futures Grid execution", () => {
   const resolved = resolveRunnerPluginsForBot(makeBot({
     strategyKey: "futures_grid",
     paramsJson: {
@@ -149,8 +149,8 @@ test("Free policy resolves futures Grid execution", () => {
     }
   }));
 
-  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_FUTURES_GRID);
-  assert.equal(resolved.diagnostics.some((item) => item.type === "PLUGIN_DISABLED_BY_POLICY"), false);
+  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_FUTURES_ENGINE_LEGACY);
+  assert.equal(resolved.diagnostics.some((item) => item.type === "PLUGIN_DISABLED_BY_POLICY"), true);
 });
 
 test("plugin resolution enforces policy snapshot and falls back", () => {
@@ -237,7 +237,17 @@ test("plugin resolution blocks capability-denied execution plugin via capability
 
 test("plugin resolution defaults prediction copier signal source by strategy", () => {
   const resolved = resolveRunnerPluginsForBot(makeBot({
-    strategyKey: "prediction_copier"
+    strategyKey: "prediction_copier",
+    paramsJson: {
+      plugins: {
+        version: 1,
+        policySnapshot: {
+          plan: "premium",
+          allowedPluginIds: null,
+          evaluatedAt: new Date().toISOString()
+        }
+      }
+    }
   }));
   assert.equal(resolved.signalSource.selectedPluginId, SIGNAL_SOURCE_PLUGIN_ID_PREDICTION_STATE);
 });
