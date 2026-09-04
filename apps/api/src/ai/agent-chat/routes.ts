@@ -38,6 +38,10 @@ export function registerAgentChatRoutes(app: Express, deps: AgentChatServiceDeps
   app.get("/api/agent-chat/conversations/:id", requireAuth, async (req, res) => {
     try { return res.json(await service.getConversation(getUserFromLocals(res), idParam(req))); } catch (error) { return sendError(res, error); }
   });
+  app.get("/api/agent-chat/conversations/:id/decision-logs", requireAuth, async (req, res) => {
+    const requestedLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    try { return res.json(await service.listDecisionLogs(getUserFromLocals(res), idParam(req), requestedLimit)); } catch (error) { return sendError(res, error); }
+  });
   app.patch("/api/agent-chat/conversations/:id", requireAuth, async (req, res) => {
     const parsed = patchConversationSchema.safeParse(req.body ?? {}); if (!parsed.success) return res.status(400).json({ error: "agent_chat_message_invalid", details: parsed.error.flatten() });
     try { return res.json(await service.updateConversation(getUserFromLocals(res), idParam(req), parsed.data)); } catch (error) { return sendError(res, error); }

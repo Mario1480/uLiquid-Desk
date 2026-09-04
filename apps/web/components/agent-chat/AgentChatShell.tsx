@@ -6,10 +6,10 @@ import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "../../lib/api";
 import { AppIcon } from "../../app/components/AppIcon";
 import { Notice, PageHeader } from "../../app/components/ui";
 import type {
-  AgentActivity,
   AgentChatResponse,
   AgentContextDraft,
   AgentConversation,
+  AgentDecisionLog,
   AgentMessage,
   AgentProfile,
   AgentProfilesResponse,
@@ -65,7 +65,8 @@ export default function AgentChatShell() {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [context, setContext] = useState<AgentContextDraft>(DEFAULT_CONTEXT);
   const [composer, setComposer] = useState("");
-  const [activity, setActivity] = useState<AgentActivity | null>(null);
+  const [decisionLogs, setDecisionLogs] = useState<AgentDecisionLog[]>([]);
+  const [decisionLogsLoading, setDecisionLogsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,11 +88,19 @@ export default function AgentChatShell() {
     : activeProfile?.description;
 
   const loadConversation = useCallback(async (id: string) => {
-    const conversation = await apiGet<AgentConversation>(`/api/agent-chat/conversations/${encodeURIComponent(id)}`);
-    setActiveConversation(conversation);
-    setMessages(conversation.messages ?? []);
-    setContext(contextFromConversation(conversation));
-    setActivity(null);
+    setDecisionLogsLoading(true);
+    try {
+      const [conversation, logPayload] = await Promise.all([
+        apiGet<AgentConversation>(`/api/agent-chat/conversations/${encodeURIComponent(id)}`),
+        apiGet<{ items: AgentDecisionLog[] }>(`/api/agent-chat/conversations/${encodeURIComponent(id)}/decision-logs?limit=20`)
+      ]);
+      setActiveConversation(conversation);
+      setMessages(conversation.messages ?? []);
+      setContext(contextFromConversation(conversation));
+      setDecisionLogs(logPayload.items);
+    } finally {
+      setDecisionLogsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -133,7 +142,7 @@ export default function AgentChatShell() {
   function newChat() {
     setActiveConversation(null);
     setMessages([]);
-    setActivity(null);
+    setDecisionLogs([]);
     setContext(DEFAULT_CONTEXT);
     setComposer("");
     setError(null);
@@ -169,8 +178,8 @@ export default function AgentChatShell() {
       });
       const assistant: AgentMessage = { id: response.messageId, role: "assistant", content: response.content, blocks: response.blocks, sourceRefs: response.citations, createdAt: new Date().toISOString() };
       setMessages((current) => [...current.filter((message) => message.id !== optimistic.id), { ...optimistic, id: `user:${response.messageId}` }, assistant]);
-      const runActivity = await apiGet<AgentActivity>(`/api/agent-chat/runs/${encodeURIComponent(response.run.id)}/activity`);
-      setActivity(runActivity);
+      const logPayload = await apiGet<{ items: AgentDecisionLog[] }>(`/api/agent-chat/conversations/${encodeURIComponent(conversation.id)}/decision-logs?limit=20`);
+      setDecisionLogs(logPayload.items);
       setLastModelClass(response.run.modelClass);
       setLastRunReceipt({ chargedCredits: response.run.chargedCredits, remainingCredits: response.run.remainingCredits, skillCategories: response.run.skillCategories });
       if (response.run.remainingCredits !== null) {
@@ -238,7 +247,7 @@ export default function AgentChatShell() {
           </div>
           <AgentComposer value={composer} loading={sending} disabled={sendDisabled} disabledReason={sendDisabledReason} onChange={setComposer} onSend={() => void sendMessage()} onShowActivity={() => setActivityOpen(true)} />
         </section>
-        <div className={activityOpen ? "agentChatActivityMobileOpen" : ""}><AgentActivityPanel activity={activity} loading={sending} onClose={() => setActivityOpen(false)} /></div>
+        <div className={activityOpen ? "agentChatActivityMobileOpen" : ""}><AgentActivityPanel logs={decisionLogs} loading={sending || decisionLogsLoading} onClose={() => setActivityOpen(false)} /></div>
       </div>
       <SkillPermissionDrawer open={skillsOpen} profile={activeProfile} skills={skills} accounts={accounts} onClose={() => setSkillsOpen(false)} />
     </main>

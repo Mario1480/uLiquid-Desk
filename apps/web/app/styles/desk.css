@@ -528,6 +528,73 @@
   color: var(--muted);
 }
 
+.agentChatDecisionLog {
+  overflow-y: auto;
+}
+
+.agentChatDecisionBody,
+.agentChatDecisionBody section,
+.agentChatDecisionSelect {
+  display: grid;
+  gap: 8px;
+}
+
+.agentChatDecisionSelect {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agentChatDecisionBody section,
+.agentChatDecisionTechnical,
+.agentChatNoExecution {
+  padding: 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.agentChatDecisionBody section > small {
+  color: var(--muted);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agentChatDecisionBody p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.agentChatNoExecution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #55d6a5;
+}
+
+.agentChatDecisionWarnings {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agentChatDecisionTechnical summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.agentChatDecisionTechnical[open] summary {
+  margin-bottom: 8px;
+}
+
+.agentChatQuality-stale,
+.agentChatQuality-degraded,
+.agentChatQuality-unavailable {
+  color: var(--color-warning, #f7c66b);
+}
+
 .agentChatActivity-success > svg { color: #55d6a5; }
 .agentChatActivity-degraded > svg,
 .agentChatActivity-blocked > svg { color: #f5bd64; }

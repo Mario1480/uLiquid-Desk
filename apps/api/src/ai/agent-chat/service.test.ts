@@ -202,6 +202,9 @@ test("off-topic requests return a persisted zero-credit response without calling
               updatedRuns.push(data);
               return { id: "run-guarded", ...data };
             }
+          },
+          aiTraceLog: {
+            create: async () => ({ id: "trace-guarded" })
           }
         }),
         aiAgentRun: {
@@ -263,4 +266,28 @@ test("off-topic requests return a persisted zero-credit response without calling
     assert.equal(createdRuns[0].routingDecision.decision, "out_of_scope");
     assert.equal(updatedRuns.at(-1)?.status, "completed");
   });
+});
+
+test("decision logs enforce conversation ownership and expose only projected fields", async () => {
+  let owner = "user-1";
+  let runTake = 0;
+  const service = new AgentChatService({
+    db: {
+      aiAgentConversation: { findFirst: async ({ where }: any) => where.userId === owner ? { id: where.id } : null },
+      aiAgentRun: { findMany: async ({ take }: any) => { runTake = take; return [{ id: "run-1", status: "failed", createdAt: new Date("2026-09-04T10:00:00Z"), completedAt: new Date("2026-09-04T10:00:01Z"), profileSnapshot: { name: "Market Analyst", baseProfileKey: "market_analyst", version: 2 }, contextSnapshot: { symbol: "BTCUSDT", marketType: "perp", selectedVenue: "auto", selectedExchangeAccountId: "secret-account" }, modelClass: "analysis", latencyMs: 1000, errorCode: "provider_failed", traceLogs: [], toolCalls: [] }]; } },
+      aiAgentMessage: { findMany: async () => [] }
+    },
+    callAiChat: async () => { throw new Error("not_used"); },
+    resolvePlanCapabilitiesForUserId: async () => ({ plan: "pro", capabilities: {} as any }),
+    isCapabilityAllowed: () => false,
+    hasAdminAccess: async () => true
+  });
+  const result = await service.listDecisionLogs({ id: "user-1", email: "admin@example.com" }, "conversation-1", 999);
+  assert.equal(runTake, 50);
+  assert.equal(result.items[0]?.recommendation, null);
+  assert.equal(JSON.stringify(result).includes("secret-account"), false);
+  await service.listDecisionLogs({ id: "user-1", email: "admin@example.com" }, "conversation-1");
+  assert.equal(runTake, 20);
+  owner = "someone-else";
+  await assert.rejects(() => service.listDecisionLogs({ id: "user-1", email: "admin@example.com" }, "conversation-1"), /agent_chat_conversation_not_found/);
 });

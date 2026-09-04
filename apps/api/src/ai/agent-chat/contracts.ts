@@ -67,11 +67,15 @@ export type AgentToolResult<T = unknown> = {
     sourceProvider?: string;
     observedAt?: string;
     fetchedAt: string;
+    ageMs: number | null;
+    quality: "fresh" | "stale" | "degraded" | "unavailable";
+    timestampSource: "provider" | "request" | "unknown";
     stale: boolean;
     degraded: boolean;
     fallbackUsed: boolean;
     cacheHit: boolean;
     warnings: string[];
+    routineVersions: Array<{ id: string; version: string }>;
   };
   error?: { code: string; message: string; retryable: boolean };
 };
@@ -95,6 +99,10 @@ export type AgentSkillExecutionContext = {
 export type AgentSkillDescriptor = {
   id: string;
   version: number;
+  status: "production";
+  allowedProfiles: readonly AgentProfileKey[];
+  outputSchemaId: string;
+  routineIds: readonly string[];
   title: string;
   description: string;
   category: "market" | "intelligence" | "prediction" | "portfolio" | "risk" | "draft";
@@ -126,4 +134,38 @@ export type AgentChatResponse = {
     remainingCredits: string | null;
     skillCategories: Array<"market" | "intelligence" | "prediction" | "portfolio" | "risk" | "draft">;
   };
+};
+
+export type AgentDecisionLogQuality = "fresh" | "stale" | "degraded" | "unavailable";
+
+export type AgentDecisionLog = {
+  runId: string;
+  state: string;
+  createdAt: string;
+  completedAt: string | null;
+  profile: { key: string; name: string; version: number };
+  context: { symbol: string | null; marketType: AgentMarketType | null; requestedVenue: AgentVenue };
+  recommendation: { messageId: string; content: string; blocks: AgentUiBlock[] } | null;
+  evidence: Array<{
+    toolCallId: string;
+    skillId: string;
+    skillVersion: number | null;
+    outputSchemaId: string | null;
+    routineVersions: Array<{ id: string; version: string }>;
+    sourceProvider: string | null;
+    sourceVenue: string | null;
+    observedAt: string | null;
+    fetchedAt: string | null;
+    ageMs: number | null;
+    quality: AgentDecisionLogQuality;
+    durationMs: number | null;
+    fallbackUsed: boolean;
+    warningCodes: string[];
+  }>;
+  dataQuality: { state: AgentDecisionLogQuality; reasonCodes: string[] };
+  modelClass: string | null;
+  totalLatencyMs: number | null;
+  permission: { readOnly: true; execution: "not_permitted" };
+  technicalActivity: Array<{ id: string; skillId: string; status: string; venue: string | null; durationMs: number | null; errorCode: string | null }>;
+  legacyAssociation: boolean;
 };

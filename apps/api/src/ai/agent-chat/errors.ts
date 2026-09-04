@@ -6,6 +6,7 @@ export type AgentChatErrorCode =
   | "agent_chat_venue_unsupported"
   | "agent_chat_market_data_degraded"
   | "agent_chat_tool_budget_exceeded"
+  | "agent_chat_tool_result_invalid"
   | "agent_chat_provider_unavailable"
   | "agent_chat_conversation_not_found"
   | "agent_chat_message_invalid"

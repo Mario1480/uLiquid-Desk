@@ -326,16 +326,24 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
           await params.db.aiAgentToolCall.update({
             where: { id: activity.id },
             data: {
-              status: toolResult.meta.degraded ? "degraded" : "success",
+              status: toolResult.meta.quality === "fresh" ? "success" : "degraded",
               venue: toolResult.meta.sourceVenue ?? params.conversation.selectedVenue,
               durationMs: Date.now() - toolStartedAt,
               resultSummary: redactAiSafetySecrets({
                 sourceVenue: toolResult.meta.sourceVenue,
                 sourceProvider: toolResult.meta.sourceProvider,
                 observedAt: toolResult.meta.observedAt,
+                fetchedAt: toolResult.meta.fetchedAt,
+                ageMs: toolResult.meta.ageMs,
+                quality: toolResult.meta.quality,
+                timestampSource: toolResult.meta.timestampSource,
                 stale: toolResult.meta.stale,
                 degraded: toolResult.meta.degraded,
                 fallbackUsed: toolResult.meta.fallbackUsed,
+                warnings: toolResult.meta.warnings,
+                skillVersion: skill.version,
+                outputSchemaId: skill.outputSchemaId,
+                routineVersions: toolResult.meta.routineVersions,
                 recordCount: Array.isArray(toolResult.data) ? toolResult.data.length : undefined
               })
             }
@@ -384,7 +392,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
     await Promise.all([
       params.db.aiAgentRun.update({ where: { id: run.id }, data: { status: "completed", provider, model, modelClass: routing.modelClass, toolIterations, toolCallCount: toolCalls, usageTotalTokens: usageTotal || null, chargedCredits, latencyMs, completedAt: new Date() } }),
       params.db.aiAgentConversation.update({ where: { id: params.conversation.id }, data: { lastMessageAt: new Date() } }),
-      params.db.aiTraceLog.create({ data: { agentRunId: run.id, userId: params.userId, scope: "agent_chat", provider, model, symbol: params.conversation.symbol, marketType: executionContext.marketType, userPayload: { conversationId: params.conversation.id, profileKey: params.profile.baseProfileKey }, parsedResponse: { runId: run.id, toolCalls, degraded, citationCount: citations.length }, success: true, fallbackUsed: citations.some((source) => source.degraded), latencyMs } }).catch(() => undefined)
+      params.db.aiTraceLog.create({ data: { agentRunId: run.id, userId: params.userId, scope: "agent_chat", provider, model, symbol: params.conversation.symbol, marketType: executionContext.marketType, userPayload: { conversationId: params.conversation.id, profileKey: params.profile.baseProfileKey }, parsedResponse: { runId: run.id, assistantMessageId: assistantMessage.id, profileVersion: params.profile.version, toolCalls, degraded, citationCount: citations.length }, success: true, fallbackUsed: citations.some((source) => source.degraded), latencyMs } }).catch(() => undefined)
     ]);
     return { messageId: assistantMessage.id, content: answer.content, blocks, citations, run: { id: run.id, modelClass: routing.modelClass, toolIterations, toolCalls, latencyMs, degraded, chargedCredits: chargedCredits.toString(), remainingCredits: remainingCredits?.toString() ?? null, skillCategories: [...usedSkillCategories] } };
   } catch (error) {

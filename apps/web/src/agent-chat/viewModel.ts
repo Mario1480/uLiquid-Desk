@@ -1,4 +1,4 @@
-import type { AgentActivity, AgentProfile, AgentSkill } from "./contracts";
+import type { AgentActivity, AgentDecisionLog, AgentProfile, AgentSkill } from "./contracts";
 
 export function enabledSkillsForProfile(profile: AgentProfile | null, skills: AgentSkill[]): AgentSkill[] {
   if (!profile) return [];
@@ -16,6 +16,10 @@ export function activityTone(status: string): "loading" | "success" | "degraded"
 
 export function orderedActivityItems(activity: AgentActivity | null) {
   return activity?.toolCalls ?? [];
+}
+
+export function selectDecisionLog(logs: AgentDecisionLog[], runId: string | null): AgentDecisionLog | null {
+  return logs.find((item) => item.runId === runId) ?? logs[0] ?? null;
 }
 
 export function requiresSelectedExchangeAccount(profile: AgentProfile | null, selectedExchangeAccountId: string | null): boolean {

@@ -1,6 +1,6 @@
 # AI Agent Chat – Security, Operations and Rollout
 
-Stand: 2026-08-26
+Stand: 2026-09-04
 
 ## Scope
 
@@ -25,18 +25,20 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 - Unknown tool names, skills outside the resolved profile and market-type capability mismatches fail closed.
 - User and account IDs are never model arguments. Private tools accept only `accountRef: selected`; the server resolves the account from conversation context and repeats ownership checks for every call.
 - Account reads never fall back to another venue. Public market reads may fall back only when the requested venue is `auto`; the result and activity record mark that fallback.
-- Position risk uses `buildPositionCopilotSnapshot` and `buildDeterministicPositionAnalysis`. No nested AI call is made and deterministic warnings cannot be removed by a tool.
+- Position risk uses the versioned `position.snapshot.v1` and `position.risk.v1` routines, with compatibility exports preserving existing Position Copilot callers. No nested AI call is made and deterministic warnings cannot be removed by a tool.
+- Every skill has a concrete output schema. A result that fails output validation is recorded as `agent_chat_tool_result_invalid` and is never exposed to the model as trusted evidence.
+- Funding, OI and order-book snapshots expose provider/source venue, observed/fetched timestamps, age, timestamp source, quality, fallback and warning codes. A missing provider timestamp is degraded rather than presented as fresh.
 - User text, market intelligence and tool results are wrapped as untrusted data. Tool arguments, results, errors and audit summaries pass through recursive secret redaction.
 - A deterministic scope guard handles clearly off-topic requests, courtesy-only messages and obvious prompt-override attempts before model routing or credit reservation. Guarded requests produce a persisted zero-credit response without exposing tools.
 - Per-user request limits, one concurrent run per user, four tool iterations, twelve calls, two calls per skill, a bounded 30-180 second run timeout (90 seconds by default) and bounded payloads constrain cost and resource abuse.
 
 ## Persistence and retention
 
-Conversations and messages are user-owned and cascade on user deletion. Runs store profile/context snapshots and compact metadata. Tool activity stores only redacted arguments and result summaries, not candle arrays, complete prompts, credentials or raw exchange payloads. A production retention period for run/tool activity must be approved with the legal/operations policy before General Availability; conversations remain user-managed product data.
+Conversations and messages are user-owned and cascade on user deletion. Runs store profile/context snapshots and compact metadata. Tool activity stores only redacted arguments and result summaries, not candle arrays, complete prompts, credentials or raw exchange payloads. The authenticated Decision Log endpoint projects user-owned runs, validated assistant blocks, evidence provenance, quality and read-only permissions from existing records. It does not introduce a new table. A production retention period for run/tool activity must be approved with the legal/operations policy before General Availability; conversations remain user-managed product data.
 
 ## Operations signals
 
-The persisted run and tool-call models expose status, provider/model, latency, token usage, skill, venue, degraded/fallback state and stable error code. `AiTraceLog` receives a compact `agent_chat` summary for existing AI operations visibility. High-cardinality tool payloads and secret values are intentionally absent.
+The persisted run and tool-call models expose status, provider/model, latency, token usage, skill/routine versions, output schema, venue, quality, degraded/fallback state and stable error code. `AiTraceLog` receives a compact `agent_chat` summary plus the assistant message ID used for exact Decision Log association. Legacy runs use a bounded timestamp association and are explicitly labeled. High-cardinality tool payloads and secret values are intentionally absent.
 
 ## Rollout
 
@@ -58,3 +60,4 @@ To close Position Copilot and automatic monitoring without changing plan entitle
 - Responses are atomic with pollable persisted activity; streaming/SSE is not enabled.
 - Private position/open-order reads are initially limited to perpetual accounts. Public spot market analysis uses the existing spot/CCXT client layer.
 - Activity retention duration and production allowlist administration remain operational configuration decisions.
+- The first cold Agent Chat test run can pause while the third-party Hyperliquid SDK is loaded from the local filesystem. The 2026-09-04 Phase 1 acceptance isolated that import delay; after loading, the full suite completed and exited normally without forced termination.

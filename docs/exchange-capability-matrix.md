@@ -22,6 +22,19 @@ It is intentionally operational rather than marketing-oriented: the goal is to s
 | Binance | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Futures connector; writes remain kill-switch gated during rollout |
 | BingX | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Perp connector; REST-only v1, perp writes enabled by default and can be disabled with `BINGX_PERP_WRITE_ENABLED=0` |
 
+## Derivatives analytics matrix
+
+| Venue | Provider | Funding | Open interest | Order-book analytics | Live certification | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Bitget | `uliquid-native:bitget` | native | native | native | `not_assessed` | OI is preserved as provider-native until its unit can be proven safe |
+| Hyperliquid | `uliquid-native:hyperliquid` | native | native | native | `not_assessed` | Funding/OI use the native asset-context contract |
+| MEXC | `uliquid-native:mexc` | native | unsupported | native | `not_assessed` | OI remains fail-closed until a native contract is verified |
+| Paper | `paper:linked-market-data` | linked | linked | linked | `not_assessed` | Support and provenance resolve through the linked live market-data venue |
+| Binance | `uliquid-native:binance` | native | native | native | `not_assessed` | Funding cadence is not inferred when the endpoint does not provide it |
+| BingX | `uliquid-native:bingx` | unsupported | unsupported | native | `not_assessed` | Funding/OI remain fail-closed until a verified native contract exists |
+
+`not_assessed` is deliberate. Unit and fixture tests are engineering evidence, not production certification.
+
 ## Shared capability intent
 
 The platform is converging on these normalized questions for every venue:
@@ -38,6 +51,8 @@ The platform is converging on these normalized questions for every venue:
 - Are normalized position and balance reads supported?
 - Is transfer support exposed in the normalized platform contract?
 - Is vault execution supported?
+- Which market-data fields are native, linked, or unsupported?
+- Has the exact provider/venue combination passed live certification?
 
 Those answers should come from explicit capability resolution, not from scattered exchange-name checks in API or runner code.
 
@@ -71,6 +86,7 @@ The central runtime registry and validation helpers now live in:
 3. Paper must become explicit, documented, and contract-shaped.
 4. Exchange-specific fixes stay in adapter/fix modules, not in route or runner orchestration.
 5. Any new venue behavior should be added to the capability matrix and regression matrix together.
+6. Explicit unsupported field requests fail closed. `auto` may skip an unsupported or unavailable venue only when the fallback is recorded.
 
 ## Current gaps to keep visible
 

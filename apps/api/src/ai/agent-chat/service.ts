@@ -15,6 +15,7 @@ import { runAgentChat } from "./runtime.js";
 import { profileMutationSchema } from "./schemas.js";
 import { buildAgentChatScopeResponse, classifyAgentChatScope, filterAgentChatModelHistory, type AgentChatScopeDecision } from "./scopeGuard.js";
 import { listAgentSkillDescriptors } from "./skills.js";
+import { projectDecisionLogs } from "./decisionLogs.js";
 import type { AgentProfileKey, ResolvedAgentProfile } from "./contracts.js";
 
 type CallAiChat = (messages: ChatMessage[], options: CallAiChatOptions) => Promise<AiChatResult>;
@@ -86,7 +87,7 @@ export class AgentChatService {
       featureAccess: access,
       plan,
       profiles: visibleProfiles,
-      skills: listAgentSkillDescriptors().map((skill) => ({ id: skill.id, title: skill.title, description: skill.description, category: skill.category, accessLevel: skill.accessLevel, sideEffect: skill.sideEffect, supportedMarketTypes: skill.supportedMarketTypes })),
+      skills: listAgentSkillDescriptors().map((skill) => ({ id: skill.id, version: skill.version, status: skill.status, allowedProfiles: skill.allowedProfiles, outputSchemaId: skill.outputSchemaId, routineIds: skill.routineIds, title: skill.title, description: skill.description, category: skill.category, accessLevel: skill.accessLevel, sideEffect: skill.sideEffect, supportedMarketTypes: skill.supportedMarketTypes })),
       accounts
     };
   }
@@ -160,6 +161,36 @@ export class AgentChatService {
     return { ...conversation, messages: normalizeStoredAgentMessages(conversation.messages ?? []) };
   }
 
+  async listDecisionLogs(user: { id: string; email: string }, conversationId: string, requestedLimit?: number) {
+    const { access } = await this.featureAccess(user); assertAgentChatAccess(access);
+    const conversation = await this.deps.db.aiAgentConversation.findFirst({
+      where: { id: conversationId, userId: user.id },
+      select: { id: true }
+    });
+    if (!conversation) throw new AgentChatError("agent_chat_conversation_not_found", 404);
+    const limit = Math.min(50, Math.max(1, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit as number) : 20));
+    const [runs, messages] = await Promise.all([
+      this.deps.db.aiAgentRun.findMany({
+        where: { conversationId, userId: user.id },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: {
+          id: true, status: true, profileSnapshot: true, contextSnapshot: true, modelClass: true,
+          latencyMs: true, errorCode: true, createdAt: true, completedAt: true,
+          traceLogs: { orderBy: { createdAt: "desc" }, take: 3, select: { parsedResponse: true } },
+          toolCalls: { orderBy: { createdAt: "asc" }, select: { id: true, toolName: true, status: true, venue: true, durationMs: true, errorCode: true, resultSummary: true } }
+        }
+      }),
+      this.deps.db.aiAgentMessage.findMany({
+        where: { conversationId, role: "assistant" },
+        orderBy: { createdAt: "desc" },
+        take: Math.min(100, limit * 3),
+        select: { id: true, role: true, content: true, blocks: true, createdAt: true }
+      })
+    ]);
+    return { items: projectDecisionLogs(runs, messages) };
+  }
+
   async updateConversation(user: { id: string; email: string }, id: string, patch: any) {
     const { access } = await this.featureAccess(user); assertAgentChatAccess(access);
     const current = await this.deps.db.aiAgentConversation.findFirst({ where: { id, userId: user.id } });
@@ -222,6 +253,20 @@ export class AgentChatService {
         await tx.aiAgentRun.update({
           where: { id: run.id },
           data: { status: "completed", latencyMs, completedAt: new Date() }
+        });
+        await tx.aiTraceLog.create({
+          data: {
+            agentRunId: run.id,
+            userId: params.userId,
+            scope: "agent_chat",
+            symbol: params.conversation.symbol,
+            marketType: params.conversation.marketType,
+            userPayload: { conversationId: params.conversation.id, profileKey: params.profile.baseProfileKey },
+            parsedResponse: { runId: run.id, assistantMessageId: message.id, profileVersion: params.profile.version, toolCalls: 0, degraded: false },
+            success: true,
+            fallbackUsed: false,
+            latencyMs
+          }
         });
         return message;
       });

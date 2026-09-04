@@ -13,6 +13,10 @@ import {
   type PaperSimulationPolicy
 } from "./paper/policy.js";
 import { decryptSecret, encryptSecret } from "./secret-crypto.js";
+import { ManualTradingError, type PerpPriceReader, type TradingAccount } from "./trading-contracts.js";
+
+export { ManualTradingError } from "./trading-contracts.js";
+export type { PerpPriceReader, TradingAccount } from "./trading-contracts.js";
 
 type DbClient = typeof prisma;
 
@@ -54,19 +58,6 @@ function resolvePerpVenueForAccount(account: TradingAccount): ResolvedPerpVenue 
     }
   );
 }
-
-export type TradingAccount = {
-  id: string;
-  userId: string;
-  exchange: string;
-  label: string;
-  apiKey: string;
-  apiSecret: string;
-  passphrase: string | null;
-  botVaultAddress?: string | null;
-  marketDataExchangeAccountId: string | null;
-  systemKey?: string | null;
-};
 
 export type PerpExecutionAdapter = SupportedFuturesAdapter & {
   exchangeId?: string;
@@ -275,17 +266,6 @@ export type NormalizedTrade = {
   ts: number | null;
 };
 
-export type PerpPriceReader = {
-  getLastPrice?(symbol: string): Promise<number | null>;
-  getTicker?(symbol: string): Promise<{ last?: number | null; mark?: number | null }>;
-  marketApi?: {
-    getTicker: (...args: any[]) => Promise<unknown>;
-    getCandles: (...args: any[]) => Promise<unknown>;
-  };
-  toExchangeSymbol?(symbol: string): Promise<string> | string;
-  productType?: string;
-};
-
 export type PaperPositionState = {
   symbol: string;
   side: "long" | "short";
@@ -345,17 +325,6 @@ export type PaperAccountSnapshot = {
   marginMode: "cross";
   status: "healthy" | "margin_call" | "liquidation";
 };
-
-export class ManualTradingError extends Error {
-  readonly status: number;
-  readonly code: string;
-
-  constructor(message: string, status = 400, code = "manual_trading_error") {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
 
 function getPaperMarketDataKey(exchangeAccountId: string): string {
   return `${PAPER_MARKET_DATA_ACCOUNT_KEY_PREFIX}${exchangeAccountId}`;

@@ -19,6 +19,11 @@ export type AgentProfile = {
 
 export type AgentSkill = {
   id: string;
+  version: number;
+  status: "production";
+  allowedProfiles: AgentProfileKey[];
+  outputSchemaId: string;
+  routineIds: string[];
   title: string;
   description: string;
   category: "market" | "intelligence" | "prediction" | "portfolio" | "risk" | "draft";
@@ -84,6 +89,25 @@ export type AgentActivity = {
   status: string;
   latencyMs: number | null;
   toolCalls: Array<{ id: string; toolName: string; status: "loading" | "success" | "degraded" | "failed" | "blocked"; venue: string | null; durationMs: number | null; resultSummary?: { observedAt?: string; stale?: boolean; degraded?: boolean; fallbackUsed?: boolean } | null }>;
+};
+
+export type AgentDecisionLogQuality = "fresh" | "stale" | "degraded" | "unavailable";
+
+export type AgentDecisionLog = {
+  runId: string;
+  state: string;
+  createdAt: string;
+  completedAt: string | null;
+  profile: { key: string; name: string; version: number };
+  context: { symbol: string | null; marketType: AgentMarketType | null; requestedVenue: AgentVenue };
+  recommendation: { messageId: string; content: string; blocks: AgentUiBlock[] } | null;
+  evidence: Array<{ toolCallId: string; skillId: string; skillVersion: number | null; outputSchemaId: string | null; routineVersions: Array<{ id: string; version: string }>; sourceProvider: string | null; sourceVenue: string | null; observedAt: string | null; fetchedAt: string | null; ageMs: number | null; quality: AgentDecisionLogQuality; durationMs: number | null; fallbackUsed: boolean; warningCodes: string[] }>;
+  dataQuality: { state: AgentDecisionLogQuality; reasonCodes: string[] };
+  modelClass: string | null;
+  totalLatencyMs: number | null;
+  permission: { readOnly: true; execution: "not_permitted" };
+  technicalActivity: Array<{ id: string; skillId: string; status: string; venue: string | null; durationMs: number | null; errorCode: string | null }>;
+  legacyAssociation: boolean;
 };
 
 export type AgentContextDraft = {

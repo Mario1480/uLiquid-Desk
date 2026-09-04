@@ -6,11 +6,10 @@ import {
   type HyperliquidFuturesAdapter,
   type MexcFuturesAdapter
 } from "@mm/futures-exchange";
-import {
-  ManualTradingError,
-  type PerpPriceReader,
-  type TradingAccount
-} from "../trading.js";
+import { ManualTradingError, type PerpPriceReader, type TradingAccount } from "../trading-contracts.js";
+import { normalizePerpDerivativesSnapshot, type PerpDerivativesSnapshot } from "./perp-derivatives-normalization.js";
+
+export { normalizePerpDerivativesSnapshot, type PerpDerivativesSnapshot } from "./perp-derivatives-normalization.js";
 
 type SupportedFuturesAdapter = BinanceFuturesAdapter | BingxFuturesAdapter | BitgetFuturesAdapter | HyperliquidFuturesAdapter | MexcFuturesAdapter;
 
@@ -68,6 +67,7 @@ export type PerpMarketDataClient = PerpPriceReader & {
     ts: number | null;
     raw: unknown;
   }>>;
+  getDerivativesSnapshot(symbol: string): Promise<PerpDerivativesSnapshot>;
   close(): Promise<void>;
 };
 
@@ -88,6 +88,16 @@ function pickNumber(record: Record<string, unknown> | null, keys: string[]): num
     if (parsed !== null) return parsed;
   }
   return null;
+}
+
+function normalizedObservedAt(value: unknown): { observedAt: string; sourceTimestampProvided: boolean } {
+  const parsed = toNumber(value);
+  if (parsed === null || parsed <= 0) return { observedAt: new Date().toISOString(), sourceTimestampProvided: false };
+  const millis = parsed < 10_000_000_000 ? parsed * 1000 : parsed;
+  const date = new Date(millis);
+  return Number.isFinite(date.getTime())
+    ? { observedAt: date.toISOString(), sourceTimestampProvided: true }
+    : { observedAt: new Date().toISOString(), sourceTimestampProvided: false };
 }
 
 function normalizeCanonicalSymbol(value: string): string {
@@ -183,7 +193,10 @@ function isOpaqueCandleError(error: unknown): boolean {
 }
 
 class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
-  constructor(private readonly adapter: SupportedFuturesAdapter) {}
+  constructor(
+    private readonly adapter: SupportedFuturesAdapter,
+    private readonly venue: "bitget" | "hyperliquid" | "mexc"
+  ) {}
 
   async listSymbols(): Promise<PerpSymbolItem[]> {
     await this.adapter.contractCache.warmup();
@@ -303,6 +316,41 @@ class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
         raw: entry
       };
     });
+  }
+
+  async getDerivativesSnapshot(symbol: string): Promise<PerpDerivativesSnapshot> {
+    const exchangeSymbol = await this.adapter.toExchangeSymbol(symbol);
+    const marketApi = this.adapter.marketApi as unknown as {
+      getTicker(symbol: string, productType?: unknown): Promise<unknown>;
+      getFundingRate?(symbol: string): Promise<unknown>;
+      getMetaAndAssetCtxs?(): Promise<unknown>;
+    };
+    if (this.venue === "bitget") {
+      const payload = await marketApi.getTicker(exchangeSymbol, this.adapter.productType);
+      return normalizePerpDerivativesSnapshot({ venue: "bitget", symbol, primary: payload });
+    }
+    if (this.venue === "hyperliquid") {
+      const payload = await marketApi.getMetaAndAssetCtxs?.();
+      return normalizePerpDerivativesSnapshot({ venue: "hyperliquid", symbol, primary: payload });
+    }
+    if (this.venue === "mexc") {
+      const [fundingPayload, tickerPayload] = await Promise.all([
+        marketApi.getFundingRate?.(exchangeSymbol) ?? Promise.resolve(null),
+        marketApi.getTicker(exchangeSymbol, this.adapter.productType)
+      ]);
+      return normalizePerpDerivativesSnapshot({ venue: "mexc", symbol, primary: fundingPayload, secondary: tickerPayload });
+    }
+    return {
+      fundingRate: null,
+      fundingIntervalHours: null,
+      openInterest: null,
+      openInterestUnit: "unknown",
+      contractSize: null,
+      markPrice: null,
+      observedAt: new Date().toISOString(),
+      sourceTimestampProvided: false,
+      warnings: ["derivatives_snapshot_unsupported"]
+    };
   }
 
   async getLastPrice(symbol: string): Promise<number | null> {
@@ -481,7 +529,7 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
       mark: last,
       bid,
       ask,
-      ts: Date.now(),
+      ts: null,
       raw
     };
   }
@@ -508,7 +556,7 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
     return {
       bids: parseLevels(row?.bids),
       asks: parseLevels(row?.asks),
-      ts: toNumber(row?.E ?? row?.T ?? row?.lastUpdateId ?? Date.now()),
+      ts: toNumber(row?.E ?? row?.T),
       raw
     };
   }
@@ -532,6 +580,15 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
         raw: entry
       };
     });
+  }
+
+  async getDerivativesSnapshot(symbol: string): Promise<PerpDerivativesSnapshot> {
+    const normalized = normalizeCanonicalSymbol(symbol);
+    const [premiumPayload, interestPayload] = await Promise.all([
+      this.fetchJson("/fapi/v1/premiumIndex", { symbol: normalized }),
+      this.fetchJson("/fapi/v1/openInterest", { symbol: normalized })
+    ]);
+    return normalizePerpDerivativesSnapshot({ venue: "binance", symbol: normalized, primary: premiumPayload, secondary: interestPayload });
   }
 
   async getLastPrice(symbol: string): Promise<number | null> {
@@ -720,6 +777,10 @@ class BingxUsdMPerpClient implements PerpMarketDataClient {
     });
   }
 
+  async getDerivativesSnapshot(_symbol: string): Promise<PerpDerivativesSnapshot> {
+    return normalizePerpDerivativesSnapshot({ venue: "bingx", symbol: _symbol });
+  }
+
   async getLastPrice(symbol: string): Promise<number | null> {
     const exchangeSymbol = toBingxSwapSymbol(symbol);
     try {
@@ -757,5 +818,5 @@ export function createPerpMarketDataClient(account: TradingAccount): PerpMarketD
   if (adapterResult.kind !== "adapter") {
     throw new ManualTradingError(adapterResult.resolution.code, 400, adapterResult.resolution.code);
   }
-  return new FuturesAdapterPerpMarketDataClient(adapterResult.adapter);
+  return new FuturesAdapterPerpMarketDataClient(adapterResult.adapter, exchange as "bitget" | "hyperliquid" | "mexc");
 }

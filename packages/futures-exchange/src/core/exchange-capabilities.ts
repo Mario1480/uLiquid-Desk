@@ -9,8 +9,27 @@ export type FuturesConnectorKind =
 
 export type FuturesPositionMode = "one-way" | "hedge";
 
+export type FuturesProviderKind = "uliquid_native" | "paper_linked" | "unknown";
+export type MarketDataCapabilitySupport = "native" | "linked" | "unsupported";
+export type ProviderLiveCertificationStatus = "not_assessed" | "partial" | "passed" | "failed";
+
+export type FuturesMarketDataCapabilities = {
+  ticker: MarketDataCapabilitySupport;
+  orderbook: MarketDataCapabilitySupport;
+  trades: MarketDataCapabilitySupport;
+  candles: MarketDataCapabilitySupport;
+  fundingRate: MarketDataCapabilitySupport;
+  openInterest: MarketDataCapabilitySupport;
+  markPrice: MarketDataCapabilitySupport;
+  orderbookAnalytics: MarketDataCapabilitySupport;
+};
+
 export type FuturesVenueCapabilities = {
   venue: ExchangeId | "unknown";
+  providerId: string;
+  providerKind: FuturesProviderKind;
+  marketData: FuturesMarketDataCapabilities;
+  liveCertificationStatus: ProviderLiveCertificationStatus;
   connectorKind: FuturesConnectorKind;
   adapterFactoryAvailable: boolean;
   supportsPerpMarketData: boolean;
@@ -85,8 +104,34 @@ const ORDER_TYPES_MARKET_AND_LIMIT: readonly OrderType[] = ["market", "limit"];
 const POSITION_MODE_ONE_WAY: readonly FuturesPositionMode[] = ["one-way"];
 const POSITION_MODE_ONE_WAY_AND_HEDGE: readonly FuturesPositionMode[] = ["one-way", "hedge"];
 
+const NATIVE_MARKET_DATA: FuturesMarketDataCapabilities = {
+  ticker: "native",
+  orderbook: "native",
+  trades: "native",
+  candles: "native",
+  fundingRate: "native",
+  openInterest: "native",
+  markPrice: "native",
+  orderbookAnalytics: "native"
+};
+
+const UNSUPPORTED_MARKET_DATA: FuturesMarketDataCapabilities = {
+  ticker: "unsupported",
+  orderbook: "unsupported",
+  trades: "unsupported",
+  candles: "unsupported",
+  fundingRate: "unsupported",
+  openInterest: "unsupported",
+  markPrice: "unsupported",
+  orderbookAnalytics: "unsupported"
+};
+
 export const BITGET_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "bitget",
+  providerId: "uliquid-native:bitget",
+  providerKind: "uliquid_native",
+  marketData: { ...NATIVE_MARKET_DATA },
+  liveCertificationStatus: "not_assessed",
   connectorKind: "live_adapter",
   adapterFactoryAvailable: true,
   supportsPerpMarketData: true,
@@ -111,6 +156,10 @@ export const BITGET_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
 
 export const HYPERLIQUID_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "hyperliquid",
+  providerId: "uliquid-native:hyperliquid",
+  providerKind: "uliquid_native",
+  marketData: { ...NATIVE_MARKET_DATA, trades: "unsupported" },
+  liveCertificationStatus: "not_assessed",
   connectorKind: "live_adapter",
   adapterFactoryAvailable: true,
   supportsPerpMarketData: true,
@@ -135,6 +184,10 @@ export const HYPERLIQUID_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
 
 export const MEXC_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "mexc",
+  providerId: "uliquid-native:mexc",
+  providerKind: "uliquid_native",
+  marketData: { ...NATIVE_MARKET_DATA, openInterest: "unsupported" },
+  liveCertificationStatus: "not_assessed",
   connectorKind: "live_adapter",
   adapterFactoryAvailable: true,
   supportsPerpMarketData: true,
@@ -159,6 +212,19 @@ export const MEXC_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
 
 export const PAPER_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "paper",
+  providerId: "paper:linked-market-data",
+  providerKind: "paper_linked",
+  marketData: {
+    ticker: "linked",
+    orderbook: "linked",
+    trades: "linked",
+    candles: "linked",
+    fundingRate: "linked",
+    openInterest: "linked",
+    markPrice: "linked",
+    orderbookAnalytics: "linked"
+  },
+  liveCertificationStatus: "not_assessed",
   connectorKind: "paper_linked_market_data",
   adapterFactoryAvailable: false,
   supportsPerpMarketData: false,
@@ -183,6 +249,10 @@ export const PAPER_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
 
 export const BINANCE_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "binance",
+  providerId: "uliquid-native:binance",
+  providerKind: "uliquid_native",
+  marketData: { ...NATIVE_MARKET_DATA },
+  liveCertificationStatus: "not_assessed",
   connectorKind: "live_adapter",
   adapterFactoryAvailable: true,
   supportsPerpMarketData: true,
@@ -209,6 +279,10 @@ export const BINANCE_MARKET_DATA_CAPABILITIES = BINANCE_FUTURES_CAPABILITIES;
 
 export const BINGX_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "bingx",
+  providerId: "uliquid-native:bingx",
+  providerKind: "uliquid_native",
+  marketData: { ...NATIVE_MARKET_DATA, fundingRate: "unsupported", openInterest: "unsupported", markPrice: "unsupported" },
+  liveCertificationStatus: "not_assessed",
   connectorKind: "live_adapter",
   adapterFactoryAvailable: true,
   supportsPerpMarketData: true,
@@ -235,6 +309,10 @@ export const BINGX_MARKET_DATA_CAPABILITIES = BINGX_FUTURES_CAPABILITIES;
 
 export const UNKNOWN_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "unknown",
+  providerId: "unknown",
+  providerKind: "unknown",
+  marketData: { ...UNSUPPORTED_MARKET_DATA },
+  liveCertificationStatus: "not_assessed",
   connectorKind: "unsupported",
   adapterFactoryAvailable: false,
   supportsPerpMarketData: false,

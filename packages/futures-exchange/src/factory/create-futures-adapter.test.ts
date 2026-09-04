@@ -191,11 +191,17 @@ test("createPaperExecutionContextForVenueResolution reuses the paper runtime fro
 
 test("futures venue capability registry exposes enforceable feature support by venue", () => {
   const bitget = getFuturesVenueCapabilities("bitget");
+  assert.equal(bitget.providerId, "uliquid-native:bitget");
+  assert.equal(bitget.providerKind, "uliquid_native");
+  assert.equal(bitget.marketData.fundingRate, "native");
+  assert.equal(bitget.marketData.openInterest, "native");
+  assert.equal(bitget.liveCertificationStatus, "not_assessed");
   assert.deepEqual(bitget.supportedOrderTypes, ["market", "limit"]);
   assert.deepEqual(bitget.supportedPositionModes, ["one-way", "hedge"]);
   assert.equal(bitget.supportsVaultExecution, false);
 
   const hyperliquid = getFuturesVenueCapabilities("hyperliquid");
+  assert.equal(hyperliquid.marketData.trades, "unsupported");
   assert.deepEqual(hyperliquid.supportedPositionModes, ["one-way"]);
   assert.equal(hyperliquid.supportsVaultExecution, true);
   assert.equal(hyperliquid.supportsOrderEditing, true);
@@ -203,12 +209,16 @@ test("futures venue capability registry exposes enforceable feature support by v
   assert.equal(hyperliquid.supportsPositionTpSl, true);
 
   const paper = getFuturesVenueCapabilities("paper");
+  assert.equal(paper.providerKind, "paper_linked");
+  assert.equal(paper.marketData.openInterest, "linked");
   assert.equal(paper.supportsBalanceReads, true);
   assert.equal(paper.supportsTransfers, false);
   assert.equal(paper.supportsGridExecution, true);
   assert.equal(paper.supportsOrderEditing, true);
 
   const mexc = getFuturesVenueCapabilities("mexc");
+  assert.equal(mexc.marketData.fundingRate, "native");
+  assert.equal(mexc.marketData.openInterest, "unsupported");
   assert.equal(mexc.supportsPositionClose, true);
   assert.equal(mexc.supportsPositionTpSl, true);
   assert.equal(mexc.supportsOrderEditing, true);
@@ -222,6 +232,8 @@ test("futures venue capability registry exposes enforceable feature support by v
   assert.equal(binance.supportsOrderEditing, true);
 
   const bingx = getFuturesVenueCapabilities("bingx");
+  assert.equal(bingx.marketData.fundingRate, "unsupported");
+  assert.equal(bingx.marketData.openInterest, "unsupported");
   assert.equal(bingx.connectorKind, "live_adapter");
   assert.equal(bingx.adapterFactoryAvailable, true);
   assert.equal(bingx.supportsPerpExecution, true);

@@ -4,3 +4,4 @@ export * from "./metadata.js";
 export * from "./sizing.js";
 export * from "./breakerBlocks.js";
 export * from "./superOrderBlockFvgBos.js";
+export * from "./marketAnalytics.js";

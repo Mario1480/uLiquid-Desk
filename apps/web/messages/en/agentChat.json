@@ -123,6 +123,25 @@
     "fallback": "fallback marked",
     "completed": "Analysis completed"
   },
+  "decisionLog": {
+    "title": "Decision log",
+    "recentRuns": "Recent analyses",
+    "loading": "Loading decision evidence…",
+    "empty": "Completed and failed analyses will appear here.",
+    "noExecution": "No trading action permitted",
+    "recommendation": "Recommendation",
+    "noRecommendation": "No recommendation is available for this run.",
+    "dataQuality": "Data quality",
+    "evidence": "Evidence",
+    "noEvidence": "No tool evidence was recorded.",
+    "technicalActivity": "Technical activity",
+    "quality": {
+      "fresh": "Fresh",
+      "stale": "Stale",
+      "degraded": "Degraded",
+      "unavailable": "Unavailable"
+    }
+  },
   "composer": {
     "placeholder": "Ask about a market, prediction, event, or selected position…",
     "hint": "Enter to send · Shift+Enter for a new line",

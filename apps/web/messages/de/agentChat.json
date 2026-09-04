@@ -123,6 +123,25 @@
     "fallback": "Fallback markiert",
     "completed": "Analyse abgeschlossen"
   },
+  "decisionLog": {
+    "title": "Entscheidungsprotokoll",
+    "recentRuns": "Letzte Analysen",
+    "loading": "Lade Entscheidungsnachweise…",
+    "empty": "Abgeschlossene und fehlgeschlagene Analysen erscheinen hier.",
+    "noExecution": "Keine Handelsaktion erlaubt",
+    "recommendation": "Empfehlung",
+    "noRecommendation": "Für diesen Lauf ist keine Empfehlung verfügbar.",
+    "dataQuality": "Datenqualität",
+    "evidence": "Nachweise",
+    "noEvidence": "Es wurden keine Tool-Nachweise aufgezeichnet.",
+    "technicalActivity": "Technische Aktivität",
+    "quality": {
+      "fresh": "Aktuell",
+      "stale": "Veraltet",
+      "degraded": "Eingeschränkt",
+      "unavailable": "Nicht verfügbar"
+    }
+  },
   "composer": {
     "placeholder": "Frage nach einem Markt, einer Prediction, einem Termin oder der ausgewählten Position…",
     "hint": "Enter zum Senden · Shift+Enter für neue Zeile",

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { ATR, EMA, RSI, SMA } from "technicalindicators";
+import { getFuturesVenueCapabilities } from "@mm/futures-exchange";
 import { createPerpMarketDataClient } from "../../perp/perp-market-data.client.js";
 import { createSpotClient } from "../../spot/spot-client-factory.js";
 import {
@@ -15,15 +15,18 @@ import {
   type TradingAccount
 } from "../../trading.js";
 import { getMarketIntelligenceService } from "../../services/marketIntelligence/service.js";
-import {
-  buildDeterministicPositionAnalysis,
-  buildPositionCopilotSnapshot
-} from "../../position-copilot/core.js";
 import { redactAiSafetySecrets } from "../safety/toolPolicy.js";
+import {
+  AGENT_ROUTINE_IDS,
+  executeAgentRoutine,
+  routineVersionRefs,
+  type AgentRoutineId
+} from "../routines/registry.js";
 import { AgentChatError } from "./errors.js";
 import { normalizeAgentCandleRows } from "./normalization.js";
 import type {
   AgentMarketType,
+  AgentProfileKey,
   AgentSkillDescriptor,
   AgentSkillExecutionContext,
   AgentToolResult,
@@ -60,25 +63,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function toNumber(value: unknown): number | null {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function toRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-}
-
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "BTCUSDT").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 32);
-}
-
-function baseCoin(symbol: string): string {
-  const canonical = normalizeSymbol(symbol);
-  for (const quote of ["USDT", "USDC", "USD", "BTC", "ETH"]) {
-    if (canonical.endsWith(quote) && canonical.length > quote.length) return canonical.slice(0, -quote.length);
-  }
-  return canonical;
 }
 
 function makeMeta(params: {
@@ -91,18 +77,29 @@ function makeMeta(params: {
   fallbackUsed?: boolean;
   cacheHit?: boolean;
   warnings?: string[];
+  quality?: AgentToolResult["meta"]["quality"];
+  timestampSource?: AgentToolResult["meta"]["timestampSource"];
 }): AgentToolResult["meta"] {
+  const fetchedAt = nowIso();
+  const observedMs = params.observedAt ? Date.parse(params.observedAt) : Number.NaN;
+  const ageMs = Number.isFinite(observedMs) ? Math.max(0, Date.parse(fetchedAt) - observedMs) : null;
+  const stale = params.stale ?? false;
+  const degraded = params.degraded ?? false;
   return {
     toolId: params.toolId,
     ...(params.venue ? { sourceVenue: params.venue } : {}),
     ...(params.provider ? { sourceProvider: params.provider } : {}),
     ...(params.observedAt ? { observedAt: params.observedAt } : {}),
-    fetchedAt: nowIso(),
-    stale: params.stale ?? false,
-    degraded: params.degraded ?? false,
+    fetchedAt,
+    ageMs,
+    quality: params.quality ?? (stale ? "stale" : degraded ? "degraded" : "fresh"),
+    timestampSource: params.timestampSource ?? (params.observedAt ? "provider" : "unknown"),
+    stale,
+    degraded,
     fallbackUsed: params.fallbackUsed ?? false,
     cacheHit: params.cacheHit ?? false,
-    warnings: params.warnings ?? []
+    warnings: params.warnings ?? [],
+    routineVersions: []
   };
 }
 
@@ -121,6 +118,10 @@ function publicAccount(venue: Exclude<AgentVenue, "auto">): TradingAccount {
     passphrase: venue === "bitget" ? "public" : null,
     marketDataExchangeAccountId: null
   };
+}
+
+function marketProviderId(venue: Exclude<AgentVenue, "auto">, marketType: AgentMarketType): string {
+  return marketType === "perp" ? getFuturesVenueCapabilities(venue).providerId : `uliquid-native-spot:${venue}`;
 }
 
 async function selectedAccountVenue(context: AgentSkillExecutionContext): Promise<Exclude<AgentVenue, "auto"> | null> {
@@ -201,55 +202,21 @@ async function readMarketClient<T>(
   }
 }
 
-async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
+async function readDerivativesSnapshot(
+  venue: Exclude<AgentVenue, "auto">,
+  symbol: string,
+  field: "fundingRate" | "openInterest"
+) {
+  const capability = getFuturesVenueCapabilities(venue);
+  if (capability.marketData[field] === "unsupported") {
+    throw new AgentChatError("agent_chat_venue_unsupported", 400, `${field} is unsupported for ${venue}.`);
+  }
+  const client = createPerpMarketDataClient(publicAccount(venue));
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal, headers: { accept: "application/json", ...(init?.headers ?? {}) } });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(`market_provider_http_${response.status}`);
-    return payload;
+    return await client.getDerivativesSnapshot(symbol);
   } finally {
-    clearTimeout(timer);
+    await client.close().catch(() => undefined);
   }
-}
-
-async function readFundingAndOpenInterest(venue: Exclude<AgentVenue, "auto">, symbol: string): Promise<{ fundingRate: number | null; openInterest: number | null; observedAt: string }> {
-  if (venue === "binance") {
-    const [premium, interest] = await Promise.all([
-      fetchJson(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${encodeURIComponent(normalizeSymbol(symbol))}`),
-      fetchJson(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${encodeURIComponent(normalizeSymbol(symbol))}`)
-    ]);
-    return {
-      fundingRate: toNumber(toRecord(premium)?.lastFundingRate),
-      openInterest: toNumber(toRecord(interest)?.openInterest),
-      observedAt: new Date(toNumber(toRecord(premium)?.time) ?? Date.now()).toISOString()
-    };
-  }
-  if (venue === "bitget") {
-    const payload = await fetchJson(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${encodeURIComponent(normalizeSymbol(symbol))}&productType=USDT-FUTURES`);
-    const data = toRecord(payload)?.data;
-    const row = toRecord(Array.isArray(data) ? data[0] : data);
-    return {
-      fundingRate: toNumber(row?.fundingRate),
-      openInterest: toNumber(row?.holdingAmount ?? row?.openInterest),
-      observedAt: new Date(toNumber(toRecord(payload)?.requestTime ?? row?.ts) ?? Date.now()).toISOString()
-    };
-  }
-  if (venue === "hyperliquid") {
-    const payload = await fetchJson("https://api.hyperliquid.xyz/info", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "metaAndAssetCtxs" })
-    });
-    const meta = toRecord(Array.isArray(payload) ? payload[0] : null);
-    const contexts = Array.isArray(payload) && Array.isArray(payload[1]) ? payload[1] : [];
-    const universe = Array.isArray(meta?.universe) ? meta.universe : [];
-    const index = universe.findIndex((item) => String(toRecord(item)?.name ?? "").toUpperCase() === baseCoin(symbol));
-    const row = index >= 0 ? toRecord(contexts[index]) : null;
-    return { fundingRate: toNumber(row?.funding), openInterest: toNumber(row?.openInterest), observedAt: nowIso() };
-  }
-  throw new AgentChatError("agent_chat_venue_unsupported", 400);
 }
 
 async function requireOwnedSelectedAccount(context: AgentSkillExecutionContext): Promise<{ id: string; exchange: string; label: string; updatedAt: Date; spotBudgetAvailable: number | null; futuresBudgetAvailableMargin: number | null; futuresBudgetEquity: number | null }> {
@@ -296,8 +263,52 @@ async function loadPerpPositions(context: AgentSkillExecutionContext, symbol?: s
   }
 }
 
-function descriptor(params: Omit<AgentSkillDescriptor, "version" | "sideEffect" | "outputSchema">): AgentSkillDescriptor {
-  return { ...params, version: 1, sideEffect: false, outputSchema: z.unknown() };
+const genericObjectSchema = z.record(z.unknown());
+const genericObjectArraySchema = z.array(genericObjectSchema);
+const nullableNumberSchema = z.number().finite().nullable();
+const candleOutputSchema = z.object({ ts: z.number().finite(), open: z.number().finite(), high: z.number().finite(), low: z.number().finite(), close: z.number().finite(), volume: z.number().finite() }).strict();
+const qualityOutputSchema = z.object({ state: z.enum(["fresh", "stale", "degraded", "unavailable"]), reasons: z.array(z.string()) }).strict();
+const analyticsOutputSchema = z.object({ routineId: z.string(), quality: qualityOutputSchema }).passthrough();
+
+const SKILL_OUTPUT_SCHEMAS: Record<string, z.ZodTypeAny> = {
+  "market.get_ohlcv": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), interval: timeframeSchema, candles: z.array(candleOutputSchema) }).strict(),
+  "market.get_indicators": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), interval: timeframeSchema, values: z.record(nullableNumberSchema) }).strict(),
+  "market.get_ticker": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), last: nullableNumberSchema, mark: nullableNumberSchema, bid: nullableNumberSchema, ask: nullableNumberSchema }).strict(),
+  "market.get_orderbook": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), bids: z.array(z.tuple([z.number().finite(), z.number().finite()])), asks: z.array(z.tuple([z.number().finite(), z.number().finite()])), analytics: analyticsOutputSchema }).strict(),
+  "market.get_funding_rate": z.object({ symbol: z.string(), fundingRate: nullableNumberSchema, analytics: analyticsOutputSchema }).strict(),
+  "market.get_open_interest": z.object({ symbol: z.string(), openInterest: nullableNumberSchema, analytics: analyticsOutputSchema }).strict(),
+  "market.get_contract_info": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), contract: genericObjectSchema.nullable() }).strict(),
+  "intelligence.get_news": genericObjectArraySchema,
+  "intelligence.get_economic_events": genericObjectArraySchema,
+  "predictions.get_recent": genericObjectArraySchema,
+  "predictions.get_performance_summary": z.object({ evaluated: z.number().int().nonnegative(), wins: z.number().int().nonnegative(), losses: z.number().int().nonnegative(), winRate: nullableNumberSchema, avgPnlPct: nullableNumberSchema }).strict(),
+  "portfolio.get_positions": z.object({ accountLabel: z.string(), venue: z.string(), positions: genericObjectArraySchema }).strict(),
+  "portfolio.get_balance_summary": z.object({ accountLabel: z.string(), venue: z.string(), spotAvailable: nullableNumberSchema, futuresAvailableMargin: nullableNumberSchema, futuresEquity: nullableNumberSchema }).strict(),
+  "portfolio.get_open_orders": z.object({ accountLabel: z.string(), venue: z.string(), orders: z.array(z.unknown()) }).strict(),
+  "risk.analyze_portfolio": z.object({ accountLabel: z.string(), venue: z.string(), positionCount: z.number().int().nonnegative(), positions: genericObjectArraySchema }).strict(),
+  "risk.analyze_position_snapshot": genericObjectSchema
+};
+
+type DescriptorParams = Omit<AgentSkillDescriptor, "version" | "status" | "allowedProfiles" | "outputSchemaId" | "routineIds" | "sideEffect" | "outputSchema"> & {
+  version?: number;
+  routineIds?: readonly AgentRoutineId[];
+  allowedProfiles?: readonly AgentProfileKey[];
+};
+
+function descriptor(params: DescriptorParams): AgentSkillDescriptor {
+  const version = params.version ?? 1;
+  const outputSchema = SKILL_OUTPUT_SCHEMAS[params.id];
+  if (!outputSchema) throw new Error(`agent_skill_output_schema_missing:${params.id}`);
+  return {
+    ...params,
+    version,
+    status: "production",
+    allowedProfiles: params.allowedProfiles ?? (params.accessLevel === "account_read" ? ["position_copilot"] : ["market_analyst", "position_copilot"]),
+    outputSchemaId: `${params.id}.v${version}`,
+    routineIds: params.routineIds ?? [],
+    sideEffect: false,
+    outputSchema
+  };
 }
 
 function tool(name: string, description: string, properties: Record<string, unknown> = {}, required: string[] = []) {
@@ -325,22 +336,18 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
       const args = candlesArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
       const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, async (client) => normalizeAgentCandleRows(await client.getCandles({ symbol, timeframe: args.interval as never, limit: args.limit }))) });
       const observedAt = result.data.at(-1)?.ts ? new Date(result.data.at(-1)!.ts).toISOString() : undefined;
-      return ok("market.get_ohlcv", { symbol, marketType, interval: args.interval, candles: result.data.slice(-args.limit) }, { venue: result.resolution.sourceVenue, provider: result.resolution.sourceVenue, observedAt, degraded: result.data.length < 20, fallbackUsed: result.resolution.fallbackUsed, warnings: result.resolution.fallbackReason ? [result.resolution.fallbackReason] : [] });
+      return ok("market.get_ohlcv", { symbol, marketType, interval: args.interval, candles: result.data.slice(-args.limit) }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt: observedAt ?? nowIso(), timestampSource: observedAt ? "provider" : "request", degraded: result.data.length < 20 || !observedAt, fallbackUsed: result.resolution.fallbackUsed, warnings: [...(result.resolution.fallbackReason ? [result.resolution.fallbackReason] : []), ...(!observedAt ? ["provider_timestamp_missing"] : [])] });
     }
   }),
   descriptor({
-    id: "market.get_indicators", title: "Indicators", description: "Deterministic SMA, EMA, RSI and ATR indicators.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 3_000, supportedMarketTypes: ["spot", "perp"], inputSchema: indicatorsArgsSchema,
+    id: "market.get_indicators", version: 2, routineIds: [AGENT_ROUTINE_IDS.technicalIndicatorSummary], title: "Indicators", description: "Deterministic SMA, EMA, RSI and ATR indicators.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 3_000, supportedMarketTypes: ["spot", "perp"], inputSchema: indicatorsArgsSchema,
     toolDefinition: tool("market_get_indicators", "Compute deterministic indicators from normalized market candles.", { ...marketCommon, interval: { type: "string", enum: ["5m", "15m", "1h", "4h", "1d"] }, limit: { type: "integer", minimum: 20, maximum: 1000 }, indicators: { type: "array", items: { type: "string", enum: ["sma20", "ema50", "rsi14", "atr14"] }, maxItems: 8 } }, ["interval"]),
     async execute(context, input) {
       const args = indicatorsArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
       const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, async (client) => normalizeAgentCandleRows(await client.getCandles({ symbol, timeframe: args.interval as never, limit: args.limit }))) });
-      const closes = result.data.map((row) => row.close); const requested = args.indicators ?? ["sma20", "ema50", "rsi14", "atr14"];
-      const values: Record<string, number | null> = {};
-      if (requested.includes("sma20")) values.sma20 = SMA.calculate({ period: 20, values: closes }).at(-1) ?? null;
-      if (requested.includes("ema50")) values.ema50 = EMA.calculate({ period: 50, values: closes }).at(-1) ?? null;
-      if (requested.includes("rsi14")) values.rsi14 = RSI.calculate({ period: 14, values: closes }).at(-1) ?? null;
-      if (requested.includes("atr14")) values.atr14 = ATR.calculate({ period: 14, high: result.data.map((row) => row.high), low: result.data.map((row) => row.low), close: closes }).at(-1) ?? null;
-      return ok("market.get_indicators", { symbol, marketType, interval: args.interval, values }, { venue: result.resolution.sourceVenue, provider: result.resolution.sourceVenue, observedAt: result.data.at(-1)?.ts ? new Date(result.data.at(-1)!.ts).toISOString() : undefined, degraded: result.data.length < 50, fallbackUsed: result.resolution.fallbackUsed });
+      const routine = executeAgentRoutine<{ values: Record<string, number | null>; quality: { state: string; reasons: string[] } }>(AGENT_ROUTINE_IDS.technicalIndicatorSummary, { candles: result.data, indicators: args.indicators ?? ["sma20", "ema50", "rsi14", "atr14"] });
+      const observedAt = result.data.at(-1)?.ts ? new Date(result.data.at(-1)!.ts).toISOString() : undefined;
+      return ok("market.get_indicators", { symbol, marketType, interval: args.interval, values: routine.values }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt: observedAt ?? nowIso(), timestampSource: observedAt ? "provider" : "request", degraded: routine.quality.state !== "fresh" || !observedAt, fallbackUsed: result.resolution.fallbackUsed, warnings: [...routine.quality.reasons, ...(!observedAt ? ["provider_timestamp_missing"] : [])] });
     }
   }),
   descriptor({
@@ -350,11 +357,12 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
       const args = marketArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
       const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, (client) => client.getTicker(symbol)) });
       const ticker = result.data as { last: number | null; mark: number | null; bid: number | null; ask: number | null; ts: number | null };
-      return ok("market.get_ticker", { symbol, marketType, last: ticker.last, mark: ticker.mark, bid: ticker.bid, ask: ticker.ask }, { venue: result.resolution.sourceVenue, provider: result.resolution.sourceVenue, observedAt: ticker.ts ? new Date(ticker.ts).toISOString() : nowIso(), fallbackUsed: result.resolution.fallbackUsed });
+      const observedAt = ticker.ts ? new Date(ticker.ts).toISOString() : nowIso(); const stale = Boolean(ticker.ts && Date.now() - new Date(ticker.ts).getTime() > 30_000);
+      return ok("market.get_ticker", { symbol, marketType, last: ticker.last, mark: ticker.mark, bid: ticker.bid, ask: ticker.ask }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt, timestampSource: ticker.ts ? "provider" : "request", stale, degraded: !ticker.ts, fallbackUsed: result.resolution.fallbackUsed, warnings: !ticker.ts ? ["provider_timestamp_missing"] : [] });
     }
   }),
   descriptor({
-    id: "market.get_orderbook", title: "Order book", description: "Bounded normalized order-book levels.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 2_000, supportedMarketTypes: ["spot", "perp"], inputSchema: orderbookArgsSchema,
+    id: "market.get_orderbook", version: 2, routineIds: [AGENT_ROUTINE_IDS.orderbookSnapshot], title: "Order book", description: "Bounded normalized order-book levels with deterministic depth analytics.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 2_000, supportedMarketTypes: ["spot", "perp"], inputSchema: orderbookArgsSchema,
     toolDefinition: tool("market_get_orderbook", "Load a bounded normalized cross-venue order book.", { ...marketCommon, limit: { type: "integer", minimum: 5, maximum: 100 } }),
     async execute(context, input) {
       const args = orderbookArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
@@ -364,18 +372,29 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
         marketType,
         read: (venue) => readMarketClient<unknown>(venue, marketType, async (client) => client.getDepth(symbol, args.limit))
       });
-      const depth = result.data as { bids: unknown[]; asks: unknown[]; ts?: string | number | null };
-      return ok("market.get_orderbook", { symbol, marketType, bids: depth.bids.slice(0, args.limit), asks: depth.asks.slice(0, args.limit) }, { venue: result.resolution.sourceVenue, provider: result.resolution.sourceVenue, observedAt: depth.ts ? new Date(Number(depth.ts)).toISOString() : nowIso(), fallbackUsed: result.resolution.fallbackUsed });
+      const depth = result.data as { bids: Array<[number, number]>; asks: Array<[number, number]>; ts?: string | number | null };
+      const bids = depth.bids.slice(0, args.limit); const asks = depth.asks.slice(0, args.limit);
+      const analytics = executeAgentRoutine<any>(AGENT_ROUTINE_IDS.orderbookSnapshot, { bids, asks });
+      const observedAt = depth.ts ? new Date(Number(depth.ts)).toISOString() : nowIso();
+      const timestampMissing = !depth.ts;
+      const stale = !timestampMissing && Date.now() - Date.parse(observedAt) > 30_000;
+      return ok("market.get_orderbook", { symbol, marketType, bids, asks, analytics }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt, timestampSource: timestampMissing ? "request" : "provider", stale, degraded: timestampMissing || analytics.quality.state !== "fresh", quality: analytics.quality.state === "unavailable" ? "unavailable" : stale ? "stale" : timestampMissing || analytics.quality.state === "degraded" ? "degraded" : "fresh", fallbackUsed: result.resolution.fallbackUsed, warnings: [...analytics.quality.reasons, ...(timestampMissing ? ["provider_timestamp_missing"] : []), ...(stale ? ["market_data_stale"] : [])] });
     }
   }),
   ...(["market.get_funding_rate", "market.get_open_interest"] as const).map((id) => descriptor({
-    id, title: id.endsWith("funding_rate") ? "Funding rate" : "Open interest", description: "Normalized perpetual-market context.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 5_000, supportedMarketTypes: ["perp"], inputSchema: marketArgsSchema,
+    id, version: 2, routineIds: [id.endsWith("funding_rate") ? AGENT_ROUTINE_IDS.fundingSnapshot : AGENT_ROUTINE_IDS.openInterestSnapshot], title: id.endsWith("funding_rate") ? "Funding rate" : "Open interest", description: "Normalized perpetual-market snapshot analytics.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 5_000, supportedMarketTypes: ["perp"], inputSchema: marketArgsSchema,
     toolDefinition: tool(id.replaceAll(".", "_"), `Load normalized ${id.endsWith("funding_rate") ? "funding rate" : "open interest"}.`, marketCommon),
     async execute(context, input) {
       const args = marketArgsSchema.parse(input); const symbol = normalizeSymbol(args.symbol ?? context.symbol);
-      const result = await withPublicVenue({ context, requested: args.venue, marketType: "perp", read: (venue) => readFundingAndOpenInterest(venue, symbol) });
-      const key = id.endsWith("funding_rate") ? "fundingRate" : "openInterest";
-      return ok(id, { symbol, [key]: result.data[key] }, { venue: result.resolution.sourceVenue, provider: result.resolution.sourceVenue, observedAt: result.data.observedAt, degraded: result.data[key] === null, fallbackUsed: result.resolution.fallbackUsed });
+      const isFunding = id.endsWith("funding_rate");
+      const result = await withPublicVenue({ context, requested: args.venue, marketType: "perp", read: (venue) => readDerivativesSnapshot(venue, symbol, isFunding ? "fundingRate" : "openInterest") });
+      const analytics = isFunding
+        ? executeAgentRoutine<any>(AGENT_ROUTINE_IDS.fundingSnapshot, { rate: result.data.fundingRate, fundingIntervalHours: result.data.fundingIntervalHours })
+        : executeAgentRoutine<any>(AGENT_ROUTINE_IDS.openInterestSnapshot, { reportedValue: result.data.openInterest, reportedUnit: result.data.openInterestUnit, referencePrice: result.data.markPrice, contractSize: result.data.contractSize });
+      const value = isFunding ? result.data.fundingRate : result.data.openInterest;
+      const timestampMissing = !result.data.sourceTimestampProvided;
+      const stale = !timestampMissing && Date.now() - Date.parse(result.data.observedAt) > 120_000;
+      return ok(id, { symbol, [isFunding ? "fundingRate" : "openInterest"]: value, analytics }, { venue: result.resolution.sourceVenue, provider: getFuturesVenueCapabilities(result.resolution.sourceVenue).providerId, observedAt: result.data.observedAt, timestampSource: timestampMissing ? "request" : "provider", stale, degraded: value === null || timestampMissing || analytics.quality.state !== "fresh", quality: value === null ? "unavailable" : stale ? "stale" : timestampMissing || analytics.quality.state !== "fresh" ? "degraded" : "fresh", fallbackUsed: result.resolution.fallbackUsed, warnings: [...new Set([...result.data.warnings, ...analytics.quality.reasons, ...(stale ? ["market_data_stale"] : []), ...(result.resolution.fallbackReason ? [result.resolution.fallbackReason] : [])])] });
     }
   })),
   descriptor({
@@ -384,7 +403,7 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     async execute(context, input) {
       const args = marketArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
       const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, async (client) => (await client.listSymbols()).find((item) => normalizeSymbol(item.symbol) === symbol) ?? null) });
-      return ok("market.get_contract_info", { symbol, marketType, contract: result.data }, { venue: result.resolution.sourceVenue, provider: result.resolution.sourceVenue, degraded: result.data === null, fallbackUsed: result.resolution.fallbackUsed });
+      return ok("market.get_contract_info", { symbol, marketType, contract: result.data }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt: nowIso(), timestampSource: "request", degraded: result.data === null, fallbackUsed: result.resolution.fallbackUsed });
     }
   }),
   ...(["intelligence.get_news", "intelligence.get_economic_events"] as const).map((id) => descriptor({
@@ -424,7 +443,7 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     }
   }),
   descriptor({
-    id: "risk.analyze_portfolio", title: "Portfolio risk", description: "Deterministic read-only risk analysis for every open position in the selected account.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 1, timeoutMs: 12_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioRiskArgsSchema,
+    id: "risk.analyze_portfolio", routineIds: [AGENT_ROUTINE_IDS.positionSnapshot, AGENT_ROUTINE_IDS.positionRisk], title: "Portfolio risk", description: "Deterministic read-only risk analysis for every open position in the selected account.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 1, timeoutMs: 12_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioRiskArgsSchema,
     toolDefinition: tool("risk_analyze_portfolio", "Analyze all open positions in the server-bound selected account. This tool never requires a symbol.", { accountRef: { type: "string", enum: ["selected"] } }),
     async execute(context, input) {
       portfolioRiskArgsSchema.parse(input);
@@ -433,9 +452,11 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
         const positionRef = index === 0 ? "selected" : `position:${createHash("sha256").update(`${context.runId}:${index}`).digest("hex").slice(0, 16)}`;
         context.positionRefs.set(positionRef, position);
         if (index === 0) context.positionRefs.set("selected", position);
-        const snapshot = buildPositionCopilotSnapshot({ ...position, exchangeAccountId: loaded.account.id, exchange: loaded.account.exchange, marketType: "perp", unrealizedPnlUsd: position.unrealizedPnl, dataDegraded: false, observedAt: nowIso(), openedByPredictionCopier: false });
+        const routineInput = { ...position, exchangeAccountId: loaded.account.id, exchange: loaded.account.exchange, marketType: "perp", unrealizedPnlUsd: position.unrealizedPnl, dataDegraded: false, observedAt: nowIso(), openedByPredictionCopier: false };
+        const snapshot = executeAgentRoutine<any>(AGENT_ROUTINE_IDS.positionSnapshot, { input: routineInput, locale: context.locale });
         const { exchangeAccountId: _exchangeAccountId, ...readOnlySnapshot } = snapshot;
-        return { positionRef, snapshot: readOnlySnapshot, analysis: buildDeterministicPositionAnalysis(snapshot, new Date(), context.locale) };
+        const risk = executeAgentRoutine<any>(AGENT_ROUTINE_IDS.positionRisk, { input: routineInput, locale: context.locale });
+        return { positionRef, snapshot: readOnlySnapshot, analysis: risk.analysis };
       });
       return ok("risk.analyze_portfolio", { accountLabel: loaded.account.label, venue: loaded.account.exchange, positionCount: positions.length, positions }, { venue: loaded.account.exchange, provider: "position_copilot_deterministic", observedAt: nowIso(), degraded: positions.some((position) => position.analysis.dataQuality.state === "degraded") });
     }
@@ -467,15 +488,16 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     }
   }),
   descriptor({
-    id: "risk.analyze_position_snapshot", title: "Position risk", description: "Shared deterministic Position Copilot analysis.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 2, timeoutMs: 4_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: riskArgsSchema,
+    id: "risk.analyze_position_snapshot", routineIds: [AGENT_ROUTINE_IDS.positionSnapshot, AGENT_ROUTINE_IDS.positionRisk], title: "Position risk", description: "Shared deterministic Position Copilot analysis.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 2, timeoutMs: 4_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: riskArgsSchema,
     toolDefinition: tool("risk_analyze_position_snapshot", "Analyze a previously loaded opaque position reference with deterministic risk rules.", { positionRef: { type: "string" } }),
     async execute(context, input) {
       const args = riskArgsSchema.parse(input); let position = context.positionRefs.get(args.positionRef) as NormalizedPosition | undefined;
       const account = await requireOwnedSelectedAccount(context);
       if (!position && args.positionRef === "selected") { const loaded = await loadPerpPositions(context, context.symbol ?? undefined); position = loaded.positions[0]; }
       if (!position) throw new AgentChatError("agent_chat_account_access_denied", 404, "Position reference is stale or unavailable.");
-      const snapshot = buildPositionCopilotSnapshot({ ...position, exchangeAccountId: account.id, exchange: account.exchange, marketType: "perp", unrealizedPnlUsd: position.unrealizedPnl, dataDegraded: false, observedAt: nowIso(), openedByPredictionCopier: false });
-      const analysis = buildDeterministicPositionAnalysis(snapshot, new Date(), context.locale);
+      const routineInput = { ...position, exchangeAccountId: account.id, exchange: account.exchange, marketType: "perp", unrealizedPnlUsd: position.unrealizedPnl, dataDegraded: false, observedAt: nowIso(), openedByPredictionCopier: false };
+      const snapshot = executeAgentRoutine<any>(AGENT_ROUTINE_IDS.positionSnapshot, { input: routineInput, locale: context.locale });
+      const analysis = executeAgentRoutine<any>(AGENT_ROUTINE_IDS.positionRisk, { input: routineInput, locale: context.locale }).analysis;
       return ok("risk.analyze_position_snapshot", analysis, { venue: account.exchange, provider: "position_copilot_deterministic", observedAt: snapshot.observedAt, degraded: analysis.dataQuality.state === "degraded" });
     }
   })
@@ -498,6 +520,7 @@ export function getAgentSkillByToolName(name: string): AgentSkillDescriptor | nu
 
 export async function executeAgentSkill(skill: AgentSkillDescriptor, context: AgentSkillExecutionContext, rawInput: unknown): Promise<AgentToolResult> {
   if (!context.profile.enabledSkillIds.includes(skill.id)) throw new AgentChatError("agent_chat_skill_not_allowed", 403);
+  if (!skill.allowedProfiles.includes(context.profile.baseProfileKey)) throw new AgentChatError("agent_chat_skill_not_allowed", 403);
   if (skill.accessLevel === "account_read" && context.profile.actionLevel !== "account_read") throw new AgentChatError("agent_chat_skill_not_allowed", 403);
   if (!skill.supportedMarketTypes.includes(context.marketType)) throw new AgentChatError("agent_chat_venue_unsupported", 400);
   const input = skill.inputSchema.parse(rawInput);
@@ -508,6 +531,12 @@ export async function executeAgentSkill(skill: AgentSkillDescriptor, context: Ag
   }
   const result = await skill.execute(context, input);
   const sanitized = redactAiSafetySecrets(result) as AgentToolResult;
+  const parsedOutput = skill.outputSchema.safeParse(sanitized.data);
+  if (!sanitized.ok || !parsedOutput.success) {
+    throw new AgentChatError("agent_chat_tool_result_invalid", 502, `Invalid output from ${skill.id}.`);
+  }
+  sanitized.data = parsedOutput.data;
+  sanitized.meta.routineVersions = routineVersionRefs(skill.routineIds as readonly AgentRoutineId[]);
   if (skill.accessLevel === "public_data" && skill.cacheTtlMs > 0) publicCache.set(cacheKey, { expiresAt: Date.now() + skill.cacheTtlMs, result: sanitized });
   return sanitized;
 }
