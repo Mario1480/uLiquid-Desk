@@ -1,3 +1,7 @@
+---
+icon: landmark
+---
+
 # Arbitrum-USDC-Billing: Architektur und Rollout
 
 ## Status und Geltungsbereich

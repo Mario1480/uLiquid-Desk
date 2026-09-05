@@ -1,6 +1,6 @@
 ---
 description: Use predictions, strategies, bots, and grid bots safely.
-icon: bot
+icon: rocket
 ---
 
 # Signals and Automation

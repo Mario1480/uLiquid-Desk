@@ -1,6 +1,6 @@
 ---
 description: Configure dashboard widgets and understand their data and safety boundaries.
-icon: layout-dashboard
+icon: gauge
 ---
 
 # Dashboard Widgets

@@ -1,6 +1,6 @@
 ---
 description: Manual trading, order types, positions, guardrails, and risk behavior.
-icon: candlestick-chart
+icon: gauge
 ---
 
 # Trading Desk and Risk

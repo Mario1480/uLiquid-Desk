@@ -1,6 +1,6 @@
 ---
 description: Admin console, platform areas, and workspace settings.
-icon: settings
+icon: server
 ---
 
 # Admin Console and Settings

@@ -1,6 +1,6 @@
 ---
 description: Read source-backed market context, provider health, and saved analyses.
-icon: chart-no-axes-combined
+icon: book-open
 ---
 
 # Market Intelligence

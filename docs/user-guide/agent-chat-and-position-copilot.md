@@ -1,6 +1,6 @@
 ---
 description: Use AI market and position analysis with explicit read-only boundaries.
-icon: bot-message-square
+icon: users
 ---
 
 # Agent Chat and Position Copilot

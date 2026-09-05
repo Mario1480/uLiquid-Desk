@@ -1,6 +1,6 @@
 ---
 description: Common issues, diagnostics, and answers to frequent questions.
-icon: life-buoy
+icon: book-open
 ---
 
 # Troubleshooting and FAQ

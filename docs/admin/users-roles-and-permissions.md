@@ -1,6 +1,6 @@
 ---
 description: Manage workspace users, roles, and permissions.
-icon: user-cog
+icon: users
 ---
 
 # Users, Roles, and Permissions

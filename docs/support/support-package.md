@@ -1,6 +1,6 @@
 ---
 description: What support or operators need for a fast investigation.
-icon: package-check
+icon: clipboard-check
 ---
 
 # Collect a Support Package
