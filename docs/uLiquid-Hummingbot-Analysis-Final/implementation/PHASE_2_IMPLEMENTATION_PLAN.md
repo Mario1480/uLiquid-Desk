@@ -1,6 +1,6 @@
 # Phase 2 — Shared Data and Existing AI Upgrade
 
-Status: `IN PROGRESS` — shared datasets, persisted feature evidence and the first AI/UI consumer integration are implemented locally; historical scope and release acceptance remain open.
+Status: `IN PROGRESS` — shared datasets, persisted feature evidence and the first AI/UI consumer integration are deployed at `4afc5dec8`; authenticated Chrome acceptance is partial. Historical scope and the remaining acceptance gates are open.
 Started: 2026-09-05.
 
 ## Entry decision
@@ -13,9 +13,11 @@ Provide consistent, source-aware market features to the existing Market Analyst 
 
 All work remains read-only. No Hummingbot, exchange adapter replacement, execution tools, trade drafts, background AI activations, production deployment, credentials or capital actions are part of this implementation slice. Preserve the newer Agent Chat budgets, scope follow-ups, permission gates and credit accounting already on `main`.
 
+Mario separately authorized production deployment and Chrome Computer Use acceptance on 2026-09-05. The API/web-only release below implements that authorization; it does not authorize trading, new monitoring activations, configuration changes or historical storage.
+
 ## Implementation sequence
 
-### 2A — Shared public snapshots and feature contracts — `IMPLEMENTED LOCALLY`
+### 2A — Shared public snapshots and feature contracts — `DEPLOYED`
 
 - [x] Introduce a typed, strictly validated public derivatives snapshot envelope above the existing normalized perpetual client.
 - [x] Key snapshots by resolved provider, source venue, market type and canonical symbol; reject private fields and ambiguous symbol strings.
@@ -32,7 +34,7 @@ All work remains read-only. No Hummingbot, exchange adapter replacement, executi
 
 The implementation remains in-process, not a Redis/distributed cache, websocket subscription manager or history store. Both typed stores use one `snapshotCache.ts` implementation, each bounded to 128 cached snapshots and 32 underlying requests. Run pinning is bounded to 32 keys and owned by the execution-context object. TTLs are three seconds for candles, two seconds for ticker/book and five seconds for derivatives. Feature values are persisted; raw market history is not stored for full recalculation/replay.
 
-### 2B — Run snapshot consistency and durable evidence — `IMPLEMENTED LOCALLY`
+### 2B — Run snapshot consistency and durable evidence — `DEPLOYED`
 
 - [x] Pin successful reads by resolved dataset and coverage and project the manifest from persisted Tool Calls. A new run is the refresh boundary; no silent mid-run refresh or new refresh tool exists.
 - [x] Store validated feature values and routine/feature/input references in existing redacted Tool Call JSON. Decode stored values without invoking routines or providers. Limit each feature to 8 KiB and each tool to four features.
@@ -41,7 +43,7 @@ The implementation remains in-process, not a Redis/distributed cache, websocket 
 - [x] Keep legacy feature arrays empty. Drop invalid persisted values, source/dataset mismatches and unsupported versions with `stored_feature_evidence_invalid`. Failed runs retain successful evidence without a recommendation.
 - [x] Retain in-process sharing for now; distributed ownership remains conditional on measured concurrency/duplication across API workers.
 
-### 2C — Existing AI consumers — `IMPLEMENTED LOCALLY` for snapshot context; acceptance pending
+### 2C — Existing AI consumers — `DEPLOYED` for snapshot context; acceptance partial
 
 1. **Market Analyst:** consume shared candles, indicators, ticker, derivatives and orderbook features. Make source differences, stale data and insufficient context visible in the existing structured response. Compare request counts, latency and credit usage against the current path with fixed fixtures and prompts.
 2. **Position Copilot:** attach public market features to account-owned position snapshots after permission checks. Preserve deterministic risk fallback, liquidation-distance semantics, deduplication, cooldowns and read-only guarantees. Cover both the Agent Chat profile and the standalone `apps/api/src/position-copilot/service.ts` path; they are distinct consumers.
@@ -54,7 +56,9 @@ Do not reprice AI models, change tool budgets, replace profiles, or activate sch
 - [x] Cache the standalone explanation together with its original feature evidence for the existing five-minute AI cache lifetime; do not fetch fresh features beside a cached explanation. Preserve economic snapshot hashing, risk floor, deterministic fallback, notifications/cooldowns, billing scope, and no-tools policy. Add safe `marketContext` to the response and existing trace JSON; deterministic AI fallback has no fabricated market evidence.
 - [x] Render persisted values, feature versions, source/input snapshot IDs, quality-at-run, observation/fetch times and coverage in the existing sidebar and mobile drawer. Keep nulls unavailable and legacy runs without invented feature values. Add English/German copy and independently handle Decision Log loading failures; refresh logs after both successful and failed sends.
 - [ ] Standalone spot enrichment is not integrated in this slice: the existing position-only analysis remains available with `spot_market_features_not_integrated`. Agent Chat retains its existing shared spot market skills.
-- [ ] Fixed-prompt live-model quality/latency/credit comparisons and authenticated target-environment browser acceptance remain open. Passing synthetic checks does not close these gates.
+- [x] Authenticated Chrome checks cover Market Analyst feature evidence, exact snapshot/value persistence after reload, unsupported BingX with no cross-venue substitution, recent-run selection, the Copilot account-selection guard and its empty-account result, and German/English mobile drawers.
+- [ ] Fixed-prompt before/after quality/latency/credit comparisons, live positive-position Copilot analysis, and live stale/fallback scenarios remain open. Passing synthetic checks or an empty-account run does not close these gates.
+- [ ] Preserve the specific unsupported-capability reason through `withPublicVenue`: the live BingX check fails closed correctly, but its two failed tools currently surface the generic `agent_chat_market_data_degraded` code. Show the unavailable capability explicitly and retain failed-tool version provenance.
 
 ### 2D — Historical feature scope — `DESIGN REQUIRED`
 
@@ -62,7 +66,7 @@ Historical Funding/OI changes, trends, percentiles and Z-scores remain a Phase 2
 
 This item is not silently moved to a later roadmap phase. Phase 2 closeout must either complete the approved historical subset or explicitly record Mario's decision to defer it.
 
-### 2E — Acceptance and release — `NOT STARTED`
+### 2E — Acceptance and release — `PARTIAL`; API/web snapshot slice deployed
 
 - Run Futures Core/Exchange, Agent Chat, Position Copilot, API/web typechecks, web i18n and relevant UI tests without forced exits.
 - Test single-flight/TTL/eviction, simultaneous failures, bounded hung requests, mutation isolation and cross-user/run/account/market separation.
@@ -120,4 +124,15 @@ This item is not silently moved to a later roadmap phase. Phase 2 closeout must 
 
 ## Next implementation slice
 
-Complete the remaining 2C/2E acceptance gates: resolve the independently tracked web typecheck issue, decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and run authenticated browser acceptance. Prepare the 2D historical coverage/storage design before any migration or backfill. Production release remains a separately authorized step.
+Complete the remaining 2C/2E gates: make unsupported-provider failures precise, decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and finish positive-position and stale/fallback acceptance in an appropriate test environment. Do not create production positions or corrupt production data to manufacture fixtures. Prepare the 2D historical coverage/storage design before any migration or backfill.
+
+## Authorized release and Chrome acceptance — 2026-09-05
+
+- Release commit `4afc5dec80041d6137f8463af9d54036d2665d4e` was pushed to `origin/main` and deployed to production. API and web were rebuilt and recreated with `--no-deps`; runner, PostgreSQL, Redis, Python and proxy container IDs were preserved. No environment or feature-gate values changed and no migrations were pending.
+- The isolated release includes the existing production dashboard fix `f7d8df936`. Full web typecheck now passes; the earlier third-slice failure remains historical evidence. The unrelated local ULIQ commit `2482356d0` was excluded from the release.
+- Release verification: Agent Chat 92/92, Position Copilot 19/19, web Agent Chat UI 9/9, Futures Core 16/16, Futures Exchange 171/171 without forced exits; API/web typechecks, i18n and production Docker builds passed.
+- Live Market Analyst: four persisted features, profile v5, skill versions 3/4 and routine/feature versions 1.0.0. Funding and OI shared one input snapshot. The fresh book and degraded candle/funding evidence were shown honestly; feature IDs and values survived reload. Observed run latency was 21.0 seconds with 71 AI Credits charged.
+- Explicit BingX Funding/OI failed closed without adopting earlier Binance values. The run completed with unavailable evidence and two failed read tools, not a fabricated quote; 5.9 seconds and 11 credits. Its generic error wording is the open follow-up above.
+- Authorized Hyperliquid Copilot analysis used a real portfolio-risk tool and returned the empty-account result without fabricated positions or market features; 5.8 seconds and 18 credits. Its evidence survived reload. The Trading Desk also showed the empty-position state, so the standalone positive-position path was not exercised.
+- German/English mobile drawers at 390×844, recent-run selection and desktop rendering were checked through Chrome Computer Use. No application warnings/errors appeared in the captured console logs; unrelated wallet-extension injection/listener errors were present. Temporary viewport overrides were reset.
+- This is partial target-environment acceptance, not Phase 2 completion or live exchange certification. See the [dated release and acceptance evidence](../../archive/tasks/2026-09-05-phase2-snapshot-production-release-and-chrome-acceptance.md) for rollback, deployment observations and remaining gates.
