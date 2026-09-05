@@ -5,12 +5,13 @@
 **Project:** uLiquid Desk × Hummingbot
 **Date:** 2026-09-03
 
-### Implementation status — 2026-09-04
+### Implementation status — 2026-09-05
 
 - `IMPLEMENTED`: redacted Decision Log projection from existing Agent Run, Tool Call, Message and Trace records, including recommendation, evidence, versions, quality and permission state.
 - `IMPLEMENTED`: Decision Log presentation in the existing right-side Activity panel with recent-run selection and mobile behavior.
 - `NOT STARTED`: durable agent memory, replay/evaluation platform, learning promotion and a new observability persistence model.
-- `FOLLOW-UP`: authenticated production reload, ownership and failed-run acceptance.
+- `COMPLETE`: Mario confirmed Phase 1 verification and formal acceptance on 2026-09-05.
+- `IN PROGRESS`: Phase 2 has local run pinning, persisted feature values/references and Decision Log snapshot manifests. Their sidebar presentation and authenticated acceptance remain open in the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
 
 ## Executive Summary
 

@@ -6,12 +6,13 @@
 **Area:** Agent Skills, Skill Packaging, Routines, Tool Boundaries, Versioning, Permissions, Skill Library
 **Date:** 2026-09-03
 
-### Implementation status — 2026-09-04
+### Implementation status — 2026-09-05
 
 - `IMPLEMENTED`: the existing `AGENT_SKILLS` catalog remains the production authority and now carries status, allowed profiles, concrete output schemas and required routine IDs.
 - `IMPLEMENTED`: validated tool results, routine/skill provenance and enriched Funding/OI/Orderbook skills.
 - `NOT STARTED`: dynamic skill packages, a second skill runtime, Hummingbot skill installation and execution-capable skills.
-- `FOLLOW-UP`: authenticated production acceptance for the enriched read-only skills.
+- `COMPLETE`: Mario confirmed Phase 1 verification and formal acceptance on 2026-09-05.
+- `IN PROGRESS`: Phase 2 candles, indicators, ticker, orderbook and Funding/OI skills consume shared/pinned snapshots locally. Feature values feed the AI context and persisted-value sidebar; standalone perpetual Copilot is integrated. Historical/spot scope and acceptance remain in the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
 
 ---
 

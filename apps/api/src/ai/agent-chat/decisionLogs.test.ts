@@ -30,3 +30,18 @@ test("uses bounded legacy association and never fabricates failed recommendation
   assert.equal(failed?.recommendation, null);
   assert.equal(failed?.dataQuality.state, "unavailable");
 });
+
+test("decision logs retain safe feature provenance across JSON persistence and discard payload extras", () => {
+  const feature = { id: "derivatives.funding-snapshot", version: "1.0.0", snapshotId: `fs_${"a".repeat(64)}`, inputSnapshotId: `mds_${"b".repeat(64)}` };
+  const summary = JSON.parse(JSON.stringify({ featureVersions: [
+    { ...feature, rawPayload: "must-not-leak", accountId: "must-not-leak" },
+    { ...feature, inputSnapshotId: "must-not-leak" },
+    { ...feature, id: "unknown" }
+  ] }));
+  const projected = projectDecisionLogs([{ id: "feature-run", status: "completed", createdAt, completedAt,
+    profileSnapshot: {}, contextSnapshot: {}, traceLogs: [], toolCalls: [
+      { id: "feature-call", toolName: "market.get_funding_rate", status: "success", resultSummary: summary }
+    ] }], []);
+  assert.deepEqual(projected[0].evidence[0].featureVersions, [feature]);
+  assert.equal(JSON.stringify(projected).includes("must-not-leak"), false);
+});

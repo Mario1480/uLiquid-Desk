@@ -45,6 +45,7 @@ This page links existing technical and operational repository documents. It comp
 
 ## AI and Predictions
 
+- [Shared Data and Existing AI Upgrade — Phase 2](../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md)
 - [AI Evaluation Framework](../ai-evaluation-framework.md)
 - [AI Prompt](../ai-prompt.md)
 - [API Prediction Detail](../api-prediction-detail.md)

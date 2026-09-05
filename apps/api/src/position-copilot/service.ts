@@ -7,6 +7,7 @@ import {
   wrapUntrustedAiPayload
 } from "../ai/safety/toolPolicy.js";
 import { getAiToolDefinitionsForAgent } from "../ai/tools/index.js";
+import { FEATURE_CONTEXT_POLICY, buildMarketFeatureContext, type MarketFeatureContext } from "../ai/features/context.js";
 import {
   buildDeterministicPositionAnalysis,
   type PositionCopilotAnalysis,
@@ -19,7 +20,8 @@ export const POSITION_COPILOT_TOOLS = getAiToolDefinitionsForAgent("position_mon
 export const POSITION_COPILOT_SYSTEM_MESSAGE = buildAiAgentSystemMessage("position_monitoring", [
   "You are the read-only uLiquid Position Copilot.",
   "Explain the supplied position snapshot in plain language. Never recommend or perform an order, close, reduction, TP/SL change, leverage change, margin change, copier-rule change, wallet signature or other execution action.",
-  "Do not invent missing market data. Return only the requested JSON."
+  "Do not invent missing market data. Return only the requested JSON.",
+  FEATURE_CONTEXT_POLICY
 ].join(" "));
 
 type CallAiChat = (
@@ -153,8 +155,10 @@ export async function analyzePositionSnapshot(params: {
   callAiChat: CallAiChat;
   language?: "de" | "en";
   now?: Date;
+  loadMarketContext?: () => Promise<MarketFeatureContext>;
 }): Promise<{
   analysis: PositionCopilotAnalysis;
+  marketContext: MarketFeatureContext | null;
   cacheHit: boolean;
   fallbackUsed: boolean;
   rateLimited: boolean;
@@ -168,20 +172,31 @@ export async function analyzePositionSnapshot(params: {
   const deterministic = buildDeterministicPositionAnalysis(params.snapshot, now, language);
   let provider: string | null = null;
   let model: string | null = null;
-  const guarded = await analyzeWithAiGuards({
-    cacheKey: `position-copilot:${params.userId}:${language}:${deterministic.snapshotHash}`,
+  const guarded = await analyzeWithAiGuards<{ analysis: PositionCopilotAnalysis; marketContext: MarketFeatureContext | null }>({
+    cacheKey: `position-copilot:v2:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
     ttlSec: 300,
     rateLimitPerMin: 12,
     aiModel: "position-copilot",
-    fallback: () => deterministic,
+    fallback: () => ({ analysis: deterministic, marketContext: null }),
     compute: async () => {
+      let marketContext: MarketFeatureContext | null = null;
+      if (params.loadMarketContext) {
+        try {
+          const raw = await params.loadMarketContext();
+          marketContext = buildMarketFeatureContext(raw.snapshotManifest, raw.featureSnapshots, raw.warningCodes);
+          if (marketContext.snapshotManifest.some(s => s.market.symbol !== params.snapshot.symbol || s.market.marketType !== params.snapshot.marketType
+            || (params.snapshot.exchange !== "paper" && s.market.sourceVenue !== params.snapshot.exchange))) throw new Error("market_context_scope_mismatch");
+        } catch { marketContext = buildMarketFeatureContext([], [], ["market_context_unavailable"]); }
+      }
       const result = await params.callAiChat([
         { role: "system", content: POSITION_COPILOT_SYSTEM_MESSAGE },
         {
           role: "user",
           content: JSON.stringify(wrapUntrustedAiPayload({
             task: `Explain risk, thesis state, relevant changes and data quality in ${language === "de" ? "German" : "English"}. Do not propose actions.`,
-            snapshot: params.snapshot
+            snapshot: params.snapshot,
+            deterministicRisk: deterministic,
+            marketContext
           }))
         }
       ], {
@@ -196,11 +211,13 @@ export async function analyzePositionSnapshot(params: {
       provider = result.provider;
       model = result.model;
       if (result.toolCalls.length > 0) throw new Error("position_copilot_tool_call_rejected");
-      return mergeAnalysis(deterministic, parseAiResponse(result.content), now);
+      return { analysis: mergeAnalysis(deterministic, parseAiResponse(result.content), now), marketContext };
     }
   });
   return {
-    analysis: guarded.value,
+    // The explanation and its original evidence share one cache entry. Never
+    // fetch newer features beside a cached explanation or mutate cached values.
+    ...structuredClone(guarded.value),
     cacheHit: guarded.cacheHit,
     fallbackUsed: guarded.fallbackUsed,
     rateLimited: guarded.rateLimited,

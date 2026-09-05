@@ -13,6 +13,7 @@ import {
   type PositionCopilotTriggerState
 } from "./core.js";
 import { analyzePositionSnapshot } from "./service.js";
+import { loadPositionMarketContext } from "./marketContext.js";
 import {
   loadPositionCopilotSettings,
   savePositionCopilotSettings
@@ -23,6 +24,7 @@ type CallAiChat = (messages: ChatMessage[], options: CallAiChatOptions) => Promi
 type RegisterPositionCopilotRoutesDeps = {
   db: any;
   callAiChat: CallAiChat;
+  loadMarketContext?: typeof loadPositionMarketContext;
   dispatchPositionCopilotNotification(payload: {
     userId: string;
     title: string;
@@ -238,7 +240,8 @@ export function registerPositionCopilotRoutes(app: express.Express, deps: Regist
         snapshot,
         userId: user.id,
         language: parsed.data.language,
-        callAiChat: deps.callAiChat
+        callAiChat: deps.callAiChat,
+        loadMarketContext: () => (deps.loadMarketContext ?? loadPositionMarketContext)({ userId: user.id, account, symbol: snapshot.symbol, marketType: snapshot.marketType })
       });
       const now = new Date();
       let notification = { sent: false, reason: "manual_analysis" };
@@ -290,7 +293,7 @@ export function registerPositionCopilotRoutes(app: express.Express, deps: Regist
           symbol,
           marketType: snapshot.marketType,
           userPayload: { trigger: parsed.data.trigger, snapshot },
-          parsedResponse: result.analysis,
+          parsedResponse: { ...result.analysis, marketContext: result.marketContext },
           success: true,
           fallbackUsed: result.fallbackUsed,
           cacheHit: result.cacheHit,
@@ -302,6 +305,7 @@ export function registerPositionCopilotRoutes(app: express.Express, deps: Regist
       return res.json({
         skipped: false,
         analysis: result.analysis,
+        marketContext: result.marketContext,
         metadata: {
           cacheHit: result.cacheHit,
           fallbackUsed: result.fallbackUsed,

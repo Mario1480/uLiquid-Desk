@@ -536,9 +536,12 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
 
   async getDepth(symbol: string, limit = 50) {
     const normalized = normalizeCanonicalSymbol(symbol);
+    const requestedLimit = Number.isFinite(limit) ? Math.max(5, Math.min(200, Math.trunc(limit))) : 50;
+    // Binance accepts discrete depth sizes; retain the caller's bounded coverage.
+    const providerLimit = [5, 10, 20, 50, 100, 500].find(value => value >= requestedLimit)!;
     const raw = await this.fetchJson("/fapi/v1/depth", {
       symbol: normalized,
-      limit: Math.max(5, Math.min(200, Math.trunc(limit)))
+      limit: providerLimit
     });
     const row = toRecord(raw);
     const parseLevels = (value: unknown): Array<[number, number]> => {
@@ -554,8 +557,8 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
         .filter((level): level is [number, number] => level !== null);
     };
     return {
-      bids: parseLevels(row?.bids),
-      asks: parseLevels(row?.asks),
+      bids: parseLevels(row?.bids).slice(0, requestedLimit),
+      asks: parseLevels(row?.asks).slice(0, requestedLimit),
       ts: toNumber(row?.E ?? row?.T),
       raw
     };

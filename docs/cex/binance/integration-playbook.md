@@ -1,5 +1,9 @@
 # CEX Integration Playbook — Binance
 
+## Public USD-M depth compatibility — 2026-09-05
+
+The normalized perpetual market-data client requests the next supported depth tier and trims the result to the caller's bounded coverage. For example, 25 requested levels require a 50-level upstream request. This fixes the HTTP 400 reproduced by the Agent Chat public smoke without changing signing or trading paths. Allowed tiers come from the [official USD-M Order Book contract](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Order-Book). A deterministic fetch test and subsequent public 25-level smoke passed; no private/write smoke was performed.
+
 Preflight: `docs/cex/binance/preflight.md`
 
 ## 1) Goals

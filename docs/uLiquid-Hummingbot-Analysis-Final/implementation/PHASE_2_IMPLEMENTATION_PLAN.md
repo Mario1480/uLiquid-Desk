@@ -1,0 +1,123 @@
+# Phase 2 — Shared Data and Existing AI Upgrade
+
+Status: `IN PROGRESS` — shared datasets, persisted feature evidence and the first AI/UI consumer integration are implemented locally; historical scope and release acceptance remain open.
+Started: 2026-09-05.
+
+## Entry decision
+
+Mario confirmed Phase 1 as tested and formally complete on 2026-09-05 and authorized Phase 2 to start. This closes the prior Phase 1 acceptance follow-up. It is an owner acceptance decision, not a new automated test report or connector certification. The September 4 release evidence remains historical evidence for `837d7d12`.
+
+## Objective and boundaries
+
+Provide consistent, source-aware market features to the existing Market Analyst and Position Copilot. Keep `AGENT_SKILLS` as the sole tool authority and the Routine Registry as the calculation authority. A Feature Registry identifies and versions reusable outputs; it does not introduce another runtime.
+
+All work remains read-only. No Hummingbot, exchange adapter replacement, execution tools, trade drafts, background AI activations, production deployment, credentials or capital actions are part of this implementation slice. Preserve the newer Agent Chat budgets, scope follow-ups, permission gates and credit accounting already on `main`.
+
+## Implementation sequence
+
+### 2A — Shared public snapshots and feature contracts — `IMPLEMENTED LOCALLY`
+
+- [x] Introduce a typed, strictly validated public derivatives snapshot envelope above the existing normalized perpetual client.
+- [x] Key snapshots by resolved provider, source venue, market type and canonical symbol; reject private fields and ambiguous symbol strings.
+- [x] Coalesce simultaneous Funding/OI reads and reuse snapshots for five seconds within one API process.
+- [x] Bound hot state to 128 entries and 32 underlying requests; apply an eight-second read timeout. Failed or late responses are not cached. A timed-out upstream request retains its capacity slot until it settles because existing adapters do not consistently support cancellation.
+- [x] Preserve original fetch time; recalculate observed age on cache reads. Missing/future timestamps are degraded, expired observations are stale, and absent units/cadence remain explicit.
+- [x] Add static versioned features for technical indicator summary, Funding snapshot, OI snapshot and orderbook snapshot, delegating to Phase 1 routines.
+- [x] Integrate Funding/OI skills with shared snapshots and feature references; retain field-specific capability checks before cache lookup and record `auto` fallback when a supported field is unavailable.
+- [x] Scope the existing tool-result cache to user, run, conversation, account and implicit market context. Public-data tool classification alone must not permit sharing user-owned prediction results.
+- [x] Persist safe feature/version/input-snapshot references in existing tool result JSON and project them in Decision Logs. Bump the two changed skills to version 3 and both built-in profiles to version 3.
+- [x] Extend the shared snapshot envelope to candles, ticker and orderbook. Include timeframe, requested depth/history coverage and dataset schema version in keys. Keep spot/perpetual and existing canonical quote symbols separate; no new inverse/settlement aliases are introduced.
+- [x] Migrate OHLCV/indicator reads to the same candle snapshot and orderbook analytics to a shared book snapshot.
+- [x] Test Paper-linked venue resolution, unsupported linked fields, and ownership checks before resolution and repeated pinned reads.
+
+The implementation remains in-process, not a Redis/distributed cache, websocket subscription manager or history store. Both typed stores use one `snapshotCache.ts` implementation, each bounded to 128 cached snapshots and 32 underlying requests. Run pinning is bounded to 32 keys and owned by the execution-context object. TTLs are three seconds for candles, two seconds for ticker/book and five seconds for derivatives. Feature values are persisted; raw market history is not stored for full recalculation/replay.
+
+### 2B — Run snapshot consistency and durable evidence — `IMPLEMENTED LOCALLY`
+
+- [x] Pin successful reads by resolved dataset and coverage and project the manifest from persisted Tool Calls. A new run is the refresh boundary; no silent mid-run refresh or new refresh tool exists.
+- [x] Store validated feature values and routine/feature/input references in existing redacted Tool Call JSON. Decode stored values without invoking routines or providers. Limit each feature to 8 KiB and each tool to four features.
+- [x] Preserve normalized observation/fetch timestamps and quality; mark `atomicObservation: false`. Existing derivatives endpoint-level timestamp semantics are retained, not upgraded to field-atomic observations.
+- [x] Implement freshness policy `1.0.0`: ticker/book 30 seconds, derivatives 120 seconds, candles one interval plus 30 seconds. Flag missing/future timestamps, incomplete/malformed/gapped/duplicate/forming candles, differing providers and instantaneous observation skew above 120 seconds. Exclude candle-open timestamps from instantaneous-skew comparison.
+- [x] Keep legacy feature arrays empty. Drop invalid persisted values, source/dataset mismatches and unsupported versions with `stored_feature_evidence_invalid`. Failed runs retain successful evidence without a recommendation.
+- [x] Retain in-process sharing for now; distributed ownership remains conditional on measured concurrency/duplication across API workers.
+
+### 2C — Existing AI consumers — `IMPLEMENTED LOCALLY` for snapshot context; acceptance pending
+
+1. **Market Analyst:** consume shared candles, indicators, ticker, derivatives and orderbook features. Make source differences, stale data and insufficient context visible in the existing structured response. Compare request counts, latency and credit usage against the current path with fixed fixtures and prompts.
+2. **Position Copilot:** attach public market features to account-owned position snapshots after permission checks. Preserve deterministic risk fallback, liquidation-distance semantics, deduplication, cooldowns and read-only guarantees. Cover both the Agent Chat profile and the standalone `apps/api/src/position-copilot/service.ts` path; they are distinct consumers.
+3. **Decision Log UI:** show feature versions, snapshot identity and persisted key feature values in the existing sidebar/mobile drawer, with English/German translations and `AppIcon` conventions. Keep raw prompts, provider payloads and private account identifiers out of public evidence projection.
+
+Do not reprice AI models, change tool budgets, replace profiles, or activate scheduled AI analysis as an incidental part of this migration.
+
+- [x] Both Agent Chat profiles now include the same feature-context policy: deterministic values/nulls, source and coverage identity, non-atomic observations, provisional candles, bounded book depth, and no unsupported historical Funding/OI claims. Built-in profiles are version 5; calculation and feature versions remain 1.0.0.
+- [x] Standalone perpetual Position Copilot reads a bounded 100-candle 1h indicator snapshot, a 25-level book, and supported Funding/OI through the same public stores. Entitlement, account ownership and automatic-monitoring settings remain checked first. Paper uses its linked venue; public factories receive no private account credentials. Unsupported fields and dataset failures stay explicit with no cross-venue fallback.
+- [x] Cache the standalone explanation together with its original feature evidence for the existing five-minute AI cache lifetime; do not fetch fresh features beside a cached explanation. Preserve economic snapshot hashing, risk floor, deterministic fallback, notifications/cooldowns, billing scope, and no-tools policy. Add safe `marketContext` to the response and existing trace JSON; deterministic AI fallback has no fabricated market evidence.
+- [x] Render persisted values, feature versions, source/input snapshot IDs, quality-at-run, observation/fetch times and coverage in the existing sidebar and mobile drawer. Keep nulls unavailable and legacy runs without invented feature values. Add English/German copy and independently handle Decision Log loading failures; refresh logs after both successful and failed sends.
+- [ ] Standalone spot enrichment is not integrated in this slice: the existing position-only analysis remains available with `spot_market_features_not_integrated`. Agent Chat retains its existing shared spot market skills.
+- [ ] Fixed-prompt live-model quality/latency/credit comparisons and authenticated target-environment browser acceptance remain open. Passing synthetic checks does not close these gates.
+
+### 2D — Historical feature scope — `DESIGN REQUIRED`
+
+Historical Funding/OI changes, trends, percentiles and Z-scores remain a Phase 2 follow-on; they are not supplied by the five-second snapshot cache. Before implementing them, document verified provider history/cadence/unit coverage, gaps, sample sufficiency, retention, storage cost and backfill limits. Propose any persistence migration separately before applying it. Until enough comparable observations exist, return unavailable history and explicit reasons; never derive a trend from one snapshot or mix venues/units silently.
+
+This item is not silently moved to a later roadmap phase. Phase 2 closeout must either complete the approved historical subset or explicitly record Mario's decision to defer it.
+
+### 2E — Acceptance and release — `NOT STARTED`
+
+- Run Futures Core/Exchange, Agent Chat, Position Copilot, API/web typechecks, web i18n and relevant UI tests without forced exits.
+- Test single-flight/TTL/eviction, simultaneous failures, bounded hung requests, mutation isolation and cross-user/run/account/market separation.
+- Verify feature input/output validation, stable hashes, changed input/version identity, preserved null values and conservative timestamp/quality handling.
+- Test explicit unsupported venues, `auto` fallback, Paper-linked sources and account ownership in the actual consumer paths.
+- Test durable snapshot evidence, legacy logs, failed runs and conversation reloads.
+- Perform authenticated Market Analyst and Position Copilot browser acceptance for fresh/stale/degraded/fallback/unsupported states and mobile rendering.
+- Measure shared reads versus current baseline, then document a separately authorized release and rollback. Do not mark Phase 2 deployed from local tests.
+
+## Code ownership and integration map
+
+| Layer | Current entry point | Phase 2 role |
+|---|---|---|
+| Provider normalization | `apps/api/src/perp/perp-market-data.client.ts`, `perp-derivatives-normalization.ts` | Existing native read contract; no adapter rewrite |
+| Public state | `apps/api/src/market-data/sharedDerivatives.ts`, `sharedMarket.ts`, `snapshotCache.ts` | Typed datasets, one cache implementation and run pinning |
+| Deterministic calculations | `apps/api/src/ai/routines/registry.ts`, `packages/futures-core/src/marketAnalytics.ts` | Sole calculation authority |
+| Features | `apps/api/src/ai/features/registry.ts` | Feature versions and input/output snapshot identity |
+| Agent consumers | `apps/api/src/ai/agent-chat/skills.ts`, `runtime.ts` | Permissions, tool execution, provenance persistence |
+| Standalone Copilot | `apps/api/src/position-copilot/service.ts`, `marketContext.ts` | Account-scoped public perpetual features and evidence paired with cached explanations |
+| User evidence | `apps/api/src/ai/agent-chat/decisionLogs.ts` and existing web sidebar | Redacted persisted feature evidence |
+
+## First-slice verification — 2026-09-05
+
+- Agent Chat including new shared-state and feature tests: 74/74 passed, normal process exit.
+- Position Copilot focused tests: 13/13 passed.
+- API typecheck: passed.
+- Futures Core: 16/16 passed.
+- Futures Exchange package build and regression command passed. The same three suites were additionally run without their existing `--test-force-exit` flag: Core 37/37, CEX 57/57, Hyperliquid 77/77 (171 total), all exited normally. Package scripts were not changed.
+- Public Binance read smoke passed through the existing normalized client and new store: two concurrent consumers invoked one `getDerivativesSnapshot` load and received the same snapshot ID; Funding/OI were present. Quality correctly remained `degraded` with `funding_interval_unavailable`. This is a public-read smoke, not live connector certification.
+- No private reads, trading writes or credential use were needed; native endpoint/signing contracts were not changed.
+- `git diff --check` passed.
+- No UI was changed; Phase 2 browser acceptance and production deployment are not claimed.
+
+## Second-slice verification — 2026-09-05
+
+- Agent Chat including shared datasets, pinning, Paper ownership and persisted feature tests: 90/90 passed, normal exit.
+- Position Copilot: 13/13; Futures Core: 16/16; API typecheck: passed.
+- OHLCV/ticker skills are now version 2; indicators/orderbook version 3; Funding/OI version 4; both built-in profiles version 4. Routine and feature calculations remain version 1.0.0.
+- Added safe `marketSnapshot`, `featureSnapshots` and aggregate `snapshotManifest` Decision Log fields. No Prisma model or migration was added. The sidebar does not yet render these new fields.
+- Public Binance ESM smoke passed for OHLCV, indicators, ticker and orderbook. OHLCV/indicators shared a snapshot; forming candles were degraded explicitly; missing ticker timestamp was degraded; the book was fresh with 25 returned levels and stored feature values.
+- The smoke initially reproduced HTTP 400 for the requested 25-level book. The existing public client now requests the next valid Binance depth tier and trims normalized coverage. Signing, private APIs, support and certification were unchanged. See [Binance USD-M Order Book](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Order-Book).
+- The initial `tsx -e` CommonJS-eval invocation stalled before its first log and was stopped as an unsuccessful launch. Native ESM was used for the successful smokes; the stopped launch was not passing evidence.
+- No authenticated browser acceptance, AI-credit/model behavior comparison, commit, push or deployment is claimed for this slice.
+
+## Third-slice verification — 2026-09-05
+
+- Agent Chat: 92/92; Position Copilot: 19/19; web Agent Chat UI: 9/9. All exited normally without forced termination. API typecheck and web i18n integrity passed.
+- Concurrent standalone fixture reads performed one load each for derivatives, candles and book across two consumers, with matching input IDs. Unknown OI units and missing cadence/timestamps retained nulls and explicit warnings. Owned-route tests verify permission/settings order and trace/response evidence parity; cross-user reads never invoke the market loader.
+- The full web typecheck remains blocked by `apps/api/src/dashboard/layout.ts:206` (`DashboardLayoutItem` optional `id` inferred under the web TypeScript configuration). That file is unchanged from HEAD, verified by matching SHA-1 `151ae14ee27098b471ecb04ee7f64acf20aa8003`. No unrelated dashboard change was made to conceal this result.
+- Local Next dev started successfully; `/en/agent-chat` redirected to `/en/login`. No authenticated local test session was available. Browser component acceptance uses the actual `AgentChatShell`, sidebar and CSS in an isolated localhost fixture with all fetches mocked; it cannot certify authentication, live AI or provider behavior.
+- Browser component acceptance passed at 1440x1000 (English) and 390x844 (German), using Playwright CLI because the Browser plugin skill was unavailable. Page identity/content, no framework overlay, and console health (zero relevant warnings/errors) passed. Checked expanded stored metrics/IDs, degraded/fallback and stale evidence, failed runs without recommendations, legacy markers, loading/empty states, conversation reload with identical feature ID, and mobile open/close without horizontal overflow. A log-fetch failure after a successful synthetic send preserved both the answer and credit receipt; the Position Copilot account-selection guard remained effective.
+- Browser testing found and corrected a sidebar overflow issue when expanding provenance: the sidebar now scrolls independently without shifting the conversation. Two test-script assertions were corrected (browser viewport scope and exact-match credit text); those failed script attempts were not passing application evidence. No authenticated/live-model acceptance or fresh-provider browser certification is claimed.
+- Futures Core: 16/16 passed. Final API typecheck, web UI tests, i18n and `git diff --check` passed; full web typecheck reproduced the dashboard error above.
+- No exchange signing/runtime policy, Prisma migration, Hummingbot, execution dependency, model pricing or production release is introduced.
+
+## Next implementation slice
+
+Complete the remaining 2C/2E acceptance gates: resolve the independently tracked web typecheck issue, decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and run authenticated browser acceptance. Prepare the 2D historical coverage/storage design before any migration or backfill. Production release remains a separately authorized step.

@@ -93,6 +93,18 @@ export type AgentActivity = {
 
 export type AgentDecisionLogQuality = "fresh" | "stale" | "degraded" | "unavailable";
 
+export type AgentMarketSnapshot = {
+  id: string; schemaVersion: string; freshnessPolicyVersion: string;
+  market: { providerId: string; sourceVenue: string; symbol: string; marketType: AgentMarketType };
+  dataset: "derivatives" | "candles" | "ticker" | "orderbook";
+  interval: string | null; limit: number | null; observedAt: string | null; fetchedAt: string;
+  ageMs: number | null; quality: AgentDecisionLogQuality; warningCodes: string[]; atomicObservation: false;
+};
+export type AgentFeatureSnapshot = {
+  id: string; version: string; snapshotId: string; inputSnapshotId: string;
+  value: unknown; routineVersions: Array<{ id: string; version: string }>;
+};
+
 export type AgentDecisionLog = {
   runId: string;
   state: string;
@@ -101,7 +113,9 @@ export type AgentDecisionLog = {
   profile: { key: string; name: string; version: number };
   context: { symbol: string | null; marketType: AgentMarketType | null; requestedVenue: AgentVenue };
   recommendation: { messageId: string; content: string; blocks: AgentUiBlock[] } | null;
-  evidence: Array<{ toolCallId: string; skillId: string; skillVersion: number | null; outputSchemaId: string | null; routineVersions: Array<{ id: string; version: string }>; sourceProvider: string | null; sourceVenue: string | null; observedAt: string | null; fetchedAt: string | null; ageMs: number | null; quality: AgentDecisionLogQuality; durationMs: number | null; fallbackUsed: boolean; warningCodes: string[] }>;
+  evidence: Array<{ toolCallId: string; skillId: string; skillVersion: number | null; outputSchemaId: string | null; routineVersions: Array<{ id: string; version: string }>; sourceProvider: string | null; sourceVenue: string | null; observedAt: string | null; fetchedAt: string | null; ageMs: number | null; quality: AgentDecisionLogQuality; durationMs: number | null; fallbackUsed: boolean; warningCodes: string[];
+    featureVersions?: Array<Omit<AgentFeatureSnapshot, "value" | "routineVersions">>; marketSnapshot?: AgentMarketSnapshot | null; featureSnapshots?: AgentFeatureSnapshot[] }>;
+  snapshotManifest?: AgentMarketSnapshot[];
   dataQuality: { state: AgentDecisionLogQuality; reasonCodes: string[] };
   modelClass: string | null;
   totalLatencyMs: number | null;

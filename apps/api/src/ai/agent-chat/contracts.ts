@@ -1,4 +1,5 @@
 import type { ChatToolDefinition } from "../provider.js";
+import type { MarketSnapshotEvidence, StoredFeatureEvidence } from "../features/evidence.js";
 
 export type AgentChatMode = "market" | "position" | "trade_planning";
 export type AgentAccessLevel = "public_data" | "account_read" | "draft_actions";
@@ -76,6 +77,9 @@ export type AgentToolResult<T = unknown> = {
     cacheHit: boolean;
     warnings: string[];
     routineVersions: Array<{ id: string; version: string }>;
+    featureVersions?: Array<{ id: string; version: string; snapshotId: string; inputSnapshotId: string }>;
+    marketSnapshot?: MarketSnapshotEvidence;
+    featureSnapshots?: StoredFeatureEvidence[];
   };
   error?: { code: string; message: string; retryable: boolean };
 };
@@ -152,6 +156,9 @@ export type AgentDecisionLog = {
     skillVersion: number | null;
     outputSchemaId: string | null;
     routineVersions: Array<{ id: string; version: string }>;
+    featureVersions: Array<{ id: string; version: string; snapshotId: string; inputSnapshotId: string }>;
+    marketSnapshot: MarketSnapshotEvidence | null;
+    featureSnapshots: StoredFeatureEvidence[];
     sourceProvider: string | null;
     sourceVenue: string | null;
     observedAt: string | null;
@@ -163,6 +170,7 @@ export type AgentDecisionLog = {
     warningCodes: string[];
   }>;
   dataQuality: { state: AgentDecisionLogQuality; reasonCodes: string[] };
+  snapshotManifest: MarketSnapshotEvidence[];
   modelClass: string | null;
   totalLatencyMs: number | null;
   permission: { readOnly: true; execution: "not_permitted" };

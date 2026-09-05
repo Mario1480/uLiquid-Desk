@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { analyzeFundingSnapshot, analyzeOpenInterestSnapshot, analyzeOrderbookSnapshot } from "@mm/futures-core";
 import { getFuturesVenueCapabilities } from "@mm/futures-exchange";
+import { sharedDerivativesStore, projectDerivativesSnapshot } from "../../market-data/sharedDerivatives.js";
+import { evaluateMarketFeature } from "../features/registry.js";
+import { storedFeatureEvidence, marketSnapshotEvidenceSchema, featureMatchesSnapshot } from "../features/evidence.js";
+import { pinRunSnapshot } from "../../market-data/snapshotCache.js";
+import { sharedMarketStore, projectMarketSnapshot, providerObservedAt, normalizeSharedCandles,
+  type MarketDataset, type MarketDatasetKey, type MarketDatasetData, type SharedMarketRead } from "../../market-data/sharedMarket.js";
 import { createPerpMarketDataClient } from "../../perp/perp-market-data.client.js";
 import { createSpotClient } from "../../spot/spot-client-factory.js";
 import {
@@ -23,7 +30,6 @@ import {
   type AgentRoutineId
 } from "../routines/registry.js";
 import { AgentChatError } from "./errors.js";
-import { normalizeAgentCandleRows } from "./normalization.js";
 import type {
   AgentMarketType,
   AgentProfileKey,
@@ -58,6 +64,7 @@ const riskArgsSchema = z.object({ positionRef: z.string().trim().min(1).max(191)
 type VenueResolution = { requestedVenue: AgentVenue; sourceVenue: Exclude<AgentVenue, "auto">; fallbackUsed: boolean; fallbackReason?: string };
 
 const publicCache = new Map<string, { expiresAt: number; result: AgentToolResult }>();
+export const agentMarketDataAccounts = { resolveLinked: resolveMarketDataTradingAccount };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -133,7 +140,7 @@ async function selectedAccountVenue(context: AgentSkillExecutionContext): Promis
   if (!account) throw new AgentChatError("agent_chat_account_access_denied", 404);
   const exchange = String(account.exchange ?? "").toLowerCase();
   if (exchange === "paper") {
-    const resolved = await resolveMarketDataTradingAccount(context.userId, context.selectedExchangeAccountId);
+    const resolved = await agentMarketDataAccounts.resolveLinked(context.userId, context.selectedExchangeAccountId);
     const linked = resolved.marketDataAccount.exchange as Exclude<AgentVenue, "auto">;
     return ["binance", "bitget", "hyperliquid", "mexc", "bingx"].includes(linked) ? linked : null;
   }
@@ -203,6 +210,7 @@ async function readMarketClient<T>(
 }
 
 async function readDerivativesSnapshot(
+  context: AgentSkillExecutionContext,
   venue: Exclude<AgentVenue, "auto">,
   symbol: string,
   field: "fundingRate" | "openInterest"
@@ -211,12 +219,61 @@ async function readDerivativesSnapshot(
   if (capability.marketData[field] === "unsupported") {
     throw new AgentChatError("agent_chat_venue_unsupported", 400, `${field} is unsupported for ${venue}.`);
   }
-  const client = createPerpMarketDataClient(publicAccount(venue));
-  try {
-    return await client.getDerivativesSnapshot(symbol);
-  } finally {
-    await client.close().catch(() => undefined);
+  const key = {
+    providerId: capability.providerId, sourceVenue: venue, marketType: "perp", symbol
+  } as const;
+  const result = await pinRunSnapshot(context, `derivatives:${JSON.stringify(key)}`, () => sharedDerivativesStore.read(key, async () => {
+    const client = createPerpMarketDataClient(publicAccount(venue));
+    try {
+      return await client.getDerivativesSnapshot(symbol);
+    } finally {
+      await client.close().catch(() => undefined);
+    }
+  }));
+  if (result.snapshot.data[field] === null) {
+    throw new AgentChatError("agent_chat_market_data_degraded", 503, `${field}_unavailable`);
   }
+  return projectDerivativesSnapshot(result.snapshot, result.cacheHit);
+}
+
+async function readSharedMarket<D extends MarketDataset>(context: AgentSkillExecutionContext,
+  key: Extract<MarketDatasetKey, { dataset: D }>,
+  load: () => Promise<{ data: MarketDatasetData[D]; observedAt: string | null; warnings: string[] }>) {
+  const result = await pinRunSnapshot(context, JSON.stringify(key), () => sharedMarketStore.read<D>(key, load));
+  return projectMarketSnapshot(result.snapshot, result.cacheHit);
+}
+
+function sharedMeta<D extends MarketDataset>(id: string, result: SharedMarketRead<D>, resolution: VenueResolution): AgentToolResult["meta"] {
+  const snapshot = result.snapshot;
+  const key: MarketDatasetKey = snapshot.key;
+  const meta = makeMeta({ toolId: id, venue: key.sourceVenue, provider: key.providerId,
+    observedAt: snapshot.observedAt ?? undefined, quality: result.quality, stale: result.quality === "stale",
+    degraded: result.quality === "degraded", timestampSource: snapshot.observedAt ? "provider" : "unknown",
+    fallbackUsed: resolution.fallbackUsed, cacheHit: result.cacheHit,
+    warnings: [...new Set([...result.warnings, ...(resolution.fallbackReason ? [resolution.fallbackReason] : [])])] });
+  meta.fetchedAt = snapshot.fetchedAt;
+  meta.ageMs = result.ageMs;
+  meta.marketSnapshot = marketSnapshotEvidenceSchema.parse({ id: snapshot.id, schemaVersion: key.schemaVersion,
+    freshnessPolicyVersion: "1.0.0", market: { providerId: key.providerId, sourceVenue: key.sourceVenue, marketType: key.marketType, symbol: key.symbol },
+    dataset: key.dataset, interval: key.dataset === "candles" ? key.interval : null, limit: "limit" in key ? key.limit : null,
+    observedAt: snapshot.observedAt, fetchedAt: snapshot.fetchedAt, ageMs: result.ageMs,
+    quality: result.quality, warningCodes: result.warnings, atomicObservation: false });
+  return meta;
+}
+
+function attachFeature(response: AgentToolResult, feature: ReturnType<typeof evaluateMarketFeature>) {
+  response.meta.featureVersions = [feature.ref];
+  response.meta.featureSnapshots = [storedFeatureEvidence(feature.ref, feature.value, feature.routineVersions)];
+}
+
+async function readCandles(context: AgentSkillExecutionContext, args: z.infer<typeof candlesArgsSchema>) {
+  const marketType = args.marketType ?? context.marketType;
+  const symbol = normalizeSymbol(args.symbol ?? context.symbol);
+  return withPublicVenue({ context, requested: args.venue, marketType, read: venue => readSharedMarket<"candles">(context,
+    { providerId: marketProviderId(venue, marketType), sourceVenue: venue, marketType, symbol,
+      dataset: "candles", schemaVersion: "1.0.0", interval: args.interval, limit: args.limit },
+    () => readMarketClient(venue, marketType, async client => normalizeSharedCandles(
+      await client.getCandles({ symbol, timeframe: args.interval as never, limit: args.limit }), args.interval, args.limit))) });
 }
 
 async function requireOwnedSelectedAccount(context: AgentSkillExecutionContext): Promise<{ id: string; exchange: string; label: string; updatedAt: Date; spotBudgetAvailable: number | null; futuresBudgetAvailableMargin: number | null; futuresBudgetEquity: number | null }> {
@@ -330,71 +387,102 @@ const marketCommon = {
 
 export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
   descriptor({
-    id: "market.get_ohlcv", title: "OHLCV", description: "Normalized candles with source and freshness metadata.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 3_000, supportedMarketTypes: ["spot", "perp"], inputSchema: candlesArgsSchema,
+    id: "market.get_ohlcv", version: 2, title: "OHLCV", description: "Shared normalized candles with source and freshness metadata.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["spot", "perp"], inputSchema: candlesArgsSchema,
     toolDefinition: tool("market_get_ohlcv", "Load normalized cross-venue OHLCV candles.", { ...marketCommon, interval: { type: "string", enum: ["5m", "15m", "1h", "4h", "1d"] }, limit: { type: "integer", minimum: 20, maximum: 1000 } }, ["interval"]),
     async execute(context, input) {
       const args = candlesArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
-      const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, async (client) => normalizeAgentCandleRows(await client.getCandles({ symbol, timeframe: args.interval as never, limit: args.limit }))) });
-      const observedAt = result.data.at(-1)?.ts ? new Date(result.data.at(-1)!.ts).toISOString() : undefined;
-      return ok("market.get_ohlcv", { symbol, marketType, interval: args.interval, candles: result.data.slice(-args.limit) }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt: observedAt ?? nowIso(), timestampSource: observedAt ? "provider" : "request", degraded: result.data.length < 20 || !observedAt, fallbackUsed: result.resolution.fallbackUsed, warnings: [...(result.resolution.fallbackReason ? [result.resolution.fallbackReason] : []), ...(!observedAt ? ["provider_timestamp_missing"] : [])] });
+      const result = await readCandles(context, args);
+      return { ok: true, data: { symbol, marketType, interval: args.interval, candles: result.data.snapshot.data.candles },
+        meta: sharedMeta("market.get_ohlcv", result.data, result.resolution) };
     }
   }),
   descriptor({
-    id: "market.get_indicators", version: 2, routineIds: [AGENT_ROUTINE_IDS.technicalIndicatorSummary], title: "Indicators", description: "Deterministic SMA, EMA, RSI and ATR indicators.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 3_000, supportedMarketTypes: ["spot", "perp"], inputSchema: indicatorsArgsSchema,
+    id: "market.get_indicators", version: 3, routineIds: [AGENT_ROUTINE_IDS.technicalIndicatorSummary], title: "Indicators", description: "Versioned SMA, EMA, RSI and ATR features from shared candles.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["spot", "perp"], inputSchema: indicatorsArgsSchema,
     toolDefinition: tool("market_get_indicators", "Compute deterministic indicators from normalized market candles.", { ...marketCommon, interval: { type: "string", enum: ["5m", "15m", "1h", "4h", "1d"] }, limit: { type: "integer", minimum: 20, maximum: 1000 }, indicators: { type: "array", items: { type: "string", enum: ["sma20", "ema50", "rsi14", "atr14"] }, maxItems: 8 } }, ["interval"]),
     async execute(context, input) {
       const args = indicatorsArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
-      const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, async (client) => normalizeAgentCandleRows(await client.getCandles({ symbol, timeframe: args.interval as never, limit: args.limit }))) });
-      const routine = executeAgentRoutine<{ values: Record<string, number | null>; quality: { state: string; reasons: string[] } }>(AGENT_ROUTINE_IDS.technicalIndicatorSummary, { candles: result.data, indicators: args.indicators ?? ["sma20", "ema50", "rsi14", "atr14"] });
-      const observedAt = result.data.at(-1)?.ts ? new Date(result.data.at(-1)!.ts).toISOString() : undefined;
-      return ok("market.get_indicators", { symbol, marketType, interval: args.interval, values: routine.values }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt: observedAt ?? nowIso(), timestampSource: observedAt ? "provider" : "request", degraded: routine.quality.state !== "fresh" || !observedAt, fallbackUsed: result.resolution.fallbackUsed, warnings: [...routine.quality.reasons, ...(!observedAt ? ["provider_timestamp_missing"] : [])] });
+      const result = await readCandles(context, args);
+      const feature = evaluateMarketFeature<{ values: Record<string, number | null>; quality: { state: string; reasons: string[] } }>(
+        "technical.indicator-summary", { candles: result.data.snapshot.data.candles, indicators: args.indicators ?? ["sma20", "ema50", "rsi14", "atr14"] }, result.data.snapshot.id);
+      const response = { ok: true, data: { symbol, marketType, interval: args.interval, values: feature.value.values },
+        meta: sharedMeta("market.get_indicators", result.data, result.resolution) };
+      response.meta.warnings = [...new Set([...response.meta.warnings, ...feature.value.quality.reasons])];
+      if (feature.value.quality.state !== "fresh") { response.meta.degraded = true; if (response.meta.quality === "fresh") response.meta.quality = "degraded"; }
+      attachFeature(response, feature);
+      return response;
     }
   }),
   descriptor({
-    id: "market.get_ticker", title: "Ticker", description: "Current normalized top-of-book ticker.", category: "market", accessLevel: "public_data", maxCallsPerRun: 3, timeoutMs: 8_000, cacheTtlMs: 2_000, supportedMarketTypes: ["spot", "perp"], inputSchema: marketArgsSchema,
+    id: "market.get_ticker", version: 2, title: "Ticker", description: "Shared normalized top-of-book ticker.", category: "market", accessLevel: "public_data", maxCallsPerRun: 3, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["spot", "perp"], inputSchema: marketArgsSchema,
     toolDefinition: tool("market_get_ticker", "Load a normalized cross-venue ticker.", marketCommon),
     async execute(context, input) {
       const args = marketArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
-      const result = await withPublicVenue({ context, requested: args.venue, marketType, read: (venue) => readMarketClient(venue, marketType, (client) => client.getTicker(symbol)) });
-      const ticker = result.data as { last: number | null; mark: number | null; bid: number | null; ask: number | null; ts: number | null };
-      const observedAt = ticker.ts ? new Date(ticker.ts).toISOString() : nowIso(); const stale = Boolean(ticker.ts && Date.now() - new Date(ticker.ts).getTime() > 30_000);
-      return ok("market.get_ticker", { symbol, marketType, last: ticker.last, mark: ticker.mark, bid: ticker.bid, ask: ticker.ask }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt, timestampSource: ticker.ts ? "provider" : "request", stale, degraded: !ticker.ts, fallbackUsed: result.resolution.fallbackUsed, warnings: !ticker.ts ? ["provider_timestamp_missing"] : [] });
+      const result = await withPublicVenue({ context, requested: args.venue, marketType, read: venue => readSharedMarket<"ticker">(context,
+        { providerId: marketProviderId(venue, marketType), sourceVenue: venue, marketType, symbol, dataset: "ticker", schemaVersion: "1.0.0" },
+        () => readMarketClient(venue, marketType, async client => {
+          const ticker = await client.getTicker(symbol) as { last?: number | null; mark?: number | null; bid?: number | null; ask?: number | null; ts?: number | null };
+          const data = { last: ticker.last ?? null, mark: ticker.mark ?? null, bid: ticker.bid ?? null, ask: ticker.ask ?? null };
+          const invalid = Object.values(data).some(value => value !== null && (!Number.isFinite(value) || value <= 0));
+          const warnings = invalid || Object.values(data).every(value => value === null) ? ["ticker_values_unavailable_or_invalid"] : [];
+          if (data.bid !== null && data.ask !== null && data.bid >= data.ask) warnings.push("ticker_crossed");
+          return { data, observedAt: providerObservedAt(ticker.ts), warnings };
+        })) });
+      return { ok: true, data: { symbol, marketType, ...result.data.snapshot.data }, meta: sharedMeta("market.get_ticker", result.data, result.resolution) };
     }
   }),
   descriptor({
-    id: "market.get_orderbook", version: 2, routineIds: [AGENT_ROUTINE_IDS.orderbookSnapshot], title: "Order book", description: "Bounded normalized order-book levels with deterministic depth analytics.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 2_000, supportedMarketTypes: ["spot", "perp"], inputSchema: orderbookArgsSchema,
+    id: "market.get_orderbook", version: 3, routineIds: [AGENT_ROUTINE_IDS.orderbookSnapshot], title: "Order book", description: "Shared bounded order-book levels with versioned depth features.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["spot", "perp"], inputSchema: orderbookArgsSchema,
     toolDefinition: tool("market_get_orderbook", "Load a bounded normalized cross-venue order book.", { ...marketCommon, limit: { type: "integer", minimum: 5, maximum: 100 } }),
     async execute(context, input) {
       const args = orderbookArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
-      const result = await withPublicVenue<unknown>({
-        context,
-        requested: args.venue,
-        marketType,
-        read: (venue) => readMarketClient<unknown>(venue, marketType, async (client) => client.getDepth(symbol, args.limit))
-      });
-      const depth = result.data as { bids: Array<[number, number]>; asks: Array<[number, number]>; ts?: string | number | null };
-      const bids = depth.bids.slice(0, args.limit); const asks = depth.asks.slice(0, args.limit);
-      const analytics = executeAgentRoutine<any>(AGENT_ROUTINE_IDS.orderbookSnapshot, { bids, asks });
-      const observedAt = depth.ts ? new Date(Number(depth.ts)).toISOString() : nowIso();
-      const timestampMissing = !depth.ts;
-      const stale = !timestampMissing && Date.now() - Date.parse(observedAt) > 30_000;
-      return ok("market.get_orderbook", { symbol, marketType, bids, asks, analytics }, { venue: result.resolution.sourceVenue, provider: marketProviderId(result.resolution.sourceVenue, marketType), observedAt, timestampSource: timestampMissing ? "request" : "provider", stale, degraded: timestampMissing || analytics.quality.state !== "fresh", quality: analytics.quality.state === "unavailable" ? "unavailable" : stale ? "stale" : timestampMissing || analytics.quality.state === "degraded" ? "degraded" : "fresh", fallbackUsed: result.resolution.fallbackUsed, warnings: [...analytics.quality.reasons, ...(timestampMissing ? ["provider_timestamp_missing"] : []), ...(stale ? ["market_data_stale"] : [])] });
+      const result = await withPublicVenue({ context, requested: args.venue, marketType, read: venue => readSharedMarket<"orderbook">(context,
+        { providerId: marketProviderId(venue, marketType), sourceVenue: venue, marketType, symbol, dataset: "orderbook", schemaVersion: "1.0.0", limit: args.limit },
+        () => readMarketClient(venue, marketType, async client => {
+          const depth = await client.getDepth(symbol, args.limit);
+          return { data: { bids: depth.bids.slice(0, args.limit) as Array<[number, number]>, asks: depth.asks.slice(0, args.limit) as Array<[number, number]> },
+            observedAt: providerObservedAt(depth.ts), warnings: [] };
+        })) });
+      const data = result.data.snapshot.data;
+      const feature = evaluateMarketFeature<ReturnType<typeof analyzeOrderbookSnapshot>>("orderbook.snapshot", data, result.data.snapshot.id);
+      const response = { ok: true, data: { symbol, marketType, ...data, analytics: feature.value }, meta: sharedMeta("market.get_orderbook", result.data, result.resolution) };
+      response.meta.warnings = [...new Set([...response.meta.warnings, ...feature.value.quality.reasons])];
+      if (feature.value.quality.state !== "fresh") { response.meta.degraded = true; if (response.meta.quality === "fresh" || feature.value.quality.state === "unavailable") response.meta.quality = feature.value.quality.state; }
+      attachFeature(response, feature);
+      return response;
     }
   }),
   ...(["market.get_funding_rate", "market.get_open_interest"] as const).map((id) => descriptor({
-    id, version: 2, routineIds: [id.endsWith("funding_rate") ? AGENT_ROUTINE_IDS.fundingSnapshot : AGENT_ROUTINE_IDS.openInterestSnapshot], title: id.endsWith("funding_rate") ? "Funding rate" : "Open interest", description: "Normalized perpetual-market snapshot analytics.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 5_000, supportedMarketTypes: ["perp"], inputSchema: marketArgsSchema,
+    id, version: 4, routineIds: [id.endsWith("funding_rate") ? AGENT_ROUTINE_IDS.fundingSnapshot : AGENT_ROUTINE_IDS.openInterestSnapshot], title: id.endsWith("funding_rate") ? "Funding rate" : "Open interest", description: "Run-pinned perpetual-market snapshot with persisted versioned features.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: marketArgsSchema,
     toolDefinition: tool(id.replaceAll(".", "_"), `Load normalized ${id.endsWith("funding_rate") ? "funding rate" : "open interest"}.`, marketCommon),
     async execute(context, input) {
       const args = marketArgsSchema.parse(input); const symbol = normalizeSymbol(args.symbol ?? context.symbol);
       const isFunding = id.endsWith("funding_rate");
-      const result = await withPublicVenue({ context, requested: args.venue, marketType: "perp", read: (venue) => readDerivativesSnapshot(venue, symbol, isFunding ? "fundingRate" : "openInterest") });
-      const analytics = isFunding
-        ? executeAgentRoutine<any>(AGENT_ROUTINE_IDS.fundingSnapshot, { rate: result.data.fundingRate, fundingIntervalHours: result.data.fundingIntervalHours })
-        : executeAgentRoutine<any>(AGENT_ROUTINE_IDS.openInterestSnapshot, { reportedValue: result.data.openInterest, reportedUnit: result.data.openInterestUnit, referencePrice: result.data.markPrice, contractSize: result.data.contractSize });
-      const value = isFunding ? result.data.fundingRate : result.data.openInterest;
-      const timestampMissing = !result.data.sourceTimestampProvided;
-      const stale = !timestampMissing && Date.now() - Date.parse(result.data.observedAt) > 120_000;
-      return ok(id, { symbol, [isFunding ? "fundingRate" : "openInterest"]: value, analytics }, { venue: result.resolution.sourceVenue, provider: getFuturesVenueCapabilities(result.resolution.sourceVenue).providerId, observedAt: result.data.observedAt, timestampSource: timestampMissing ? "request" : "provider", stale, degraded: value === null || timestampMissing || analytics.quality.state !== "fresh", quality: value === null ? "unavailable" : stale ? "stale" : timestampMissing || analytics.quality.state !== "fresh" ? "degraded" : "fresh", fallbackUsed: result.resolution.fallbackUsed, warnings: [...new Set([...result.data.warnings, ...analytics.quality.reasons, ...(stale ? ["market_data_stale"] : []), ...(result.resolution.fallbackReason ? [result.resolution.fallbackReason] : [])])] });
+      const result = await withPublicVenue({ context, requested: args.venue, marketType: "perp", read: (venue) => readDerivativesSnapshot(context, venue, symbol, isFunding ? "fundingRate" : "openInterest") });
+      const shared = result.data;
+      const data = shared.snapshot.data;
+      const feature = isFunding
+        ? evaluateMarketFeature<ReturnType<typeof analyzeFundingSnapshot>>("derivatives.funding-snapshot", { rate: data.fundingRate, fundingIntervalHours: data.fundingIntervalHours }, shared.snapshot.id)
+        : evaluateMarketFeature<ReturnType<typeof analyzeOpenInterestSnapshot>>("derivatives.open-interest-snapshot", { reportedValue: data.openInterest, reportedUnit: data.openInterestUnit, referencePrice: data.markPrice, contractSize: data.contractSize }, shared.snapshot.id);
+      const analytics = feature.value;
+      const value = isFunding ? data.fundingRate : data.openInterest;
+      const stale = shared.quality === "stale";
+      const degraded = shared.quality === "degraded" || analytics.quality.state !== "fresh";
+      const response = ok(id, { symbol, [isFunding ? "fundingRate" : "openInterest"]: value, analytics }, {
+        venue: result.resolution.sourceVenue, provider: shared.snapshot.market.providerId,
+        observedAt: data.observedAt, timestampSource: data.sourceTimestampProvided ? "provider" : "request",
+        stale, degraded, quality: stale ? "stale" : degraded ? "degraded" : "fresh",
+        fallbackUsed: result.resolution.fallbackUsed, cacheHit: shared.cacheHit,
+        warnings: [...new Set([...shared.warnings, ...analytics.quality.reasons,
+          ...(result.resolution.fallbackReason ? [result.resolution.fallbackReason] : [])])]
+      });
+      response.meta.fetchedAt = shared.snapshot.fetchedAt;
+      response.meta.ageMs = shared.ageMs;
+      response.meta.marketSnapshot = marketSnapshotEvidenceSchema.parse({ id: shared.snapshot.id, schemaVersion: "1.0.0", freshnessPolicyVersion: "1.0.0",
+        market: shared.snapshot.market, dataset: "derivatives", interval: null, limit: null,
+        observedAt: data.sourceTimestampProvided ? data.observedAt : null, fetchedAt: shared.snapshot.fetchedAt, ageMs: shared.ageMs,
+        quality: shared.quality, warningCodes: shared.warnings, atomicObservation: false });
+      attachFeature(response, feature);
+      return response;
     }
   })),
   descriptor({
@@ -519,24 +607,51 @@ export function getAgentSkillByToolName(name: string): AgentSkillDescriptor | nu
 }
 
 export async function executeAgentSkill(skill: AgentSkillDescriptor, context: AgentSkillExecutionContext, rawInput: unknown): Promise<AgentToolResult> {
+  context.signal?.throwIfAborted();
   if (!context.profile.enabledSkillIds.includes(skill.id)) throw new AgentChatError("agent_chat_skill_not_allowed", 403);
   if (!skill.allowedProfiles.includes(context.profile.baseProfileKey)) throw new AgentChatError("agent_chat_skill_not_allowed", 403);
   if (skill.accessLevel === "account_read" && context.profile.actionLevel !== "account_read") throw new AgentChatError("agent_chat_skill_not_allowed", 403);
   if (!skill.supportedMarketTypes.includes(context.marketType)) throw new AgentChatError("agent_chat_venue_unsupported", 400);
   const input = skill.inputSchema.parse(rawInput);
-  const cacheKey = `${skill.id}:${context.selectedVenue}:${context.marketType}:${JSON.stringify(input)}`;
+  if (input.marketType && !skill.supportedMarketTypes.includes(input.marketType)) throw new AgentChatError("agent_chat_venue_unsupported", 400);
+  // Tool outputs can contain user predictions or depend on account-derived venue
+  // selection. Only normalized public snapshots are shared across runs/users.
+  const cacheKey = JSON.stringify([skill.id, skill.version, context.userId, context.runId,
+    context.conversationId, context.symbol, context.selectedExchangeAccountId,
+    context.profile.id, context.profile.version, context.profile.preferredVenue,
+    context.selectedVenue, context.marketType, input]);
   if (skill.accessLevel === "public_data" && skill.cacheTtlMs > 0) {
     const cached = publicCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return { ...cached.result, meta: { ...cached.result.meta, cacheHit: true } };
+    if (cached && cached.expiresAt > Date.now()) {
+      const result = structuredClone(cached.result);
+      result.meta.cacheHit = true;
+      if (result.meta.observedAt && result.meta.timestampSource === "provider") {
+        result.meta.ageMs = Math.max(0, Date.now() - Date.parse(result.meta.observedAt));
+      }
+      return result;
+    }
   }
   const result = await skill.execute(context, input);
+  context.signal?.throwIfAborted();
   const sanitized = redactAiSafetySecrets(result) as AgentToolResult;
   const parsedOutput = skill.outputSchema.safeParse(sanitized.data);
   if (!sanitized.ok || !parsedOutput.success) {
     throw new AgentChatError("agent_chat_tool_result_invalid", 502, `Invalid output from ${skill.id}.`);
   }
   sanitized.data = parsedOutput.data;
+  try {
+    if (sanitized.meta.marketSnapshot) sanitized.meta.marketSnapshot = marketSnapshotEvidenceSchema.parse(sanitized.meta.marketSnapshot);
+    if (sanitized.meta.featureSnapshots) sanitized.meta.featureSnapshots = sanitized.meta.featureSnapshots.slice(0, 4).map(feature => {
+      if (!sanitized.meta.marketSnapshot || !featureMatchesSnapshot(feature, sanitized.meta.marketSnapshot)) throw new Error("feature_source_mismatch");
+      const { id, version, snapshotId, inputSnapshotId } = feature;
+      return storedFeatureEvidence({ id, version, snapshotId, inputSnapshotId }, feature.value, feature.routineVersions);
+    });
+  } catch { throw new AgentChatError("agent_chat_tool_result_invalid", 502, `Invalid evidence from ${skill.id}.`); }
   sanitized.meta.routineVersions = routineVersionRefs(skill.routineIds as readonly AgentRoutineId[]);
-  if (skill.accessLevel === "public_data" && skill.cacheTtlMs > 0) publicCache.set(cacheKey, { expiresAt: Date.now() + skill.cacheTtlMs, result: sanitized });
+  if (skill.accessLevel === "public_data" && skill.cacheTtlMs > 0) {
+    for (const [key, entry] of publicCache) if (entry.expiresAt <= Date.now()) publicCache.delete(key);
+    if (publicCache.size >= 128) publicCache.delete(publicCache.keys().next().value!);
+    publicCache.set(cacheKey, { expiresAt: Date.now() + skill.cacheTtlMs, result: structuredClone(sanitized) });
+  }
   return sanitized;
 }

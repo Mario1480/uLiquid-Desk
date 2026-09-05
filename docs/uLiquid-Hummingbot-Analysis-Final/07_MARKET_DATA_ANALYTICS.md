@@ -5,12 +5,13 @@
 **Project:** uLiquid Desk × Hummingbot
 **Date:** 2026-09-03
 
-### Implementation status — 2026-09-04
+### Implementation status — 2026-09-05
 
 - `IMPLEMENTED`: deterministic current-snapshot Funding, open-interest and order-book analytics with provider/source provenance, timestamps, age, fallback codes and honest quality states.
 - `IMPLEMENTED`: native normalization coverage for the Phase 1 Binance, Bitget, Hyperliquid, MEXC, BingX-unsupported and linked-Paper contracts.
-- `NOT STARTED`: shared subscription/state service, historical Funding/OI series, Feature Registry, cross-consumer snapshot persistence and Hummingbot market-data provider.
-- `FOLLOW-UP`: live-provider acceptance and resolution of observed Bitget time-window and transient connectivity warnings.
+- `IN PROGRESS`: shared derivatives/candles/ticker/orderbook snapshots, Feature Registry, run pinning, persisted values, feature-aware AI context, standalone perpetual Copilot and sidebar are implemented locally. Historical/spot scope and acceptance are tracked in the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+- `NOT STARTED`: distributed subscriptions, historical Funding/OI series, raw-input recalculation/replay and Hummingbot market-data provider.
+- `COMPLETE`: Mario confirmed Phase 1 verification and formal acceptance on 2026-09-05. Connector certification and a measurable native-vs-Hummingbot comparison remain separate gates.
 
 ## Executive Summary
 

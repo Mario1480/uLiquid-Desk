@@ -6,7 +6,7 @@
 ## Workstream 0 — Preflight
 Map existing exchange adapters, market data, bot/execution state, AI Predictions/Agents, credential storage and Hyperliquid/Vault boundaries. Produce a dependency graph before edits.
 
-## Phase 1 — Consolidate Quick Wins — `IMPLEMENTED`
+## Phase 1 — Consolidate Quick Wins — `COMPLETE`
 Extend and test the existing foundations:
 - [x] extract reusable deterministic Routines from calculations already embedded in Agent Chat and Position Copilot
 - [x] extend the existing typed Agent Skill catalog and permission checks; do not create a parallel production Skill runtime
@@ -16,10 +16,12 @@ Extend and test the existing foundations:
 
 Use existing uLiquid providers and data paths. Do not introduce Hummingbot or migrate existing adapters in this phase.
 
-## Phase 2 — Shared Data and Existing AI Upgrade — `NOT STARTED`
+## Phase 2 — Shared Data and Existing AI Upgrade — `IN PROGRESS`
 Build a provider-neutral Shared Market Data foundation and a versioned Feature Registry with snapshot/provenance support. Upgrade the existing Market Analyst and Position Copilot to consume the Phase 1 Skills, shared features and Decision Logs. Keep Market Analyst read-only and Position Copilot recommendation-only.
 
 Shared Market Data is uLiquid-owned and must proceed regardless of the later Hummingbot POC result. It may initially use the existing native providers.
+
+The active [Phase 2 implementation plan](PHASE_2_IMPLEMENTATION_PLAN.md) records local shared datasets, run pinning, Feature Registry, persisted values, feature-aware AI context, standalone perpetual Copilot and sidebar integration. Historical scope and acceptance remain open.
 
 ## Phase 3 — New Product Features — `NOT STARTED`
 Implement deterministic Arbitrage and XEMM Scanners with fees, slippage, depth, inventory readiness and opportunity scoring. Scanner-only: no automated cross-market execution.
@@ -94,17 +96,13 @@ Production release evidence on 2026-09-04:
 - External API health returned HTTP 200, web and Agent Chat reached the login surface, and the unauthenticated Decision Log request was rejected with HTTP 401.
 - Runner typecheck, 244/244 Runner tests and the production Runner build passed after aligning stale test expectations with the new fail-closed plan capabilities.
 
-The implementation is complete and production-deployed. Full authenticated browser E2E and live provider acceptance remain `FOLLOW-UP` and must not be inferred from fixture, component or unauthenticated ingress evidence.
+As of the September 4 release, authenticated browser E2E and live-provider acceptance remained a separate follow-up. On 2026-09-05, Mario confirmed Phase 1 as tested and formally complete and authorized Phase 2. This closes the Phase 1 acceptance follow-up by owner decision; it does not rewrite the historical test evidence or automatically certify individual connectors.
 
 ## Recommended next step
 
-Close the Phase 1 target-environment acceptance before starting Phase 2 implementation:
+Continue the remaining 2C/2E acceptance and 2D historical design in the [Phase 2 implementation plan](PHASE_2_IMPLEMENTATION_PLAN.md). Snapshot AI/UI consumers are integrated locally; standalone spot enrichment, model/credit comparisons, the web typecheck blocker and authenticated acceptance remain explicit follow-ups.
 
-1. Run authenticated production acceptance for Market Analyst and Position Copilot, including Decision Log reload, ownership isolation, fresh/stale/fallback/unsupported evidence and mobile behavior.
-2. Triage the observed Bitget funding-window and transient Bitget/Binance connectivity warnings so Phase 2 starts from a stable native-provider baseline.
-3. Record the closeout evidence and then create a scoped Phase 2 implementation plan in the order Shared Market Data contracts, snapshot/provenance model, Feature Registry, Market Analyst migration, Position Copilot migration.
-
-The Bitget Hummingbot POC may be planned in parallel after this closeout, but its comparison run should wait until the native Bitget baseline is stable and measurable.
+The Bitget Hummingbot POC remains a separate workstream. Its comparison run requires a stable, measurable native Bitget baseline and is not started by the Phase 2 implementation.
 
 ## Definition of Done for the Phase 4 Decision Gate
 The Bitget Hummingbot provider has a recorded `PASS`, `PARTIAL` or `FAIL` result from the POC/certification suite and can be switched on/off without changing product-facing APIs. Only `PASS` authorizes consideration of the full Phase 5 scope; each production connector and executor still requires its own certification.
