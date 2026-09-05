@@ -46,6 +46,10 @@ uLiquid Desk is a trading and automation tool. Always review every order, fundin
       <td>Predictions, strategies, standard bots, and grid bots.</td>
     </tr>
     <tr>
+      <td><a href="user-guide/market-intelligence.md">Market Intelligence & AI</a></td>
+      <td>Source-backed market context, saved analyses, Agent Chat, and Position Copilot boundaries.</td>
+    </tr>
+    <tr>
       <td><a href="user-guide/wallet-funding-and-vaults.md">Wallet, Funding & Vaults</a></td>
       <td>Connect wallets, move assets, fund vaults, and run BotVault flows.</td>
     </tr>
@@ -55,6 +59,10 @@ uLiquid Desk is a trading and automation tool. Always review every order, fundin
     </tr>
   </tbody>
 </table>
+
+## Plans and Feature Access
+
+Feature access depends on your plan, workspace role, and the current environment. See [Plans and Feature Access](getting-started/plans-and-feature-access.md) for the current in-product source of truth and safe upgrade guidance.
 
 ## Good Operating Habits
 

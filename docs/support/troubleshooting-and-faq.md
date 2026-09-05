@@ -60,6 +60,10 @@ Check:
 
 Some funding flows confirm only when the destination balance is reached. Wait for indexer or balance refresh and do not start the same flow repeatedly.
 
+## Market Intelligence or AI Is Unavailable
+
+Check your current plan and workspace role first. Then check the feature page for a locked state, provider warning, or exhausted AI-credit notice. A degraded source means the result may be incomplete; use its source references and do not treat it as a trading instruction.
+
 ## FAQ
 
 ### Does a prediction execute trades automatically?
@@ -81,3 +85,7 @@ Exchange APIs, websockets, indexers, and internal reconciliation can have slight
 ### What is a canary?
 
 A small live test with limited capital, clear scope, and close monitoring.
+
+### Can Market Intelligence, Agent Chat, or Position Copilot place a trade?
+
+No. They provide market context, analysis, or risk-oriented recommendations. Any live order remains a separate Trading Desk action that you must review and confirm.

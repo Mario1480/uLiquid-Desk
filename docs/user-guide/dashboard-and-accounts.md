@@ -23,6 +23,8 @@ If data is degraded, do not start risky actions until the cause is understood.
 
 Use **Edit dashboard** to move, resize, hide, and restore widgets. New widgets are added to existing layouts without replacing saved visibility choices.
 
+For the complete widget catalogue, data freshness notes, and navigation shortcuts, see [Dashboard Widgets](dashboard-widgets.md).
+
 On desktop, widget widths and heights snap to the same grid in edit and normal view. Each height unit is 96 pixels, with 12-pixel gaps between units. Longer content scrolls inside its panel. Saved sizes, ordering, and visibility remain unchanged. On mobile, widgets stack in a single column with content-driven heights.
 
 - **Price Alerts:** set up to 20 alerts for the supported Binance Spot USDT markets. A fresh quote at or above/below the target triggers the alert, which stays recorded until rearmed or removed. Checks run every 15 seconds while the widget is mounted in a visible dashboard tab. These alerts do not send background or Telegram notifications.

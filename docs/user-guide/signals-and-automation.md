@@ -7,6 +7,8 @@ icon: bot
 
 uLiquid Desk brings together predictions, strategies, standard bots, and grid bots. The safe operating pattern is: understand the signal, check the risk, simulate or test small first, and automate only after that.
 
+Market context can be reviewed separately in [Market Intelligence](market-intelligence.md). It does not create a prediction or execute a trade.
+
 ## Predictions
 
 Predictions analyze market information and produce setups. They can prefill the Trading Desk, but they do not execute an order automatically.
@@ -39,6 +41,15 @@ Standard bots execute strategy logic automatically. Before starting one, check:
 - Runner status.
 - Last strategy evaluation.
 - Stop and pause behavior.
+
+## Monitor, Pause, and Recover
+
+After starting a bot, monitor its current state, latest evaluation, account data, and runner health. A visible running state is not evidence that every venue-side order has completed; check the relevant bot detail and exchange account before making another capital-changing decision.
+
+- **Pause** stops new strategy actions according to the bot workflow. Review existing venue orders and positions separately.
+- **Stop** is a controlled lifecycle action. Read the displayed effect before confirming; it may not mean that every external order or position has disappeared immediately.
+- **Error**, **stale**, or **pending** states require investigation. Do not create a replacement bot to work around an unresolved state.
+- If recovery is needed after a connectivity or runner issue, collect the bot ID, account label, timestamp, and visible status before contacting support.
 
 ## Grid Bots
 

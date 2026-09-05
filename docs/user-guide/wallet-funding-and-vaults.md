@@ -68,6 +68,17 @@ During a grid bot launch, uLiquid Desk shows:
 
 Funding history shows in-app actions and their status. Use it to trace pending transfers, confirmed actions, and transaction hashes.
 
+## Read Status Conservatively
+
+| Status | What it means | What to do |
+| --- | --- | --- |
+| Pending | The action has been submitted or is awaiting an expected state change. | Wait, refresh, and do not submit the same action again. |
+| Confirmed or settled | The product has recorded the expected completion state. | Review the resulting balance and transaction reference. |
+| Reconciled | The product has compared its recorded state with the expected destination state. | Treat it as operational evidence, then investigate any discrepancy shown. |
+| Failed or needs attention | Completion was not established. | Do not retry blindly; keep the transaction reference and collect a support package. |
+
+Displayed state is not a substitute for checking a material destination balance or the relevant network/venue when capital is at risk.
+
 ## Avoid Funding Mistakes
 
 - Do not sign on the wrong network.

@@ -10,9 +10,17 @@
 ## User Guide
 
 * [Dashboard and Exchange Accounts](user-guide/dashboard-and-accounts.md)
+* [Dashboard Widgets](user-guide/dashboard-widgets.md)
+* [Exchange Accounts and Venue Support](user-guide/exchange-accounts-and-venue-support.md)
 * [Trading Desk and Risk](user-guide/trading-desk-and-risk.md)
 * [Signals and Automation](user-guide/signals-and-automation.md)
+* [Market Intelligence](user-guide/market-intelligence.md)
+* [Agent Chat and Position Copilot](user-guide/agent-chat-and-position-copilot.md)
 * [Wallet, Funding, and Vaults](user-guide/wallet-funding-and-vaults.md)
+
+## Plans and Access
+
+* [Plans and Feature Access](getting-started/plans-and-feature-access.md)
 
 ## Admin and Operations
 
