@@ -344,8 +344,8 @@ export class AgentChatService {
       const profile = await this.validateContext(user.id, { profileId: conversation.profileId ?? `builtin:${conversation.profileKey}`, profileKey: conversation.profileKey, selectedVenue: conversation.selectedVenue, selectedExchangeAccountId: conversation.selectedExchangeAccountId, marketType: conversation.marketType, symbol: conversation.symbol }, access);
       const history = await this.deps.db.aiAgentMessage.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "desc" }, take: 10, select: { role: true, content: true } });
       const orderedHistory = history.reverse();
-      const scopeDecision = classifyAgentChatScope({ message: content, profileKey: profile.baseProfileKey, history: orderedHistory });
       const modelHistory = filterAgentChatModelHistory(orderedHistory, profile.baseProfileKey);
+      const scopeDecision = classifyAgentChatScope({ message: content, profileKey: profile.baseProfileKey, history: modelHistory });
       await this.deps.db.aiAgentMessage.create({ data: { conversationId: conversation.id, role: "user", content } });
       await this.deps.db.aiAgentConversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
       if (scopeDecision !== "in_scope") {

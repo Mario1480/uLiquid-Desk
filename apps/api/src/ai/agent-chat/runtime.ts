@@ -59,7 +59,7 @@ const DEFAULT_BUDGET = {
   maxToolCalls: 12,
   maxCallsPerSkill: 2,
   timeoutMs: resolveAgentRunTimeoutMs(),
-  maxOutputTokens: 2_200
+  maxOutputTokens: 6_000
 } as const;
 
 export function resolveAgentChatReservationRouting(routing: AiRoutingDecision): AiRoutingDecision {
@@ -155,7 +155,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
     1_000,
     Math.ceil((params.userMessage.length + params.history.reduce((sum, row) => sum + row.content.length, 0)) / 4) + 2_000
   );
-  const routing = routeOpenAiModel({
+  const routing = resolveAgentChatReservationRouting(routeOpenAiModel({
     scope: "ai_agent_chat",
     profile: params.profile.baseProfileKey,
     requestedSymbols: params.conversation.symbol ? 1 : 0,
@@ -164,12 +164,12 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
     createsTradingDraft: false,
     expectedInputTokens,
     allowDeep: process.env.AI_DEEP_ANALYSIS_ENABLED === "true"
-  }, configuredModelRouting.models);
+  }, configuredModelRouting.models));
   const billingEnabled = await isAiCreditBillingEnabledForDatabase(params.db);
   const estimate = billingEnabled
     ? await estimateAiRunReservation({
       database: params.db,
-      routing: resolveAgentChatReservationRouting(routing),
+      routing,
       expectedInputTokens
     })
     : null;
@@ -266,13 +266,13 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
 
   try {
     let finalContent = "";
-    for (let iteration = 0; iteration <= DEFAULT_BUDGET.maxToolIterations; iteration += 1) {
+    for (let iteration = 0; iteration <= routing.maxToolRounds; iteration += 1) {
       if (abort.signal.aborted) throw new AgentChatError("agent_chat_tool_budget_exceeded", 429, "Agent run timed out.");
       const result = await params.callAiChat(messages, {
         tools,
         toolChoice: tools.length > 0 ? "auto" : "none",
         responseFormat: AGENT_CHAT_RESPONSE_FORMAT,
-        maxTokens: Math.min(DEFAULT_BUDGET.maxOutputTokens, routing.maxOutputTokens),
+        maxTokens: routing.maxOutputTokens,
         timeoutMs: Math.max(1_000, DEFAULT_BUDGET.timeoutMs - (Date.now() - startedAt)),
         temperature: 0.2,
         reasoningEffort: routing.reasoningEffort,
@@ -288,7 +288,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
         finalContent = result.content;
         break;
       }
-      if (iteration >= DEFAULT_BUDGET.maxToolIterations) throw new AgentChatError("agent_chat_tool_budget_exceeded", 429);
+      if (iteration >= routing.maxToolRounds) throw new AgentChatError("agent_chat_tool_budget_exceeded", 429);
       toolIterations += 1;
       messages.push({
         role: "assistant",

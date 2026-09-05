@@ -1,6 +1,6 @@
 # AI Agent Chat – Security, Operations and Rollout
 
-Stand: 2026-09-04
+Last updated: 2026-09-05
 
 ## Scope
 
@@ -30,6 +30,8 @@ The Agent Chat is a separate read-only product surface. It does not share persis
 - Funding, OI and order-book snapshots expose provider/source venue, observed/fetched timestamps, age, timestamp source, quality, fallback and warning codes. A missing provider timestamp is degraded rather than presented as fresh.
 - User text, market intelligence and tool results are wrapped as untrusted data. Tool arguments, results, errors and audit summaries pass through recursive secret redaction.
 - A deterministic scope guard handles clearly off-topic requests, courtesy-only messages and obvious prompt-override attempts before model routing or credit reservation. Guarded requests produce a persisted zero-credit response without exposing tools.
+- Scope detection accepts singular and plural portfolio/market terminology in English and German, including "Analyze all my open positions." Short timeframe, explanation and language follow-ups use filtered in-scope conversation history; rejected turns do not establish follow-up context. References to newsletters, history or chart images are distinguished from unrelated content-production requests.
+- Agent Chat allows up to 6,000 output tokens per provider call (previously 2,200), subject to any lower router limit. Credit reservation, persisted routing and provider execution share the same effective output and tool-round caps. The larger budget can increase reserved and consumed credits; account credit limits remain enforced.
 - Per-user request limits, one concurrent run per user, four tool iterations, twelve calls, two calls per skill, a bounded 30-180 second run timeout (90 seconds by default) and bounded payloads constrain cost and resource abuse.
 
 ## Persistence and retention

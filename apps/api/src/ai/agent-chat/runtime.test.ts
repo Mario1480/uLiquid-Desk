@@ -27,8 +27,20 @@ test("agent chat credit reservation uses the tighter runtime budget", () => {
     reasonCode: "multi_source_analysis"
   });
 
-  assert.equal(routing.maxOutputTokens, 2_200);
+  assert.equal(routing.maxOutputTokens, 6_000);
   assert.equal(routing.maxToolRounds, 4);
+});
+
+test("agent chat preserves lower router limits for reservation and execution", () => {
+  const routing = {
+    modelClass: "standard" as const,
+    model: "gpt-5.6-luna",
+    reasoningEffort: "low" as const,
+    maxOutputTokens: 3_000,
+    maxToolRounds: 2,
+    reasonCode: "standard_agent"
+  };
+  assert.deepEqual(resolveAgentChatReservationRouting(routing), routing);
 });
 
 test("agent chat requests a JSON object envelope from the Responses API", () => {

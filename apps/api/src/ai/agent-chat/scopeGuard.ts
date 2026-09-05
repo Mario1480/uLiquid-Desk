@@ -14,15 +14,15 @@ type ScopeGuardInput = {
 
 const DOMAIN_PATTERNS = [
   /\b(?:btc|bitcoin|eth|ethereum|sol|solana|xrp|bnb|usdt|usdc|crypto|krypto)\b/,
-  /\b(?:market|markt|markte|borse|exchange|spot|perp|perpetual|futures?)\b/,
-  /\b(?:price|preis|chart|candle|kerze|timeframe|trend|bullish|bearish|volatility|volatilitat)\b/,
+  /\b(?:markets?|markt|markte|markten|borse[n]?|exchanges?|spot|perps?|perpetuals?|futures?)\b/,
+  /\b(?:prices?|preis[e]?|charts?|candles?|kerzen?|timeframes?|trends?|bullish|bearish|volatility|volatilitat)\b/,
   /\b(?:rsi|sma|ema|atr|indicator|indikator|support|resistance|widerstand|orderbook|orderbuch|volume|volumen)\b/,
   /\b(?:funding|open interest|liquidation|margin|leverage|hebel|pnl|drawdown|exposure)\b/,
   /\b(?:market|markt|portfolio|position|trading|trade|crypto|krypto)\b.{0,60}\b(?:risk|risiko)\b/,
   /\b(?:risk|risiko)\b.{0,60}\b(?:market|markt|portfolio|position|trading|trade|crypto|krypto)\b/,
-  /\b(?:position|positionen|balance|guthaben|open orders?|offene orders?|portfolio)\b/,
+  /\b(?:positions?|positionen|balances?|guthaben|open orders?|offene[n]? orders?|portfolios?|trades?|trading|holdings?|bestande|bestanden|risiken|liquidationsrisiko|stop[ -]?loss|take[ -]?profit)\b/,
   /\b(?:prediction|predictions|prognose|prognosen|accuracy|genauigkeit|confidence|konfidenz)\b/,
-  /\b(?:economic|economy|macro|makro|inflation|cpi|ppi|fomc|fed|ecb|ezb|interest rate|zins|arbeitsmarkt|nonfarm|nfp)\b/,
+  /\b(?:economic|economy|macro|makro|inflation|cpi|ppi|fomc|fed|ecb|ezb|interest rates?|zins(?:en|entscheidung)?|wirtschaftstermine[n]?|arbeitsmarkt|nonfarm|nfp)\b/,
   /\b(?:news|nachrichten)\b.*\b(?:market|markt|crypto|krypto|bitcoin|ethereum)\b/,
   /\b(?:uliquid|desk|agent chat|market analyst|position copilot|ai credits?|ki credits?|subscription|abonnement|profil|skills?)\b/,
   /\b(?:what can you do|how does this work|was kannst du|wie funktioniert das hier)\b/
@@ -33,10 +33,12 @@ const OFF_TOPIC_TASK_PATTERNS = [
   /\b(?:website|webseite|homepage|landingpage|landing page|web app|webapp)\b.{0,80}\b(?:build|create|design|develop|make|write|bau(?:e|en)?|erstell\w*|entwickel\w*|programm\w*|mach\w*)\b/,
   /\b(?:react|nextjs|next js|javascript|typescript|html|css|python|java|swift|kotlin)\b.*\b(?:code|app|component|komponente|programm|script|skript)\b/,
   /\b(?:programmiere|programmieren|code schreiben|write code|build an app|build a site|create an app|erstelle eine app)\b/,
-  /\b(?:email|e mail|newsletter|essay|aufsatz|gedicht|poem|song|lied|story|geschichte|homework|hausaufgabe)\b/,
+  /\b(?:essay|aufsatz|gedicht|poem|song|lied|homework|hausaufgabe)\b/,
+  /\b(?:write|compose|create|draft|generate|tell|schreib\w*|verfass\w*|erstell\w*|erzahl\w*)\b.{0,80}\b(?:email|e mail|newsletter|story|geschichte)\b/,
   /\b(?:resume|cv|lebenslauf|cover letter|anschreiben|bewerbung)\b/,
   /\b(?:recipe|rezept|meal plan|ernahrungsplan|travel itinerary|reiseplan)\b/,
-  /\b(?:logo|image|bild|social media post|marketing copy|werbetext)\b/,
+  /\b(?:logo|social media post|marketing copy|werbetext)\b/,
+  /\b(?:create|generate|draw|paint|erstell\w*|generier\w*|zeichne\w*|male)\b.{0,80}\b(?:image|bild)\b/,
   /\b(?:joke|witz|roleplay|rollenspiel)\b/,
   /\b(?:translate|ubersetze?|ubersetzung)\b.{0,80}\b(?:contract|vertrag|lease|mietvertrag|document|dokument)\b/,
   /\b(?:legal|rechtlich\w*)\b.{0,80}\b(?:contract|vertrag|lease|mietvertrag|advice|beratung|risk|risiko)\b/
@@ -66,6 +68,12 @@ const COMPACT_PROMPT_ATTACKS = [
 const COURTESY_PATTERN = /^(?:thanks?|thank you|danke|vielen dank|super|perfekt|okay?|alles klar|verstanden)[.! ]*$/;
 const FOLLOW_UP_PATTERN = /^(?:why|why not|how so|explain(?: that)?|more details?|what next|what about that|warum|wieso|weshalb|erklare? das|mehr details?|und jetzt|was bedeutet das|wie kommst du darauf)[?!. ]*$/;
 const EXTENDED_FOLLOW_UP_PATTERN = /^(?:could you |can you |please |bitte )?(?:explain|clarify|elaborate|summarize|compare|erklare?|erlautere?|fasse zusammen|vergleiche)\b.{0,100}\b(?:that|this|it|das|dies|es)\b|^(?:what|which|wie|welche)\b.{0,100}\b(?:assumption|assumptions|annahme|annahmen)\b/;
+const CONTEXTUAL_FOLLOW_UP_PATTERNS = [
+  /^(?:and |und )?(?:on |auf |im )?(?:the |dem )?(?:\d{1,3}\s*(?:m|h|d|w)|daily|weekly|tageschart|wochenchart)[?!. ]*$/,
+  /^(?:please |bitte )?(?:continue|go on|weiter|nochmal|erneut|shorter|kurzer|ausfuhrlicher)[?!. ]*$/,
+  /^(?:can you |could you |please |bitte )?(?:summarize|zusammenfassen|fasse das zusammen)[?!. ]*$/,
+  /^(?:(?:which|welche) (?:one|davon)|(?:in |auf )(?:english|german|deutsch|englisch))[?!. ]*$/
+] as const;
 
 const COMMON_CONFUSABLES: Record<string, string> = {
   "а": "a", "е": "e", "і": "i", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x"
@@ -117,8 +125,8 @@ export function classifyAgentChatScope(input: ScopeGuardInput): AgentChatScopeDe
     .map((row) => normalize(row.content));
   if (
     message.length <= 160
-    && (FOLLOW_UP_PATTERN.test(message) || EXTENDED_FOLLOW_UP_PATTERN.test(message))
-    && recentHistory.some(hasDomainSignal)
+    && (FOLLOW_UP_PATTERN.test(message) || EXTENDED_FOLLOW_UP_PATTERN.test(message) || matchesAny(message, CONTEXTUAL_FOLLOW_UP_PATTERNS))
+    && recentHistory.some((content) => hasDomainSignal(content) && !hasPromptAttack(content) && !matchesAny(content, OFF_TOPIC_TASK_PATTERNS))
   ) {
     return "in_scope";
   }
