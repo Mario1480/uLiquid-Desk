@@ -21,7 +21,8 @@ export const DASHBOARD_WIDGET_IDS = [
   "fundingRates",
   "topMovers",
   "portfolioAllocation",
-  "networkStatus"
+  "networkStatus",
+  "priceAlerts", "tradeJournal", "botRadar", "tradingSummary", "notes", "liquidationDistance"
 ] as const;
 
 export type DashboardWidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
@@ -72,6 +73,12 @@ export type DashboardWidgetRegistryEntry = {
 };
 
 export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetRegistryEntry[] = [
+  { id: "priceAlerts", titleKey: "workbench.priceAlerts.title", anchorId: "widget-price-alerts", icon: "riskAlerts", defaultSize: { w: 6, h: 4 } },
+  { id: "tradeJournal", titleKey: "workbench.tradeJournal.title", anchorId: "widget-trade-journal", icon: "manualTrading", defaultSize: { w: 6, h: 4 } },
+  { id: "botRadar", titleKey: "workbench.botRadar.title", anchorId: "widget-bot-radar", icon: "bots", defaultSize: { w: 6, h: 4 } },
+  { id: "tradingSummary", titleKey: "workbench.tradingSummary.title", anchorId: "widget-trading-summary", icon: "performance", defaultSize: { w: 6, h: 4 } },
+  { id: "notes", titleKey: "workbench.notes.title", anchorId: "widget-notes", icon: "quickActions", defaultSize: { w: 6, h: 4 } },
+  { id: "liquidationDistance", titleKey: "workbench.liquidationDistance.title", anchorId: "widget-liquidation-distance", icon: "riskAlerts", defaultSize: { w: 6, h: 4 } },
   {
     id: "alerts",
     titleKey: "alerts.title",
@@ -232,7 +239,13 @@ const DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
   { id: "fundingRates", visible: true, x: 0, y: 27, w: 6, h: 4 },
   { id: "topMovers", visible: true, x: 6, y: 27, w: 6, h: 4 },
   { id: "portfolioAllocation", visible: true, x: 0, y: 31, w: 6, h: 4 },
-  { id: "networkStatus", visible: true, x: 6, y: 31, w: 6, h: 4 }
+  { id: "networkStatus", visible: true, x: 6, y: 31, w: 6, h: 4 },
+  { id: "priceAlerts", visible: true, x: 0, y: 35, w: 6, h: 4 },
+  { id: "tradeJournal", visible: true, x: 6, y: 35, w: 6, h: 4 },
+  { id: "botRadar", visible: true, x: 0, y: 39, w: 6, h: 4 },
+  { id: "tradingSummary", visible: true, x: 6, y: 39, w: 6, h: 4 },
+  { id: "notes", visible: true, x: 0, y: 43, w: 6, h: 4 },
+  { id: "liquidationDistance", visible: true, x: 6, y: 43, w: 6, h: 4 }
 ];
 
 function layoutItemsEqual(left: DashboardLayoutItem[], right: DashboardLayoutItem[]): boolean {

@@ -5,6 +5,13 @@
 **Project:** uLiquid Desk × Hummingbot
 **Date:** 2026-09-03
 
+### Implementation status — 2026-09-04
+
+- `IMPLEMENTED`: redacted Decision Log projection from existing Agent Run, Tool Call, Message and Trace records, including recommendation, evidence, versions, quality and permission state.
+- `IMPLEMENTED`: Decision Log presentation in the existing right-side Activity panel with recent-run selection and mobile behavior.
+- `NOT STARTED`: durable agent memory, replay/evaluation platform, learning promotion and a new observability persistence model.
+- `FOLLOW-UP`: authenticated production reload, ownership and failed-run acceptance.
+
 ## Executive Summary
 
 Condor provides a strong reference for agent memory and observability. It separates per-session journals, cross-session learnings, full tick snapshots, deterministic risk/portfolio state, and persistent assistant memory/skills.

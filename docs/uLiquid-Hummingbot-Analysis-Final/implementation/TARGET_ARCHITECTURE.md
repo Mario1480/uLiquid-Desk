@@ -1,4 +1,7 @@
 # Target Architecture
+
+**Implementation status:** Phase 1 foundations are `IMPLEMENTED`; Phase 2 shared state/Feature Registry, the Hummingbot provider and execution-gateway expansion are `NOT STARTED` or `GATED` as defined in the roadmap.
+
 ```text
 uLIQUID DESK
    │

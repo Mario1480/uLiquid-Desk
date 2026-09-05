@@ -2,7 +2,6 @@
 
 import type { DragEvent, PointerEvent, ReactNode } from "react";
 import type { DashboardLayoutItem } from "../../src/dashboard/layout";
-import { DASHBOARD_LAYOUT_ROW_HEIGHT } from "../../src/dashboard/layout";
 import { AppIcon } from "../../app/components/AppIcon";
 
 export default function DashboardWidgetFrame({
@@ -42,7 +41,7 @@ export default function DashboardWidgetFrame({
       onDrop={onDrop}
       style={{
         gridColumn: `span ${item.w}`,
-        minHeight: editable ? `${item.h * DASHBOARD_LAYOUT_ROW_HEIGHT}px` : undefined
+        gridRow: `span ${item.h}`
       }}
     >
       {editable ? (

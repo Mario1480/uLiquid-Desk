@@ -55,6 +55,9 @@ export function resolvePermissionRequirementForRequest(
   }
   if (
     p === "/dashboard/layout"
+    || /^\/dashboard\/workbench\/(notes|price-alerts|journal)$/.test(p)
+    || p === "/dashboard/price-alerts/check"
+    || p === "/dashboard/trade-journal"
     || p === "/dashboard/network-status"
     || p === "/dashboard/funding-rates"
     || p === "/dashboard/top-movers"

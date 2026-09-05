@@ -26,37 +26,39 @@ uLiquid Platform
 
 ## Recommended implementation order
 
-### Phase 1 — Consolidate Quick Wins
-- extract and reuse existing deterministic Routines
-- extend the existing typed Agent Skill catalog instead of creating a parallel Skill runtime
-- extend the existing Futures Capability Registry
-- build user-facing Decision Logs on the existing Agent Run, Tool Call and Trace records
-- add derived Funding, open-interest and order-book analytics with freshness and quality metadata
+### Phase 1 — Consolidate Quick Wins — `IMPLEMENTED`
+- [x] extract and reuse existing deterministic Routines
+- [x] extend the existing typed Agent Skill catalog instead of creating a parallel Skill runtime
+- [x] extend the existing Futures Capability Registry
+- [x] build user-facing Decision Logs on the existing Agent Run, Tool Call and Trace records
+- [x] add derived Funding, open-interest and order-book analytics with freshness and quality metadata
 
-### Phase 2 — Shared Data and Existing AI Upgrade
+The Phase 1 code, focused suites and production builds are complete and deployed at release head `837d7d12`. Authenticated target-environment Decision Log E2E and live-provider acceptance remain `FOLLOW-UP`; Hummingbot and execution authority were not introduced.
+
+### Phase 2 — Shared Data and Existing AI Upgrade — `NOT STARTED`
 - build the provider-neutral Shared Market Data foundation independently of Hummingbot
 - add a versioned Feature Registry and feature snapshots
 - upgrade the existing Market Analyst and Position Copilot to consume the shared features and Decision Logs
 
-### Phase 3 — New Product Features
+### Phase 3 — New Product Features — `NOT STARTED`
 - Arbitrage Scanner
 - XEMM Scanner
 
-### Phase 4 — Parallel Infrastructure Validation
+### Phase 4 — Parallel Infrastructure Validation — `NOT STARTED`
 - define the Exchange Gateway contract by extending the existing adapter/capability foundations
 - run the isolated Bitget Hummingbot POC
 
 Phase 4 may begin after Phase 1 and run in parallel with Phases 2–3. It validates the Hummingbot dependency early without blocking provider-independent product improvements.
 
-### Decision Gate
+### Decision Gate — `GATED`
 Proceed with Hummingbot-backed production infrastructure only if the Bitget POC meets the defined functional, recovery, isolation, performance and economic acceptance criteria.
 
-### Phase 5 — If the POC Is Successful
+### Phase 5 — If the POC Is Successful — `GATED`
 - Hummingbot CEX Provider
 - separately certified TWAP and DCA integrations
 - additional certified exchanges
 
-### Phase 6 — Advanced
+### Phase 6 — Advanced — `GATED`
 - Phase 6A: Bot Architect drafts and simulation only
 - Phase 6B: explicitly approved Bot Architect deployment
 - Phase 6C: automated Arbitrage after dual-leg reconciliation is proven

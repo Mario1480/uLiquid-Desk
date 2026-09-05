@@ -5,6 +5,13 @@
 **Project:** uLiquid Desk × Hummingbot
 **Date:** 2026-09-03
 
+### Implementation status — 2026-09-04
+
+- `IMPLEMENTED`: deterministic current-snapshot Funding, open-interest and order-book analytics with provider/source provenance, timestamps, age, fallback codes and honest quality states.
+- `IMPLEMENTED`: native normalization coverage for the Phase 1 Binance, Bitget, Hyperliquid, MEXC, BingX-unsupported and linked-Paper contracts.
+- `NOT STARTED`: shared subscription/state service, historical Funding/OI series, Feature Registry, cross-consumer snapshot persistence and Hummingbot market-data provider.
+- `FOLLOW-UP`: live-provider acceptance and resolution of observed Bitget time-window and transient connectivity warnings.
+
 ## Executive Summary
 
 Hummingbot's Market Data API is highly relevant to uLiquid. It exposes normalized prices, tickers, order books, candles, historical candles, funding and size-aware order-book queries such as price-for-volume and VWAP-for-volume.

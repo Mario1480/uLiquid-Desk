@@ -24,6 +24,8 @@ import FundingRatesWidget from "../components/dashboard/FundingRatesWidget";
 import TopMoversWidget from "../components/dashboard/TopMoversWidget";
 import PortfolioAllocationWidget from "../components/dashboard/PortfolioAllocationWidget";
 import NetworkStatusWidget from "../components/dashboard/NetworkStatusWidget";
+import { NotesWidget, PriceAlertsWidget, TradeJournalWidget, TradingSummaryWidget } from "../components/dashboard/WorkbenchWidgets";
+import { BotRadarWidget, LiquidationDistanceWidget } from "../components/dashboard/OperationalWidgets";
 import { HyperEvmAddressLink } from "../components/wallet/ExplorerLinks";
 import type { GridInstance } from "../components/grid/types";
 import {
@@ -199,6 +201,10 @@ type DashboardRiskAnalysisResponse = {
 };
 
 type DashboardOpenPositionItem = {
+  markPrice?: number | null;
+  liquidationPrice?: number | null;
+  leverage?: number | null;
+  marginUsd?: number | null;
   exchangeAccountId: string;
   exchange: string;
   exchangeLabel: string;
@@ -882,7 +888,7 @@ export default function Page() {
       );
       const columnStep = columnWidth + DASHBOARD_LAYOUT_GAP;
       const deltaColumns = Math.round((event.clientX - resizeState.startX) / columnStep);
-      const deltaRows = Math.round((event.clientY - resizeState.startY) / DASHBOARD_LAYOUT_ROW_HEIGHT);
+      const deltaRows = Math.round((event.clientY - resizeState.startY) / (DASHBOARD_LAYOUT_ROW_HEIGHT + DASHBOARD_LAYOUT_GAP));
 
       setDraftLayout((current) => {
         const base = normalizeDashboardLayout(current ?? savedLayout ?? getDefaultDashboardLayout());
@@ -1783,6 +1789,12 @@ export default function Page() {
       title: t("networkStatus.title"),
       render: () => <NetworkStatusWidget accounts={overview} />
     },
+    priceAlerts: { available: true, title: t("workbench.priceAlerts.title"), render: () => <PriceAlertsWidget /> },
+    tradeJournal: { available: true, title: t("workbench.tradeJournal.title"), render: () => <TradeJournalWidget /> },
+    tradingSummary: { available: true, title: t("workbench.tradingSummary.title"), render: () => <TradingSummaryWidget /> },
+    notes: { available: true, title: t("workbench.notes.title"), render: () => <NotesWidget /> },
+    botRadar: { available: accessVisibility.bots, title: t("workbench.botRadar.title"), render: () => <BotRadarWidget bots={botsOverview} loading={loading} degraded={botsOverviewLoadError} /> },
+    liquidationDistance: { available: accessVisibility.tradingDesk, title: t("workbench.liquidationDistance.title"), render: () => <LiquidationDistanceWidget positions={openPositions} loading={loading} degraded={openPositionsDegraded} /> },
     affiliateProfitshare: {
       available: true,
       title: t("affiliateProfitshare.title"),
@@ -2025,6 +2037,7 @@ export default function Page() {
     affiliateOverview,
     affiliateOverviewLoadError,
     botsOverviewLoadError,
+    botsOverview,
     calendarEvents,
     calendarLoadError,
     error,
@@ -2333,7 +2346,11 @@ export default function Page() {
 
       {canEditLayout ? (
         <section className="dashboardSectionAnchor">
-          <div ref={gridRef} className="dashboardWidgetDesktopGrid">
+          <div
+            ref={gridRef}
+            className="dashboardWidgetDesktopGrid"
+            style={{ gridAutoRows: DASHBOARD_LAYOUT_ROW_HEIGHT, gap: DASHBOARD_LAYOUT_GAP }}
+          >
             {desktopItems.map((item) => {
               const meta = widgetMetaById.get(item.id);
               if (!meta) return null;

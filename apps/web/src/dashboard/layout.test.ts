@@ -4,7 +4,7 @@ import { getDefaultDashboardLayout, normalizeDashboardLayout } from "./layout";
 
 test("new dashboard widgets are visible in the default layout", () => {
   const layout = getDefaultDashboardLayout();
-  assert.equal(layout.items.length, 18);
+  assert.equal(layout.items.length, 24);
   assert.equal(layout.items.find((item) => item.id === "marketSessions")?.visible, true);
   assert.equal(layout.items.find((item) => item.id === "watchlist")?.visible, true);
   assert.equal(layout.items.find((item) => item.id === "quickActions")?.visible, true);

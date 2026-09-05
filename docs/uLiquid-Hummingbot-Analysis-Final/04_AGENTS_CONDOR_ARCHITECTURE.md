@@ -6,6 +6,13 @@
 **Area:** Condor, Trading Agents, Agent Roles, Tool/Skill Use, Permissions, Autonomy, Multi-Agent, Observability
 **Date:** 2026-09-03
 
+### Implementation status — 2026-09-04
+
+- `IMPLEMENTED`: deterministic Routine Registry, routine version provenance, typed read-only Agent Skill contracts and user-facing Decision Logs for the existing Market Analyst and Position Copilot.
+- `IMPLEMENTED`: explicit no-execution permission boundary for these profiles.
+- `NOT STARTED`: Bot Architect, autonomous or multi-agent trading, durable agent learning and Condor runtime integration.
+- `GATED`: every execution-capable or autonomous agent concept described later in this analysis.
+
 ---
 
 ## 1. Executive Summary

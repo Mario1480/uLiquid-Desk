@@ -24,7 +24,8 @@ export const DASHBOARD_WIDGET_IDS = [
   "fundingRates",
   "topMovers",
   "portfolioAllocation",
-  "networkStatus"
+  "networkStatus",
+  "priceAlerts", "tradeJournal", "botRadar", "tradingSummary", "notes", "liquidationDistance"
 ] as const;
 
 export type DashboardWidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
@@ -141,7 +142,13 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
     { id: "fundingRates", visible: true, x: 0, y: 27, w: 6, h: 4 },
     { id: "topMovers", visible: true, x: 6, y: 27, w: 6, h: 4 },
     { id: "portfolioAllocation", visible: true, x: 0, y: 31, w: 6, h: 4 },
-    { id: "networkStatus", visible: true, x: 6, y: 31, w: 6, h: 4 }
+    { id: "networkStatus", visible: true, x: 6, y: 31, w: 6, h: 4 },
+    { id: "priceAlerts", visible: true, x: 0, y: 35, w: 6, h: 4 },
+    { id: "tradeJournal", visible: true, x: 6, y: 35, w: 6, h: 4 },
+    { id: "botRadar", visible: true, x: 0, y: 39, w: 6, h: 4 },
+    { id: "tradingSummary", visible: true, x: 6, y: 39, w: 6, h: 4 },
+    { id: "notes", visible: true, x: 0, y: 43, w: 6, h: 4 },
+    { id: "liquidationDistance", visible: true, x: 6, y: 43, w: 6, h: 4 }
   ]
 };
 

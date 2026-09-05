@@ -6,38 +6,38 @@
 ## Workstream 0 — Preflight
 Map existing exchange adapters, market data, bot/execution state, AI Predictions/Agents, credential storage and Hyperliquid/Vault boundaries. Produce a dependency graph before edits.
 
-## Phase 1 — Consolidate Quick Wins
+## Phase 1 — Consolidate Quick Wins — `IMPLEMENTED`
 Extend and test the existing foundations:
-- extract reusable deterministic Routines from calculations already embedded in Agent Chat and Position Copilot
-- extend the existing typed Agent Skill catalog and permission checks; do not create a parallel production Skill runtime
-- extend the existing Futures Capability Registry with provider, data-quality and certification dimensions
-- project structured, user-facing Decision Logs from existing Agent Run, Tool Call, Message and Trace records before adding new persistence
-- add derived Funding, open-interest and order-book analytics with freshness, provenance and quality metadata
+- [x] extract reusable deterministic Routines from calculations already embedded in Agent Chat and Position Copilot
+- [x] extend the existing typed Agent Skill catalog and permission checks; do not create a parallel production Skill runtime
+- [x] extend the existing Futures Capability Registry with provider, data-quality and certification dimensions
+- [x] project structured, user-facing Decision Logs from existing Agent Run, Tool Call, Message and Trace records before adding new persistence
+- [x] add derived Funding, open-interest and order-book analytics with freshness, provenance and quality metadata
 
 Use existing uLiquid providers and data paths. Do not introduce Hummingbot or migrate existing adapters in this phase.
 
-## Phase 2 — Shared Data and Existing AI Upgrade
+## Phase 2 — Shared Data and Existing AI Upgrade — `NOT STARTED`
 Build a provider-neutral Shared Market Data foundation and a versioned Feature Registry with snapshot/provenance support. Upgrade the existing Market Analyst and Position Copilot to consume the Phase 1 Skills, shared features and Decision Logs. Keep Market Analyst read-only and Position Copilot recommendation-only.
 
 Shared Market Data is uLiquid-owned and must proceed regardless of the later Hummingbot POC result. It may initially use the existing native providers.
 
-## Phase 3 — New Product Features
+## Phase 3 — New Product Features — `NOT STARTED`
 Implement deterministic Arbitrage and XEMM Scanners with fees, slippage, depth, inventory readiness and opportunity scoring. Scanner-only: no automated cross-market execution.
 
-## Phase 4 — Parallel Infrastructure Validation
+## Phase 4 — Parallel Infrastructure Validation — `NOT STARTED`
 After the Phase 1 contract review, define and test the provider-neutral Exchange Gateway by extending the existing futures adapter and capability foundations. Add provider health, canonical execution identities and idempotency boundaries. Create an isolated `hummingbot-provider-poc` for Bitget so native and Hummingbot paths can be compared without changing product-facing APIs.
 
 Build a certification harness for authentication, data, orders, fills, reconnects, restarts, rate limits, idempotency, reconciliation, tenant isolation, latency and resource usage.
 
 This workstream may run in parallel with Phases 2–3. It must not force Hummingbot-specific DTOs or lifecycle assumptions into the Shared Market Data, Agent or Scanner contracts.
 
-## Decision Gate
+## Decision Gate — `GATED`
 Classify the Bitget POC as `PASS`, `PARTIAL` or `FAIL` from recorded evidence. Do not continue to production Hummingbot adoption merely because the happy path can place an order.
 
-## Phase 5 — If the POC Is Successful
+## Phase 5 — If the POC Is Successful — `GATED`
 Add the production Hummingbot CEX Provider to the existing Shared Market Data and Exchange Gateway contracts. POC and certify TWAP and DCA independently, then certify additional exchanges one connector/market/executor combination at a time.
 
-## Phase 6 — Advanced
+## Phase 6 — Advanced — `GATED`
 ### Phase 6A — Bot Architect Drafts
 Add Bot Architect with BotSpec validation and simulation/paper mode. It cannot deploy live.
 
@@ -71,7 +71,7 @@ The existing Routines, typed Skills, Capability Registry and Agent observability
 - Extended the existing Futures Capability Registry with stable provider identity, per-field native/linked/unsupported support and conservative live-certification state.
 - Consolidated Agent Skill market-data reads through the existing normalized clients, added concrete output validation and persisted skill/routine provenance.
 - Added the authenticated Decision Log projection and upgraded the existing right-side activity surface without adding a Prisma model or migration.
-- Kept Market Analyst and Position Copilot read-only. No Hummingbot dependency, execution tool, trade draft, credential change or deployment was introduced.
+- Kept Market Analyst and Position Copilot read-only. The implementation introduced no Hummingbot dependency, execution tool, trade draft or credential change.
 
 Verification on 2026-09-04:
 
@@ -80,12 +80,31 @@ Verification on 2026-09-04:
 - Agent Chat, routines and derivatives normalization: 50/50 tests passed and the process exited normally.
 - Focused Position Copilot: 13/13 tests passed.
 - Agent Chat UI: 7/7 tests passed; English/German translation integrity passed.
-- Targeted TypeScript validation for every changed Agent Chat web module passed. The repository-wide web TypeScript command generated route types, then stalled without diagnostics at zero CPU in the local environment and was stopped after a bounded wait.
-- The API TypeScript command reported only pre-existing errors outside the Phase 1 files in billing, dashboard and ULIQ modules.
+- Targeted TypeScript validation for every changed Agent Chat web module passed. The local repository-wide web TypeScript command generated route types, then stalled without diagnostics at zero CPU and was stopped after a bounded wait. The production Docker build subsequently completed the full Next.js TypeScript and 97-page generation pipeline successfully.
+- The API TypeScript command initially exposed pre-existing errors outside the Phase 1 files in billing, dashboard and ULIQ modules. Those release blockers were corrected with explicit types; the complete API typecheck and production Docker build then passed.
 - Browser-level Decision Log acceptance passed for fresh Market Analyst evidence, auto fallback, stale Position Copilot evidence, unsupported BingX data, recent-run selection, technical-activity disclosure and a 390 px mobile viewport without horizontal overflow. This used the production React component in an isolated local harness because the full Next development route stalled before its first response; authenticated end-to-end acceptance remains a separate target-environment check.
 - `git diff --check` passed.
 
-The implementation is complete at code and focused-test level. Full authenticated browser E2E and live provider certification remain open and must not be inferred from fixture or component evidence.
+Production release evidence on 2026-09-04:
+
+- Phase 1 implementation commit: `dddfe9d8`.
+- Production release head after build and policy-test corrections: `837d7d12`.
+- API, web, runner, PostgreSQL, Redis and Python strategy service reported healthy after deployment.
+- Prisma reported 114 migrations and no pending migration; no contract deployment or onchain/capital action occurred.
+- External API health returned HTTP 200, web and Agent Chat reached the login surface, and the unauthenticated Decision Log request was rejected with HTTP 401.
+- Runner typecheck, 244/244 Runner tests and the production Runner build passed after aligning stale test expectations with the new fail-closed plan capabilities.
+
+The implementation is complete and production-deployed. Full authenticated browser E2E and live provider acceptance remain `FOLLOW-UP` and must not be inferred from fixture, component or unauthenticated ingress evidence.
+
+## Recommended next step
+
+Close the Phase 1 target-environment acceptance before starting Phase 2 implementation:
+
+1. Run authenticated production acceptance for Market Analyst and Position Copilot, including Decision Log reload, ownership isolation, fresh/stale/fallback/unsupported evidence and mobile behavior.
+2. Triage the observed Bitget funding-window and transient Bitget/Binance connectivity warnings so Phase 2 starts from a stable native-provider baseline.
+3. Record the closeout evidence and then create a scoped Phase 2 implementation plan in the order Shared Market Data contracts, snapshot/provenance model, Feature Registry, Market Analyst migration, Position Copilot migration.
+
+The Bitget Hummingbot POC may be planned in parallel after this closeout, but its comparison run should wait until the native Bitget baseline is stable and measurable.
 
 ## Definition of Done for the Phase 4 Decision Gate
 The Bitget Hummingbot provider has a recorded `PASS`, `PARTIAL` or `FAIL` result from the POC/certification suite and can be switched on/off without changing product-facing APIs. Only `PASS` authorizes consideration of the full Phase 5 scope; each production connector and executor still requires its own certification.

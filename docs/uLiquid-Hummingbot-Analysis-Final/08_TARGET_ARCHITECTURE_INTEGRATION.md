@@ -420,41 +420,43 @@ Never outsource stable authority for tenant identity, subscriptions/ULIQ, permis
 
 ## 24. Implementation Roadmap
 
-### Phase 1 — Consolidate Quick Wins
+### Phase 1 — Consolidate Quick Wins — `IMPLEMENTED`
 Extract reusable deterministic Routines, extend the existing typed Agent Skill catalog and Futures Capability Registry, project user-facing Decision Logs from the existing Agent records, and add Funding/OI/Orderbook Analytics with freshness and quality metadata. Do not create parallel registries or runtimes.
 
-### Phase 2 — Shared Data and Existing AI Upgrade
+Code, focused tests and production deployment are complete at release head `837d7d12`. Authenticated target-environment Decision Log E2E and live-provider acceptance remain `FOLLOW-UP`.
+
+### Phase 2 — Shared Data and Existing AI Upgrade — `NOT STARTED`
 Build the provider-neutral Shared Market Data foundation and a versioned Feature Registry. Upgrade the existing Market Analyst and Position Copilot to consume consistent shared features and Decision Logs. This uLiquid-owned platform work proceeds regardless of the Hummingbot POC result.
 
-### Phase 3 — New Product Features
+### Phase 3 — New Product Features — `NOT STARTED`
 Add scanner-only Arbitrage and XEMM experiences. They calculate realistic opportunities and risks but do not perform automated execution.
 
-### Phase 4 — Parallel Infrastructure Validation
+### Phase 4 — Parallel Infrastructure Validation — `NOT STARTED`
 After Phase 1, define the Exchange Gateway by extending the existing adapter/capability foundations and run the isolated Bitget Hummingbot POC against the native Bitget path. Validate data, trading, recovery, latency, resource usage, tenant isolation and multi-account behavior. This may run in parallel with Phases 2–3.
 
-### Decision Gate
+### Decision Gate — `GATED`
 Evaluate the POC against the certification criteria. Hummingbot adoption beyond the POC requires an explicit decision based on functional, recovery, security, performance and economic evidence.
 
-### Phase 5 — If the POC Is Successful
+### Phase 5 — If the POC Is Successful — `GATED`
 Introduce the production Hummingbot CEX Provider behind the existing uLiquid contracts. Add TWAP, DCA and further exchanges only after separate connector/market/executor certification.
 
-### Phase 6 — Advanced
+### Phase 6 — Advanced — `GATED`
 Split advanced work into independent gates: 6A Bot Architect drafts/simulation, 6B explicitly approved deployment, 6C automated Arbitrage after proven dual-leg reconciliation, 6D XEMM after an independent Hedge Watchdog and emergency recovery, and 6E policy-constrained autonomous Agents after the complete permission, risk, audit, replay, evaluation and kill-switch stack is proven.
 
 ## 25. Dependency Order
 
 ```text
-Phase 1: Existing foundations consolidated
+Phase 1: Existing foundations consolidated [IMPLEMENTED]
         │
-        ├─→ Phase 2: Shared Market Data / Feature Registry / AI upgrades
+        ├─→ Phase 2: Shared Market Data / Feature Registry / AI upgrades [NOT STARTED]
         │          ↓
-        │   Phase 3: Arbitrage / XEMM Scanners
+        │   Phase 3: Arbitrage / XEMM Scanners [NOT STARTED]
         │
-        └─→ Phase 4: Exchange Gateway / Bitget Hummingbot POC
+        └─→ Phase 4: Exchange Gateway / Bitget Hummingbot POC [NOT STARTED]
                    ↓
-              DECISION GATE
+              DECISION GATE [GATED]
                    ↓ PASS
-        Phase 5: HB CEX Provider / TWAP / DCA / Exchanges
+        Phase 5: HB CEX Provider / TWAP / DCA / Exchanges [GATED]
 
 Phases 2–5 provide the foundations for separately gated Phase 6A–6E work.
 ```

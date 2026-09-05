@@ -6,6 +6,13 @@
 **Area:** Agent Skills, Skill Packaging, Routines, Tool Boundaries, Versioning, Permissions, Skill Library
 **Date:** 2026-09-03
 
+### Implementation status — 2026-09-04
+
+- `IMPLEMENTED`: the existing `AGENT_SKILLS` catalog remains the production authority and now carries status, allowed profiles, concrete output schemas and required routine IDs.
+- `IMPLEMENTED`: validated tool results, routine/skill provenance and enriched Funding/OI/Orderbook skills.
+- `NOT STARTED`: dynamic skill packages, a second skill runtime, Hummingbot skill installation and execution-capable skills.
+- `FOLLOW-UP`: authenticated production acceptance for the enriched read-only skills.
+
 ---
 
 ## 1. Executive Summary

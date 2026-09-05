@@ -1,4 +1,91 @@
 {
+  "workbench": {
+    "priceAlerts": {
+      "title": "Preisalarme",
+      "direction": "Richtung",
+      "above": "Bei oder über",
+      "below": "Bei oder unter",
+      "target": "Zielkurs (USDT)",
+      "scope": "Binance Spot · Prüfung alle 15 Sekunden bei geöffnetem Dashboard. Keine Hintergrundbenachrichtigungen.",
+      "triggered": "Ausgelöst",
+      "armed": "Aktiv",
+      "paused": "Pausiert",
+      "pause": "Alarm pausieren",
+      "enable": "Alarm aktivieren",
+      "rearm": "Alarm erneut aktivieren",
+      "empty": "Noch keine Preisalarme."
+    },
+    "tradeJournal": {
+      "title": "Trading-Journal"
+    },
+    "notes": {
+      "title": "Notizen & Checkliste",
+      "text": "Tagesplan, Kurszonen und Notizen",
+      "item": "Neuer Checklistenpunkt"
+    },
+    "botRadar": {
+      "title": "Bot-Radar",
+      "error": "Bot-Fehler",
+      "stale": "Laufzeitdaten fehlen oder sind über 5 Min. alt",
+      "margin": "Margin / Guthaben prüfen",
+      "waiting": "Wartet auf Signal",
+      "running": "Läuft",
+      "stopped": "Gestoppt / pausiert",
+      "empty": "Keine Bots vorhanden.",
+      "scope": "Standard-Bots · Status aus der letzten Laufzeitaktualisierung."
+    },
+    "tradingSummary": {
+      "title": "Tages- & Wochenübersicht",
+      "pnl": "Erfasster realisierter Gewinn/Verlust",
+      "fees": "Gebühren (USD)",
+      "net": "Netto nach Gebühren",
+      "trades": "Abgeschlossene Trades",
+      "winRate": "Trefferquote",
+      "unknownFees": "Für einige Trades fehlen Gebühren; ein vollständiges Nettoergebnis ist nicht berechenbar."
+    },
+    "liquidationDistance": {
+      "title": "Abstand zur Liquidation",
+      "empty": "Keine offenen Positionen.",
+      "mark": "Markpreis",
+      "price": "Liquidationspreis",
+      "margin": "Margin (USD)",
+      "leverage": "Hebel",
+      "scope": "Abstand zum Markpreis: ≤5 % kritisch, ≤10 % Warnung. Fehlende Börsenpreise bleiben unbekannt."
+    },
+    "journal": {
+      "coverage": "Letzte 7 Tage · erfasste Bot-Trades und manuell eingetragene Trades. Kein automatischer Import manueller Börsentrades.",
+      "entry": "Einstieg (Ortszeit)",
+      "exit": "Ausstieg (Ortszeit)",
+      "grossPnl": "Realisierter Gewinn/Verlust vor Gebühren (USD)",
+      "note": "Trade-Notiz",
+      "invalidDates": "Ausstieg muss nach Einstieg liegen und darf nicht in der Zukunft liegen.",
+      "empty": "Keine abgeschlossenen Trades in dieser Auswahl."
+    },
+    "save": "Speichern",
+    "saved": "Gespeichert",
+    "add": "Hinzufügen",
+    "remove": "Entfernen",
+    "refresh": "Aktualisieren",
+    "loading": "Lädt…",
+    "loadError": "Daten konnten nicht geladen werden. Bitte aktualisieren.",
+    "saveError": "Speichern fehlgeschlagen. Deine Eingabe bleibt erhalten.",
+    "conflict": "Ein anderer Tab hat eine neuere Version gespeichert. Vor erneutem Speichern bitte neu laden.",
+    "reloadRevision": "Gespeicherte Version laden",
+    "delayed": "Daten sind verzögert oder unvollständig.",
+    "unknown": "Unbekannt",
+    "symbol": "Symbol",
+    "side": "Richtung",
+    "period": "Zeitraum",
+    "source": "Trade-Quelle",
+    "day": "Heute (UTC)",
+    "week": "Letzte 7 Tage",
+    "all": "Alle",
+    "bot": "Bot",
+    "manual": "Manuell",
+    "account": "Exchange-Account",
+    "truncated": "Mehr als 5.000 Bot-Trades: Summen berücksichtigen nur die letzten 5.000.",
+    "updated": "Aktualisiert {time}"
+  },
   "title": "Dashboard",
   "subtitle": "Alle Konten, Positionen und Automationen auf einen Blick.",
   "actions": {

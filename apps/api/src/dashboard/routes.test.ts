@@ -8,6 +8,7 @@ function createFakeApp() {
   const getRoutes: RouteMap = new Map();
   const putRoutes: RouteMap = new Map();
   return {
+    post() {},
     get(path: string, ...handlers: Array<(...args: any[]) => any>) {
       getRoutes.set(path, handlers);
     },
@@ -80,7 +81,7 @@ test("dashboard layout returns defaults when no user layout exists", async () =>
   assert.equal(res.body?.version, 1);
   assert.equal(res.body?.desktop?.columns, 12);
   assert.equal(Array.isArray(res.body?.items), true);
-  assert.equal(res.body?.items?.length, 18);
+  assert.equal(res.body?.items?.length, 24);
   assert.equal(res.body?.items?.[0]?.id, "alerts");
   assert.equal(res.body?.items?.some((item: any) => item.id === "affiliateProfitshare"), true);
   assert.equal(res.body?.updatedAt, null);
@@ -147,8 +148,8 @@ test("dashboard layout update stores normalized layout", async () => {
   }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.equal(savedValue?.items?.length, 18);
-  assert.equal(res.body?.items?.length, 18);
+  assert.equal(savedValue?.items?.length, 24);
+  assert.equal(res.body?.items?.length, 24);
   assert.equal(res.body?.updatedAt, "2026-03-24T12:00:00.000Z");
   assert.equal(res.body?.items?.find((item: any) => item.id === "wallet")?.w, 4);
   assert.equal(res.body?.items?.find((item: any) => item.id === "affiliateProfitshare")?.id, "affiliateProfitshare");

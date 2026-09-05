@@ -1,5 +1,9 @@
 # Hummingbot Provider POC Plan
 
+**Implementation status:** `NOT STARTED`
+
+The POC has not been executed and the Decision Gate remains `GATED`. Start the comparison only after the Phase 1 target-environment closeout and a stable native Bitget baseline.
+
 ## Roadmap Placement
 This POC is the parallel Phase 4 infrastructure-validation track. It begins only after the Phase 1 contract review and may run alongside the provider-neutral Shared Market Data, existing-AI upgrade and Scanner work. Its result gates production Hummingbot adoption in Phase 5; it does not gate the uLiquid-owned Shared Market Data platform.
 

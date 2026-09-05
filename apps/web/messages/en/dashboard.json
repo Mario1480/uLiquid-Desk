@@ -1,4 +1,91 @@
 {
+  "workbench": {
+    "priceAlerts": {
+      "title": "Price Alerts",
+      "direction": "Direction",
+      "above": "At or above",
+      "below": "At or below",
+      "target": "Target price (USDT)",
+      "scope": "Binance Spot · checked every 15 seconds while this dashboard is open. No background notifications.",
+      "triggered": "Triggered",
+      "armed": "Armed",
+      "paused": "Paused",
+      "pause": "Pause alert",
+      "enable": "Enable alert",
+      "rearm": "Rearm alert",
+      "empty": "No price alerts yet."
+    },
+    "tradeJournal": {
+      "title": "Trading Journal"
+    },
+    "notes": {
+      "title": "Notes & Checklist",
+      "text": "Daily plan, price levels, and notes",
+      "item": "New checklist item"
+    },
+    "botRadar": {
+      "title": "Bot Radar",
+      "error": "Bot error",
+      "stale": "Runtime data missing or over 5 min old",
+      "margin": "Check margin / balance",
+      "waiting": "Waiting for signal",
+      "running": "Running",
+      "stopped": "Stopped / paused",
+      "empty": "No bots available.",
+      "scope": "Standard bots · status from the latest runtime update."
+    },
+    "tradingSummary": {
+      "title": "Day & Week",
+      "pnl": "Reported realized P&L",
+      "fees": "Fees (USD)",
+      "net": "Net after fees",
+      "trades": "Closed trades",
+      "winRate": "Win rate",
+      "unknownFees": "Fees are missing for some trades; a complete net result cannot be calculated."
+    },
+    "liquidationDistance": {
+      "title": "Liquidation Distance",
+      "empty": "No open positions.",
+      "mark": "Mark price",
+      "price": "Liquidation price",
+      "margin": "Margin (USD)",
+      "leverage": "Leverage",
+      "scope": "Distance from mark price: ≤5% critical, ≤10% warning. Missing venue prices remain unknown."
+    },
+    "journal": {
+      "coverage": "Last 7 days · recorded bot trades and manually entered trades. No automatic import of manual exchange trades.",
+      "entry": "Entry (local time)",
+      "exit": "Exit (local time)",
+      "grossPnl": "Realized P&L before fees (USD)",
+      "note": "Trade note",
+      "invalidDates": "Exit must be after entry and cannot be in the future.",
+      "empty": "No closed trades in this selection."
+    },
+    "save": "Save",
+    "saved": "Saved",
+    "add": "Add",
+    "remove": "Remove",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "loadError": "Data could not be loaded. Please refresh.",
+    "saveError": "Saving failed. Your input is retained.",
+    "conflict": "A newer version was saved in another tab. Reload before saving again.",
+    "reloadRevision": "Load saved version",
+    "delayed": "Data is delayed or incomplete.",
+    "unknown": "Unknown",
+    "symbol": "Symbol",
+    "side": "Side",
+    "period": "Period",
+    "source": "Trade source",
+    "day": "Today (UTC)",
+    "week": "Last 7 days",
+    "all": "All",
+    "bot": "Bot",
+    "manual": "Manual",
+    "account": "Exchange account",
+    "truncated": "More than 5,000 bot trades: totals cover only the latest 5,000.",
+    "updated": "Updated {time}"
+  },
   "title": "Dashboard",
   "subtitle": "All accounts, positions, and automations at a glance.",
   "actions": {

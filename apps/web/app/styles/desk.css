@@ -1,5 +1,31 @@
 /* Dashboard, trading desk, predictions, calendar, and news styles. */
 
+.dashboardWorkbenchCard { gap: 12px; }
+.dashboardWorkbenchBody { display: flex; flex-direction: column; gap: 10px; }
+.dashboardWorkbenchBody small { color: var(--muted); display: block; overflow-wrap: anywhere; }
+.dashboardWorkbenchRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.dashboardWorkbenchRow > div, .dashboardWorkbenchRow > input { min-width: 0; }
+.dashboardWorkbenchRow strong, .dashboardWorkbenchCheck span { overflow-wrap: anywhere; }
+.dashboardWorkbenchRow > .input { flex: 1; width: 0; }
+.dashboardWorkbenchActions { display: flex; gap: 6px; flex-wrap: wrap; }
+.dashboardWorkbenchForm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 8px; }
+.dashboardWorkbenchForm label { display: grid; gap: 4px; min-width: 0; font-size: 11px; }
+.dashboardWorkbenchForm .input { min-width: 0; width: 100%; }
+.dashboardWorkbenchTextarea { min-height: 120px; resize: vertical; width: 100%; }
+.dashboardWorkbenchCheck { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.dashboardWorkbenchMetrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dashboardWorkbenchMetrics strong { display: block; font-variant-numeric: tabular-nums; }
+.dashboardWorkbenchMetrics span { font-size: 12px; }
+.dashboardWorkbenchTrade, .dashboardWorkbenchLink { border-bottom: 1px solid var(--ui-border); padding: 8px 0; }
+.dashboardWorkbenchLink { color: var(--text); text-decoration: none; }
+.dashboardWorkbenchTrade p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dashboardWorkbenchCard .dashboardCompactWidgetHead { flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .dashboardWorkbenchForm { grid-template-columns: minmax(0, 1fr); }
+  .dashboardWorkbenchRow { flex-wrap: wrap; }
+  .dashboardWorkbenchRow > .input { flex-basis: 120px; }
+}
+
 :root {
   --dashboard-widget-surface: var(--ui-surface-panel);
   --dashboard-widget-border: var(--ui-border-strong);
@@ -1292,8 +1318,8 @@
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
-  align-items: start;
-  grid-auto-flow: dense;
+  align-items: stretch;
+  grid-auto-flow: row;
 }
 
 .dashboardWidgetMobileStack {
@@ -1309,6 +1335,8 @@
   position: relative;
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .dashboardWidgetFrameEditable {
@@ -1363,7 +1391,38 @@
 .dashboardWidgetFrameBody {
   min-width: 0;
   min-height: 0;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  border-radius: var(--ui-radius-card);
+}
+
+/* Constrain desktop panels to their saved grid span without clipping content. */
+.dashboardWidgetFrameBody > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.dashboardWidgetFrameBody > .dashboardWidgetCardFill {
   height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.dashboardWidgetFrameBody > .dashboardWidgetCardFill > * {
+  flex-shrink: 0;
+}
+
+.dashboardWidgetFrameBody > .dashboardWidgetCardFill > .dashboardWidgetScrollArea {
+  flex: 1 1 auto;
+}
+
+.dashboardWidgetMobileItem > .dashboardWidgetCardFill {
+  height: auto;
+  min-height: 0;
 }
 
 .dashboardWidgetResizeHandle {
@@ -1378,6 +1437,7 @@
   background: rgba(7, 17, 26, 0.92);
   color: var(--muted);
   cursor: nwse-resize;
+  touch-action: none;
 }
 
 .dashboardWidgetCardFill {

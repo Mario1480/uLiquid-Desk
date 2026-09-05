@@ -35,7 +35,7 @@ uLiquid Desk is a trading and automation tool. Always review every order, fundin
     </tr>
     <tr>
       <td><a href="user-guide/dashboard-and-accounts.md">Dashboard & Accounts</a></td>
-      <td>Account status, open positions, alerts, and exchange accounts.</td>
+      <td>Account status, open positions, price alerts, journal, daily metrics, notes, and exchange accounts.</td>
     </tr>
     <tr>
       <td><a href="user-guide/trading-desk-and-risk.md">Trading Desk & Risk</a></td>

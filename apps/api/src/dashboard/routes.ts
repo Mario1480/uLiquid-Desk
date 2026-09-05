@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import { registerDashboardWorkbenchRoutes } from "./workbench.js";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { deriveHyperliquidCredentialExpiryState } from "../exchange-accounts/hyperliquidCredentialExpiry.js";
 import {
@@ -129,6 +130,7 @@ export type RegisterDashboardRoutesDeps = {
 };
 
 export function registerDashboardRoutes(app: express.Express, deps: RegisterDashboardRoutesDeps) {
+  registerDashboardWorkbenchRoutes(app, deps.db);
   app.get("/dashboard/network-status", requireAuth, async (_req, res) => {
     try {
       return res.json(await loadDashboardNetworkStatus());

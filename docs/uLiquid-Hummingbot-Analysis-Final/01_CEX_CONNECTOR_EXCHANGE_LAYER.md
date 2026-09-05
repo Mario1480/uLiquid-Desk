@@ -5,6 +5,13 @@
 **Decision:** ADOPT uLiquid abstraction; INTEGRATE Hummingbot as optional CEX provider after POC
 **Primary POC:** Bitget Perpetual
 
+### Implementation status — 2026-09-04
+
+- `IMPLEMENTED`: additive Futures Capability Registry dimensions for stable provider identity, field-level support, data quality and conservative certification status.
+- `IMPLEMENTED`: provider-neutral current Funding/OI normalization through existing native uLiquid data paths.
+- `NOT STARTED`: Exchange Gateway, Credential/KMS expansion and Bitget Hummingbot POC.
+- `GATED`: production Hummingbot connectors and order execution.
+
 ## 1. Objective
 Determine whether Hummingbot can replace a substantial portion of uLiquid Desk's custom CEX connector maintenance while preserving uLiquid's control over security, tenancy, risk, product logic, AI permissions, and Hyperliquid/HyperEVM-specific infrastructure.
 
