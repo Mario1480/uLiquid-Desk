@@ -310,14 +310,19 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
         callCountBySkill.set(skill.id, count);
         if (count > Math.min(DEFAULT_BUDGET.maxCallsPerSkill, skill.maxCallsPerRun)) throw new AgentChatError("agent_chat_tool_budget_exceeded", 429);
         const argumentsValue = parseArguments(call.argumentsText);
+        const attemptedVersion = { skillVersion: skill.version, outputSchemaId: skill.outputSchemaId };
+        const requestedVenue = argumentsValue && typeof argumentsValue === "object" && "venue" in argumentsValue
+          && ["binance", "bitget", "hyperliquid", "mexc", "bingx"].includes(String(argumentsValue.venue))
+          ? String(argumentsValue.venue) : params.conversation.selectedVenue;
         const activity = await params.db.aiAgentToolCall.create({
           data: {
             runId: run.id,
             toolName: skill.id,
             status: "loading",
-            venue: params.conversation.selectedVenue,
+            venue: requestedVenue,
             exchangeAccountId: skill.accessLevel === "account_read" ? params.conversation.selectedExchangeAccountId : null,
-            argumentsSummary: redactAiSafetySecrets(argumentsValue)
+            argumentsSummary: redactAiSafetySecrets(argumentsValue),
+            resultSummary: { ...attemptedVersion, routineVersions: [], featureVersions: [] }
           }
         });
         const toolStartedAt = Date.now();
@@ -356,8 +361,18 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
           messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: JSON.stringify(wrapUntrustedAiPayload(toolResult)).slice(0, 60_000) });
         } catch (error) {
           const normalized = toAgentChatError(error);
-          await params.db.aiAgentToolCall.update({ where: { id: activity.id }, data: { status: "failed", durationMs: Date.now() - toolStartedAt, errorCode: normalized.code, resultSummary: { error: normalized.code } } });
-          messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: JSON.stringify({ ok: false, error: { code: normalized.code, retryable: normalized.status >= 500 } }) });
+          degraded = true;
+          await params.db.aiAgentToolCall.update({ where: { id: activity.id }, data: {
+            status: "failed", durationMs: Date.now() - toolStartedAt, errorCode: normalized.code,
+            resultSummary: { ...attemptedVersion, error: normalized.code, quality: "unavailable",
+              warnings: [normalized.code], routineVersions: [], featureVersions: [] }
+          } });
+          messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: JSON.stringify({
+            ok: false, skillId: skill.id, ...attemptedVersion,
+            error: { code: normalized.code, retryable: normalized.status >= 500,
+              ...(normalized.code === "agent_chat_venue_unsupported"
+                ? { message: "The requested skill does not support this venue or market type. This is an unsupported capability, not a temporary data outage." } : {}) }
+          }) });
         }
       }
     }

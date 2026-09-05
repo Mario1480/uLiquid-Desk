@@ -124,6 +124,13 @@
     "completed": "Analyse abgeschlossen"
   },
   "decisionLog": {
+    "reasons": {
+      "agent_chat_venue_unsupported": "Die angefragten Daten oder die Analyse werden für diese Börse oder diesen Markttyp nicht unterstützt.",
+      "agent_chat_market_data_degraded": "Die angefragten Marktdaten konnten nicht zuverlässig abgerufen werden.",
+      "agent_chat_tool_result_invalid": "Ein Tool hat ungültige Daten geliefert. Sie wurden nicht als vertrauenswürdiger Nachweis verwendet.",
+      "market_data_stale": "Die gespeicherten Marktdaten waren bereits zum Analysezeitpunkt veraltet.",
+      "market_data_fallback_used": "Eine alternative Marktdaten-Börse wurde verwendet. Bitte die gespeicherte Quelle beachten."
+    },
     "open": "Protokoll",
     "loadError": "Decision Logs konnten nicht geladen werden. Öffne die Unterhaltung erneut.",
     "recordedEvidence": "Gespeicherte Datengrundlage zum Analysezeitpunkt – keine Live-Marktdaten.",
