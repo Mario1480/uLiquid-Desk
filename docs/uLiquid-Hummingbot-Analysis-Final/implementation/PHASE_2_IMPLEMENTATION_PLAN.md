@@ -58,7 +58,7 @@ Do not reprice AI models, change tool budgets, replace profiles, or activate sch
 - [ ] Standalone spot enrichment is not integrated in this slice: the existing position-only analysis remains available with `spot_market_features_not_integrated`. Agent Chat retains its existing shared spot market skills.
 - [x] Authenticated Chrome checks cover Market Analyst feature evidence, exact snapshot/value persistence after reload, unsupported BingX with no cross-venue substitution, recent-run selection, the Copilot account-selection guard and its empty-account result, and German/English mobile drawers.
 - [ ] Fixed-prompt before/after quality/latency/credit comparisons, live positive-position Copilot analysis, and live stale/fallback scenarios remain open. Passing synthetic checks or an empty-account run does not close these gates.
-- [x] The follow-up preserves the specific unsupported-capability reason through `withPublicVenue`, adds translated unavailable-capability copy and retains failed-tool skill/schema provenance. Required routines are not presented as executed routines when a tool fails. Code `3dc0e2401` is production-deployed with passing runtime smokes; authenticated live re-verification remains open.
+- [x] The follow-up preserves the specific unsupported-capability reason through `withPublicVenue`, adds translated unavailable-capability copy and retains failed-tool skill/schema provenance. Required routines are not presented as executed routines when a tool fails. Code `3dc0e2401` is production-deployed; runtime smokes and authenticated BingX wording/version/reload acceptance passed.
 
 ### 2D — Historical feature scope — `DESIGN REQUIRED`
 
@@ -124,7 +124,7 @@ This item is not silently moved to a later roadmap phase. Phase 2 closeout must 
 
 ## Next implementation slice
 
-Complete the remaining 2C/2E gates: live-verify the deployed error/provenance correction after Chrome becomes accessible, decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and finish target-environment positive-position and stale/fallback acceptance. The controlled fixtures below do not replace those live gates. Do not create production positions or corrupt production data to manufacture fixtures. Prepare the 2D historical coverage/storage design before any migration or backfill.
+Complete the remaining 2C/2E gates: decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and finish target-environment positive-position and stale/fallback acceptance. The controlled fixtures below do not replace those live gates. Do not create production positions or corrupt production data to manufacture fixtures. Prepare the 2D historical coverage/storage design before any migration or backfill.
 
 ## Authorized release and Chrome acceptance — 2026-09-05
 
@@ -152,4 +152,4 @@ Complete the remaining 2C/2E gates: live-verify the deployed error/provenance co
 
 - Mario subsequently authorized publication. Code `3dc0e2401` was pushed to main and deployed to production API/web; the same 128 tests, API/web typechecks, i18n and production builds passed.
 - Runtime checks passed: both containers healthy with zero restarts, API health and English/German login HTTP 200, unauthenticated Decision Logs HTTP 401. Configuration and schema were unchanged; other service containers were not recreated.
-- Authenticated Chrome re-verification remains blocked by the locked Mac, not accepted by inference from runtime health. Phase 2 remains incomplete. See the [dated correction release evidence](../../archive/tasks/2026-09-05-phase2-error-provenance-production-release.md) for image identity, rollback and remaining gates.
+- After Mario unlocked the Mac, authenticated Chrome re-verification passed: two BingX-only v4 failures retained `agent_chat_venue_unsupported`; the assistant distinguished missing capability from temporary outage, and evidence survived reload and recent-run selection. English desktop and German mobile checks passed. One run used 20 AI Credits and took 5.2 seconds; reservations were zero after reload. Phase 2 remains incomplete. See the [dated correction release evidence](../../archive/tasks/2026-09-05-phase2-error-provenance-production-release.md) for image identity, rollback and remaining gates.
