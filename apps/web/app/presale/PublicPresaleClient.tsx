@@ -356,7 +356,12 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
           <p>{view === "vesting" ? t("vesting.description") : t("hero.description")}</p>
           <div className="publicPresaleHeroMeta">
             <span className="uiStatusBadge uiStatusBadge-warning">{t("hero.preview")}</span>
-            <span>{previewOnly ? t("hero.contractsPending") : t("hero.finalizedBlock", { block: overview.asOfBlock })}</span>
+            <span>{previewOnly ? t(overview.explorerUrl && !/^0x0{40}$/i.test(overview.tokenAddress) ? "hero.presaleContractsPending" : "hero.contractsPending") : t("hero.finalizedBlock", { block: overview.asOfBlock })}</span>
+            {overview.explorerUrl && !/^0x0{40}$/i.test(overview.tokenAddress) ? (
+              <a className="btn" href={`${overview.explorerUrl}/token/${overview.tokenAddress}`} target="_blank" rel="noreferrer" title={overview.tokenAddress}>
+                <AppIcon name="external" /> {t("hero.tokenContract")}: {overview.tokenAddress.slice(0, 8)}…{overview.tokenAddress.slice(-6)}
+              </a>
+            ) : null}
           </div>
         </div>
         <button className="btn" type="button" onClick={() => void load()} disabled={busy !== null}>

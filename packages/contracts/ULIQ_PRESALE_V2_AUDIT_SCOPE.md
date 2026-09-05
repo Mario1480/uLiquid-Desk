@@ -6,6 +6,8 @@ This document defines the source set to hand to external reviewers for the curre
 
 Candidate Arbitrum One role addresses and read-only verification evidence are recorded in [`ULIQ_PRESALE_V2_MAINNET_ROLES.md`](./ULIQ_PRESALE_V2_MAINNET_ROLES.md). Those candidates do not close any audit, Legal, custody, deployment, funding, configuration, readiness, or activation gate.
 
+The [2026-09-05 token deployment audit](./ULIQ_TOKEN_DEPLOYMENT_AUDIT.md) adds token-only agent-review evidence and tests under `test/uliq/shared/`. It does not replace this package's independent audit or cover the other deployable contracts below.
+
 ## In-scope deployable contracts
 
 | File | Planned instances | Purpose |

@@ -32,6 +32,8 @@ The package still includes no Mainnet deployment script. The proposed onchain cu
 
 The exact external-review handoff, exclusions, trust assumptions, and open blockers are documented in [`ULIQ_PRESALE_V2_AUDIT_SCOPE.md`](./ULIQ_PRESALE_V2_AUDIT_SCOPE.md). The current read-only Arbitrum One address evidence and candidate constructor-role mapping are tracked separately in [`ULIQ_PRESALE_V2_MAINNET_ROLES.md`](./ULIQ_PRESALE_V2_MAINNET_ROLES.md); that record is not deployment authorization.
 
+The shared token's [2026-09-05 deployment audit](./ULIQ_TOKEN_DEPLOYMENT_AUDIT.md) records an agent review, dedicated unit/fuzz/invariant tests, compiler/advisory dispositions, and a local candidate-Safe fork smoke. It is not an independent audit or Mainnet approval. Tests are under `test/uliq/shared/` and included in `test:uliq`; the optional fork test skips on the default local chain.
+
 Run only the new review suite with `npm -w @mm/contracts run test:uliq:presale-v2`, only the previous MVP suite with `npm -w @mm/contracts run test:uliq:legacy-testnet`, or both with `npm -w @mm/contracts run test:uliq`. Deployment and configuration are intentionally separate stages so addresses and ownership can be reconciled before inventory funding. No Mainnet script is provided for ULIQ while ADR-001 is blocked.
 
 ### Arbitrum Sepolia deployment preflight

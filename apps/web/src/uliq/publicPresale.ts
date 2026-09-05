@@ -1,3 +1,5 @@
+import { ULIQ_ARBITRUM_ONE_TOKEN } from "../../lib/uliqDeployments";
+
 export type PublicPresaleRoundId = "round-1" | "round-2";
 
 export type PublicPresaleRound = {
@@ -168,11 +170,11 @@ export function createPublicPresalePreviewOverview(chainId = 42_161): PublicPres
 
   return {
     chainId: chainId === 421_614 ? 421_614 : 42_161,
-    tokenAddress: ZERO_ADDRESS,
+    tokenAddress: chainId === ULIQ_ARBITRUM_ONE_TOKEN.chainId ? ULIQ_ARBITRUM_ONE_TOKEN.address : ZERO_ADDRESS,
     paymentTokenAddress: ZERO_ADDRESS,
     globalListingAddress: ZERO_ADDRESS,
     listingTimestamp: null,
-    explorerUrl: null,
+    explorerUrl: chainId === ULIQ_ARBITRUM_ONE_TOKEN.chainId ? ULIQ_ARBITRUM_ONE_TOKEN.explorerUrl : null,
     currentRoundId: "round-1",
     purchasesEnabled: false,
     terms: { version: null, textHash: null, url: "/presale/terms", ready: false },

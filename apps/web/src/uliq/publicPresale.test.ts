@@ -40,6 +40,19 @@ test("public presale progress uses integer raw values without floating-point inp
   assert.equal(progressPercent("100", "0"), 0);
 });
 
+test("preview exposes the deployed token only on Arbitrum One without activating the sale", () => {
+  const mainnet = createPublicPresalePreviewOverview();
+  assert.equal(mainnet.tokenAddress, "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd");
+  assert.equal(mainnet.explorerUrl, "https://arbiscan.io");
+  assert.equal(mainnet.purchasesEnabled, false);
+  assert.equal(mainnet.rounds.every((round) => round.contractAddress === "0x0000000000000000000000000000000000000000" && !round.purchaseEnabled), true);
+  for (const chainId of [421614, 1]) {
+    const preview = createPublicPresalePreviewOverview(chainId);
+    assert.equal(preview.tokenAddress, "0x0000000000000000000000000000000000000000");
+    assert.equal(preview.explorerUrl, null);
+  }
+});
+
 test("public presale schedule helpers expose compact countdowns and day durations", () => {
   const now = Date.parse("2026-09-01T10:00:00.000Z");
   assert.equal(countdownLabel("2026-09-03T13:30:00.000Z", now), "2d 3h");

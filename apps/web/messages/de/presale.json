@@ -11,6 +11,8 @@
     "preview": "Öffentliche Vorschau",
     "finalizedBlock": "Finalisierter Block {block}",
     "contractsPending": "Contract-Adressen folgen später",
+    "presaleContractsPending": "Token deployed · Presale-Contracts folgen später",
+    "tokenContract": "ULIQ-Token-Contract",
     "previewNotice": "Dies ist eine nicht transaktionale UI-Vorschau mit den freigegebenen Rundenparametern. Contract-Daten, Wallet-Bestätigung und Käufe bleiben bis zur separaten Onchain-Freigabe deaktiviert.",
     "refresh": "Aktualisieren",
     "unavailable": "Der öffentliche Presale ist in dieser Umgebung noch nicht konfiguriert."

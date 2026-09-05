@@ -2,7 +2,13 @@
 
 Status: planning and read-only address evidence only; not audited, not deployment-ready, and not authorization to fund, sign, broadcast, deploy, configure, or activate contracts.
 
-This document records candidate Arbitrum One addresses for the ULIQ Presale V2 deployment graph. Every address, owner set, threshold, balance, nonce, implementation, module, guard, constructor input, and transaction must be reverified against the finalized deployment revision immediately before any separately authorized action.
+This document records Arbitrum One role addresses for the ULIQ Presale V2 deployment graph. The initial ULIQ mint recipient is confirmed by Mario as recorded below; other candidate mappings remain proposals. Every address, owner set, threshold, balance, nonce, implementation, module, guard, constructor input, and transaction must be reverified against the finalized deployment revision immediately before any separately authorized action.
+
+## Confirmed initial mint recipient — 2026-09-05
+
+Mario explicitly confirmed `ULIQToken.allocationController` as `0x9C96F9AE59e30786fD325EFD969884FC1f751739`, the Treasury Safe on Arbitrum One (`42161`). With the reviewed constructor, this Safe receives the entire initial supply of 1,000,000,000 ULIQ once at deployment; the deployment EOA receives no token allocation.
+
+This confirmation settles the initial recipient choice only. It does not approve deployment, downstream transfers, vesting implementation, presale inventory sources, USDC custody destinations, or the complete release manifest. Remaining controls and gates are tracked in the [token deployment audit](./ULIQ_TOKEN_DEPLOYMENT_AUDIT.md). No new onchain verification or transaction was performed when recording this decision; the observations below retain their original timestamps.
 
 ## Evidence snapshot
 
@@ -16,12 +22,12 @@ This document records candidate Arbitrum One addresses for the ULIQ Presale V2 d
 
 This is a point-in-time observation, not a monitoring result or a future-state guarantee.
 
-## Candidate role matrix
+## Role matrix and confirmation status
 
-| Role | Candidate address | Intended use | Current evidence | Required before use |
+| Role | Address | Intended use / decision status | Snapshot evidence | Required before use |
 | --- | --- | --- | --- | --- |
 | Deployment EOA | `0x89473caAb2d0d5aC4B0fcCd45B0348E65307810E` | Gas-only deployment signer; no durable ownership or token allocation | No contract code, nonce `1`, successful inbound/outbound control test | Freeze the exact deployment script and revision, complete the dry-run, estimate gas, fund only the approved gas budget, and obtain explicit deployment authorization |
-| Treasury / inventory-source Safe | `0x9C96F9AE59e30786fD325EFD969884FC1f751739` | Candidate `ULIQToken` allocation controller and immutable inventory source for both rounds | Deployed SafeL2, two owners, threshold `2`, no modules or guard, successful two-signature transfer test | Resolve final allocation/distribution architecture, independently reverify all Safe state, complete audit and Legal gates, and approve the exact funding/reconciliation sequence |
+| Treasury / inventory-source Safe | `0x9C96F9AE59e30786fD325EFD969884FC1f751739` | Confirmed initial `ULIQToken` mint recipient; still a candidate immutable inventory source for both rounds | Deployed SafeL2, two owners, threshold `2`, no modules or guard, successful two-signature transfer test | Resolve downstream allocation/distribution architecture, independently reverify all Safe state, complete audit and Legal gates, and approve the exact funding/reconciliation sequence |
 | Admin / governance Safe | `0xf6EB22eC94be977A668967f44F89eB1e056FF70f` | Candidate owner for listing, rounds, vesting, and custody contracts | Deployed SafeL2, two owners, threshold `2`, no modules or guard, nonce `0` | Complete a two-signature execution test, independently reverify all Safe state, freeze the role map, and approve each configuration action separately |
 | Production USDC custody treasury | Unresolved | Recipient or safeguarding destination used by the final production custody model | No address accepted | Legal approval, final custody design, independent audit, and exact constructor/reconciliation review |
 
@@ -34,11 +40,11 @@ Separate Safe addresses provide role and accounting isolation, but the shared ow
 
 ## Planned constructor mapping
 
-The mapping below is a candidate input map. It is not an accepted deployment manifest.
+The initial token recipient below is confirmed; the remaining mappings are candidate inputs. This is not an accepted deployment manifest or authorization to execute any constructor.
 
-| Contract input | Candidate value | Notes |
+| Contract input | Value | Notes / decision status |
 | --- | --- | --- |
-| `ULIQToken.allocationController` | Treasury / inventory-source Safe | The full fixed supply is minted once. Final downstream bucket destinations and controls must be frozen before deployment. |
+| `ULIQToken.allocationController` | `0x9C96F9AE59e30786fD325EFD969884FC1f751739` | Initial recipient confirmed by Mario on 2026-09-05. The full initial supply is minted once. Final downstream bucket destinations and controls remain open before deployment. |
 | `ULIQGlobalListing.admin` | Admin / governance Safe | Controls one-time round binding and listing scheduling. |
 | `ULIQPresaleRoundVesting.admin` for both instances | Admin / governance Safe | Controls one-time Presale binding. |
 | `ULIQPaymentCustody.admin` for both instances | Admin / governance Safe | Production use remains blocked by the Legal and safeguarding decision. |
@@ -46,7 +52,7 @@ The mapping below is a candidate input map. It is not an accepted deployment man
 | `ULIQPresaleRound.inventorySource_` for both instances | Treasury / inventory-source Safe | The same Safe may fund both isolated rounds, but each immutable input and funding action must be verified independently. |
 | `ULIQPresaleRound.admin` for both instances | Admin / governance Safe | Controls draft configuration and lifecycle operations defined by the reviewed contract. |
 
-The ULIQ Treasury Safe does not replace the separately specified Ecosystem, Marketing, Liquidity, Team-vesting, or other final allocation destinations. The complete one-billion-ULIQ distribution and control model must be reconciled before the token deployment input is frozen.
+The confirmed initial mint recipient does not replace the separately specified Ecosystem, Marketing, Liquidity, Team-vesting, or other final allocation destinations. The complete one-billion-ULIQ downstream distribution and control model must be reconciled before the deployment manifest is approved.
 
 ## Public transaction evidence
 
@@ -99,4 +105,3 @@ This record does not authorize or evidence:
 - `configureRounds()`, `setPresale()`, `fundInventory()`, `markReady()`, sale activation, listing scheduling, or DEX operations;
 - environment, database, API, indexer, web, production, migration, or feature-flag changes;
 - Legal approval, independent audit completion, or Mainnet readiness.
-

@@ -11,6 +11,8 @@
     "preview": "Public preview",
     "finalizedBlock": "Finalized block {block}",
     "contractsPending": "Contract addresses will be added later",
+    "presaleContractsPending": "Token deployed · Presale contracts pending",
+    "tokenContract": "ULIQ token contract",
     "previewNotice": "This is a non-transactional UI preview using the approved round parameters. Contract data, wallet verification, and purchases remain disabled until the separate onchain approval.",
     "refresh": "Refresh",
     "unavailable": "The public presale is not configured in this environment yet."
