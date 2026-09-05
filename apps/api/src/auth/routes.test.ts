@@ -23,6 +23,7 @@ test("registration honeypot returns generically without creating user, workspace
   const calls = { user: 0, workspace: 0, otp: 0, email: 0 };
   registerAuthRoutes(app as any, {
     db: {
+      globalSetting: { findUnique: async () => null },
       user: { findUnique: async () => { calls.user += 1; return null; } },
       reauthOtp: { create: async () => { calls.otp += 1; } }
     },

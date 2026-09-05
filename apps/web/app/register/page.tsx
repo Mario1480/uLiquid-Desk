@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { ApiError, apiPost } from "../../lib/api";
+import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { redirectAfterAuth } from "../../lib/auth/redirect";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { AppIcon } from "../components/AppIcon";
@@ -44,6 +44,16 @@ export default function RegisterPage() {
   const [referralCode, setReferralCode] = useState("");
   const [legalAcknowledged, setLegalAcknowledged] = useState(false);
   const [companyWebsite, setCompanyWebsite] = useState("");
+  const [registrationEnabled, setRegistrationEnabled] = useState<boolean | null>(null);
+  const [registrationUnavailable, setRegistrationUnavailable] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    apiGet<{ enabled: boolean }>("/auth/registration")
+      .then((result) => { if (active) setRegistrationEnabled(result.enabled); })
+      .catch(() => { if (active) setRegistrationUnavailable(true); });
+    return () => { active = false; };
+  }, []);
 
   const registerPath = useMemo(() => withLocalePath("/register", locale), [locale]);
 
@@ -60,6 +70,7 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
     if (step === "register") {
+      if (registrationEnabled !== true) return;
       if (!legalAcknowledged) {
         setError(t("legal.requiredError"));
         return;
@@ -125,6 +136,14 @@ export default function RegisterPage() {
     <div className="container authPage">
       <h1 className="authHeading">{t("createAccountTitle")}</h1>
       <div className="card authCard">
+        {step === "register" && registrationEnabled !== true ? (
+          <div className="authForm">
+            <p role="status">{registrationUnavailable ? t("errors.registration_unavailable") : registrationEnabled === false ? t("errors.registration_disabled") : t("registrationLoading")}</p>
+            <Link href={withLocalePath("/login", locale)} className="btn">
+              <AppIcon name="back" /> {t("backToLogin")}
+            </Link>
+          </div>
+        ) : <>
         <LegalRiskNotice />
         <form onSubmit={submit} className="authForm">
           <div className="authHoneypot" aria-hidden="true">
@@ -238,6 +257,7 @@ export default function RegisterPage() {
           ) : null}
           {error ? <div className="authError">{error}</div> : null}
         </form>
+        </>}
       </div>
     </div>
   );

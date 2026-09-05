@@ -16,6 +16,7 @@ import {
 import { getPrimarySuperadminEmail, isSuperadminEmail } from "./auth/superadmin.js";
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
+import { registerRegistrationSettingsRoutes } from "./auth/registrationSettings.js";
 import { consumeRecentReauth, registerReauthRoutes } from "./auth/reauth.js";
 import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "./legalAcknowledgement.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
@@ -11356,6 +11357,12 @@ registerSystemRoutes(app, {
   economicCalendarDailyTelegramJob,
   requireSuperadmin,
   getTrafficControlHealth
+});
+
+registerRegistrationSettingsRoutes(app, {
+  db,
+  requireSuperadmin: requirePlatformSuperadmin,
+  recordAdminAuditEvent
 });
 
 registerAuthRoutes(app, {

@@ -1,0 +1,235 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - complementary [ref=f3e3]:
+      - generic [ref=f3e4]:
+        - link "uLiquid Desk" [ref=f3e6] [cursor=pointer]:
+          - /url: /de
+          - img "uLiquid Desk logo" [ref=f3e7]
+          - generic [ref=f3e8]:
+            - strong [ref=f3e9]: uLiquid Desk
+            - generic [ref=f3e10]: Desk Beta v1.0.0
+        - region "Desk & Trading" [ref=f3e11]:
+          - navigation [ref=f3e13]:
+            - link "Dashboard" [ref=f3e14] [cursor=pointer]:
+              - /url: /de/dashboard
+            - link "Trading Desk" [ref=f3e20] [cursor=pointer]:
+              - /url: /de/trade
+            - link "Market Intelligence" [ref=f3e24] [cursor=pointer]:
+              - /url: /de/market-intelligence
+            - link "Kalender" [ref=f3e30] [cursor=pointer]:
+              - /url: /de/calendar
+            - link "News" [ref=f3e35] [cursor=pointer]:
+              - /url: /de/news
+        - region "AI" [ref=f3e41]:
+          - navigation [ref=f3e43]:
+            - link "AI Agent Chat" [ref=f3e335] [cursor=pointer]:
+              - /url: /de/agent-chat
+            - link "Prognosen" [ref=f3e44] [cursor=pointer]:
+              - /url: /de/predictions
+            - link "AI Prediction Builder" [ref=f3e350] [cursor=pointer]:
+              - /url: /de/strategies
+        - region "Grid, Bots & Signale" [ref=f3e50]:
+          - navigation [ref=f3e52]:
+            - link "Trading Bots" [ref=f3e53] [cursor=pointer]:
+              - /url: /de/bots
+            - link "Grid Bots" [ref=f3e365] [cursor=pointer]:
+              - /url: /de/bots/grid
+        - region "Vaults & Funding" [ref=f3e59]:
+          - navigation [ref=f3e61]:
+            - link "Accounts" [ref=f3e62] [cursor=pointer]:
+              - /url: /de/accounts
+            - link "Wallet & Funding" [ref=f3e69] [cursor=pointer]:
+              - /url: /de/wallet
+            - link "Vaults" [ref=f3e75] [cursor=pointer]:
+              - /url: /de/vaults
+        - region "Einstellungen" [ref=f3e81]:
+          - navigation [ref=f3e83]:
+            - link "Einstellungen" [ref=f3e84] [cursor=pointer]:
+              - /url: /de/settings
+            - link "Admin" [ref=f3e370] [cursor=pointer]:
+              - /url: /de/admin
+            - link "Hilfe" [ref=f3e90] [cursor=pointer]:
+              - /url: /de/help
+        - region "System Snapshot" [ref=f3e96]:
+          - generic [ref=f3e98]:
+            - generic [ref=f3e99]:
+              - generic [ref=f3e100]: Exchange-Accounts
+              - strong [ref=f3e101]: "0"
+            - generic [ref=f3e102]:
+              - generic [ref=f3e103]: Laufende Bots
+              - strong [ref=f3e104]: "0"
+            - generic [ref=f3e105]:
+              - generic [ref=f3e106]: Laufende Grid Bots
+              - strong [ref=f3e107]: "0"
+            - generic [ref=f3e108]:
+              - generic [ref=f3e109]: Laufende Prognosen
+              - strong [ref=f3e110]: "0"
+            - generic [ref=f3e111]:
+              - generic [ref=f3e112]: Bots mit Fehlern
+              - strong [ref=f3e113]: "0"
+        - button "Abmelden" [ref=f3e115] [cursor=pointer]
+    - generic [ref=f3e121]:
+      - banner [ref=f3e122]:
+        - generic [ref=f3e123]:
+          - generic [ref=f3e125]:
+            - combobox "Seiten suchen" [ref=f3e126]
+            - button "Los" [ref=f3e127] [cursor=pointer]:
+              - generic [aria-hidden] [ref=f3e128]:
+                - generic [ref=f3e129]: Ctrl/⌘
+                - generic [ref=f3e130]: K
+          - generic [ref=f3e131]:
+            - button "Sprache wechseln" [ref=f3e133] [cursor=pointer]:
+              - generic [ref=f3e138]: DE
+            - link "AI Credits verfügbar, reserviert. Abrechnung öffnen." [ref=f3e375] [cursor=pointer]:
+              - /url: /de/settings/subscription
+              - generic [ref=f3e156]: AI
+              - strong
+            - button "Wallet verbinden" [ref=f3e377] [cursor=pointer]
+            - button "Alarme öffnen" [ref=f3e159] [cursor=pointer]
+            - button "Benutzermenü öffnen" [ref=f3e163] [cursor=pointer]:
+              - generic [aria-hidden] [ref=f3e164]: QA
+              - generic [ref=f3e165]: qa
+      - navigation "Breadcrumb" [ref=f3e170]:
+        - list [ref=f3e172]:
+          - listitem [ref=f3e173]:
+            - link "Dashboard" [ref=f3e174] [cursor=pointer]:
+              - /url: /de/dashboard
+          - listitem [ref=f3e182]:
+            - link "Einstellungen" [ref=f3e183] [cursor=pointer]:
+              - /url: /de/settings
+          - listitem [ref=f3e192]:
+            - link "Admin" [ref=f3e193] [cursor=pointer]:
+              - /url: /de/admin
+          - listitem [ref=f3e201]:
+            - generic [ref=f3e202]: Bereichszugriffe
+      - main [ref=f3e208]:
+        - generic [ref=f3e209]:
+          - complementary [ref=f3e210]:
+            - generic [ref=f3e211]:
+              - generic [ref=f3e212]:
+                - generic [ref=f3e213]: uLiquid Desk
+                - generic [ref=f3e214]: Platform Admin
+                - generic [ref=f3e215]: Strict superadmin operations area
+              - navigation "Admin navigation" [ref=f3e216]:
+                - link "Overview" [ref=f3e217] [cursor=pointer]:
+                  - /url: /de/admin
+                - link "Users" [ref=f3e224] [cursor=pointer]:
+                  - /url: /de/admin/users
+                - link "Workspaces" [ref=f3e233] [cursor=pointer]:
+                  - /url: /de/admin/workspaces
+                - link "Licenses" [ref=f3e240] [cursor=pointer]:
+                  - /url: /de/admin/licenses
+                - link "Alerts" [ref=f3e246] [cursor=pointer]:
+                  - /url: /de/admin/alerts
+                - link "Bots" [ref=f3e252] [cursor=pointer]:
+                  - /url: /de/admin/bots
+                - link "Runners" [ref=f3e259] [cursor=pointer]:
+                  - /url: /de/admin/runners
+                - link "Audit" [ref=f3e266] [cursor=pointer]:
+                  - /url: /de/admin/audit
+                - link "Statistics" [ref=f3e273] [cursor=pointer]:
+                  - /url: /de/admin/statistics
+                - link "Providers" [ref=f3e280] [cursor=pointer]:
+                  - /url: /de/admin/providers
+                - link "Affiliate" [ref=f3e287] [cursor=pointer]:
+                  - /url: /de/admin/affiliate
+                - link "Vaults" [ref=f3e294] [cursor=pointer]:
+                  - /url: /de/admin/system/vaults/execution
+                - link "System" [ref=f3e301] [cursor=pointer]:
+                  - /url: /de/admin/system
+          - generic [ref=f3e309]:
+            - generic [ref=f3e311]:
+              - generic [ref=f3e312]: System
+              - heading "Admin · Zugriffseinstellungen" [level=1] [ref=f3e313]
+              - paragraph [ref=f3e314]: Sichtbarkeit der Hauptbereiche und das Maintenance-Verhalten fuer normale User steuern.
+            - generic [ref=f3e383]:
+              - heading "Registrierung" [level=3] [ref=f3e385]
+              - status [ref=f3e544]: Access-Section-Einstellungen gespeichert.
+              - generic [ref=f3e387] [cursor=pointer]:
+                - generic [ref=f3e388]:
+                  - strong [ref=f3e389]: Neuregistrierungen erlauben
+                  - generic [ref=f3e395]: Wenn ausgeschaltet, ist die öffentliche Registrierung geschlossen. Bestehende Nutzer können sich weiterhin anmelden und Admins können Konten anlegen.
+                - checkbox "Neuregistrierungen erlauben Wenn ausgeschaltet, ist die öffentliche Registrierung geschlossen. Bestehende Nutzer können sich weiterhin anmelden und Admins können Konten anlegen." [ref=f3e396]
+              - button "Einstellungen speichern" [ref=f3e398] [cursor=pointer]
+            - generic [ref=f3e403]:
+              - generic [ref=f3e404]:
+                - heading "Zugriffseinstellungen" [level=3] [ref=f3e405]
+                - generic [ref=f3e406]: "Quelle: default · Zuletzt aktualisiert: nie"
+              - generic [ref=f3e408] [cursor=pointer]:
+                - generic [ref=f3e409]:
+                  - strong [ref=f3e410]: Wartungsmodus
+                  - generic [ref=f3e414]: Wenn aktiv, sehen normale User nur noch die Wartungsseite. Admins und Superadmins behalten vollen Zugriff, und der Login bleibt erreichbar.
+                - checkbox "Wartungsmodus für normale User aktivieren" [ref=f3e415]
+              - heading "Sichtbarkeit (nur UI)" [level=4] [ref=f3e417]
+              - generic [ref=f3e418]:
+                - generic [ref=f3e419] [cursor=pointer]:
+                  - strong [ref=f3e421]: Trading Desk
+                  - checkbox "Trading Desk" [checked] [ref=f3e423]
+                - generic [ref=f3e424] [cursor=pointer]:
+                  - strong [ref=f3e426]: Bots
+                  - checkbox "Bots" [checked] [ref=f3e430]
+                - generic [ref=f3e431] [cursor=pointer]:
+                  - strong [ref=f3e433]: Grid Bots
+                  - checkbox "Grid Bots" [checked] [ref=f3e436]
+                - generic [ref=f3e437] [cursor=pointer]:
+                  - strong [ref=f3e439]: AI Agent Chat
+                  - checkbox "AI Agent Chat" [checked] [ref=f3e452]
+                - generic [ref=f3e453] [cursor=pointer]:
+                  - strong [ref=f3e455]: Predictions Dashboard
+                  - checkbox "Predictions Dashboard" [checked] [ref=f3e459]
+                - generic [ref=f3e460] [cursor=pointer]:
+                  - strong [ref=f3e462]: Prediction Builder
+                  - checkbox "Prediction Builder" [checked] [ref=f3e475]
+                - generic [ref=f3e476] [cursor=pointer]:
+                  - strong [ref=f3e478]: Market Intelligence
+                  - checkbox "Market Intelligence" [checked] [ref=f3e482]
+                - generic [ref=f3e483] [cursor=pointer]:
+                  - strong [ref=f3e485]: Wirtschaftskalender
+                  - checkbox "Wirtschaftskalender" [checked] [ref=f3e488]
+                - generic [ref=f3e489] [cursor=pointer]:
+                  - strong [ref=f3e491]: News
+                  - checkbox "News" [checked] [ref=f3e495]
+                - generic [ref=f3e496] [cursor=pointer]:
+                  - strong [ref=f3e498]: Accounts
+                  - checkbox "Accounts" [checked] [ref=f3e503]
+                - generic [ref=f3e504] [cursor=pointer]:
+                  - strong [ref=f3e506]: ULIQ
+                  - checkbox "ULIQ" [checked] [ref=f3e509]
+                - generic [ref=f3e510] [cursor=pointer]:
+                  - strong [ref=f3e512]: Wallet & Funding
+                  - checkbox "Wallet & Funding" [checked] [ref=f3e516]
+                - generic [ref=f3e517] [cursor=pointer]:
+                  - strong [ref=f3e519]: Vaults
+                  - checkbox "Vaults" [checked] [ref=f3e523]
+              - generic [ref=f3e524]:
+                - button "Defaults laden" [ref=f3e525] [cursor=pointer]
+                - button "Einstellungen speichern" [ref=f3e529] [cursor=pointer]
+  - contentinfo [ref=f3e316]:
+    - generic [ref=f3e317]:
+      - generic [ref=f3e318]: © 2026 uLiquid
+      - generic [ref=f3e319]:
+        - link "uLiquid Desk Website" [ref=f3e320] [cursor=pointer]:
+          - /url: https://desk.uliquid.vip
+          - text: desk.uliquid.vip
+        - link "Datenschutz" [ref=f3e321] [cursor=pointer]:
+          - /url: /de/privacy
+        - link "Cookie-Informationen" [ref=f3e322] [cursor=pointer]:
+          - /url: /de/cookies
+        - link "Nutzungsbedingungen" [ref=f3e323] [cursor=pointer]:
+          - /url: /de/terms
+        - link "Crypto Risk Disclosure" [ref=f3e324] [cursor=pointer]:
+          - /url: /de/risk-disclosure
+          - text: Risk Disclosure
+        - link "Support email" [ref=f3e325] [cursor=pointer]:
+          - /url: mailto:support@uliquid.vip
+          - text: support@uliquid.vip
+  - generic [ref=f3e330] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=f3e331]
+    - generic [ref=f3e534]:
+      - button "Open issues overlay" [ref=f3e535]:
+        - generic [ref=f3e536]:
+          - generic [aria-hidden] [ref=f3e537]: "0"
+          - generic [ref=f3e538]: "1"
+        - generic [ref=f3e539]: Issue
+      - button "Collapse issues badge" [ref=f3e540]
+  - alert [ref=f3e543]

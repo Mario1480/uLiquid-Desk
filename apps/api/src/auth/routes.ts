@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { readRegistrationSettings } from "./registrationSettings.js";
 import express from "express";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { logger } from "../logger.js";
@@ -209,6 +210,13 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
   }
 
   app.post("/auth/register", async (req, res) => {
+    try {
+      if (!(await readRegistrationSettings(deps.db)).enabled) {
+        return res.status(403).json({ error: "registration_disabled" });
+      }
+    } catch {
+      return res.status(503).json({ error: "registration_unavailable" });
+    }
     const parsed = deps.registerSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });

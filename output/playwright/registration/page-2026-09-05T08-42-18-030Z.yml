@@ -1,0 +1,156 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - complementary [ref=f3e3]:
+      - generic [ref=f3e4]:
+        - link "uLiquid Desk" [ref=f3e6] [cursor=pointer]:
+          - /url: /de
+          - img "uLiquid Desk logo" [ref=f3e7]
+          - generic [ref=f3e8]:
+            - strong [ref=f3e9]: uLiquid Desk
+            - generic [ref=f3e10]: Desk Beta v1.0.0
+        - region "Desk & Trading" [ref=f3e11]:
+          - navigation [ref=f3e13]:
+            - link "Dashboard" [ref=f3e14] [cursor=pointer]:
+              - /url: /de/dashboard
+            - link "Trading Desk" [ref=f3e20] [cursor=pointer]:
+              - /url: /de/trade
+            - link "Market Intelligence" [ref=f3e24] [cursor=pointer]:
+              - /url: /de/market-intelligence
+            - link "Kalender" [ref=f3e30] [cursor=pointer]:
+              - /url: /de/calendar
+            - link "News" [ref=f3e35] [cursor=pointer]:
+              - /url: /de/news
+        - region "AI" [ref=f3e41]:
+          - navigation [ref=f3e43]:
+            - link "Prognosen" [ref=f3e44] [cursor=pointer]:
+              - /url: /de/predictions
+        - region "Grid, Bots & Signale" [ref=f3e50]:
+          - navigation [ref=f3e52]:
+            - link "Trading Bots" [ref=f3e53] [cursor=pointer]:
+              - /url: /de/bots
+        - region "Vaults & Funding" [ref=f3e59]:
+          - navigation [ref=f3e61]:
+            - link "Accounts" [ref=f3e62] [cursor=pointer]:
+              - /url: /de/accounts
+            - link "Wallet & Funding" [ref=f3e69] [cursor=pointer]:
+              - /url: /de/wallet
+            - link "Vaults" [ref=f3e75] [cursor=pointer]:
+              - /url: /de/vaults
+        - region "Einstellungen" [ref=f3e81]:
+          - navigation [ref=f3e83]:
+            - link "Einstellungen" [ref=f3e84] [cursor=pointer]:
+              - /url: /de/settings
+            - link "Hilfe" [ref=f3e90] [cursor=pointer]:
+              - /url: /de/help
+        - region "System Snapshot" [ref=f3e96]:
+          - generic [ref=f3e98]:
+            - generic [ref=f3e99]:
+              - generic [ref=f3e100]: Exchange-Accounts
+              - strong [ref=f3e101]: …
+            - generic [ref=f3e102]:
+              - generic [ref=f3e103]: Laufende Bots
+              - strong [ref=f3e104]: …
+            - generic [ref=f3e105]:
+              - generic [ref=f3e106]: Laufende Grid Bots
+              - strong [ref=f3e107]: …
+            - generic [ref=f3e108]:
+              - generic [ref=f3e109]: Laufende Prognosen
+              - strong [ref=f3e110]: …
+            - generic [ref=f3e111]:
+              - generic [ref=f3e112]: Bots mit Fehlern
+              - strong [ref=f3e113]: …
+        - button "Abmelden" [ref=f3e115] [cursor=pointer]
+    - generic [ref=f3e121]:
+      - banner [ref=f3e122]:
+        - generic [ref=f3e123]:
+          - generic [ref=f3e125]:
+            - combobox "Seiten suchen" [ref=f3e126]
+            - button "Los" [ref=f3e127] [cursor=pointer]:
+              - generic [aria-hidden] [ref=f3e128]:
+                - generic [ref=f3e129]: Ctrl/⌘
+                - generic [ref=f3e130]: K
+          - generic [ref=f3e131]:
+            - button "Sprache wechseln" [ref=f3e133] [cursor=pointer]:
+              - generic [ref=f3e138]: DE
+            - link "AI-Credit-Guthaben wird geladen" [ref=f3e142] [cursor=pointer]:
+              - /url: /de/settings/subscription
+              - generic [ref=f3e156]: AI
+              - strong [ref=f3e157]: –
+            - button "Alarme öffnen" [ref=f3e159] [cursor=pointer]
+            - button "Benutzermenü öffnen" [ref=f3e163] [cursor=pointer]:
+              - generic [aria-hidden] [ref=f3e164]: BE
+              - generic [ref=f3e165]: Benutzer
+      - navigation "Breadcrumb" [ref=f3e170]:
+        - list [ref=f3e172]:
+          - listitem [ref=f3e173]:
+            - link "Dashboard" [ref=f3e174] [cursor=pointer]:
+              - /url: /de/dashboard
+          - listitem [ref=f3e182]:
+            - link "Einstellungen" [ref=f3e183] [cursor=pointer]:
+              - /url: /de/settings
+          - listitem [ref=f3e192]:
+            - link "Admin" [ref=f3e193] [cursor=pointer]:
+              - /url: /de/admin
+          - listitem [ref=f3e201]:
+            - generic [ref=f3e202]: Bereichszugriffe
+      - main [ref=f3e208]:
+        - generic [ref=f3e209]:
+          - complementary [ref=f3e210]:
+            - generic [ref=f3e211]:
+              - generic [ref=f3e212]:
+                - generic [ref=f3e213]: uLiquid Desk
+                - generic [ref=f3e214]: Platform Admin
+                - generic [ref=f3e215]: Strict superadmin operations area
+              - navigation "Admin navigation" [ref=f3e216]:
+                - link "Overview" [ref=f3e217] [cursor=pointer]:
+                  - /url: /de/admin
+                - link "Users" [ref=f3e224] [cursor=pointer]:
+                  - /url: /de/admin/users
+                - link "Workspaces" [ref=f3e233] [cursor=pointer]:
+                  - /url: /de/admin/workspaces
+                - link "Licenses" [ref=f3e240] [cursor=pointer]:
+                  - /url: /de/admin/licenses
+                - link "Alerts" [ref=f3e246] [cursor=pointer]:
+                  - /url: /de/admin/alerts
+                - link "Bots" [ref=f3e252] [cursor=pointer]:
+                  - /url: /de/admin/bots
+                - link "Runners" [ref=f3e259] [cursor=pointer]:
+                  - /url: /de/admin/runners
+                - link "Audit" [ref=f3e266] [cursor=pointer]:
+                  - /url: /de/admin/audit
+                - link "Statistics" [ref=f3e273] [cursor=pointer]:
+                  - /url: /de/admin/statistics
+                - link "Providers" [ref=f3e280] [cursor=pointer]:
+                  - /url: /de/admin/providers
+                - link "Affiliate" [ref=f3e287] [cursor=pointer]:
+                  - /url: /de/admin/affiliate
+                - link "Vaults" [ref=f3e294] [cursor=pointer]:
+                  - /url: /de/admin/system/vaults/execution
+                - link "System" [ref=f3e301] [cursor=pointer]:
+                  - /url: /de/admin/system
+          - generic [ref=f3e309]:
+            - generic [ref=f3e311]:
+              - generic [ref=f3e312]: System
+              - heading "Admin · Zugriffseinstellungen" [level=1] [ref=f3e313]
+              - paragraph [ref=f3e314]: Sichtbarkeit der Hauptbereiche und das Maintenance-Verhalten fuer normale User steuern.
+            - generic [ref=f3e315]: Laedt...
+  - contentinfo [ref=f3e316]:
+    - generic [ref=f3e317]:
+      - generic [ref=f3e318]: © 2026 uLiquid
+      - generic [ref=f3e319]:
+        - link "uLiquid Desk Website" [ref=f3e320] [cursor=pointer]:
+          - /url: https://desk.uliquid.vip
+          - text: desk.uliquid.vip
+        - link "Datenschutz" [ref=f3e321] [cursor=pointer]:
+          - /url: /de/privacy
+        - link "Cookie-Informationen" [ref=f3e322] [cursor=pointer]:
+          - /url: /de/cookies
+        - link "Nutzungsbedingungen" [ref=f3e323] [cursor=pointer]:
+          - /url: /de/terms
+        - link "Crypto Risk Disclosure" [ref=f3e324] [cursor=pointer]:
+          - /url: /de/risk-disclosure
+          - text: Risk Disclosure
+        - link "Support email" [ref=f3e325] [cursor=pointer]:
+          - /url: mailto:support@uliquid.vip
+          - text: support@uliquid.vip
+  - button "Open Next.js Dev Tools" [ref=f3e331] [cursor=pointer]

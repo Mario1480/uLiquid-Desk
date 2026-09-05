@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { AppIcon, type AppIconName } from "../../components/AppIcon";
 import AdminPageHeader from "../_components/AdminPageHeader";
+import RegistrationSettings from "./RegistrationSettings";
 import {
   DEFAULT_ACCESS_SECTION_MAINTENANCE,
   DEFAULT_ACCESS_SECTION_VISIBILITY,
@@ -39,6 +40,7 @@ export default function AdminAccessSectionPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
+  const [canManageRegistration, setCanManageRegistration] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<AccessSectionAdminResponse | null>(null);
@@ -58,6 +60,7 @@ export default function AdminAccessSectionPage() {
     setError(null);
     try {
       const me = await apiGet<any>("/auth/me");
+      setCanManageRegistration(Boolean(me?.isSuperadmin));
       if (!(me?.isSuperadmin || me?.hasAdminBackendAccess)) {
         setIsSuperadmin(false);
         setError(t("messages.accessRequired"));
@@ -107,6 +110,7 @@ export default function AdminAccessSectionPage() {
   return (
     <div className="adminPageStack">
       <AdminPageHeader eyebrow="System" title={t("title")} description={t("subtitle")} />
+      {canManageRegistration ? <RegistrationSettings /> : null}
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
