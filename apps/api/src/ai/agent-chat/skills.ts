@@ -170,7 +170,7 @@ async function withPublicVenue<T>(params: {
   marketType: AgentMarketType;
   read(venue: Exclude<AgentVenue, "auto">): Promise<T>;
 }): Promise<{ data: T; resolution: VenueResolution }> {
-  const requestedVenue = params.requested ?? params.context.selectedVenue;
+  const requestedVenue = params.requested && params.requested !== "auto" ? params.requested : params.context.selectedVenue;
   const candidates = await venueCandidates(params.context, params.requested, params.marketType);
   let firstError = "";
   for (let index = 0; index < candidates.length; index += 1) {
@@ -186,7 +186,12 @@ async function withPublicVenue<T>(params: {
         }
       };
     } catch (error) {
-      if (!firstError) firstError = error instanceof Error ? error.message : String(error);
+      if (error instanceof AgentChatError && (requestedVenue !== "auto"
+        || !["agent_chat_venue_unsupported", "agent_chat_market_data_degraded", "agent_chat_provider_unavailable"].includes(error.code))) throw error;
+      // Only stable codes may enter persisted fallback evidence, never provider messages.
+      if (!firstError) firstError = error instanceof AgentChatError
+        ? (["funding_unavailable", "openInterest_unavailable"].includes(error.message) ? error.message : error.code)
+        : "agent_chat_market_data_degraded";
       if (requestedVenue !== "auto") break;
     }
   }

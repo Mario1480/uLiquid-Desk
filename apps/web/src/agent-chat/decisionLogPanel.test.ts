@@ -75,6 +75,7 @@ test("decision log panel renders failed unsupported-provider runs without a fabr
   assert.match(html, /No recommendation is available/);
   assert.match(html, /Unavailable/);
   assert.match(html, /agent_chat_venue_unsupported/);
+  assert.match(html, /not supported for this venue or market type/);
   assert.doesNotMatch(html, /Buy|Sell|Long|Short/);
 });
 

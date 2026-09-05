@@ -46,10 +46,32 @@ test("funding and OI skills consume shared snapshots with persisted feature prov
 test("explicit unsupported derivatives requests fail before the shared cache", async (t) => {
   let reads = 0;
   t.mock.method(sharedDerivativesStore, "read", async () => { reads++; return sharedFixture(); });
-  for (const [venue, name] of [["bingx", "market_get_funding_rate"], ["mexc", "market_get_open_interest"]] as const) {
-    await assert.rejects(executeAgentSkill(getAgentSkillByToolName(name)!, marketContext({ selectedVenue: venue }), {}));
+  for (const [venue, name] of [["bingx", "market_get_funding_rate"], ["bingx", "market_get_open_interest"], ["mexc", "market_get_open_interest"]] as const) {
+    for (const explicitInput of [false, true]) {
+      await assert.rejects(executeAgentSkill(getAgentSkillByToolName(name)!,
+        marketContext({ selectedVenue: explicitInput ? "auto" : venue }), explicitInput ? { venue } : {}),
+      (error: any) => error.code === "agent_chat_venue_unsupported" && error.status === 400);
+    }
   }
+  await assert.rejects(executeAgentSkill(getAgentSkillByToolName("market_get_funding_rate")!,
+    marketContext({ selectedVenue: "bingx" }), { venue: "auto" }),
+  (error: any) => error.code === "agent_chat_venue_unsupported" && error.status === 400);
   assert.equal(reads, 0);
+});
+
+test("auto fallback never persists raw provider errors", async (t) => {
+  t.mock.method(Date, "now", () => Date.parse("2026-09-05T10:00:00.100Z"));
+  const venues: string[] = [];
+  t.mock.method(sharedDerivativesStore, "read", async (key: { sourceVenue: string }) => {
+    venues.push(key.sourceVenue);
+    if (key.sourceVenue === "hyperliquid") throw new Error("private-provider-payload apiKey=fixture-secret");
+    return sharedFixture();
+  });
+  const result = await executeAgentSkill(getAgentSkillByToolName("market_get_funding_rate")!, marketContext({ selectedVenue: "auto" }), {});
+  assert.deepEqual(venues, ["hyperliquid", "binance"]);
+  assert.equal(result.meta.fallbackUsed, true);
+  assert.ok(result.meta.warnings.includes("agent_chat_market_data_degraded"));
+  assert.doesNotMatch(JSON.stringify(result), /fixture-secret|private-provider-payload/);
 });
 
 test("auto skips unavailable fields and records fallback without changing an explicit venue", async (t) => {
@@ -163,6 +185,28 @@ test("recursive redaction removes credentials from tool summaries", () => {
   const value = redactAiSafetySecrets({ nested: { apiSecret: "secret-value", authorization: "Bearer abcdefghijklmnop" } }) as any;
   assert.equal(value.nested.apiSecret, "[REDACTED]");
   assert.equal(value.nested.authorization, "[REDACTED]");
+});
+
+test("Copilot analyzes an owned positive-position reference without execution and rejects cross-user reuse", async () => {
+  let owner = true;
+  const context = marketContext({ profile: resolveBuiltinAgentProfile("position_copilot"), selectedExchangeAccountId: "fixture-account",
+    db: { exchangeAccount: { findFirst: async ({ where }: any) => {
+      assert.deepEqual(where, { id: "fixture-account", userId: "user-a" });
+      return owner ? { id: "fixture-account", exchange: "binance", label: "Synthetic account" } : null;
+    } } } });
+  context.positionRefs.set("fixture-position", { symbol: "BTCUSDT", side: "long", size: 0.1, entryPrice: 65000,
+    markPrice: 64000, unrealizedPnl: -100, leverage: 5, marginMode: "isolated", marginUsd: 1280, notionalUsd: 6400,
+    liquidationPrice: 61000, liquidationDistancePct: 4.6875, roePct: -7.8, pnlPct: -1.56,
+    stopLossPrice: 62500, takeProfitPrice: 68000 });
+  const skill = getAgentSkillByToolName("risk_analyze_position_snapshot")!;
+  const result = await executeAgentSkill(skill, context, { positionRef: "fixture-position" });
+  assert.equal((result.data as any).riskLevel, "critical");
+  assert.equal((result.data as any).readOnly, true);
+  assert.equal(result.meta.routineVersions.length, 2);
+  assert.equal(skill.sideEffect, false);
+  owner = false;
+  await assert.rejects(executeAgentSkill(skill, context, { positionRef: "fixture-position" }),
+    (error: any) => error.code === "agent_chat_account_access_denied");
 });
 
 test("OHLCV and indicators share run-pinned candles and expose stored feature values", async (t) => {

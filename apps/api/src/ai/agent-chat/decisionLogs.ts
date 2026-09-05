@@ -71,7 +71,7 @@ export function projectDecisionLogs(runs: any[], messages: any[]): AgentDecision
     const trace = (run.traceLogs ?? []).find((item: any) => record(item.parsedResponse).assistantMessageId);
     const assistantId = text(record(trace?.parsedResponse).assistantMessageId);
     const exactAssistant = assistantId ? messagesById.get(assistantId) : null;
-    const associatedAssistant = exactAssistant ?? legacyAssistant(run, messages);
+    const associatedAssistant = run.status === "completed" ? exactAssistant ?? legacyAssistant(run, messages) : null;
     const legacyAssociation = !exactAssistant && Boolean(associatedAssistant);
     const evidence: AgentDecisionLog["evidence"] = (run.toolCalls ?? []).slice(0, 64).map((call: any) => {
       const summary = record(call.resultSummary);

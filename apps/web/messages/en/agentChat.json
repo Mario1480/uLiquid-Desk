@@ -124,6 +124,13 @@
     "completed": "Analysis completed"
   },
   "decisionLog": {
+    "reasons": {
+      "agent_chat_venue_unsupported": "The requested data or analysis is not supported for this venue or market type.",
+      "agent_chat_market_data_degraded": "The requested market data could not be retrieved reliably.",
+      "agent_chat_tool_result_invalid": "A tool returned invalid data. It was not used as trusted evidence.",
+      "market_data_stale": "The recorded market data was already stale at analysis time.",
+      "market_data_fallback_used": "An alternative market-data venue was used. Check the recorded source."
+    },
     "open": "Decision log",
     "loadError": "Decision logs could not be loaded. Reopen the conversation to retry.",
     "recordedEvidence": "Recorded evidence at analysis time — not live market data.",
