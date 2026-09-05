@@ -30,7 +30,7 @@ Each round stores an immutable inventory source. That source must approve the ro
 
 The package still includes no Mainnet deployment script. The proposed onchain custody model, ADR-001 legal/access/cancellation decisions, exact calendar interpretation, inventory-source Safe addresses, external audit, deployment reconciliation, and operational evidence remain explicit blockers. The code and passing tests must not be described as audited or Mainnet-ready.
 
-The exact external-review handoff, exclusions, trust assumptions, and open blockers are documented in [`ULIQ_PRESALE_V2_AUDIT_SCOPE.md`](./ULIQ_PRESALE_V2_AUDIT_SCOPE.md).
+The exact external-review handoff, exclusions, trust assumptions, and open blockers are documented in [`ULIQ_PRESALE_V2_AUDIT_SCOPE.md`](./ULIQ_PRESALE_V2_AUDIT_SCOPE.md). The current read-only Arbitrum One address evidence and candidate constructor-role mapping are tracked separately in [`ULIQ_PRESALE_V2_MAINNET_ROLES.md`](./ULIQ_PRESALE_V2_MAINNET_ROLES.md); that record is not deployment authorization.
 
 Run only the new review suite with `npm -w @mm/contracts run test:uliq:presale-v2`, only the previous MVP suite with `npm -w @mm/contracts run test:uliq:legacy-testnet`, or both with `npm -w @mm/contracts run test:uliq`. Deployment and configuration are intentionally separate stages so addresses and ownership can be reconciled before inventory funding. No Mainnet script is provided for ULIQ while ADR-001 is blocked.
 

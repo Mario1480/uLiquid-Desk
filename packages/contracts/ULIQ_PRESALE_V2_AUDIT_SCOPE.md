@@ -4,6 +4,8 @@ Status: developer-review package; not audited, not Mainnet-ready, and not author
 
 This document defines the source set to hand to external reviewers for the current two-round ULIQ presale. Reviewers should receive a pinned commit or tag together with the compiler configuration and dependency lockfile. A working-tree snapshot is not a reproducible audit target.
 
+Candidate Arbitrum One role addresses and read-only verification evidence are recorded in [`ULIQ_PRESALE_V2_MAINNET_ROLES.md`](./ULIQ_PRESALE_V2_MAINNET_ROLES.md). Those candidates do not close any audit, Legal, custody, deployment, funding, configuration, readiness, or activation gate.
+
 ## In-scope deployable contracts
 
 | File | Planned instances | Purpose |
