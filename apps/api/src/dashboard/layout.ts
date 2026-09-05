@@ -201,9 +201,18 @@ export function normalizeDashboardLayoutValue(value: unknown): DashboardLayoutRe
   for (const candidate of rawItems) {
     const parsed = dashboardLayoutItemSchema.safeParse(candidate);
     if (!parsed.success) continue;
-    if (seen.has(parsed.data.id)) continue;
-    seen.add(parsed.data.id);
-    parsedItems.push(parsed.data);
+    if (!parsed.data.id) continue;
+    const parsedItem: DashboardLayoutItem = {
+      id: parsed.data.id,
+      visible: parsed.data.visible ?? true,
+      x: parsed.data.x ?? 0,
+      y: parsed.data.y ?? 0,
+      w: parsed.data.w ?? DASHBOARD_LAYOUT_COLUMNS,
+      h: parsed.data.h ?? 2
+    };
+    if (seen.has(parsedItem.id)) continue;
+    seen.add(parsedItem.id);
+    parsedItems.push(parsedItem);
   }
 
   const matchesLegacyLayout = layoutItemsEqual(
