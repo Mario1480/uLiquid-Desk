@@ -14,6 +14,10 @@ Implementation:
 
 ## 1. Exchange foundation
 
+Phase 2 shared-market coverage also runs with `npm -w apps/api run test:agent-chat`: `src/market-data/*.test.ts`, `src/ai/features/*.test.ts`, Agent Chat skill/Decision Log tests and the normalized perpetual client tests. It covers dataset/venue/market/coverage isolation, single-flight/timeouts, run pinning, Paper ownership, stored feature validation and Binance depth-limit translation. Fixture coverage is not connector certification.
+
+Phase 2 consumer coverage adds `node node_modules/tsx/dist/cli.mjs --test apps/api/src/position-copilot/*.test.ts` and `npm -w apps/web run test:agent-chat-ui`: public feature context after ownership/settings checks, evidence paired with cached explanations, unsupported/linked source handling, deterministic risk floor, no AI tools, persisted metric projection and legacy/error states. See the [active Phase 2 plan](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) for synthetic browser evidence and remaining authenticated/model/typecheck gates.
+
 Purpose:
 
 - adapter creation / venue resolution

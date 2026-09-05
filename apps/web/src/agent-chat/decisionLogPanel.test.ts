@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import AgentActivityPanel from "../../components/agent-chat/AgentActivityPanel.js";
 import type { AgentDecisionLog } from "./contracts.js";
+import enMessages from "../../messages/en/agentChat.json";
 
 const messages = {
   agentChat: {
@@ -24,6 +25,7 @@ const messages = {
     },
     states: { degraded: "degraded", stale: "stale" },
     decisionLog: {
+      ...enMessages.decisionLog,
       title: "Decision Log",
       recentRuns: "Recent runs",
       loading: "Loading decision logs...",
@@ -40,22 +42,15 @@ const messages = {
   }
 };
 
-function render(logs: AgentDecisionLog[], loading: boolean) {
-  const originalConsoleError = console.error;
-  try {
-    console.error = () => undefined;
-    return renderToStaticMarkup(createElement(
-      NextIntlClientProvider,
-      { locale: "en", messages, children: createElement(AgentActivityPanel, { logs, loading }) }
-    ));
-  } finally {
-    console.error = originalConsoleError;
-  }
+function render(logs: AgentDecisionLog[], loading: boolean, error = false) {
+  return renderToStaticMarkup(createElement(NextIntlClientProvider,
+    { locale: "en", timeZone: "UTC", messages, onError: error => { throw error; }, children: createElement(AgentActivityPanel, { logs, loading, error }) }));
 }
 
 test("decision log panel exposes loading and empty states", () => {
   assert.match(render([], true), /Loading decision logs/);
   assert.match(render([], false), /No decision logs yet/);
+  assert.match(render([], false, true), /Decision logs could not be loaded/);
 });
 
 test("decision log panel renders failed unsupported-provider runs without a fabricated recommendation", () => {
@@ -103,4 +98,20 @@ test("decision log panel renders validated recommendation metric blocks", () => 
   const html = render([completed], false);
   assert.match(html, /Funding/);
   assert.match(html, /1\.0 bps/);
+  completed.snapshotManifest = [{ id: "mds_original", schemaVersion: "1.0.0", freshnessPolicyVersion: "1.0.0",
+    market: { providerId: "uliquid-native:binance", sourceVenue: "binance", marketType: "perp", symbol: "BTCUSDT" },
+    dataset: "derivatives", interval: null, limit: null, observedAt: null, fetchedAt: completed.createdAt, ageMs: null,
+    quality: "degraded", warningCodes: ["provider_timestamp_missing"], atomicObservation: false }];
+  completed.evidence = [{ toolCallId: "tool", skillId: "market.get_funding_rate", skillVersion: 4, outputSchemaId: null,
+    routineVersions: [{ id: "derivatives.funding-snapshot.v1", version: "1.0.0" }], sourceProvider: "uliquid-native:binance", sourceVenue: "binance",
+    observedAt: null, fetchedAt: completed.createdAt, ageMs: null, quality: "degraded", durationMs: 10, fallbackUsed: false, warningCodes: [],
+    featureSnapshots: [{ id: "derivatives.funding-snapshot", version: "1.0.0", snapshotId: "fs_original", inputSnapshotId: "mds_original",
+      routineVersions: [], value: { rateBps: 0, fundingIntervalHours: null, annualizedEstimate: null, quality: { reasons: ["funding_interval_unavailable"] } } }] }];
+  const persisted = render([JSON.parse(JSON.stringify(completed))], false);
+  assert.match(persisted, /fs_original/);
+  assert.match(persisted, /mds_original/);
+  assert.match(persisted, /0 bps/);
+  assert.match(persisted, /Unavailable/);
+  assert.match(persisted, /not live market data/);
+  assert.match(persisted, /provider_timestamp_missing/);
 });

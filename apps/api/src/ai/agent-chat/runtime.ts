@@ -16,6 +16,7 @@ import {
 } from "../safety/toolPolicy.js";
 import { AgentChatError, toAgentChatError } from "./errors.js";
 import { parseAgentAnswer, type ParsedAgentAnswer } from "./answer.js";
+import { FEATURE_CONTEXT_POLICY } from "../features/context.js";
 import {
   executeAgentSkill,
   getAgentSkillByToolName,
@@ -109,6 +110,7 @@ export function buildSystemMessage(profile: ResolvedAgentProfile, locale: "de" |
       "If the user asks for all, every, or the complete set of open positions, call risk_analyze_portfolio without a symbol and do not ask the user to provide one."
     ] : []),
     "Preserve deterministic risk warnings and never lower their severity.",
+    FEATURE_CONTEXT_POLICY,
     "The final response must be a JSON object with the top-level fields content (string), blocks (array) and citations (array).",
     "Never use a generic content field inside a block.",
     "summary blocks use {type, title?, text}; key_metrics use {type, title?, items:[{label,value,tone?}]} where tone is only neutral, positive, warning or critical; risk_findings use {type, title?, riskLevel, items:[{title,detail}]}; scenario_table uses {type,title?,columns,rows}; prediction_comparison uses {type,title?,prediction,position,divergence}; source_list uses {type,title?,sources}.",
@@ -344,6 +346,9 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
                 skillVersion: skill.version,
                 outputSchemaId: skill.outputSchemaId,
                 routineVersions: toolResult.meta.routineVersions,
+                featureVersions: toolResult.meta.featureVersions,
+                marketSnapshot: toolResult.meta.marketSnapshot,
+                featureSnapshots: toolResult.meta.featureSnapshots,
                 recordCount: Array.isArray(toolResult.data) ? toolResult.data.length : undefined
               })
             }

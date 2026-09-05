@@ -420,13 +420,15 @@ Never outsource stable authority for tenant identity, subscriptions/ULIQ, permis
 
 ## 24. Implementation Roadmap
 
-### Phase 1 — Consolidate Quick Wins — `IMPLEMENTED`
+### Phase 1 — Consolidate Quick Wins — `COMPLETE`
 Extract reusable deterministic Routines, extend the existing typed Agent Skill catalog and Futures Capability Registry, project user-facing Decision Logs from the existing Agent records, and add Funding/OI/Orderbook Analytics with freshness and quality metadata. Do not create parallel registries or runtimes.
 
-Code, focused tests and production deployment are complete at release head `837d7d12`. Authenticated target-environment Decision Log E2E and live-provider acceptance remain `FOLLOW-UP`.
+Code, focused tests and production deployment were recorded at release head `837d7d12`. Mario confirmed Phase 1 as verified and formally complete on 2026-09-05. This closes Phase 1 acceptance, not separate connector certification gates.
 
-### Phase 2 — Shared Data and Existing AI Upgrade — `NOT STARTED`
+### Phase 2 — Shared Data and Existing AI Upgrade — `IN PROGRESS`
 Build the provider-neutral Shared Market Data foundation and a versioned Feature Registry. Upgrade the existing Market Analyst and Position Copilot to consume consistent shared features and Decision Logs. This uLiquid-owned platform work proceeds regardless of the Hummingbot POC result.
+
+See the [Phase 2 implementation plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md). Shared datasets, run pinning, persisted feature evidence, feature-aware AI context, standalone perpetual Copilot and sidebar presentation are implemented locally; historical scope, spot enrichment and acceptance remain open.
 
 ### Phase 3 — New Product Features — `NOT STARTED`
 Add scanner-only Arbitrage and XEMM experiences. They calculate realistic opportunities and risks but do not perform automated execution.
@@ -446,9 +448,9 @@ Split advanced work into independent gates: 6A Bot Architect drafts/simulation, 
 ## 25. Dependency Order
 
 ```text
-Phase 1: Existing foundations consolidated [IMPLEMENTED]
+Phase 1: Existing foundations consolidated [COMPLETE]
         │
-        ├─→ Phase 2: Shared Market Data / Feature Registry / AI upgrades [NOT STARTED]
+        ├─→ Phase 2: Shared Market Data / Feature Registry / AI upgrades [IN PROGRESS]
         │          ↓
         │   Phase 3: Arbitrage / XEMM Scanners [NOT STARTED]
         │

@@ -26,19 +26,21 @@ uLiquid Platform
 
 ## Recommended implementation order
 
-### Phase 1 — Consolidate Quick Wins — `IMPLEMENTED`
+### Phase 1 — Consolidate Quick Wins — `COMPLETE`
 - [x] extract and reuse existing deterministic Routines
 - [x] extend the existing typed Agent Skill catalog instead of creating a parallel Skill runtime
 - [x] extend the existing Futures Capability Registry
 - [x] build user-facing Decision Logs on the existing Agent Run, Tool Call and Trace records
 - [x] add derived Funding, open-interest and order-book analytics with freshness and quality metadata
 
-The Phase 1 code, focused suites and production builds are complete and deployed at release head `837d7d12`. Authenticated target-environment Decision Log E2E and live-provider acceptance remain `FOLLOW-UP`; Hummingbot and execution authority were not introduced.
+The Phase 1 code, focused suites and production builds were deployed at release head `837d7d12`. Mario confirmed Phase 1 as verified and formally complete on 2026-09-05, closing its acceptance follow-up. Hummingbot and execution authority were not introduced; connector certification remains a separate gate.
 
-### Phase 2 — Shared Data and Existing AI Upgrade — `NOT STARTED`
+### Phase 2 — Shared Data and Existing AI Upgrade — `IN PROGRESS`
 - build the provider-neutral Shared Market Data foundation independently of Hummingbot
 - add a versioned Feature Registry and feature snapshots
 - upgrade the existing Market Analyst and Position Copilot to consume the shared features and Decision Logs
+
+The [Phase 2 implementation plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md) records local shared datasets, run pinning, persisted feature values, feature-aware AI context, standalone perpetual Copilot and sidebar presentation. Remaining work includes historical-scope design, standalone spot scope, model/credit comparisons and authenticated acceptance; the full web typecheck has an unrelated dashboard blocker.
 
 ### Phase 3 — New Product Features — `NOT STARTED`
 - Arbitrage Scanner

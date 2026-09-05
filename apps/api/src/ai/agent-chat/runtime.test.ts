@@ -2,12 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { toAgentChatError } from "./errors.js";
 import { resolveBuiltinAgentProfile } from "./profiles.js";
+import { FEATURE_CONTEXT_POLICY } from "../features/context.js";
 import {
   AGENT_CHAT_RESPONSE_FORMAT,
   buildSystemMessage,
   resolveAgentChatReservationRouting,
   resolveAgentRunTimeoutMs
 } from "./runtime.js";
+
+test("both read-only profiles explicitly consume versioned, source-aware snapshot features", () => {
+  for (const key of ["market_analyst", "position_copilot"] as const) {
+    const message = buildSystemMessage(resolveBuiltinAgentProfile(key), "en", key === "market_analyst" ? "agent_market" : "agent_position");
+    assert.ok(message.includes(FEATURE_CONTEXT_POLICY));
+    assert.match(message, /no changes, trends, percentiles/);
+    assert.match(message, /do not recalculate or replace null values/);
+    assert.match(message, /Never claim to execute/);
+  }
+});
 
 test("agent chat run timeout leaves enough time for provider and tool iterations", () => {
   assert.equal(resolveAgentRunTimeoutMs(undefined), 90_000);

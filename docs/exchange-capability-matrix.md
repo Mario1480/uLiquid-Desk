@@ -35,6 +35,8 @@ It is intentionally operational rather than marketing-oriented: the goal is to s
 
 `not_assessed` is deliberate. Unit and fixture tests are engineering evidence, not production certification.
 
+Phase 2 local implementation (2026-09-05) adds bounded public derivatives/candle/ticker/orderbook sharing, run pinning and persisted feature evidence above existing clients. Funding/OI capability checks precede cache/pinned reads; unsupported explicit venues fail closed. Binance's public depth request now maps arbitrary bounded coverage to supported upstream tiers and trims results. No matrix support, signing or certification changes. See the [Phase 2 plan](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+
 ## Shared capability intent
 
 The platform is converging on these normalized questions for every venue:

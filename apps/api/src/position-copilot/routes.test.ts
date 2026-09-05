@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { registerPositionCopilotRoutes } from "./routes.js";
+import { resetAiAnalyzerState } from "../ai/analyzer.js";
+import { buildMarketFeatureContext } from "../ai/features/context.js";
 
 function createFakeApp() {
   const postHandlers = new Map<string, any[]>();
@@ -104,6 +106,7 @@ test("Position Copilot rejects cross-user account access before invoking AI", as
     const app = createFakeApp();
     let accountWhere: any = null;
     let aiCalled = false;
+    let marketCalled = false;
     registerPositionCopilotRoutes(app as any, {
       db: {
         exchangeAccount: {
@@ -117,6 +120,7 @@ test("Position Copilot rejects cross-user account access before invoking AI", as
         aiCalled = true;
         throw new Error("must_not_run");
       },
+      loadMarketContext: async () => { marketCalled = true; throw new Error("must_not_run"); },
       dispatchPositionCopilotNotification: async () => undefined,
       ...capabilityDeps({ "product.ai_position_copilot": true })
     });
@@ -131,6 +135,7 @@ test("Position Copilot rejects cross-user account access before invoking AI", as
     assert.equal(res.statusCode, 404);
     assert.equal(res.body?.error, "exchange_account_not_found");
     assert.equal(aiCalled, false);
+    assert.equal(marketCalled, false);
   });
 });
 
@@ -210,5 +215,32 @@ test("automatic Position Copilot analysis additionally requires the monitoring c
     assert.equal(res.statusCode, 403);
     assert.equal(res.body?.capability, "product.ai_position_monitoring");
     assert.equal(accountRead, false);
+  });
+});
+
+test("owned manual analysis persists the exact public context without activating notifications", async () => {
+  await withPositionFeatureFlags({ AI_POSITION_COPILOT_ENABLED: "true" }, async () => {
+    resetAiAnalyzerState();
+    const app = createFakeApp();
+    const steps: string[] = [];
+    let trace: any;
+    registerPositionCopilotRoutes(app as any, {
+      db: {
+        exchangeAccount: { findFirst: async ({ where }: any) => { assert.equal(where.userId, "user_1"); steps.push("ownership"); return { id: "account_1", exchange: "bitget" }; } },
+        botTradeHistory: { findFirst: async () => null },
+        globalSetting: { findUnique: async () => { steps.push("settings"); return null; } },
+        aiTraceLog: { create: async ({ data }: any) => { trace = data; } }
+      },
+      loadMarketContext: async params => { steps.push("market"); assert.equal(params.userId, "user_1"); assert.equal(params.account.id, "account_1"); return buildMarketFeatureContext([], [], ["market_context_unavailable"]); },
+      callAiChat: async () => { steps.push("ai"); return { content: JSON.stringify({ summary: "Read-only fixture.", thesisStatus: "unknown", riskLevel: "critical", riskFactors: [], events: [] }), toolCalls: [], usage: {}, provider: "openai", model: "test", finishReason: "stop" }; },
+      dispatchPositionCopilotNotification: async () => { assert.fail("manual analysis must not notify"); },
+      ...capabilityDeps({ "product.ai_position_copilot": true })
+    });
+    const res = createRes();
+    await app.handler("/api/position-copilot/analyze")({ body: validAnalyzeBody() }, res);
+    assert.deepEqual(steps, ["ownership", "settings", "market", "ai"]);
+    assert.equal(res.body.analysis.readOnly, true);
+    assert.deepEqual(res.body.marketContext, trace.parsedResponse.marketContext);
+    assert.equal(res.body.marketContext.quality, "unavailable");
   });
 });

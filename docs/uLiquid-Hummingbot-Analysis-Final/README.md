@@ -7,13 +7,13 @@ Final consolidated architecture and integration package, September 2026.
 3. `implementation/POC_PLAN.md`
 4. `implementation/CODEX_IMPLEMENTATION_PLAN.md`
 
-## Implementation status — 2026-09-04
+## Implementation status — 2026-09-05
 
 | Roadmap item | Status | Evidence / next gate |
 |---|---|---|
-| Phase 1 — Consolidate Quick Wins | `IMPLEMENTED` and production-deployed | Release head `837d7d12`; focused suites and production builds passed |
-| Phase 1 target-environment acceptance | `FOLLOW-UP` | Authenticated Market Analyst/Position Copilot Decision Log E2E and live-provider acceptance remain open |
-| Phase 2 — Shared Data and Existing AI Upgrade | `NOT STARTED` | Create and approve a scoped Phase 2 implementation plan after the Phase 1 acceptance closeout |
+| Phase 1 — Consolidate Quick Wins | `COMPLETE` | Production release `837d7d12`; Mario confirmed formal completion and verification on 2026-09-05 |
+| Phase 1 target-environment acceptance | `ACCEPTED` | Closed by Mario's confirmation; this is not a new connector certification report |
+| Phase 2 — Shared Data and Existing AI Upgrade | `IN PROGRESS` | Shared datasets, feature-aware AI context, standalone perpetual Copilot and persisted-feature sidebar implemented locally; historical scope and acceptance remain open in the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md) |
 | Phase 3 — Arbitrage/XEMM Scanners | `NOT STARTED` | Depends on stable shared data and feature contracts |
 | Phase 4 — Exchange Gateway / Bitget Hummingbot POC | `NOT STARTED` | May begin after the Phase 1 closeout; native Bitget must provide a stable comparison baseline |
 | Decision Gate | `GATED` | No `PASS`, `PARTIAL` or `FAIL` evidence exists yet |

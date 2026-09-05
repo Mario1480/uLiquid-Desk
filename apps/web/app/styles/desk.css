@@ -555,7 +555,14 @@
 }
 
 .agentChatDecisionLog {
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.agentChatWorkspace > div:last-child {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .agentChatDecisionBody,
@@ -563,7 +570,11 @@
 .agentChatDecisionSelect {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+
+.agentChatDecisionSelect select { width: 100%; min-width: 0; }
 
 .agentChatDecisionSelect {
   margin-bottom: 10px;
@@ -605,6 +616,44 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+.agentChatFeatureEvidence {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.agentChatFeatureEvidence summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.agentChatFeatureEvidence > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.agentChatFeatureEvidence code {
+  display: block;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.agentChatFeatureMetrics {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.agentChatFeatureMetrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agentChatFeatureMetrics dt { color: var(--muted); }
+.agentChatFeatureMetrics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 
 .agentChatDecisionTechnical summary {
   cursor: pointer;

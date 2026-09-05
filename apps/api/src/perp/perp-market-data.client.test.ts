@@ -1,6 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizePerpDerivativesSnapshot } from "./perp-derivatives-normalization.js";
+import { createPerpMarketDataClient } from "./perp-market-data.client.js";
+
+test("Binance depth maps requested coverage to valid provider sizes and trims normalized levels", async (t) => {
+  let expectedLimit = 50;
+  t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, "/fapi/v1/depth");
+    assert.equal(parsed.searchParams.get("limit"), String(expectedLimit));
+    assert.equal(parsed.searchParams.get("symbol"), "BTCUSDT");
+    assert.equal(options.method, "GET");
+    const levels = Array.from({ length: expectedLimit }, () => ["100", "2"]);
+    return new Response(JSON.stringify({ bids: levels, asks: levels, E: 1700000000000 }));
+  });
+  const client = createPerpMarketDataClient({ id: "public:binance", userId: "public", exchange: "binance", label: "public", apiKey: "", apiSecret: "", passphrase: null, marketDataExchangeAccountId: null });
+  for (const [requested, upstream, returned] of [[25, 50, 25], [7, 10, 7], [100, 100, 100], [200, 500, 200], [NaN, 50, 50]]) {
+    expectedLimit = upstream;
+    const result = await client.getDepth("BTCUSDT", requested);
+    assert.equal(result.bids.length, returned);
+    assert.equal(result.asks.length, returned);
+  }
+  await client.close();
+});
 
 test("normalizes Binance and Bitget funding/OI conservatively", () => {
   const binance = normalizePerpDerivativesSnapshot({ venue: "binance", symbol: "BTCUSDT", primary: { lastFundingRate: "0.0001", markPrice: "50000", time: 1_700_000_000_000 }, secondary: { openInterest: "2" } });

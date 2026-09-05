@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "../../lib/api";
 import { AppIcon } from "../../app/components/AppIcon";
 import { Notice, PageHeader } from "../../app/components/ui";
@@ -67,6 +67,10 @@ export default function AgentChatShell() {
   const [composer, setComposer] = useState("");
   const [decisionLogs, setDecisionLogs] = useState<AgentDecisionLog[]>([]);
   const [decisionLogsLoading, setDecisionLogsLoading] = useState(false);
+  const [decisionLogsError, setDecisionLogsError] = useState(false);
+  const [conversationLoading, setConversationLoading] = useState(false);
+  const conversationRequest = useRef(0);
+  const visibleConversationId = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,21 +91,38 @@ export default function AgentChatShell() {
       : t("profiles.marketAnalystDescription")
     : activeProfile?.description;
 
-  const loadConversation = useCallback(async (id: string) => {
+  const refreshDecisionLogs = useCallback(async (id: string) => {
+    const request = conversationRequest.current;
     setDecisionLogsLoading(true);
+    setDecisionLogsError(false);
     try {
-      const [conversation, logPayload] = await Promise.all([
-        apiGet<AgentConversation>(`/api/agent-chat/conversations/${encodeURIComponent(id)}`),
-        apiGet<{ items: AgentDecisionLog[] }>(`/api/agent-chat/conversations/${encodeURIComponent(id)}/decision-logs?limit=20`)
-      ]);
-      setActiveConversation(conversation);
-      setMessages(conversation.messages ?? []);
-      setContext(contextFromConversation(conversation));
-      setDecisionLogs(logPayload.items);
+      const payload = await apiGet<{ items: AgentDecisionLog[] }>(`/api/agent-chat/conversations/${encodeURIComponent(id)}/decision-logs?limit=20`);
+      if (request === conversationRequest.current && visibleConversationId.current === id) setDecisionLogs(payload.items);
+    } catch {
+      if (request === conversationRequest.current && visibleConversationId.current === id) setDecisionLogsError(true);
     } finally {
-      setDecisionLogsLoading(false);
+      if (request === conversationRequest.current && visibleConversationId.current === id) setDecisionLogsLoading(false);
     }
   }, []);
+
+  const loadConversation = useCallback(async (id: string) => {
+    const request = ++conversationRequest.current;
+    setConversationLoading(true);
+    setDecisionLogs([]);
+    setDecisionLogsError(false);
+    setDecisionLogsLoading(true);
+    const conversation = await apiGet<AgentConversation>(`/api/agent-chat/conversations/${encodeURIComponent(id)}`).catch(error => {
+      if (request === conversationRequest.current) { setDecisionLogsLoading(false); setConversationLoading(false); }
+      throw error;
+    });
+    if (request !== conversationRequest.current) return;
+    setConversationLoading(false);
+    visibleConversationId.current = id;
+    setActiveConversation(conversation);
+    setMessages(conversation.messages ?? []);
+    setContext(contextFromConversation(conversation));
+    await refreshDecisionLogs(id);
+  }, [refreshDecisionLogs]);
 
   useEffect(() => {
     let mounted = true;
@@ -136,13 +157,19 @@ export default function AgentChatShell() {
       }
     }
     void load();
-    return () => { mounted = false; };
+    return () => { mounted = false; conversationRequest.current++; };
   }, [loadConversation]);
 
   function newChat() {
+    if (sending) return;
+    conversationRequest.current++;
+    visibleConversationId.current = null;
     setActiveConversation(null);
     setMessages([]);
     setDecisionLogs([]);
+    setDecisionLogsLoading(false);
+    setDecisionLogsError(false);
+    setConversationLoading(false);
     setContext(DEFAULT_CONTEXT);
     setComposer("");
     setError(null);
@@ -156,6 +183,7 @@ export default function AgentChatShell() {
       return updated;
     }
     const created = await apiPost<AgentConversation>("/api/agent-chat/conversations", { context });
+    visibleConversationId.current = created.id;
     setActiveConversation(created);
     setConversations((current) => [created, ...current]);
     return created;
@@ -163,14 +191,16 @@ export default function AgentChatShell() {
 
   async function sendMessage(contentOverride?: string) {
     const content = (contentOverride ?? composer).trim();
-    if (!canSendAgentMessage({ content, loading: sending, profile: activeProfile, selectedExchangeAccountId: context.selectedExchangeAccountId })) return;
+    if (!canSendAgentMessage({ content, loading: sending || conversationLoading || loading, profile: activeProfile, selectedExchangeAccountId: context.selectedExchangeAccountId })) return;
     setSending(true);
     setError(null);
     const optimistic: AgentMessage = { id: `optimistic:${Date.now()}`, role: "user", content, createdAt: new Date().toISOString() };
     setMessages((current) => [...current, optimistic]);
     setComposer("");
+    let runConversationId: string | null = null;
     try {
       const conversation = await ensureConversation();
+      runConversationId = conversation.id;
       const response = await apiPost<AgentChatResponse>(`/api/agent-chat/conversations/${encodeURIComponent(conversation.id)}/messages`, {
         content,
         locale,
@@ -178,8 +208,6 @@ export default function AgentChatShell() {
       });
       const assistant: AgentMessage = { id: response.messageId, role: "assistant", content: response.content, blocks: response.blocks, sourceRefs: response.citations, createdAt: new Date().toISOString() };
       setMessages((current) => [...current.filter((message) => message.id !== optimistic.id), { ...optimistic, id: `user:${response.messageId}` }, assistant]);
-      const logPayload = await apiGet<{ items: AgentDecisionLog[] }>(`/api/agent-chat/conversations/${encodeURIComponent(conversation.id)}/decision-logs?limit=20`);
-      setDecisionLogs(logPayload.items);
       setLastModelClass(response.run.modelClass);
       setLastRunReceipt({ chargedCredits: response.run.chargedCredits, remainingCredits: response.run.remainingCredits, skillCategories: response.run.skillCategories });
       if (response.run.remainingCredits !== null) {
@@ -191,6 +219,7 @@ export default function AgentChatShell() {
       setComposer(content);
       setError(errorMessage(sendError));
     } finally {
+      if (runConversationId) await refreshDecisionLogs(runConversationId);
       setSending(false);
     }
   }
@@ -208,7 +237,7 @@ export default function AgentChatShell() {
   const quickPrompts = activeProfile?.baseProfileKey === "position_copilot"
     ? [t("empty.positionPrompt1"), t("empty.positionPrompt2"), t("empty.positionPrompt3")]
     : [t("empty.marketPrompt1"), t("empty.marketPrompt2"), t("empty.marketPrompt3")];
-  const sendDisabled = !canSendAgentMessage({ content: composer, loading: sending, profile: activeProfile, selectedExchangeAccountId: context.selectedExchangeAccountId });
+  const sendDisabled = !canSendAgentMessage({ content: composer, loading: sending || conversationLoading || loading, profile: activeProfile, selectedExchangeAccountId: context.selectedExchangeAccountId });
   const accountSelectionRequired = requiresSelectedExchangeAccount(activeProfile, context.selectedExchangeAccountId);
   const sendDisabledReason = accountSelectionRequired
     ? accounts.length > 0
@@ -230,7 +259,7 @@ export default function AgentChatShell() {
       {profilesPayload && !profilesPayload.featureAccess.chat ? <Notice tone="warning"><strong>{t("states.disabledTitle")}</strong><span>{t("states.disabled")}</span></Notice> : null}
       <AgentContextBar context={context} profiles={profiles} accounts={accounts} activeProfile={activeProfile} skillCount={enabledSkills.length} disabled={sending || loading} onChange={(patch) => setContext((current) => ({ ...current, ...patch }))} onOpenSkills={() => setSkillsOpen(true)} />
       <div className="agentChatWorkspace">
-        <ConversationHistory conversations={conversations} activeId={activeConversation?.id ?? null} onSelect={(id) => void loadConversation(id).catch((loadError) => setError(errorMessage(loadError)))} onNew={newChat} onArchive={(id) => void archiveConversation(id)} />
+        <ConversationHistory conversations={conversations} activeId={activeConversation?.id ?? null} onSelect={(id) => { if (!sending) void loadConversation(id).catch((loadError) => setError(errorMessage(loadError))); }} onNew={newChat} onArchive={(id) => { if (!sending) void archiveConversation(id); }} />
         <section className="agentChatConversation" aria-label={t("conversation.title")}>
           <div className="agentChatMessages">
             {loading ? <div className="agentChatEmpty"><span className="agentChatSpinner" /><p>{t("states.loading")}</p></div> : messages.length === 0 ? (
@@ -247,7 +276,7 @@ export default function AgentChatShell() {
           </div>
           <AgentComposer value={composer} loading={sending} disabled={sendDisabled} disabledReason={sendDisabledReason} onChange={setComposer} onSend={() => void sendMessage()} onShowActivity={() => setActivityOpen(true)} />
         </section>
-        <div className={activityOpen ? "agentChatActivityMobileOpen" : ""}><AgentActivityPanel logs={decisionLogs} loading={sending || decisionLogsLoading} onClose={() => setActivityOpen(false)} /></div>
+        <div className={activityOpen ? "agentChatActivityMobileOpen" : ""}><AgentActivityPanel logs={decisionLogs} loading={sending || decisionLogsLoading} error={decisionLogsError} onClose={() => setActivityOpen(false)} /></div>
       </div>
       <SkillPermissionDrawer open={skillsOpen} profile={activeProfile} skills={skills} accounts={accounts} onClose={() => setSkillsOpen(false)} />
     </main>
