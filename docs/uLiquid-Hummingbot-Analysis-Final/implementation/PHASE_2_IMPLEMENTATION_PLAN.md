@@ -58,7 +58,7 @@ Do not reprice AI models, change tool budgets, replace profiles, or activate sch
 - [ ] Standalone spot enrichment is not integrated in this slice: the existing position-only analysis remains available with `spot_market_features_not_integrated`. Agent Chat retains its existing shared spot market skills.
 - [x] Authenticated Chrome checks cover Market Analyst feature evidence, exact snapshot/value persistence after reload, unsupported BingX with no cross-venue substitution, recent-run selection, the Copilot account-selection guard and its empty-account result, and German/English mobile drawers.
 - [ ] Fixed-prompt before/after quality/latency/credit comparisons, live positive-position Copilot analysis, and live stale/fallback scenarios remain open. Passing synthetic checks or an empty-account run does not close these gates.
-- [x] Local follow-up preserves the specific unsupported-capability reason through `withPublicVenue`, adds translated unavailable-capability copy and retains failed-tool skill/schema provenance. Required routines are not presented as executed routines when a tool fails. Deployment and live re-verification of this correction remain open.
+- [x] The follow-up preserves the specific unsupported-capability reason through `withPublicVenue`, adds translated unavailable-capability copy and retains failed-tool skill/schema provenance. Required routines are not presented as executed routines when a tool fails. Code `3dc0e2401` is production-deployed with passing runtime smokes; authenticated live re-verification remains open.
 
 ### 2D — Historical feature scope — `DESIGN REQUIRED`
 
@@ -124,7 +124,7 @@ This item is not silently moved to a later roadmap phase. Phase 2 closeout must 
 
 ## Next implementation slice
 
-Complete the remaining 2C/2E gates: separately release and live-verify the local error/provenance correction, decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and finish target-environment positive-position and stale/fallback acceptance. The controlled fixtures below do not replace those live gates. Do not create production positions or corrupt production data to manufacture fixtures. Prepare the 2D historical coverage/storage design before any migration or backfill.
+Complete the remaining 2C/2E gates: live-verify the deployed error/provenance correction after Chrome becomes accessible, decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and finish target-environment positive-position and stale/fallback acceptance. The controlled fixtures below do not replace those live gates. Do not create production positions or corrupt production data to manufacture fixtures. Prepare the 2D historical coverage/storage design before any migration or backfill.
 
 ## Authorized release and Chrome acceptance — 2026-09-05
 
@@ -147,3 +147,9 @@ Complete the remaining 2C/2E gates: separately release and live-verify the local
 - Final local checks: Agent Chat 99/99, Position Copilot 20/20 and web Agent Chat UI 9/9, normal exits; API/web typechecks, i18n and `git diff --check` passed on the isolated production-base worktree. The main checkout's unrelated local ULIQ commit and divergence are preserved.
 - Chrome Computer Use rendered the actual `AgentChatShell` and sidebar at `http://127.0.0.1:3108`, using synthetic records processed by the real Decision Log projector. English desktop and German 390×844 mobile checks covered readable unsupported/stale/fallback reasons, failed-tool v4 evidence, a fully failed run without a recommendation/legacy notice, retained zero Funding, 180-second age, recent-run selection, reload and drawer open/close. Page identity, content, no framework overlay, screenshots and application console health passed; wallet-extension warnings/errors were separately observed. The mobile document had no horizontal overflow, and the viewport override was reset.
 - Test harnesses and screenshots stay outside the repository. Model responses, public providers and persistence were controlled fixtures; no real AI Credits, account data or production writes were used. No additional commit, push or deployment is claimed by this follow-up. The deployed code remains `4afc5dec8`; its dated acceptance findings remain historical evidence.
+
+## Error/provenance release — 2026-09-05
+
+- Mario subsequently authorized publication. Code `3dc0e2401` was pushed to main and deployed to production API/web; the same 128 tests, API/web typechecks, i18n and production builds passed.
+- Runtime checks passed: both containers healthy with zero restarts, API health and English/German login HTTP 200, unauthenticated Decision Logs HTTP 401. Configuration and schema were unchanged; other service containers were not recreated.
+- Authenticated Chrome re-verification remains blocked by the locked Mac, not accepted by inference from runtime health. Phase 2 remains incomplete. See the [dated correction release evidence](../../archive/tasks/2026-09-05-phase2-error-provenance-production-release.md) for image identity, rollback and remaining gates.
