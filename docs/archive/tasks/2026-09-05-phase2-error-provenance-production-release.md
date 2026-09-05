@@ -1,6 +1,6 @@
 # Phase 2 error/provenance production release — 2026-09-05
 
-Status: the scoped API/web correction is deployed and runtime smokes passed. Authenticated post-release browser acceptance remains open because Chrome Computer Use was blocked by the locked Mac. This is not full Phase 2 completion.
+Status: the scoped API/web correction is deployed; runtime smokes and the bounded authenticated BingX post-release browser check passed. The initially locked Mac was subsequently unlocked by Mario. This is not full Phase 2 completion.
 
 ## Authority and identity
 
@@ -26,7 +26,7 @@ Mario explicitly authorized publication of the previously verified local correct
 | Prisma during startup | No pending migrations to apply |
 | Migration/configuration diff | No Prisma, Compose, environment-template or deploy-wrapper changes |
 | Rendered configuration comparison | Zero changed configured environment keys and build argument keys against the previously running API/web containers; values were not printed |
-| Authenticated post-release UI | Not verified: Computer Use reported the Mac locked and unable to unlock automatically; Mario was asked to unlock it |
+| Authenticated post-release UI | Initially blocked by the locked Mac; subsequently passed for the bounded BingX case after Mario unlocked it; see the follow-up below |
 
 The previous local synthetic desktop/mobile checks remain local evidence only. No real AI analysis or credit consumption was performed in this release turn. Root, runner, contracts, unrelated capital-flow suites and a fresh dependency audit were not rerun or represented as completed release gates.
 
@@ -66,6 +66,18 @@ Rollback was not executed. Under a rollback decision, retag the retained images 
 
 ## Remaining acceptance
 
-After Mario unlocks the Mac, run a bounded authenticated BingX Funding/OI-only check and verify explicit unsupported wording, v4 failed-tool provenance, no fabricated routine/data evidence, and persistence after conversation reload. Do not reinterpret old generic-error records as newly produced corrected runs.
+The bounded BingX wording/version/reload gate is closed by the follow-up below. Do not reinterpret old generic-error records as newly produced corrected runs.
 
 Positive-position target-environment Copilot acceptance, genuine stale/fallback scenarios, fixed-prompt quality/latency/credit comparisons and the outstanding historical/spot design decisions remain in the [active Phase 2 plan](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md). No positions or corrupted production data should be created solely to manufacture acceptance fixtures.
+
+## Authenticated Chrome follow-up after unlock — 2026-09-05
+
+- Mario unlocked the Mac and authorized continuation of the pending check. Chrome Computer Use reused the existing public-market conversation on production, with Market Analyst, BingX, BTCUSDT and Perp visibly selected.
+- One new analysis began at the displayed local time 20:11:58 (Europe/Berlin). It performed exactly two visible tool calls: `market.get_funding_rate` and `market.get_open_interest`. Both failed with `agent_chat_venue_unsupported`, retained v4 evidence and source BingX, and did not display fabricated executed routines or feature values.
+- The assistant explicitly distinguished unsupported capabilities from a temporary data outage and did not reuse older Binance values. The Decision Log showed unavailable quality, the translated capability reason, no stored feature values and the explicit read-only permission statement.
+- Displayed latency was 5.2 seconds; the receipt charged 20 AI Credits. After a full reload, the balance matched the settled receipt and reservations were zero. No account-position analysis, orders or other capital actions were performed.
+- Full reload retained the newest recommendation, both skill versions and the reason. Selecting the older 18:28:39 run showed its historical generic failure and missing version evidence unchanged; reselecting the new run restored the corrected evidence. The older record was not rewritten or treated as evidence of the new fix.
+- English desktop and German 390×844 responsive checks passed for page identity, meaningful content, no framework overlay, translated reason, recent-run selection and mobile drawer open/close. Mobile document width and scroll width both measured 375 pixels (excluding the scrollbar), with no horizontal overflow. Screenshots were inspected via Computer Use; the native Chrome window capture was used when the viewport-override tab capture was downscaled. No screenshots or private browser data were committed.
+- Captured warning/error logs contained only wallet-extension listener/stream warnings, not application warnings/errors. The header briefly retained a reservation display after the completed run; a full reload displayed the settled balance and zero reservations. This observation does not establish continuous header-update timing.
+- The temporary viewport override was reset and the original English route restored. A non-matching label locator and a native selection attempt did not change the UI; a DOM-grounded combobox interaction subsequently verified recent-run selection.
+- This closes the scoped unsupported-provider correction acceptance, not fully failed-run production coverage, live stale/fallback acceptance or Phase 2 as a whole. No further code change or application redeployment was needed for this verification.
