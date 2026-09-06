@@ -14,7 +14,8 @@ test("both read-only profiles explicitly consume versioned, source-aware snapsho
   for (const key of ["market_analyst", "position_copilot"] as const) {
     const message = buildSystemMessage(resolveBuiltinAgentProfile(key), "en", key === "market_analyst" ? "agent_market" : "agent_position");
     assert.ok(message.includes(FEATURE_CONTEXT_POLICY));
-    assert.match(message, /no changes, trends, percentiles/);
+    assert.match(message, /snapshot features contain no history/);
+    assert.match(message, /validated derivatives.history-summary/);
     assert.match(message, /do not recalculate or replace null values/);
     assert.match(message, /Never claim to execute/);
   }

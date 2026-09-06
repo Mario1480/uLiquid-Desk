@@ -293,6 +293,7 @@ test("positive-position route uses real shared feature contracts and preserves s
     t.mock.method(sharedDerivativesStore, "read", createSharedDerivativesStore({ now: () => at }).read);
     t.mock.method(sharedMarketStore, "read", createSharedMarketStore({ now: () => at }).read);
     t.mock.method(globalThis, "fetch", async () => { assert.fail("unexpected network request"); });
+    t.mock.method(positionMarketContextDependencies, "readHistory", async () => { throw new Error("fixture_history_unavailable"); });
     const reads = { candles: 0, book: 0, derivatives: 0 };
     t.mock.method(positionMarketContextDependencies, "createClient", account => {
       assert.equal(account.apiKey, ""); assert.equal(account.apiSecret, "");

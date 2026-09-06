@@ -5,6 +5,8 @@ import { executeAgentRoutine } from "../routines/registry.js";
 
 const source = `mds_${"a".repeat(64)}`;
 const inputs: Record<MarketFeatureId, unknown> = {
+  "derivatives.history-summary": { kind: "funding", unit: "rate", requestedStart: 1000, requestedEnd: 2000, evaluatedAt: 2000,
+    points: [], warningCodes: [], excludedRows: 0, conflictingDuplicates: false, truncated: false },
   "technical.indicator-summary": { candles: [], indicators: ["rsi14"] },
   "derivatives.funding-snapshot": { rate: 0.0001, fundingIntervalHours: null },
   "derivatives.open-interest-snapshot": { reportedValue: 12, reportedUnit: "unknown", referencePrice: 100 },

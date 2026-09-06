@@ -65,8 +65,8 @@ test("unsupported tool errors retain exact provenance through runtime, model inp
       assert.equal(payload.error.code, "agent_chat_venue_unsupported");
       assert.equal(payload.error.retryable, false);
       assert.match(payload.error.message, /unsupported capability, not a temporary data outage/);
-      assert.equal(payload.skillVersion, 4);
-      assert.equal(payload.outputSchemaId, `${payload.skillId}.v4`);
+      assert.equal(payload.skillVersion, 5);
+      assert.equal(payload.outputSchemaId, `${payload.skillId}.v5`);
     }
     return modelResult('{"content":"Requested BingX data is unsupported.","blocks":[],"citations":[]}');
   } });
@@ -77,8 +77,8 @@ test("unsupported tool errors retain exact provenance through runtime, model inp
   assert.deepEqual(log.dataQuality, { state: "unavailable", reasonCodes: ["agent_chat_venue_unsupported"] });
   assert.equal(log.evidence.length, 2);
   for (const evidence of log.evidence) {
-    assert.equal(evidence.skillVersion, 4);
-    assert.equal(evidence.outputSchemaId, `${evidence.skillId}.v4`);
+    assert.equal(evidence.skillVersion, 5);
+    assert.equal(evidence.outputSchemaId, `${evidence.skillId}.v5`);
     assert.equal(evidence.sourceVenue, "bingx");
     assert.deepEqual(evidence.routineVersions, []);
     assert.deepEqual(evidence.featureSnapshots, []);
@@ -106,7 +106,7 @@ test("stale auto-fallback values remain pinned and persist after a later model f
   const [log] = fixture.logs();
   assert.equal(log.state, "failed"); assert.equal(log.recommendation, null);
   assert.equal(log.evidence.length, 2);
-  assert.ok(log.evidence.every(item => item.quality === "stale" && item.fallbackUsed && item.skillVersion === 4));
+  assert.ok(log.evidence.every(item => item.quality === "stale" && item.fallbackUsed && item.skillVersion === 5));
   assert.ok(log.dataQuality.reasonCodes.includes("market_data_stale"));
   assert.ok(log.dataQuality.reasonCodes.includes("market_data_fallback_used"));
   assert.equal(log.snapshotManifest.length, 1);
@@ -128,7 +128,7 @@ test("invalid tool output is excluded from model input and stored failure eviden
     return modelResult('{"content":"No validated data is available.","blocks":[],"citations":[]}');
   } });
   const evidence = fixture.logs()[0].evidence[0];
-  assert.equal(evidence.skillVersion, 4);
+  assert.equal(evidence.skillVersion, 5);
   assert.deepEqual(evidence.routineVersions, []);
   assert.deepEqual(evidence.warningCodes, ["agent_chat_tool_result_invalid"]);
   assert.doesNotMatch(JSON.stringify(fixture.calls), /untrusted-fixture-payload/);

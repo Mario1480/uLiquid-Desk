@@ -96,7 +96,7 @@ export type AgentDecisionLogQuality = "fresh" | "stale" | "degraded" | "unavaila
 export type AgentMarketSnapshot = {
   id: string; schemaVersion: string; freshnessPolicyVersion: string;
   market: { providerId: string; sourceVenue: string; symbol: string; marketType: AgentMarketType };
-  dataset: "derivatives" | "candles" | "ticker" | "orderbook";
+  dataset: "derivatives" | "candles" | "ticker" | "orderbook" | "derivatives_history";
   interval: string | null; limit: number | null; observedAt: string | null; fetchedAt: string;
   ageMs: number | null; quality: AgentDecisionLogQuality; warningCodes: string[]; atomicObservation: false;
 };

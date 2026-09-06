@@ -19,3 +19,14 @@ test("unsupported feature versions and unrecognized fields never become metric v
   assert.equal(book.find(r => r.key === "imbalance")!.value, null);
   assert.equal(book.find(r => r.key === "bidDepth")!.value, 0);
 });
+
+test("history metrics preserve unavailable statistics and display actual coverage without recalculation", () => {
+  const rows = featureMetricRows(feature("derivatives.history-summary", { kind: "funding", unit: "rate", sampleCount: 90,
+    minimumStatisticsSamples: 30, actualStart: 1000, actualEnd: 2000, cadenceMs: null, coverageRatio: null,
+    latestValue: 0, mean: null, changeBps: null, percentile: null, zScore: null, excludedRows: 0 }));
+  assert.equal(rows.find(r => r.key === "historyLatest")?.value, 0);
+  assert.equal(rows.find(r => r.key === "historyChange")?.value, null);
+  assert.equal(rows.find(r => r.key === "historyStart")?.format, "date");
+  assert.equal(rows.find(r => r.key === "historyZScore")?.value, null);
+  assert.equal(rows.some(r => r.key === "historyChangePct"), false);
+});

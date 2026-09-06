@@ -31,7 +31,7 @@ test("funding and OI skills consume shared snapshots with persisted feature prov
   for (const name of ["market_get_funding_rate", "market_get_open_interest"]) {
     const skill = getAgentSkillByToolName(name)!;
     const result = await executeAgentSkill(skill, marketContext(), {});
-    assert.equal(skill.version, 4);
+    assert.equal(skill.version, 5);
     assert.equal(skill.cacheTtlMs, 0);
     assert.equal(result.meta.fetchedAt, sharedFixture().snapshot.fetchedAt);
     assert.equal(result.meta.ageMs, 100);
@@ -246,7 +246,7 @@ test("owned BingX zero-price skill result remains read-only and carries correcte
   assert.ok((result.data as any).events.some((e: any) => e.code === "no_liquidation_price"));
   assert.equal(skill.version, 2);
   assert.equal(skill.sideEffect, false);
-  assert.equal(context.profile.version, 8);
+  assert.equal(context.profile.version, 9);
   assert.deepEqual(result.meta.routineVersions, [{ id: "position.snapshot.v1", version: "1.1.0" }, { id: "position.risk.v1", version: "1.1.0" }]);
 });
 

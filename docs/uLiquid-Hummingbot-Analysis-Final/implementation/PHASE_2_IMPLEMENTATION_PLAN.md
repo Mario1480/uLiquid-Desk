@@ -62,11 +62,15 @@ Do not reprice AI models, change tool budgets, replace profiles, or activate sch
 - [ ] Fixed-prompt before/after quality/latency/credit comparisons, standalone cached-evidence identity, and genuine stale observations remain open. Passing synthetic checks does not close these gates.
 - [x] The follow-up preserves the specific unsupported-capability reason through `withPublicVenue`, adds translated unavailable-capability copy and retains failed-tool skill/schema provenance. Required routines are not presented as executed routines when a tool fails. Code `3dc0e2401` is production-deployed; runtime smokes and authenticated BingX wording/version/reload acceptance passed.
 
-### 2D — Historical feature scope — `DESIGN REQUIRED`
+### 2D — Historical feature scope — `IN PROGRESS`; provider-history mode selected
 
-The [historical storage decision](PHASE_2_HISTORY_DECISION.md) records the owner choice needed, initial verified Binance coverage, proposed calculation safeguards and capacity boundaries. No storage strategy or migration has been inferred from the completion request.
+Mario selected existing exchange histories without a new database on 2026-09-06. The [historical storage decision](PHASE_2_HISTORY_DECISION.md) records that choice, verified initial coverage, calculation safeguards and capacity boundaries. No collector or migration is authorized.
 
-Historical Funding/OI changes, trends, percentiles and Z-scores remain a Phase 2 follow-on; they are not supplied by the five-second snapshot cache. Before implementing them, document verified provider history/cadence/unit coverage, gaps, sample sufficiency, retention, storage cost and backfill limits. Propose any persistence migration separately before applying it. Until enough comparable observations exist, return unavailable history and explicit reasons; never derive a trend from one snapshot or mix venues/units silently.
+- [x] Implement the local bounded public history reader, deterministic registered summary routine and replayable Feature Registry contract. Public probes cover Binance Funding/OI and Bitget/MEXC Funding; missing historical cadence remains explicit.
+- [x] Integrate historical capabilities, existing AI consumers and user-facing evidence; verify permissions, provider coverage and unsupported paths with deterministic fixtures. Funding/OI skills v5, Market Analyst v8, Position Copilot v9 and standalone explanation cache v6. Initial historical coverage is explicitly bounded to Binance Funding/OI and Bitget/MEXC Funding; other histories fail closed.
+- [ ] Release and perform authenticated historical-feature acceptance. The local foundation is not a deployed historical AI feature.
+
+Historical changes, percentiles and Z-scores now use the separate bounded provider-history path, not the five-second current-snapshot cache. Coverage, cadence/unit safeguards, sample sufficiency and backfill limits are documented in the selected-mode decision. Until enough comparable observations exist, return unavailable statistics and explicit reasons; never derive a trend from one snapshot or mix venues/units silently. No persistence migration or collector is part of this implementation.
 
 This item is not silently moved to a later roadmap phase. Phase 2 closeout must either complete the approved historical subset or explicitly record Mario's decision to defer it.
 

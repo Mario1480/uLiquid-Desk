@@ -6,12 +6,14 @@ import {
 } from "@mm/futures-core";
 import { ATR, EMA, RSI, SMA } from "technicalindicators";
 import { z } from "zod";
+import { DERIVATIVES_HISTORY_ROUTINE_ID, derivativesHistoryInputSchema, derivativesHistoryOutputSchema, summarizeDerivativesHistory } from "./derivativesHistory.js";
 import {
   buildDeterministicPositionAnalysis,
   buildPositionCopilotSnapshot
 } from "../../position-copilot/core.js";
 
 export const AGENT_ROUTINE_IDS = {
+  derivativesHistory: DERIVATIVES_HISTORY_ROUTINE_ID,
   technicalIndicatorSummary: "market.technical-indicator-summary.v1",
   fundingSnapshot: MARKET_ANALYTICS_ROUTINE_VERSIONS.fundingSnapshot,
   openInterestSnapshot: MARKET_ANALYTICS_ROUTINE_VERSIONS.openInterestSnapshot,
@@ -181,6 +183,7 @@ function computeTechnicalIndicatorSummary(input: z.infer<typeof technicalIndicat
 }
 
 export const AGENT_ROUTINES: readonly AgentRoutineDescriptor[] = [
+  { id: AGENT_ROUTINE_IDS.derivativesHistory, version: "1.0.0", owner: "agent-chat", inputSchema: derivativesHistoryInputSchema, outputSchema: derivativesHistoryOutputSchema, execute: summarizeDerivativesHistory },
   { id: AGENT_ROUTINE_IDS.technicalIndicatorSummary, version: "1.0.0", owner: "agent-chat", inputSchema: technicalIndicatorInputSchema, outputSchema: technicalIndicatorOutputSchema, execute: computeTechnicalIndicatorSummary },
   { id: AGENT_ROUTINE_IDS.fundingSnapshot, version: "1.0.0", owner: "futures-core", inputSchema: fundingInputSchema, outputSchema: fundingOutputSchema, execute: analyzeFundingSnapshot },
   { id: AGENT_ROUTINE_IDS.openInterestSnapshot, version: "1.0.0", owner: "futures-core", inputSchema: openInterestInputSchema, outputSchema: openInterestOutputSchema, execute: analyzeOpenInterestSnapshot },

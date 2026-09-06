@@ -150,12 +150,14 @@
     "coverageLimit": "Angeforderter Umfang: {count} Zeilen / Levels",
     "nonAtomic": "Die Datensätze werden nicht zeitgleich beobachtet.",
     "datasets": {
+      "derivatives_history": "Funding- / OI-Historie",
       "derivatives": "Derivate",
       "candles": "Kerzen",
       "ticker": "Ticker",
       "orderbook": "Orderbuch"
     },
     "units": {
+      "rate": "Rate (dezimal)",
       "base_asset": "Basiseinheiten",
       "quote_asset": "Quote-Einheiten",
       "contracts": "Kontrakte",
@@ -163,6 +165,19 @@
       "unknown": "unbekannte Einheiten"
     },
     "metrics": {
+      "historySamples": "Gültige Beobachtungen",
+      "historyMinimumSamples": "Mindeststichprobe für Statistik",
+      "historyStart": "Tatsächlicher Zeitraum: Beginn",
+      "historyEnd": "Tatsächlicher Zeitraum: Ende",
+      "historyCoverage": "Abdeckung des angefragten Zeitraums",
+      "historyCadence": "Beobachtungsintervall",
+      "historyLatest": "Letzter historischer Wert",
+      "historyMean": "Stichprobenmittelwert",
+      "historyChange": "Änderung im Zeitraum",
+      "historyChangePct": "Änderung im Zeitraum (%)",
+      "historyPercentile": "Letzter Wert: Stichprobenperzentil",
+      "historyZScore": "Letzter Wert: Stichproben-Z-Score",
+      "historyExcluded": "Ausgeschlossene Beobachtungen",
       "fundingBps": "Funding",
       "fundingInterval": "Funding-Intervall",
       "annualizedEstimate": "Einfache annualisierte Schätzung",

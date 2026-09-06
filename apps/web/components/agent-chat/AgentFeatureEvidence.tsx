@@ -11,7 +11,7 @@ export function AgentFeatureEvidence({ feature }: { feature: AgentFeatureSnapsho
     <summary>{feature.id} v{feature.version}</summary>
     {rows.length ? <dl className="agentChatFeatureMetrics">{rows.map(row => <div key={`${row.key}:${row.band ?? ""}`}>
       <dt>{t(`metrics.${row.key}`)}{row.band !== undefined ? ` · ${row.band} bps` : ""}</dt>
-      <dd>{row.value === null ? t("unavailableValue") : new Intl.NumberFormat(locale, { maximumSignificantDigits: 10 }).format(row.value)}{row.value !== null && row.unit ? ` ${["base_asset", "quote_asset", "contracts", "provider_native", "unknown"].includes(row.unit) ? t(`units.${row.unit}`) : row.unit}` : ""}</dd>
+      <dd>{row.value === null ? t("unavailableValue") : row.format === "date" ? new Date(row.value).toLocaleString(locale) : new Intl.NumberFormat(locale, { maximumSignificantDigits: 10 }).format(row.value)}{row.value !== null && row.unit ? ` ${["base_asset", "quote_asset", "contracts", "provider_native", "unknown", "rate"].includes(row.unit) ? t(`units.${row.unit}`) : row.unit}` : ""}</dd>
     </div>)}</dl> : <p className="agentChatMuted">{t("unsupportedFeatureVersion")}</p>}
     {warnings.length ? <ul className="agentChatDecisionWarnings">{warnings.map(code => <li key={code}>{code}</li>)}</ul> : null}
     <small>{t("featureSnapshot")}<code>{feature.snapshotId}</code></small>
