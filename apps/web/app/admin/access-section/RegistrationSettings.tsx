@@ -1,4 +1,5 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -53,8 +54,8 @@ export default function RegistrationSettings() {
             <strong><AppIcon name="users" /> {t("registrationEnabled")}</strong>
             <small>{t("registrationHint")}</small>
           </span>
-          <DeskInput type="checkbox" checked={enabled ?? false} disabled={enabled === null || saving}
-            onChange={(event) => { setEnabled(event.target.checked); setSaved(false); }} />
+          <DeskSwitch checked={enabled ?? false} disabled={enabled === null || saving}
+            onCheckedChange={(checked) => { setEnabled(checked); setSaved(false); }} />
         </label>
       </div>
       <div className="adminInlineActions">

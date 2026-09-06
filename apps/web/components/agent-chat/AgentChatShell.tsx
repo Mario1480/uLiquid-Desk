@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { useLocale, useTranslations } from "next-intl";
@@ -248,7 +249,7 @@ export default function AgentChatShell() {
 
   return (
     <main className="uiPage agentChatPage">
-      <PageHeader title={t("title")} description={t("description")} actions={<><span className={`badge agentChatCreditBadge agentChatCreditBadge-${creditSummary?.warningLevel ?? "none"}`}><AppIcon name="billing" />{t("credits.available", { value: creditSummary?.available ?? "-" })}</span>{lastModelClass ? <span className="badge agentChatAnalysisBadge">{t(`credits.classes.${lastModelClass}`)}</span> : null}<span className="badge agentChatReadOnlyBadge"><AppIcon name="shield" />{t("readOnlyMvp")}</span><DeskButton type="button" className="btn btnPrimary" onClick={newChat}><AppIcon name="create" />{t("actions.newChat")}</DeskButton></>} />
+      <PageHeader title={t("title")} description={t("description")} actions={<><DeskBadge className={`badge agentChatCreditBadge agentChatCreditBadge-${creditSummary?.warningLevel ?? "none"}`}><AppIcon name="billing" />{t("credits.available", { value: creditSummary?.available ?? "-" })}</DeskBadge>{lastModelClass ? <DeskBadge className="badge agentChatAnalysisBadge">{t(`credits.classes.${lastModelClass}`)}</DeskBadge> : null}<DeskBadge className="badge agentChatReadOnlyBadge"><AppIcon name="shield" />{t("readOnlyMvp")}</DeskBadge><DeskButton type="button" className="btn btnPrimary" onClick={newChat}><AppIcon name="create" />{t("actions.newChat")}</DeskButton></>} />
       {lastRunReceipt ? (
         <div className="agentChatRunReceipt" role="status">
           <span><strong>{t("credits.lastRun")}</strong> {t("credits.charged", { value: lastRunReceipt.chargedCredits })}</span>

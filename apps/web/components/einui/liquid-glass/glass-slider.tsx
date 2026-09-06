@@ -9,6 +9,7 @@ const GlassSlider = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
 >(({ className, ...props }, ref) => (
   <SliderPrimitive.Root
+    data-ein-slider="true"
     ref={ref}
     className={cn("ein:relative ein:flex ein:w-full ein:touch-none ein:select-none ein:items-center", className)}
     {...props}
@@ -22,12 +23,13 @@ const GlassSlider = React.forwardRef<
       <SliderPrimitive.Range
         className={cn(
           "ein:absolute ein:h-full ein:rounded-full",
-          "ein:bg-linear-to-r ein:from-cyan-400 ein:via-blue-400 ein:to-purple-400",
+          "ein:bg-primary",
           "ein:shadow-[0_0_8px_rgba(59,130,246,0.4)]",
         )}
       />
     </SliderPrimitive.Track>
     <SliderPrimitive.Thumb
+      aria-label={props["aria-label"]}
       className={cn(
         "ein:block ein:h-5 ein:w-5 ein:rounded-full ein:cursor-grab ein:active:cursor-grabbing",
         "ein:bg-white ein:border-2 ein:border-white/50",

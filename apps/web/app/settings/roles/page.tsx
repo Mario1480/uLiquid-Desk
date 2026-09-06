@@ -1,4 +1,5 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -315,10 +316,9 @@ export default function RolesPage() {
               ))}
             </DeskSelect>
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
-              <DeskInput
-                type="checkbox"
+              <DeskCheckbox
                 checked={inviteResetPassword}
-                onChange={(e) => setInviteResetPassword(e.target.checked)}
+                onCheckedChange={(checked) => setInviteResetPassword(checked)}
               />
               {t("members.inviteResetPassword")}
 	            </label>
@@ -367,11 +367,10 @@ export default function RolesPage() {
             <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
               {PERMISSIONS.map((p) => (
                 <label key={p.key} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
-                  <DeskInput
-                    type="checkbox"
+                  <DeskCheckbox
                     checked={Boolean(role.permissions?.[p.key])}
                     disabled={!canManage}
-                    onChange={(e) => togglePerm(role.id, p.key, e.target.checked)}
+                    onCheckedChange={(checked) => togglePerm(role.id, p.key, checked)}
                   />
                   {t(`permissions.${p.labelKey}`)}
                 </label>

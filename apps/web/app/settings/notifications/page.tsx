@@ -1,4 +1,8 @@
 "use client";
+import { GlassRadioGroup, GlassRadioGroupItem } from "@/components/einui/liquid-glass/glass-radio";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -448,7 +452,7 @@ export default function NotificationsPage() {
         <div className="settingsSectionHeader">
           <div style={{ fontWeight: 700 }}>{t("telegram.title")}</div>
           {linkStatus.connectUrl ? (
-            <a
+            <DeskAnchor
               className="btn"
               href={linkStatus.connectUrl}
               target="_blank"
@@ -456,7 +460,7 @@ export default function NotificationsPage() {
 	            >
 	              <AppIcon name="external" />
 	              {t("telegram.openBot")}
-	            </a>
+	            </DeskAnchor>
           ) : null}
         </div>
         <div style={{ color: "var(--muted)", marginBottom: 10 }}>
@@ -499,10 +503,10 @@ export default function NotificationsPage() {
 	              {linking ? tCommon("saving") : t("telegram.connect")}
 	            </DeskButton>
 	            {linkStatus.connectUrl ? (
-	              <a className="btn" href={linkStatus.connectUrl} target="_blank" rel="noreferrer">
+	              <DeskAnchor className="btn" href={linkStatus.connectUrl} target="_blank" rel="noreferrer">
 	                <AppIcon name="external" />
 	                {t("telegram.openBot")}
-	              </a>
+	              </DeskAnchor>
 	            ) : null}
 	            <DeskButton className="btn" type="button" onClick={refreshTelegramLinkStatus} disabled={refreshingLink}>
 	              <AppIcon name="refresh" />
@@ -529,12 +533,12 @@ export default function NotificationsPage() {
               <div className="settingsInlineTitle">{t("subscriptionReminders.title")}</div>
               <div className="settingsMutedText">{t("subscriptionReminders.description")}</div>
             </div>
-            <span className="uiStatusBadge uiStatusBadge-info">
+            <DeskBadge className="uiStatusBadge uiStatusBadge-info">
               <AppIcon name="alerts" />
               {t(`subscriptionReminders.source.${subscriptionNotificationSource}`)}
-            </span>
+            </DeskBadge>
           </div>
-          <div className="subscriptionReminderChoiceGrid">
+          <GlassRadioGroup className="subscriptionReminderChoiceGrid" value={subscriptionChannel} onValueChange={(value) => setSubscriptionChannel(value as SubscriptionNotificationChannel)} name="subscriptionChannel" aria-label={t("subscriptionReminders.title")}>
             {(["email", "telegram", "both"] as SubscriptionNotificationChannel[]).map((channel) => {
               const unavailable = channel === "email"
                 ? !subscriptionEmailAvailable
@@ -543,13 +547,7 @@ export default function NotificationsPage() {
                   : !subscriptionEmailAvailable || !subscriptionTelegramAvailable;
               return (
                 <label className="subscriptionReminderChoice" key={channel} aria-disabled={unavailable}>
-                  <DeskInput
-                    type="radio"
-                    name="subscription-notification-channel"
-                    checked={subscriptionChannel === channel}
-                    disabled={unavailable}
-                    onChange={() => setSubscriptionChannel(channel)}
-                  />
+                  <GlassRadioGroupItem value={channel} disabled={unavailable} />
                   <span>
                     <strong>{t(`subscriptionReminders.channel.${channel}.label`)}</strong>
                     <small>{t(`subscriptionReminders.channel.${channel}.hint`)}</small>
@@ -557,7 +555,7 @@ export default function NotificationsPage() {
                 </label>
               );
             })}
-          </div>
+          </GlassRadioGroup>
           <label className="adminFormField">
             <span className="adminFormFieldLabel">{t("subscriptionReminders.language")}</span>
             <DeskSelect
@@ -599,10 +597,9 @@ export default function NotificationsPage() {
                 : t("dailyCalendar.neverSent")}
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-              <DeskInput
-                type="checkbox"
+              <DeskSwitch
                 checked={dailyEnabled}
-                onChange={(e) => setDailyEnabled(e.target.checked)}
+                onCheckedChange={(checked) => setDailyEnabled(checked)}
               />
               <span>{t("dailyCalendar.enabledLabel")}</span>
             </label>
@@ -615,27 +612,14 @@ export default function NotificationsPage() {
                 onChange={(e) => setDailySendTimeLocal(e.target.value)}
               />
             </label>
-            <div style={{ display: "grid", gap: 8 }}>
+            <GlassRadioGroup style={{ display: "grid", gap: 8 }} value={dailyTimezoneMode} onValueChange={(value) => { setDailyTimezoneMode(value as "device" | "manual"); if (value === "manual") setDailyTimezoneInput((current) => current.trim() || browserTimezone); }} name="dailyTimezoneMode" aria-label={t("dailyCalendar.timezone")}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.timezone")}</span>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <DeskInput
-                  type="radio"
-                  name="daily-timezone-mode"
-                  checked={dailyTimezoneMode === "device"}
-                  onChange={() => setDailyTimezoneMode("device")}
-                />
+                <GlassRadioGroupItem value={"device"}  />
                 <span>{t("dailyCalendar.timezoneAuto")}</span>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <DeskInput
-                  type="radio"
-                  name="daily-timezone-mode"
-                  checked={dailyTimezoneMode === "manual"}
-                  onChange={() => {
-                    setDailyTimezoneMode("manual");
-                    setDailyTimezoneInput((current) => current.trim() || browserTimezone);
-                  }}
-                />
+                <GlassRadioGroupItem value={"manual"}  />
                 <span>{t("dailyCalendar.timezoneManual")}</span>
               </label>
               {dailyTimezoneMode === "manual" ? (
@@ -658,7 +642,7 @@ export default function NotificationsPage() {
               <div style={{ fontSize: 12, color: "var(--muted)" }}>
                 {t("dailyCalendar.timezoneDetected")}: <b>{effectiveDailyTimezone}</b>
               </div>
-            </div>
+            </GlassRadioGroup>
             <div style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.currencies")}</span>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -705,10 +689,10 @@ export default function NotificationsPage() {
               <div style={{ fontWeight: 700 }}>{t("mobilePush.title")}</div>
               <div className="settingsMutedText">{t("mobilePush.description")}</div>
             </div>
-            <span className="badge">
+            <DeskBadge className="badge">
               <AppIcon name="mobile" />
               {mobilePush?.enabled ? t("mobilePush.enabled") : t("mobilePush.disabled")}
-            </span>
+            </DeskBadge>
           </div>
           <div className="settingsHubSummary settingsTradingDefaultsSummary">
             <div className="miniMetric">
@@ -742,7 +726,7 @@ export default function NotificationsPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <span className="badge">{token.enabled && !token.revokedAt ? t("mobilePush.active") : t("mobilePush.revoked")}</span>
+                      <DeskBadge className="badge">{token.enabled && !token.revokedAt ? t("mobilePush.active") : t("mobilePush.revoked")}</DeskBadge>
                       {token.enabled && !token.revokedAt ? (
                         <DeskButton
                           className="btn btnStop"

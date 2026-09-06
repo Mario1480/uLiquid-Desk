@@ -1,11 +1,14 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskTextarea } from "@/components/desk/DeskTextarea";
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -1557,7 +1560,7 @@ export default function AdminGridTemplatesPage() {
             <DeskInput className="input" type="number" min="1" max="16" step="1" value={form.autoReserveMaxPreviewIterations} disabled={form.autoReservePolicy !== "LIQ_GUARD_MAX_GRID"} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveMaxPreviewIterations: event.target.value }))} />
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
-            <DeskInput type="checkbox" checked={form.initialSeedEnabled} onChange={(event) => setForm((prev) => ({ ...prev, initialSeedEnabled: event.target.checked }))} />
+            <DeskSwitch checked={form.initialSeedEnabled} onCheckedChange={(checked) => setForm((prev) => ({ ...prev, initialSeedEnabled: checked }))} />
             <span>{tCreate("fields.initialSeedEnabled")}</span>
           </label>
           <label>
@@ -1648,20 +1651,20 @@ export default function AdminGridTemplatesPage() {
             <DeskTextarea className="input" rows={2} value={form.catalogShortDescription} onChange={(event) => setForm((prev) => ({ ...prev, catalogShortDescription: event.target.value }))} />
           </label>
           <label className="settingsToggle">
-            <DeskInput type="checkbox" checked={form.catalogFeatured} onChange={(event) => setForm((prev) => ({ ...prev, catalogFeatured: event.target.checked }))} />
+            <DeskCheckbox checked={form.catalogFeatured} onCheckedChange={(checked) => setForm((prev) => ({ ...prev, catalogFeatured: checked }))} />
             <span>{tCreate("fields.catalogFeatured")}</span>
           </label>
 
           <label className="settingsToggle">
-            <DeskInput type="checkbox" checked={form.marginPolicy === "AUTO_ALLOWED"} readOnly />
+            <DeskCheckbox checked={form.marginPolicy === "AUTO_ALLOWED"} readOnly />
             <span>{tCreate("fields.allowAutoMarginDerived")}</span>
           </label>
           <label className="settingsToggle">
-            <DeskInput type="checkbox" checked={form.allowManualMarginAdjust} onChange={(event) => setForm((prev) => ({ ...prev, allowManualMarginAdjust: event.target.checked }))} />
+            <DeskCheckbox checked={form.allowManualMarginAdjust} onCheckedChange={(checked) => setForm((prev) => ({ ...prev, allowManualMarginAdjust: checked }))} />
             <span>{tCreate("fields.allowManualMarginAdjust")}</span>
           </label>
           <label className="settingsToggle">
-            <DeskInput type="checkbox" checked={form.allowProfitWithdraw} onChange={(event) => setForm((prev) => ({ ...prev, allowProfitWithdraw: event.target.checked }))} />
+            <DeskCheckbox checked={form.allowProfitWithdraw} onCheckedChange={(checked) => setForm((prev) => ({ ...prev, allowProfitWithdraw: checked }))} />
             <span>{tCreate("fields.allowProfitWithdraw")}</span>
           </label>
 
@@ -1805,9 +1808,9 @@ export default function AdminGridTemplatesPage() {
                 <div className="gridTemplatePreviewBadges">
                   {(preview.marketDataVenue === "hyperliquid" || selectedPreviewAccount?.marketDataExchange === "hyperliquid")
                     && preview.pilotAccess?.provider === "hyperliquid_demo" ? (
-                    <span className="badge badgeWarn">{tCreate("preview.pilotBadge")}</span>
+                    <DeskBadge className="badge badgeWarn">{tCreate("preview.pilotBadge")}</DeskBadge>
                   ) : null}
-                  <span className={`badge ${previewInsufficient ? "badgeWarn" : previewLiqRiskActive ? "badgeWarn" : "badgeOk"}`}>
+                  <DeskBadge className={`badge ${previewInsufficient ? "badgeWarn" : previewLiqRiskActive ? "badgeWarn" : "badgeOk"}`}>
                     {previewInsufficient
                       ? tCreate("preview.status.insufficientBudget")
                       : previewLiqRiskActive
@@ -1815,7 +1818,7 @@ export default function AdminGridTemplatesPage() {
                         : preview.status?.ready === false
                           ? tCreate("preview.status.needsReview")
                           : tCreate("preview.status.ready")}
-                  </span>
+                  </DeskBadge>
                 </div>
               </div>
               <div className="settingsFormGrid gridTemplatePreviewStatsGrid">
@@ -1881,7 +1884,7 @@ export default function AdminGridTemplatesPage() {
               {previewTagCodes.length > 0 ? (
                 <div className="gridTemplatePreviewTagRow">
                   {previewTagCodes.map((code) => (
-                    <span key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</span>
+                    <DeskBadge key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</DeskBadge>
                   ))}
                 </div>
               ) : null}
@@ -1896,7 +1899,7 @@ export default function AdminGridTemplatesPage() {
         <div className="settingsSectionHeader">
           <h3 style={{ margin: 0 }}>{tCreate("list.title")}</h3>
           <label className="settingsToggle" style={{ margin: 0 }}>
-            <DeskInput type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
+            <DeskSwitch checked={showArchived} onCheckedChange={(checked) => setShowArchived(checked)} />
             <span>{tCreate("list.showArchived")}</span>
           </label>
         </div>
@@ -1935,10 +1938,10 @@ export default function AdminGridTemplatesPage() {
                     </div>
                   </div>
                   <div className="adminInlineActions">
-                    <Link href={withLocalePath(`/admin/system/bots/grid-templates/${template.id}`, locale)} className="btn">
+                    <DeskLink href={withLocalePath(`/admin/system/bots/grid-templates/${template.id}`, locale)} className="btn">
                       <AppIcon name="open" />
                       {tCreate("list.actions.open")}
-                    </Link>
+                    </DeskLink>
                     <AdminActionButton icon="refresh" onClick={() => void bumpVersion(template)} disabled={saving}>{tCreate("list.actions.bumpVersion")}</AdminActionButton>
                     {template.isPublished ? (
                       <AdminActionButton icon="archive" variant="danger" onClick={() => void setPublishState(template, false)} disabled={saving}>{tCreate("list.actions.archive")}</AdminActionButton>

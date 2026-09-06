@@ -11,22 +11,23 @@ interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
-  ({ className, asChild = false, glowEffect = true, children, ...props }, ref) => {
+  ({ className, asChild = false, glowEffect = false, children, ...props }, ref) => {
     // Slot mode preserves layout and semantic elements in the marketing site.
     if (asChild) return <Slot.Root ref={ref} data-ein-surface="true" className={cn(
-      "ein-card-material ein:relative ein:rounded-2xl ein:backdrop-blur-xl",
+      "ein-card-material ein:relative ein:rounded-2xl",
       className,
     )} {...props}>{children}</Slot.Root>
 
     return (
       <div className="ein:relative">
         {glowEffect && (
-          <div className="ein:absolute ein:-inset-1 ein:rounded-2xl ein:bg-linear-to-r ein:from-cyan-500/30 ein:via-blue-500/30 ein:to-purple-500/30 ein:blur-xl ein:opacity-70" />
+          <div className="ein-card-glow" />
         )}
         <div
           ref={ref}
+          data-ein-surface="true"
           className={cn(
-            "ein-card-material ein:relative ein:rounded-2xl ein:backdrop-blur-xl",
+            "ein-card-material ein:relative ein:rounded-2xl",
             className,
           )}
           {...props}

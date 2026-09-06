@@ -1,4 +1,6 @@
 "use client";
+import { DeskChoiceGroup, DeskChoiceItem } from "@/components/desk/DeskChoiceGroup";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -481,9 +483,9 @@ export default function FundingTransferSection({
               <h3 className="walletSectionTitle">{t("hyperCoreCardTitle")}</h3>
               <div className="walletMutedText">{tCommon("locationHyperCore")}</div>
             </div>
-            <span className={`badge ${overview.hyperCore.available ? "badgeOk" : "badgeWarn"}`}>
+            <DeskBadge className={`badge ${overview.hyperCore.available ? "badgeOk" : "badgeWarn"}`}>
               {overview.hyperCore.available ? t("statusLive") : t("statusUnavailable")}
-            </span>
+            </DeskBadge>
           </div>
           {overview.hyperCore.reason ? (
             <div className={overviewReasonClass(overview.hyperCore.reason)}>
@@ -510,9 +512,9 @@ export default function FundingTransferSection({
                 {tCommon("locationHyperEvm")} · {overview.hyperEvm.network.networkName}
               </div>
             </div>
-            <span className={`badge ${networkBadgeClass(isCorrectHyperEvmChain)}`}>
+            <DeskBadge className={`badge ${networkBadgeClass(isCorrectHyperEvmChain)}`}>
               {isCorrectHyperEvmChain ? t("networkReady") : t("networkMismatch")}
-            </span>
+            </DeskBadge>
           </div>
           {overview.hyperEvm.reason ? (
             <div className="walletNotice walletNoticeError">{overview.hyperEvm.reason}</div>
@@ -540,44 +542,40 @@ export default function FundingTransferSection({
         </div>
 
         {presentation === "card" ? (
-          <div className="fundingDirectionRow fundingSegmentedRow">
-            <DeskButton
-              type="button"
+          <DeskChoiceGroup className="fundingDirectionRow fundingSegmentedRow" value={direction} onValueChange={(value) => setDirection(value as typeof direction)}>
+            <DeskChoiceItem
 	              className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
-	              onClick={() => setDirection("core_to_evm")}
+	              value={"core_to_evm"}
 	            >
 	              <AppIcon name="transfer" />
 	              {t("moveToHyperEvm")}
-	            </DeskButton>
-            <DeskButton
-              type="button"
+	            </DeskChoiceItem>
+            <DeskChoiceItem
 	              className={`btn ${direction === "evm_to_core" ? "btnPrimary" : ""}`}
-	              onClick={() => setDirection("evm_to_core")}
+	              value={"evm_to_core"}
 	            >
 	              <AppIcon name="transfer" />
 	              {t("moveToHyperCore")}
-	            </DeskButton>
-          </div>
+	            </DeskChoiceItem>
+          </DeskChoiceGroup>
         ) : null}
 
         {presentation === "modal" ? (
           <>
-            <div className="fundingModalCompactSwitch" role="tablist" aria-label={t("transferCardTitle")}>
-              <DeskButton
-                type="button"
+            <DeskChoiceGroup className="fundingModalCompactSwitch" value={direction} onValueChange={(value) => setDirection(value as "core_to_evm" | "evm_to_core")} aria-label={t("transferCardTitle")}>
+              <DeskChoiceItem
                 className={`fundingModalCompactSwitchButton ${direction === "core_to_evm" ? "isActive" : ""}`}
-                onClick={() => setDirection("core_to_evm")}
-              >
+
+               value={"core_to_evm"}>
                 {tCommon("locationHyperCore")} ↔ {tCommon("locationHyperEvm")}
-              </DeskButton>
-              <DeskButton
-                type="button"
+              </DeskChoiceItem>
+              <DeskChoiceItem
                 className={`fundingModalCompactSwitchButton ${direction === "evm_to_core" ? "isActive" : ""}`}
-                onClick={() => setDirection("evm_to_core")}
-              >
+
+               value={"evm_to_core"}>
                 {tCommon("locationHyperEvm")} ↔ {tCommon("locationHyperCore")}
-              </DeskButton>
-            </div>
+              </DeskChoiceItem>
+            </DeskChoiceGroup>
             <div className="fundingModalAmountMeta">
               <span>{t("fromLabel")}</span>
               <strong>{locationFrom}</strong>

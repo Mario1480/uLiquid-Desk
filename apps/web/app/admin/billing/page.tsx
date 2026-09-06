@@ -1,4 +1,6 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
@@ -464,9 +466,9 @@ export default function AdminBillingPage() {
               <h3 className="adminSubsectionTitle">{t("paymentConfig.title")}</h3>
               <div className="adminSectionDescription">{t("paymentConfig.description")}</div>
             </div>
-            <span className={`uiStatusBadge ${paymentConfig?.configured && paymentConfig.rpc?.ready ? "uiStatusBadge-success" : "uiStatusBadge-warning"}`}>
+            <DeskBadge className={`uiStatusBadge ${paymentConfig?.configured && paymentConfig.rpc?.ready ? "uiStatusBadge-success" : "uiStatusBadge-warning"}`}>
               {paymentConfig?.configured && paymentConfig.rpc?.ready ? t("paymentConfig.ready") : t("paymentConfig.notReady")}
-            </span>
+            </DeskBadge>
           </div>
           <div className="adminChoiceGrid">
             <FormField label={t("paymentConfig.treasuryAddress")} hint={t("paymentConfig.treasuryHint")}>
@@ -503,11 +505,11 @@ export default function AdminBillingPage() {
           <div className="billingFeatureToggleList">
             <label className="billingFeatureToggle">
               <span><strong>{t("featureFlags.billingEnabled.label")}</strong><small>{t("featureFlags.billingEnabled.hint")}</small></span>
-              <DeskInput type="checkbox" checked={billingEnabled} onChange={(event) => setBillingEnabled(event.target.checked)} aria-label={t("featureFlags.billingEnabled.label")} />
+              <DeskSwitch checked={billingEnabled} onCheckedChange={(checked) => setBillingEnabled(checked)} aria-label={t("featureFlags.billingEnabled.label")} />
             </label>
             <label className="billingFeatureToggle">
               <span><strong>{t("featureFlags.aiCreditBillingEnabled.label")}</strong><small>{t("featureFlags.aiCreditBillingEnabled.hint")}</small></span>
-              <DeskInput type="checkbox" checked={aiCreditBillingEnabled} onChange={(event) => setAiCreditBillingEnabled(event.target.checked)} aria-label={t("featureFlags.aiCreditBillingEnabled.label")} />
+              <DeskSwitch checked={aiCreditBillingEnabled} onCheckedChange={(checked) => setAiCreditBillingEnabled(checked)} aria-label={t("featureFlags.aiCreditBillingEnabled.label")} />
             </label>
           </div>
           <AdminActionButton className="billingSectionAction" icon="save" variant="primary" onClick={requestSaveFeatureFlags} loading={savingId === "flags"} loadingLabel={tCommon("saving")}>
@@ -695,7 +697,7 @@ function PackageGroup({
 
   return (
     <section className="billingPackageGroup" aria-label={title}>
-      <div className="billingPackageGroupHeader"><h4>{title}</h4><span className="badge">{items.length}</span></div>
+      <div className="billingPackageGroupHeader"><h4>{title}</h4><DeskBadge className="badge">{items.length}</DeskBadge></div>
       {items.length === 0 ? <div className="settingsMutedText">{t("packageSummary.groupEmpty")}</div> : (
         <div className="billingPackageList">
           {items.map((item) => {
@@ -706,8 +708,8 @@ function PackageGroup({
                 <div className="billingPackageSummaryRow">
                   <div className="billingPackageIdentity">
                     <div className="billingPackageBadges">
-                      <span className={`uiStatusBadge ${item.isActive ? "uiStatusBadge-success" : "uiStatusBadge-warning"}`}>{item.isActive ? t("packageSummary.enabled") : t("packageSummary.disabled")}</span>
-                      <span className="badge">{packageType(item)}</span>
+                      <DeskBadge className={`uiStatusBadge ${item.isActive ? "uiStatusBadge-success" : "uiStatusBadge-warning"}`}>{item.isActive ? t("packageSummary.enabled") : t("packageSummary.disabled")}</DeskBadge>
+                      <DeskBadge className="badge">{packageType(item)}</DeskBadge>
                     </div>
                     <h5>{item.name}</h5>
                     <code>{item.code}</code>
@@ -792,7 +794,7 @@ function PackageForm({
         <div className="adminFormGridCompact">
           <FormField label={t("fields.priceCents.label")} hint={t("fields.priceCents.hint")}><DeskInput className="input" type="number" value={draft.priceCents} placeholder="2900" onChange={(event) => setDraft({ ...draft, priceCents: Number(event.target.value) })} /></FormField>
           <FormField label={t("fields.billingMonths.label")} hint={t("fields.billingMonths.hint")}><DeskInput className="input" type="number" value={draft.billingMonths} placeholder="1" onChange={(event) => setDraft({ ...draft, billingMonths: Number(event.target.value) })} /></FormField>
-          <FormField label={t("fields.isActive.label")} hint={t("fields.isActive.hint")}><label className="adminCheckboxLabel billingPackageAvailability"><DeskInput type="checkbox" checked={draft.isActive} onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })} />{t("fields.isActive.value")}</label></FormField>
+          <FormField label={t("fields.isActive.label")} hint={t("fields.isActive.hint")}><label className="adminCheckboxLabel billingPackageAvailability"><DeskSwitch checked={draft.isActive} onCheckedChange={(checked) => setDraft({ ...draft, isActive: checked })} />{t("fields.isActive.value")}</label></FormField>
         </div>
       </fieldset>
 

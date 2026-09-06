@@ -1,8 +1,9 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { useLocale, useTranslations } from "next-intl";
@@ -30,10 +31,10 @@ export default function VaultsIndexClient({ _config }: { _config: WalletFeatureC
           <h2 className="walletPageTitle">{t("title")}</h2>
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
-        <Link className="btn" href={withLocalePath("/wallet", locale)}>
+        <DeskLink className="btn" href={withLocalePath("/wallet", locale)}>
           <AppIcon name="back" />
           {tCommon("backToWallet")}
-        </Link>
+        </DeskLink>
       </div>
 
       {!isConnected ? (
@@ -59,7 +60,7 @@ export default function VaultsIndexClient({ _config }: { _config: WalletFeatureC
                   <h3 className="walletSectionTitle">{vault.name ?? t("unnamedVault")}</h3>
                   <div className="walletMutedText">{shortAddress(vault.vaultAddress)}</div>
                 </div>
-                <span className="badge">{vault.userRole ?? tCommon("vaultRole")}</span>
+                <DeskBadge className="badge">{vault.userRole ?? tCommon("vaultRole")}</DeskBadge>
               </div>
               <p className="walletMutedText walletVaultDescription">{vault.description ?? t("noDescription")}</p>
               <div className="walletInfoGrid">
@@ -81,10 +82,10 @@ export default function VaultsIndexClient({ _config }: { _config: WalletFeatureC
                 </div>
               </div>
               <div className="walletActionRow walletCardActions">
-                <Link className="btn btnPrimary" href={withLocalePath(`/vaults/${vault.vaultAddress}`, locale)}>
+                <DeskLink className="btn btnPrimary" href={withLocalePath(`/vaults/${vault.vaultAddress}`, locale)}>
                   <AppIcon name="vault" />
                   {t("openVault")}
-                </Link>
+                </DeskLink>
               </div>
             </article></DeskSurface>
           ))}

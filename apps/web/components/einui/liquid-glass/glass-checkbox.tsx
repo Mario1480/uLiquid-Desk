@@ -31,12 +31,22 @@ export interface GlassCheckboxProps extends React.ComponentPropsWithoutRef<typeo
 }
 
 const GlassCheckbox = React.forwardRef<React.ElementRef<typeof CheckboxPrimitive.Root>, GlassCheckboxProps>(
-  ({ className, label, id, ...props }, ref) => {
-    const checkboxId = id || "glass-checkbox-id"
+  ({ className, label, id, onCheckedChange, ...props }, ref) => {
+    const generatedId = React.useId()
+    const checkboxId = id || generatedId
+    const [invalid, setInvalid] = React.useState(false)
+    React.useEffect(() => { if (props.checked === true) setInvalid(false) }, [props.checked])
 
     return (
-      <div className="ein:flex ein:items-center ein:gap-3">
+      <span className={label ? "ein:inline-flex ein:items-center ein:gap-3" : "ein:contents"} onInvalidCapture={event => {
+        event.preventDefault()
+        setInvalid(true)
+        event.currentTarget.querySelector<HTMLButtonElement>('[role="checkbox"]')?.focus()
+      }}>
         <CheckboxPrimitive.Root
+          data-ein-control="checkbox"
+          aria-invalid={invalid || undefined}
+          onCheckedChange={value => { setInvalid(false); onCheckedChange?.(value) }}
           ref={ref}
           id={checkboxId}
           className={cn(
@@ -66,7 +76,7 @@ const GlassCheckbox = React.forwardRef<React.ElementRef<typeof CheckboxPrimitive
             {label}
           </label>
         )}
-      </div>
+      </span>
     )
   },
 )

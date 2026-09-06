@@ -1,4 +1,7 @@
 "use client";
+import { DeskChoiceGroup, DeskChoiceItem } from "@/components/desk/DeskChoiceGroup";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -272,9 +275,9 @@ export default function HyperliquidUsdClassTransferSection({
         </div>
         {presentation === "card" ? (
           <div className="fundingBridgeBadges">
-            <span className="badge badgeOk">{tCommon("locationHyperCore")} / {t("spotLabel")}</span>
-            <span className="badge badgeOk">{t("perpLabel")}</span>
-            <span className="badge">{t("officialAction")}</span>
+            <DeskBadge className="badge badgeOk">{tCommon("locationHyperCore")} / {t("spotLabel")}</DeskBadge>
+            <DeskBadge className="badge badgeOk">{t("perpLabel")}</DeskBadge>
+            <DeskBadge className="badge">{t("officialAction")}</DeskBadge>
           </div>
         ) : null}
       </div>
@@ -323,45 +326,41 @@ export default function HyperliquidUsdClassTransferSection({
       ) : null}
 
       {presentation === "card" ? (
-        <div className="fundingDirectionRow fundingSegmentedRow">
-          <DeskButton
-            type="button"
+        <DeskChoiceGroup className="fundingDirectionRow fundingSegmentedRow" value={direction} onValueChange={(value) => setDirection(value as typeof direction)}>
+          <DeskChoiceItem
             className={`btn ${direction === "perp_to_spot" ? "btnPrimary" : ""}`}
-            onClick={() => setDirection("perp_to_spot")}
+            value={"perp_to_spot"}
           >
             <AppIcon name="transfer" />
             {t("moveToSpot")}
-          </DeskButton>
-          <DeskButton
-            type="button"
+          </DeskChoiceItem>
+          <DeskChoiceItem
             className={`btn ${direction === "spot_to_perp" ? "btnPrimary" : ""}`}
-            onClick={() => setDirection("spot_to_perp")}
+            value={"spot_to_perp"}
           >
             <AppIcon name="transfer" />
             {t("moveToPerp")}
-          </DeskButton>
-        </div>
+          </DeskChoiceItem>
+        </DeskChoiceGroup>
       ) : null}
 
       <div className="fundingBridgeFlowCard">
         {presentation === "modal" ? (
           <>
-            <div className="fundingModalCompactSwitch" role="tablist" aria-label={t("title")}>
-              <DeskButton
-                type="button"
+            <DeskChoiceGroup className="fundingModalCompactSwitch" value={direction} onValueChange={(value) => setDirection(value as "perp_to_spot" | "spot_to_perp")} aria-label={t("title")}>
+              <DeskChoiceItem
                 className={`fundingModalCompactSwitchButton ${direction === "perp_to_spot" ? "isActive" : ""}`}
-                onClick={() => setDirection("perp_to_spot")}
-              >
+
+               value={"perp_to_spot"}>
                 {t("perpLabel")} ↔ {t("spotLabel")}
-              </DeskButton>
-              <DeskButton
-                type="button"
+              </DeskChoiceItem>
+              <DeskChoiceItem
                 className={`fundingModalCompactSwitchButton ${direction === "spot_to_perp" ? "isActive" : ""}`}
-                onClick={() => setDirection("spot_to_perp")}
-              >
+
+               value={"spot_to_perp"}>
                 {t("spotLabel")} ↔ {t("perpLabel")}
-              </DeskButton>
-            </div>
+              </DeskChoiceItem>
+            </DeskChoiceGroup>
             <div className="fundingModalAmountMeta">
               <span>{t("sourceBalanceLabel")}</span>
               <strong>{displayBalance(sourceBalance, 2)}</strong></div>
@@ -392,9 +391,9 @@ export default function HyperliquidUsdClassTransferSection({
             </div>
 
             <div className="fundingBridgePhaseRow">
-              <span className={`badge ${phaseStepClass(executionState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
-              <span className={`badge ${phaseStepClass(executionState.phase, "pending")}`}>{t("pendingShort")}</span>
-              <span className={`badge ${phaseStepClass(executionState.phase, "complete")}`}>{t("confirmedShort")}</span>
+              <DeskBadge className={`badge ${phaseStepClass(executionState.phase, "signature")}`}>{t("awaitingSignatureShort")}</DeskBadge>
+              <DeskBadge className={`badge ${phaseStepClass(executionState.phase, "pending")}`}>{t("pendingShort")}</DeskBadge>
+              <DeskBadge className={`badge ${phaseStepClass(executionState.phase, "complete")}`}>{t("confirmedShort")}</DeskBadge>
             </div>
           </>
         )}
@@ -416,10 +415,10 @@ export default function HyperliquidUsdClassTransferSection({
             {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", 2)}
           </DeskButton>
           {presentation === "card" && overview.bridge.links.officialAppUrl ? (
-            <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
+            <DeskAnchor className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
               <AppIcon name="external" />
               {t("openOfficialApp")}
-            </a>
+            </DeskAnchor>
           ) : null}
         </div>
 

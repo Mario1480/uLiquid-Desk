@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSelect } from "@/components/desk/DeskSelect";
@@ -202,7 +203,7 @@ export default function AdminProvidersPage() {
                     <strong>{provider.providerId}</strong>
                     <span className="adminProviderSubline">{provider.providerType} · {provider.message ?? "–"}</span>
                   </td>
-                  <td><span className="badge">{provider.state}</span></td>
+                  <td><DeskBadge className="badge">{provider.state}</DeskBadge></td>
                   <td>{provider.lastSuccessAt ? new Date(provider.lastSuccessAt).toLocaleString() : "–"}</td>
                   <td>{provider.itemCount ?? "–"}</td>
                   <td>

@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
 import { DeskButton } from "@/components/desk/DeskButton";
@@ -193,9 +194,9 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
     <article className="walletInfoTile fundingQuickCard">
       <div className="fundingQuickHeader">
         <strong>{t("fundingVault.title")}</strong>
-        <span className={`badge ${overviewStatusClass(ready)}`}>
+        <DeskBadge className={`badge ${overviewStatusClass(ready)}`}>
           {ready ? tCommon("ready") : t("fundingVault.setupRequired")}
-        </span>
+        </DeskBadge>
       </div>
       <div className="walletMutedText">{t("fundingVault.subtitle")}</div>
       <div className="fundingQuickStats">
@@ -239,9 +240,9 @@ export function BotVaultWalletQuickCard({ onFund, onWithdraw }: { onFund: () => 
     <article className="walletInfoTile fundingQuickCard">
       <div className="fundingQuickHeader">
         <strong>{t("cards.relayTitle")}</strong>
-        <span className={`badge ${overviewStatusClass(routeReady)}`}>
+        <DeskBadge className={`badge ${overviewStatusClass(routeReady)}`}>
           {loading ? t("loading") : routeReady ? tCommon("ready") : t("attention")}
-        </span>
+        </DeskBadge>
       </div>
       <div className="walletMutedText">{t("cards.relaySubtitle")}</div>
       {isConnected ? (
@@ -519,7 +520,7 @@ export default function FundingActionCenter({
       <article className="walletInfoTile fundingQuickCard">
         <div className="fundingQuickHeader">
           <strong>{t("cards.bridgeTitle")}</strong>
-          <span className={`badge ${overviewStatusClass(depositReady && withdrawReady)}`}>{depositReady && withdrawReady ? tCommon("ready") : t("attention")}</span>
+          <DeskBadge className={`badge ${overviewStatusClass(depositReady && withdrawReady)}`}>{depositReady && withdrawReady ? tCommon("ready") : t("attention")}</DeskBadge>
         </div>
         <div className="walletMutedText">{t("cards.bridgeSubtitle")}</div>
         <div className="fundingQuickStats">
@@ -542,7 +543,7 @@ export default function FundingActionCenter({
       <article className="walletInfoTile fundingQuickCard">
         <div className="fundingQuickHeader">
           <strong>{t("cards.spotPerpTitle")}</strong>
-          <span className={`badge ${overviewStatusClass(spotPerpReady)}`}>{spotPerpReady ? tCommon("ready") : t("attention")}</span>
+          <DeskBadge className={`badge ${overviewStatusClass(spotPerpReady)}`}>{spotPerpReady ? tCommon("ready") : t("attention")}</DeskBadge>
         </div>
         <div className="walletMutedText">{t("cards.spotPerpSubtitle")}</div>
         <div className="fundingQuickStats">
@@ -561,7 +562,7 @@ export default function FundingActionCenter({
       <article className="walletInfoTile fundingQuickCard">
         <div className="fundingQuickHeader">
           <strong>{t("cards.coreEvmTitle")}</strong>
-          <span className={`badge ${overviewStatusClass(hyperCoreOk && hyperEvmOk)}`}>{hyperCoreOk && hyperEvmOk ? tCommon("ready") : t("attention")}</span>
+          <DeskBadge className={`badge ${overviewStatusClass(hyperCoreOk && hyperEvmOk)}`}>{hyperCoreOk && hyperEvmOk ? tCommon("ready") : t("attention")}</DeskBadge>
         </div>
         <div className="walletMutedText">{t("cards.coreEvmSubtitle")}</div>
         <div className="fundingQuickStats">

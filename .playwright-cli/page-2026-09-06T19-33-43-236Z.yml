@@ -1,0 +1,78 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "uLiquid Desk" [ref=e4] [cursor=pointer]:
+        - /url: /de
+        - img "uLiquid Desk logo" [ref=e5]
+      - navigation "Sprache wechseln" [ref=e7]:
+        - link "Englisch" [ref=e8] [cursor=pointer]:
+          - /url: /en/login
+          - generic [aria-hidden] [ref=e9]: 🇺🇸
+          - generic [ref=e10]: EN
+        - link "Deutsch" [ref=e11] [cursor=pointer]:
+          - /url: /de/login
+          - generic [aria-hidden] [ref=e12]: 🇩🇪
+          - generic [ref=e13]: DE
+  - main [ref=e14]:
+    - generic [ref=e15]:
+      - region [ref=e16]:
+        - heading "Anmelden" [level=1] [ref=e23]
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e26]:
+              - text: E-Mail
+              - textbox "E-Mail" [ref=e28]:
+                - /placeholder: you@example.com
+            - generic [ref=e29]:
+              - text: Passwort
+              - textbox "Passwort" [ref=e31]:
+                - /placeholder: ••••••••
+            - generic [ref=e32]:
+              - button "Anmelden" [disabled] [ref=e33]
+              - link "Konto erstellen" [ref=e38] [cursor=pointer]:
+                - /url: /de/register
+              - link "Passwort vergessen?" [ref=e44] [cursor=pointer]:
+                - /url: /de/reset-password
+              - status
+          - generic [ref=e48]:
+            - generic [ref=e49]: Bitte verbinde zuerst oben deine Wallet.
+            - button "Mit Wallet anmelden" [ref=e50] [cursor=pointer]
+      - region [ref=e55]:
+        - generic [ref=e56]:
+          - heading "Risk & Non-Custody Notice" [level=2] [ref=e61]
+          - generic [ref=e62]: Version 2026-05-17
+        - list [ref=e63]:
+          - listitem [ref=e64]: By creating an account or using uLiquid, you agree to the uLiquid Terms of Use, acknowledge the uLiquid Privacy Policy, and acknowledge the uLiquid Crypto Risk Disclosure.
+          - listitem [ref=e65]: uLiquid is non-custodial software. uLiquid does not take custody of your funds and has no independent access to withdraw your funds. uLiquid does not ask for or control your private keys, seed phrases, or withdrawal credentials. Wallets, exchange accounts, API permissions, smart contracts, orders, and transactions remain under your control or the third-party venues you choose.
+          - listitem [ref=e66]: uLiquid does not provide financial, investment, trading, tax, accounting, or legal advice. Information, signals, automation, alerts, backtests, forecasts, and examples are provided for software functionality and informational purposes only.
+          - listitem [ref=e67]: Crypto-assets, derivatives, leverage, automated trading, exchange integrations, smart contracts, wallets, and network activity involve substantial risk. You may lose some or all of your funds.
+          - listitem [ref=e68]: You are solely responsible for every wallet connection, API permission, order, strategy, bot, configuration, deposit, withdrawal, transfer, and transaction initiated through or alongside uLiquid.
+          - listitem [ref=e69]: Past performance, backtests, simulated results, AI outputs, indicators, and strategy presets do not guarantee future results. uLiquid makes no promise of profit, availability, execution quality, or error-free operation.
+          - listitem [ref=e70]: By using uLiquid, you confirm that you understand these risks and use the software entirely at your own risk.
+        - generic "Legal documents" [ref=e71]:
+          - link "Terms of Use" [ref=e72] [cursor=pointer]:
+            - /url: /de/terms
+          - link "Privacy Policy" [ref=e73] [cursor=pointer]:
+            - /url: /de/privacy
+          - link "Crypto Risk Disclosure" [ref=e74] [cursor=pointer]:
+            - /url: /de/risk-disclosure
+  - contentinfo [ref=e75]:
+    - generic [ref=e76]:
+      - generic [ref=e77]: © 2026 uLiquid
+      - generic [ref=e78]:
+        - link "uLiquid Desk Website" [ref=e79] [cursor=pointer]:
+          - /url: https://desk.uliquid.vip
+          - text: desk.uliquid.vip
+        - link "Datenschutz" [ref=e80] [cursor=pointer]:
+          - /url: /de/privacy
+        - link "Cookie-Informationen" [ref=e81] [cursor=pointer]:
+          - /url: /de/cookies
+        - link "Nutzungsbedingungen" [ref=e82] [cursor=pointer]:
+          - /url: /de/terms
+        - link "Crypto Risk Disclosure" [ref=e83] [cursor=pointer]:
+          - /url: /de/risk-disclosure
+          - text: Risk Disclosure
+        - link "Support email" [ref=e84] [cursor=pointer]:
+          - /url: mailto:support@uliquid.vip
+          - text: support@uliquid.vip
+  - alert [ref=e85]

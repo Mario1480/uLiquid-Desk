@@ -1,9 +1,10 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
@@ -111,10 +112,10 @@ export default function PrivacySettingsPage() {
         title={t("title")}
         description={t("description")}
         actions={(
-          <Link className="btn" href={withLocalePath("/settings", locale)}>
+          <DeskLink className="btn" href={withLocalePath("/settings", locale)}>
             <AppIcon name="back" />
             {tCommon("backToSettings")}
-          </Link>
+          </DeskLink>
         )}
       />
 
@@ -135,10 +136,10 @@ export default function PrivacySettingsPage() {
             <div className="settingsInlineTitle">{t("export.title")}</div>
             <div className="settingsMutedText">{t("export.description")}</div>
           </div>
-          <span className="badge">
+          <DeskBadge className="badge">
             <AppIcon name="download" />
             {t("export.status")}
-          </span>
+          </DeskBadge>
         </div>
         <div className="settingsMutedText">{t("export.meta")}</div>
       </section></DeskSurface>

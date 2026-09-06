@@ -1,4 +1,6 @@
 "use client";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -506,16 +508,16 @@ export default function ArbitrumHyperCoreBridgeSection({
         </div>
         {presentation === "card" ? (
           <div className="fundingBridgeBadges">
-            <span className={`badge ${networkBadgeClass(isCorrectArbitrumChain)}`}>
+            <DeskBadge className={`badge ${networkBadgeClass(isCorrectArbitrumChain)}`}>
               {isCorrectArbitrumChain ? t("networkReady") : t("networkMismatch")}
-            </span>
-            <span className={`badge ${routeBadgeClass(depositRouteStatus)}`}>
+            </DeskBadge>
+            <DeskBadge className={`badge ${routeBadgeClass(depositRouteStatus)}`}>
               {t("deposit.title")} · {routeStatusLabel(t, depositRouteStatus)}
-            </span>
-            <span className={`badge ${routeBadgeClass(withdrawRouteStatus)}`}>
+            </DeskBadge>
+            <DeskBadge className={`badge ${routeBadgeClass(withdrawRouteStatus)}`}>
               {t("withdraw.title")} · {routeStatusLabel(t, withdrawRouteStatus)}
-            </span>
-            <span className="badge">{t("nativeUsdcOnly")}</span>
+            </DeskBadge>
+            <DeskBadge className="badge">{t("nativeUsdcOnly")}</DeskBadge>
           </div>
         ) : null}
       </div>
@@ -589,9 +591,9 @@ export default function ArbitrumHyperCoreBridgeSection({
               </div>
 
               <div className="fundingBridgePhaseRow">
-                <span className={`badge ${phaseStepClass(depositState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
-                <span className={`badge ${phaseStepClass(depositState.phase, "pending")}`}>{t("pendingShort")}</span>
-                <span className={`badge ${phaseStepClass(depositState.phase, "complete")}`}>{t("confirmedShort")}</span>
+                <DeskBadge className={`badge ${phaseStepClass(depositState.phase, "signature")}`}>{t("awaitingSignatureShort")}</DeskBadge>
+                <DeskBadge className={`badge ${phaseStepClass(depositState.phase, "pending")}`}>{t("pendingShort")}</DeskBadge>
+                <DeskBadge className={`badge ${phaseStepClass(depositState.phase, "complete")}`}>{t("confirmedShort")}</DeskBadge>
               </div>
             </>
           )}
@@ -623,9 +625,9 @@ export default function ArbitrumHyperCoreBridgeSection({
               </>
             ) : null}
             {presentation === "card" && overview.bridge.links.depositContractExplorerUrl ? (
-              <a className="btn" href={overview.bridge.links.depositContractExplorerUrl} target="_blank" rel="noreferrer">
+              <DeskAnchor className="btn" href={overview.bridge.links.depositContractExplorerUrl} target="_blank" rel="noreferrer">
                 {t("deposit.bridgeExplorer")}
-              </a>
+              </DeskAnchor>
             ) : null}
             <DeskButton
               type="button"
@@ -703,9 +705,9 @@ export default function ArbitrumHyperCoreBridgeSection({
               </div>
 
               <div className="fundingBridgePhaseRow">
-                <span className={`badge ${phaseStepClass(withdrawState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
-                <span className={`badge ${phaseStepClass(withdrawState.phase, "pending")}`}>{t("pendingShort")}</span>
-                <span className={`badge ${phaseStepClass(withdrawState.phase, "complete")}`}>{t("confirmedShort")}</span>
+                <DeskBadge className={`badge ${phaseStepClass(withdrawState.phase, "signature")}`}>{t("awaitingSignatureShort")}</DeskBadge>
+                <DeskBadge className={`badge ${phaseStepClass(withdrawState.phase, "pending")}`}>{t("pendingShort")}</DeskBadge>
+                <DeskBadge className={`badge ${phaseStepClass(withdrawState.phase, "complete")}`}>{t("confirmedShort")}</DeskBadge>
               </div>
             </>
           )}
@@ -747,9 +749,9 @@ export default function ArbitrumHyperCoreBridgeSection({
               </DeskButton>
             ) : null}
             {presentation === "card" && overview.bridge.links.officialAppUrl ? (
-              <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
+              <DeskAnchor className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
                 {t("withdraw.officialBridge")}
-              </a>
+              </DeskAnchor>
             ) : null}
             {presentation === "card" ? (
               <DeskButton

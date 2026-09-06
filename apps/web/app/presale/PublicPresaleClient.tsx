@@ -1,4 +1,7 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -98,7 +101,7 @@ function RoundCard({ round, current, locale }: { round: PublicPresaleRound; curr
             {round.scheduleSource === "ONCHAIN" ? t("rounds.onchain") : round.scheduleSource === "BACKEND_DRAFT" ? t("rounds.planned") : t("rounds.notConfigured")}
           </p>
         </div>
-        <span className={`uiStatusBadge uiStatusBadge-${statusTone(round.state)}`}>{t.has(`states.${round.state}`) ? t(`states.${round.state}`) : round.state}</span>
+        <DeskBadge className={`uiStatusBadge uiStatusBadge-${statusTone(round.state)}`}>{t.has(`states.${round.state}`) ? t(`states.${round.state}`) : round.state}</DeskBadge>
       </div>
       <div className="publicPresaleMetrics">
         <div><span>{t("rounds.price")}</span><strong>{formatRaw(round.priceUsdcRawPerUliq, 6, 4)} USDC</strong></div>
@@ -358,12 +361,12 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
           <h1>{view === "vesting" ? t("vesting.title") : t("hero.title")}</h1>
           <p>{view === "vesting" ? t("vesting.description") : t("hero.description")}</p>
           <div className="publicPresaleHeroMeta">
-            <span className="uiStatusBadge uiStatusBadge-warning">{t("hero.preview")}</span>
+            <DeskBadge className="uiStatusBadge uiStatusBadge-warning">{t("hero.preview")}</DeskBadge>
             <span>{previewOnly ? t(overview.explorerUrl && !/^0x0{40}$/i.test(overview.tokenAddress) ? "hero.presaleContractsPending" : "hero.contractsPending") : t("hero.finalizedBlock", { block: overview.asOfBlock })}</span>
             {overview.explorerUrl && !/^0x0{40}$/i.test(overview.tokenAddress) ? (
-              <a className="btn" href={`${overview.explorerUrl}/token/${overview.tokenAddress}`} target="_blank" rel="noreferrer" title={overview.tokenAddress}>
+              <DeskAnchor className="btn" href={`${overview.explorerUrl}/token/${overview.tokenAddress}`} target="_blank" rel="noreferrer" title={overview.tokenAddress}>
                 <AppIcon name="external" /> {t("hero.tokenContract")}: {overview.tokenAddress.slice(0, 8)}…{overview.tokenAddress.slice(-6)}
-              </a>
+              </DeskAnchor>
             ) : null}
           </div>
         </div>
@@ -408,7 +411,7 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
                 <div className="publicPresaleTermsAccept">
                   <h3>{t("access.termsTitle")}</h3>
                   <p>{t("access.termsDescription")}</p>
-                  <label><DeskInput type="checkbox" checked={termsChecked} onChange={(event) => setTermsChecked(event.target.checked)} /> <span>{t("access.termsCheckbox")}</span></label>
+                  <label><DeskCheckbox checked={termsChecked} onCheckedChange={(checked) => setTermsChecked(checked)} /> <span>{t("access.termsCheckbox")}</span></label>
                   <div className="publicPresaleInlineLinks">
                     <Link href={withLocalePath("/presale/terms", locale)}>{t("tabs.terms")}</Link>
                     <Link href={withLocalePath("/terms", locale)}>{t("terms.platformTerms")}</Link>
@@ -435,7 +438,7 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
                   <DeskButton className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction("purchase", purchase, t("purchase.submitted"))}><AppIcon name="wallet" /> {t("purchase.approveBuy")}</DeskButton>
                 </div>
               ) : null}
-              {lastTransaction && overview.explorerUrl ? <a className="btn" href={`${overview.explorerUrl}/tx/${lastTransaction}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {t("purchase.lastTransaction")}</a> : null}
+              {lastTransaction && overview.explorerUrl ? <DeskAnchor className="btn" href={`${overview.explorerUrl}/tx/${lastTransaction}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {t("purchase.lastTransaction")}</DeskAnchor> : null}
             </article>
           </section>
 
@@ -449,10 +452,10 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
                   return (
                     <article key={purchase.key} className="publicPresaleHistoryRow">
                       <div><strong>{purchase.purchaseId ? t("history.purchase", { id: purchase.purchaseId }) : purchase.roundId ?? "ULIQ"}</strong><span>{t("history.amount", { usdc: formatRaw(purchase.usdcAmountRaw, 6), uliq: formatRaw(purchase.uliqAllocationRaw, 18) })}</span></div>
-                      <span className={`uiStatusBadge uiStatusBadge-${statusTone(purchase.confirmationStatus)}`}>{purchase.confirmationStatus.replaceAll("_", " ")}</span>
+                      <DeskBadge className={`uiStatusBadge uiStatusBadge-${statusTone(purchase.confirmationStatus)}`}>{purchase.confirmationStatus.replaceAll("_", " ")}</DeskBadge>
                       <div><span>{t("history.withdrawalDeadline")}</span><strong>{formatDate(purchase.withdrawalDeadline, locale)}</strong></div>
                       <div className="publicPresaleHistoryActions">
-                        {overview.explorerUrl ? <a className="btn btnIcon" href={`${overview.explorerUrl}/tx/${purchase.transactionHash}`} target="_blank" rel="noreferrer" aria-label={t("history.transaction")}><AppIcon name="external" /></a> : null}
+                        {overview.explorerUrl ? <DeskAnchor className="btn btnIcon" href={`${overview.explorerUrl}/tx/${purchase.transactionHash}`} target="_blank" rel="noreferrer" aria-label={t("history.transaction")}><AppIcon name="external" /></DeskAnchor> : null}
                         {purchase.roundId && purchase.purchaseId && withdrawalOpen ? <DeskButton className="btn" type="button" disabled={busy !== null} onClick={() => void runAction(`withdraw:${purchase.key}`, () => settle(purchase.roundId!, purchase.purchaseId!, "withdraw"))}><AppIcon name="withdraw" /> {t("history.withdraw")}</DeskButton> : null}
                         {purchase.roundId && purchase.purchaseId && canFinalize ? <DeskButton className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction(`finalize:${purchase.key}`, () => settle(purchase.roundId!, purchase.purchaseId!, "finalize"))}><AppIcon name="check" /> {t("history.finalize")}</DeskButton> : null}
                       </div>
@@ -472,7 +475,7 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
             const progress = hasData && BigInt(position.allocatedRaw) > BigInt(0) ? Number(BigInt(position.vestedRaw) * BigInt(10_000) / BigInt(position.allocatedRaw)) / 100 : 0;
             return (
               <article className="uiSection publicPresaleVestingCard" key={position.roundId}>
-                <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><span className="uliqSectionEyebrow">{round ? t("rounds.round", { number: round.number }) : position.roundId}</span><h2 className="uiSectionTitle">{t("vesting.title")}</h2></div><span className={`uiStatusBadge uiStatusBadge-${BigInt(position.claimableRaw ?? "0") > BigInt(0) ? "success" : "neutral"}`}>{formatRaw(position.claimableRaw, 18)} ULIQ</span></div>
+                <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><span className="uliqSectionEyebrow">{round ? t("rounds.round", { number: round.number }) : position.roundId}</span><h2 className="uiSectionTitle">{t("vesting.title")}</h2></div><DeskBadge className={`uiStatusBadge uiStatusBadge-${BigInt(position.claimableRaw ?? "0") > BigInt(0) ? "success" : "neutral"}`}>{formatRaw(position.claimableRaw, 18)} ULIQ</DeskBadge></div>
                 <div className="publicPresaleMetrics">
                   <div><span>{t("vesting.allocated")}</span><strong>{formatRaw(position.allocatedRaw, 18)} ULIQ</strong></div>
                   <div><span>{t("vesting.vested")}</span><strong>{formatRaw(position.vestedRaw, 18)} ULIQ</strong></div>

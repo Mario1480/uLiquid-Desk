@@ -1,10 +1,11 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
@@ -163,10 +164,10 @@ export default function TradingDefaultsPage() {
         title={t("title")}
         description={t("description")}
         actions={(
-          <Link className="btn" href={withLocalePath("/settings", locale)}>
+          <DeskLink className="btn" href={withLocalePath("/settings", locale)}>
             <AppIcon name="back" />
             {tCommon("backToSettings")}
-          </Link>
+          </DeskLink>
         )}
       />
 
@@ -316,7 +317,7 @@ export default function TradingDefaultsPage() {
                       : t("preview.noAccount")}
                   </div>
                 </div>
-                <span className="badge">{settings.marketType.toUpperCase()}</span>
+                <DeskBadge className="badge">{settings.marketType.toUpperCase()}</DeskBadge>
               </div>
               <div className="settingsHubSummary settingsTradingDefaultsSummary">
                 <div className="miniMetric">

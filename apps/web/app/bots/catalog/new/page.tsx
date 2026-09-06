@@ -1,11 +1,12 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskTextarea } from "@/components/desk/DeskTextarea";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -435,12 +436,12 @@ export default function UserGridTemplateCreatePage() {
             <p className="gridCatalogHeroSubtitle">{tGrid("templateCreateSubtitle")}</p>
           </div>
           <div className="gridCatalogHeroBadges">
-            <span className="badge">{tGrid("templateCreateAutoMarginBadge")}</span>
-            <span className="badge">{tGrid("templateCreateConservativeBadge")}</span>
+            <DeskBadge className="badge">{tGrid("templateCreateAutoMarginBadge")}</DeskBadge>
+            <DeskBadge className="badge">{tGrid("templateCreateConservativeBadge")}</DeskBadge>
           </div>
         </div>
         <div className="gridCatalogHeroActions">
-          <Link href={withLocalePath("/bots/catalog", locale)} className="btn">{tGrid("templateCreateBack")}</Link>
+          <DeskLink href={withLocalePath("/bots/catalog", locale)} className="btn">{tGrid("templateCreateBack")}</DeskLink>
         </div>
       </section></DeskSurface>
 
@@ -546,13 +547,13 @@ export default function UserGridTemplateCreatePage() {
               <div className="gridCatalogSectionHint">{tGrid("previewSectionHint")}</div>
             </div>
             {previewLoading ? (
-              <span className="badge badgeWarn">{tGrid("previewUpdating")}</span>
+              <DeskBadge className="badge badgeWarn">{tGrid("previewUpdating")}</DeskBadge>
             ) : previewInsufficient ? (
-              <span className="badge badgeDanger">{tGrid("previewInsufficient")}</span>
+              <DeskBadge className="badge badgeDanger">{tGrid("previewInsufficient")}</DeskBadge>
             ) : previewReady ? (
-              <span className="badge badgeOk">{tGrid("previewReady")}</span>
+              <DeskBadge className="badge badgeOk">{tGrid("previewReady")}</DeskBadge>
             ) : (
-              <span className="badge">{tGrid("previewWaiting")}</span>
+              <DeskBadge className="badge">{tGrid("previewWaiting")}</DeskBadge>
             )}
           </div>
 
@@ -572,7 +573,7 @@ export default function UserGridTemplateCreatePage() {
               <div className="gridCatalogCalloutBody">
                 {tGrid("noExecutionAccountsHint", { exchanges: [...allowedGridExchanges].join(", ") })}
               </div>
-              <Link href={withLocalePath("/settings", locale)} className="btn">{tGrid("openExchangeSettings")}</Link>
+              <DeskLink href={withLocalePath("/settings", locale)} className="btn">{tGrid("openExchangeSettings")}</DeskLink>
             </div></DeskSurface>
           ) : null}
 

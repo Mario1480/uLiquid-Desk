@@ -1,0 +1,259 @@
+- generic:
+  - generic:
+    - complementary [aria-hidden]:
+      - generic:
+        - generic:
+          - link:
+            - /url: /de
+            - generic:
+              - strong: uLiquid Desk
+              - generic: Desk Beta v1.0.0
+        - region:
+          - generic: Desk & Trading
+          - navigation:
+            - link:
+              - /url: /de/dashboard
+              - generic: Dashboard
+            - link:
+              - /url: /de/trade
+              - generic: Trading Desk
+            - link:
+              - /url: /de/market-intelligence
+              - generic: Market Intelligence
+            - link:
+              - /url: /de/calendar
+              - generic: Kalender
+            - link:
+              - /url: /de/news
+              - generic: News
+        - region:
+          - generic: AI
+          - navigation:
+            - link:
+              - /url: /de/agent-chat
+              - generic: AI Agent Chat
+            - link:
+              - /url: /de/predictions
+              - generic: Prognosen
+            - link:
+              - /url: /de/strategies
+              - generic: AI Prediction Builder
+        - region:
+          - generic: Grid, Bots & Signale
+          - navigation:
+            - link:
+              - /url: /de/bots
+              - generic: Trading Bots
+            - link:
+              - /url: /de/bots/grid
+              - generic: Grid Bots
+        - region:
+          - generic: Vaults & Funding
+          - navigation:
+            - link:
+              - /url: /de/accounts
+              - generic: Accounts
+            - link:
+              - /url: /de/wallet
+              - generic: Wallet & Funding
+            - link:
+              - /url: /de/vaults
+              - generic: Vaults
+        - region:
+          - generic: Einstellungen
+          - navigation:
+            - link:
+              - /url: /de/settings
+              - generic: Einstellungen
+            - link:
+              - /url: /de/admin
+              - generic: Admin
+            - link:
+              - /url: /de/help
+              - generic: Hilfe
+        - region:
+          - generic: System Snapshot
+          - generic:
+            - generic:
+              - generic: Exchange-Accounts
+              - strong: "0"
+            - generic:
+              - generic: Laufende Bots
+              - strong: "0"
+            - generic:
+              - generic: Laufende Grid Bots
+              - strong: "0"
+            - generic:
+              - generic: Laufende Prognosen
+              - strong: "0"
+            - generic:
+              - generic: Bots mit Fehlern
+              - strong: "0"
+        - generic:
+          - button:
+            - generic: Abmelden
+    - generic:
+      - banner [aria-hidden]:
+        - generic:
+          - generic:
+            - generic:
+              - combobox
+              - button:
+                - generic [aria-hidden]:
+                  - generic: Ctrl/⌘
+                  - generic: K
+          - generic:
+            - generic:
+              - button:
+                - generic: DE
+            - link:
+              - /url: /de/settings/subscription
+              - generic: AI
+              - strong: "0"
+            - generic:
+              - button:
+                - generic: Wallet verbinden
+            - generic:
+              - button
+            - generic:
+              - button:
+                - generic:
+                  - generic [aria-hidden]:
+                    - generic: UF
+                - generic: ui-fixture
+      - navigation [aria-hidden]:
+        - generic:
+          - list:
+            - listitem:
+              - link:
+                - /url: /de/dashboard
+            - listitem:
+              - link:
+                - /url: /de/admin
+                - generic: Admin
+            - listitem:
+              - link:
+                - /url: /de/admin/system
+                - generic: System
+            - listitem:
+              - generic: Ui Components
+      - main:
+        - generic:
+          - complementary [aria-hidden]:
+            - generic:
+              - generic:
+                - generic: uLiquid Desk
+                - generic: Platform Admin
+                - generic: Strict superadmin operations area
+              - navigation:
+                - link:
+                  - /url: /de/admin
+                  - generic: Overview
+                - link:
+                  - /url: /de/admin/users
+                  - generic: Users
+                - link:
+                  - /url: /de/admin/workspaces
+                  - generic: Workspaces
+                - link:
+                  - /url: /de/admin/licenses
+                  - generic: Licenses
+                - link:
+                  - /url: /de/admin/alerts
+                  - generic: Alerts
+                - link:
+                  - /url: /de/admin/bots
+                  - generic: Bots
+                - link:
+                  - /url: /de/admin/runners
+                  - generic: Runners
+                - link:
+                  - /url: /de/admin/audit
+                  - generic: Audit
+                - link:
+                  - /url: /de/admin/statistics
+                  - generic: Statistics
+                - link:
+                  - /url: /de/admin/providers
+                  - generic: Providers
+                - link:
+                  - /url: /de/admin/affiliate
+                  - generic: Affiliate
+                - link:
+                  - /url: /de/admin/system/vaults/execution
+                  - generic: Vaults
+                - link:
+                  - /url: /de/admin/system
+                  - generic: System
+          - generic:
+            - generic:
+              - navigation [aria-hidden]:
+                - link:
+                  - /url: /de/admin/system
+                  - text: Overview
+                - link:
+                  - /url: /de/admin/system/access
+                  - text: Access
+                - link:
+                  - /url: /de/admin/system/notifications/smtp
+                  - text: Notifications
+                - link:
+                  - /url: /de/admin/system/integrations/api-keys
+                  - text: Integrations
+                - link:
+                  - /url: /de/admin/system/ai/prompts
+                  - text: AI Controls
+                - link:
+                  - /url: /de/admin/system/bots/grid-templates
+                  - text: Bots & Strategies
+                - link:
+                  - /url: /de/admin/system/vaults/execution
+                  - text: Vault Controls
+              - generic:
+                - heading [level=1] [aria-hidden]: Ein-UI-Komponentengalerie
+                - paragraph [aria-hidden]: Vollständige lokale Ein-UI-Sammlung mit Ocean-Palette und einfarbigen Buttons.
+                - generic [aria-hidden]:
+                  - generic:
+                    - text: Komponente
+                    - combobox
+                  - generic:
+                    - text: Vorschaupalette
+                    - combobox
+                  - button: Vorschau pausieren
+                - paragraph [aria-hidden]: Nur lokale Beispieldaten. Es werden keine Orders, Zahlungen, Registrierungen oder Nachrichten ausgelöst.
+                - generic [aria-hidden]:
+                  - generic:
+                    - button [expanded]: Open / Öffnen
+                - status
+                - paragraph [aria-hidden]: 46 ausführbare Beispiele für die Upstream-Registry und die Dashboard-Vorlage der Website.
+  - contentinfo [aria-hidden]:
+    - generic:
+      - generic: © 2026 uLiquid
+      - generic:
+        - link:
+          - /url: https://desk.uliquid.vip
+          - text: desk.uliquid.vip
+        - link:
+          - /url: /de/privacy
+          - text: Datenschutz
+        - link:
+          - /url: /de/cookies
+          - text: Cookie-Informationen
+        - link:
+          - /url: /de/terms
+          - text: Nutzungsbedingungen
+        - link:
+          - /url: /de/risk-disclosure
+          - text: Risk Disclosure
+        - link:
+          - /url: mailto:support@uliquid.vip
+          - text: support@uliquid.vip
+  - alert
+  - dialog [ref=f2e434]:
+    - generic [ref=f2e435]:
+      - heading "Local dialog / Lokaler Dialog" [level=2] [ref=f2e436]
+      - paragraph [ref=f2e437]: Focus, Escape and scroll-lock example.
+      - generic [ref=f2e438]:
+        - text: Sample input
+        - textbox "Sample input" [active] [ref=f2e439]
+    - button "Close" [ref=f2e440]

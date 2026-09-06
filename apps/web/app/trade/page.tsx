@@ -1,11 +1,15 @@
 "use client";
+import { DeskChoiceGroup, DeskChoiceItem } from "@/components/desk/DeskChoiceGroup";
+import { GlassSlider } from "@/components/einui/liquid-glass/glass-slider";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskTable } from "@/components/desk/DeskTable";
-import Link from "next/link";
 import { normalizePositionLiquidation } from "@mm/futures-core";
 import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -2397,7 +2401,7 @@ function TradePageContent() {
               {activePrefill.tags?.length ? (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {activePrefill.tags.map((tag) => (
-                    <span key={tag} className="badge">{tag}</span>
+                    <DeskBadge key={tag} className="badge">{tag}</DeskBadge>
                   ))}
                 </div>
               ) : null}
@@ -2495,10 +2499,10 @@ function TradePageContent() {
           <div style={{ color: "var(--muted)", marginBottom: 12 }}>
             {t("noAccountsHint")}
           </div>
-	          <Link href="/settings" className="btn btnPrimary">
+	          <DeskLink href="/settings" className="btn btnPrimary">
 	            <AppIcon name="settings" />
 	            {t("actions.addExchangeAccount")}
-	          </Link>
+	          </DeskLink>
         </div></DeskSurface>
       ) : (
         <>
@@ -2706,40 +2710,36 @@ function TradePageContent() {
                     </div>
                   </>
                 ) : (
-                  <div className="tradeOrderModeSwitch">
-                    <DeskButton
+                  <DeskChoiceGroup className="tradeOrderModeSwitch" value={spotOrderSide} onValueChange={(value) => setSpotOrderSide(value as typeof spotOrderSide)}>
+                    <DeskChoiceItem
                       className={`tradeOrderModeBtn ${spotOrderSide === "buy" ? "tradeOrderModeBtnActive" : ""}`}
-                      onClick={() => setSpotOrderSide("buy")}
-                      type="button"
+                      value={"buy"}
                     >
                       {t("actions.buy")}
-                    </DeskButton>
-                    <DeskButton
+                    </DeskChoiceItem>
+                    <DeskChoiceItem
                       className={`tradeOrderModeBtn ${spotOrderSide === "sell" ? "tradeOrderModeBtnActive" : ""}`}
-                      onClick={() => setSpotOrderSide("sell")}
-                      type="button"
+                      value={"sell"}
                     >
                       {t("actions.sell")}
-                    </DeskButton>
-                  </div>
+                    </DeskChoiceItem>
+                  </DeskChoiceGroup>
                 )}
 
-                <div className="tradeOrderTypeTabs">
-                  <DeskButton
+                <DeskChoiceGroup className="tradeOrderTypeTabs" value={orderType} onValueChange={(value) => setOrderType(value as typeof orderType)}>
+                  <DeskChoiceItem
                     className={`tradeOrderTypeTab ${orderType === "limit" ? "tradeOrderTypeTabActive" : ""}`}
-                    onClick={() => setOrderType("limit")}
-                    type="button"
+                    value={"limit"}
                   >
                     {t("fields.limit")}
-                  </DeskButton>
-                  <DeskButton
+                  </DeskChoiceItem>
+                  <DeskChoiceItem
                     className={`tradeOrderTypeTab ${orderType === "market" ? "tradeOrderTypeTabActive" : ""}`}
-                    onClick={() => setOrderType("market")}
-                    type="button"
+                    value={"market"}
                   >
                     {t("fields.market")}
-                  </DeskButton>
-                </div>
+                  </DeskChoiceItem>
+                </DeskChoiceGroup>
 
                 <div className="tradeOrderMetaRow">
                   <span>{t("fields.available")}</span>
@@ -2794,14 +2794,14 @@ function TradePageContent() {
                   </div>
                 </label>
 
-                <DeskInput
+                <GlassSlider
                   className="tradeOrderSlider"
-                  type="range"
+
                   min={0}
                   max={100}
                   step={25}
-                  value={qtyPercent}
-                  onChange={(event) => setQtyFromPercent(Number(event.target.value))}
+                  value={[qtyPercent]}
+                  onValueChange={([value]) => setQtyFromPercent(value)} aria-label={t("fields.positionSize")}
                 />
 
                 <div className="tradeOrderDualStats">
@@ -2834,10 +2834,9 @@ function TradePageContent() {
                 {!isSpotMode ? (
                   <>
                     <label className="tradeOrderCheckRow">
-                      <DeskInput
-                        type="checkbox"
+                      <DeskSwitch
                         checked={tpSlEnabled}
-                        onChange={(event) => setTpSlEnabled(event.target.checked)}
+                        onCheckedChange={(checked) => setTpSlEnabled(checked)}
                       />
                       <span>{t("fields.tpSl")}</span>
                     </label>
@@ -3019,7 +3018,7 @@ function TradePageContent() {
                   <AppIcon name="refresh" />
                   {copilotLoading ? t("copilot.analyzing") : t("copilot.refresh")}
                 </DeskButton>
-                <Link
+                <DeskLink
                   className="btn"
                   href={POSITION_COPILOT_MANUAL_REVIEW_HREF}
                   onClick={() => {
@@ -3036,7 +3035,7 @@ function TradePageContent() {
                 >
                   <AppIcon name="ai" />
                   {t("copilot.deepAnalyze")}
-                </Link>
+                </DeskLink>
               </div>
             </div>
 
@@ -3057,20 +3056,18 @@ function TradePageContent() {
                   </DeskSelect>
                 </label>
                 <label className="tradeCopilotToggle">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={copilotSettings?.inAppEnabled ?? true}
                     disabled={!copilotSettings || copilotSettingsSaving}
-                    onChange={(event) => void updateCopilotSettings({ inAppEnabled: event.target.checked })}
+                    onCheckedChange={(checked) => void updateCopilotSettings({ inAppEnabled: checked })}
                   />
                   {t("copilot.inApp")}
                 </label>
                 <label className="tradeCopilotToggle">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={copilotSettings?.telegramEnabled ?? false}
                     disabled={!copilotSettings || copilotSettingsSaving}
-                    onChange={(event) => void updateCopilotSettings({ telegramEnabled: event.target.checked })}
+                    onCheckedChange={(checked) => void updateCopilotSettings({ telegramEnabled: checked })}
                   />
                   {t("copilot.telegram")}
                 </label>
@@ -3331,11 +3328,11 @@ function TradePageContent() {
                         <div className="tradeMobileHead">
                           <div className="tradeMobileHeadLeft">
                             <div className="tradeMobileTitle">{position.symbol}</div>
-                            <span
+                            <DeskBadge
                               className={`tradeMobileChip ${position.side === "long" ? "tradeMobileChipLong" : "tradeMobileChipShort"}`}
                             >
                               {position.side.toUpperCase()}
-                            </span>
+                            </DeskBadge>
                           </div>
                           <div
                             className="tradeMobilePnl"
@@ -3694,10 +3691,10 @@ function TradePageContent() {
                         <div className="tradeMobileHead">
                           <div className="tradeMobileHeadLeft">
                             <div className="tradeMobileTitle">{order.symbol}</div>
-                            <span className={`tradeMobileChip ${sideChipClass}`}>{order.side ?? "-"}</span>
+                            <DeskBadge className={`tradeMobileChip ${sideChipClass}`}>{order.side ?? "-"}</DeskBadge>
                           </div>
                           <div className="tradeMobileHeadRight">
-                            <span className={`tradeMobileChip ${statusChipClass}`}>{order.status ?? "-"}</span>
+                            <DeskBadge className={`tradeMobileChip ${statusChipClass}`}>{order.status ?? "-"}</DeskBadge>
                           </div>
                         </div>
                         <div className="tradeMobileRows">

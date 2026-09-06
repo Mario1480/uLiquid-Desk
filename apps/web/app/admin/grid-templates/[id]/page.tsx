@@ -1,4 +1,7 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -1007,7 +1010,7 @@ export default function AdminGridTemplateDetailPage() {
               <DeskInput className="input" type="number" min="1" max="16" step="1" value={form.autoReserveMaxPreviewIterations} disabled={form.autoReservePolicy !== "LIQ_GUARD_MAX_GRID"} onChange={(event) => setForm((prev) => prev ? { ...prev, autoReserveMaxPreviewIterations: event.target.value } : prev)} />
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
-              <DeskInput type="checkbox" checked={form.initialSeedEnabled} onChange={(event) => setForm((prev) => prev ? { ...prev, initialSeedEnabled: event.target.checked } : prev)} />
+              <DeskSwitch checked={form.initialSeedEnabled} onCheckedChange={(checked) => setForm((prev) => prev ? { ...prev, initialSeedEnabled: checked } : prev)} />
               <span>{tDetail("fields.initialSeedEnabled")}</span>
             </label>
             <label>
@@ -1094,19 +1097,19 @@ export default function AdminGridTemplateDetailPage() {
               <DeskTextarea className="input" rows={2} value={form.catalogShortDescription} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogShortDescription: event.target.value } : prev)} />
             </label>
             <label className="settingsToggle">
-              <DeskInput type="checkbox" checked={form.catalogFeatured} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogFeatured: event.target.checked } : prev)} />
+              <DeskCheckbox checked={form.catalogFeatured} onCheckedChange={(checked) => setForm((prev) => prev ? { ...prev, catalogFeatured: checked } : prev)} />
               <span>{tDetail("fields.catalogFeatured")}</span>
             </label>
             <label className="settingsToggle">
-              <DeskInput type="checkbox" checked={form.marginPolicy === "AUTO_ALLOWED"} readOnly />
+              <DeskCheckbox checked={form.marginPolicy === "AUTO_ALLOWED"} readOnly />
               <span>{tDetail("fields.allowAutoMarginDerived")}</span>
             </label>
             <label className="settingsToggle">
-              <DeskInput type="checkbox" checked={form.allowManualMarginAdjust} onChange={(event) => setForm((prev) => prev ? { ...prev, allowManualMarginAdjust: event.target.checked } : prev)} />
+              <DeskCheckbox checked={form.allowManualMarginAdjust} onCheckedChange={(checked) => setForm((prev) => prev ? { ...prev, allowManualMarginAdjust: checked } : prev)} />
               <span>{tDetail("fields.allowManualMarginAdjust")}</span>
             </label>
             <label className="settingsToggle">
-              <DeskInput type="checkbox" checked={form.allowProfitWithdraw} onChange={(event) => setForm((prev) => prev ? { ...prev, allowProfitWithdraw: event.target.checked } : prev)} />
+              <DeskCheckbox checked={form.allowProfitWithdraw} onCheckedChange={(checked) => setForm((prev) => prev ? { ...prev, allowProfitWithdraw: checked } : prev)} />
               <span>{tDetail("fields.allowProfitWithdraw")}</span>
             </label>
             <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -1240,7 +1243,7 @@ export default function AdminGridTemplateDetailPage() {
                     <div style={{ color: "#ef4444" }}>{tDetail("previewNotes.errors")}:</div>
                     <div className="gridTemplatePreviewTagRow" style={{ marginTop: 6 }}>
                       {preview.validationErrors.map((code) => (
-                        <span key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</span>
+                        <DeskBadge key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</DeskBadge>
                       ))}
                     </div>
                   </div>
@@ -1250,7 +1253,7 @@ export default function AdminGridTemplateDetailPage() {
                     <div style={{ color: "#f59e0b" }}>{tDetail("previewNotes.warnings")}:</div>
                     <div className="gridTemplatePreviewTagRow" style={{ marginTop: 6 }}>
                       {preview.warnings.map((code) => (
-                        <span key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</span>
+                        <DeskBadge key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</DeskBadge>
                       ))}
                     </div>
                   </div>

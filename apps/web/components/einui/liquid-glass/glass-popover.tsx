@@ -17,13 +17,14 @@ const GlassPopoverContent = React.forwardRef<
 >(({ className, align = "center", sideOffset = 4, ...props }, ref) => (
   <PopoverPrimitive.Portal><EinPortalTheme>
     <PopoverPrimitive.Content
+      data-ein-overlay="true"
       ref={ref}
       align={align}
       sideOffset={sideOffset}
       className={cn(
         "ein:z-50 ein:w-72 ein:rounded-xl ein:p-4",
-        "ein:bg-white/10 ein:backdrop-blur-2xl ein:border ein:border-white/20",
-        "ein:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
+        " ein:border ein:border-white/20",
+        "",
         "ein:outline-none",
         "ein:data-[state=open]:animate-in ein:data-[state=closed]:animate-out",
         "ein:data-[state=closed]:fade-out-0 ein:data-[state=open]:fade-in-0",

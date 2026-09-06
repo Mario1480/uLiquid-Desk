@@ -1,11 +1,12 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskTable } from "@/components/desk/DeskTable";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Fragment, useEffect, useMemo, useState } from "react";
@@ -2339,9 +2340,9 @@ export default function PredictionsPage() {
           </div>
 
           <div className="predictionContextRow">
-            <span className={`badge ${reasonBadgeClass}`}>{manualReason.label}</span>
+            <DeskBadge className={`badge ${reasonBadgeClass}`}>{manualReason.label}</DeskBadge>
             {parsedReason.signalFlip ? (
-              <span className="badge predictionFlipBadge">FLIP {formatFlipLabel(parsedReason.signalFlip)}</span>
+              <DeskBadge className="badge predictionFlipBadge">FLIP {formatFlipLabel(parsedReason.signalFlip)}</DeskBadge>
             ) : null}
             <span
               className={`predictionUpdateMeta ${isRecentTimestamp(updatedAtIso, nowMs, 2 * 60 * 1000) ? "predictionUpdateMetaFresh" : ""}`}
@@ -2522,13 +2523,13 @@ export default function PredictionsPage() {
               <DeskSurface><div className="uiNotice uiNotice-warning">{tPred("detail.marketIntelligenceDegraded")}</div></DeskSurface>
             ) : null}
             <div className="predictionIntelligenceSnapshotMeta">
-              <span className="badge">{tPred("detail.factsCount", { count: marketIntelligenceFacts.length })}</span>
-              <span className="badge">{tPred("detail.eventsCount", { count: marketIntelligenceEvents.length })}</span>
-              <span className="badge">
+              <DeskBadge className="badge">{tPred("detail.factsCount", { count: marketIntelligenceFacts.length })}</DeskBadge>
+              <DeskBadge className="badge">{tPred("detail.eventsCount", { count: marketIntelligenceEvents.length })}</DeskBadge>
+              <DeskBadge className="badge">
                 {typeof marketIntelligenceSnapshot.generatedAt === "string"
                   ? new Date(marketIntelligenceSnapshot.generatedAt).toLocaleString()
                   : tPred("misc.na")}
-              </span>
+              </DeskBadge>
             </div>
             <div className="predictionIntelligenceSnapshotList">
               {marketIntelligenceFacts.map((fact, index) => (
@@ -2640,7 +2641,7 @@ export default function PredictionsPage() {
                 {events.map((event) => (
                   <div key={event.id} className="predictionEventItem">
                     <div className="predictionEventHeader">
-                      <span className="badge">{event.changeType}</span>
+                      <DeskBadge className="badge">{event.changeType}</DeskBadge>
                       <span
                         className="predictionEventTimestamp"
                         title={event.tsCreated ? new Date(event.tsCreated).toLocaleString() : "n/a"}
@@ -2675,10 +2676,10 @@ export default function PredictionsPage() {
             <AppIcon name="preview" />
             {tPred("detail.monitorMarket")}
           </DeskButton>
-          <Link className="btn" href={withLocalePath("/strategies", locale)}>
+          <DeskLink className="btn" href={withLocalePath("/strategies", locale)}>
             <AppIcon name="template" />
             {tPred("detail.saveTemplate")}
-          </Link>
+          </DeskLink>
         </div>
       </div>
       </PredictionDetailDrawer>
@@ -2783,7 +2784,7 @@ export default function PredictionsPage() {
                 <DeskButton className="predictionRecentRow" type="button" key={row.id} onClick={() => void togglePredictionDetail(row.id)}>
                   <span className="predictionRecentSymbol">{row.symbol}</span>
                   <span>{row.marketType} · {row.timeframe}</span>
-                  <span className="badge" style={signalBadgeStyle(signal)}>{signal}</span>
+                  <DeskBadge className="badge" style={signalBadgeStyle(signal)}>{signal}</DeskBadge>
                   <span>{fmtConfidence(resolveConfidence(row, source))}</span>
                   <span>{isFinal ? tPred("overview.finalEvaluation") : tPred("overview.currentOutcome")}</span>
                   <AppIcon name="chevronRight" />
@@ -2830,10 +2831,10 @@ export default function PredictionsPage() {
             </div>
           </div>
           {analysisKind === "trading_with_intelligence" ? <div className="predictionCreateHeaderActions">
-            <Link className="btn btnPrimary predictionManageStrategiesButton" href={withLocalePath("/strategies", locale)}>
+            <DeskLink className="btn btnPrimary predictionManageStrategiesButton" href={withLocalePath("/strategies", locale)}>
               <AppIcon name="strategies" />
               {tPred("create.manageStrategies")}
-            </Link>
+            </DeskLink>
             <div className="predictionCreateBadges">
               <StatusBadge tone="success" title={tPred("create.autoScheduleAlwaysOn")}>
                 {tPred("create.autoScheduleShort")}
@@ -3312,9 +3313,9 @@ export default function PredictionsPage() {
 	                      <td style={{ padding: "8px 6px" }}>{latest ? outcomeLabel(latest.outcomeStatus, latest.outcomeResult) : tPred("history.pending")}</td>
 	                      <td style={{ padding: "8px 6px" }}>{latest?.outcomeEvaluatedAt ? (latest.outcomeResult ?? tPred("history.final")) : tPred("active.notFinal")}</td>
 	                      <td style={{ padding: "8px 6px" }}>
-	                        <span className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
+	                        <DeskBadge className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
 	                          {refreshDegraded ? tPred("running.degraded") : row.paused ? tPred("running.paused") : tPred("running.running")}
-	                        </span>
+	                        </DeskBadge>
 	                        {refreshDegraded ? (
 	                          <div className="predictionRunningHealthText" title={refreshHealthTitle(row)}>
 	                            {row.lastRefreshError ?? tPred("running.refreshFailed")}
@@ -3363,9 +3364,9 @@ export default function PredictionsPage() {
 	                <DeskSurface><div key={`${row.id}_mobile`} className="card predictionRunningCard">
 	                  <div className="predictionRunningCardHeader">
 	                    <div className="predictionRunningCardSymbol">{row.symbol}</div>
-	                    <span className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
+	                    <DeskBadge className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
 	                      {refreshDegraded ? tPred("running.degraded") : row.paused ? tPred("running.paused") : tPred("running.running")}
-	                    </span>
+	                    </DeskBadge>
 	                  </div>
 	                  {refreshDegraded ? (
 	                    <div className="predictionRunningHealthText" title={refreshHealthTitle(row)}>
@@ -3467,16 +3468,16 @@ export default function PredictionsPage() {
         </div>
         <div className="predictionsFiltersHeader">
           <div className="predictionFeedSummaryChips">
-            <span className="predictionFeedChip">
+            <DeskBadge className="predictionFeedChip">
               {tPred("feed.summary", { listed: filteredRows.length, actionable: actionableRowsCount })}
-            </span>
-            <span className="predictionFeedChip">
+            </DeskBadge>
+            <DeskBadge className="predictionFeedChip">
               {signalSource === "ai" ? tPred("feed.signalSourceAiShort") : tPred("feed.signalSourceLocalShort")}
-            </span>
+            </DeskBadge>
             {activeFiltersCount > 0 ? (
-              <span className="predictionFeedChip">
+              <DeskBadge className="predictionFeedChip">
                 {tPred("feed.activeFilters", { count: activeFiltersCount })}
-              </span>
+              </DeskBadge>
             ) : null}
           </div>
           <div className="predictionsFiltersActions">
@@ -3636,7 +3637,7 @@ export default function PredictionsPage() {
                         <td style={{ padding: "8px 6px" }}>{row.marketType}</td>
                         <td style={{ padding: "8px 6px" }}>{row.timeframe}</td>
                         <td style={{ padding: "8px 6px" }}>
-                          <span className="badge" style={signalBadgeStyle(activeSignal)}>{activeSignal}</span>
+                          <DeskBadge className="badge" style={signalBadgeStyle(activeSignal)}>{activeSignal}</DeskBadge>
                           {showLocalAiComparison && aiComparisonAvailable ? (
                             <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 4 }}>
                               local {localComparisonSignal} / ai {row.aiPrediction?.signal}
@@ -3669,9 +3670,9 @@ export default function PredictionsPage() {
 	                          <div>{row.autoScheduleEnabled ? "enabled" : "off"}</div>
 	                          {refreshDegraded ? (
 	                            <div style={{ marginTop: 4 }}>
-	                              <span className="badge predictionRefreshBadgeDegraded" title={refreshHealthTitle(row)}>
+	                              <DeskBadge className="badge predictionRefreshBadgeDegraded" title={refreshHealthTitle(row)}>
 	                                {tPred("feed.refreshDegraded")}
-	                              </span>
+	                              </DeskBadge>
 	                            </div>
 	                          ) : null}
 	                          <div style={{ color: "var(--muted)", fontSize: 12 }}>
@@ -3689,7 +3690,7 @@ export default function PredictionsPage() {
                         <td style={{ padding: "8px 6px", maxWidth: 360 }}>
                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
                             {row.tags.slice(0, 4).map((tag) => (
-                              <span key={`${row.id}_${tag}`} className="badge">{tag}</span>
+                              <DeskBadge key={`${row.id}_${tag}`} className="badge">{tag}</DeskBadge>
                             ))}
                           </div>
                           <div
@@ -3717,11 +3718,11 @@ export default function PredictionsPage() {
                         <td style={{ padding: "8px 6px", maxWidth: 200 }}>
                           <div className="predictionChangeCell">
                             <div className="predictionChangeBadges">
-                              <span className={`badge ${reasonBadgeClass}`}>{manualReason.label}</span>
+                              <DeskBadge className={`badge ${reasonBadgeClass}`}>{manualReason.label}</DeskBadge>
                               {changeReason.signalFlip ? (
-                                <span className="badge predictionFlipBadge">
+                                <DeskBadge className="badge predictionFlipBadge">
                                   FLIP {formatFlipLabel(changeReason.signalFlip)}
-                                </span>
+                                </DeskBadge>
                               ) : null}
                             </div>
                             <div className="predictionChangeText" title={manualReason.rawReason ?? "n/a"}>
@@ -3732,9 +3733,9 @@ export default function PredictionsPage() {
                         <td style={{ padding: "8px 6px" }}>{new Date(row.tsCreated).toLocaleString()}</td>
                         <td style={{ padding: "8px 6px" }}>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <span className={`badge ${actionStateBadgeClass(actionState.state)}`}>
+                            <DeskBadge className={`badge ${actionStateBadgeClass(actionState.state)}`}>
                               {actionState.label}
-                            </span>
+                            </DeskBadge>
                             {actionState.state === "ready" ? (
                               <DeskButton
                                 className="btn btnPrimary"
@@ -3804,7 +3805,7 @@ export default function PredictionsPage() {
                 >
                   <div className="predictionRowCardHeader">
                     <div className="predictionRowCardSymbol">{row.symbol}</div>
-                    <span className="badge" style={signalBadgeStyle(activeSignal)}>{activeSignal}</span>
+                    <DeskBadge className="badge" style={signalBadgeStyle(activeSignal)}>{activeSignal}</DeskBadge>
                   </div>
 
                   <div className="predictionRowCardMeta">
@@ -3847,18 +3848,18 @@ export default function PredictionsPage() {
 
 	                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
 	                    {refreshDegraded ? (
-	                      <span className="badge predictionRefreshBadgeDegraded" title={refreshHealthTitle(row)}>
+	                      <DeskBadge className="badge predictionRefreshBadgeDegraded" title={refreshHealthTitle(row)}>
 	                        {tPred("feed.refreshDegraded")}
-	                      </span>
+	                      </DeskBadge>
 	                    ) : null}
-	                    <span className={`badge ${reasonBadgeClass}`}>{manualReason.label}</span>
+	                    <DeskBadge className={`badge ${reasonBadgeClass}`}>{manualReason.label}</DeskBadge>
                     {changeReason.signalFlip ? (
-                      <span className="badge predictionFlipBadge">
+                      <DeskBadge className="badge predictionFlipBadge">
                         FLIP {formatFlipLabel(changeReason.signalFlip)}
-                      </span>
+                      </DeskBadge>
                     ) : null}
                     {row.tags.slice(0, 4).map((tag) => (
-                      <span key={`${row.id}_m_${tag}`} className="badge">{tag}</span>
+                      <DeskBadge key={`${row.id}_m_${tag}`} className="badge">{tag}</DeskBadge>
                     ))}
                   </div>
 
@@ -3882,9 +3883,9 @@ export default function PredictionsPage() {
 	                  </div>
 
                   <div className="predictionRowCardActions">
-                    <span className={`badge ${actionStateBadgeClass(actionState.state)}`}>
+                    <DeskBadge className={`badge ${actionStateBadgeClass(actionState.state)}`}>
                       {actionState.label}
-                    </span>
+                    </DeskBadge>
                     {actionState.state === "ready" ? (
                       <DeskButton
                         className="btn btnPrimary"

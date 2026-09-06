@@ -1,3 +1,4 @@
+import { DeskBadge } from "@/components/desk/DeskBadge";
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
@@ -34,7 +35,7 @@ export default function AgentContextBar({ context, profiles, accounts, activePro
       {accountRead ? <label><span>{t("context.account")}{accountRequired ? <em className="agentChatRequiredFlag">{t("context.required")}</em> : null}</span><DeskSelect ref={accountSelectRef} className={`input${accountRequired ? " agentChatAccountSelectRequired" : ""}`} required aria-invalid={accountRequired} disabled={disabled} value={context.selectedExchangeAccountId ?? ""} onChange={(event) => onChange({ selectedExchangeAccountId: event.target.value || null })}><option value="">{t("context.selectAccount")}</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.exchange.toUpperCase()} · {account.label}</option>)}</DeskSelect></label> : null}
       <label><span>{t("context.marketType")}</span><DeskSelect className="input" disabled={disabled} value={context.marketType} onChange={(event) => onChange({ marketType: event.target.value as AgentContextDraft["marketType"] })}><option value="perp">Perp</option><option value="spot">Spot</option></DeskSelect></label>
       <label><span>{accountRead ? t("context.symbolFilter") : t("context.symbol")}</span><DeskInput className="input" disabled={disabled} value={context.symbol ?? ""} placeholder={accountRead ? t("context.allPositions") : undefined} maxLength={32} onChange={(event) => onChange({ symbol: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") || null })} /></label>
-      <span className="badge agentChatAccessBadge"><AppIcon name="shield" />{accountRead ? t("access.readOnly") : t("access.publicData")}</span>
+      <DeskBadge className="badge agentChatAccessBadge"><AppIcon name="shield" />{accountRead ? t("access.readOnly") : t("access.publicData")}</DeskBadge>
       <DeskButton type="button" className="btn" onClick={onOpenSkills}><AppIcon name="ai" />{t("skills.button", { count: skillCount })}</DeskButton>
     </div>
   );

@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -297,10 +298,10 @@ export default function NewsPage() {
               <DeskSurface><article className="card newsItemCard newsProItemCard" key={item.id}>
                 <div className="newsItemContent">
                   <div className="newsItemHeader newsProItemHeader">
-                    <span className={`badge ${item.feed === "crypto" ? "newsBadgeCrypto" : "newsBadgeGeneral"}`}>
+                    <DeskBadge className={`badge ${item.feed === "crypto" ? "newsBadgeCrypto" : "newsBadgeGeneral"}`}>
                       {item.feed === "crypto" ? t("feed.crypto") : t("feed.general")}
-                    </span>
-                    {item.symbol ? <span className="badge">{item.symbol}</span> : null}
+                    </DeskBadge>
+                    {item.symbol ? <DeskBadge className="badge">{item.symbol}</DeskBadge> : null}
                     <span className="newsItemTime newsProItemTime">
                       {formatLocalDateTime(item.publishedAt)}
                     </span>

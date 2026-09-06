@@ -1,6 +1,7 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
-import Link from "next/link";
 import { AppIcon } from "../../app/components/AppIcon";
 
 type PredictionCopierEligibilityProps = {
@@ -22,14 +23,14 @@ export default function PredictionCopierEligibility(props: PredictionCopierEligi
         <p>{props.description}</p>
       </div>
       <div className="predictionCopierEligibilityActions">
-        <span className={`badge ${props.eligible ? "badgeOk" : "badgeWarn"}`}>
+        <DeskBadge className={`badge ${props.eligible ? "badgeOk" : "badgeWarn"}`}>
           {props.eligible ? props.eligibleLabel : props.unavailableLabel}
-        </span>
+        </DeskBadge>
         {props.eligible ? (
-          <Link className="btn btnPrimary" href={props.href}>
+          <DeskLink className="btn btnPrimary" href={props.href}>
             <AppIcon name="bots" />
             {props.actionLabel}
-          </Link>
+          </DeskLink>
         ) : null}
       </div>
     </section>

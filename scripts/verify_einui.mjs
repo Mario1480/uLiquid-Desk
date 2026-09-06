@@ -41,6 +41,24 @@ function imports(file){
 }
 function closure(file,seen=new Set()) {if(seen.has(file))return seen;seen.add(file);for(const child of imports(file))closure(child,seen);return seen;}
 const routes=walk(path.join(root,"apps/web/app")).filter(p=>p.endsWith("/page.tsx"));
+// Prevent new unmigrated status spans and button-styled links after the production sweep.
+for (const file of [...walk(path.join(root,"apps/web/app")),...walk(path.join(root,"apps/web/components"))].filter(p=>p.endsWith(".tsx")&&!/\/components\/(einui|desk)\//.test(p))) {
+ const tree=ts.createSourceFile(file,fs.readFileSync(file,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ function inspect(node) {
+  if (ts.isJsxOpeningElement(node)||ts.isJsxSelfClosingElement(node)) {
+   const tag=node.tagName.getText(tree);
+   assert.ok(!["button","select","textarea","input","progress"].includes(tag),`Raw product control: ${file}: ${tag}`);
+   const type=node.attributes.properties.find(a=>ts.isJsxAttribute(a)&&a.name.getText(tree)==="type")?.initializer;
+   assert.ok(!(tag==="DeskInput"&&type&&ts.isStringLiteral(type)&&["checkbox","radio","range"].includes(type.text)),`Legacy native choice control: ${file}`);
+   const attr=node.attributes.properties.find(a=>ts.isJsxAttribute(a)&&a.name.getText(tree)==="className");
+   const value=attr?.getText(tree)||"";
+   assert.ok(!(tag==="span"&&/badge|chip|pill|\btag\b/i.test(value)),`Legacy status span: ${file}`);
+   assert.ok(!(["a","Link"].includes(tag)&&/\bbtn(?:Primary|Start|Stop|Pause)?\b/.test(value)),`Legacy action link: ${file}`);
+  }
+  ts.forEachChild(node,inspect);
+ }
+ inspect(tree);
+}
 const inventory=[];
 for(const file of routes){
  const dependencies=[...closure(file)];

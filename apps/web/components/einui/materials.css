@@ -1,0 +1,82 @@
+/* Single source of truth for Desk glass. Layout remains owned by the caller.
+ * The important layer protects only material properties from legacy selectors;
+ * never add positioning, dimensions, transforms or interaction rules here. */
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.10);
+  --glass-border: rgba(215, 232, 246, 0.26);
+  --glass-blur: 20px;
+  --glass-bg-light: rgba(255, 255, 255, 0.04);
+  --glass-blur-light: 12px;
+  --glass-bg-solid: rgba(20, 33, 53, 0.94);
+  --glass-blur-solid: 20px;
+  --glass-control-bg: rgba(255, 255, 255, 0.12);
+  --glass-control-border: rgba(215, 232, 246, 0.52);
+  --glass-shadow: 0 8px 24px #00000029, inset 0 1px 0 #ffffff24;
+  --glass-fallback-bg: #19283d;
+}
+
+:is(.ein-card-material, [data-ein-surface], [data-ein-overlay], [data-ein-control]) {
+  --ein-material-bg: var(--glass-bg);
+  --ein-material-blur: var(--glass-blur);
+}
+[data-ein-control] { --ein-material-bg: var(--glass-control-bg); }
+:is(.ein-card-material, [data-ein-surface], [data-ein-overlay], [data-ein-control]).glass-light {
+  --ein-material-bg: var(--glass-bg-light);
+  --ein-material-blur: var(--glass-blur-light);
+}
+:is(.ein-card-material, [data-ein-surface], [data-ein-overlay], [data-ein-control]).glass-solid,
+[data-ein-density="dense"], [data-ein-overlay] {
+  --ein-material-bg: var(--glass-bg-solid);
+  --ein-material-blur: var(--glass-blur-solid);
+}
+
+@layer ein-material {
+  :is(.ein-card-material, [data-ein-surface], [data-ein-overlay], [data-ein-control]):not(input[type="checkbox"]):not(input[type="radio"]) {
+    background: var(--ein-material-bg) !important;
+    box-shadow: var(--glass-shadow) !important;
+    -webkit-backdrop-filter: blur(var(--ein-material-blur)) !important;
+    backdrop-filter: blur(var(--ein-material-blur)) !important;
+  }
+  :is(.ein-card-material, [data-ein-surface], [data-ein-overlay])::before,
+  :is(.ein-card-material, [data-ein-surface], [data-ein-overlay])::after {
+    background-image: none !important;
+  }
+  [data-ein-control]:not(input[type="checkbox"]):not(input[type="radio"]) {
+    border: 1px solid var(--glass-control-border) !important;
+  }
+  [data-ein-control]:focus-visible { border-color: var(--ein-ocean-cyan) !important; }
+  [data-ein-control][aria-invalid="true"] { border-color: #fb7185 !important; }
+  [data-ein-badge] { background-image: none !important; }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :is(.ein-card-material, [data-ein-surface], [data-ein-overlay], [data-ein-control]):not(input[type="checkbox"]):not(input[type="radio"]) {
+      background: var(--glass-fallback-bg) !important;
+    }
+  }
+}
+:is(.ein-card-material, [data-ein-surface], [data-ein-overlay]) { border: 1px solid var(--glass-border); }
+[data-ein-control]:focus-visible { outline: 2px solid var(--ein-ocean-cyan); outline-offset: 3px; }
+.ein-card-glow { pointer-events: none; position: absolute; inset: -1px; border-radius: inherit; box-shadow: 0 0 24px #b7faff12; }
+.ein-control-glow { pointer-events: none; position: absolute; inset: 0; border-radius: inherit; }
+.ein-control-glow:has(+ :focus-visible) { box-shadow: 0 0 16px #b7faff1a; }
+
+/* Native bridges preserve form contracts; only the Ein trigger is interactive. */
+.ein-form-bridge { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; pointer-events: none !important; }
+[data-ein-control]:is([data-state="checked"],[data-state="indeterminate"]) { --ein-material-bg: var(--ein-action); }
+[data-ein-control="radio"] [data-state="checked"] > div { background: var(--ein-foreground); }
+[data-ein-control="checkbox"] svg { color: var(--ein-foreground); }
+[data-ein-slider] { min-height: 24px; }
+[data-ein-control="switch"] { min-width: 44px; }
+[data-ein-button-variant] { --ein-button-bg: #172a43; --ein-button-border: #90a8c4; }
+[data-ein-button-variant="primary"] { --ein-button-bg: var(--ein-action); --ein-button-border: #719dff; }
+[data-ein-button-variant="success"] { --ein-button-bg: #187448; --ein-button-border: #5bab7a; }
+[data-ein-button-variant="warning"] { --ein-button-bg: #986000; --ein-button-border: #d5a64e; }
+[data-ein-button-variant="destructive"] { --ein-button-bg: #b42336; --ein-button-border: #ef7b8a; }
+[data-ein-button-variant="outline"] { --ein-button-bg: transparent; }
+[data-ein-button-variant="ghost"] { --ein-button-bg: transparent; --ein-button-border: transparent; }
+[data-ein-choice][data-state="checked"] { --ein-button-bg: var(--ein-action); --ein-button-border: #719dff; }
+@layer ein-material {
+  [data-ein-button-variant] { background: var(--ein-button-bg) !important; border-color: var(--ein-button-border) !important; color: var(--ein-foreground) !important; }
+  [data-ein-button-variant]:hover:not(:disabled) { background: color-mix(in srgb, var(--ein-button-bg) 90%, white 10%) !important; }
+}
+
+.ein-native-button:disabled { opacity: .55; cursor: not-allowed; }

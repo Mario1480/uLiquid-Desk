@@ -1,3 +1,4 @@
+import { DeskBadge } from "@/components/desk/DeskBadge";
 function normalizeTone(value: string): string {
   const tone = value.trim().toLowerCase();
   if (["accepted", "active", "online", "running", "resolved", "healthy", "verified", "completed", "finalized"].includes(tone)) return "success";
@@ -14,5 +15,5 @@ export default function AdminStatusBadge({
   label?: string;
 }) {
   const safeValue = String(value ?? "unknown").replace(/_/g, " ");
-  return <span className={`tag adminStatusBadge adminStatusBadge${normalizeTone(safeValue)}`}>{label ?? safeValue}</span>;
+  return <DeskBadge className={`tag adminStatusBadge adminStatusBadge${normalizeTone(safeValue)}`}>{label ?? safeValue}</DeskBadge>;
 }

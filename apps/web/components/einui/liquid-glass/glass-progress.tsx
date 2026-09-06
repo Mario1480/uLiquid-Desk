@@ -7,10 +7,11 @@ import { cn } from "@/components/einui/utils"
 const GlassProgress = React.forwardRef<
   React.ElementRef<typeof ProgressPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root>
->(({ className, value, ...props }, ref) => (
+>(({ className, value, max = 100, ...props }, ref) => (
   <div className="ein:relative">
-    <div className="ein:absolute ein:-inset-1 ein:rounded-full ein:bg-linear-to-r ein:from-cyan-500/20 ein:via-blue-500/20 ein:to-purple-500/20 ein:blur-md ein:opacity-50" />
     <ProgressPrimitive.Root
+      value={value}
+      max={max}
       ref={ref}
       className={cn(
         "ein:relative ein:h-3 ein:w-full ein:overflow-hidden ein:rounded-full",
@@ -22,10 +23,10 @@ const GlassProgress = React.forwardRef<
       <ProgressPrimitive.Indicator
         className={cn(
           "ein:h-full ein:transition-all ein:duration-500 ein:ease-out ein:rounded-full",
-          "ein:bg-linear-to-r ein:from-cyan-400 ein:via-blue-400 ein:to-purple-400",
+          "ein:bg-primary",
           "ein:shadow-[0_0_12px_rgba(59,130,246,0.5)]",
         )}
-        style={{ width: `${value || 0}%` }}
+        style={{ width: `${Math.max(0, Math.min(100, ((value ?? 0) / (max > 0 ? max : 100)) * 100))}%` }}
       />
     </ProgressPrimitive.Root>
   </div>

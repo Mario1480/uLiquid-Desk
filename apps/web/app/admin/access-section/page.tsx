@@ -1,4 +1,5 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -139,10 +140,9 @@ export default function AdminAccessSectionPage() {
                 <strong><AppIcon name="settings" /> {t("maintenanceTitle")}</strong>
                 <small>{t("maintenanceHint")}</small>
               </span>
-              <DeskInput
-                type="checkbox"
+              <DeskSwitch
                 checked={maintenanceEnabled}
-                onChange={(event) => setMaintenanceEnabled(event.target.checked)}
+                onCheckedChange={(checked) => setMaintenanceEnabled(checked)}
                 aria-label={t("maintenanceEnabledLabel")}
               />
             </label>
@@ -157,12 +157,11 @@ export default function AdminAccessSectionPage() {
                 <span>
                   <strong><AppIcon name={item.icon} /> {t(`visibility.${item.key}` as any)}</strong>
                 </span>
-                <DeskInput
-                  type="checkbox"
+                <DeskSwitch
                   checked={visibility[item.key]}
-                  onChange={(event) => setVisibility((prev) => ({
+                  onCheckedChange={(checked) => setVisibility((prev) => ({
                     ...prev,
-                    [item.key]: event.target.checked
+                    [item.key]: checked
                   }))}
                 />
               </label>

@@ -1,7 +1,8 @@
-@layer theme, base, components, utilities;
+@layer ein-material, theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme) prefix(ein);
 @import "tailwindcss/utilities.css" layer(utilities) prefix(ein) source(none);
 @import "tw-animate-css";
+@import "./materials.css";
 @source "./**/*.{ts,tsx}";
 @source "../desk/**/*.{ts,tsx}";
 @custom-variant dark (&:is(.dark *, [data-ein-theme] *));
@@ -56,13 +57,6 @@
   --color-focus-ring: var(--ein-ocean-cyan);
   --color-text-muted: #a5b6cd;
 }
-.ein-card-material, [data-ein-surface] {
-  background: linear-gradient(110deg, #24e6f212, #3478fa0f 52%, #8854f612), #071222c9;
-  border: 1px solid #b7faff26;
-  box-shadow: 0 8px 24px #00000029, inset 0 1px 0 #b7faff12;
-  backdrop-filter: blur(16px);
-}
-[data-ein-density="dense"] { background-color: #071222f5; backdrop-filter: none; }
 .ein-native-control { color-scheme: dark; accent-color: var(--ein-action); }
 .ein-native-control:focus-visible, [data-ein-button]:focus-visible, .ein-gallery :focus-visible {
   outline: 2px solid var(--ein-ocean-cyan); outline-offset: 3px;
@@ -110,7 +104,7 @@
 [data-ein-preview-theme="aurora"] { --ein-color-cyan-500: #a855f7; --ein-color-blue-500: #d946ef; --ein-color-purple-500: #ec4899; }
 [data-ein-preview-theme="forest"] { --ein-color-cyan-500: #10b981; --ein-color-blue-500: #14b8a6; --ein-color-purple-500: #06b6d4; }
 [data-ein-portal] > [data-state] { z-index: 1400; }
-[data-ein-portal] :is([role="dialog"], [role="alertdialog"]) { background-color: #0b172af5; max-height: calc(100dvh - 32px); overflow-y: auto; }
+[data-ein-portal] :is([role="dialog"], [role="alertdialog"]) { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .ein-admin-confirm { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .ein-gallery-preview { min-height: 180px; scroll-margin-top: 140px; }
 .ein-gallery select { max-width: 100%; min-height: 40px; }
@@ -140,8 +134,6 @@
 [data-ein-table] thead { background-color: #0e1c30; }
 [data-ein-table] :is(th,td) { border-color: #b7faff26; }
 [data-ein-table] tbody tr:hover { background-color: #b7faff08; }
-.card[data-ein-surface], :is(.dashboardPage,.settingsPage,.adminPage,.uiPage) .card[data-ein-surface] { background: linear-gradient(110deg,#24e6f212,#3478fa0f 52%,#8854f612),#071222e6 !important; box-shadow: 0 8px 24px #00000029,inset 0 1px 0 #b7faff12 !important; }
-.card[data-ein-density="dense"] { background-color: #071222fa !important; }
 
 [data-ein-portal] [role="alertdialog"] { width: min(24rem, calc(100vw - 32px)); }
 /* Persistent notices retain their business meaning on the shared glass material. */
@@ -149,3 +141,47 @@
 [data-ein-surface].uiNotice-success { border-color: #22c55e80; }
 [data-ein-surface].uiNotice-warning { border-color: #f59e0b85; }
 [data-ein-surface].uiNotice-danger { border-color: #ef44448c; }
+
+[data-ein-badge] { background: var(--glass-bg); border-color: var(--glass-border); box-shadow: inset 0 1px 0 #ffffff0f; }
+[data-ein-badge-tone="outline"] { background: transparent; }
+/* Production-sized Ein badges: visual material changes without changing status meaning. */
+.ein-native-badge[data-ein-badge] {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  padding: 2px 8px; border: 1px solid #b7faff45; border-radius: 999px;
+  background: #b7faff12; color: #d7e8f6; font-size: 12px; line-height: 1.4;
+  box-shadow: inset 0 1px 0 #ffffff0f;
+}
+[data-ein-badge-tone="primary"] { background: #3478fa26; border-color: #67b8ff80; color: #cceaff; }
+[data-ein-badge-tone="success"] { background: #22c55e1c; border-color: #4ade8080; color: #baf7d1; }
+[data-ein-badge-tone="warning"] { background: #f59e0b1c; border-color: #fbbf2480; color: #ffe5a3; }
+[data-ein-badge-tone="destructive"] { background: #ef444420; border-color: #fb718580; color: #ffc7d0; }
+:is(input,textarea)[data-ein-control].input, select[data-ein-control] {
+  border-radius: 10px; color: #edf5ff;
+}
+select[data-ein-control] { min-height: 36px; padding: 6px 10px; font: inherit; color-scheme: dark; }
+select[data-ein-control] option { background: #0b172a; color: #edf5ff; }
+:is(input,textarea,select)[data-ein-control]:focus-visible { border-color: #24e6f2; }
+:is(input,textarea,select)[data-ein-control][aria-invalid="true"] { border-color: #fb7185; }
+input[data-ein-control]:is([type="checkbox"],[type="radio"]) { accent-color: #2865dc; }
+/* Shared composition from the upstream auth blocks; business forms remain controlled by Desk. */
+.ein-auth-page { width: 100%; min-width: 0; display: grid; justify-items: center; gap: 24px; padding: 24px 16px 40px; box-sizing: border-box; }
+.ein-auth-card { width: 100%; max-width: 480px; box-sizing: border-box; border-radius: 20px; }
+.ein-auth-header { display: grid; justify-items: center; gap: 14px; padding: 28px 24px 24px; text-align: center; }
+.ein-auth-header h1 { margin: 0; color: #f2f7ff; font-size: clamp(24px,5vw,30px); line-height: 1.2; }
+.ein-auth-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; border: 1px solid #24e6f266; background: #3478fa24; color: #b7faff; }
+.ein-auth-icon svg { width: 24px; height: 24px; }
+.ein-auth-content { padding: 0 24px 24px; }
+.ein-auth-content .authLabel { color: #d7e8f6; font-size: 14px; gap: 8px; }
+.ein-auth-content .authLabel .input { min-height: 44px; box-sizing: border-box; border-radius: 12px; padding: 10px 12px; font-size: 16px; color: #edf5ff; }
+.ein-auth-content .authActions { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; }
+.ein-auth-content .btn { width: 100%; min-height: 44px; box-sizing: border-box; justify-content: center; white-space: normal; text-align: center; }
+.ein-auth-content .authForm { gap: 18px; }
+.ein-auth-content :is(.authStatus,.authMessage,.authWalletMeta) { color: #bacbdd; }
+.ein-auth-content .authError { color: #ffc7d0; }
+.ein-auth-notice { width: 100%; max-width: 680px; min-width: 0; }
+.ein-auth-notice .legalRiskNotice { margin: 0; }
+@media (max-width: 480px) {
+  .ein-auth-page { padding: 12px 0 24px; gap: 20px; }
+  .ein-auth-header { padding: 24px 16px 20px; }
+  .ein-auth-content { padding: 0 16px 20px; }
+}

@@ -9,6 +9,7 @@ const GlassSwitch = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>
 >(({ className, ...props }, ref) => (
   <SwitchPrimitive.Root
+    data-ein-control="switch"
     className={cn(
       "ein:peer ein:inline-flex ein:h-6 ein:w-11 ein:shrink-0 ein:cursor-pointer ein:items-center ein:rounded-full",
       "ein:border ein:border-white/20 ein:transition-all ein:duration-300",

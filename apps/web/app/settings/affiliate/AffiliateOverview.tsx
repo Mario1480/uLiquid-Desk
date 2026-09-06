@@ -1,4 +1,6 @@
 "use client";
+import { GlassSlider } from "@/components/einui/liquid-glass/glass-slider";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -341,13 +343,13 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">Adjust</span>
-            <DeskInput
-              type="range"
+            <GlassSlider
+
               min={0}
               max={maxSelfSelectedRate}
-              step="0.25"
-              value={selectedProfitshareRate}
-              onChange={(event) => setProfitshareRateInput(event.target.value)}
+              step={0.25}
+              value={[selectedProfitshareRate]}
+              onValueChange={([value]) => setProfitshareRateInput(String(value))} aria-label="Adjust"
             />
           </label>
         </div>
@@ -680,10 +682,10 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	            <h2 style={{ margin: 0 }}>Affiliate</h2>
 	            <div className="settingsSectionMeta">Referral code, accrued earnings and latest affiliate events.</div>
 	          </div>
-	          <Link href={withLocalePath("/settings", locale)} className="btn">
+	          <DeskLink href={withLocalePath("/settings", locale)} className="btn">
 	            <AppIcon name="back" />
 	            Back to settings
-	          </Link>
+	          </DeskLink>
 	        </div>
       </div></DeskSurface>
       {content}

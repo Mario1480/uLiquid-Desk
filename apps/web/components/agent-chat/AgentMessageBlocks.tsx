@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskTable } from "@/components/desk/DeskTable";
 import React from "react";
@@ -36,7 +37,7 @@ export default function AgentMessageBlocks({ blocks }: { blocks: AgentUiBlock[] 
         );
         if (block.type === "risk_findings") return (
           <section className="agentChatBlock" key={key}>
-            <div className="agentChatBlockTitle"><span><AppIcon name="risk" />{block.title ?? t("blocks.riskFindings")}</span><span className={`badge agentChatRisk-${block.riskLevel}`}>{t(`blocks.riskLevels.${block.riskLevel}`)}</span></div>
+            <div className="agentChatBlockTitle"><span><AppIcon name="risk" />{block.title ?? t("blocks.riskFindings")}</span><DeskBadge className={`badge agentChatRisk-${block.riskLevel}`}>{t(`blocks.riskLevels.${block.riskLevel}`)}</DeskBadge></div>
             <ul>{block.items.map((item) => <li key={`${item.title}:${item.detail}`}><strong>{item.title}</strong><span>{item.detail}</span></li>)}</ul>
           </section>
         );

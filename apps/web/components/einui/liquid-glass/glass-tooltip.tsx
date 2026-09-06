@@ -17,6 +17,7 @@ const GlassTooltipContent = React.forwardRef<
 >(({ className, sideOffset = 4, ...props }, ref) => (
   <TooltipPrimitive.Portal><EinPortalTheme>
     <TooltipPrimitive.Content
+      data-ein-overlay="true"
       ref={ref}
       sideOffset={sideOffset}
       className={cn(

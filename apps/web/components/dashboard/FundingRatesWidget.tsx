@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSelect } from "@/components/desk/DeskSelect";
@@ -157,7 +158,7 @@ export default function FundingRatesWidget() {
                   <span>{positive ? t("longsPay") : negative ? t("shortsPay") : t("neutral")}</span>
                 </div>
                 <div className="dashboardFundingRateNext">
-                  {item.elevated ? <span className="uiStatusBadge uiStatusBadge-warning">{t("elevated")}</span> : null}
+                  {item.elevated ? <DeskBadge className="uiStatusBadge uiStatusBadge-warning">{t("elevated")}</DeskBadge> : null}
                   <span>{t("nextIn")}</span>
                   <strong>{countdown(item.nextFundingTime, now)}</strong>
                 </div>

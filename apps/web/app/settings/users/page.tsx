@@ -1,9 +1,10 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -289,10 +290,9 @@ export default function UsersPage() {
         </div>
         <div style={{ display: "grid", gap: 10, marginBottom: 10, maxWidth: 360 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <DeskInput
-              type="checkbox"
+            <DeskSwitch
               checked={autoLogoutEnabled}
-              onChange={(e) => setAutoLogoutEnabled(e.target.checked)}
+              onCheckedChange={(checked) => setAutoLogoutEnabled(checked)}
               disabled={securityLoading || securitySaving}
             />
             <span>{t("security.autoLogout")}</span>
@@ -311,10 +311,9 @@ export default function UsersPage() {
           </label>
           {isSuperadmin ? (
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <DeskInput
-                type="checkbox"
+              <DeskSwitch
                 checked={otpEnabled}
-                onChange={(e) => setOtpEnabled(e.target.checked)}
+                onCheckedChange={(checked) => setOtpEnabled(checked)}
                 disabled={securityLoading || securitySaving}
               />
               <span>{t("security.otp")}</span>
@@ -370,7 +369,7 @@ export default function UsersPage() {
                 <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <strong>{session.isCurrent ? t("sessions.current") : t("sessions.other")}</strong>
-                    {session.expired ? <span className="badge">{t("sessions.expired")}</span> : null}
+                    {session.expired ? <DeskBadge className="badge">{t("sessions.expired")}</DeskBadge> : null}
                   </div>
                   <div className="settingsMutedText">
                     {t("sessions.lastActive")}: {formatDateTime(session.lastActiveAt)}

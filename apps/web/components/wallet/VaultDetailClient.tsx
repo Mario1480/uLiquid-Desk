@@ -1,8 +1,10 @@
 "use client";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { useLocale, useTranslations } from "next-intl";
@@ -54,7 +56,7 @@ export default function VaultDetailClient({
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
         <div className="walletActionRow">
-          <a
+          <DeskAnchor
             className="btn"
             href={buildExplorerAddressUrl(config.chain.explorerUrl, vaultAddress)}
             target="_blank"
@@ -62,11 +64,11 @@ export default function VaultDetailClient({
           >
             <AppIcon name="external" />
             {tCommon("explorer")}
-          </a>
-          <Link className="btn" href={withLocalePath("/vaults", locale)}>
+          </DeskAnchor>
+          <DeskLink className="btn" href={withLocalePath("/vaults", locale)}>
             <AppIcon name="back" />
             {tCommon("backToVaults")}
-          </Link>
+          </DeskLink>
         </div>
       </div>
 
@@ -87,7 +89,7 @@ export default function VaultDetailClient({
                 <h3 className="walletSectionTitle">{query.data.name ?? t("unnamedVault")}</h3>
                 <div className="walletMutedText">{shortAddress(query.data.vaultAddress)}</div>
               </div>
-              <span className="badge">{query.data.userRole ?? tCommon("publicRole")}</span>
+              <DeskBadge className="badge">{query.data.userRole ?? tCommon("publicRole")}</DeskBadge>
             </div>
             <p className="walletMutedText walletVaultDescription">{query.data.description ?? t("noDescription")}</p>
             <div className="walletInfoGrid walletDetailSummaryGrid">

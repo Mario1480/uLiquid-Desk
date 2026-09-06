@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
@@ -59,7 +60,7 @@ export default function AlertsFeed({ alerts }: { alerts: DashboardAlert[] }) {
             const content = (
               <div className={`dashboardAlertItem dashboardAlertItem-${alert.severity}`}>
                 <div className="dashboardAlertTop">
-                  <span className={badgeClass(alert.severity)}>{alert.severity.toUpperCase()}</span>
+                  <DeskBadge className={badgeClass(alert.severity)}>{alert.severity.toUpperCase()}</DeskBadge>
                   <span className="dashboardAlertTime" title={new Date(alert.ts).toLocaleString()}>
                     {formatAgo(alert.ts, t)}
                   </span>

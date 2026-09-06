@@ -17,12 +17,13 @@ const GlassSelectTrigger = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Trigger
+    data-ein-control="true"
     ref={ref}
     className={cn(
       "ein:flex ein:h-10 ein:w-full ein:items-center ein:justify-between ein:gap-2 ein:rounded-xl ein:px-4 ein:py-2 ein:text-sm",
-      "ein:bg-white/10 ein:backdrop-blur-xl ein:border ein:border-white/20",
+      " ein:border ein:border-white/20",
       "ein:text-white ein:placeholder:text-white/70",
-      "ein:shadow-[0_4px_16px_rgba(0,0,0,0.2)]",
+      "",
       "ein:transition-all ein:duration-300",
       "ein:focus:outline-none ein:focus:border-white/40 ein:focus:bg-white/15",
       "ein:focus:ring-2 ein:focus:ring-cyan-400/30 ein:focus:ring-offset-0",
@@ -74,11 +75,12 @@ const GlassSelectContent = React.forwardRef<
 >(({ className, children, position = "popper", ...props }, ref) => (
   <SelectPrimitive.Portal><EinPortalTheme>
     <SelectPrimitive.Content
+      data-ein-overlay="true"
       ref={ref}
       className={cn(
         "ein:relative ein:z-50 ein:max-h-96 ein:min-w-32 ein:overflow-hidden ein:rounded-xl",
-        "ein:bg-white/10 ein:backdrop-blur-2xl ein:border ein:border-white/20",
-        "ein:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
+        " ein:border ein:border-white/20",
+        "",
         "ein:data-[state=open]:animate-in ein:data-[state=closed]:animate-out",
         "ein:data-[state=closed]:fade-out-0 ein:data-[state=open]:fade-in-0",
         "ein:data-[state=closed]:zoom-out-95 ein:data-[state=open]:zoom-in-95",

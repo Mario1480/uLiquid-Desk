@@ -1,8 +1,8 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
@@ -68,10 +68,10 @@ export default function Setup() {
     <div>
       <h2>{t("title")}</h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Link href={withLocalePath("/bots/new", locale)} className="btn btnPrimary">
+        <DeskLink href={withLocalePath("/bots/new", locale)} className="btn btnPrimary">
           <AppIcon name="create" />
           {t("newBot")}
-        </Link>
+        </DeskLink>
         <DeskButton onClick={loadBots} className="btn">
           <AppIcon name="refresh" />
           {t("refreshList")}
@@ -107,10 +107,10 @@ export default function Setup() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-	                  <Link href={withLocalePath(`/bots/${bot.id}`, locale)} className="btn">
+	                  <DeskLink href={withLocalePath(`/bots/${bot.id}`, locale)} className="btn">
 	                    <AppIcon name="open" />
 	                    {t("open")}
-	                  </Link>
+	                  </DeskLink>
                   <DeskButton
                     className="btn btnStop"
 	                    onClick={() => setBotToDelete(bot)}

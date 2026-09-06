@@ -1,4 +1,6 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -281,10 +283,9 @@ export default function AccountAssetsClient() {
             />
           </label>
           <label className="accountsZeroToggle">
-            <DeskInput
-              type="checkbox"
+            <DeskCheckbox
               checked={includeZero}
-              onChange={(event) => setIncludeZero(event.target.checked)}
+              onCheckedChange={(checked) => setIncludeZero(checked)}
             />
             <span>{t("filters.includeZero")}</span>
           </label>
@@ -325,7 +326,7 @@ export default function AccountAssetsClient() {
                   <span className={statusClass(account.perp.status)}>
                     {t("account.perpStatus", { status: t(`status.${account.perp.status}`) })}
                   </span>
-                  <span className="badge">{account.quoteAsset}</span>
+                  <DeskBadge className="badge">{account.quoteAsset}</DeskBadge>
                 </div>
               </header>
 

@@ -1,10 +1,13 @@
 "use client";
+import { DeskChoiceGroup, DeskChoiceItem } from "@/components/desk/DeskChoiceGroup";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -1077,25 +1080,25 @@ function GridBotCatalogPageContent() {
             <p className="gridCatalogHeroSubtitle">{tGrid("catalogSubtitle")}</p>
           </div>
           <div className="gridCatalogHeroBadges">
-            <span className="badge">{tGrid("catalogCategory")}: {filters.categories.length}</span>
-            <span className="badge">{tGrid("catalogTag")}: {filters.tags.length}</span>
-            {favoritesOnly ? <span className="badge badgeOk">{tGrid("catalogFavoritesOnly")}</span> : null}
-            {ownOnly ? <span className="badge badgeOk">{tGrid("catalogOwnOnly")}</span> : null}
+            <DeskBadge className="badge">{tGrid("catalogCategory")}: {filters.categories.length}</DeskBadge>
+            <DeskBadge className="badge">{tGrid("catalogTag")}: {filters.tags.length}</DeskBadge>
+            {favoritesOnly ? <DeskBadge className="badge badgeOk">{tGrid("catalogFavoritesOnly")}</DeskBadge> : null}
+            {ownOnly ? <DeskBadge className="badge badgeOk">{tGrid("catalogOwnOnly")}</DeskBadge> : null}
           </div>
 	        </div>
 	        <div className="gridCatalogHeroActions">
-	          <Link href={withLocalePath("/bots/grid", locale)} className="btn">
+	          <DeskLink href={withLocalePath("/bots/grid", locale)} className="btn">
 	            <AppIcon name="dashboard" />
 	            {tGrid("dashboard")}
-	          </Link>
-	          <Link href={withLocalePath("/bots/catalog/new", locale)} className="btn btnPrimary">
+	          </DeskLink>
+	          <DeskLink href={withLocalePath("/bots/catalog/new", locale)} className="btn btnPrimary">
 	            <AppIcon name="create" />
 	            {tGrid("catalogCreateOwnTemplate")}
-	          </Link>
-	          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn">
+	          </DeskLink>
+	          <DeskLink href={withLocalePath("/bots/grid/new", locale)} className="btn">
 	            <AppIcon name="gridBots" />
 	            {tGrid("catalogFallbackCta")}
-	          </Link>
+	          </DeskLink>
 	        </div>
       </section></DeskSurface>
 
@@ -1146,32 +1149,30 @@ function GridBotCatalogPageContent() {
         </div>
         <div className="gridCatalogFilterFooter">
           <label className="settingsToggle gridCatalogToggle">
-            <DeskInput type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
+            <DeskCheckbox checked={favoritesOnly} onCheckedChange={(checked) => setFavoritesOnly(checked)} />
             <span>{tGrid("catalogFavoritesOnly")}</span>
           </label>
           <label className="settingsToggle gridCatalogToggle">
-            <DeskInput type="checkbox" checked={ownOnly} onChange={(event) => setOwnOnly(event.target.checked)} />
+            <DeskCheckbox checked={ownOnly} onCheckedChange={(checked) => setOwnOnly(checked)} />
             <span>{tGrid("catalogOwnOnly")}</span>
           </label>
           <div className="gridCatalogFilterActions">
-            <div className="gridCatalogViewToggle" role="group" aria-label={tGrid("catalogViewLabel")}>
-              <DeskButton
+            <DeskChoiceGroup className="gridCatalogViewToggle" aria-label={tGrid("catalogViewLabel")} value={catalogView} onValueChange={(value) => setCatalogView(value as typeof catalogView)}>
+              <DeskChoiceItem
                 className={`btn gridCatalogViewButton ${catalogView === "grid" ? "gridCatalogViewButtonActive" : ""}`}
-                type="button"
-	                onClick={() => setCatalogView("grid")}
+	                value={"grid"}
 	              >
 	                <AppIcon name="grid" />
 	                {tGrid("catalogViewGrid")}
-	              </DeskButton>
-              <DeskButton
+	              </DeskChoiceItem>
+              <DeskChoiceItem
                 className={`btn gridCatalogViewButton ${catalogView === "list" ? "gridCatalogViewButtonActive" : ""}`}
-                type="button"
-	                onClick={() => setCatalogView("list")}
+	                value={"list"}
 	              >
 	                <AppIcon name="list" />
 	                {tGrid("catalogViewList")}
-	              </DeskButton>
-            </div>
+	              </DeskChoiceItem>
+            </DeskChoiceGroup>
 	            {hasActiveFilters ? (
 	              <DeskButton className="btn" type="button" onClick={resetFilters}>
 	                <AppIcon name="reset" />
@@ -1245,11 +1246,11 @@ function GridBotCatalogPageContent() {
                 </div>
 
                 <div className="gridCatalogBadgeRow">
-                  <span className="badge">{template.symbol}</span>
-                  <span className="badge">{tGrid(`catalogDifficultyValues.${template.catalogDifficulty ?? "BEGINNER"}`)}</span>
-                  <span className="badge">{tGrid(`catalogRiskValues.${template.catalogRiskLevel ?? "MEDIUM"}`)}</span>
-                  {template.isOwnTemplate ? <span className="badge badgeOk">{tGrid("catalogOwnTemplate")}</span> : null}
-                  {template.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
+                  <DeskBadge className="badge">{template.symbol}</DeskBadge>
+                  <DeskBadge className="badge">{tGrid(`catalogDifficultyValues.${template.catalogDifficulty ?? "BEGINNER"}`)}</DeskBadge>
+                  <DeskBadge className="badge">{tGrid(`catalogRiskValues.${template.catalogRiskLevel ?? "MEDIUM"}`)}</DeskBadge>
+                  {template.isOwnTemplate ? <DeskBadge className="badge badgeOk">{tGrid("catalogOwnTemplate")}</DeskBadge> : null}
+                  {template.catalogFeatured ? <DeskBadge className="badge badgeOk">{tGrid("catalogFeatured")}</DeskBadge> : null}
                 </div>
 
                 <div className="gridCatalogMetaList">
@@ -1260,7 +1261,7 @@ function GridBotCatalogPageContent() {
 
                 {visibleCatalogTags(template).length > 0 ? (
                   <div className="gridCatalogTagList">
-                    {visibleCatalogTags(template).slice(0, catalogView === "list" ? 6 : 4).map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                    {visibleCatalogTags(template).slice(0, catalogView === "list" ? 6 : 4).map((tag) => <DeskBadge key={tag} className="badge">{tag}</DeskBadge>)}
                   </div>
                 ) : null}
               </div>
@@ -1305,10 +1306,10 @@ function GridBotCatalogPageContent() {
               )}
               <div className="gridCatalogDrawerIntroCopy">
                 <div className="gridCatalogBadgeRow">
-                  <span className="badge">{tGrid(`catalogDifficultyValues.${selectedTemplate.catalogDifficulty ?? "BEGINNER"}`)}</span>
-                  <span className="badge">{tGrid(`catalogRiskValues.${selectedTemplate.catalogRiskLevel ?? "MEDIUM"}`)}</span>
-                  {selectedTemplate.isOwnTemplate ? <span className="badge badgeOk">{tGrid("catalogOwnTemplate")}</span> : null}
-                  {selectedTemplate.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
+                  <DeskBadge className="badge">{tGrid(`catalogDifficultyValues.${selectedTemplate.catalogDifficulty ?? "BEGINNER"}`)}</DeskBadge>
+                  <DeskBadge className="badge">{tGrid(`catalogRiskValues.${selectedTemplate.catalogRiskLevel ?? "MEDIUM"}`)}</DeskBadge>
+                  {selectedTemplate.isOwnTemplate ? <DeskBadge className="badge badgeOk">{tGrid("catalogOwnTemplate")}</DeskBadge> : null}
+                  {selectedTemplate.catalogFeatured ? <DeskBadge className="badge badgeOk">{tGrid("catalogFeatured")}</DeskBadge> : null}
                 </div>
                   <div className="gridCatalogDrawerMetaBlock">
                     <div className="gridCatalogDrawerMetaEyebrow">{tGrid("catalogMetaSummary")}</div>
@@ -1321,7 +1322,7 @@ function GridBotCatalogPageContent() {
                 ) : null}
                 {selectedTemplateTags.length > 0 ? (
                   <div className="gridCatalogTagList">
-                    {selectedTemplateTags.map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                    {selectedTemplateTags.map((tag) => <DeskBadge key={tag} className="badge">{tag}</DeskBadge>)}
                   </div>
                 ) : null}
               </div>
@@ -1365,7 +1366,7 @@ function GridBotCatalogPageContent() {
                       <div className={`gridCatalogMiniPanel ${walletFundingShortfall ? "gridCatalogMiniPanelWarn" : ""}`}>
                       <div className="gridCatalogMiniPanelTop">
                         <span className="gridCatalogMiniPanelLabel">{tGrid("launchWalletUsdcLabel")}</span>
-                        {walletFundingShortfall ? <span className="badge badgeWarn">{tGrid("launchWalletUsdcShortfall")}</span> : null}
+                        {walletFundingShortfall ? <DeskBadge className="badge badgeWarn">{tGrid("launchWalletUsdcShortfall")}</DeskBadge> : null}
                       </div>
                       <strong className="gridCatalogMiniPanelValue">{walletUsdcDisplay}</strong>
                         <div className="gridCatalogMiniPanelHint">{walletFundingHint}</div>
@@ -1373,7 +1374,7 @@ function GridBotCatalogPageContent() {
                       <div className={`gridCatalogMiniPanel ${fundingVaultShortfall ? "gridCatalogMiniPanelWarn" : ""}`}>
                         <div className="gridCatalogMiniPanelTop">
                           <span className="gridCatalogMiniPanelLabel">{tGrid("launchFundingVaultLabel")}</span>
-                          {fundingVaultShortfall ? <span className="badge badgeWarn">{tGrid("launchWalletUsdcShortfall")}</span> : null}
+                          {fundingVaultShortfall ? <DeskBadge className="badge badgeWarn">{tGrid("launchWalletUsdcShortfall")}</DeskBadge> : null}
                         </div>
                         <strong className="gridCatalogMiniPanelValue">{fundingVaultDisplay}</strong>
                         <div className="gridCatalogMiniPanelHint">{fundingVaultHint}</div>
@@ -1381,15 +1382,15 @@ function GridBotCatalogPageContent() {
                       <div className="gridCatalogMiniPanel">
                       <div className="gridCatalogMiniPanelTop">
                         <span className="gridCatalogMiniPanelLabel">{tGrid("launchProfitshareLabel")}</span>
-                        <span className="badge">{tGrid("launchProfitshareTotal", { rate: formatNumber(totalFeeRatePct, 2) })}</span>
+                        <DeskBadge className="badge">{tGrid("launchProfitshareTotal", { rate: formatNumber(totalFeeRatePct, 2) })}</DeskBadge>
                       </div>
                       <div className="gridCatalogProfitshareChips">
-                        <span className="badge">{tGrid("launchPlatformShare", { rate: formatNumber(platformFeeRatePct, 2) })}</span>
-                        <span className={`badge ${affiliateLinked ? "badgeOk" : ""}`}>
+                        <DeskBadge className="badge">{tGrid("launchPlatformShare", { rate: formatNumber(platformFeeRatePct, 2) })}</DeskBadge>
+                        <DeskBadge className={`badge ${affiliateLinked ? "badgeOk" : ""}`}>
                           {affiliateLinked
                             ? tGrid("launchAffiliateShare", { rate: formatNumber(affiliateFeeRatePct, 2) })
                             : tGrid("launchAffiliateShareNone")}
-                        </span>
+                        </DeskBadge>
                       </div>
                       <div className="gridCatalogMiniPanelHint">
                         {affiliateLinked
@@ -1483,10 +1484,10 @@ function GridBotCatalogPageContent() {
                   <div className="gridCatalogCalloutBody">
                     {tGrid("noExecutionAccountsHint", { exchanges: [...allowedGridExchanges].join(", ") })}
                   </div>
-	                  <Link href={withLocalePath("/settings", locale)} className="btn">
+	                  <DeskLink href={withLocalePath("/settings", locale)} className="btn">
 	                    <AppIcon name="settings" />
 	                    {tGrid("openExchangeSettings")}
-	                  </Link>
+	                  </DeskLink>
                 </div></DeskSurface>
               ) : null}
 
@@ -1517,7 +1518,7 @@ function GridBotCatalogPageContent() {
                     <strong>{tGrid("previewTitle")}</strong>
                     <div className="gridCatalogSectionHint">{tGrid("previewSectionHint")}</div>
                   </div>
-                  {previewLoading ? <span className="badge badgeWarn">{tGrid("previewUpdating")}</span> : previewInsufficient ? <span className="badge badgeDanger">{tGrid("previewInsufficient")}</span> : preview ? <span className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</span> : <span className="badge">{tGrid("previewWaiting")}</span>}
+                  {previewLoading ? <DeskBadge className="badge badgeWarn">{tGrid("previewUpdating")}</DeskBadge> : previewInsufficient ? <DeskBadge className="badge badgeDanger">{tGrid("previewInsufficient")}</DeskBadge> : preview ? <DeskBadge className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</DeskBadge> : <DeskBadge className="badge">{tGrid("previewWaiting")}</DeskBadge>}
                 </div>
                 <div className="gridCatalogPreviewHint">{tGrid("previewOnlyHint")}</div>
                 {neutralPreviewHints.show ? (
@@ -1601,7 +1602,7 @@ function GridBotCatalogPageContent() {
                 <div className="gridCatalogProgressTitle">{tGrid("provisioningTrackerTitle")}</div>
                 <div className="gridCatalogProgressSubtitle">{tGrid("provisioningTrackerSubtitle")}</div>
               </div>
-              <span className={`badge ${
+              <DeskBadge className={`badge ${
                 provisioningPhaseTone(createdInstance?.provisioningStatus?.phase) === "success"
                   ? "badgeOk"
                   : provisioningPhaseTone(createdInstance?.provisioningStatus?.phase) === "warning"
@@ -1609,7 +1610,7 @@ function GridBotCatalogPageContent() {
                     : "badge"
               }`}>
                 {provisioningPhaseText}
-              </span>
+              </DeskBadge>
             </div>
 
             <div className="gridCatalogProgressSummary">
@@ -1683,7 +1684,7 @@ function GridBotCatalogPageContent() {
                   <div className="gridCatalogProgressCopy">
                     <div className="gridCatalogProgressStepTop">
                       <strong>{step.label}</strong>
-                      <span className={`badge ${
+                      <DeskBadge className={`badge ${
                         step.state === "complete"
                           ? "badgeOk"
                           : step.state === "active"
@@ -1691,7 +1692,7 @@ function GridBotCatalogPageContent() {
                             : "badge"
                       }`}>
                         {provisioningProgressToneLabel(step.state, tGrid)}
-                      </span>
+                      </DeskBadge>
                     </div>
                   </div>
                 </div>

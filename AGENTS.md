@@ -96,7 +96,8 @@ BotVault, FundingVault, grid, billing, and ULIQ changes can affect contracts, Pr
 - Read nearby components and styles before editing; the existing design language has priority.
 - Use `AppIcon` from `apps/web/app/components/AppIcon.tsx`; do not add inline SVGs for normal UI icons.
 - Important action buttons should include icons.
-- Prefer existing primitives such as `uiPage`, `uiSection`, `card`, `btn`, `btnPrimary`, `AdminPageHeader`, `AdminTable`, and `AdminNotice`.
+- Ein UI is the visual source of truth: use `apps/web/components/einui` primitives and `components/desk` adapters. Existing `uiPage`, `uiSection`, `card`, `btn` and admin components may retain layout and behavior, but must not introduce competing material styles.
+- Use central `materials.css` glass tokens and light/solid variants. Cards use a single translucent tint; buttons remain solid single-color. Preserve semantic status colors.
 - Follow existing i18n patterns for visible text.
 - Validate web/UI changes locally when possible, including mobile layouts and capital-related flows.
 - Slow detail, analytics, AI, or dashboard requests must not block capital-status lists.

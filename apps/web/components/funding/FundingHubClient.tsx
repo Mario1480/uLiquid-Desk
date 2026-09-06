@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useAccount } from "wagmi";
@@ -34,7 +35,7 @@ export default function FundingHubClient({
               <h3 className="walletSectionTitle">{t("walletTitle")}</h3>
               <div className="walletMutedText">{t("walletSubtitle")}</div>
             </div>
-            <span className="badge">{address ? shortAddress(address) : t("connectTitle")}</span>
+            <DeskBadge className="badge">{address ? shortAddress(address) : t("connectTitle")}</DeskBadge>
           </div>
 
           <div className="walletInfoGrid fundingHeroGrid">

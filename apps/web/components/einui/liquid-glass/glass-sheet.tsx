@@ -36,8 +36,8 @@ GlassSheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 const sheetVariants = cva(
   cn(
     "ein:fixed ein:z-50 ein:gap-4 ein:p-6",
-    "ein:bg-white/10 ein:backdrop-blur-2xl ein:border ein:border-white/20",
-    "ein:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
+    " ein:border ein:border-white/20",
+    "",
     "ein:transition ein:ease-in-out ein:duration-300",
     "ein:data-[state=open]:animate-in ein:data-[state=closed]:animate-out",
     "ein:before:absolute ein:before:inset-0",
@@ -78,7 +78,7 @@ const GlassSheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitiv
   ({ side = "right", className, children, ...props }, ref) => (
     <GlassSheetPortal>
       <GlassSheetOverlay />
-      <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
+      <SheetPrimitive.Content data-ein-overlay="true" ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
         <div className="ein:relative ein:z-10">{children}</div>
         <SheetPrimitive.Close className="ein:absolute ein:right-4 ein:top-4 ein:rounded-lg ein:p-1 ein:text-white/60 ein:transition-all ein:hover:text-white ein:hover:bg-white/10 ein:focus:outline-none ein:focus:ring-2 ein:focus:ring-white/50">
           <X className="ein:h-4 ein:w-4" />

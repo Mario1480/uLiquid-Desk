@@ -1,9 +1,9 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
-import { DeskButton } from "@/components/desk/DeskButton";
-import { DeskInput } from "@/components/desk/DeskInput";
-import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
+import { GlassButton } from "@/components/einui/liquid-glass/glass-button";
+import { GlassInput } from "@/components/einui/liquid-glass/glass-input";
+import { GlassAuthFrame } from "@/components/einui/auth-frame";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
@@ -77,13 +77,12 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="container authPage">
-      <h1 className="authHeading">{t("resetPasswordTitle")}</h1>
-      <DeskSurface><div className="card authCard">
+    <GlassAuthFrame title={t("resetPasswordTitle")} icon={<AppIcon name="key" />} >
         <div className="authForm">
           <label className="authLabel">
             {t("accountEmail")}
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="email"
               value={email}
@@ -93,14 +92,15 @@ export default function ResetPasswordPage() {
             />
           </label>
           <div className="authActions">
-            <DeskButton className="btn" type="button" disabled={!email} onClick={() => void requestResetCode()}>
+            <GlassButton className="btn" type="button" disabled={!email} onClick={() => void requestResetCode()}>
               <AppIcon name="mail" />
               {t("requestResetCode")}
-            </DeskButton>
+            </GlassButton>
           </div>
           <label className="authLabel">
             {t("resetCode")}
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="text"
               value={code}
@@ -111,7 +111,8 @@ export default function ResetPasswordPage() {
           </label>
           <label className="authLabel">
             {t("newPassword")}
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="password"
               value={newPassword}
@@ -122,7 +123,8 @@ export default function ResetPasswordPage() {
           </label>
           <label className="authLabel">
             {t("confirmNewPassword")}
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="password"
               value={confirmPassword}
@@ -132,7 +134,7 @@ export default function ResetPasswordPage() {
             />
           </label>
           <div className="authActions">
-            <DeskButton
+            <GlassButton
               className="btn btnPrimary"
               type="button"
               disabled={!email || code.length !== 6 || newPassword.length < 8}
@@ -140,21 +142,20 @@ export default function ResetPasswordPage() {
             >
               <AppIcon name="key" />
               {t("setNewPassword")}
-            </DeskButton>
-            <Link href={withLocalePath("/login", locale)} className="btn">
+            </GlassButton>
+            <DeskLink href={withLocalePath("/login", locale)} className="btn">
               <AppIcon name="back" />
               {t("backToLogin")}
-            </Link>
+            </DeskLink>
           </div>
-          {status ? <div className="authStatus">{status}</div> : null}
+          {status ? <div className="authStatus" role="status">{status}</div> : null}
           {devCode ? (
             <div className="authDevCode">
               {t("devResetCode")}: <b>{devCode}</b>
             </div>
           ) : null}
-          {error ? <div className="authError">{error}</div> : null}
+          {error ? <div className="authError" role="alert">{error}</div> : null}
         </div>
-      </div></DeskSurface>
-    </div>
+    </GlassAuthFrame>
   );
 }

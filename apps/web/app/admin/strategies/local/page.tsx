@@ -1,4 +1,6 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -507,10 +509,9 @@ export default function AdminLocalStrategiesPage() {
               <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
                 <label className="settingsField" style={{ justifyContent: "end" }}>
                   <span className="settingsFieldLabel">Shadow mode (log only)</span>
-                  <DeskInput
-                    type="checkbox"
+                  <DeskCheckbox
                     checked={shadowMode}
-                    onChange={(e) => setShadowMode(e.target.checked)}
+                    onCheckedChange={(checked) => setShadowMode(checked)}
                   />
                 </label>
                 <div />
@@ -562,7 +563,7 @@ export default function AdminLocalStrategiesPage() {
 
               <label className="settingsField" style={{ justifyContent: "end" }}>
                 <span className="settingsFieldLabel">Enabled</span>
-                <DeskInput type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} />
+                <DeskSwitch checked={isEnabled} onCheckedChange={(checked) => setIsEnabled(checked)} />
               </label>
             </div>
 

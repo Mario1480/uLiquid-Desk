@@ -1,0 +1,37 @@
+[     109ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[    1236ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3301/en/reset-password:0
+[    1236ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3301/en/reset-password:0
+[    1260ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[    1266ms] [LOG] [HMR] connected @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[   55103ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:4401/auth/password-reset/request:0
+[   55171ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:4401/auth/password-reset/confirm:0
+[  105653ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  105660ms] [LOG] [HMR] connected @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  105713ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3301/en/register?ref=LOCAL:0
+[  163260ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  163273ms] [LOG] [Fast Refresh] done in 116ms @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  163320ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  163328ms] [LOG] [HMR] connected @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  163447ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  163500ms] [LOG] [Fast Refresh] done in 155ms @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  204889ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  204955ms] [LOG] [Fast Refresh] done in 167ms @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  361641ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  361649ms] [LOG] [HMR] connected @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  361751ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3301/en/login:0
+[  361768ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  361777ms] [LOG] [HMR] connected @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  518288ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  519290ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  520292ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  521294ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  522295ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  527298ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  532300ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  537303ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  542306ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  547313ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  552317ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  557324ms] [ERROR] WebSocket connection to 'ws://localhost:3301/_next/webpack-hmr?id=wvZktIV7NkVuvqjmtaIp_' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3301/_next/static/chunks/node_modules_next_dist_client_0r5nbpw._.js:13422
+[  593658ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3301/en/login:0
+[  623784ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3301/de/login:0

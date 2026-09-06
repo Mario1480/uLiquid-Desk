@@ -1,0 +1,242 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "uLiquid Desk" [ref=e6] [cursor=pointer]:
+            - /url: /de
+            - img "uLiquid Desk logo" [ref=e7]
+            - generic [ref=e8]:
+              - strong [ref=e9]: uLiquid Desk
+              - generic [ref=e10]: Desk Beta v1.0.0
+          - button "Sidebar schließen" [ref=e11] [cursor=pointer]
+        - region "Desk & Trading" [ref=e15]:
+          - navigation [ref=e17]:
+            - link "Dashboard" [ref=e18] [cursor=pointer]:
+              - /url: /de/dashboard
+            - link "Trading Desk" [ref=e24] [cursor=pointer]:
+              - /url: /de/trade
+            - link "Market Intelligence" [ref=e28] [cursor=pointer]:
+              - /url: /de/market-intelligence
+            - link "Kalender" [ref=e34] [cursor=pointer]:
+              - /url: /de/calendar
+            - link "News" [ref=e39] [cursor=pointer]:
+              - /url: /de/news
+        - region "AI" [ref=e45]:
+          - navigation [ref=e47]:
+            - link "AI Agent Chat" [ref=e48] [cursor=pointer]:
+              - /url: /de/agent-chat
+            - link "Prognosen" [ref=e63] [cursor=pointer]:
+              - /url: /de/predictions
+            - link "AI Prediction Builder" [ref=e69] [cursor=pointer]:
+              - /url: /de/strategies
+        - region "Grid, Bots & Signale" [ref=e84]:
+          - navigation [ref=e86]:
+            - link "Trading Bots" [ref=e87] [cursor=pointer]:
+              - /url: /de/bots
+            - link "Grid Bots" [ref=e93] [cursor=pointer]:
+              - /url: /de/bots/grid
+        - region "Vaults & Funding" [ref=e98]:
+          - navigation [ref=e100]:
+            - link "Accounts" [ref=e101] [cursor=pointer]:
+              - /url: /de/accounts
+            - link "Wallet & Funding" [ref=e108] [cursor=pointer]:
+              - /url: /de/wallet
+            - link "Vaults" [ref=e114] [cursor=pointer]:
+              - /url: /de/vaults
+        - region "Einstellungen" [ref=e120]:
+          - navigation [ref=e122]:
+            - link "Einstellungen" [ref=e123] [cursor=pointer]:
+              - /url: /de/settings
+            - link "Admin" [ref=e129] [cursor=pointer]:
+              - /url: /de/admin
+            - link "Hilfe" [ref=e134] [cursor=pointer]:
+              - /url: /de/help
+        - region "System Snapshot" [ref=e140]:
+          - generic [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e144]: Exchange-Accounts
+              - strong [ref=e145]: "0"
+            - generic [ref=e146]:
+              - generic [ref=e147]: Laufende Bots
+              - strong [ref=e148]: "0"
+            - generic [ref=e149]:
+              - generic [ref=e150]: Laufende Grid Bots
+              - strong [ref=e151]: "0"
+            - generic [ref=e152]:
+              - generic [ref=e153]: Laufende Prognosen
+              - strong [ref=e154]: "0"
+            - generic [ref=e155]:
+              - generic [ref=e156]: Bots mit Fehlern
+              - strong [ref=e157]: "0"
+        - button "Abmelden" [ref=e159] [cursor=pointer]
+    - generic [ref=e165]:
+      - banner [ref=e166]:
+        - generic [ref=e167]:
+          - generic [ref=e169]:
+            - combobox "Seiten suchen" [ref=e170]
+            - button "Los" [ref=e171] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e172]:
+                - generic [ref=e173]: Ctrl/⌘
+                - generic [ref=e174]: K
+          - generic [ref=e175]:
+            - button "Sprache wechseln" [ref=e177] [cursor=pointer]:
+              - generic [ref=e182]: DE
+            - link "0 AI Credits verfügbar, 0 reserviert. Abrechnung öffnen." [ref=e186] [cursor=pointer]:
+              - /url: /de/settings/subscription
+              - generic [ref=e200]: AI
+              - strong [ref=e201]: "0"
+            - button "Wallet verbinden" [ref=e203] [cursor=pointer]
+            - button "Alarme öffnen" [ref=e210] [cursor=pointer]
+            - button "Benutzermenü öffnen" [ref=e214] [cursor=pointer]:
+              - generic [ref=e215]: UF
+              - generic [ref=e219]: ui-fixture
+      - navigation "Breadcrumb" [ref=e224]:
+        - list [ref=e226]:
+          - listitem [ref=e227]:
+            - link "Dashboard" [ref=e228] [cursor=pointer]:
+              - /url: /de/dashboard
+          - listitem [ref=e236]:
+            - link "Admin" [ref=e237] [cursor=pointer]:
+              - /url: /de/admin
+          - listitem [ref=e245]:
+            - link "System" [ref=e246] [cursor=pointer]:
+              - /url: /de/admin/system
+          - listitem [ref=e254]:
+            - generic [ref=e255]: Ui Components
+      - main [ref=e260]:
+        - generic [ref=e261]:
+          - button "Open admin menu" [ref=e262] [cursor=pointer]
+          - complementary [ref=e264]:
+            - generic [ref=e265]:
+              - generic [ref=e266]:
+                - generic [ref=e267]: uLiquid Desk
+                - generic [ref=e268]: Platform Admin
+                - generic [ref=e269]: Strict superadmin operations area
+              - navigation "Admin navigation" [ref=e270]:
+                - link "Overview" [ref=e271] [cursor=pointer]:
+                  - /url: /de/admin
+                - link "Users" [ref=e278] [cursor=pointer]:
+                  - /url: /de/admin/users
+                - link "Workspaces" [ref=e287] [cursor=pointer]:
+                  - /url: /de/admin/workspaces
+                - link "Licenses" [ref=e294] [cursor=pointer]:
+                  - /url: /de/admin/licenses
+                - link "Alerts" [ref=e300] [cursor=pointer]:
+                  - /url: /de/admin/alerts
+                - link "Bots" [ref=e306] [cursor=pointer]:
+                  - /url: /de/admin/bots
+                - link "Runners" [ref=e313] [cursor=pointer]:
+                  - /url: /de/admin/runners
+                - link "Audit" [ref=e320] [cursor=pointer]:
+                  - /url: /de/admin/audit
+                - link "Statistics" [ref=e327] [cursor=pointer]:
+                  - /url: /de/admin/statistics
+                - link "Providers" [ref=e334] [cursor=pointer]:
+                  - /url: /de/admin/providers
+                - link "Affiliate" [ref=e341] [cursor=pointer]:
+                  - /url: /de/admin/affiliate
+                - link "Vaults" [ref=e348] [cursor=pointer]:
+                  - /url: /de/admin/system/vaults/execution
+                - link "System" [ref=e355] [cursor=pointer]:
+                  - /url: /de/admin/system
+          - generic [ref=e363]:
+            - navigation "System navigation" [ref=e364]:
+              - link "Overview" [ref=e365] [cursor=pointer]:
+                - /url: /de/admin/system
+              - link "Access" [ref=e369] [cursor=pointer]:
+                - /url: /de/admin/system/access
+              - link "Notifications" [ref=e373] [cursor=pointer]:
+                - /url: /de/admin/system/notifications/smtp
+              - link "Integrations" [ref=e377] [cursor=pointer]:
+                - /url: /de/admin/system/integrations/api-keys
+              - link "AI Controls" [ref=e381] [cursor=pointer]:
+                - /url: /de/admin/system/ai/prompts
+              - link "Bots & Strategies" [ref=e394] [cursor=pointer]:
+                - /url: /de/admin/system/bots/grid-templates
+              - link "Vault Controls" [ref=e398] [cursor=pointer]:
+                - /url: /de/admin/system/vaults/execution
+            - generic [ref=e402]:
+              - heading "Ein-UI-Komponentengalerie" [level=1] [ref=e403]
+              - paragraph [ref=e404]: Vollständige lokale Ein-UI-Sammlung mit Ocean-Palette und einfarbigen Buttons.
+              - generic [ref=e405]:
+                - generic [ref=e406]:
+                  - text: Komponente
+                  - combobox "Komponente" [ref=e407]:
+                    - option "Glass Avatar — glass-avatar"
+                    - option "Glass Badge — glass-badge"
+                    - option "Glass Button — glass-button"
+                    - option "Glass Card — glass-card"
+                    - option "Glass Dialog — glass-dialog"
+                    - option "Glass Input — glass-input"
+                    - option "Glass Progress — glass-progress"
+                    - option "Glass Slider — glass-slider"
+                    - option "Glass Switch — glass-switch"
+                    - option "Glass Tabs — glass-tabs"
+                    - option "Glass Tooltip — glass-tooltip"
+                    - option "Glass Command Palette — glass-command-palette"
+                    - option "Glass Notification — glass-notification"
+                    - option "Glass Dock — glass-dock"
+                    - option "Glass Gauge — glass-gauge"
+                    - option "Glass Morph Card — glass-morph-card"
+                    - option "Glass Ripple — glass-ripple"
+                    - option "Glass Spotlight — glass-spotlight"
+                    - option "Glass Orb — glass-orb"
+                    - option "Glass Waveform — glass-waveform"
+                    - option "Glass Timeline — glass-timeline"
+                    - option "Base Widget — base-widget"
+                    - option "Calendar Widgets — calendar-widget"
+                    - option "Clock Widgets — clock-widget"
+                    - option "Weather Widgets — weather-widget"
+                    - option "Stats Widgets — stats-widget"
+                    - option "Stock Widgets — stock-widget"
+                    - option "Admin Panel — admin-panel"
+                    - option "Glass Select — glass-select"
+                    - option "Glass Textarea — glass-textarea"
+                    - option "Glass Checkbox — glass-checkbox"
+                    - option "Glass Radio Group — glass-radio"
+                    - option "Glass Skeleton — glass-skeleton"
+                    - option "Glass Table — glass-table"
+                    - option "Glass Breadcrumb — glass-breadcrumb"
+                    - option "Glass Sheet — glass-sheet"
+                    - option "Glass Popover — glass-popover"
+                    - option "Glass Alert Dialog — glass-alert-dialog"
+                    - option "Glass Separator — glass-separator"
+                    - option "Glass Scroll Area — glass-scroll-area"
+                    - option "Forgot Password Page — forgot-password-page"
+                    - option "Login Page — login-page"
+                    - option "Sign Up Page — signup-page"
+                    - option "Pricing Page — pricing-page"
+                    - option "Dashboard template — dashboard-page"
+                    - option "Desk native contract — desk-contract" [selected]
+                - generic [ref=e408]:
+                  - text: Vorschaupalette
+                  - combobox "Vorschaupalette" [ref=e409]:
+                    - option "Ocean" [selected]
+                    - option "Aurora"
+                    - option "Forest"
+                - button "Vorschau pausieren" [ref=e410] [cursor=pointer]
+              - paragraph [ref=e411]: Nur lokale Beispieldaten. Es werden keine Orders, Zahlungen, Registrierungen oder Nachrichten ausgelöst.
+              - paragraph [ref=e413]: Vorschau pausiert, solange sie unsichtbar oder manuell angehalten ist.
+              - status
+              - paragraph [ref=e414]: 46 ausführbare Beispiele für die Upstream-Registry und die Dashboard-Vorlage der Website.
+  - contentinfo [ref=e415]:
+    - generic [ref=e416]:
+      - generic [ref=e417]: © 2026 uLiquid
+      - generic [ref=e418]:
+        - link "uLiquid Desk Website" [ref=e419] [cursor=pointer]:
+          - /url: https://desk.uliquid.vip
+          - text: desk.uliquid.vip
+        - link "Datenschutz" [ref=e420] [cursor=pointer]:
+          - /url: /de/privacy
+        - link "Cookie-Informationen" [ref=e421] [cursor=pointer]:
+          - /url: /de/cookies
+        - link "Nutzungsbedingungen" [ref=e422] [cursor=pointer]:
+          - /url: /de/terms
+        - link "Crypto Risk Disclosure" [ref=e423] [cursor=pointer]:
+          - /url: /de/risk-disclosure
+          - text: Risk Disclosure
+        - link "Support email" [ref=e424] [cursor=pointer]:
+          - /url: mailto:support@uliquid.vip
+          - text: support@uliquid.vip
+  - alert [ref=e425]

@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
 import { DeskButton } from "@/components/desk/DeskButton";
@@ -231,7 +232,7 @@ export default function WalletDashboardClient({
     <article className="walletInfoTile fundingQuickCard walletAgentSystemCard">
       <div className="fundingQuickHeader">
         <strong>{t("masterAgentWallet")}</strong>
-        <span className={`badge ${agentReady ? "badgeOk" : "badgeWarn"}`}>{masterAgentStateLabel}</span>
+        <DeskBadge className={`badge ${agentReady ? "badgeOk" : "badgeWarn"}`}>{masterAgentStateLabel}</DeskBadge>
       </div>
       <div className="walletMutedText">{t("agentActions.subtitle")}</div>
 
@@ -377,7 +378,7 @@ export default function WalletDashboardClient({
                     {activityQuery.data.items.length}
                   </span>
                 ) : null}
-                <span className="badge">{activityOpen ? t("collapseRecentActivity") : t("expandRecentActivity")}</span>
+                <DeskBadge className="badge">{activityOpen ? t("collapseRecentActivity") : t("expandRecentActivity")}</DeskBadge>
                 <span className={`walletAccordionChevron${activityOpen ? " isOpen" : ""}`} aria-hidden="true">
                   ▾
                 </span>

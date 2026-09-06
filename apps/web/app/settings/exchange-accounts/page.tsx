@@ -1,10 +1,12 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -306,9 +308,9 @@ export default function ExchangeAccountsPage() {
         ? "uiStatusBadge-warning"
         : "uiStatusBadge-success";
     return (
-      <span className={`badge ${tone}`}>
+      <DeskBadge className={`badge ${tone}`}>
         {t(`credential.${account.credentialExpiryState}`)}
-      </span>
+      </DeskBadge>
     );
   }
 
@@ -320,10 +322,10 @@ export default function ExchangeAccountsPage() {
         description={t("description")}
         actions={(
           <>
-            <Link className="btn" href={withLocalePath("/settings", locale)}>
+            <DeskLink className="btn" href={withLocalePath("/settings", locale)}>
               <AppIcon name="back" />
               {tCommon("backToSettings")}
-            </Link>
+            </DeskLink>
             <DeskButton className="btn" type="button" onClick={() => void loadAll()} disabled={loading}>
               <AppIcon name="refresh" />
               {loading ? tCommon("loading") : tCommon("reload")}
@@ -349,7 +351,7 @@ export default function ExchangeAccountsPage() {
             <h3 style={{ margin: 0 }}>{t("create.title")}</h3>
             <div className="settingsMutedText">{t("create.description")}</div>
           </div>
-          {serverIpAddress ? <span className="badge">{t("serverIp", { ip: serverIpAddress })}</span> : null}
+          {serverIpAddress ? <DeskBadge className="badge">{t("serverIp", { ip: serverIpAddress })}</DeskBadge> : null}
         </div>
 
         <form className="settingsFormGrid" onSubmit={createAccount}>
@@ -410,10 +412,10 @@ export default function ExchangeAccountsPage() {
               <AppIcon name="create" />
               {saving ? tCommon("saving") : t("create.submit")}
             </DeskButton>
-            <Link className="btn" href={withLocalePath("/settings/risk", locale)}>
+            <DeskLink className="btn" href={withLocalePath("/settings/risk", locale)}>
               <AppIcon name="risk" />
               {t("create.riskLink")}
-            </Link>
+            </DeskLink>
           </div>
         </form>
       </section></DeskSurface>
@@ -424,7 +426,7 @@ export default function ExchangeAccountsPage() {
             <h3 style={{ margin: 0 }}>{t("list.title")}</h3>
             <div className="settingsMutedText">{t("list.description")}</div>
           </div>
-          <span className="badge">{t("list.count", { count: accounts.length })}</span>
+          <DeskBadge className="badge">{t("list.count", { count: accounts.length })}</DeskBadge>
         </div>
 
         {loading ? (
@@ -442,9 +444,9 @@ export default function ExchangeAccountsPage() {
                   <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <strong>{account.label}</strong>
-                      <span className="badge">{exchangeLabel(option, account.exchange)}</span>
+                      <DeskBadge className="badge">{exchangeLabel(option, account.exchange)}</DeskBadge>
                     {renderCredentialStatus(account)}
-                    {account.systemManaged ? <span className="badge badgeOk">{t("list.systemManaged")}</span> : null}
+                    {account.systemManaged ? <DeskBadge className="badge badgeOk">{t("list.systemManaged")}</DeskBadge> : null}
                     </div>
                     <div className="settingsMutedText">
                       {t("fields.apiKey")}: {account.apiKeyMasked || "****"} · {t("list.lastUsed")}: {formatDateTime(account.lastUsedAt)}
@@ -503,7 +505,7 @@ export default function ExchangeAccountsPage() {
                                 <DeskInput className="input" type="password" value={editPassphrase} onChange={(event) => setEditPassphrase(event.target.value)} placeholder={t("fields.keepCurrent")} />
                               </label>
                               <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <DeskInput type="checkbox" checked={editClearPassphrase} onChange={(event) => setEditClearPassphrase(event.target.checked)} disabled={Boolean(editPassphrase.trim())} />
+                                <DeskCheckbox checked={editClearPassphrase} onCheckedChange={(checked) => setEditClearPassphrase(checked)} disabled={Boolean(editPassphrase.trim())} />
                                 <span>{t("fields.clearPassphrase")}</span>
                               </label>
                             </>

@@ -1,8 +1,10 @@
 "use client";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
-import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
@@ -68,10 +70,10 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
         <div className="walletActionRow">
-          <Link className="btn" href={withLocalePath("/wallet", locale)}>
+          <DeskLink className="btn" href={withLocalePath("/wallet", locale)}>
             <AppIcon name="back" />
             {t("backToWallet")}
-          </Link>
+          </DeskLink>
         </div>
       </div>
 
@@ -98,10 +100,10 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
                 <div className="walletMutedText">{historyQuery.data?.trackingMode ?? "lightweight"}</div>
               </div>
               {address ? (
-                <a className="btn" href={buildExplorerAddressUrl(config.hyperEvm.explorerUrl, address)} target="_blank" rel="noreferrer">
+                <DeskAnchor className="btn" href={buildExplorerAddressUrl(config.hyperEvm.explorerUrl, address)} target="_blank" rel="noreferrer">
                   <AppIcon name="external" />
                   {tCommon("hyperEvmExplorer")}
-                </a>
+                </DeskAnchor>
               ) : null}
             </div>
             <div className="walletNotice">{historyQuery.data?.note ?? t("trackingNoteFallback")}</div>
@@ -118,7 +120,7 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
                         <h3 className="walletSectionTitle">{item.title}</h3>
                         <div className="walletMutedText">{item.description}</div>
                       </div>
-                      <span className={`badge ${statusBadgeClass(item.status)}`}>{item.status}</span>
+                      <DeskBadge className={`badge ${statusBadgeClass(item.status)}`}>{item.status}</DeskBadge>
                     </div>
                     <div className="walletInfoGrid">
                       <div className="walletInfoTile">
@@ -140,10 +142,10 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
                     </div>
                     <div className="walletActionRow walletCardActions">
                       {txUrl ? (
-                        <a className="btn" href={txUrl} target="_blank" rel="noreferrer">
+                        <DeskAnchor className="btn" href={txUrl} target="_blank" rel="noreferrer">
                           <AppIcon name="external" />
                           {tCommon("explorer")}
-                        </a>
+                        </DeskAnchor>
                       ) : null}
                     </div>
                   </article></DeskSurface>

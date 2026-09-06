@@ -1,0 +1,3 @@
+[  230001ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4401/settings/alerts:0
+[  230001ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4401/settings/mobile-push:0
+[  230001ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4401/settings/subscription/notifications?locale=de:0

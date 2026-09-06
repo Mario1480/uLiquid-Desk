@@ -1,6 +1,6 @@
 # Phase 2 — Shared Data and Existing AI Upgrade
 
-Status: `IN PROGRESS` — snapshot consumers and positive-position acceptance passed after the combined release. Spot enrichment and the mobile correction are published as `9c31dbe6b`; current deployment/acceptance evidence is recorded in the [closeout slice](../../archive/tasks/2026-09-06-phase2-spot-closeout-slice.md). Historical scope and the remaining acceptance gates are open.
+Status: `IN PROGRESS` — snapshot consumers, positive-position acceptance, Binance historical UTC/reload acceptance and standalone cache identity/invalidation passed. History is deployed with the UTC correction `31a9da352`. Genuine stale observations and the controlled before/after benchmark remain open. See the current acceptance update below; older dated entries retain their historical status.
 Started: 2026-09-05.
 
 ## Entry decision
@@ -59,7 +59,8 @@ Do not reprice AI models, change tool budgets, replace profiles, or activate sch
 - [x] Authenticated Chrome checks cover Market Analyst feature evidence, exact snapshot/value persistence after reload, unsupported BingX with no cross-venue substitution, recent-run selection, the Copilot account-selection guard and its empty-account result, and German/English mobile drawers.
 - [x] Live positive-position acceptance passed for the standalone and Agent Chat Copilot on 2026-09-06 after release; see the [post-release browser evidence](../../archive/tasks/2026-09-06-post-release-copilot-browser-acceptance.md). Complete recommendations, available BingX orderbook, conservative liquidation-zero handling and persisted Agent Chat provenance were observed.
 - [x] The deployed mobile Decision Log correction passed authenticated English/German 390×844 acceptance after unlock. A new Spot Agent Chat run and genuine BingX-to-Hyperliquid `auto` Funding fallback completed with exact reloaded feature evidence; see the [closeout evidence](../../archive/tasks/2026-09-06-phase2-spot-closeout-slice.md).
-- [ ] Fixed-prompt before/after quality/latency/credit comparisons, standalone cached-evidence identity, and genuine stale observations remain open. Passing synthetic checks does not close these gates.
+- [x] Standalone cached-evidence identity and natural snapshot-change invalidation passed in authenticated Firefox on 2026-09-06; see the current acceptance update below.
+- [ ] Fixed-prompt before/after quality/latency/credit comparisons and genuine stale observations remain open. Passing synthetic checks does not close these gates.
 - [x] The follow-up preserves the specific unsupported-capability reason through `withPublicVenue`, adds translated unavailable-capability copy and retains failed-tool skill/schema provenance. Required routines are not presented as executed routines when a tool fails. Code `3dc0e2401` is production-deployed; runtime smokes and authenticated BingX wording/version/reload acceptance passed.
 
 ### 2D — Historical feature scope — `IN PROGRESS`; provider-history mode selected
@@ -69,7 +70,7 @@ Mario selected existing exchange histories without a new database on 2026-09-06.
 - [x] Implement the local bounded public history reader, deterministic registered summary routine and replayable Feature Registry contract. Public probes cover Binance Funding/OI and Bitget/MEXC Funding; missing historical cadence remains explicit.
 - [x] Integrate historical capabilities, existing AI consumers and user-facing evidence; verify permissions, provider coverage and unsupported paths with deterministic fixtures. Funding/OI skills v5, Market Analyst v8, Position Copilot v9 and standalone explanation cache v6. Initial historical coverage is explicitly bounded to Binance Funding/OI and Bitget/MEXC Funding; other histories fail closed.
 - [x] Publish and deploy historical consumers to production API/web as `41299926e`; both services healthy, public running-image smokes passed and no other services changed. See the [release evidence](../../archive/tasks/2026-09-06-phase2-provider-history-release.md).
-- [ ] Perform authenticated historical-feature/reload/mobile acceptance. The initial Computer Use attempt was blocked by the locked Mac; public probes do not close this gate.
+- [x] Authenticated Binance Funding/OI historical-feature acceptance passed after the UTC correction: exact generated endpoints including milliseconds, identical expanded Decision Log after reload and mobile drawer access. This is not certification of every supported provider or of standalone historical enrichment on all account types.
 
 Historical changes, percentiles and Z-scores now use the separate bounded provider-history path, not the five-second current-snapshot cache. Coverage, cadence/unit safeguards, sample sufficiency and backfill limits are documented in the selected-mode decision. Until enough comparable observations exist, return unavailable statistics and explicit reasons; never derive a trend from one snapshot or mix venues/units silently. No persistence migration or collector is part of this implementation.
 
@@ -155,6 +156,20 @@ See [dated live acceptance findings](../../archive/tasks/2026-09-06-phase2-live-
 Subsequent publication: the combined UI/Copilot release is now deployed; see [production release evidence](../../archive/tasks/2026-09-06-einui-copilot-production-release.md). The following paragraph records the earlier local-only stage, not current deployment status.
 
 Mario subsequently authorized fixing those findings. The corrections above are implemented and locally verified, not published. Market Analyst is version 6, Position Copilot is version 7 and the standalone explanation cache namespace is `v4`; routine/skill calculation contracts and read-only permissions are unchanged. Agent Chat 106/106, standalone Copilot 26/26, web Agent Chat 9/9 and web Copilot 4/4 passed with normal exits, as did API/web typechecks, i18n and whitespace checks. See [local correction evidence](../../archive/tasks/2026-09-06-phase2-copilot-local-corrections.md) for boundaries and remaining live gates. The earlier live findings remain historical observations; no new live AI success or Phase 2 completion is claimed.
+
+## Current acceptance update — 2026-09-06, 19:03–19:12 UTC
+
+This update supersedes older open entries above for the historical-scope decision, positive-position repeat, auto fallback and exact standalone cached evidence. It does not close genuine stale observations or the controlled before/after benchmark.
+
+- Production Chrome Market Analyst v9 repeated the original Binance BTCUSDT history prompt without supplying expected dates. Both Funding/OI endpoints matched persisted feature values to the millisecond, verified using a narrow read-only server projection. Full expanded Decision Log text remained exactly identical after reload. Desktop and 390×844 mobile evidence rendered without a framework overlay; only wallet-extension warnings appeared in the captured console. Cost: 65 credits; latency: 9.3 seconds. German history rendering and other historical venues were not repeated in this pass.
+- Authenticated Firefox standalone Position Copilot on the existing BingX ADAUSDT position completed three read-only refreshes. The account, orders, protection levels, notifications and monitoring settings were not changed.
+- First trace at 19:09:49.589 UTC: `cacheHit=false`, 7,400 ms, successful AI result, no fallback or rate limit. Second trace at 19:09:57.600 UTC: `cacheHit=true`, 2 ms. A bounded server-side comparison verified the same user, same economic snapshot hash, byte-equivalent parsed response and complete market context (including both features and their original evidence).
+- Third trace at 19:11:18.720 UTC: `cacheHit=false`, 8,581 ms, successful AI result. Naturally changing PnL/ROE, margin and notional fields changed the economic snapshot hash and market evidence within the five-minute cache lifetime. No position was created or modified to manufacture the test.
+- Firefox credit balance changed from 2,837 to 2,834 after the first analysis and remained there for the cache hit, then reached 2,831 after the third analysis; zero reserved credits at completion. Total cost: 6 credits. The reused response was not billed again.
+- The standalone card visibly preserved complete position-data versus degraded market-context labels and conservative zero-liquidation semantics. The evidence was degraded due to a forming candle and unavailable derivatives, not a genuine stale-provider case. Firefox was driven through native Computer Use as requested; no Firefox console capture or mobile check is claimed for this pass.
+- The live cache reuse gate is satisfied for this account/snapshot path. It is not evidence of a five-minute expiry test, every venue/account type, cross-user cache isolation or a controlled old/new implementation benchmark. Existing deterministic tests provide separate coverage and are not relabeled live acceptance.
+
+Documentation updates from this acceptance pass are local only; no code change, push or deployment was performed.
 
 ## Authorized release and Chrome acceptance — 2026-09-05
 

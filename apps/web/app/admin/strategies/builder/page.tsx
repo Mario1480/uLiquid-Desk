@@ -1,4 +1,5 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -597,7 +598,7 @@ export default function AdminStrategiesBuilderPage() {
 
             <label className="settingsField" style={{ marginBottom: 10 }}>
               <span className="settingsFieldLabel">Enabled</span>
-              <DeskInput type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} />
+              <DeskSwitch checked={isEnabled} onCheckedChange={(checked) => setIsEnabled(checked)} />
             </label>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

@@ -1,4 +1,7 @@
 "use client";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -931,9 +934,9 @@ function UliqHubContent() {
         </section>
 
         <section className="uliqLifecycle" aria-label={t("overview.lifecycle")}>
-          <div><span className={`uliqLifecycleIcon uiStatusBadge-${statusTone(rounds?.rounds[0]?.state ?? overview?.state ?? "")}`}><AppIcon name="check" /></span><span>{rounds?.rounds[0]?.label ?? t("rounds.round1")}</span><strong>{(rounds?.rounds[0]?.state ?? overview?.state ?? "–").replaceAll("_", " ")}</strong></div>
-          <div><span className="uliqLifecycleIcon uiStatusBadge-success"><AppIcon name="refresh" /></span><span>{t("tabs.vesting")}</span><strong>{hubPresentation.vestingVisible ? `${vestingProgress.toFixed(2)}%` : t("overview.completed")}</strong></div>
-          <div><span className="uliqLifecycleIcon uiStatusBadge-warning"><AppIcon name="shield" /></span><span>{t("overview.locks")}</span><strong>{t("overview.activeCount", { count: locks?.positions.filter((position) => position.status === "ACTIVE").length ?? 0 })}</strong></div>
+          <div><DeskBadge className={`uliqLifecycleIcon uiStatusBadge-${statusTone(rounds?.rounds[0]?.state ?? overview?.state ?? "")}`}><AppIcon name="check" /></DeskBadge><span>{rounds?.rounds[0]?.label ?? t("rounds.round1")}</span><strong>{(rounds?.rounds[0]?.state ?? overview?.state ?? "–").replaceAll("_", " ")}</strong></div>
+          <div><DeskBadge className="uliqLifecycleIcon uiStatusBadge-success"><AppIcon name="refresh" /></DeskBadge><span>{t("tabs.vesting")}</span><strong>{hubPresentation.vestingVisible ? `${vestingProgress.toFixed(2)}%` : t("overview.completed")}</strong></div>
+          <div><DeskBadge className="uliqLifecycleIcon uiStatusBadge-warning"><AppIcon name="shield" /></DeskBadge><span>{t("overview.locks")}</span><strong>{t("overview.activeCount", { count: locks?.positions.filter((position) => position.status === "ACTIVE").length ?? 0 })}</strong></div>
         </section>
 
         <div className="uliqOverviewGrid">
@@ -942,11 +945,11 @@ function UliqHubContent() {
             {hubPresentation.nextAction === "CLAIM_VESTING" ? <>
               <div className="uliqNextActionAmount">{formatRaw(vesting?.claimableRaw, 18)} ULIQ</div>
               <DeskButton type="button" className="btn btnPrimary" disabled={!canSign || !vesting || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null || Boolean(pendingClaimForCurrentWallet)} onClick={() => void runAction("claim", claimVesting)}><AppIcon name="withdraw" /> {t(pendingClaimForCurrentWallet ? "vesting.claimPendingButton" : "vesting.claim")}</DeskButton>
-            </> : hubPresentation.nextAction === "NONE" ? null : <Link className="btn btnPrimary" href={withLocalePath(hubPresentation.nextAction === "MANAGE_LOCK" ? "/uliq/locking" : "/uliq/presale", locale as AppLocale)}><AppIcon name="open" /> {t(`overview.actions.${hubPresentation.nextAction}.cta`)}</Link>}
+            </> : hubPresentation.nextAction === "NONE" ? null : <DeskLink className="btn btnPrimary" href={withLocalePath(hubPresentation.nextAction === "MANAGE_LOCK" ? "/uliq/locking" : "/uliq/presale", locale as AppLocale)}><AppIcon name="open" /> {t(`overview.actions.${hubPresentation.nextAction}.cta`)}</DeskLink>}
           </section>
 
           {entitlement ? <section className="uiSection">
-            <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("overview.benefits")}</h2></div><span className={`uiStatusBadge uiStatusBadge-${statusTone(entitlement.priceQualityStatus)}`}>{entitlement.priceQualityStatus}</span></div>
+            <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("overview.benefits")}</h2></div><DeskBadge className={`uiStatusBadge uiStatusBadge-${statusTone(entitlement.priceQualityStatus)}`}>{entitlement.priceQualityStatus}</DeskBadge></div>
             <div className="uliqDetailList uliqOverviewBenefits">
               <div><span>{t("entitlement.tier")}</span><strong>{entitlement.effectiveTier}</strong></div>
               <div><span>{t("entitlement.discounts")}</span><strong>{entitlement.subscriptionDiscountBps / 100}% / {entitlement.aiDiscountBps / 100}%</strong></div>
@@ -957,11 +960,11 @@ function UliqHubContent() {
         </div>
 
         <section className="uiSection uliqActivitySection">
-          <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><div className="uliqActivityTitle"><h2 className="uiSectionTitle">{t("activity.title")}</h2>{activity?.partial ? <span className="uiStatusBadge uiStatusBadge-info">{t("activity.partial")}</span> : null}</div><p className="uiSectionDescription">{t("activity.description")}</p></div>{(activity?.items.length ?? 0) > 5 ? <DeskButton type="button" className="btn btnGhost" onClick={() => setActivityExpanded((value) => !value)}>{t(activityExpanded ? "activity.showLess" : "activity.viewAll")}</DeskButton> : null}</div>
+          <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><div className="uliqActivityTitle"><h2 className="uiSectionTitle">{t("activity.title")}</h2>{activity?.partial ? <DeskBadge className="uiStatusBadge uiStatusBadge-info">{t("activity.partial")}</DeskBadge> : null}</div><p className="uiSectionDescription">{t("activity.description")}</p></div>{(activity?.items.length ?? 0) > 5 ? <DeskButton type="button" className="btn btnGhost" onClick={() => setActivityExpanded((value) => !value)}>{t(activityExpanded ? "activity.showLess" : "activity.viewAll")}</DeskButton> : null}</div>
           {activity?.items.length ? <div className="uliqActivityList">{activity.items.slice(0, activityExpanded ? 25 : 5).map((item) => {
             const activityIcon = item.type === "VESTING_CLAIMED" || item.type === "TOKENS_UNLOCKED" ? "withdraw" : item.type === "TOKENS_LOCKED" ? "shield" : item.type === "LOCK_EXTENDED" ? "refresh" : item.type === "PRESALE_WITHDRAWN" ? "restore" : "check";
             const tone = item.type === "PRESALE_WITHDRAWN" ? "danger" : item.type === "TOKENS_LOCKED" || item.type === "LOCK_EXTENDED" ? "warning" : "success";
-            return <article key={item.id} className="uliqActivityRow"><span className={`uliqActivityIcon uliqActivityIcon-${tone}`}><AppIcon name={activityIcon} /></span><div><strong>{t(`activity.types.${item.type}.title`)}</strong><span>{t(`activity.types.${item.type}.description`, { id: item.referenceId ?? "–" })}</span></div><time dateTime={item.occurredAt}>{formatDate(item.occurredAt, locale)}</time><div className="uliqActivityAmount">{item.amountRaw ? `${formatRaw(item.amountRaw, item.asset === "USDC" ? 6 : 18)} ${item.asset}` : t("activity.statusOnly")}</div><a className="btn btnIcon" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${item.transactionHash}`} target="_blank" rel="noreferrer" aria-label={t("purchases.transaction")}><AppIcon name="external" /></a></article>;
+            return <article key={item.id} className="uliqActivityRow"><span className={`uliqActivityIcon uliqActivityIcon-${tone}`}><AppIcon name={activityIcon} /></span><div><strong>{t(`activity.types.${item.type}.title`)}</strong><span>{t(`activity.types.${item.type}.description`, { id: item.referenceId ?? "–" })}</span></div><time dateTime={item.occurredAt}>{formatDate(item.occurredAt, locale)}</time><div className="uliqActivityAmount">{item.amountRaw ? `${formatRaw(item.amountRaw, item.asset === "USDC" ? 6 : 18)} ${item.asset}` : t("activity.statusOnly")}</div><DeskAnchor className="btn btnIcon" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${item.transactionHash}`} target="_blank" rel="noreferrer" aria-label={t("purchases.transaction")}><AppIcon name="external" /></DeskAnchor></article>;
           })}</div> : <div className="uiEmptyState">{t("activity.empty")}</div>}
         </section>
       </> : null}
@@ -970,7 +973,7 @@ function UliqHubContent() {
         <section className="uiSection">
           <div className="uiSectionHeader">
             <div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("sale.title")}</h2><p className="uiSectionDescription">{t("sale.description")}</p></div>
-            <span className={`uiStatusBadge uiStatusBadge-${statusTone(overview.state)}`}>{overview.state.replaceAll("_", " ")}</span>
+            <DeskBadge className={`uiStatusBadge uiStatusBadge-${statusTone(overview.state)}`}>{overview.state.replaceAll("_", " ")}</DeskBadge>
           </div>
           <div className="uliqMetricGrid">
             <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.raised")}</span><strong>{formatRaw(overview.totalRaisedUsdcRaw, 6, 2)} USDC</strong></div></DeskSurface>
@@ -1047,7 +1050,7 @@ function UliqHubContent() {
             return <article key={`tracking-${trackedPurchase.id}`} className="uliqPositionCard">
               <div>
                 <strong>{trackedPurchase.purchaseIdOnchain ? `#${trackedPurchase.purchaseIdOnchain}` : t("purchases.pendingId")}</strong>
-                <span className={`uiStatusBadge uiStatusBadge-${statusTone(trackedPurchase.confirmationStatus)}`}>{presentation.label}</span>
+                <DeskBadge className={`uiStatusBadge uiStatusBadge-${statusTone(trackedPurchase.confirmationStatus)}`}>{presentation.label}</DeskBadge>
               </div>
               <dl>
                 <div><dt>{t("purchases.amount")}</dt><dd>{formatRaw(trackedPurchase.usdcAmountRaw ?? trackedPurchase.maxUsdcAmountRaw, 6, 2)} USDC</dd></div>
@@ -1055,7 +1058,7 @@ function UliqHubContent() {
               </dl>
               <DeskSurface dense><div className={`uiNotice uiNotice-${presentation.noticeTone}`}>{presentation.message}</div></DeskSurface>
               <div className="uliqActions">
-                <a className="btn" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${trackedPurchase.transactionHash}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {t("purchases.transaction")}</a>
+                <DeskAnchor className="btn" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${trackedPurchase.transactionHash}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {t("purchases.transaction")}</DeskAnchor>
               </div>
             </article>;
           })}
@@ -1071,7 +1074,7 @@ function UliqHubContent() {
               ? t("purchases.finalizeSyncingStatus")
               : purchaseRow.status.replaceAll("_", " ");
           return <article key={purchaseRow.id} className="uliqPositionCard">
-            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className="uliqStatusGroup"><span className="uiStatusBadge uiStatusBadge-success">{t("purchases.confirmationStatus.finalized")}</span><span className={`uiStatusBadge uiStatusBadge-${statusTone(settlementSyncPending ? "completed" : purchaseRow.status)}`}>{syncingStatus}</span></span></div>
+            <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className="uliqStatusGroup"><DeskBadge className="uiStatusBadge uiStatusBadge-success">{t("purchases.confirmationStatus.finalized")}</DeskBadge><DeskBadge className={`uiStatusBadge uiStatusBadge-${statusTone(settlementSyncPending ? "completed" : purchaseRow.status)}`}>{syncingStatus}</DeskBadge></span></div>
             <dl><div><dt>{t("purchases.allocation")}</dt><dd>{formatRaw(purchaseRow.uliqAllocationRaw, 18)} ULIQ</dd></div><div><dt>{t("purchases.deadline")}</dt><dd>{formatDate(purchaseRow.withdrawalDeadline, locale)}</dd></div></dl>
             {purchaseRow.status === "PENDING_WITHDRAWAL" ? <div className="uliqActions">
               <DeskSurface dense><div className={`uiNotice ${settlementSyncPending ? "uiNotice-success" : "uiNotice-warning"}`}>{t(withdrawSyncPending ? "purchases.withdrawSyncingHint" : finalizeSyncPending ? "purchases.finalizeSyncingHint" : "purchases.pendingInactive")}</div></DeskSurface>
@@ -1093,7 +1096,7 @@ function UliqHubContent() {
             : locks.coverageTerms.find((term) => term.billingMonths === selectedMonths)?.requiredUntil ?? null;
           const extensionNeeded = Boolean(selectedRequiredUntil && new Date(position.unlockAt).getTime() < new Date(selectedRequiredUntil).getTime());
           return <article key={position.id} className="uliqPositionCard">
-            <div><strong>Lock #{position.lockIdOnchain}</strong><span className="uliqStatusGroup">{position.contractAddress.toLowerCase() !== locks.activeLockerAddress.toLowerCase() ? <span className="uiStatusBadge uiStatusBadge-warning">{t("locking.legacy")}</span> : null}<span className={`uiStatusBadge uiStatusBadge-${statusTone(position.status)}`}>{position.status}</span></span></div>
+            <div><strong>Lock #{position.lockIdOnchain}</strong><span className="uliqStatusGroup">{position.contractAddress.toLowerCase() !== locks.activeLockerAddress.toLowerCase() ? <DeskBadge className="uiStatusBadge uiStatusBadge-warning">{t("locking.legacy")}</DeskBadge> : null}<DeskBadge className={`uiStatusBadge uiStatusBadge-${statusTone(position.status)}`}>{position.status}</DeskBadge></span></div>
             <dl>
               <div><dt>{t("locking.amount")}</dt><dd>{formatRaw(position.amountRaw, 18)} ULIQ</dd></div>
               <div><dt>{t("locking.unlockAt")}</dt><dd>{formatDate(position.unlockAt, locale)}</dd></div>
@@ -1104,12 +1107,12 @@ function UliqHubContent() {
               {locks.coverageTerms.map((term) => {
                 const covered = position.qualifiesFor[String(term.billingMonths)];
                 const shortfallSeconds = lockCoverageShortfallSeconds(position.unlockAt, term.requiredUntil);
-                return <span key={term.billingMonths} className={`uiStatusBadge uiStatusBadge-${covered ? "success" : "warning"}`}>{covered
+                return <DeskBadge key={term.billingMonths} className={`uiStatusBadge uiStatusBadge-${covered ? "success" : "warning"}`}>{covered
                   ? t("locking.coverage.covered", { term: t(`locking.terms.${term.billingMonths}`) })
                   : t(shortfallSeconds == null ? "locking.coverage.short" : "locking.coverage.shortfall", {
                     term: t(`locking.terms.${term.billingMonths}`),
                     duration: shortfallSeconds == null ? "" : formatLockDuration(shortfallSeconds, locale)
-                  })}</span>;
+                  })}</DeskBadge>;
               })}
             </div>
             {position.status !== "WITHDRAWN" ? <div className="uliqLockActions">
@@ -1121,7 +1124,7 @@ function UliqHubContent() {
         })}</div> : <div className="uiEmptyState">{t("locking.empty")}</div>}
       </section> : null}
 
-      {lastTxHash ? <a className="btn uliqExplorerLink" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${lastTxHash}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {lastTxHash.slice(0, 12)}…</a> : null}
+      {lastTxHash ? <DeskAnchor className="btn uliqExplorerLink" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${lastTxHash}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {lastTxHash.slice(0, 12)}…</DeskAnchor> : null}
     </div>
   );
 }

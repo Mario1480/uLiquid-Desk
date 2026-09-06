@@ -1,9 +1,9 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
-import { DeskButton } from "@/components/desk/DeskButton";
-import { DeskInput } from "@/components/desk/DeskInput";
-import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
+import { GlassButton } from "@/components/einui/liquid-glass/glass-button";
+import { GlassInput } from "@/components/einui/liquid-glass/glass-input";
+import { GlassAuthFrame } from "@/components/einui/auth-frame";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
@@ -118,14 +118,12 @@ function LoginPageContent() {
   }
 
   return (
-    <div className="container authPage">
-      <h1 className="authHeading">{t("signIn")}</h1>
-      <DeskSurface><div className="card authCard">
-        <LegalRiskNotice compact />
+    <GlassAuthFrame title={t("signIn")} icon={<AppIcon name="login" />} notice={<LegalRiskNotice compact />}>
         <form onSubmit={submit} className="authForm">
           <label className="authLabel">
             {t("email")}
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="email"
               value={email}
@@ -136,7 +134,8 @@ function LoginPageContent() {
           </label>
           <label className="authLabel">
             {t("password")}
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="password"
               value={password}
@@ -146,33 +145,33 @@ function LoginPageContent() {
             />
           </label>
           <div className="authActions">
-            <DeskButton className="btn btnPrimary" type="submit" disabled={!email || !password}>
+            <GlassButton className="btn btnPrimary" type="submit" disabled={!email || !password}>
               <AppIcon name="login" />
               {t("signInButton")}
-            </DeskButton>
-            <Link href={withLocalePath("/register", locale)} className="btn">
+            </GlassButton>
+            <DeskLink href={withLocalePath("/register", locale)} className="btn">
               <AppIcon name="register" />
               {t("createAccount")}
-            </Link>
-            <Link href={withLocalePath("/reset-password", locale)} className="btn">
+            </DeskLink>
+            <DeskLink href={withLocalePath("/reset-password", locale)} className="btn">
               <AppIcon name="key" />
               {t("forgotPassword")}
-            </Link>
-            <span className="authStatus">{status}</span>
+            </DeskLink>
+            <span className="authStatus" role="status">{status}</span>
           </div>
           {errorCode === "email_not_verified" ? (
             <div className="authActions">
-              <Link href={verifyEmailHref} className="btn">
+              <DeskLink href={verifyEmailHref} className="btn">
                 <AppIcon name="mail" />
                 {t("continueEmailVerification")}
-              </Link>
+              </DeskLink>
             </div>
           ) : null}
-          {error ? <div className="authError">{error}</div> : null}
+          {error ? <div className="authError" role="alert">{error}</div> : null}
         </form>
         <div className="authDivider">
           {!isConnected ? <div className="authWalletMeta">{t("siwe.connectWalletFirst")}</div> : null}
-          <DeskButton
+          <GlassButton
             className="btn"
             type="button"
             onClick={() => void submitSiwe()}
@@ -180,17 +179,16 @@ function LoginPageContent() {
           >
             <AppIcon name="wallet" />
             {t("siwe.signInButton")}
-          </DeskButton>
+          </GlassButton>
           {isConnected && address ? (
             <div className="authWalletMeta">
               {t("siwe.connectedWallet", { wallet: shortenWalletAddress(address) || address })}
             </div>
           ) : null}
           {siweStatus ? <div className="authMessage">{siweStatus}</div> : null}
-          {siweError ? <div className="authError">{siweError}</div> : null}
+          {siweError ? <div className="authError" role="alert">{siweError}</div> : null}
         </div>
-      </div></DeskSurface>
-    </div>
+    </GlassAuthFrame>
   );
 }
 
