@@ -246,7 +246,7 @@ test("owned BingX zero-price skill result remains read-only and carries correcte
   assert.ok((result.data as any).events.some((e: any) => e.code === "no_liquidation_price"));
   assert.equal(skill.version, 2);
   assert.equal(skill.sideEffect, false);
-  assert.equal(context.profile.version, 9);
+  assert.equal(context.profile.version, 10);
   assert.deepEqual(result.meta.routineVersions, [{ id: "position.snapshot.v1", version: "1.1.0" }, { id: "position.risk.v1", version: "1.1.0" }]);
 });
 

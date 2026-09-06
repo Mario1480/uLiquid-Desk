@@ -17,6 +17,7 @@ import {
 import { AgentChatError, toAgentChatError } from "./errors.js";
 import { parseAgentAnswer, type ParsedAgentAnswer } from "./answer.js";
 import { FEATURE_CONTEXT_POLICY } from "../features/context.js";
+import { serializeMarketModelPayload } from "../features/modelPayload.js";
 import { POSITION_LIQUIDATION_POLICY } from "../../position-copilot/core.js";
 import {
   executeAgentSkill,
@@ -369,7 +370,7 @@ export async function runAgentChat(params: RunAgentChatParams): Promise<AgentCha
               })
             }
           });
-          messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: JSON.stringify(wrapUntrustedAiPayload(toolResult)).slice(0, 60_000) });
+          messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: serializeMarketModelPayload(wrapUntrustedAiPayload(toolResult)).slice(0, 60_000) });
         } catch (error) {
           const normalized = toAgentChatError(error);
           degraded = true;

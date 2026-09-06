@@ -1,6 +1,6 @@
 # Phase 2 provider-history release
 
-Status: code published and production API/web deployed as `41299926e`; technical runtime smokes passed. Authenticated history/reload/mobile acceptance is pending because the Mac was locked at the browser attempt. This is not full Phase 2 completion.
+Status: code published and production API/web deployed as `41299926e`; technical runtime smokes passed. Subsequent authenticated Chrome acceptance verified history evidence persistence and mobile access, but found incorrect actual-window start dates in the generated answer. Historical answer acceptance and full Phase 2 completion remain open.
 
 ## Scope and boundaries
 
@@ -48,3 +48,36 @@ API `/health` returned `{"ok":true}`; English and German login routes returned H
 The intended flow is production Agent Chat → explicit historical Funding/OI request → persisted evidence → full reload → desktop/mobile evidence inspection. Computer Use reported that the Mac was locked and could not be automatically unlocked. Mario was asked to unlock it while implementation and release work continued. No new browser screenshot, interaction, console-health or reload evidence is claimed.
 
 The active [Phase 2 plan](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) retains authenticated historical acceptance, the exact live standalone cache comparison, naturally stale evidence and the controlled before/after benchmark as open gates. No orders, transfers, account/provider settings or deliberate service disruptions are required or authorized by these acceptance steps.
+
+## Subsequent authenticated Chrome acceptance — 18:05 UTC
+
+After Mario unlocked the Mac, a fresh Chrome tab using the existing login successfully ran a public-only Binance BTCUSDT perpetual history request. The existing tab's detached debugger required opening a new tab; no account or browser security settings were changed.
+
+- Market Analyst v8 invoked Open Interest and Funding skills v5 with historical summaries. Both recorded `derivatives.history-summary.v1` v1.0.0.
+- OI returned 168 observations, fresh quality, hourly cadence, 100% requested coverage, change -731.733 base units (-0.6830752099%), percentile 8.630952381 and Z-score -1.009264063.
+- Funding returned 90 observations, degraded quality and `history_cadence_unverified_or_changed`. Coverage, interval, mean, change, percentile and Z-score were unavailable, without substituted statistics.
+- The expanded Decision Log's complete rendered text compared exactly equal before and after full page reload, including feature/input identities, values, provenance, fetch timestamps and recorded analysis-time age. Reload did not incur another analysis charge.
+- Desktop screenshot inspection and the mobile 390×844 Decision Log drawer showed readable stored evidence. The drawer opened and closed successfully; the temporary viewport override was reset. German rendering was not rechecked in this pass.
+- The browser error log contained a wallet-extension `Cannot redefine property: ethereum` error from a `chrome-extension://` source; no application-origin error appeared in the returned error entries. This is not a clean extension-console claim.
+- UI billing showed 65 AI Credits used, balance 9,483 → 9,418, zero reserved. Recorded total latency was 12.7 seconds; OI/Funding tool durations were 0.6/0.3 seconds. This single run is not a controlled before/after benchmark.
+
+### Acceptance finding: generated history windows contradict stored evidence
+
+| Dataset | Stored actual window, converted from browser-local UTC+2 to UTC | Generated answer |
+| --- | --- | --- |
+| OI | 2026-08-30 19:00 to 2026-09-06 18:00 | Incorrect start: 2026-08-30 00:20 UTC |
+| Funding | 2026-08-08 00:00 to 2026-09-06 16:00 | Incorrect start: 2026-08-06 18:40 UTC |
+
+The incorrect dates also persisted in the recommendation section, while the stored feature values remained internally consistent. This is a model-answer grounding failure, not evidence that the historical records changed on reload. Source inspection shows numeric epoch-millisecond window fields in the historical tool result; whether model-side date conversion caused the discrepancy requires a focused fix and repeat live acceptance. Do not mark the history answer gate complete from successful persistence alone.
+
+No private position read, order, transfer, activation, setting change or deployment occurred during this browser pass. The standalone cache comparison, naturally stale case and controlled benchmark were not performed in this pass. The finding is documented locally; this evidence update has not yet been published.
+
+## Local history-window presentation correction
+
+The model boundary now serializes validated historical summary window endpoints as deterministic ISO 8601 UTC strings. This applies to Agent Chat tool data and feature evidence, and standalone Position Copilot feature context. Stored routine output, numeric timestamps, snapshot identities and historical UI evidence are unchanged. Null endpoints remain null and unrelated numeric fields are not converted. The shared model policy requires copying actual endpoints rather than deriving them from the requested window, sample count or cadence.
+
+Market Analyst is locally v9 and Position Copilot v10. The standalone explanation cache namespace is v7 so previously generated explanations cannot satisfy the corrected path's cache lookup. Skill and routine versions remain unchanged because their validated output contracts and calculations have not changed; only model presentation and instructions changed.
+
+Regression fixtures cover the exact OI/Funding dates found above, duplicated tool/feature presentation, requested versus actual windows, null preservation and non-mutation of persisted values. Agent Chat tests passed 128/128, standalone Copilot 28/28, API typecheck and `git diff --check` passed. The known missing `/hooks/validate-schema.py` post-edit hook reported errors; file inspection confirmed the patches landed and the listed checks then completed successfully.
+
+This correction is local, not committed, pushed or deployed. It removes model-side epoch conversion but is not a guarantee against all generated-answer errors. A new authenticated paid read-only history run after publication must verify exact UTC dates and persistence before closing this acceptance finding. Existing saved answers are not rewritten.

@@ -1,5 +1,6 @@
 import type { AiChatResult, CallAiChatOptions, ChatMessage } from "../ai/provider.js";
 import { analyzeWithAiGuards } from "../ai/analyzer.js";
+import { serializeMarketModelPayload } from "../ai/features/modelPayload.js";
 import {
   assertAiOutputWithinBoundary,
   buildAiAgentSystemMessage,
@@ -196,7 +197,7 @@ export async function analyzePositionSnapshot(params: {
   let provider: string | null = null;
   let model: string | null = null;
   const guarded = await analyzeWithAiGuards<{ analysis: PositionCopilotAnalysis; marketContext: MarketFeatureContext | null }>({
-    cacheKey: `position-copilot:v6:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
+    cacheKey: `position-copilot:v7:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
     ttlSec: 300,
     rateLimitPerMin: 12,
     aiModel: "position-copilot",
@@ -215,7 +216,7 @@ export async function analyzePositionSnapshot(params: {
         { role: "system", content: POSITION_COPILOT_SYSTEM_MESSAGE },
         {
           role: "user",
-          content: JSON.stringify(wrapUntrustedAiPayload({
+          content: serializeMarketModelPayload(wrapUntrustedAiPayload({
             task: `Explain risk, thesis state, relevant changes and data quality in ${language === "de" ? "German" : "English"}. Do not propose actions.`,
             snapshot: params.snapshot,
             deterministicRisk: deterministic,
