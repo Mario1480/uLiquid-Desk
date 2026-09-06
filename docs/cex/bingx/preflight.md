@@ -112,6 +112,7 @@ Status: implemented for native REST v1. Spot and USD-M perpetual swap public/pri
 - Ticker / mid: `GET /openApi/swap/v2/quote/bookTicker`
 - Klines: `GET /openApi/swap/v3/quote/klines`
 - Depth: `GET /openApi/swap/v2/quote/depth`
+  - Release update: the following depth correction was published and deployed at `111b9de6e` on 2026-09-06. A read through the running API image returned 25 bids/asks and a provider timestamp. See [production release evidence](../../archive/tasks/2026-09-06-einui-copilot-production-release.md); authenticated standalone model/UI acceptance remains open.
   - Public-depth correction, locally verified 2026-09-06: the normalized perpetual client maps requested coverage to the next supported size in `5, 10, 20, 50, 100, 500`, then trims returned levels to its existing 5–200-level coverage bound. Non-finite requests use 50. A request for 25 therefore fetches 50, not the rejected native limit 25.
   - Provider timestamps remain unchanged; no request-time timestamp or replacement levels are invented. The patched public client smoke returned 25 bids/asks with a provider timestamp and an uncrossed book. Funding/OI support and private signing/execution are unchanged. This is not production deployment or live trading certification; see [local correction evidence](../../archive/tasks/2026-09-06-phase2-copilot-local-corrections.md).
 - Recent trades: `GET /openApi/swap/v2/quote/trades`

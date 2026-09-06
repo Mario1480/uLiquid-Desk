@@ -2,6 +2,8 @@
 
 Status: implementation is active locally; release acceptance remains open. No production deployment, transaction, payment, registration, migration, commit or push was performed by this task.
 
+Subsequent release update: Mario authorized publication after this local validation task. Combined code `111b9de6e` was pushed and deployed to API/web on 2026-09-06; technical runtime checks passed. See the [release evidence](../archive/tasks/2026-09-06-einui-copilot-production-release.md). The local observations below remain historical; they do not replace the still-open post-release authenticated browser, accessibility or populated financial-screen acceptance.
+
 ## Scope and reproducibility
 
 Baseline branch: `codex/einui-baseline-20260906` at `ff8374278`. Migration branch: `codex/einui-desk-integration`. A detached temporary baseline checkout was built with its own lockfile. Both builds used Node 20.20.2, Next 16.2.12, React 19.2.3 and the same loopback API fixture. Both needed the documented compile-only Dashboard field-copy correction. The website source remains clean and unchanged.

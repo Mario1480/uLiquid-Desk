@@ -135,12 +135,15 @@ Complete the remaining 2C/2E gates: decide standalone spot enrichment scope, com
 - [x] Implement a local correction for reproducible Agent Chat position-plus-market-context budget exhaustion: advertise only eligible tools and reserve the existing final model call for synthesis, without raising limits. The earlier live requests failed; post-release positive acceptance remains open.
 - [x] Correct standalone BingX depth normalization locally: fetch the supported 50-level book for requested 25-level coverage and trim the normalized result. The patched client's public read smoke returned 25 bids/asks with a provider timestamp.
 - [x] Separate standalone position-data completeness from market-context quality in English/German and deduplicate deterministic/model findings without lowering severity. Local component browser acceptance passed.
-- [ ] Publish the local corrections with separate authorization and repeat the real Position Copilot plus market-context analysis, standalone BingX analysis and cached/reloaded evidence checks.
+- [x] Publish the corrections with Mario's authorization together with the UI release: code `111b9de6e`, deployed to API/web on 2026-09-06. Technical health, read-only profile versions and the running native BingX client were verified.
+- [ ] Repeat the real Position Copilot plus market-context analysis, standalone BingX analysis and cached/reloaded evidence checks after the Mac is unlocked. The post-release browser attempt was blocked by the locked Mac.
 - [ ] Keep genuine stale/auto-fallback acceptance, the controlled benchmark, exact standalone cache evidence, and historical/spot scope decisions open.
 
 See [dated live acceptance findings](../../archive/tasks/2026-09-06-phase2-live-acceptance-findings.md) for reproduction, evidence boundaries and the 127-credit test total. This was testing only: no code or production configuration was changed and no deployment was performed. Phase 2 remains incomplete.
 
 ### Local correction follow-up — 2026-09-06
+
+Subsequent publication: the combined UI/Copilot release is now deployed; see [production release evidence](../../archive/tasks/2026-09-06-einui-copilot-production-release.md). The following paragraph records the earlier local-only stage, not current deployment status.
 
 Mario subsequently authorized fixing those findings. The corrections above are implemented and locally verified, not published. Market Analyst is version 6, Position Copilot is version 7 and the standalone explanation cache namespace is `v4`; routine/skill calculation contracts and read-only permissions are unchanged. Agent Chat 106/106, standalone Copilot 26/26, web Agent Chat 9/9 and web Copilot 4/4 passed with normal exits, as did API/web typechecks, i18n and whitespace checks. See [local correction evidence](../../archive/tasks/2026-09-06-phase2-copilot-local-corrections.md) for boundaries and remaining live gates. The earlier live findings remain historical observations; no new live AI success or Phase 2 completion is claimed.
 
