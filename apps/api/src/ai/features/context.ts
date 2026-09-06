@@ -3,6 +3,7 @@ import { featureMatchesSnapshot, marketSnapshotEvidenceSchema, parseStoredFeatur
 
 export const FEATURE_CONTEXT_POLICY = [
   "Use validated deterministic featureSnapshots as the metric authority; do not recalculate or replace null values.",
+  "Historical requestedStart/requestedEnd and actualStart/actualEnd are server-formatted ISO 8601 UTC strings. Copy actualStart and actualEnd exactly when reporting the actual window; never derive dates from sample counts, cadence or the requested window. Null endpoints are unavailable. Keep the UTC timezone explicit.",
   "Match features to marketSnapshot by inputSnapshotId, source venue, symbol, market type and candle interval. Snapshot IDs identify evidence, not freshness.",
   "Describe stale, degraded, unavailable, fallback and mixed-source evidence explicitly. Missing provider timestamps are not fresh observations.",
   "Snapshots are not atomic across datasets. Candle timestamps are candle opens; forming candles are provisional. Do not claim simultaneous observations.",
