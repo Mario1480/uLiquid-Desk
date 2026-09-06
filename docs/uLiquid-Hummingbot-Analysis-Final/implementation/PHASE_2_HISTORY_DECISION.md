@@ -1,6 +1,6 @@
 # Phase 2 historical analytics — storage decision
 
-Status: provider-history mode selected by Mario on 2026-09-06; local foundation, AI consumer integration and Decision Log presentation implemented. Release and authenticated acceptance pending. No migration or collector is approved.
+Status: provider-history mode selected by Mario on 2026-09-06; foundation, AI consumers and Decision Log presentation deployed to production as `41299926e`. Technical smokes passed; authenticated acceptance pending. No migration or collector is approved. See the [release evidence](../../archive/tasks/2026-09-06-phase2-provider-history-release.md).
 
 ## Owner decision
 
@@ -59,4 +59,4 @@ Official contracts: [Bitget historical Funding](https://www.bitget.com/api-doc/c
 - Consumer fixtures cover pinned reads, ownership revocation, explicit unsupported venues, Paper-linked auto fallback, source identity, six-feature standalone context and persisted Decision Log values. Current-snapshot and historical versions remain separate.
 - Verification after integration: Agent Chat 126/126, standalone Copilot 28/28, Futures Core 19/19, Futures Exchange 174/174 and web Agent Chat 11/11 passed. Exchange tests ran directly without forced exit. API/web typechecks, i18n integrity and diff checks passed. Web tests require the `apps/web` working directory so existing `@/` aliases resolve; an initial root-directory invocation failed for that reason and was rerun correctly.
 
-Still required before completion: release, authenticated history evidence/reload/mobile acceptance and the other open Phase 2 acceptance items in the implementation plan. The Mac was locked at the initial browser attempt; that attempt is not passing evidence. Do not mark Phase 2 complete from code tests alone.
+Still required before completion: authenticated history evidence/reload/mobile acceptance and the other open Phase 2 acceptance items in the implementation plan. The Mac was locked at the initial browser attempt; that attempt is not passing evidence. Do not mark Phase 2 complete from code tests and public smokes alone.
