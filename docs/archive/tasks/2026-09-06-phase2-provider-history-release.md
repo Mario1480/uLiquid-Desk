@@ -81,3 +81,13 @@ Market Analyst is locally v9 and Position Copilot v10. The standalone explanatio
 Regression fixtures cover the exact OI/Funding dates found above, duplicated tool/feature presentation, requested versus actual windows, null preservation and non-mutation of persisted values. Agent Chat tests passed 128/128, standalone Copilot 28/28, API typecheck and `git diff --check` passed. The known missing `/hooks/validate-schema.py` post-edit hook reported errors; file inspection confirmed the patches landed and the listed checks then completed successfully.
 
 This correction is local, not committed, pushed or deployed. It removes model-side epoch conversion but is not a guarantee against all generated-answer errors. A new authenticated paid read-only history run after publication must verify exact UTC dates and persistence before closing this acceptance finding. Existing saved answers are not rewritten.
+
+## UTC correction production deployment
+
+Following Mario's explicit deployment request, local commit `ab3da0054` was cherry-picked into the isolated main release checkout as `31a9da352` and pushed to `origin/main`. The release checkout repeated 128/128 Agent Chat tests and the API typecheck successfully. Unrelated local UI changes were excluded.
+
+The server fast-forwarded to this commit and built the API successfully. Preflight confirmed 114 migrations with the schema up to date; no new migration or environment synchronization was introduced. Only API was recreated using `--no-deps --wait`; web, runner, PostgreSQL, Redis, Python and proxy container identities remained unchanged.
+
+API container `6201f137f091` runs image `sha256:c9180b7cb66c1432c10f90531804ea4a2993480461f40e5c9056fdaa09545dab`, healthy with zero restarts. Public `/health` returned `{"ok":true}`. The previous API image is retained as `uliquid-desk-api:history-utc-rollback-20260906`. Server tracked files are clean; pre-existing `backups/` is preserved.
+
+This supersedes the preceding local-only publication status. Authenticated generated-answer acceptance remains open: deployment health does not establish that a new model answer reproduces both UTC windows correctly. No paid AI request or trading action was made during this deployment.
