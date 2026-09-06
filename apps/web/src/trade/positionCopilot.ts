@@ -1,6 +1,16 @@
 export const POSITION_COPILOT_MANUAL_REVIEW_HREF = "/agent-chat" as const;
 export const POSITION_COPILOT_AGENT_CHAT_PREFILL_KEY = "uliquid.agentChat.positionPrefill.v1" as const;
 
+export type PositionCopilotMarketQuality = "fresh" | "stale" | "degraded" | "unavailable";
+
+export function positionCopilotMarketQuality(context: unknown): PositionCopilotMarketQuality {
+  if (!context || typeof context !== "object" || Array.isArray(context)) return "unavailable";
+  const record = context as Record<string, unknown>;
+  if (record.version !== "1.0.0") return "unavailable";
+  return record.quality === "fresh" || record.quality === "stale" || record.quality === "degraded"
+    ? record.quality : "unavailable";
+}
+
 export function buildPositionCopilotAgentChatPrefill(input: {
   exchangeAccountId: string;
   symbol: string;

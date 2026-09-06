@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -106,16 +108,16 @@ export default function MarketIntelligencePage() {
         title={t("title")}
         description={t("subtitle")}
         actions={(
-          <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
+          <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
             <AppIcon name="refresh" />
             {t("refresh")}
-          </button>
+          </DeskButton>
         )}
       />
 
       <div className="marketIntelligenceToolbar" role="group" aria-label={t("horizonLabel")}>
         {(["intraday", "24h", "7d"] as Horizon[]).map((entry) => (
-          <button
+          <DeskButton
             key={entry}
             type="button"
             className={`btn ${horizon === entry ? "btnPrimary" : ""}`}
@@ -123,30 +125,30 @@ export default function MarketIntelligencePage() {
             aria-pressed={horizon === entry}
           >
             {t(`horizons.${entry}`)}
-          </button>
+          </DeskButton>
         ))}
       </div>
 
-      {error ? <div className="uiNotice uiNotice-danger">{t("loadError")}: {error}</div> : null}
-      {incomplete ? <div className="uiNotice uiNotice-warning">{t("dataIncomplete")}</div> : null}
+      {error ? <DeskSurface><div className="uiNotice uiNotice-danger">{t("loadError")}: {error}</div></DeskSurface> : null}
+      {incomplete ? <DeskSurface><div className="uiNotice uiNotice-warning">{t("dataIncomplete")}</div></DeskSurface> : null}
 
       <section className="marketIntelligenceMetrics" aria-label={t("overviewTitle")}>
-        <div className="uiMetricTile">
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("risk")}</span>
           <strong>{payload?.summary.overallRisk ?? (loading ? "…" : "unknown")}</strong>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("tone")}</span>
           <strong>{payload?.summary.sentiment ?? (loading ? "…" : "neutral")}</strong>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("providers")}</span>
           <strong>{healthyProviders}/{providers.length}</strong>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("updated")}</span>
           <strong>{payload ? new Date(payload.summary.generatedAt).toLocaleTimeString() : "–"}</strong>
-        </div>
+        </div></DeskSurface>
       </section>
 
       <div className="marketIntelligenceGrid">

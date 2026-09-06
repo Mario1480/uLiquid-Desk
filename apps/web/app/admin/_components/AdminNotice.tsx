@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { AppIcon, type AppIconName } from "../../components/AppIcon";
 
@@ -51,11 +53,11 @@ export default function AdminNotice({
   if (hidden) return null;
 
   return (
-    <div className={`adminNotice adminNotice${tone}${canDismiss ? " adminNoticeDismissible" : ""}`}>
+    <DeskSurface dense><div className={`adminNotice adminNotice${tone}${canDismiss ? " adminNoticeDismissible" : ""}`}>
       <AppIcon name={NOTICE_ICON[tone]} />
       <div>{children}</div>
       {canDismiss ? (
-        <button
+        <DeskButton
           aria-label={dismissLabel}
           className="adminNoticeDismiss"
           type="button"
@@ -68,8 +70,8 @@ export default function AdminNotice({
           }}
         >
           <AppIcon name="close" />
-        </button>
+        </DeskButton>
       ) : null}
-    </div>
+    </div></DeskSurface>
   );
 }

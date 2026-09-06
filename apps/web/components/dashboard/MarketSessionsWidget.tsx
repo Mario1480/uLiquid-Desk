@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiGet, apiPut } from "../../lib/api";
@@ -78,13 +81,13 @@ export default function MarketSessionsWidget() {
   }
 
   return (
-    <div className="card dashboardInsightCard dashboardMarketSessionsCard dashboardWidgetCardFill">
+    <DeskSurface><div className="card dashboardInsightCard dashboardMarketSessionsCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div>
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>
           <div className="dashboardCompactWidgetSubtitle">{t("subtitle")}</div>
         </div>
-        <button
+        <DeskButton
           type="button"
           className="btn"
           onClick={() => {
@@ -94,7 +97,7 @@ export default function MarketSessionsWidget() {
         >
           <AppIcon name={editing ? "cancel" : "settings"} />
           {editing ? t("cancel") : t("select")}
-        </button>
+        </DeskButton>
       </div>
 
       {editing ? (
@@ -102,7 +105,7 @@ export default function MarketSessionsWidget() {
           <div className="dashboardWidgetChoiceGrid">
             {available.map((id) => (
               <label key={id} className="dashboardWidgetChoice">
-                <input
+                <DeskInput
                   type="checkbox"
                   checked={draft.includes(id)}
                   onChange={(event) => setDraft((current) => (
@@ -113,10 +116,10 @@ export default function MarketSessionsWidget() {
               </label>
             ))}
           </div>
-          <button type="button" className="btn btnPrimary" disabled={saving || draft.length === 0} onClick={() => void save()}>
+          <DeskButton type="button" className="btn btnPrimary" disabled={saving || draft.length === 0} onClick={() => void save()}>
             <AppIcon name="save" />
             {saving ? t("saving") : t("save")}
-          </button>
+          </DeskButton>
         </div>
       ) : (
         <div className="dashboardMarketSessionsList dashboardWidgetScrollArea">
@@ -145,6 +148,6 @@ export default function MarketSessionsWidget() {
         <span>{t("regularHours")}</span>
         {error ? <span className="dashboardWidgetInlineError">{t("saveError")}</span> : null}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

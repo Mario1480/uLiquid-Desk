@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -244,7 +248,7 @@ export default function RolesPage() {
   return (
     <div style={{ maxWidth: 980 }}>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="card" style={{ padding: 12, marginBottom: 14 }}>
+      <DeskSurface><div className="card" style={{ padding: 12, marginBottom: 14 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>{t("members.title")}</div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
           {t("members.description")}
@@ -261,7 +265,7 @@ export default function RolesPage() {
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("members.superadmin")}</div>
                 ) : (
                   <>
-                    <select
+                    <DeskSelect
                       className="input"
                       style={{ maxWidth: 220 }}
                       disabled={!canManageMembers || savingMemberId === m.id}
@@ -273,15 +277,15 @@ export default function RolesPage() {
                           {r.name}
                         </option>
                       ))}
-                    </select>
-	                    <button
+                    </DeskSelect>
+	                    <DeskButton
 	                      className="btn btnStop"
 	                      onClick={() => removeMember(m.id)}
 	                      disabled={!canManageMembers || savingMemberId === m.id}
 	                    >
 	                      <AppIcon name="delete" />
 	                      {t("members.remove")}
-	                    </button>
+	                    </DeskButton>
                   </>
                 )}
               </div>
@@ -293,13 +297,13 @@ export default function RolesPage() {
         {canManageMembers ? (
           <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
             <div style={{ fontWeight: 600 }}>{t("members.inviteTitle")}</div>
-            <input
+            <DeskInput
               className="input"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
               placeholder={t("members.invitePlaceholder")}
             />
-            <select
+            <DeskSelect
               className="input"
               value={inviteRoleId}
               onChange={(e) => setInviteRoleId(e.target.value)}
@@ -309,19 +313,19 @@ export default function RolesPage() {
                   {r.name}
                 </option>
               ))}
-            </select>
+            </DeskSelect>
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
-              <input
+              <DeskInput
                 type="checkbox"
                 checked={inviteResetPassword}
                 onChange={(e) => setInviteResetPassword(e.target.checked)}
               />
               {t("members.inviteResetPassword")}
 	            </label>
-	            <button className="btn btnPrimary" onClick={invite} disabled={!inviteEmail || !inviteRoleId}>
+	            <DeskButton className="btn btnPrimary" onClick={invite} disabled={!inviteEmail || !inviteRoleId}>
 	              <AppIcon name="mail" />
 	              {t("members.invite")}
-	            </button>
+	            </DeskButton>
           </div>
         ) : (
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
@@ -330,11 +334,11 @@ export default function RolesPage() {
         )}
         {memberStatus ? <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>{memberStatus}</div> : null}
         {memberError ? <div style={{ fontSize: 12, color: "#ff6b6b", marginTop: 8 }}>{memberError}</div> : null}
-      </div>
+      </div></DeskSurface>
       {!canManage ? (
-        <div className="card" style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>
+        <DeskSurface><div className="card" style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>
           {t("roles.noPermission")}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       <div style={{ display: "grid", gap: 12 }}>
@@ -344,7 +348,7 @@ export default function RolesPage() {
               {role.name}
             </summary>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <input
+              <DeskInput
                 className="input"
                 style={{ maxWidth: 220 }}
                 value={role.name}
@@ -354,16 +358,16 @@ export default function RolesPage() {
               {role.isSystem ? (
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("roles.systemRole")}</span>
 	              ) : (
-	                <button className="btn btnStop" disabled={!canManage} onClick={() => deleteRole(role.id)}>
+	                <DeskButton className="btn btnStop" disabled={!canManage} onClick={() => deleteRole(role.id)}>
 	                  <AppIcon name="delete" />
 	                  {t("roles.delete")}
-	                </button>
+	                </DeskButton>
               )}
             </div>
             <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
               {PERMISSIONS.map((p) => (
                 <label key={p.key} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={Boolean(role.permissions?.[p.key])}
                     disabled={!canManage}
@@ -378,20 +382,20 @@ export default function RolesPage() {
       </div>
 
       {canManage ? (
-        <div className="card" style={{ padding: 12, marginTop: 14 }}>
+        <DeskSurface><div className="card" style={{ padding: 12, marginTop: 14 }}>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>{t("roles.createTitle")}</div>
-          <input
+          <DeskInput
             className="input"
             value={newRoleName}
             onChange={(e) => setNewRoleName(e.target.value)}
             placeholder={t("roles.namePlaceholder")}
 	          />
-	          <button className="btn btnPrimary" style={{ marginTop: 8 }} onClick={createRole}>
+	          <DeskButton className="btn btnPrimary" style={{ marginTop: 8 }} onClick={createRole}>
 	            <AppIcon name="create" />
 	            {t("roles.create")}
-	          </button>
+	          </DeskButton>
           {status ? <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{status}</div> : null}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       <ReauthDialog

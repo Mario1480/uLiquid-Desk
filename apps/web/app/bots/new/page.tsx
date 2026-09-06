@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -613,7 +616,7 @@ export default function NewBotPage() {
           <>
             {subscriptionQuota ? (
               <section className="botsSetupSummaryGrid" hidden={wizardStep !== "review"}>
-                <div className="card botsSetupMetricCard">
+                <DeskSurface dense><div className="card botsSetupMetricCard">
                   <div className="botsSetupMetricLabel">{t("summary.runningSlots")}</div>
                   <div className="botsSetupMetricValue">{runningBotUsage}/{runningBotLimit}</div>
                   <div className="botsSetupMetricHint">
@@ -623,52 +626,52 @@ export default function NewBotPage() {
                       remaining: String(runningBotRemaining)
                     })}
                   </div>
-                </div>
-                <div className="card botsSetupMetricCard">
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card botsSetupMetricCard">
                   <div className="botsSetupMetricLabel">{t("summary.executionAccount")}</div>
                   <div className="botsSetupMetricValue botsSetupMetricValueCompact">{selectedAccountLabel}</div>
-                </div>
-                <div className="card botsSetupMetricCard">
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card botsSetupMetricCard">
                   <div className="botsSetupMetricLabel">{t("summary.strategy")}</div>
                   <div className="botsSetupMetricValue">{formatStrategyLabel(strategyKey, t)}</div>
-                </div>
+                </div></DeskSurface>
                 {strategyKey !== "prediction_copier" ? (
-                  <div className="card botsSetupMetricCard">
+                  <DeskSurface dense><div className="card botsSetupMetricCard">
                     <div className="botsSetupMetricLabel">{t("summary.runtime")}</div>
                     <div className="botsSetupMetricValue">{formatExecutionModeLabel(executionMode, t)}</div>
                     <div className="botsSetupMetricHint">{t("summary.hint")}</div>
-                  </div>
+                  </div></DeskSurface>
                 ) : null}
               </section>
             ) : null}
 
-            <div className="card botsSetupSection" hidden={wizardStep !== "base"}>
+            <DeskSurface dense><div className="card botsSetupSection" hidden={wizardStep !== "base"}>
               <div className="botsSetupSectionHeader">
                 <div className="botsSetupSectionTitle">{t("sections.base")}</div>
                 <div className="botsSetupSectionHint">{t("sections.baseHint")}</div>
               </div>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.name")}</span>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+                <DeskInput className="input" value={name} onChange={(e) => setName(e.target.value)} required />
               </label>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.exchangeAccount")}</span>
-                  <select className="input" value={exchangeAccountId} onChange={(e) => setExchangeAccountId(e.target.value)}>
+                  <DeskSelect className="input" value={exchangeAccountId} onChange={(e) => setExchangeAccountId(e.target.value)}>
                     {accounts.map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.label} ({account.exchange})
                       </option>
                     ))}
-                  </select>
+                  </DeskSelect>
                 </label>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.strategy")}</span>
-                  <select className="input" value={strategyKey} onChange={(e) => setStrategyKey(e.target.value as StrategyKey)}>
+                  <DeskSelect className="input" value={strategyKey} onChange={(e) => setStrategyKey(e.target.value as StrategyKey)}>
                     <option value="dummy">{t("options.simpleRuntime")}</option>
                     <option value="prediction_copier">{t("options.predictionCopier")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
               </div>
 
@@ -693,24 +696,24 @@ export default function NewBotPage() {
                 </label>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.marginMode")}</span>
-                  <select className="input" value={marginMode} onChange={(e) => setMarginMode(e.target.value as "isolated" | "cross")}>
+                  <DeskSelect className="input" value={marginMode} onChange={(e) => setMarginMode(e.target.value as "isolated" | "cross")}>
                     <option value="isolated">{t("options.isolated")}</option>
                     <option value="cross">{t("options.cross")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.leverage")}</span>
-                  <input className="input" type="number" min={1} max={125} value={leverage} onChange={(e) => setLeverage(Number(e.target.value || 1))} />
+                  <DeskInput className="input" type="number" min={1} max={125} value={leverage} onChange={(e) => setLeverage(Number(e.target.value || 1))} />
                 </label>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.tickMs")}</span>
-                  <input className="input" type="number" min={100} max={60_000} value={tickMs} onChange={(e) => setTickMs(Number(e.target.value || 1000))} />
+                  <DeskInput className="input" type="number" min={100} max={60_000} value={tickMs} onChange={(e) => setTickMs(Number(e.target.value || 1000))} />
                 </label>
               </div>
-            </div>
+            </div></DeskSurface>
 
             {strategyKey !== "prediction_copier" ? (
-              <div className="card botsSetupSection" hidden={wizardStep !== "execution" && wizardStep !== "risk"}>
+              <DeskSurface dense><div className="card botsSetupSection" hidden={wizardStep !== "execution" && wizardStep !== "risk"}>
                 <div className="botsSetupSectionHeader">
                   <div className="botsSetupSectionTitle">
                     {wizardStep === "risk" ? t("sections.risk") : t("sections.execution")}
@@ -723,36 +726,36 @@ export default function NewBotPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "execution"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.executionMode")}</span>
-                    <select className="input" value={executionMode} onChange={(e) => setExecutionMode(e.target.value as ExecutionModeValue)}>
+                    <DeskSelect className="input" value={executionMode} onChange={(e) => setExecutionMode(e.target.value as ExecutionModeValue)}>
                       <option value="simple">{t("options.executionSimple")}</option>
                       <option value="dca">{t("options.executionDca")}</option>
                       <option value="grid">{t("options.executionGrid")}</option>
                       <option value="dip_reversion">{t("options.executionDipReversion")}</option>
-                    </select>
+                    </DeskSelect>
                   </label>
                   <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxDailyExecutions")}</span>
-                    <input className="input" type="number" min={1} max={10000} value={commonMaxDailyExecutions} onChange={(e) => setCommonMaxDailyExecutions(Number(e.target.value || 200))} />
+                    <DeskInput className="input" type="number" min={1} max={10000} value={commonMaxDailyExecutions} onChange={(e) => setCommonMaxDailyExecutions(Number(e.target.value || 200))} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.cooldownSecAfterExecution")}</span>
-                    <input className="input" type="number" min={0} max={86400} value={commonCooldownSecAfterExecution} onChange={(e) => setCommonCooldownSecAfterExecution(Number(e.target.value || 0))} />
+                    <DeskInput className="input" type="number" min={0} max={86400} value={commonCooldownSecAfterExecution} onChange={(e) => setCommonCooldownSecAfterExecution(Number(e.target.value || 0))} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxOpenPositions")}</span>
-                    <input className="input" type="number" min={1} max={100} value={commonMaxOpenPositions} onChange={(e) => setCommonMaxOpenPositions(Number(e.target.value || 1))} />
+                    <DeskInput className="input" type="number" min={1} max={100} value={commonMaxOpenPositions} onChange={(e) => setCommonMaxOpenPositions(Number(e.target.value || 1))} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxNotionalPerSymbol")}</span>
-                    <input className="input" type="number" min={0} step="0.01" value={commonMaxNotionalPerSymbolUsd} onChange={(e) => setCommonMaxNotionalPerSymbolUsd(e.target.value)} />
+                    <DeskInput className="input" type="number" min={0} step="0.01" value={commonMaxNotionalPerSymbolUsd} onChange={(e) => setCommonMaxNotionalPerSymbolUsd(e.target.value)} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }} hidden={wizardStep !== "risk"}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxNotionalTotal")}</span>
-                    <input className="input" type="number" min={0} step="0.01" value={commonMaxTotalNotionalUsd} onChange={(e) => setCommonMaxTotalNotionalUsd(e.target.value)} />
+                    <DeskInput className="input" type="number" min={0} step="0.01" value={commonMaxTotalNotionalUsd} onChange={(e) => setCommonMaxTotalNotionalUsd(e.target.value)} />
                   </label>
                   <label className="botsNewCheckField" hidden={wizardStep !== "risk"}>
                     <span className="botsNewCheckFieldLabel">{t("fields.enforceReduceOnlyOnClose")}</span>
-                    <input className="botsNewCheckInput" type="checkbox" checked={commonEnforceReduceOnlyOnClose} onChange={(e) => setCommonEnforceReduceOnlyOnClose(e.target.checked)} />
+                    <DeskInput className="botsNewCheckInput" type="checkbox" checked={commonEnforceReduceOnlyOnClose} onChange={(e) => setCommonEnforceReduceOnlyOnClose(e.target.checked)} />
                   </label>
                 </div>
 
@@ -760,65 +763,65 @@ export default function NewBotPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.orderType")}</span>
-                      <select className="input" value={simpleOrderType} onChange={(e) => setSimpleOrderType(e.target.value as "market" | "limit")}>
+                      <DeskSelect className="input" value={simpleOrderType} onChange={(e) => setSimpleOrderType(e.target.value as "market" | "limit")}>
                         <option value="market">{t("options.market")}</option>
                         <option value="limit">{t("options.limit")}</option>
-                      </select>
+                      </DeskSelect>
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.limitOffsetBps")}</span>
-                      <input className="input" type="number" min={0} max={500} value={simpleLimitOffsetBps} onChange={(e) => setSimpleLimitOffsetBps(Number(e.target.value || 0))} />
+                      <DeskInput className="input" type="number" min={0} max={500} value={simpleLimitOffsetBps} onChange={(e) => setSimpleLimitOffsetBps(Number(e.target.value || 0))} />
                     </label>
                   </div>
                 ) : null}
 
                 {executionMode === "dca" && wizardStep === "execution" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxEntries")}</span><input className="input" type="number" min={1} max={20} value={dcaMaxEntries} onChange={(e) => setDcaMaxEntries(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stepPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={dcaStepPct} onChange={(e) => setDcaStepPct(Number(e.target.value || 0))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.sizeScale")}</span><input className="input" type="number" min={1} step="0.01" value={dcaSizeScale} onChange={(e) => setDcaSizeScale(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxEntries")}</span><DeskInput className="input" type="number" min={1} max={20} value={dcaMaxEntries} onChange={(e) => setDcaMaxEntries(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stepPct")}</span><DeskInput className="input" type="number" min={0.01} step="0.01" value={dcaStepPct} onChange={(e) => setDcaStepPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.sizeScale")}</span><DeskInput className="input" type="number" min={1} step="0.01" value={dcaSizeScale} onChange={(e) => setDcaSizeScale(Number(e.target.value || 1))} /></label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.entryOrderType")}</span>
-                      <select className="input" value={dcaEntryOrderType} onChange={(e) => setDcaEntryOrderType(e.target.value as "market" | "limit")}>
+                      <DeskSelect className="input" value={dcaEntryOrderType} onChange={(e) => setDcaEntryOrderType(e.target.value as "market" | "limit")}>
                         <option value="market">{t("options.market")}</option>
                         <option value="limit">{t("options.limit")}</option>
-                      </select>
+                      </DeskSelect>
                     </label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.takeProfitPct")}</span><input className="input" type="number" min={0} step="0.1" value={dcaTakeProfitPct} onChange={(e) => setDcaTakeProfitPct(e.target.value)} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stopLossPct")}</span><input className="input" type="number" min={0} step="0.1" value={dcaStopLossPct} onChange={(e) => setDcaStopLossPct(e.target.value)} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.takeProfitPct")}</span><DeskInput className="input" type="number" min={0} step="0.1" value={dcaTakeProfitPct} onChange={(e) => setDcaTakeProfitPct(e.target.value)} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stopLossPct")}</span><DeskInput className="input" type="number" min={0} step="0.1" value={dcaStopLossPct} onChange={(e) => setDcaStopLossPct(e.target.value)} /></label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("fields.cancelPendingOnFlip")}</span>
-                      <input className="botsNewCheckInput" type="checkbox" checked={dcaCancelPendingOnFlip} onChange={(e) => setDcaCancelPendingOnFlip(e.target.checked)} />
+                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={dcaCancelPendingOnFlip} onChange={(e) => setDcaCancelPendingOnFlip(e.target.checked)} />
                     </label>
                   </div>
                 ) : null}
 
                 {executionMode === "grid" && wizardStep === "execution" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.levelsPerSide")}</span><input className="input" type="number" min={1} max={40} value={gridLevelsPerSide} onChange={(e) => setGridLevelsPerSide(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.gridSpacingPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={gridSpacingPct} onChange={(e) => setGridSpacingPct(Number(e.target.value || 0))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.baseOrderUsd")}</span><input className="input" type="number" min={1} step="1" value={gridBaseOrderUsd} onChange={(e) => setGridBaseOrderUsd(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.tpPctPerLevel")}</span><input className="input" type="number" min={0.01} step="0.01" value={gridTpPctPerLevel} onChange={(e) => setGridTpPctPerLevel(Number(e.target.value || 0))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxActiveOrders")}</span><input className="input" type="number" min={1} max={200} value={gridMaxActiveOrders} onChange={(e) => setGridMaxActiveOrders(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.rebalanceThresholdPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={gridRebalanceThresholdPct} onChange={(e) => setGridRebalanceThresholdPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.levelsPerSide")}</span><DeskInput className="input" type="number" min={1} max={40} value={gridLevelsPerSide} onChange={(e) => setGridLevelsPerSide(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.gridSpacingPct")}</span><DeskInput className="input" type="number" min={0.01} step="0.01" value={gridSpacingPct} onChange={(e) => setGridSpacingPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.baseOrderUsd")}</span><DeskInput className="input" type="number" min={1} step="1" value={gridBaseOrderUsd} onChange={(e) => setGridBaseOrderUsd(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.tpPctPerLevel")}</span><DeskInput className="input" type="number" min={0.01} step="0.01" value={gridTpPctPerLevel} onChange={(e) => setGridTpPctPerLevel(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxActiveOrders")}</span><DeskInput className="input" type="number" min={1} max={200} value={gridMaxActiveOrders} onChange={(e) => setGridMaxActiveOrders(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.rebalanceThresholdPct")}</span><DeskInput className="input" type="number" min={0.01} step="0.01" value={gridRebalanceThresholdPct} onChange={(e) => setGridRebalanceThresholdPct(Number(e.target.value || 0))} /></label>
                   </div>
                 ) : null}
 
                 {executionMode === "dip_reversion" && wizardStep === "execution" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.dipTriggerPct")}</span><input className="input" type="number" min={0.1} step="0.1" value={dipTriggerPct} onChange={(e) => setDipTriggerPct(Number(e.target.value || 0))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.recoveryTakeProfitPct")}</span><input className="input" type="number" min={0.1} step="0.1" value={dipRecoveryTakeProfitPct} onChange={(e) => setDipRecoveryTakeProfitPct(Number(e.target.value || 0))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxHoldMinutes")}</span><input className="input" type="number" min={1} step="1" value={dipMaxHoldMinutes} onChange={(e) => setDipMaxHoldMinutes(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxReentriesPerDay")}</span><input className="input" type="number" min={1} step="1" value={dipMaxReentriesPerDay} onChange={(e) => setDipMaxReentriesPerDay(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.entryScaleUsd")}</span><input className="input" type="number" min={1} step="1" value={dipEntryScaleUsd} onChange={(e) => setDipEntryScaleUsd(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.dipTriggerPct")}</span><DeskInput className="input" type="number" min={0.1} step="0.1" value={dipTriggerPct} onChange={(e) => setDipTriggerPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.recoveryTakeProfitPct")}</span><DeskInput className="input" type="number" min={0.1} step="0.1" value={dipRecoveryTakeProfitPct} onChange={(e) => setDipRecoveryTakeProfitPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxHoldMinutes")}</span><DeskInput className="input" type="number" min={1} step="1" value={dipMaxHoldMinutes} onChange={(e) => setDipMaxHoldMinutes(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxReentriesPerDay")}</span><DeskInput className="input" type="number" min={1} step="1" value={dipMaxReentriesPerDay} onChange={(e) => setDipMaxReentriesPerDay(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.entryScaleUsd")}</span><DeskInput className="input" type="number" min={1} step="1" value={dipEntryScaleUsd} onChange={(e) => setDipEntryScaleUsd(Number(e.target.value || 1))} /></label>
                   </div>
                 ) : null}
-              </div>
+              </div></DeskSurface>
             ) : null}
 
             {strategyKey === "prediction_copier" ? (
               <>
-                <div className="card botsSetupSection" hidden={wizardStep !== "review"}>
+                <DeskSurface dense><div className="card botsSetupSection" hidden={wizardStep !== "review"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("copier.guidedReviewTitle")}</div>
                     <div className="botsSetupSectionHint">{t("copier.guidedReviewHint")}</div>
@@ -828,9 +831,9 @@ export default function NewBotPage() {
                       <li key={index}>{t(`copier.reviewSteps.step${index + 1}` as any)}</li>
                     ))}
                   </ol>
-                </div>
+                </div></DeskSurface>
 
-                <div className="card botsSetupSection" hidden={wizardStep !== "execution"}>
+                <DeskSurface dense><div className="card botsSetupSection" hidden={wizardStep !== "execution"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("sections.copier")}</div>
                     <div className="botsSetupSectionHint">{t("sections.copierHint")}</div>
@@ -841,12 +844,12 @@ export default function NewBotPage() {
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.marketType")}</span>
-                    <input className="input" value={t("copier.perpetualBetaOnly")} disabled />
+                    <DeskInput className="input" value={t("copier.perpetualBetaOnly")} disabled />
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.source")}</span>
-                    <select
+                    <DeskSelect
                       className="input"
                       value={sourceStateId}
                       onChange={(e) => setSourceStateId(e.target.value)}
@@ -860,7 +863,7 @@ export default function NewBotPage() {
                           {formatPredictionSourceStrategy(source)} · {source.symbol} · {source.timeframe} · {source.lastSignal}
                         </option>
                       ))}
-                    </select>
+                    </DeskSelect>
                   </label>
 
                   {sourcesError ? (
@@ -868,84 +871,84 @@ export default function NewBotPage() {
                   ) : null}
 
                   {selectedSource ? (
-                    <div className="card botsSetupSubCard" style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
+                    <DeskSurface dense><div className="card botsSetupSubCard" style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
                       <div>{t("copier.sourceMeta.symbol")}: <strong>{selectedSource.symbol}</strong></div>
                       <div>{t("copier.sourceMeta.timeframe")}: <strong>{selectedSource.timeframe}</strong></div>
                       <div>{t("copier.sourceMeta.strategy")}: <strong>{selectedSource.strategyName ?? selectedSource.strategyKind ?? "n/a"}</strong></div>
                       <div>{t("copier.sourceMeta.lastSignal")}: <strong>{formatSignalLabel(selectedSource.lastSignal as CopierSignal, t)}</strong> ({selectedSource.confidence.toFixed(1)}%)</div>
                       <div>{t("copier.sourceMeta.updated")}: <strong>{new Date(selectedSource.tsUpdated).toLocaleString()}</strong></div>
-                    </div>
+                    </div></DeskSurface>
                   ) : null}
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.predictionTf")}</span>
-                      <input className="input" value={copierTimeframe} disabled />
+                      <DeskInput className="input" value={copierTimeframe} disabled />
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.minConfidence")}</span>
-                      <input className="input" type="number" min={0} max={100} value={copierMinConfidence} onChange={(e) => setCopierMinConfidence(Number(e.target.value || 0))} />
+                      <DeskInput className="input" type="number" min={0} max={100} value={copierMinConfidence} onChange={(e) => setCopierMinConfidence(Number(e.target.value || 0))} />
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxPredictionAge")}</span>
-                      <input className="input" type="number" min={30} max={86_400} value={copierMaxPredictionAgeSec} onChange={(e) => setCopierMaxPredictionAgeSec(Number(e.target.value || 600))} />
+                      <DeskInput className="input" type="number" min={30} max={86_400} value={copierMaxPredictionAgeSec} onChange={(e) => setCopierMaxPredictionAgeSec(Number(e.target.value || 600))} />
                     </label>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.orderType")}</span>
-                      <select className="input" value={copierOrderType} onChange={(e) => setCopierOrderType(e.target.value as CopierOrderType)}>
+                      <DeskSelect className="input" value={copierOrderType} onChange={(e) => setCopierOrderType(e.target.value as CopierOrderType)}>
                         <option value="market">{t("options.market")}</option>
                         <option value="limit">{t("options.limit")}</option>
-                      </select>
+                      </DeskSelect>
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.sizingType")}</span>
-                      <select className="input" value={copierSizingType} onChange={(e) => setCopierSizingType(e.target.value as CopierSizingType)}>
+                      <DeskSelect className="input" value={copierSizingType} onChange={(e) => setCopierSizingType(e.target.value as CopierSizingType)}>
                         <option value="fixed_usd">fixed_usd</option>
                         <option value="equity_pct">equity_pct</option>
                         <option value="risk_pct">risk_pct</option>
-                      </select>
+                      </DeskSelect>
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.sizingValue")}</span>
-                      <input className="input" type="number" min={0.01} step="0.01" value={copierSizingValue} onChange={(e) => setCopierSizingValue(Number(e.target.value || 100))} />
+                      <DeskInput className="input" type="number" min={0.01} step="0.01" value={copierSizingValue} onChange={(e) => setCopierSizingValue(Number(e.target.value || 100))} />
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.limitOffsetBps")}</span>
-                      <input className="input" type="number" min={0} max={500} value={executionLimitOffsetBps} onChange={(e) => setExecutionLimitOffsetBps(Number(e.target.value || 0))} />
+                      <DeskInput className="input" type="number" min={0} max={500} value={executionLimitOffsetBps} onChange={(e) => setExecutionLimitOffsetBps(Number(e.target.value || 0))} />
                     </label>
                   </div>
-                </div>
+                </div></DeskSurface>
 
-                <div className="card botsSetupSection" hidden={wizardStep !== "risk"}>
+                <DeskSurface dense><div className="card botsSetupSection" hidden={wizardStep !== "risk"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("sections.risk")}</div>
                     <div className="botsSetupSectionHint">{t("sections.riskHint")}</div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxOpenPositions")}</span><input className="input" type="number" min={1} value={riskMaxOpenPositions} onChange={(e) => setRiskMaxOpenPositions(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxDailyTrades")}</span><input className="input" type="number" min={1} value={riskMaxDailyTrades} onChange={(e) => setRiskMaxDailyTrades(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.cooldownSec")}</span><input className="input" type="number" min={0} value={riskCooldownSec} onChange={(e) => setRiskCooldownSec(Number(e.target.value || 0))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxNotionalPerSymbol")}</span><input className="input" type="number" min={1} value={riskMaxNotionalSymbol} onChange={(e) => setRiskMaxNotionalSymbol(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxNotionalTotal")}</span><input className="input" type="number" min={1} value={riskMaxNotionalTotal} onChange={(e) => setRiskMaxNotionalTotal(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.dailyLossLimitUsd")}</span><input className="input" type="number" min={1} step="1" value={riskDailyLossLimitUsd} onChange={(e) => setRiskDailyLossLimitUsd(Number(e.target.value || 1))} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.stopLossPct")}</span><input className="input" type="number" min={0} step="0.1" value={riskStopLossPct} onChange={(e) => setRiskStopLossPct(e.target.value)} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.takeProfitPct")}</span><input className="input" type="number" min={0} step="0.1" value={riskTakeProfitPct} onChange={(e) => setRiskTakeProfitPct(e.target.value)} /></label>
-                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.timeStopMin")}</span><input className="input" type="number" min={0} step="1" value={riskTimeStopMin} onChange={(e) => setRiskTimeStopMin(e.target.value)} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxOpenPositions")}</span><DeskInput className="input" type="number" min={1} value={riskMaxOpenPositions} onChange={(e) => setRiskMaxOpenPositions(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxDailyTrades")}</span><DeskInput className="input" type="number" min={1} value={riskMaxDailyTrades} onChange={(e) => setRiskMaxDailyTrades(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.cooldownSec")}</span><DeskInput className="input" type="number" min={0} value={riskCooldownSec} onChange={(e) => setRiskCooldownSec(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxNotionalPerSymbol")}</span><DeskInput className="input" type="number" min={1} value={riskMaxNotionalSymbol} onChange={(e) => setRiskMaxNotionalSymbol(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxNotionalTotal")}</span><DeskInput className="input" type="number" min={1} value={riskMaxNotionalTotal} onChange={(e) => setRiskMaxNotionalTotal(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.dailyLossLimitUsd")}</span><DeskInput className="input" type="number" min={1} step="1" value={riskDailyLossLimitUsd} onChange={(e) => setRiskDailyLossLimitUsd(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.stopLossPct")}</span><DeskInput className="input" type="number" min={0} step="0.1" value={riskStopLossPct} onChange={(e) => setRiskStopLossPct(e.target.value)} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.takeProfitPct")}</span><DeskInput className="input" type="number" min={0} step="0.1" value={riskTakeProfitPct} onChange={(e) => setRiskTakeProfitPct(e.target.value)} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.timeStopMin")}</span><DeskInput className="input" type="number" min={0} step="1" value={riskTimeStopMin} onChange={(e) => setRiskTimeStopMin(e.target.value)} /></label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.exitOnSignalFlip")}</span>
-                      <input className="botsNewCheckInput" type="checkbox" checked={exitOnSignalFlip} onChange={(e) => setExitOnSignalFlip(e.target.checked)} />
+                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={exitOnSignalFlip} onChange={(e) => setExitOnSignalFlip(e.target.checked)} />
                     </label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.exitOnConfidenceDrop")}</span>
-                      <input className="botsNewCheckInput" type="checkbox" checked={exitOnConfidenceDrop} onChange={(e) => setExitOnConfidenceDrop(e.target.checked)} />
+                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={exitOnConfidenceDrop} onChange={(e) => setExitOnConfidenceDrop(e.target.checked)} />
                     </label>
                   </div>
-                </div>
+                </div></DeskSurface>
 
-                <div className="card botsSetupSection" hidden={wizardStep !== "risk"}>
+                <DeskSurface dense><div className="card botsSetupSection" hidden={wizardStep !== "risk"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("sections.filters")}</div>
                     <div className="botsSetupSectionHint">{t("sections.filtersHint")}</div>
@@ -953,45 +956,45 @@ export default function NewBotPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.blockTags")}</span>
-                      <input className="input" value={filtersBlockTags} onChange={(e) => setFiltersBlockTags(e.target.value)} placeholder={t("copier.blockTagsPlaceholder")} />
+                      <DeskInput className="input" value={filtersBlockTags} onChange={(e) => setFiltersBlockTags(e.target.value)} placeholder={t("copier.blockTagsPlaceholder")} />
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.requireTags")}</span>
-                      <input className="input" value={filtersRequireTags} onChange={(e) => setFiltersRequireTags(e.target.value)} placeholder={t("copier.requireTagsPlaceholder")} />
+                      <DeskInput className="input" value={filtersRequireTags} onChange={(e) => setFiltersRequireTags(e.target.value)} placeholder={t("copier.requireTagsPlaceholder")} />
                     </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.minExpectedMove")}</span>
-                      <input className="input" type="number" min={0} step="0.01" value={filtersMinExpectedMove} onChange={(e) => setFiltersMinExpectedMove(e.target.value)} />
+                      <DeskInput className="input" type="number" min={0} step="0.01" value={filtersMinExpectedMove} onChange={(e) => setFiltersMinExpectedMove(e.target.value)} />
                     </label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.newsRiskBlockEnabled")}</span>
-                      <input className="botsNewCheckInput" type="checkbox" checked={filtersNewsRiskBlockEnabled} onChange={(e) => setFiltersNewsRiskBlockEnabled(e.target.checked)} />
+                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={filtersNewsRiskBlockEnabled} onChange={(e) => setFiltersNewsRiskBlockEnabled(e.target.checked)} />
                     </label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.reduceOnlyOnExit")}</span>
-                      <input className="botsNewCheckInput" type="checkbox" checked={executionReduceOnlyOnExit} onChange={(e) => setExecutionReduceOnlyOnExit(e.target.checked)} />
+                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={executionReduceOnlyOnExit} onChange={(e) => setExecutionReduceOnlyOnExit(e.target.checked)} />
                     </label>
                   </div>
                   <div className="botsNewSignalRow">
                     <span className="botsNewSignalLabel">{t("copier.fields.allowSignals")}</span>
                     <div className="botsNewSignalOptions">
                       <label className="botsNewSignalOption">
-                        <input className="botsNewCheckInput" type="checkbox" checked={allowSignalUp} onChange={(e) => setAllowSignalUp(e.target.checked)} />
+                        <DeskInput className="botsNewCheckInput" type="checkbox" checked={allowSignalUp} onChange={(e) => setAllowSignalUp(e.target.checked)} />
                         <span>{t("options.signalUp")}</span>
                       </label>
                       <label className="botsNewSignalOption">
-                        <input className="botsNewCheckInput" type="checkbox" checked={allowSignalDown} onChange={(e) => setAllowSignalDown(e.target.checked)} />
+                        <DeskInput className="botsNewCheckInput" type="checkbox" checked={allowSignalDown} onChange={(e) => setAllowSignalDown(e.target.checked)} />
                         <span>{t("options.signalDown")}</span>
                       </label>
                       <label className="botsNewSignalOption">
-                        <input className="botsNewCheckInput" type="checkbox" checked={allowSignalNeutral} onChange={(e) => setAllowSignalNeutral(e.target.checked)} />
+                        <DeskInput className="botsNewCheckInput" type="checkbox" checked={allowSignalNeutral} onChange={(e) => setAllowSignalNeutral(e.target.checked)} />
                         <span>{t("options.signalNeutral")}</span>
                       </label>
                     </div>
                   </div>
-                </div>
+                </div></DeskSurface>
 
-                <div className="card botsSetupSection botsCopierFinalReview" hidden={wizardStep !== "review"}>
+                <DeskSurface dense><div className="card botsSetupSection botsCopierFinalReview" hidden={wizardStep !== "review"}>
                   <div className="botsSetupSectionHeader">
                     <div className="botsSetupSectionTitle">{t("copier.finalReviewTitle")}</div>
                     <div className="botsSetupSectionHint">{t("copier.finalReviewHint")}</div>
@@ -1006,7 +1009,7 @@ export default function NewBotPage() {
                   </div>
                   <label className="botsNewCheckField">
                     <span className="botsNewCheckFieldLabel">{t("copier.confirmReview")}</span>
-                    <input
+                    <DeskInput
                       className="botsNewCheckInput"
                       type="checkbox"
                       checked={copierReviewConfirmed}
@@ -1014,7 +1017,7 @@ export default function NewBotPage() {
                     />
                   </label>
                   <div className="botsSetupInlineHint">{t("copier.activationSeparateHint")}</div>
-                </div>
+                </div></DeskSurface>
               </>
             ) : null}
 

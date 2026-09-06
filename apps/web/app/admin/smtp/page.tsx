@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -95,42 +98,42 @@ export default function AdminSmtpPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">
           {error}
-        </div>
+        </div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">
           {notice}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
         <>
           <section className="adminStatsGrid">
-            <div className="card adminStatsCard">
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("passwordStored")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{smtpHasPassword ? t("yes") : t("no")}</div>
               <div className="adminStatsHint">{t("passwordHint")}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("host")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{smtpHost || "-"}</div>
               <div className="adminStatsHint">{t("sectionTitle")}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("port")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{smtpPort || "-"}</div>
               <div className="adminStatsHint">{t("secureConnection")}: {smtpSecure ? t("yes") : t("no")}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("from")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{smtpFrom || "-"}</div>
               <div className="adminStatsHint">{t("user")}: {smtpUser || "-"}</div>
-            </div>
+            </div></DeskSurface>
           </section>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader adminDetailSectionHeader">
               <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
               <div className="adminDetailSectionDescription">
@@ -140,27 +143,27 @@ export default function AdminSmtpPage() {
           <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("host")}</span>
-              <input className="input" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
+              <DeskInput className="input" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("port")}</span>
-              <input className="input" type="number" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
+              <DeskInput className="input" type="number" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("user")}</span>
-              <input className="input" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
+              <DeskInput className="input" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("from")}</span>
-              <input className="input" value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} />
+              <DeskInput className="input" value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} />
             </label>
             <label className="inlineCheck" style={{ marginTop: 26 }}>
-              <input type="checkbox" checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />
+              <DeskInput type="checkbox" checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />
               <span>{t("secureConnection")}</span>
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("passwordHint")}</span>
-              <input
+              <DeskInput
                 className="input"
                 type="password"
                 value={smtpPassword}
@@ -170,13 +173,13 @@ export default function AdminSmtpPage() {
           </div>
 
           <div className="adminInlineActions" style={{ marginTop: 14 }}>
-            <button className="btn btnPrimary" onClick={() => void saveSmtp()}>
+            <DeskButton className="btn btnPrimary" onClick={() => void saveSmtp()}>
               {t("saveSmtp")}
-            </button>
+            </DeskButton>
           </div>
-        </section>
+        </section></DeskSurface>
 
-        <section className="card settingsSection">
+        <DeskSurface dense><section className="card settingsSection">
           <div className="settingsSectionHeader adminDetailSectionHeader">
             <h3 style={{ margin: 0 }}>{t("sendTest")}</h3>
             <div className="adminDetailSectionDescription">
@@ -186,15 +189,15 @@ export default function AdminSmtpPage() {
           <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("testRecipient")}</span>
-              <input className="input" value={smtpTestTo} onChange={(e) => setSmtpTestTo(e.target.value)} />
+              <DeskInput className="input" value={smtpTestTo} onChange={(e) => setSmtpTestTo(e.target.value)} />
             </label>
           </div>
           <div className="adminInlineActions" style={{ marginTop: 14 }}>
-            <button className="btn" onClick={() => void testSmtp()} disabled={!smtpTestTo.trim()}>
+            <DeskButton className="btn" onClick={() => void testSmtp()} disabled={!smtpTestTo.trim()}>
               {t("sendTest")}
-            </button>
+            </DeskButton>
           </div>
-        </section>
+        </section></DeskSurface>
         </>
       ) : null}
     </div>

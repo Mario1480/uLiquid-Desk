@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "../../lib/api";
@@ -247,7 +248,7 @@ export default function AgentChatShell() {
 
   return (
     <main className="uiPage agentChatPage">
-      <PageHeader title={t("title")} description={t("description")} actions={<><span className={`badge agentChatCreditBadge agentChatCreditBadge-${creditSummary?.warningLevel ?? "none"}`}><AppIcon name="billing" />{t("credits.available", { value: creditSummary?.available ?? "-" })}</span>{lastModelClass ? <span className="badge agentChatAnalysisBadge">{t(`credits.classes.${lastModelClass}`)}</span> : null}<span className="badge agentChatReadOnlyBadge"><AppIcon name="shield" />{t("readOnlyMvp")}</span><button type="button" className="btn btnPrimary" onClick={newChat}><AppIcon name="create" />{t("actions.newChat")}</button></>} />
+      <PageHeader title={t("title")} description={t("description")} actions={<><span className={`badge agentChatCreditBadge agentChatCreditBadge-${creditSummary?.warningLevel ?? "none"}`}><AppIcon name="billing" />{t("credits.available", { value: creditSummary?.available ?? "-" })}</span>{lastModelClass ? <span className="badge agentChatAnalysisBadge">{t(`credits.classes.${lastModelClass}`)}</span> : null}<span className="badge agentChatReadOnlyBadge"><AppIcon name="shield" />{t("readOnlyMvp")}</span><DeskButton type="button" className="btn btnPrimary" onClick={newChat}><AppIcon name="create" />{t("actions.newChat")}</DeskButton></>} />
       {lastRunReceipt ? (
         <div className="agentChatRunReceipt" role="status">
           <span><strong>{t("credits.lastRun")}</strong> {t("credits.charged", { value: lastRunReceipt.chargedCredits })}</span>
@@ -263,7 +264,7 @@ export default function AgentChatShell() {
         <section className="agentChatConversation" aria-label={t("conversation.title")}>
           <div className="agentChatMessages">
             {loading ? <div className="agentChatEmpty"><span className="agentChatSpinner" /><p>{t("states.loading")}</p></div> : messages.length === 0 ? (
-              <div className="agentChatEmpty"><span className="agentChatEmptyIcon"><AppIcon name="ai" /></span><h2>{t("empty.title")}</h2><p>{profileDescription ?? t("empty.description")}</p><div className="agentChatQuickPrompts">{quickPrompts.map((prompt) => <button key={prompt} className="btn" type="button" disabled={sending || (activeProfile?.actionLevel === "account_read" && !context.selectedExchangeAccountId)} onClick={() => void sendMessage(prompt)}>{prompt}</button>)}</div></div>
+              <div className="agentChatEmpty"><span className="agentChatEmptyIcon"><AppIcon name="ai" /></span><h2>{t("empty.title")}</h2><p>{profileDescription ?? t("empty.description")}</p><div className="agentChatQuickPrompts">{quickPrompts.map((prompt) => <DeskButton key={prompt} className="btn" type="button" disabled={sending || (activeProfile?.actionLevel === "account_read" && !context.selectedExchangeAccountId)} onClick={() => void sendMessage(prompt)}>{prompt}</DeskButton>)}</div></div>
             ) : messages.map((message) => (
               <article key={message.id} className={`agentChatMessage agentChatMessage-${message.role}`}>
                 <div className="agentChatMessageMeta"><span>{message.role === "assistant" ? activeProfile?.name ?? t("assistant") : t("you")}</span><time>{new Date(message.createdAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</time></div>

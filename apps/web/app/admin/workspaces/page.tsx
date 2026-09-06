@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet } from "../../../lib/api";
@@ -72,29 +75,29 @@ export default function AdminWorkspacesPage() {
         <div className="adminFilterGrid">
           <label className="settingsField">
             <span className="settingsFieldLabel">Search</span>
-            <input className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Workspace name" />
+            <DeskInput className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Workspace name" />
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">Status</span>
-            <select className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
+            <DeskSelect className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
               <option value="">All</option>
               <option value="active">active</option>
               <option value="idle">idle</option>
-            </select>
+            </DeskSelect>
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">License</span>
-            <select className="input" value={licenseStatus} onChange={(event) => { setPage(1); setLicenseStatus(event.target.value); }}>
+            <DeskSelect className="input" value={licenseStatus} onChange={(event) => { setPage(1); setLicenseStatus(event.target.value); }}>
               <option value="">All</option>
               <option value="active">active</option>
               <option value="inactive">inactive</option>
-            </select>
+            </DeskSelect>
           </label>
         </div>
       </AdminFilterBar>
 
       {loading ? <div className="settingsMutedText">Loading workspaces…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
 
       {data && data.items.length > 0 ? (
         <>

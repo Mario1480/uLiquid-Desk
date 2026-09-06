@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
@@ -87,7 +88,7 @@ export default function ExchangeAccountOverviewCard({
   const accountStatus = statusLabel(overview.status, t);
 
   return (
-    <article className="card exchangeOverviewCard">
+    <DeskSurface><article className="card exchangeOverviewCard">
       <header className="exchangeOverviewHeader">
         <div>
           <h3 className="exchangeOverviewTitle">
@@ -163,6 +164,6 @@ export default function ExchangeAccountOverviewCard({
           {t("settings")}
         </Link>
       </footer>
-    </article>
+    </article></DeskSurface>
   );
 }

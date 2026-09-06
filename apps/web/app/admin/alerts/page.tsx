@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut } from "../../../lib/api";
 import AdminActionButton from "../_components/AdminActionButton";
@@ -98,7 +101,7 @@ export default function AdminAlertsPage() {
   return (
     <div className="adminPageStack">
       <AdminPageHeader title="Alerts" description="Platform-wide alert inbox with operational acknowledge and resolve actions." />
-      <section className="card settingsSection">
+      <DeskSurface dense><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 className="adminSubsectionTitle">Retention & Cleanup</h3>
@@ -106,7 +109,7 @@ export default function AdminAlertsPage() {
           </div>
         </div>
         <label className="adminCheckboxLabel">
-          <input
+          <DeskInput
             type="checkbox"
             checked={Boolean(data?.retention?.autoDeleteOlderThan30Days)}
             onChange={(event) => void updateRetention(event.target.checked)}
@@ -125,12 +128,12 @@ export default function AdminAlertsPage() {
             {actionLoading === "delete-all" ? "Deleting…" : "Delete all alerts"}
           </AdminActionButton>
         </div>
-      </section>
+      </section></DeskSurface>
       <AdminFilterBar>
         <div className="adminFilterGrid">
-          <label className="settingsField"><span className="settingsFieldLabel">Search</span><input className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Title or message" /></label>
-          <label className="settingsField"><span className="settingsFieldLabel">Severity</span><select className="input" value={severity} onChange={(event) => { setPage(1); setSeverity(event.target.value); }}><option value="">All</option>{data?.filterOptions?.severity?.map((option: string) => <option key={option} value={option}>{option}</option>)}</select></label>
-          <label className="settingsField"><span className="settingsFieldLabel">Status</span><select className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">All</option>{data?.filterOptions?.status?.map((option: string) => <option key={option} value={option}>{option}</option>)}</select></label>
+          <label className="settingsField"><span className="settingsFieldLabel">Search</span><DeskInput className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Title or message" /></label>
+          <label className="settingsField"><span className="settingsFieldLabel">Severity</span><DeskSelect className="input" value={severity} onChange={(event) => { setPage(1); setSeverity(event.target.value); }}><option value="">All</option>{data?.filterOptions?.severity?.map((option: string) => <option key={option} value={option}>{option}</option>)}</DeskSelect></label>
+          <label className="settingsField"><span className="settingsFieldLabel">Status</span><DeskSelect className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">All</option>{data?.filterOptions?.status?.map((option: string) => <option key={option} value={option}>{option}</option>)}</DeskSelect></label>
         </div>
       </AdminFilterBar>
       {loading ? <div className="settingsMutedText">Loading alerts…</div> : null}

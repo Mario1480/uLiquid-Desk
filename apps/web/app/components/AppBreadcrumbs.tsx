@@ -1,5 +1,6 @@
 "use client";
 
+import { GlassBreadcrumb } from "@/components/einui/liquid-glass/glass-breadcrumb";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -587,7 +588,7 @@ export default function AppBreadcrumbs() {
   if (items.length === 0) return null;
 
   return (
-    <nav className="appBreadcrumbs" aria-label={tCrumbs("ariaLabel")}>
+    <GlassBreadcrumb className="appBreadcrumbs" aria-label={tCrumbs("ariaLabel")}>
       <div className="container appBreadcrumbsInner">
         <ol className="appBreadcrumbsList">
           {items.map((item, index) => {
@@ -642,6 +643,6 @@ export default function AppBreadcrumbs() {
           })}
         </ol>
       </div>
-    </nav>
+    </GlassBreadcrumb>
   );
 }

@@ -11,6 +11,7 @@ import "./styles/desk.css";
 import "./styles/settings-admin.css";
 import "./styles/bots-wallet.css";
 import "./ui-system.css";
+import "../components/einui/theme.css";
 
 assertWebEnv();
 

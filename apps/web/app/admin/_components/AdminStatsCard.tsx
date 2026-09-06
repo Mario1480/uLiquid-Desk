@@ -1,3 +1,4 @@
+import { DeskSurface } from "@/components/desk/DeskSurface";
 type AdminStatsCardProps = {
   label: string;
   value: string | number;
@@ -6,10 +7,10 @@ type AdminStatsCardProps = {
 
 export default function AdminStatsCard({ label, value, hint }: AdminStatsCardProps) {
   return (
-    <article className="settingsSection adminStatsCard">
+    <DeskSurface dense><article className="settingsSection adminStatsCard">
       <div className="adminStatsLabel">{label}</div>
       <div className="adminStatsValue">{value}</div>
       {hint ? <div className="adminStatsHint">{hint}</div> : null}
-    </article>
+    </article></DeskSurface>
   );
 }

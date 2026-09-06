@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -135,7 +138,7 @@ export default function RegisterPage() {
   return (
     <div className="container authPage">
       <h1 className="authHeading">{t("createAccountTitle")}</h1>
-      <div className="card authCard">
+      <DeskSurface><div className="card authCard">
         {step === "register" && registrationEnabled !== true ? (
           <div className="authForm">
             <p role="status">{registrationUnavailable ? t("errors.registration_unavailable") : registrationEnabled === false ? t("errors.registration_disabled") : t("registrationLoading")}</p>
@@ -148,7 +151,7 @@ export default function RegisterPage() {
         <form onSubmit={submit} className="authForm">
           <div className="authHoneypot" aria-hidden="true">
             <label htmlFor="companyWebsite">Company website</label>
-            <input
+            <DeskInput
               id="companyWebsite"
               name="companyWebsite"
               type="text"
@@ -160,7 +163,7 @@ export default function RegisterPage() {
           </div>
           <label className="authLabel">
             {t("email")}
-            <input
+            <DeskInput
               className="input"
               type="email"
               value={email}
@@ -172,7 +175,7 @@ export default function RegisterPage() {
           </label>
           <label className="authLabel">
             Referral Code
-            <input
+            <DeskInput
               className="input"
               type="text"
               value={referralCode}
@@ -185,7 +188,7 @@ export default function RegisterPage() {
             <>
               <label className="authLabel">
                 {t("password")}
-                <input
+                <DeskInput
                   className="input"
                   type="password"
                   value={password}
@@ -196,7 +199,7 @@ export default function RegisterPage() {
                 />
               </label>
               <div className="authLegalCheckbox">
-                <input
+                <DeskInput
                   id="legalAcknowledgement"
                   type="checkbox"
                   checked={legalAcknowledged}
@@ -217,7 +220,7 @@ export default function RegisterPage() {
               <div className="authMessage">{t("verificationHint")}</div>
               <label className="authLabel">
                 {t("verificationCode")}
-                <input
+                <DeskInput
                   className="input"
                   type="text"
                   value={code}
@@ -230,19 +233,19 @@ export default function RegisterPage() {
             </>
           )}
           <div className="authActions">
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="submit"
               disabled={step === "register" ? (!email || password.length < 8 || !legalAcknowledged) : (!email || code.length !== 6)}
             >
               <AppIcon name={step === "register" ? "register" : "check"} />
               {step === "register" ? t("registerButton") : t("verifyEmailButton")}
-            </button>
+            </DeskButton>
             {step === "verify" ? (
-              <button className="btn" type="button" disabled={!email} onClick={() => void resendCode()}>
+              <DeskButton className="btn" type="button" disabled={!email} onClick={() => void resendCode()}>
                 <AppIcon name="mail" />
                 {t("resendVerificationCode")}
-              </button>
+              </DeskButton>
             ) : null}
             <Link href={withLocalePath("/login", locale)} className="btn">
               <AppIcon name="back" />
@@ -258,7 +261,7 @@ export default function RegisterPage() {
           {error ? <div className="authError">{error}</div> : null}
         </form>
         </>}
-      </div>
+      </div></DeskSurface>
     </div>
   );
 }

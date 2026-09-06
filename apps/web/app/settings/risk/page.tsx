@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -196,23 +199,23 @@ export default function SettingsRiskPage() {
   return (
     <div className="settingsWrap settingsRiskPage">
 
-      <div className="card settingsRiskHead">
+      <DeskSurface><div className="card settingsRiskHead">
         <h2 className="settingsRiskTitle">{t("title")}</h2>
         <div className="settingsSectionMeta">{t("subtitle")}</div>
-      </div>
+      </div></DeskSurface>
 
       {error ? (
-        <div className="card settingsRiskErrorCard">
+        <DeskSurface><div className="card settingsRiskErrorCard">
           <strong>{t("errors.load")}</strong> {error}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {loading ? (
-        <div className="card settingsRiskState settingsRiskPanelCard">{t("loading")}</div>
+        <DeskSurface><div className="card settingsRiskState settingsRiskPanelCard">{t("loading")}</div></DeskSurface>
       ) : isEmpty ? (
-        <div className="card settingsRiskState settingsRiskPanelCard">{t("empty")}</div>
+        <DeskSurface><div className="card settingsRiskState settingsRiskPanelCard">{t("empty")}</div></DeskSurface>
       ) : (
-        <div className="card settingsRiskPanelCard settingsRiskTableCard">
+        <DeskSurface><div className="card settingsRiskPanelCard settingsRiskTableCard">
           <div className="settingsRiskTable" role="table" aria-label={t("title")}>
             <div className="settingsRiskRow settingsRiskRowHead" role="row">
               <div role="columnheader">{t("columns.account")}</div>
@@ -235,7 +238,7 @@ export default function SettingsRiskPage() {
                   {RISK_LIMIT_FIELDS.map((field) => (
                     <label key={field.key} className={`settingsRiskCell settingsRiskCellKey-${field.key}`} role="cell">
                       <span className="settingsRiskCellLabel">{t(`columns.${field.labelKey}`)}</span>
-                      <input
+                      <DeskInput
                         type="number"
                         className="input settingsRiskInput"
                         step={field.step}
@@ -248,14 +251,14 @@ export default function SettingsRiskPage() {
                   ))}
 
 	                  <div className="settingsRiskActions" role="cell">
-	                    <button className="btn btnPrimary" type="button" onClick={() => void saveRow(item.exchangeAccountId)} disabled={saving}>
+	                    <DeskButton className="btn btnPrimary" type="button" onClick={() => void saveRow(item.exchangeAccountId)} disabled={saving}>
 	                      <AppIcon name="save" />
 	                      {saving ? tCommon("saving") : t("save")}
-	                    </button>
-	                    <button className="btn" type="button" onClick={() => resetRow(item.exchangeAccountId)} disabled={saving}>
+	                    </DeskButton>
+	                    <DeskButton className="btn" type="button" onClick={() => resetRow(item.exchangeAccountId)} disabled={saving}>
 	                      <AppIcon name="reset" />
 	                      {t("reset")}
-                    </button>
+                    </DeskButton>
                     {rowMessages[item.exchangeAccountId] ? (
                       <div className="settingsRiskRowMessage">{rowMessages[item.exchangeAccountId]}</div>
                     ) : null}
@@ -264,7 +267,7 @@ export default function SettingsRiskPage() {
               );
             })}
           </div>
-        </div>
+        </div></DeskSurface>
       )}
     </div>
   );

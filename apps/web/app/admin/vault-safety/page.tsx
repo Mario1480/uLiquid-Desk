@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -194,7 +197,7 @@ export default function AdminVaultSafetyPage() {
 
       {isAdmin ? (
         <>
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("sectionTitle")}</h3>
             </div>
@@ -203,7 +206,7 @@ export default function AdminVaultSafetyPage() {
             </div>
 
               <label className="adminCheckboxLabel">
-                <input
+                <DeskInput
                   type="checkbox"
                   checked={haltNewOrders}
                   onChange={(event) => setHaltNewOrders(event.target.checked)}
@@ -213,7 +216,7 @@ export default function AdminVaultSafetyPage() {
 
               <div className="adminFilterGrid">
                 <label className="adminCheckboxLabel">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={depositsDisabled}
                     onChange={(event) => setDepositsDisabled(event.target.checked)}
@@ -221,7 +224,7 @@ export default function AdminVaultSafetyPage() {
                   <span>Deposits disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={withdrawsDisabled}
                     onChange={(event) => setWithdrawsDisabled(event.target.checked)}
@@ -229,7 +232,7 @@ export default function AdminVaultSafetyPage() {
                   <span>Withdraws disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={gridStartsDisabled}
                     onChange={(event) => setGridStartsDisabled(event.target.checked)}
@@ -237,7 +240,7 @@ export default function AdminVaultSafetyPage() {
                   <span>Grid starts disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={profitClaimsDisabled}
                     onChange={(event) => setProfitClaimsDisabled(event.target.checked)}
@@ -245,7 +248,7 @@ export default function AdminVaultSafetyPage() {
                   <span>Profit claims disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={fundingVaultLaunchesDisabled}
                     onChange={(event) => setFundingVaultLaunchesDisabled(event.target.checked)}
@@ -253,7 +256,7 @@ export default function AdminVaultSafetyPage() {
                   <span>Funding Vault launches disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={fundingVaultWithdrawsDisabled}
                     onChange={(event) => setFundingVaultWithdrawsDisabled(event.target.checked)}
@@ -265,7 +268,7 @@ export default function AdminVaultSafetyPage() {
             <div className="settingsFormGrid">
               <label>
                 {t("closeOnlyUsersLabel")}
-                <textarea
+                <DeskTextarea
                   className="input"
                   rows={6}
                   value={closeOnlyUsersInput}
@@ -275,7 +278,7 @@ export default function AdminVaultSafetyPage() {
               </label>
               <label>
                 {t("reasonLabel")}
-                <textarea
+                <DeskTextarea
                   className="input"
                   rows={6}
                   value={reason}
@@ -290,9 +293,9 @@ export default function AdminVaultSafetyPage() {
                 {t("save")}
               </AdminActionButton>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("closeOnlyAllTitle")}</h3>
             </div>
@@ -303,7 +306,7 @@ export default function AdminVaultSafetyPage() {
             <div className="settingsFormGrid">
               <label>
                 {t("targetUserIdLabel")}
-                <input
+                <DeskInput
                   className="input"
                   value={closeOnlyTargetUserId}
                   onChange={(event) => setCloseOnlyTargetUserId(event.target.value)}
@@ -326,7 +329,7 @@ export default function AdminVaultSafetyPage() {
                 <div>{t("resultFailed", { count: lastCloseOnlyResult.failed.length })}</div>
               </div>
             ) : null}
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
     </div>

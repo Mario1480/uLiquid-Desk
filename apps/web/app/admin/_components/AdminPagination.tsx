@@ -1,3 +1,4 @@
+import { DeskButton } from "@/components/desk/DeskButton";
 import { AppIcon } from "../../components/AppIcon";
 
 type AdminPaginationProps = {
@@ -9,17 +10,17 @@ type AdminPaginationProps = {
 export default function AdminPagination({ page, totalPages, onPageChange }: AdminPaginationProps) {
   return (
     <div className="adminPagination">
-      <button className="btn" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+      <DeskButton className="btn" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
         <AppIcon name="back" />
         Previous
-      </button>
+      </DeskButton>
       <span className="settingsMutedText">
         Page {page} of {Math.max(1, totalPages)}
       </span>
-      <button className="btn" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+      <DeskButton className="btn" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
         <AppIcon name="chevronRight" />
         Next
-      </button>
+      </DeskButton>
     </div>
   );
 }

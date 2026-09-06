@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -117,7 +120,7 @@ function RoundCard({ round, current, locale }: { round: PublicPresaleRound; curr
         <span>{t("rounds.saleWindow")}: {formatDate(round.saleStart, locale)} – {formatDate(round.saleEnd, locale)}</span>
         {countdown ? <strong>{countdown}</strong> : null}
       </div>
-      {round.configurationStatus === "MISMATCH" ? <div className="uiNotice uiNotice-danger">{t("rounds.configurationMismatch")}</div> : null}
+      {round.configurationStatus === "MISMATCH" ? <DeskSurface><div className="uiNotice uiNotice-danger">{t("rounds.configurationMismatch")}</div></DeskSurface> : null}
     </article>
   );
 }
@@ -344,8 +347,8 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
     return [...tracked, ...canonical];
   }, [walletState]);
 
-  if (loading) return <div className="publicPresalePage"><div className="uiNotice">{t("common.loading")}</div></div>;
-  if (!overview) return <div className="publicPresalePage"><div className="uiNotice uiNotice-warning">{t("hero.unavailable")} {error ? <small>{error}</small> : null}</div></div>;
+  if (loading) return <div className="publicPresalePage"><DeskSurface><div className="uiNotice">{t("common.loading")}</div></DeskSurface></div>;
+  if (!overview) return <div className="publicPresalePage"><DeskSurface><div className="uiNotice uiNotice-warning">{t("hero.unavailable")} {error ? <small>{error}</small> : null}</div></DeskSurface></div>;
 
   return (
     <div className="publicPresalePage">
@@ -359,9 +362,9 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
             <span>{previewOnly ? t("hero.contractsPending") : t("hero.finalizedBlock", { block: overview.asOfBlock })}</span>
           </div>
         </div>
-        <button className="btn" type="button" onClick={() => void load()} disabled={busy !== null}>
+        <DeskButton className="btn" type="button" onClick={() => void load()} disabled={busy !== null}>
           <AppIcon name="refresh" /> {t("hero.refresh")}
-        </button>
+        </DeskButton>
       </header>
 
       <nav className="uliqRouteTabs publicPresaleTabs" aria-label={t("tabs.label")}>
@@ -370,9 +373,9 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
         <Link href={withLocalePath("/presale/terms", locale)}><AppIcon name="detail" /> {t("tabs.terms")}</Link>
       </nav>
 
-      {previewOnly ? <div className="uiNotice uiNotice-warning">{t("hero.previewNotice")}</div> : null}
-      {error ? <div className="uiNotice uiNotice-danger">{error}</div> : null}
-      {notice ? <div className="uiNotice uiNotice-success">{notice}</div> : null}
+      {previewOnly ? <DeskSurface><div className="uiNotice uiNotice-warning">{t("hero.previewNotice")}</div></DeskSurface> : null}
+      {error ? <DeskSurface><div className="uiNotice uiNotice-danger">{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface><div className="uiNotice uiNotice-success">{notice}</div></DeskSurface> : null}
 
       {view === "presale" ? (
         <>
@@ -388,43 +391,43 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
           <section className="publicPresaleActionGrid">
             <article className="uiSection publicPresaleAccess">
               <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("access.title")}</h2><p className="uiSectionDescription">{t("access.description")}</p></div><span className="uliqSummaryIcon"><AppIcon name="wallet" /></span></div>
-              {previewOnly ? <div className="uiNotice">{t("access.previewUnavailable")}</div> : !isConnected || !address ? <div className="uiNotice">{t("access.connect")}</div> : null}
+              {previewOnly ? <DeskSurface><div className="uiNotice">{t("access.previewUnavailable")}</div></DeskSurface> : !isConnected || !address ? <DeskSurface><div className="uiNotice">{t("access.connect")}</div></DeskSurface> : null}
               {!previewOnly && isConnected && address && !connectedMatchesSession ? (
-                <button className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction("verify", verifyWallet)}>
+                <DeskButton className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction("verify", verifyWallet)}>
                   <AppIcon name="wallet" /> {busy === "verify" ? t("access.verifying") : t("access.verify")}
-                </button>
+                </DeskButton>
               ) : null}
-              {!previewOnly && session && connectedMatchesSession ? <div className="uiNotice uiNotice-success">{t("access.verified", { time: formatDate(session.expiresAt, locale) })}<br />{shortenWalletAddress(session.walletAddress)}</div> : null}
-              {session && connectedMatchesSession && !session.terms.ready ? <div className="uiNotice uiNotice-warning">{t("access.termsUnavailable")}</div> : null}
+              {!previewOnly && session && connectedMatchesSession ? <DeskSurface><div className="uiNotice uiNotice-success">{t("access.verified", { time: formatDate(session.expiresAt, locale) })}<br />{shortenWalletAddress(session.walletAddress)}</div></DeskSurface> : null}
+              {session && connectedMatchesSession && !session.terms.ready ? <DeskSurface><div className="uiNotice uiNotice-warning">{t("access.termsUnavailable")}</div></DeskSurface> : null}
               {session && connectedMatchesSession && session.terms.ready && !session.termsAccepted ? (
                 <div className="publicPresaleTermsAccept">
                   <h3>{t("access.termsTitle")}</h3>
                   <p>{t("access.termsDescription")}</p>
-                  <label><input type="checkbox" checked={termsChecked} onChange={(event) => setTermsChecked(event.target.checked)} /> <span>{t("access.termsCheckbox")}</span></label>
+                  <label><DeskInput type="checkbox" checked={termsChecked} onChange={(event) => setTermsChecked(event.target.checked)} /> <span>{t("access.termsCheckbox")}</span></label>
                   <div className="publicPresaleInlineLinks">
                     <Link href={withLocalePath("/presale/terms", locale)}>{t("tabs.terms")}</Link>
                     <Link href={withLocalePath("/terms", locale)}>{t("terms.platformTerms")}</Link>
                     <Link href={withLocalePath("/privacy", locale)}>{t("terms.privacy")}</Link>
                     <Link href={withLocalePath("/risk-disclosure", locale)}>{t("terms.risk")}</Link>
                   </div>
-                  <button className="btn btnPrimary" type="button" disabled={!termsChecked || busy !== null} onClick={() => void runAction("terms", acceptTerms, t("access.termsAccepted"))}><AppIcon name="check" /> {t("access.acceptTerms")}</button>
+                  <DeskButton className="btn btnPrimary" type="button" disabled={!termsChecked || busy !== null} onClick={() => void runAction("terms", acceptTerms, t("access.termsAccepted"))}><AppIcon name="check" /> {t("access.acceptTerms")}</DeskButton>
                 </div>
               ) : null}
-              {session?.termsAccepted && connectedMatchesSession ? <div className="uiNotice uiNotice-success"><AppIcon name="check" /> {t("access.termsAccepted")}</div> : null}
+              {session?.termsAccepted && connectedMatchesSession ? <DeskSurface><div className="uiNotice uiNotice-success"><AppIcon name="check" /> {t("access.termsAccepted")}</div></DeskSurface> : null}
             </article>
 
             <article className="uiSection publicPresalePurchase">
               <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("purchase.title", { round: activeRound ? t("rounds.round", { number: activeRound.number }) : "–" })}</h2><p className="uiSectionDescription">{t("purchase.description")}</p></div><span className="uliqSummaryIcon"><AppIcon name="billing" /></span></div>
-              {!activeRound?.purchaseEnabled ? <div className="uiNotice uiNotice-warning">{t("purchase.inactive")}</div> : null}
-              {!session?.termsAccepted || !connectedMatchesSession ? <div className="uiNotice">{t("purchase.termsRequired")}</div> : null}
-              <label className="publicPresaleField"><span>{t("purchase.amount")}</span><input className="input" inputMode="decimal" value={amount} disabled={previewOnly} onChange={(event) => { setAmount(event.target.value); setQuote(null); }} placeholder="500" /></label>
-              <button className="btn" type="button" disabled={!activeRound?.purchaseEnabled || !session?.termsAccepted || !connectedMatchesSession || !amount || busy !== null} onClick={() => void runAction("quote", requestQuote)}><AppIcon name="preview" /> {t("purchase.quote")}</button>
+              {!activeRound?.purchaseEnabled ? <DeskSurface><div className="uiNotice uiNotice-warning">{t("purchase.inactive")}</div></DeskSurface> : null}
+              {!session?.termsAccepted || !connectedMatchesSession ? <DeskSurface><div className="uiNotice">{t("purchase.termsRequired")}</div></DeskSurface> : null}
+              <label className="publicPresaleField"><span>{t("purchase.amount")}</span><DeskInput className="input" inputMode="decimal" value={amount} disabled={previewOnly} onChange={(event) => { setAmount(event.target.value); setQuote(null); }} placeholder="500" /></label>
+              <DeskButton className="btn" type="button" disabled={!activeRound?.purchaseEnabled || !session?.termsAccepted || !connectedMatchesSession || !amount || busy !== null} onClick={() => void runAction("quote", requestQuote)}><AppIcon name="preview" /> {t("purchase.quote")}</DeskButton>
               {quote ? (
                 <div className="publicPresaleQuote">
                   <div><span>{t("purchase.accepted")}</span><strong>{formatRaw(quote.acceptedUsdcRaw, 6)} USDC</strong></div>
                   <div><span>{t("purchase.allocation")}</span><strong>{formatRaw(quote.uliqAllocationRaw, 18)} ULIQ</strong></div>
                   {quote.partialFill ? <p>{t("purchase.partial")}</p> : null}
-                  <button className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction("purchase", purchase, t("purchase.submitted"))}><AppIcon name="wallet" /> {t("purchase.approveBuy")}</button>
+                  <DeskButton className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction("purchase", purchase, t("purchase.submitted"))}><AppIcon name="wallet" /> {t("purchase.approveBuy")}</DeskButton>
                 </div>
               ) : null}
               {lastTransaction && overview.explorerUrl ? <a className="btn" href={`${overview.explorerUrl}/tx/${lastTransaction}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {t("purchase.lastTransaction")}</a> : null}
@@ -445,8 +448,8 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
                       <div><span>{t("history.withdrawalDeadline")}</span><strong>{formatDate(purchase.withdrawalDeadline, locale)}</strong></div>
                       <div className="publicPresaleHistoryActions">
                         {overview.explorerUrl ? <a className="btn btnIcon" href={`${overview.explorerUrl}/tx/${purchase.transactionHash}`} target="_blank" rel="noreferrer" aria-label={t("history.transaction")}><AppIcon name="external" /></a> : null}
-                        {purchase.roundId && purchase.purchaseId && withdrawalOpen ? <button className="btn" type="button" disabled={busy !== null} onClick={() => void runAction(`withdraw:${purchase.key}`, () => settle(purchase.roundId!, purchase.purchaseId!, "withdraw"))}><AppIcon name="withdraw" /> {t("history.withdraw")}</button> : null}
-                        {purchase.roundId && purchase.purchaseId && canFinalize ? <button className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction(`finalize:${purchase.key}`, () => settle(purchase.roundId!, purchase.purchaseId!, "finalize"))}><AppIcon name="check" /> {t("history.finalize")}</button> : null}
+                        {purchase.roundId && purchase.purchaseId && withdrawalOpen ? <DeskButton className="btn" type="button" disabled={busy !== null} onClick={() => void runAction(`withdraw:${purchase.key}`, () => settle(purchase.roundId!, purchase.purchaseId!, "withdraw"))}><AppIcon name="withdraw" /> {t("history.withdraw")}</DeskButton> : null}
+                        {purchase.roundId && purchase.purchaseId && canFinalize ? <DeskButton className="btn btnPrimary" type="button" disabled={busy !== null} onClick={() => void runAction(`finalize:${purchase.key}`, () => settle(purchase.roundId!, purchase.purchaseId!, "finalize"))}><AppIcon name="check" /> {t("history.finalize")}</DeskButton> : null}
                       </div>
                     </article>
                   );
@@ -457,7 +460,7 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
         </>
       ) : (
         <section className="publicPresaleVestingGrid">
-          {!walletState ? <div className="uiNotice">{previewOnly ? t("vesting.previewUnavailable") : t("vesting.connect")}</div> : null}
+          {!walletState ? <DeskSurface><div className="uiNotice">{previewOnly ? t("vesting.previewUnavailable") : t("vesting.connect")}</div></DeskSurface> : null}
           {(walletState?.vesting ?? overview.rounds.map((round) => ({ roundId: round.id } as PublicVestingPosition))).map((position) => {
             const round = overview.rounds.find((item) => item.id === position.roundId);
             const hasData = typeof position.allocatedRaw === "string";
@@ -478,7 +481,7 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
                   <div><dt>{t("vesting.linearStart")}</dt><dd>{formatDate(position.linearVestingStart, locale)}</dd></div>
                   <div><dt>{t("vesting.vestingEnd")}</dt><dd>{formatDate(position.vestingEnd, locale)}</dd></div>
                 </dl>
-                <button className="btn btnPrimary" type="button" disabled={!hasData || !connectedMatchesSession || BigInt(position.claimableRaw ?? "0") === BigInt(0) || busy !== null} onClick={() => void runAction(`claim:${position.roundId}`, () => claim(position), t("vesting.claimSubmitted"))}><AppIcon name="withdraw" /> {t("vesting.claim")}</button>
+                <DeskButton className="btn btnPrimary" type="button" disabled={!hasData || !connectedMatchesSession || BigInt(position.claimableRaw ?? "0") === BigInt(0) || busy !== null} onClick={() => void runAction(`claim:${position.roundId}`, () => claim(position), t("vesting.claimSubmitted"))}><AppIcon name="withdraw" /> {t("vesting.claim")}</DeskButton>
                 {hasData && BigInt(position.claimableRaw) === BigInt(0) ? <p className="uiSectionDescription">{t("vesting.nothing")}</p> : null}
               </article>
             );

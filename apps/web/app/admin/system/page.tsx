@@ -158,7 +158,8 @@ export default function AdminSystemPage() {
       links: [
         { href: "/admin/system/integrations/api-keys", label: "API Keys" },
         { href: "/admin/system/integrations/exchanges", label: "Exchanges" },
-        { href: "/admin/system/integrations/server-info", label: "Server Info" }
+        { href: "/admin/system/integrations/server-info", label: "Server Info" },
+        { href: "/admin/system/ui-components", label: "Ein UI Components" }
       ]
     },
     {

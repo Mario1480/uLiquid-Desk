@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -76,11 +79,11 @@ export default function ResetPasswordPage() {
   return (
     <div className="container authPage">
       <h1 className="authHeading">{t("resetPasswordTitle")}</h1>
-      <div className="card authCard">
+      <DeskSurface><div className="card authCard">
         <div className="authForm">
           <label className="authLabel">
             {t("accountEmail")}
-            <input
+            <DeskInput
               className="input"
               type="email"
               value={email}
@@ -90,14 +93,14 @@ export default function ResetPasswordPage() {
             />
           </label>
           <div className="authActions">
-            <button className="btn" type="button" disabled={!email} onClick={() => void requestResetCode()}>
+            <DeskButton className="btn" type="button" disabled={!email} onClick={() => void requestResetCode()}>
               <AppIcon name="mail" />
               {t("requestResetCode")}
-            </button>
+            </DeskButton>
           </div>
           <label className="authLabel">
             {t("resetCode")}
-            <input
+            <DeskInput
               className="input"
               type="text"
               value={code}
@@ -108,7 +111,7 @@ export default function ResetPasswordPage() {
           </label>
           <label className="authLabel">
             {t("newPassword")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={newPassword}
@@ -119,7 +122,7 @@ export default function ResetPasswordPage() {
           </label>
           <label className="authLabel">
             {t("confirmNewPassword")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={confirmPassword}
@@ -129,7 +132,7 @@ export default function ResetPasswordPage() {
             />
           </label>
           <div className="authActions">
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
               disabled={!email || code.length !== 6 || newPassword.length < 8}
@@ -137,7 +140,7 @@ export default function ResetPasswordPage() {
             >
               <AppIcon name="key" />
               {t("setNewPassword")}
-            </button>
+            </DeskButton>
             <Link href={withLocalePath("/login", locale)} className="btn">
               <AppIcon name="back" />
               {t("backToLogin")}
@@ -151,7 +154,7 @@ export default function ResetPasswordPage() {
           ) : null}
           {error ? <div className="authError">{error}</div> : null}
         </div>
-      </div>
+      </div></DeskSurface>
     </div>
   );
 }

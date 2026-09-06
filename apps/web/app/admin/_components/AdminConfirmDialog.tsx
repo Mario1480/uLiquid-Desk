@@ -1,6 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import { AppIcon } from "../../components/AppIcon";
+import { useRef } from "react";
+import { GlassAlertDialog, GlassAlertDialogContent, GlassAlertDialogTitle, GlassAlertDialogDescription, GlassAlertDialogCancel } from "@/components/einui/liquid-glass/glass-alert-dialog";
 
 type AdminConfirmDialogProps = {
   open: boolean;
@@ -25,24 +28,24 @@ export default function AdminConfirmDialog({
   onCancel,
   onConfirm
 }: AdminConfirmDialogProps) {
-  if (!open) return null;
+  const returnFocus = useRef<HTMLElement | null>(null);
 
   return (
-    <div className="adminConfirmOverlay" role="presentation">
-      <div className="adminConfirmDialog" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title">
+    <GlassAlertDialog open={open} onOpenChange={(next) => { if (!next && !loading) onCancel(); }}>
+      <GlassAlertDialogContent className="adminConfirmDialog ein-admin-confirm" onOpenAutoFocus={() => { if (document.activeElement instanceof HTMLElement) returnFocus.current = document.activeElement; }} onEscapeKeyDown={(event) => { if (loading) event.preventDefault(); }} onCloseAutoFocus={(event) => { event.preventDefault(); returnFocus.current?.focus(); }}>
         <div className={`adminConfirmIcon adminConfirmIcon${tone}`}>
           <AppIcon name={tone === "danger" ? "alerts" : "check"} />
         </div>
         <div className="adminConfirmBody">
-          <h3 id="admin-confirm-title">{title}</h3>
-          <p>{description}</p>
+          <GlassAlertDialogTitle asChild><h3>{title}</h3></GlassAlertDialogTitle>
+          <GlassAlertDialogDescription asChild><p>{description}</p></GlassAlertDialogDescription>
         </div>
         <div className="adminConfirmActions">
-          <button className="btn" type="button" onClick={onCancel} disabled={loading}>
+          <GlassAlertDialogCancel asChild><DeskButton className="btn" type="button" disabled={loading}>
             <AppIcon name="cancel" />
             {cancelLabel}
-          </button>
-          <button
+          </DeskButton></GlassAlertDialogCancel>
+          <DeskButton
             className={`btn ${tone === "danger" ? "btnStop" : "btnPrimary"}`}
             type="button"
             onClick={onConfirm}
@@ -50,9 +53,9 @@ export default function AdminConfirmDialog({
           >
             <AppIcon name={tone === "danger" ? "delete" : "confirm"} />
             {loading ? "Working..." : confirmLabel}
-          </button>
+          </DeskButton>
         </div>
-      </div>
-    </div>
+      </GlassAlertDialogContent>
+    </GlassAlertDialog>
   );
 }

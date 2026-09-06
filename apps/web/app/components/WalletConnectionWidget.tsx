@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
@@ -148,7 +149,7 @@ function WalletConnectionWidgetContent({
 
   return (
     <div ref={anchorRef} className="appHeaderMenuAnchor">
-      <button
+      <DeskButton
         ref={triggerRef}
         type="button"
         className={`appHeaderWalletTrigger ${
@@ -170,7 +171,7 @@ function WalletConnectionWidgetContent({
         {isConnected ? (
           <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
         ) : null}
-      </button>
+      </DeskButton>
       {!isConnected && connectionError && menuOpen ? (
         <div
           ref={panelRef}
@@ -204,7 +205,7 @@ function WalletConnectionWidgetContent({
             <div className="appHeaderWalletPanelLabel">{tWallet("address")}</div>
             <div className="appHeaderWalletPanelValueRow">
               <div className="appHeaderWalletPanelValue">{address}</div>
-              <button
+              <DeskButton
                 type="button"
                 className="appHeaderWalletCopyButton"
                 onClick={() => void handleCopyAddress()}
@@ -212,7 +213,7 @@ function WalletConnectionWidgetContent({
                 aria-label={copied ? tWallet("copied") : tWallet("copyAddress")}
               >
                 <AppIcon name="copy" />
-              </button>
+              </DeskButton>
             </div>
           </div>
           <div className="appHeaderWalletPanelMeta">
@@ -235,7 +236,7 @@ function WalletConnectionWidgetContent({
           {HEADER_SWITCH_CHAINS.map((chain) => {
             const isCurrent = chain.id === chainId;
             return (
-              <button
+              <DeskButton
                 type="button"
                 className="appHeaderMenuLink"
                 key={chain.id}
@@ -245,10 +246,10 @@ function WalletConnectionWidgetContent({
                 <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="switch" /></span>
                 <span>{isCurrent ? chain.name : tWallet("switchNetwork", { chain: chain.name })}</span>
                 {isCurrent ? <span className="badge badgeOk">{tWallet("statusConnected")}</span> : null}
-              </button>
+              </DeskButton>
             );
           })}
-          <button
+          <DeskButton
             type="button"
             className="appHeaderMenuLink appHeaderMenuLinkDanger"
             onClick={() => void handleDisconnect()}
@@ -256,7 +257,7 @@ function WalletConnectionWidgetContent({
           >
             <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="logout" /></span>
             <span>{isDisconnectPending ? tWallet("statusDisconnecting") : tWallet("disconnect")}</span>
-          </button>
+          </DeskButton>
         </div>
       ) : null}
     </div>

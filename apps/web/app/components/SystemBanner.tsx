@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiGet } from "../../lib/api";
@@ -37,11 +38,11 @@ export default function SystemBanner() {
   if (!settings.readOnlyMode) return null;
 
   return (
-    <div className="card" style={{ padding: "8px 12px", margin: "10px auto", maxWidth: 980 }}>
+    <DeskSurface><div className="card" style={{ padding: "8px 12px", margin: "10px auto", maxWidth: 980 }}>
       <div style={{ fontSize: 13, fontWeight: 600 }}>{t("title")}</div>
       <div style={{ fontSize: 12, color: "var(--muted)" }}>
         {t("description")}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
@@ -70,8 +72,8 @@ export default function VaultDetailClient({
 
       {query.isLoading ? (
         <div className="walletTwoColumnGrid">
-          <div className="card walletCard"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
-          <div className="card walletCard"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
+          <DeskSurface dense><div className="card walletCard"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div></DeskSurface>
+          <DeskSurface dense><div className="card walletCard"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div></DeskSurface>
         </div>
       ) : query.error ? (
         <div className="walletNotice walletNoticeError">
@@ -79,7 +81,7 @@ export default function VaultDetailClient({
         </div>
       ) : query.data ? (
         <div className="walletStack">
-          <section className="card walletCard walletDetailHero">
+          <DeskSurface dense><section className="card walletCard walletDetailHero">
             <div className="walletSectionHeader">
               <div className="walletSectionIntro">
                 <h3 className="walletSectionTitle">{query.data.name ?? t("unnamedVault")}</h3>
@@ -122,9 +124,9 @@ export default function VaultDetailClient({
                 <strong>{formatPct(query.data.maxDrawdownPct)}</strong>
               </div>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card walletCard">
+          <DeskSurface dense><section className="card walletCard">
             <div className="walletSectionHeader">
               <div className="walletSectionIntro">
                 <h3 className="walletSectionTitle">{t("performanceTitle")}</h3>
@@ -149,9 +151,9 @@ export default function VaultDetailClient({
                 <strong>{formatPct(query.data.allTimeReturnPct)}</strong>
               </div>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card walletCard walletChartCard">
+          <DeskSurface dense><section className="card walletCard walletChartCard">
             <div className="walletSectionHeader">
               <div className="walletSectionIntro">
                 <h3 className="walletSectionTitle">{t("performanceTitle")}</h3>
@@ -191,7 +193,7 @@ export default function VaultDetailClient({
             ) : (
               <div className="walletMutedText">{t("noChartData")}</div>
             )}
-          </section>
+          </section></DeskSurface>
         </div>
       ) : null}
     </div>

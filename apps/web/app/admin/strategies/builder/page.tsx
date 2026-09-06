@@ -1,5 +1,11 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -530,12 +536,12 @@ export default function AdminStrategiesBuilderPage() {
       </div>
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface> : null}
 
       {isAdmin ? (
         <>
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{editingId ? t("editTitle") : t("createTitle")}</h3>
             </div>
@@ -543,67 +549,67 @@ export default function AdminStrategiesBuilderPage() {
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Name</span>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="BTC Composite v1" />
+                <DeskInput className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="BTC Composite v1" />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Version</span>
-                <input className="input" value={version} onChange={(e) => setVersion(e.target.value)} />
+                <DeskInput className="input" value={version} onChange={(e) => setVersion(e.target.value)} />
               </label>
             </div>
 
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Combine mode</span>
-                <select className="input" value={combineMode} onChange={(e) => setCombineMode(e.target.value as "pipeline" | "vote")}>
+                <DeskSelect className="input" value={combineMode} onChange={(e) => setCombineMode(e.target.value as "pipeline" | "vote")}>
                   <option value="pipeline">pipeline</option>
                   <option value="vote" disabled>vote (reserved)</option>
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Output policy</span>
-                <select className="input" value={outputPolicy} onChange={(e) => setOutputPolicy(e.target.value as any)}>
+                <DeskSelect className="input" value={outputPolicy} onChange={(e) => setOutputPolicy(e.target.value as any)}>
                   <option value="first_non_neutral">first_non_neutral</option>
                   <option value="override_by_confidence">override_by_confidence</option>
                   <option value="local_signal_ai_explain">local_signal_ai_explain</option>
-                </select>
+                </DeskSelect>
               </label>
             </div>
 
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("newsRiskMode")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={newsRiskMode}
                   onChange={(e) => setNewsRiskMode(e.target.value === "block" ? "block" : "off")}
                 >
                   <option value="off">{t("newsRiskModeOff")}</option>
                   <option value="block">{t("newsRiskModeBlock")}</option>
-                </select>
+                </DeskSelect>
               </label>
               <div />
             </div>
 
             <label className="settingsField" style={{ marginBottom: 10 }}>
               <span className="settingsFieldLabel">Description</span>
-              <textarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+              <DeskTextarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
             </label>
 
             <label className="settingsField" style={{ marginBottom: 10 }}>
               <span className="settingsFieldLabel">Enabled</span>
-              <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} />
+              <DeskInput type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} />
             </label>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" type="button" onClick={() => void saveComposite()} disabled={saving}>
+              <DeskButton className="btn btnPrimary" type="button" onClick={() => void saveComposite()} disabled={saving}>
                 {saving ? t("saving") : editingId ? t("updateComposite") : t("createComposite")}
-              </button>
-              <button className="btn" type="button" onClick={resetBuilder}>{t("resetBuilder")}</button>
+              </DeskButton>
+              <DeskButton className="btn" type="button" onClick={resetBuilder}>{t("resetBuilder")}</DeskButton>
             </div>
-          </section>
+          </section></DeskSurface>
 
           <div className="settingsTwoColGrid" style={{ alignItems: "start", marginBottom: 12 }}>
-            <section className="card settingsSection" style={{ marginBottom: 0 }}>
+            <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 0 }}>
               <div className="settingsSectionHeader">
                 <h3 style={{ margin: 0 }}>{t("availableStrategies")}</h3>
               </div>
@@ -612,7 +618,7 @@ export default function AdminStrategiesBuilderPage() {
                 <div className="settingsFieldLabel" style={{ marginBottom: 6 }}>Local</div>
                 <div style={{ display: "grid", gap: 6 }}>
                   {localStrategies.map((item) => (
-                    <button
+                    <DeskButton
                       key={item.id}
                       className="btn"
                       type="button"
@@ -621,7 +627,7 @@ export default function AdminStrategiesBuilderPage() {
                       title={item.description ?? ""}
                     >
                       + {item.name} ({item.strategyType})
-                    </button>
+                    </DeskButton>
                   ))}
                   {localStrategies.length === 0 ? <div className="settingsMutedText">{t("noLocalStrategies")}</div> : null}
                 </div>
@@ -631,21 +637,21 @@ export default function AdminStrategiesBuilderPage() {
                 <div className="settingsFieldLabel" style={{ marginBottom: 6 }}>AI</div>
                 <div style={{ display: "grid", gap: 6 }}>
                   {aiPrompts.map((item) => (
-                    <button
+                    <DeskButton
                       key={item.id}
                       className="btn"
                       type="button"
                       onClick={() => addStep("ai", item.id, item.name)}
                     >
                       + {item.name}
-                    </button>
+                    </DeskButton>
                   ))}
                   {aiPrompts.length === 0 ? <div className="settingsMutedText">{t("noAiPrompts")}</div> : null}
                 </div>
               </div>
-            </section>
+            </section></DeskSurface>
 
-            <section className="card settingsSection" style={{ marginBottom: 0 }}>
+            <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 0 }}>
               <div className="settingsSectionHeader">
                 <h3 style={{ margin: 0 }}>{t("pipelineSteps")}</h3>
               </div>
@@ -663,13 +669,13 @@ export default function AdminStrategiesBuilderPage() {
                       }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                        <button className="btn" type="button" onClick={() => setSelectedStepId(step.id)}>
+                        <DeskButton className="btn" type="button" onClick={() => setSelectedStepId(step.id)}>
                           Step {index + 1}: {step.label}
-                        </button>
+                        </DeskButton>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button className="btn" type="button" onClick={() => moveStep(step.id, -1)} disabled={index === 0}>↑</button>
-                          <button className="btn" type="button" onClick={() => moveStep(step.id, 1)} disabled={index === steps.length - 1}>↓</button>
-                          <button className="btn" type="button" onClick={() => removeStep(step.id)}>Remove</button>
+                          <DeskButton className="btn" type="button" onClick={() => moveStep(step.id, -1)} disabled={index === 0}>↑</DeskButton>
+                          <DeskButton className="btn" type="button" onClick={() => moveStep(step.id, 1)} disabled={index === steps.length - 1}>↓</DeskButton>
+                          <DeskButton className="btn" type="button" onClick={() => removeStep(step.id)}>Remove</DeskButton>
                         </div>
                       </div>
 
@@ -677,7 +683,7 @@ export default function AdminStrategiesBuilderPage() {
                         <div className="settingsTwoColGrid" style={{ marginTop: 8 }}>
                           <label className="settingsField">
                             <span className="settingsFieldLabel">Edge rule from previous step</span>
-                            <select
+                            <DeskSelect
                               className="input"
                               value={step.edgeRule}
                               onChange={(e) => patchStep(step.id, { edgeRule: e.target.value as BuilderStep["edgeRule"] })}
@@ -685,11 +691,11 @@ export default function AdminStrategiesBuilderPage() {
                               <option value="always">always</option>
                               <option value="if_signal_not_neutral">if_signal_not_neutral</option>
                               <option value="if_confidence_gte">if_confidence_gte</option>
-                            </select>
+                            </DeskSelect>
                           </label>
                           <label className="settingsField">
                             <span className="settingsFieldLabel">confidence gte</span>
-                            <input
+                            <DeskInput
                               className="input"
                               type="number"
                               min={0}
@@ -705,10 +711,10 @@ export default function AdminStrategiesBuilderPage() {
                   ))}
                 </div>
               )}
-            </section>
+            </section></DeskSurface>
           </div>
 
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("nodeConfigEditor")}</h3>
             </div>
@@ -721,7 +727,7 @@ export default function AdminStrategiesBuilderPage() {
                 </div>
                 <label className="settingsField" style={{ marginBottom: 8 }}>
                   <span className="settingsFieldLabel">configOverrides JSON</span>
-                  <textarea
+                  <DeskTextarea
                     className="input"
                     rows={10}
                     value={selectedStep.configOverridesText}
@@ -730,7 +736,7 @@ export default function AdminStrategiesBuilderPage() {
                 </label>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">Suggested uiSchema</span>
-                  <textarea
+                  <DeskTextarea
                     className="input"
                     rows={8}
                     readOnly
@@ -747,9 +753,9 @@ export default function AdminStrategiesBuilderPage() {
                 </label>
               </>
             )}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>Preview (dry run)</h3>
             </div>
@@ -757,58 +763,58 @@ export default function AdminStrategiesBuilderPage() {
             <div className="settingsTwoColGrid" style={{ marginBottom: 8 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Exchange</span>
-                <input className="input" value={previewExchange} onChange={(e) => setPreviewExchange(e.target.value)} placeholder="bitget" />
+                <DeskInput className="input" value={previewExchange} onChange={(e) => setPreviewExchange(e.target.value)} placeholder="bitget" />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Account ID (optional)</span>
-                <input className="input" value={previewAccountId} onChange={(e) => setPreviewAccountId(e.target.value)} placeholder="acc_..." />
+                <DeskInput className="input" value={previewAccountId} onChange={(e) => setPreviewAccountId(e.target.value)} placeholder="acc_..." />
               </label>
             </div>
 
             <div className="settingsTwoColGrid" style={{ marginBottom: 8 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Symbol</span>
-                <input className="input" value={previewSymbol} onChange={(e) => setPreviewSymbol(toUpperSymbol(e.target.value))} />
+                <DeskInput className="input" value={previewSymbol} onChange={(e) => setPreviewSymbol(toUpperSymbol(e.target.value))} />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Timeframe</span>
-                <select className="input" value={previewTimeframe} onChange={(e) => setPreviewTimeframe(e.target.value as any)}>
+                <DeskSelect className="input" value={previewTimeframe} onChange={(e) => setPreviewTimeframe(e.target.value as any)}>
                   <option value="5m">5m</option>
                   <option value="15m">15m</option>
                   <option value="1h">1h</option>
                   <option value="4h">4h</option>
                   <option value="1d">1d</option>
-                </select>
+                </DeskSelect>
               </label>
             </div>
 
             <div className="settingsTwoColGrid" style={{ marginBottom: 8 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Market type</span>
-                <select className="input" value={previewMarketType} onChange={(e) => setPreviewMarketType(e.target.value as "spot" | "perp")}>
+                <DeskSelect className="input" value={previewMarketType} onChange={(e) => setPreviewMarketType(e.target.value as "spot" | "perp")}>
                   <option value="perp">perp</option>
                   <option value="spot">spot</option>
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Prediction ID (optional override)</span>
-                <input className="input" value={selectedPredictionId} onChange={(e) => setSelectedPredictionId(e.target.value)} placeholder="auto-select latest if empty" />
+                <DeskInput className="input" value={selectedPredictionId} onChange={(e) => setSelectedPredictionId(e.target.value)} placeholder="auto-select latest if empty" />
               </label>
             </div>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              <button className="btn btnPrimary" type="button" onClick={() => void runDryPreview()} disabled={runningPreview || !editingId}>
+              <DeskButton className="btn btnPrimary" type="button" onClick={() => void runDryPreview()} disabled={runningPreview || !editingId}>
                 {runningPreview ? "Running..." : "Run preview"}
-              </button>
+              </DeskButton>
             </div>
 
             <label className="settingsField">
               <span className="settingsFieldLabel">Dry-run output</span>
-              <textarea className="input" rows={14} readOnly value={previewOutput} placeholder="Dry-run output appears here." />
+              <DeskTextarea className="input" rows={14} readOnly value={previewOutput} placeholder="Dry-run output appears here." />
             </label>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>Saved Composite Strategies</h3>
             </div>
@@ -818,7 +824,7 @@ export default function AdminStrategiesBuilderPage() {
             {composites.length === 0 ? <div className="settingsMutedText">No composites yet.</div> : (
               <div className="adminTableWrap">
                 <div className="adminTableScroller">
-                <table className="adminTable">
+                <DeskTable className="adminTable">
                   <thead>
                     <tr>
                       <th>Name</th>
@@ -850,11 +856,11 @@ export default function AdminStrategiesBuilderPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </DeskTable>
                 </div>
               </div>
             )}
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
       <AdminConfirmDialog

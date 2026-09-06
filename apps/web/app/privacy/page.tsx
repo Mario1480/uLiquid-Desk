@@ -1,3 +1,4 @@
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { withLocalePath } from "../../i18n/config";
 import { resolveRequestLocale } from "../../i18n/request";
@@ -12,16 +13,16 @@ export default async function PrivacyPage() {
         <div className="legalPageMeta">Last updated: May 17, 2026. Version 2026-05-17.</div>
       </header>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>1. Scope</h2>
         <p>
           This Privacy Policy explains how uLiquid collects, uses, stores, and protects information when you use uLiquid
           Desk, uLiquid software, websites, dashboards, APIs, wallet and exchange integrations, notifications, and
           related services.
         </p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>2. Information We Collect</h2>
         <ul>
           <li>Account information, such as email address, authentication status, role, workspace membership, and support communications.</li>
@@ -33,9 +34,9 @@ export default async function PrivacyPage() {
         <p>
           uLiquid does not ask for private keys or seed phrases. Do not enter private keys or seed phrases into uLiquid.
         </p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>3. How We Use Information</h2>
         <ul>
           <li>To provide, operate, secure, troubleshoot, and improve uLiquid.</li>
@@ -43,9 +44,9 @@ export default async function PrivacyPage() {
           <li>To run user-requested product features, including bots, alerts, exchange synchronization, wallet views, notifications, billing, and admin tools.</li>
           <li>To maintain records of legal acknowledgements, operational events, audit logs, support requests, and compliance-relevant activity.</li>
         </ul>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>4. Cookies and Local Storage</h2>
         <p>
           uLiquid may use cookies, local storage, and similar technologies for authentication, CSRF protection, locale
@@ -56,9 +57,9 @@ export default async function PrivacyPage() {
           The current first-party inventory and retention details are listed in the{" "}
           <Link href={withLocalePath("/cookies", locale)}>Cookie and Storage Information</Link>.
         </p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>5. Sharing</h2>
         <p>
           uLiquid may share information with service providers that help operate the product, such as hosting,
@@ -70,9 +71,9 @@ export default async function PrivacyPage() {
           Third-party wallets, exchanges, blockchains, bridges, payment providers, and data providers process information
           under their own terms and privacy policies.
         </p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>6. Security and Retention</h2>
         <p>
           uLiquid uses technical and organizational safeguards designed to protect information, including access controls,
@@ -80,24 +81,24 @@ export default async function PrivacyPage() {
           retains information for as long as needed to provide the product, maintain security, resolve disputes, comply
           with legal obligations, and preserve auditability.
         </p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>7. Your Choices</h2>
         <p>
           You may request access, correction, export, or deletion of personal information where required by applicable
           law. Some records may be retained where necessary for security, legal, audit, fraud-prevention, or operational
           reasons.
         </p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>8. Related Terms</h2>
         <p>
           This policy should be read together with the <Link href={withLocalePath("/terms", locale)}>Terms of Use</Link>{" "}
           and <Link href={withLocalePath("/risk-disclosure", locale)}>Crypto Risk Disclosure</Link>.
         </p>
-      </section>
+      </section></DeskSurface>
     </main>
   );
 }

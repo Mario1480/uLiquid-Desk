@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLocale } from "next-intl";
@@ -37,14 +38,14 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
 
   return (
     <div className="adminShell">
-      <button
+      <DeskButton
         type="button"
         className="btn adminSidebarToggle"
         onClick={() => setSidebarOpen((open) => !open)}
       >
         <AppIcon name={sidebarOpen ? "close" : "menu"} />
         {sidebarOpen ? "Close admin menu" : "Open admin menu"}
-      </button>
+      </DeskButton>
 
       <aside className={`adminSidebarPanel ${sidebarOpen ? "adminSidebarPanelOpen" : ""}`}>
         <div className="adminSidebarPanelInner">
@@ -76,7 +77,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
       <div className="adminShellContent">{children}</div>
 
       {sidebarOpen ? (
-        <button
+        <DeskButton
           type="button"
           className="adminSidebarBackdrop"
           aria-label="Close admin menu"

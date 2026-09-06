@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import Link from "next/link";
 import { normalizePositionLiquidation } from "@mm/futures-core";
 import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +30,8 @@ import {
 import { estimateLiquidationPrices } from "../../src/trade/liquidationEstimate";
 import {
   buildPositionCopilotAgentChatPrefill,
+  positionCopilotMarketQuality,
+  type PositionCopilotMarketQuality,
   POSITION_COPILOT_AGENT_CHAT_PREFILL_KEY,
   POSITION_COPILOT_MANUAL_REVIEW_HREF
 } from "../../src/trade/positionCopilot";
@@ -38,6 +45,7 @@ import {
 import { TradeChart } from "./TradeChart";
 import SymbolSearchSelect, { type SymbolSearchOption } from "../../components/SymbolSearchSelect";
 import { AppIcon } from "../components/AppIcon";
+import PositionCopilotDataQuality from "../../components/trade/PositionCopilotDataQuality";
 import { Notice, PageHeader } from "../components/ui";
 
 type ExchangeAccountItem = {
@@ -137,6 +145,7 @@ type PositionCopilotFinding = {
 };
 
 type PositionCopilotAnalysis = {
+  marketDataQuality?: PositionCopilotMarketQuality;
   snapshotHash: string;
   riskLevel: "low" | "medium" | "high" | "critical";
   thesisStatus: "intact" | "weakened" | "invalidated" | "unknown";
@@ -154,6 +163,7 @@ type PositionCopilotAnalysis = {
 };
 
 type PositionCopilotResponse = {
+  marketContext?: unknown;
   skipped: boolean;
   reason?: string;
   analysis?: PositionCopilotAnalysis;
@@ -935,7 +945,7 @@ function TradePageContent() {
         }
       });
       if (requestSequence === copilotRequestSequenceRef.current) {
-        if (response.analysis) setCopilotAnalysis(response.analysis);
+        if (response.analysis) setCopilotAnalysis({ ...response.analysis, marketDataQuality: positionCopilotMarketQuality(response.marketContext) });
         if (response.settings) setCopilotSettings(response.settings);
       }
     } catch (error) {
@@ -2306,7 +2316,7 @@ function TradePageContent() {
         <Notice tone="danger" className="card tradeDeskNotice tradeDeskNoticeError">
           <strong>{t("alerts.error")}:</strong> {displayedError}
           <div style={{ marginTop: 8 }}>
-            <button
+            <DeskButton
               className="btn"
               onClick={() => {
                 if (!selectedAccountId) return;
@@ -2317,7 +2327,7 @@ function TradePageContent() {
             >
               <AppIcon name="refresh" />
               {t("actions.retry")}
-            </button>
+            </DeskButton>
           </div>
         </Notice>
       ) : null}
@@ -2341,7 +2351,7 @@ function TradePageContent() {
       ) : null}
 
       {activePrefill ? (
-        <div className="card tradeDeskNotice tradeDeskNoticeInfo">
+        <DeskSurface dense><div className="card tradeDeskNotice tradeDeskNoticeInfo">
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <div>
               <strong>{t("prefill.title")}</strong>
@@ -2362,18 +2372,18 @@ function TradePageContent() {
               ) : null}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
+              <DeskButton
                 className="btn"
                 type="button"
 	                onClick={() => setPrefillContextExpanded((prev) => !prev)}
 	              >
 	                <AppIcon name="detail" />
 	                {prefillContextExpanded ? t("prefill.hideContext") : t("prefill.showContext")}
-	              </button>
-	              <button className="btn" onClick={clearPrefill} type="button">
+	              </DeskButton>
+	              <DeskButton className="btn" onClick={clearPrefill} type="button">
 	                <AppIcon name="reset" />
 	                {t("prefill.clearPrefill")}
-	              </button>
+	              </DeskButton>
             </div>
           </div>
           <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
@@ -2402,43 +2412,43 @@ function TradePageContent() {
               ) : null}
 
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>RSI (14)</div>
                   <div style={{ fontWeight: 700 }}>{fmtIndicator(activePrefill.indicators?.rsi_14, 1)}</div>
-                </div>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>MACD hist</div>
                   <div style={{ fontWeight: 700 }}>{fmtIndicator(activePrefill.indicators?.macd?.hist, 4)}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                     line {fmtIndicator(activePrefill.indicators?.macd?.line, 4)} / signal {fmtIndicator(activePrefill.indicators?.macd?.signal, 4)}
                   </div>
-                </div>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>BB width% / pos</div>
                   <div style={{ fontWeight: 700 }}>
                     {fmtIndicator(activePrefill.indicators?.bb?.width_pct, 2)} / {fmtIndicator(activePrefill.indicators?.bb?.pos, 3)}
                   </div>
-                </div>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>VWAP dist%</div>
                   <div style={{ fontWeight: 700 }}>{fmtIndicator(activePrefill.indicators?.vwap?.dist_pct, 2)}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                     mode {activePrefill.indicators?.vwap?.mode ?? t("misc.na")}
                   </div>
-                </div>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>ADX / +DI / -DI</div>
                   <div style={{ fontWeight: 700 }}>
                     {fmtIndicator(activePrefill.indicators?.adx?.adx_14, 1)} / {fmtIndicator(activePrefill.indicators?.adx?.plus_di_14, 1)} / {fmtIndicator(activePrefill.indicators?.adx?.minus_di_14, 1)}
                   </div>
-                </div>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>StochRSI %K / %D / value</div>
                   <div style={{ fontWeight: 700 }}>
                     {fmtIndicator(activePrefill.indicators?.stochrsi?.k, 1)} / {fmtIndicator(activePrefill.indicators?.stochrsi?.d, 1)} / {fmtIndicator(activePrefill.indicators?.stochrsi?.value, 1)}
                   </div>
-                </div>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>Volume z / rel / trend%</div>
                   <div style={{ fontWeight: 700 }}>
                     {fmtIndicator(activePrefill.indicators?.volume?.vol_z, 3)} / {fmtIndicator(activePrefill.indicators?.volume?.rel_vol, 3)} / {fmtIndicator(activePrefill.indicators?.volume?.vol_trend, 2)}
@@ -2446,8 +2456,8 @@ function TradePageContent() {
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                     EMA {fmtIndicator(activePrefill.indicators?.volume?.vol_ema_fast, 2)} / {fmtIndicator(activePrefill.indicators?.volume?.vol_ema_slow, 2)}
                   </div>
-                </div>
-                <div className="card" style={{ margin: 0, padding: 8 }}>
+                </div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>FVG open bull / bear</div>
                   <div style={{ fontWeight: 700 }}>
                     {fmtIndicator(activePrefill.indicators?.fvg?.open_bullish_count, 0)} / {fmtIndicator(activePrefill.indicators?.fvg?.open_bearish_count, 0)}
@@ -2455,10 +2465,10 @@ function TradePageContent() {
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                     bull {fmtIndicator(activePrefill.indicators?.fvg?.nearest_bullish_gap?.dist_pct, 2)}% · bear {fmtIndicator(activePrefill.indicators?.fvg?.nearest_bearish_gap?.dist_pct, 2)}%
                   </div>
-                </div>
+                </div></DeskSurface>
               </div>
 
-              <div className="card" style={{ margin: 0, padding: 8 }}>
+              <DeskSurface dense><div className="card" style={{ margin: 0, padding: 8 }}>
                 <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>{t("prefill.keyDrivers")}</div>
                 {activePrefill.keyDrivers?.length ? (
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
@@ -2471,16 +2481,16 @@ function TradePageContent() {
                 ) : (
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("misc.na")}</div>
                 )}
-              </div>
+              </div></DeskSurface>
             </div>
           ) : null}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {loading ? (
-        <div className="card tradeDeskSection">{t("loadingDesk")}</div>
+        <DeskSurface dense><div className="card tradeDeskSection">{t("loadingDesk")}</div></DeskSurface>
       ) : accounts.length === 0 ? (
-        <div className="card tradeDeskSection">
+        <DeskSurface dense><div className="card tradeDeskSection">
           <div style={{ fontWeight: 700, marginBottom: 8 }}>{t("noAccountsTitle")}</div>
           <div style={{ color: "var(--muted)", marginBottom: 12 }}>
             {t("noAccountsHint")}
@@ -2489,10 +2499,10 @@ function TradePageContent() {
 	            <AppIcon name="settings" />
 	            {t("actions.addExchangeAccount")}
 	          </Link>
-        </div>
+        </div></DeskSurface>
       ) : (
         <>
-          <section className="card tradeDeskSection">
+          <DeskSurface dense><section className="card tradeDeskSection">
             <div className="tradeDeskSectionHeader">
               <div>
                 <div className="tradeDeskSectionTitle">{t("sections.tradingContext")}</div>
@@ -2504,7 +2514,7 @@ function TradePageContent() {
             <div className="tradeDeskContextGrid">
               <label className="tradeDeskField">
                 <div className="tradeDeskFieldLabel">{t("fields.exchangeAccount")}</div>
-                <select
+                <DeskSelect
                   className="input"
                   value={selectedAccountId}
                   onChange={(event) => {
@@ -2518,7 +2528,7 @@ function TradePageContent() {
                       {account.exchange.toUpperCase()} - {account.label}
                     </option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
 
               <label className="tradeDeskField">
@@ -2538,7 +2548,7 @@ function TradePageContent() {
 
               <label className="tradeDeskField">
                 <div className="tradeDeskFieldLabel">{t("fields.timeframe")}</div>
-                <select
+                <DeskSelect
                   className="input"
                   value={timeframe}
                   onChange={(event) => {
@@ -2550,13 +2560,13 @@ function TradePageContent() {
                   {TIMEFRAMES.map((item) => (
                     <option key={item} value={item}>{item}</option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
 
               <div className="tradeDeskField">
                 <div className="tradeDeskFieldLabel">{t("fields.marketType")}</div>
                 <div className="tradeOrderModeSwitch">
-                  <button
+                  <DeskButton
                     className={`tradeOrderModeBtn ${marketType === "perp" ? "tradeOrderModeBtnActive" : ""}`}
                     disabled={!perpModeSupportedForAccount}
                     onClick={() => {
@@ -2566,8 +2576,8 @@ function TradePageContent() {
                     type="button"
                   >
                     {t("fields.perp")}
-                  </button>
-                  <button
+                  </DeskButton>
+                  <DeskButton
                     className={`tradeOrderModeBtn ${marketType === "spot" ? "tradeOrderModeBtnActive" : ""}`}
                     disabled={!spotModeSupportedForAccount}
                     onClick={() => {
@@ -2577,7 +2587,7 @@ function TradePageContent() {
                     type="button"
                   >
                     {t("fields.spot")}
-                  </button>
+                  </DeskButton>
                 </div>
                 {!spotModeSupportedForAccount ? (
                   <div className="tradeDeskSectionHint">{t("messages.spotModeNotAvailableForAccount")}</div>
@@ -2588,17 +2598,17 @@ function TradePageContent() {
 
               <div className="tradeDeskField">
                 <div className="tradeDeskFieldLabel">{t("fields.accountSnapshot")}</div>
-                <div className="card tradeDeskSummary">
+                <DeskSurface dense><div className="card tradeDeskSummary">
                   {t("fields.eq")}: {fmt(summary?.equity)} | {t("fields.avail")}: {fmt(summary?.availableMargin)}
-                </div>
+                </div></DeskSurface>
               </div>
             </div>
-          </section>
+          </section></DeskSurface>
 
           <section
             className="tradeDeskGrid"
           >
-            <article className="card tradeDeskPane">
+            <DeskSurface dense><article className="card tradeDeskPane">
               <div className="tradeDeskPaneTitle">
                 {selectedSymbol} {selectedSymbolMeta?.status ? `- ${selectedSymbolMeta.status}` : ""}
               </div>
@@ -2616,9 +2626,9 @@ function TradePageContent() {
                 onChartEngineChange={handleChartEngineChange}
                 onChartPreferencesChange={handleChartPreferencesChange}
               />
-            </article>
+            </article></DeskSurface>
 
-            <article className="card tradeDeskPane">
+            <DeskSurface dense><article className="card tradeDeskPane">
               <div className="tradeDeskPaneTitle">{t("sections.orderEntry")}</div>
               <div className="tradeDeskPaneHint">{t("orderEntryHint")}</div>
 
@@ -2627,7 +2637,7 @@ function TradePageContent() {
                   <>
                     <div className="tradeOrderTopRow">
                       <div className="tradeOrderModeSwitch">
-                        <button
+                        <DeskButton
                           className={`tradeOrderModeBtn ${marginMode === "isolated" ? "tradeOrderModeBtnActive" : ""}`}
                           onClick={() => {
                             setMarginMode("isolated");
@@ -2636,8 +2646,8 @@ function TradePageContent() {
                           type="button"
                         >
                           {t("fields.isolated")}
-                        </button>
-                        <button
+                        </DeskButton>
+                        <DeskButton
                           className={`tradeOrderModeBtn ${marginMode === "cross" ? "tradeOrderModeBtnActive" : ""}`}
                           onClick={() => {
                             setMarginMode("cross");
@@ -2646,12 +2656,12 @@ function TradePageContent() {
                           type="button"
                         >
                           {t("fields.cross")}
-                        </button>
+                        </DeskButton>
                       </div>
                       <div className="tradeOrderLeverageControl">
                         <div className="tradeOrderLeverageLabel">{t("fields.leverage")}</div>
                         <div className="tradeOrderLeverageGroup">
-                          <input
+                          <DeskInput
                             className="tradeOrderLeverageInput"
                             type="number"
                             min={1}
@@ -2666,69 +2676,69 @@ function TradePageContent() {
                               }
                             }}
                           />
-                          <button
+                          <DeskButton
                             className="tradeOrderApplyBtn"
                             disabled={isApplyingLeverage}
                             onClick={() => void applyLeverage()}
                             type="button"
                           >
                             {isApplyingLeverage ? "..." : t("actions.apply")}
-                          </button>
+                          </DeskButton>
                         </div>
                       </div>
                     </div>
 
                     <div className="tradeOrderEntryMode">
-                      <button
+                      <DeskButton
                         className={`tradeOrderEntryModeBtn ${entryMode === "open" ? "tradeOrderEntryModeBtnActive" : ""}`}
                         onClick={() => setEntryMode("open")}
                         type="button"
                       >
                         {t("actions.open")}
-                      </button>
-                      <button
+                      </DeskButton>
+                      <DeskButton
                         className={`tradeOrderEntryModeBtn ${entryMode === "close" ? "tradeOrderEntryModeBtnActive" : ""}`}
                         onClick={() => setEntryMode("close")}
                         type="button"
                       >
                         {t("actions.close")}
-                      </button>
+                      </DeskButton>
                     </div>
                   </>
                 ) : (
                   <div className="tradeOrderModeSwitch">
-                    <button
+                    <DeskButton
                       className={`tradeOrderModeBtn ${spotOrderSide === "buy" ? "tradeOrderModeBtnActive" : ""}`}
                       onClick={() => setSpotOrderSide("buy")}
                       type="button"
                     >
                       {t("actions.buy")}
-                    </button>
-                    <button
+                    </DeskButton>
+                    <DeskButton
                       className={`tradeOrderModeBtn ${spotOrderSide === "sell" ? "tradeOrderModeBtnActive" : ""}`}
                       onClick={() => setSpotOrderSide("sell")}
                       type="button"
                     >
                       {t("actions.sell")}
-                    </button>
+                    </DeskButton>
                   </div>
                 )}
 
                 <div className="tradeOrderTypeTabs">
-                  <button
+                  <DeskButton
                     className={`tradeOrderTypeTab ${orderType === "limit" ? "tradeOrderTypeTabActive" : ""}`}
                     onClick={() => setOrderType("limit")}
                     type="button"
                   >
                     {t("fields.limit")}
-                  </button>
-                  <button
+                  </DeskButton>
+                  <DeskButton
                     className={`tradeOrderTypeTab ${orderType === "market" ? "tradeOrderTypeTabActive" : ""}`}
                     onClick={() => setOrderType("market")}
                     type="button"
                   >
                     {t("fields.market")}
-                  </button>
+                  </DeskButton>
                 </div>
 
                 <div className="tradeOrderMetaRow">
@@ -2740,13 +2750,13 @@ function TradePageContent() {
                   <label className="tradeOrderField">
                     <span>{t("fields.price")}</span>
                     <div className="tradeOrderInputRow">
-                      <input
+                      <DeskInput
                         className="tradeOrderInput"
                         value={price}
                         onChange={(event) => setPrice(event.target.value)}
                         placeholder={ticker?.last ? String(ticker.last) : "0.0"}
                       />
-                      <button
+                      <DeskButton
                         className="tradeOrderMiniBtn"
                         type="button"
                         onClick={() => {
@@ -2757,7 +2767,7 @@ function TradePageContent() {
                         }}
                       >
                         BBO
-                      </button>
+                      </DeskButton>
                     </div>
                   </label>
                 ) : null}
@@ -2765,13 +2775,13 @@ function TradePageContent() {
                 <label className="tradeOrderField">
                   <span>{t(`qtyMode.${qtyInputModeOption.titleKey}`)}</span>
                   <div className="tradeOrderInputRow">
-                    <input
+                    <DeskInput
                       className="tradeOrderInput"
                       value={qty}
                       onChange={(event) => setQty(event.target.value)}
                       placeholder={qtyInputMode === "quantity" ? "0.001" : "10"}
                     />
-                    <button
+                    <DeskButton
                       type="button"
                       className="tradeOrderUnitBadge"
                       onClick={() => {
@@ -2780,11 +2790,11 @@ function TradePageContent() {
                       }}
                     >
                       {qtyDisplayUnit}
-                    </button>
+                    </DeskButton>
                   </div>
                 </label>
 
-                <input
+                <DeskInput
                   className="tradeOrderSlider"
                   type="range"
                   min={0}
@@ -2824,7 +2834,7 @@ function TradePageContent() {
                 {!isSpotMode ? (
                   <>
                     <label className="tradeOrderCheckRow">
-                      <input
+                      <DeskInput
                         type="checkbox"
                         checked={tpSlEnabled}
                         onChange={(event) => setTpSlEnabled(event.target.checked)}
@@ -2836,7 +2846,7 @@ function TradePageContent() {
                       <div className="tradeOrderTpSlGrid">
                         <label className="tradeOrderField">
                           <span>{t("fields.takeProfit")}</span>
-                          <input
+                          <DeskInput
                             className="tradeOrderInput"
                             value={takeProfitPrice}
                             onChange={(event) => setTakeProfitPrice(event.target.value)}
@@ -2845,7 +2855,7 @@ function TradePageContent() {
                         </label>
                         <label className="tradeOrderField">
                           <span>{t("fields.stopLoss")}</span>
-                          <input
+                          <DeskInput
                             className="tradeOrderInput"
                             value={stopLossPrice}
                             onChange={(event) => setStopLossPrice(event.target.value)}
@@ -2871,7 +2881,7 @@ function TradePageContent() {
 
                 {!isSpotMode ? (
                   <div className="tradeOrderActionGrid">
-                    <button
+                    <DeskButton
                       className="btn btnStart"
                       style={activePrefill?.side === "long" ? { boxShadow: "0 0 0 2px rgba(16,185,129,.45) inset" } : undefined}
                       disabled={isSubmitting || tradingDataBlocked}
@@ -2885,8 +2895,8 @@ function TradePageContent() {
                           ? t("actions.openLong")
                           : t("actions.closeShort")}
                       {activePrefill?.side === "long" ? ` (${t("actions.suggested")})` : ""}
-                    </button>
-                    <button
+                    </DeskButton>
+                    <DeskButton
                       className="btn btnStop"
                       style={activePrefill?.side === "short" ? { boxShadow: "0 0 0 2px rgba(239,68,68,.45) inset" } : undefined}
                       disabled={isSubmitting || tradingDataBlocked}
@@ -2900,11 +2910,11 @@ function TradePageContent() {
                           ? t("actions.openShort")
                           : t("actions.closeLong")}
                       {activePrefill?.side === "short" ? ` (${t("actions.suggested")})` : ""}
-                    </button>
+                    </DeskButton>
                   </div>
                 ) : (
                   <div className="tradeOrderActionGrid tradeOrderActionGridSingle">
-                    <button
+                    <DeskButton
                       className={`btn ${spotOrderSide === "buy" ? "btnStart" : "btnStop"}`}
                       disabled={tradingDataBlocked || isSubmitting || (spotOrderSide === "sell" && (!spotBaseAvailable || spotBaseAvailable <= 0))}
 	                      onClick={() => void submitOrder(spotOrderSide)}
@@ -2916,7 +2926,7 @@ function TradePageContent() {
                         : spotOrderSide === "buy"
                           ? t("actions.buy")
                           : t("actions.sell")}
-                    </button>
+                    </DeskButton>
                   </div>
                 )}
                 {actionError ? (
@@ -2935,7 +2945,7 @@ function TradePageContent() {
                   <strong>{estimatedMaxInputByMode ? `${fmt(estimatedMaxInputByMode, 4)} ${qtyDisplayUnit}` : "-"}</strong>
                 </div>
 
-                <button
+                <DeskButton
                   className="btn"
                   disabled={tradingDataBlocked || isCancelAllPending}
 	                  onClick={() => void cancelAll()}
@@ -2943,7 +2953,7 @@ function TradePageContent() {
 	                >
 	                  <AppIcon name="cancel" />
 	                  {isCancelAllPending ? t("actions.cancelling") : t("actions.cancelAll")} ({selectedSymbol})
-	                </button>
+	                </DeskButton>
 
                 <div className="tradeOrderDivider" />
 
@@ -2986,11 +2996,11 @@ function TradePageContent() {
                   </div>
                 ) : null}
               </div>
-            </article>
+            </article></DeskSurface>
           </section>
 
           {positionCopilotEnabled ? (
-          <section className="card tradeDeskSection tradeCopilot" aria-labelledby="position-copilot-title">
+          <DeskSurface dense><section className="card tradeDeskSection tradeCopilot" aria-labelledby="position-copilot-title">
             <div className="tradeDeskSectionHeader tradeCopilotHeader">
               <div>
                 <div className="tradeDeskSectionTitle" id="position-copilot-title">
@@ -3000,7 +3010,7 @@ function TradePageContent() {
                 <div className="tradeDeskSectionHint">{t("copilot.hint")}</div>
               </div>
               <div className="tradeCopilotActions">
-                <button
+                <DeskButton
                   className="btn"
                   type="button"
                   disabled={!copilotPosition || copilotLoading}
@@ -3008,7 +3018,7 @@ function TradePageContent() {
                 >
                   <AppIcon name="refresh" />
                   {copilotLoading ? t("copilot.analyzing") : t("copilot.refresh")}
-                </button>
+                </DeskButton>
                 <Link
                   className="btn"
                   href={POSITION_COPILOT_MANUAL_REVIEW_HREF}
@@ -3034,7 +3044,7 @@ function TradePageContent() {
               <div className="tradeCopilotSettings" aria-label={t("copilot.settingsLabel")}>
                 <label>
                   <span>{t("copilot.notificationMode")}</span>
-                  <select
+                  <DeskSelect
                     className="select"
                     value={copilotSettings?.mode ?? "important_changes"}
                     disabled={!copilotSettings || copilotSettingsSaving}
@@ -3044,10 +3054,10 @@ function TradePageContent() {
                     <option value="important_changes">{t("copilot.modes.importantChanges")}</option>
                     <option value="periodic_summary">{t("copilot.modes.periodicSummary")}</option>
                     <option value="off">{t("copilot.modes.off")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
                 <label className="tradeCopilotToggle">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={copilotSettings?.inAppEnabled ?? true}
                     disabled={!copilotSettings || copilotSettingsSaving}
@@ -3056,7 +3066,7 @@ function TradePageContent() {
                   {t("copilot.inApp")}
                 </label>
                 <label className="tradeCopilotToggle">
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={copilotSettings?.telegramEnabled ?? false}
                     disabled={!copilotSettings || copilotSettingsSaving}
@@ -3078,9 +3088,7 @@ function TradePageContent() {
                       {t(`copilot.risk.${copilotAnalysis.riskLevel}`)}
                     </span>
                     <span>{t("copilot.thesis", { status: t(`copilot.thesisStatus.${copilotAnalysis.thesisStatus}`) })}</span>
-                    <span className={copilotAnalysis.dataQuality.state === "degraded" ? "tradeCopilotQualityDegraded" : ""}>
-                      {t("copilot.dataQuality", { state: t(`copilot.quality.${copilotAnalysis.dataQuality.state}`) })}
-                    </span>
+                    <PositionCopilotDataQuality position={copilotAnalysis.dataQuality.state} market={copilotAnalysis.marketDataQuality ?? "unavailable"} />
                     {copilotAnalysis.openedByPredictionCopier ? <span>{t("copilot.openedByCopier")}</span> : null}
                   </div>
                   <p>{copilotAnalysis.summary}</p>
@@ -3104,10 +3112,10 @@ function TradePageContent() {
             ) : (
               <div className="tradeCopilotEmpty">{t("copilot.ready", { symbol: copilotPosition.symbol })}</div>
             )}
-          </section>
+          </section></DeskSurface>
           ) : null}
 
-            <section className="card tradeDeskSection" id="trade-positions">
+            <DeskSurface dense><section className="card tradeDeskSection" id="trade-positions">
             <div className="tradeDeskSectionHeader">
               <div>
                 <div className="tradeDeskSectionTitle">{t("sections.positions")}</div>
@@ -3117,7 +3125,7 @@ function TradePageContent() {
 
             <div className="tradeDesktopOnly">
               <div className="tradeTableWrap">
-                <table className="tradeDataTable">
+                <DeskTable className="tradeDataTable">
                   <thead>
                     <tr style={{ textAlign: "left", color: "var(--muted)" }}>
                       <th style={{ padding: "8px 6px" }}>{t("positions.columns.symbol")}</th>
@@ -3175,7 +3183,7 @@ function TradePageContent() {
                               {isSpotMode ? (
                                 "-"
                               ) : positionEditDrafts[rowKey] ? (
-                                <input
+                                <DeskInput
                                   className="input tradeTableInput"
                                   value={positionEditDrafts[rowKey]?.sl ?? ""}
                                   onChange={(event) =>
@@ -3196,7 +3204,7 @@ function TradePageContent() {
                               {isSpotMode ? (
                                 "-"
                               ) : positionEditDrafts[rowKey] ? (
-                                <input
+                                <DeskInput
                                   className="input tradeTableInput"
                                   value={positionEditDrafts[rowKey]?.tp ?? ""}
                                   onChange={(event) =>
@@ -3219,7 +3227,7 @@ function TradePageContent() {
                             <td style={{ padding: "8px 6px" }}>
                               {isSpotMode ? (
                                 <div className="tradeRowActions">
-                                  <button
+                                  <DeskButton
                                     className="btn"
                                     disabled={tradingDataBlocked || closePendingKey !== null}
                                     onClick={(event) => {
@@ -3228,11 +3236,11 @@ function TradePageContent() {
                                     }}
                                   >
                                     {closePendingKey ? t("actions.closing") : t("actions.close")}
-                                  </button>
+                                  </DeskButton>
                                 </div>
                               ) : positionEditDrafts[rowKey] ? (
                                 <div className="tradeRowActions">
-                                  <button
+                                  <DeskButton
                                     className="btn"
                                     disabled={positionSavingKey === rowKey}
                                     onClick={(event) => {
@@ -3241,8 +3249,8 @@ function TradePageContent() {
                                     }}
                                   >
                                     {t("actions.save")}
-                                  </button>
-                                  <button
+                                  </DeskButton>
+                                  <DeskButton
                                     className="btn"
                                     onClick={(event) => {
                                       event.stopPropagation();
@@ -3254,11 +3262,11 @@ function TradePageContent() {
                                     }}
                                   >
                                     {t("actions.cancel")}
-                                  </button>
+                                  </DeskButton>
                                 </div>
                               ) : (
                                 <div className="tradeRowActions">
-                                  <button
+                                  <DeskButton
                                     className="btn"
                                     onClick={(event) => {
                                       event.stopPropagation();
@@ -3280,8 +3288,8 @@ function TradePageContent() {
                                     }}
                                   >
                                     {t("actions.edit")}
-                                  </button>
-                                  <button
+                                  </DeskButton>
+                                  <DeskButton
                                     className="btn"
                                     disabled={tradingDataBlocked || closePendingKey !== null}
                                     onClick={(event) => {
@@ -3290,7 +3298,7 @@ function TradePageContent() {
                                     }}
                                   >
                                     {closePendingKey ? t("actions.closing") : t("actions.close")}
-                                  </button>
+                                  </DeskButton>
                                 </div>
                               )}
                             </td>
@@ -3299,7 +3307,7 @@ function TradePageContent() {
                       })
                     )}
                   </tbody>
-                </table>
+                </DeskTable>
               </div>
             </div>
 
@@ -3360,7 +3368,7 @@ function TradePageContent() {
                           <div className="tradeMobileRow">
                             <span>{t("positions.columns.stopLoss")}</span>
                             {draft ? (
-                              <input
+                              <DeskInput
                                 className="input tradeMobileInlineInput"
                                 value={draft.sl ?? ""}
                                 onClick={(event) => event.stopPropagation()}
@@ -3378,7 +3386,7 @@ function TradePageContent() {
                           <div className="tradeMobileRow">
                             <span>{t("positions.columns.takeProfit")}</span>
                             {draft ? (
-                              <input
+                              <DeskInput
                                 className="input tradeMobileInlineInput"
                                 value={draft.tp ?? ""}
                                 onClick={(event) => event.stopPropagation()}
@@ -3399,14 +3407,14 @@ function TradePageContent() {
                             <>
                               {!isSpotMode ? (
                                 <>
-                                  <button
+                                  <DeskButton
                                     className="btn"
                                     disabled={positionSavingKey === rowKey}
                                     onClick={() => void savePositionTpSl(position, rowKey)}
                                   >
                                     {t("actions.save")}
-                                  </button>
-                                  <button
+                                  </DeskButton>
+                                  <DeskButton
                                     className="btn"
                                     onClick={() =>
                                       setPositionEditDrafts((prev) => {
@@ -3417,14 +3425,14 @@ function TradePageContent() {
                                     }
                                   >
                                     {t("actions.cancel")}
-                                  </button>
+                                  </DeskButton>
                                 </>
                               ) : null}
                             </>
                           ) : (
                             <>
                               {!isSpotMode ? (
-                                <button
+                                <DeskButton
                                   className="btn"
                                   onClick={() =>
                                     setPositionEditDrafts((prev) => ({
@@ -3445,15 +3453,15 @@ function TradePageContent() {
                                   }
                                 >
                                   {t("actions.edit")}
-                                </button>
+                                </DeskButton>
                               ) : null}
-                              <button
+                              <DeskButton
                                 className="btn"
                                 disabled={tradingDataBlocked || closePendingKey !== null}
                                 onClick={() => void closePosition(position)}
                               >
                                 {closePendingKey ? t("actions.closing") : t("actions.close")}
-                              </button>
+                              </DeskButton>
                             </>
                           )}
                         </div>
@@ -3463,26 +3471,26 @@ function TradePageContent() {
                 </div>
               )}
             </div>
-            </section>
+            </section></DeskSurface>
 
-          <section className="card tradeDeskSection">
+          <DeskSurface dense><section className="card tradeDeskSection">
             <div className="tradeDeskSectionHeader">
               <div>
                 <div className="tradeDeskSectionTitle">{t("sections.openOrders")}</div>
                 <div className="tradeDeskSectionHint">{t("orders.hint")}</div>
               </div>
-              <button
+              <DeskButton
                 className="btn"
                 disabled={tradingDataBlocked || isCancelAllPending}
                 onClick={() => void cancelAll()}
               >
                 {isCancelAllPending ? t("actions.cancelling") : t("actions.cancelAll")}
-              </button>
+              </DeskButton>
             </div>
 
             <div className="tradeDesktopOnly">
               <div className="tradeTableWrap">
-                <table className="tradeDataTable">
+                <DeskTable className="tradeDataTable">
                   <thead>
                     <tr style={{ textAlign: "left", color: "var(--muted)" }}>
                       <th style={{ padding: "8px 6px" }}>{t("orders.columns.symbol")}</th>
@@ -3511,7 +3519,7 @@ function TradePageContent() {
                           <td style={{ padding: "8px 6px" }}>{order.type ?? "-"}</td>
                           <td style={{ padding: "8px 6px" }}>
                             {orderEditDrafts[order.orderId] ? (
-                              <input
+                              <DeskInput
                                 className="input tradeTableInput"
                                 value={orderEditDrafts[order.orderId]?.price ?? ""}
                                 onChange={(event) =>
@@ -3532,7 +3540,7 @@ function TradePageContent() {
                             {isSpotMode ? (
                               "-"
                             ) : orderEditDrafts[order.orderId] ? (
-                              <input
+                              <DeskInput
                                 className="input tradeTableInput"
                                 value={orderEditDrafts[order.orderId]?.sl ?? ""}
                                 onChange={(event) =>
@@ -3553,7 +3561,7 @@ function TradePageContent() {
                             {isSpotMode ? (
                               "-"
                             ) : orderEditDrafts[order.orderId] ? (
-                              <input
+                              <DeskInput
                                 className="input tradeTableInput"
                                 value={orderEditDrafts[order.orderId]?.tp ?? ""}
                                 onChange={(event) =>
@@ -3572,7 +3580,7 @@ function TradePageContent() {
                           </td>
                           <td style={{ padding: "8px 6px" }}>
                             {orderEditDrafts[order.orderId] ? (
-                              <input
+                              <DeskInput
                                 className="input tradeTableInput"
                                 value={orderEditDrafts[order.orderId]?.qty ?? ""}
                                 onChange={(event) =>
@@ -3593,14 +3601,14 @@ function TradePageContent() {
                           <td style={{ padding: "8px 6px" }}>
                             {orderEditDrafts[order.orderId] ? (
                               <div className="tradeRowActions">
-                                <button
+                                <DeskButton
                                   className="btn"
                                   disabled={orderSavingId === order.orderId}
                                   onClick={() => void saveOrderEdit(order)}
                                 >
                                   {t("actions.save")}
-                                </button>
-                                <button
+                                </DeskButton>
+                                <DeskButton
                                   className="btn"
                                   onClick={() =>
                                     setOrderEditDrafts((prev) => {
@@ -3611,11 +3619,11 @@ function TradePageContent() {
                                   }
                                 >
                                   {t("actions.cancel")}
-                                </button>
+                                </DeskButton>
                               </div>
                             ) : (
                               <div className="tradeRowActions">
-                                <button
+                                <DeskButton
                                   className="btn"
                                   onClick={() =>
                                     setOrderEditDrafts((prev) => ({
@@ -3636,14 +3644,14 @@ function TradePageContent() {
                                   }
                                 >
                                   {t("actions.edit")}
-                                </button>
-                                <button
+                                </DeskButton>
+                                <DeskButton
                                   className="btn"
                                   disabled={tradingDataBlocked}
                                   onClick={() => void cancelOrder(order.orderId)}
                                 >
                                   {t("actions.cancel")}
-                                </button>
+                                </DeskButton>
                               </div>
                             )}
                           </td>
@@ -3651,7 +3659,7 @@ function TradePageContent() {
                       ))
                     )}
                   </tbody>
-                </table>
+                </DeskTable>
               </div>
             </div>
 
@@ -3698,7 +3706,7 @@ function TradePageContent() {
                           <div className="tradeMobileRow">
                             <span>{t("orders.columns.limitPrice")}</span>
                             {draft ? (
-                              <input
+                              <DeskInput
                                 className="input tradeMobileInlineInput"
                                 value={draft.price ?? ""}
                                 onChange={(event) =>
@@ -3717,7 +3725,7 @@ function TradePageContent() {
                             {isSpotMode ? (
                               <strong>-</strong>
                             ) : draft ? (
-                              <input
+                              <DeskInput
                                 className="input tradeMobileInlineInput"
                                 value={draft.sl ?? ""}
                                 onChange={(event) =>
@@ -3736,7 +3744,7 @@ function TradePageContent() {
                             {isSpotMode ? (
                               <strong>-</strong>
                             ) : draft ? (
-                              <input
+                              <DeskInput
                                 className="input tradeMobileInlineInput"
                                 value={draft.tp ?? ""}
                                 onChange={(event) =>
@@ -3753,7 +3761,7 @@ function TradePageContent() {
                           <div className="tradeMobileRow">
                             <span>{t("orders.columns.qty")}</span>
                             {draft ? (
-                              <input
+                              <DeskInput
                                 className="input tradeMobileInlineInput"
                                 value={draft.qty ?? ""}
                                 onChange={(event) =>
@@ -3771,10 +3779,10 @@ function TradePageContent() {
                         <div className="tradeMobileActions">
                           {draft ? (
                             <>
-                              <button className="btn" disabled={orderSavingId === order.orderId} onClick={() => void saveOrderEdit(order)}>
+                              <DeskButton className="btn" disabled={orderSavingId === order.orderId} onClick={() => void saveOrderEdit(order)}>
                                 {t("actions.save")}
-                              </button>
-                              <button
+                              </DeskButton>
+                              <DeskButton
                                 className="btn"
                                 onClick={() =>
                                   setOrderEditDrafts((prev) => {
@@ -3785,11 +3793,11 @@ function TradePageContent() {
                                 }
                               >
                                 {t("actions.cancel")}
-                              </button>
+                              </DeskButton>
                             </>
                           ) : (
                             <>
-                              <button
+                              <DeskButton
                                 className="btn"
                                 onClick={() =>
                                   setOrderEditDrafts((prev) => ({
@@ -3810,14 +3818,14 @@ function TradePageContent() {
                             }
                               >
                                 {t("actions.edit")}
-                              </button>
-                              <button
+                              </DeskButton>
+                              <DeskButton
                                 className="btn"
                                 disabled={tradingDataBlocked}
                                 onClick={() => void cancelOrder(order.orderId)}
                               >
                                 {t("actions.cancel")}
-                              </button>
+                              </DeskButton>
                             </>
                           )}
                         </div>
@@ -3827,7 +3835,7 @@ function TradePageContent() {
                 </div>
               )}
             </div>
-          </section>
+          </section></DeskSurface>
         </>
       )}
 
@@ -3836,14 +3844,14 @@ function TradePageContent() {
           <div className="tradeModalCard" onClick={(event) => event.stopPropagation()}>
             <div className="tradeModalHeader">
               <h3>{t("qtyMode.title")}</h3>
-              <button
+              <DeskButton
                 type="button"
                 className="tradeModalCloseBtn"
 	                onClick={() => setIsQtyModeModalOpen(false)}
 	                aria-label={t("actions.close")}
 	              >
 	                <AppIcon name="close" />
-	              </button>
+	              </DeskButton>
             </div>
 
             <div className="tradeModalOptions">
@@ -3851,7 +3859,7 @@ function TradePageContent() {
                 const unit = option.unit === "BASE" ? baseAssetUnit : quoteAssetUnit;
                 const isSelected = qtyInputModeDraft === option.value;
                 return (
-                  <button
+                  <DeskButton
                     key={option.value}
                     type="button"
                     className={`tradeModalOption ${isSelected ? "tradeModalOptionActive" : ""}`}
@@ -3861,20 +3869,20 @@ function TradePageContent() {
                       {t(`qtyMode.${option.titleKey}`)}-{unit}
                     </div>
                     <div className="tradeModalOptionDescription">{t(`qtyMode.${option.descriptionKey}`)}</div>
-                  </button>
+                  </DeskButton>
                 );
               })}
             </div>
 
             <div className="tradeModalActions">
-              <button
+              <DeskButton
                 type="button"
                 className="tradeModalSecondaryBtn"
                 onClick={() => setIsQtyModeModalOpen(false)}
               >
                 {t("actions.cancel")}
-              </button>
-              <button
+              </DeskButton>
+              <DeskButton
                 type="button"
                 className="tradeModalPrimaryBtn"
                 onClick={() => {
@@ -3885,7 +3893,7 @@ function TradePageContent() {
                 }}
               >
                 {t("actions.confirm")}
-              </button>
+              </DeskButton>
             </div>
           </div>
         </div>

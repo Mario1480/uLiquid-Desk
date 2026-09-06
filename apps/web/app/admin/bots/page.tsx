@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { apiGet } from "../../../lib/api";
 import AdminEmptyState from "../_components/AdminEmptyState";
@@ -46,13 +48,13 @@ export default function AdminBotsPage() {
       <AdminPageHeader title="Bots" description="Cross-platform bot operations table with workspace, owner, runner, and error visibility." />
       <AdminFilterBar>
         <div className="adminFilterGrid">
-          <label className="settingsField"><span className="settingsFieldLabel">Search</span><input className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Bot name or symbol" /></label>
-          <label className="settingsField"><span className="settingsFieldLabel">Status</span><input className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }} placeholder="running, error…" /></label>
-          <label className="settingsField"><span className="settingsFieldLabel">Exchange</span><input className="input" value={exchange} onChange={(event) => { setPage(1); setExchange(event.target.value); }} placeholder="bitget, binance…" /></label>
+          <label className="settingsField"><span className="settingsFieldLabel">Search</span><DeskInput className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Bot name or symbol" /></label>
+          <label className="settingsField"><span className="settingsFieldLabel">Status</span><DeskInput className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }} placeholder="running, error…" /></label>
+          <label className="settingsField"><span className="settingsFieldLabel">Exchange</span><DeskInput className="input" value={exchange} onChange={(event) => { setPage(1); setExchange(event.target.value); }} placeholder="bitget, binance…" /></label>
         </div>
       </AdminFilterBar>
       {loading ? <div className="settingsMutedText">Loading bots…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
       {data?.items?.length > 0 ? (
         <>
           <AdminTable columns={["Bot", "Workspace", "Owner", "Exchange", "Symbol", "Strategy", "Status", "Runner", "Last Heartbeat", "Last Error", "Created"]}>

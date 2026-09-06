@@ -1,5 +1,11 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -423,12 +429,12 @@ export default function AdminLocalStrategiesPage() {
       </div>
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface> : null}
 
       {isAdmin ? (
         <>
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{editingId ? t("editTitle") : t("createTitle")}</h3>
             </div>
@@ -436,19 +442,19 @@ export default function AdminLocalStrategiesPage() {
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Engine</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={engine}
                   onChange={(e) => setEngine(e.target.value === "python" ? "python" : "ts")}
                 >
                   <option value="ts">TS (local registry)</option>
                   <option value="python">Python sidecar</option>
-                </select>
+                </DeskSelect>
               </label>
 
               <label className="settingsField">
                 <span className="settingsFieldLabel">Strategy type</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={strategyType}
                   onChange={(e) => applyRegistryDefaults(e.target.value)}
@@ -462,7 +468,7 @@ export default function AdminLocalStrategiesPage() {
                     && !(engine === "python" ? pythonStrategyOptions : registry).some((item) => item.type === strategyType)
                     ? <option value={strategyType}>{strategyType}</option>
                     : null}
-                </select>
+                </DeskSelect>
               </label>
             </div>
 
@@ -470,7 +476,7 @@ export default function AdminLocalStrategiesPage() {
               <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">Remote strategy type</span>
-                  <input
+                  <DeskInput
                     className="input"
                     value={remoteStrategyType}
                     onChange={(e) => setRemoteStrategyType(e.target.value)}
@@ -480,7 +486,7 @@ export default function AdminLocalStrategiesPage() {
 
                 <label className="settingsField">
                   <span className="settingsFieldLabel">Fallback strategy type (TS)</span>
-                  <select
+                  <DeskSelect
                     className="input"
                     value={fallbackStrategyType}
                     onChange={(e) => setFallbackStrategyType(e.target.value)}
@@ -492,7 +498,7 @@ export default function AdminLocalStrategiesPage() {
                       && !fallbackStrategyOptions.includes(fallbackStrategyType)
                       ? <option value={fallbackStrategyType}>{fallbackStrategyType}</option>
                       : null}
-                  </select>
+                  </DeskSelect>
                 </label>
               </div>
             ) : null}
@@ -501,7 +507,7 @@ export default function AdminLocalStrategiesPage() {
               <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
                 <label className="settingsField" style={{ justifyContent: "end" }}>
                   <span className="settingsFieldLabel">Shadow mode (log only)</span>
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={shadowMode}
                     onChange={(e) => setShadowMode(e.target.checked)}
@@ -515,7 +521,7 @@ export default function AdminLocalStrategiesPage() {
               {engine === "python" ? (
                 <label className="settingsField">
                   <span className="settingsFieldLabel">Python timeout (ms)</span>
-                  <input
+                  <DeskInput
                     className="input"
                     type="number"
                     min={200}
@@ -529,21 +535,21 @@ export default function AdminLocalStrategiesPage() {
 
               <label className="settingsField">
                 <span className="settingsFieldLabel">Version</span>
-                <input className="input" value={version} onChange={(e) => setVersion(e.target.value)} />
+                <DeskInput className="input" value={version} onChange={(e) => setVersion(e.target.value)} />
               </label>
             </div>
 
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("newsRiskMode")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={newsRiskMode}
                   onChange={(e) => setNewsRiskMode(e.target.value === "block" ? "block" : "off")}
                 >
                   <option value="off">{t("newsRiskModeOff")}</option>
                   <option value="block">{t("newsRiskModeBlock")}</option>
-                </select>
+                </DeskSelect>
               </label>
               <div />
             </div>
@@ -551,39 +557,39 @@ export default function AdminLocalStrategiesPage() {
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Name</span>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Regime Gate BTC" />
+                <DeskInput className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Regime Gate BTC" />
               </label>
 
               <label className="settingsField" style={{ justifyContent: "end" }}>
                 <span className="settingsFieldLabel">Enabled</span>
-                <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} />
+                <DeskInput type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} />
               </label>
             </div>
 
             <label className="settingsField" style={{ marginBottom: 10 }}>
               <span className="settingsFieldLabel">Description</span>
-              <textarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+              <DeskTextarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
             </label>
 
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Input schema JSON</span>
-                <textarea className="input" rows={8} value={inputSchemaText} onChange={(e) => setInputSchemaText(e.target.value)} />
+                <DeskTextarea className="input" rows={8} value={inputSchemaText} onChange={(e) => setInputSchemaText(e.target.value)} />
               </label>
 
               <label className="settingsField">
                 <span className="settingsFieldLabel">Config JSON</span>
-                <textarea className="input" rows={8} value={configJsonText} onChange={(e) => setConfigJsonText(e.target.value)} />
+                <DeskTextarea className="input" rows={8} value={configJsonText} onChange={(e) => setConfigJsonText(e.target.value)} />
               </label>
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
+              <DeskButton className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
                 {saving ? t("saving") : editingId ? t("updateStrategy") : t("createStrategy")}
-              </button>
-              <button className="btn" type="button" onClick={resetForm}>{t("resetForm")}</button>
+              </DeskButton>
+              <DeskButton className="btn" type="button" onClick={resetForm}>{t("resetForm")}</DeskButton>
               {selectedRegistry ? (
-                <button
+                <DeskButton
                   className="btn"
                   type="button"
                   onClick={() => {
@@ -592,7 +598,7 @@ export default function AdminLocalStrategiesPage() {
                   }}
                 >
                   Apply registry defaults
-                </button>
+                </DeskButton>
               ) : null}
             </div>
             {engine === "python" ? (
@@ -604,9 +610,9 @@ export default function AdminLocalStrategiesPage() {
                 version: {pythonRegistry.health?.version ?? "-"}
               </p>
             ) : null}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("listTitle")}</h3>
             </div>
@@ -616,7 +622,7 @@ export default function AdminLocalStrategiesPage() {
             {items.length === 0 ? <div className="settingsMutedText">{t("noItems")}</div> : (
               <div className="adminTableWrap">
                 <div className="adminTableScroller">
-                <table className="adminTable">
+                <DeskTable className="adminTable">
                   <thead>
                     <tr>
                       <th>Name</th>
@@ -650,13 +656,13 @@ export default function AdminLocalStrategiesPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </DeskTable>
                 </div>
               </div>
             )}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>Preview Run</h3>
             </div>
@@ -667,26 +673,26 @@ export default function AdminLocalStrategiesPage() {
             <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">featureSnapshot JSON</span>
-                <textarea className="input" rows={12} value={runFeatureSnapshotText} onChange={(e) => setRunFeatureSnapshotText(e.target.value)} />
+                <DeskTextarea className="input" rows={12} value={runFeatureSnapshotText} onChange={(e) => setRunFeatureSnapshotText(e.target.value)} />
               </label>
 
               <label className="settingsField">
                 <span className="settingsFieldLabel">ctx JSON</span>
-                <textarea className="input" rows={12} value={runCtxText} onChange={(e) => setRunCtxText(e.target.value)} />
+                <DeskTextarea className="input" rows={12} value={runCtxText} onChange={(e) => setRunCtxText(e.target.value)} />
               </label>
             </div>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              <button className="btn btnPrimary" type="button" disabled={running || !editingId} onClick={() => void runPreview()}>
+              <DeskButton className="btn btnPrimary" type="button" disabled={running || !editingId} onClick={() => void runPreview()}>
                 {running ? "Running..." : "Run preview"}
-              </button>
+              </DeskButton>
             </div>
 
             <label className="settingsField">
               <span className="settingsFieldLabel">Result</span>
-              <textarea className="input" rows={10} readOnly value={runOutput} placeholder="Run output appears here." />
+              <DeskTextarea className="input" rows={10} readOnly value={runOutput} placeholder="Run output appears here." />
             </label>
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
       <AdminConfirmDialog

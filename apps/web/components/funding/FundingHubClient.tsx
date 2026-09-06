@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useAccount } from "wagmi";
 import { useTranslations } from "next-intl";
 import type { FundingFeatureConfig } from "../../lib/funding/types";
@@ -27,7 +28,7 @@ export default function FundingHubClient({
       </div>
 
       <div className="walletStack">
-        <section className="card walletCard fundingHeroCard">
+        <DeskSurface dense><section className="card walletCard fundingHeroCard">
           <div className="walletSectionHeader">
             <div className="walletSectionIntro">
               <h3 className="walletSectionTitle">{t("walletTitle")}</h3>
@@ -53,7 +54,7 @@ export default function FundingHubClient({
               <div className="walletMutedText">{t("calloutEvmGasBody")}</div>
             </div>
           </div>
-        </section>
+        </section></DeskSurface>
 
         <FundingActionCenter fundingConfig={fundingConfig} transferConfig={config} />
       </div>

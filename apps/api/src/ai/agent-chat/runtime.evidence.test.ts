@@ -156,3 +156,65 @@ test("auto tool arguments cannot relabel or bypass an explicitly selected unsupp
   assert.deepEqual(log.evidence[0].warningCodes, ["agent_chat_venue_unsupported"]);
   assert.equal(log.technicalActivity[0].venue, "bingx");
 });
+
+for (const profileKey of ["market_analyst", "position_copilot"] as const) {
+  test(`${profileKey} synthesizes after four rounds without extra budget or fabricated evidence`, async t => {
+    const fixture = setup(t);
+    t.mock.method(sharedDerivativesStore, "read", async () => derivatives());
+    let calls = 0;
+    const names = ["market_get_funding_rate", "market_get_funding_rate", "market_get_open_interest", "market_get_open_interest"];
+    const response = await runAgentChat({ ...fixture.params, profile: resolveBuiltinAgentProfile(profileKey),
+      callAiChat: async (messages, options) => {
+        const iteration = calls++;
+        assert.equal(options.aiRunContext?.callIndex, iteration);
+        assert.equal(options.aiRunContext?.routing.maxToolRounds, 4);
+        assert.ok(options.maxTokens! <= 6_000);
+        if (iteration < 4) {
+          assert.equal(options.toolChoice, "auto");
+          if (iteration >= 2) assert.ok(!options.tools!.some(tool => tool.function.name === "market_get_funding_rate"));
+          return modelResult("", [{ id: `budget-${iteration}`, name: names[iteration], argumentsText: '{"venue":"binance"}' }]);
+        }
+        assert.equal(options.toolChoice, "none");
+        assert.deepEqual(options.tools, []);
+        assert.match(messages.at(-1)!.content, /No further tool calls are permitted/);
+        assert.match(messages.at(-1)!.content, /missing requested evidence/);
+        assert.equal(messages.filter(message => message.role === "tool").length, 4);
+        assert.match(JSON.stringify(messages), /market_data_stale/);
+        return modelResult('{"content":"Only stale funding and OI evidence is available; other requested context is unavailable.","blocks":[],"citations":[]}');
+      } });
+    assert.equal(calls, 5);
+    assert.equal(response.run.toolIterations, 4);
+    assert.equal(response.run.toolCalls, 4);
+    const [log] = fixture.logs();
+    assert.equal(log.state, "completed");
+    assert.equal(log.recommendation?.messageId, response.messageId);
+    assert.equal(log.evidence.length, 4);
+    assert.equal(log.snapshotManifest.length, 1);
+    assert.ok(log.evidence.every(item => item.quality === "stale"));
+    assert.equal(log.permission.execution, "not_permitted");
+  });
+}
+
+test("final synthesis rejects unexpected provider tool calls without executing or persisting a recommendation", async t => {
+  const fixture = setup(t);
+  const profile = { ...fixture.params.profile, enabledSkillIds: ["market.get_funding_rate"] };
+  t.mock.method(sharedDerivativesStore, "read", async () => derivatives());
+  let calls = 0;
+  await assert.rejects(runAgentChat({ ...fixture.params, profile, callAiChat: async (_messages, options) => {
+    if (++calls === 3) { assert.equal(options.toolChoice, "none"); assert.deepEqual(options.tools, []); }
+    return modelResult("", [{ id: `call-${calls}`, name: "market_get_funding_rate", argumentsText: '{"venue":"binance"}' }]);
+  } }), (error: any) => error.code === "agent_chat_tool_budget_exceeded");
+  assert.equal(calls, 3);
+  assert.equal(fixture.calls.length, 2);
+  assert.equal(fixture.logs()[0].recommendation, null);
+});
+
+test("per-skill caps still fail closed for excessive calls in one model batch", async t => {
+  const fixture = setup(t);
+  t.mock.method(sharedDerivativesStore, "read", async () => derivatives());
+  await assert.rejects(runAgentChat({ ...fixture.params, callAiChat: async () => modelResult("", [0, 1, 2].map(i => ({
+    id: `call-${i}`, name: "market_get_funding_rate", argumentsText: '{"venue":"binance"}'
+  }))) }), (error: any) => error.code === "agent_chat_tool_budget_exceeded");
+  assert.equal(fixture.calls.length, 2);
+  assert.equal(fixture.logs()[0].recommendation, null);
+});

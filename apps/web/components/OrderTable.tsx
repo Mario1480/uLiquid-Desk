@@ -1,3 +1,4 @@
+import { DeskTable } from "@/components/desk/DeskTable";
 type Order = {
   id: string;
   side: "buy" | "sell";
@@ -11,7 +12,7 @@ type OrderTableProps = {
 
 export function OrderTable({ orders }: OrderTableProps) {
   return (
-    <table>
+    <DeskTable>
       <thead>
         <tr>
           <th>ID</th>
@@ -30,6 +31,6 @@ export function OrderTable({ orders }: OrderTableProps) {
           </tr>
         ))}
       </tbody>
-    </table>
+    </DeskTable>
   );
 }

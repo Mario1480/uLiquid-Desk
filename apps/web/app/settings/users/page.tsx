@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -231,7 +234,7 @@ export default function UsersPage() {
   return (
     <div className="settingsWrap" style={{ maxWidth: 760 }}>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="card settingsSection" style={{ marginTop: 14 }}>
+      <DeskSurface><div className="card settingsSection" style={{ marginTop: 14 }}>
         <div className="settingsSectionHeader">
           <div style={{ fontWeight: 700 }}>{t("password.title")}</div>
         </div>
@@ -241,7 +244,7 @@ export default function UsersPage() {
         <div style={{ display: "grid", gap: 10 }}>
           <label style={{ fontSize: 13 }}>
             {t("password.current")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={currentPassword}
@@ -250,7 +253,7 @@ export default function UsersPage() {
           </label>
           <label style={{ fontSize: 13 }}>
             {t("password.new")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={newPassword}
@@ -259,7 +262,7 @@ export default function UsersPage() {
           </label>
           <label style={{ fontSize: 13 }}>
             {t("password.confirm")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={confirmPassword}
@@ -267,17 +270,17 @@ export default function UsersPage() {
             />
           </label>
 	          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-	            <button className="btn btnPrimary" onClick={savePassword} disabled={!currentPassword || !newPassword}>
+	            <DeskButton className="btn btnPrimary" onClick={savePassword} disabled={!currentPassword || !newPassword}>
 	              <AppIcon name="key" />
 	              {t("password.submit")}
-	            </button>
+	            </DeskButton>
             <span style={{ fontSize: 12, opacity: 0.7 }}>{pwdStatus}</span>
           </div>
           {pwdError ? <div style={{ fontSize: 12, color: "#ff6b6b" }}>{pwdError}</div> : null}
         </div>
-      </div>
+      </div></DeskSurface>
 
-      <div className="card settingsSection" style={{ marginTop: 14 }}>
+      <DeskSurface><div className="card settingsSection" style={{ marginTop: 14 }}>
         <div className="settingsSectionHeader">
           <div style={{ fontWeight: 700 }}>{t("security.title")}</div>
         </div>
@@ -286,7 +289,7 @@ export default function UsersPage() {
         </div>
         <div style={{ display: "grid", gap: 10, marginBottom: 10, maxWidth: 360 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
+            <DeskInput
               type="checkbox"
               checked={autoLogoutEnabled}
               onChange={(e) => setAutoLogoutEnabled(e.target.checked)}
@@ -296,7 +299,7 @@ export default function UsersPage() {
           </label>
           <label style={{ display: "grid", gap: 6 }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("security.idleMinutes")}</span>
-            <input
+            <DeskInput
               className="input"
               type="number"
               min={1}
@@ -308,7 +311,7 @@ export default function UsersPage() {
           </label>
           {isSuperadmin ? (
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
+              <DeskInput
                 type="checkbox"
                 checked={otpEnabled}
                 onChange={(e) => setOtpEnabled(e.target.checked)}
@@ -319,32 +322,32 @@ export default function UsersPage() {
           ) : null}
         </div>
 	        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-	          <button className="btn btnPrimary" onClick={saveSecuritySettings} disabled={securityLoading || securitySaving}>
+	          <DeskButton className="btn btnPrimary" onClick={saveSecuritySettings} disabled={securityLoading || securitySaving}>
 	            <AppIcon name="save" />
 	            {securitySaving ? tCommon("saving") : tCommon("saveSettings")}
-	          </button>
-	          <button className="btn" onClick={loadSecuritySettings} disabled={securityLoading || securitySaving}>
+	          </DeskButton>
+	          <DeskButton className="btn" onClick={loadSecuritySettings} disabled={securityLoading || securitySaving}>
 	            <AppIcon name="refresh" />
 	            {securityLoading ? tCommon("loading") : tCommon("reload")}
-	          </button>
+	          </DeskButton>
         </div>
         {securityMsg ? (
           <div style={{ marginTop: 10, color: "var(--muted)" }}>{securityMsg}</div>
         ) : null}
-      </div>
+      </div></DeskSurface>
 
-      <div className="card settingsSection" style={{ marginTop: 14 }}>
+      <DeskSurface><div className="card settingsSection" style={{ marginTop: 14 }}>
         <div className="settingsSectionHeader">
           <div>
             <div style={{ fontWeight: 700 }}>{t("sessions.title")}</div>
             <div className="settingsMutedText">{t("sessions.description")}</div>
           </div>
           <div className="settingsWalletLinkActions">
-            <button className="btn" type="button" onClick={() => void loadSessions()} disabled={sessionsLoading || Boolean(sessionActionBusy)}>
+            <DeskButton className="btn" type="button" onClick={() => void loadSessions()} disabled={sessionsLoading || Boolean(sessionActionBusy)}>
               <AppIcon name="refresh" />
               {sessionsLoading ? tCommon("loading") : tCommon("reload")}
-            </button>
-            <button
+            </DeskButton>
+            <DeskButton
               className="btn btnStop"
               type="button"
               onClick={() => setConfirmRevokeOthers(true)}
@@ -352,7 +355,7 @@ export default function UsersPage() {
             >
               <AppIcon name="unlink" />
               {t("sessions.revokeOthers")}
-            </button>
+            </DeskButton>
           </div>
         </div>
         {sessionsError ? <div className="settingsAlert settingsAlertError">{sessionsError}</div> : null}
@@ -363,7 +366,7 @@ export default function UsersPage() {
         ) : (
           <div className="settingsAccountList">
             {sessions.map((session) => (
-              <div className="card settingsAccountCard" key={session.id}>
+              <DeskSurface><div className="card settingsAccountCard" key={session.id}>
                 <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <strong>{session.isCurrent ? t("sessions.current") : t("sessions.other")}</strong>
@@ -377,7 +380,7 @@ export default function UsersPage() {
                   </div>
                 </div>
                 <div className="settingsAccountActions">
-                  <button
+                  <DeskButton
                     className="btn btnStop"
                     type="button"
                     onClick={() => setConfirmSessionId(session.id)}
@@ -386,15 +389,15 @@ export default function UsersPage() {
                   >
                     <AppIcon name="delete" />
                     {sessionActionBusy === session.id ? tCommon("deleting") : t("sessions.revoke")}
-                  </button>
+                  </DeskButton>
                 </div>
-              </div>
+              </div></DeskSurface>
             ))}
           </div>
         )}
-      </div>
+      </div></DeskSurface>
 
-      <div className="card settingsSection" style={{ marginTop: 14 }}>
+      <DeskSurface><div className="card settingsSection" style={{ marginTop: 14 }}>
         <div className="settingsSectionHeader">
           <div style={{ fontWeight: 700 }}>{t("reset.title")}</div>
         </div>
@@ -404,7 +407,7 @@ export default function UsersPage() {
         <div style={{ display: "grid", gap: 10, maxWidth: 420 }}>
           <label style={{ fontSize: 13 }}>
             {t("reset.email")}
-            <input
+            <DeskInput
               className="input"
               type="email"
               value={resetEmail}
@@ -413,14 +416,14 @@ export default function UsersPage() {
             />
           </label>
 	          <div>
-	            <button className="btn" onClick={() => void requestResetCode()} disabled={!resetEmail}>
+	            <DeskButton className="btn" onClick={() => void requestResetCode()} disabled={!resetEmail}>
 	              <AppIcon name="mail" />
 	              {t("reset.sendCode")}
-	            </button>
+	            </DeskButton>
           </div>
           <label style={{ fontSize: 13 }}>
             {t("reset.code")}
-            <input
+            <DeskInput
               className="input"
               value={resetCode}
               onChange={(e) => setResetCode(e.target.value)}
@@ -430,7 +433,7 @@ export default function UsersPage() {
           </label>
           <label style={{ fontSize: 13 }}>
             {t("reset.newPassword")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={resetNewPassword}
@@ -440,7 +443,7 @@ export default function UsersPage() {
           </label>
           <label style={{ fontSize: 13 }}>
             {t("reset.confirmPassword")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={resetConfirmPassword}
@@ -449,14 +452,14 @@ export default function UsersPage() {
             />
           </label>
           <div>
-            <button
+            <DeskButton
               className="btn btnPrimary"
 	              onClick={() => void confirmResetPassword()}
 	              disabled={!resetEmail || resetCode.length !== 6 || resetNewPassword.length < 8}
 	            >
 	              <AppIcon name="key" />
 	              {t("reset.submit")}
-	            </button>
+	            </DeskButton>
           </div>
           {resetStatus ? <div style={{ fontSize: 12, color: "var(--muted)" }}>{resetStatus}</div> : null}
           {resetDevCode ? (
@@ -466,7 +469,7 @@ export default function UsersPage() {
           ) : null}
           {resetError ? <div style={{ fontSize: 12, color: "#ff6b6b" }}>{resetError}</div> : null}
         </div>
-      </div>
+      </div></DeskSurface>
 
       {error ? <div style={{ fontSize: 12, color: "#ff6b6b", marginTop: 8 }}>{error}</div> : null}
       <AdminConfirmDialog

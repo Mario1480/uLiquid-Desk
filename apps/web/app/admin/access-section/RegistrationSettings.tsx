@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiGet, apiPut } from "../../../lib/api";
@@ -37,7 +40,7 @@ export default function RegistrationSettings() {
   }
 
   return (
-    <section className="card settingsSection">
+    <DeskSurface dense><section className="card settingsSection">
       <div className="settingsSectionHeader">
         <h3 className="adminSubsectionTitle">{t("registrationTitle")}</h3>
       </div>
@@ -50,15 +53,15 @@ export default function RegistrationSettings() {
             <strong><AppIcon name="users" /> {t("registrationEnabled")}</strong>
             <small>{t("registrationHint")}</small>
           </span>
-          <input type="checkbox" checked={enabled ?? false} disabled={enabled === null || saving}
+          <DeskInput type="checkbox" checked={enabled ?? false} disabled={enabled === null || saving}
             onChange={(event) => { setEnabled(event.target.checked); setSaved(false); }} />
         </label>
       </div>
       <div className="adminInlineActions">
-        <button className="btn btnPrimary" type="button" disabled={enabled === null || saving} onClick={() => void save()}>
+        <DeskButton className="btn btnPrimary" type="button" disabled={enabled === null || saving} onClick={() => void save()}>
           <AppIcon name="save" /> {saving ? t("saving") : t("saveSettings")}
-        </button>
+        </DeskButton>
       </div>
-    </section>
+    </section></DeskSurface>
   );
 }

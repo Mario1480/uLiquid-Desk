@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -456,16 +461,16 @@ export default function ArbitrumHyperCoreBridgeSection({
 
   if (!isConnected) {
     return (
-      <div className="card walletCard walletEmptyState">
+      <DeskSurface dense><div className="card walletCard walletEmptyState">
         <h3 style={{ marginTop: 0 }}>{t("connectTitle")}</h3>
         <div className="walletMutedText">{t("connectDescription")}</div>
-      </div>
+      </div></DeskSurface>
     );
   }
 
   if (overviewQuery.isLoading) {
     return (
-      <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
+      <DeskSurface dense><section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
         <div className="walletSectionHeader">
           <div className="walletSectionIntro">
             <h3 className="walletSectionTitle">{t("title")}</h3>
@@ -473,10 +478,10 @@ export default function ArbitrumHyperCoreBridgeSection({
           </div>
         </div>
         <div className="walletInfoGrid">
-          <div className="walletInfoTile"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
-          <div className="walletInfoTile"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
+          <div className="walletInfoTile"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
+          <div className="walletInfoTile"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
         </div>
-      </section>
+      </section></DeskSurface>
     );
   }
 
@@ -491,7 +496,7 @@ export default function ArbitrumHyperCoreBridgeSection({
   if (!overview) return null;
 
   return (
-    <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
+    <DeskSurface dense><section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
       <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
         <div className="walletSectionIntro">
           <h3 className="walletSectionTitle">{t("title")}</h3>
@@ -563,12 +568,12 @@ export default function ArbitrumHyperCoreBridgeSection({
                 <span>MAX</span>
                 <strong>{formatToken(overview.arbitrum.usdc.formatted ?? "0", 2)} USDC</strong>
               </div>
-              <select className="input walletAmountInput" value="USDC" disabled>
+              <DeskSelect className="input walletAmountInput" value="USDC" disabled>
                 <option value="USDC">USDC</option>
-              </select>
-              <select className="input walletAmountInput" value="Arbitrum" disabled>
+              </DeskSelect>
+              <DeskSelect className="input walletAmountInput" value="Arbitrum" disabled>
                 <option value="Arbitrum">Arbitrum</option>
-              </select>
+              </DeskSelect>
             </>
           ) : (
             <>
@@ -592,29 +597,29 @@ export default function ArbitrumHyperCoreBridgeSection({
           )}
 
           <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
-            <input
+            <DeskInput
               className="input walletAmountInput"
               inputMode="decimal"
               value={depositAmount}
               onChange={(event) => setDepositAmount(event.target.value)}
               placeholder={t("amountPlaceholder")}
             />
-            <button type="button" className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"} onClick={() => setDepositAmount(overview.arbitrum.usdc.formatted ?? "")}>
+            <DeskButton type="button" className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"} onClick={() => setDepositAmount(overview.arbitrum.usdc.formatted ?? "")}>
               {t("maxButton")}: {formatToken(overview.arbitrum.usdc.formatted ?? "0", 2)}
-            </button>
+            </DeskButton>
           </div>
 
           <div className={presentation === "modal" ? "walletActionRow fundingModalPrimaryActionRow fundingBridgeInlineActions" : "walletActionRow fundingBridgeInlineActions"}>
             {presentation === "card" ? (
               <>
                 {!isCorrectArbitrumChain ? (
-                  <button type="button" className="btn" onClick={() => handleSwitchToArbitrum("deposit")}>
+                  <DeskButton type="button" className="btn" onClick={() => handleSwitchToArbitrum("deposit")}>
                     {t("deposit.switchToArbitrum")}
-                  </button>
+                  </DeskButton>
                 ) : null}
-                <button type="button" className="btn" onClick={() => handleCopy("bridge-contract", overview.bridge.depositContractAddress)}>
+                <DeskButton type="button" className="btn" onClick={() => handleCopy("bridge-contract", overview.bridge.depositContractAddress)}>
                   {copiedKey === "bridge-contract" ? tCommon("copied") : t("deposit.copyBridgeAddress")}
-                </button>
+                </DeskButton>
               </>
             ) : null}
             {presentation === "card" && overview.bridge.links.depositContractExplorerUrl ? (
@@ -622,7 +627,7 @@ export default function ArbitrumHyperCoreBridgeSection({
                 {t("deposit.bridgeExplorer")}
               </a>
             ) : null}
-            <button
+            <DeskButton
               type="button"
               className="btn btnPrimary"
               onClick={() => {
@@ -635,7 +640,7 @@ export default function ArbitrumHyperCoreBridgeSection({
               disabled={!walletClient}
             >
               {!isCorrectArbitrumChain ? t("deposit.switchToArbitrum") : t("deposit.submit")}
-            </button>
+            </DeskButton>
           </div>
 
           {depositState.phase !== "idle" ? (
@@ -677,12 +682,12 @@ export default function ArbitrumHyperCoreBridgeSection({
                 <span>MAX</span>
                 <strong>{formatToken(overview.bridge.creditedBalance.formatted ?? "0", 2)} USDC</strong>
               </div>
-              <select className="input walletAmountInput" value="USDC" disabled>
+              <DeskSelect className="input walletAmountInput" value="USDC" disabled>
                 <option value="USDC">USDC</option>
-              </select>
-              <select className="input walletAmountInput" value="Arbitrum" disabled>
+              </DeskSelect>
+              <DeskSelect className="input walletAmountInput" value="Arbitrum" disabled>
                 <option value="Arbitrum">Arbitrum</option>
-              </select>
+              </DeskSelect>
             </>
           ) : (
             <>
@@ -709,37 +714,37 @@ export default function ArbitrumHyperCoreBridgeSection({
           <label className="settingsField">
             <span className="settingsFieldLabel">{t("withdraw.destinationLabel")}</span>
             <div className="walletAmountRow fundingAmountActionRow">
-              <input
+              <DeskInput
                 className="input walletAmountInput"
                 value={destinationAddress}
                 onChange={(event) => setDestinationAddress(event.target.value)}
                 placeholder={t("withdraw.destinationPlaceholder")}
               />
-              <button type="button" className="btn" onClick={() => setDestinationAddress(address ?? "")}>
+              <DeskButton type="button" className="btn" onClick={() => setDestinationAddress(address ?? "")}>
                 {t("withdraw.useConnectedWallet")}
-              </button>
-              <button type="button" className="btn" onClick={() => handleCopy("withdraw-destination", destinationAddress)}>
+              </DeskButton>
+              <DeskButton type="button" className="btn" onClick={() => handleCopy("withdraw-destination", destinationAddress)}>
                 {copiedKey === "withdraw-destination" ? tCommon("copied") : tCommon("copyAddress")}
-              </button>
+              </DeskButton>
             </div>
           </label>
           ) : null}
 
           <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
-            <input
+            <DeskInput
               className="input walletAmountInput"
               inputMode="decimal"
               value={withdrawAmount}
               onChange={(event) => setWithdrawAmount(event.target.value)}
               placeholder={t("amountPlaceholder")}
             />
-            <button type="button" className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"} onClick={() => setWithdrawAmount(overview.bridge.creditedBalance.formatted ?? "")}>
+            <DeskButton type="button" className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"} onClick={() => setWithdrawAmount(overview.bridge.creditedBalance.formatted ?? "")}>
               {t("maxButton")}: {formatToken(overview.bridge.creditedBalance.formatted ?? "0", 2)}
-            </button>
+            </DeskButton>
             {presentation === "card" && !isCorrectArbitrumChain ? (
-              <button type="button" className="btn" onClick={() => handleSwitchToArbitrum("withdraw")}>
+              <DeskButton type="button" className="btn" onClick={() => handleSwitchToArbitrum("withdraw")}>
                 {t("withdraw.switchToArbitrum")}
-              </button>
+              </DeskButton>
             ) : null}
             {presentation === "card" && overview.bridge.links.officialAppUrl ? (
               <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
@@ -747,7 +752,7 @@ export default function ArbitrumHyperCoreBridgeSection({
               </a>
             ) : null}
             {presentation === "card" ? (
-              <button
+              <DeskButton
                 type="button"
                 className="btn btnPrimary"
                 onClick={() => {
@@ -760,13 +765,13 @@ export default function ArbitrumHyperCoreBridgeSection({
                 disabled={!walletClient}
               >
                 {!isCorrectArbitrumChain ? t("withdraw.switchToArbitrum") : t("withdraw.submit")}
-              </button>
+              </DeskButton>
             ) : null}
           </div>
 
           {presentation === "modal" ? (
             <div className="walletActionRow fundingModalPrimaryActionRow">
-              <button
+              <DeskButton
                 type="button"
                 className="btn btnPrimary"
                 onClick={() => {
@@ -779,7 +784,7 @@ export default function ArbitrumHyperCoreBridgeSection({
                 disabled={!walletClient}
               >
                 {!isCorrectArbitrumChain ? t("withdraw.switchToArbitrum") : t("withdraw.submit")}
-              </button>
+              </DeskButton>
             </div>
           ) : null}
 
@@ -813,6 +818,6 @@ export default function ArbitrumHyperCoreBridgeSection({
           </div>
         </>
       ) : null}
-    </section>
+    </section></DeskSurface>
   );
 }

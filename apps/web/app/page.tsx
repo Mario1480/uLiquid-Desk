@@ -1,5 +1,10 @@
 "use client";
 
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import {
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
@@ -459,20 +464,20 @@ function aggregateOverviewTotals(rows: ExchangeAccountOverview[]): DashboardTota
 
 function DashboardSkeletonCard() {
   return (
-    <article className="card exchangeOverviewCard exchangeOverviewSkeleton" aria-hidden>
-      <div className="skeletonLine skeletonLineLg" />
-      <div className="skeletonLine skeletonLineMd" />
+    <DeskSurface><article className="card exchangeOverviewCard exchangeOverviewSkeleton" aria-hidden>
+      <GlassSkeleton className="skeletonLine skeletonLineLg" />
+      <GlassSkeleton className="skeletonLine skeletonLineMd" />
       <div className="exchangeOverviewStats" style={{ marginTop: 10 }}>
-        <div className="exchangeOverviewStatBlock"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" /></div>
-        <div className="exchangeOverviewStatBlock"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" /></div>
-        <div className="exchangeOverviewStatBlock"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" /></div>
-        <div className="exchangeOverviewStatBlock"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" /></div>
+        <div className="exchangeOverviewStatBlock"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" /></div>
+        <div className="exchangeOverviewStatBlock"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" /></div>
+        <div className="exchangeOverviewStatBlock"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" /></div>
+        <div className="exchangeOverviewStatBlock"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" /></div>
       </div>
       <div className="exchangeOverviewActions" style={{ marginTop: 10 }}>
-        <div className="skeletonButton" />
-        <div className="skeletonButton" />
+        <GlassSkeleton className="skeletonButton" />
+        <GlassSkeleton className="skeletonButton" />
       </div>
-    </article>
+    </article></DeskSurface>
   );
 }
 
@@ -1100,7 +1105,7 @@ export default function Page() {
       available: true,
       title: t("performance.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardPerformanceProCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardPerformanceProCard dashboardWidgetCardFill">
           <div className="dashboardPerformanceHead">
             <div>
               <div className="dashboardPerformanceTitle">{t("performance.title")}</div>
@@ -1122,7 +1127,7 @@ export default function Page() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
                 <span className="dashboardPerformanceSubtitle">{t("performance.filterLabel")}</span>
-                <select
+                <DeskSelect
                   className="select"
                   value={performanceExchangeFilter}
                   onChange={(event) => setPerformanceExchangeFilter(event.target.value)}
@@ -1133,11 +1138,11 @@ export default function Page() {
                       {item.exchange.toUpperCase()} · {item.label}
                     </option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
               <div className="dashboardPerformanceTabs" role="tablist" aria-label={t("performance.title")}>
                 {PERFORMANCE_RANGES.map((range) => (
-                  <button
+                  <DeskButton
                     key={range}
                     type="button"
                     role="tab"
@@ -1152,7 +1157,7 @@ export default function Page() {
                       : range === "7d"
                         ? t("performance.range7d")
                         : t("performance.range30d")}
-                  </button>
+                  </DeskButton>
                 ))}
               </div>
             </div>
@@ -1352,14 +1357,14 @@ export default function Page() {
               </div>
             </aside>
           </div>
-        </div>
+        </div></DeskSurface>
       )
     },
     calendar: {
       available: accessVisibility.economicCalendar,
       title: t("calendar.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardCalendarProCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardCalendarProCard dashboardWidgetCardFill">
           <div className="dashboardCalendarProHead">
             <div className="dashboardCalendarProTitle">{t("calendar.title")}</div>
             <Link href={withLocalePath("/calendar", locale)} className="btn">
@@ -1398,14 +1403,14 @@ export default function Page() {
               </div>
             )}
           </div>
-        </div>
+        </div></DeskSurface>
       )
     },
     news: {
       available: accessVisibility.news,
       title: t("news.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardNewsProCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardNewsProCard dashboardWidgetCardFill">
           <div className="dashboardNewsProHead">
             <div className="dashboardNewsProTitle">{t("news.intelligenceTitle")}</div>
             {accessVisibility.marketIntelligence ? (
@@ -1459,21 +1464,21 @@ export default function Page() {
               </div>
             )}
           </div>
-        </div>
+        </div></DeskSurface>
       )
     },
     fearGreed: {
       available: true,
       title: t("fearGreed.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardFearGreedCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardFearGreedCard dashboardWidgetCardFill">
           <img
             src="https://alternative.me/crypto/fear-and-greed-index.png"
             alt={t("fearGreed.alt")}
             className="dashboardFearGreedImage"
             loading="lazy"
           />
-        </div>
+        </div></DeskSurface>
       )
     },
     accounts: {
@@ -1482,9 +1487,9 @@ export default function Page() {
       render: () => (
         <div className="dashboardAccountsWidget dashboardWidgetScrollArea">
           {error ? (
-            <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>
+            <DeskSurface><div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>
               <strong>{t("errors.load")}</strong> {error}
-            </div>
+            </div></DeskSurface>
           ) : null}
 
           {loading ? (
@@ -1494,7 +1499,7 @@ export default function Page() {
               <DashboardSkeletonCard />
             </div>
           ) : overview.length === 0 ? (
-            <div className="card exchangeOverviewEmpty">
+            <DeskSurface><div className="card exchangeOverviewEmpty">
               <h3 style={{ marginTop: 0 }}>{t("empty.title")}</h3>
               <p style={{ color: "var(--muted)", marginTop: 0 }}>
                 {t("empty.description")}
@@ -1503,7 +1508,7 @@ export default function Page() {
                 <AppIcon name="settings" />
                 {t("empty.cta")}
               </Link>
-            </div>
+            </div></DeskSurface>
           ) : (
             <div className="exchangeOverviewGrid">
               {overview.map((item) => (
@@ -1522,7 +1527,7 @@ export default function Page() {
       available: accessVisibility.bots,
       title: t("botsOverview.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardBotOverviewCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardBotOverviewCard dashboardWidgetCardFill">
           <div className="dashboardBotOverviewHead">
             <div>
               <div className="dashboardBotOverviewTitle">{t("botsOverview.title")}</div>
@@ -1630,14 +1635,14 @@ export default function Page() {
               </div>
             )}
           </div>
-        </div>
+        </div></DeskSurface>
       )
     },
     gridBotsOverview: {
       available: accessVisibility.gridBots,
       title: t("gridBotsOverview.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardBotOverviewCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardBotOverviewCard dashboardWidgetCardFill">
           <div className="dashboardBotOverviewHead">
             <div>
               <div className="dashboardBotOverviewTitle">{t("gridBotsOverview.title")}</div>
@@ -1745,7 +1750,7 @@ export default function Page() {
               </div>
             )}
           </div>
-        </div>
+        </div></DeskSurface>
       )
     },
     marketSessions: {
@@ -1799,7 +1804,7 @@ export default function Page() {
       available: true,
       title: t("affiliateProfitshare.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardAffiliateProfitshareCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardAffiliateProfitshareCard dashboardWidgetCardFill">
           <div className="dashboardAffiliateProfitshareHead">
             <div>
               <div className="dashboardAffiliateProfitshareTitle">{t("affiliateProfitshare.title")}</div>
@@ -1859,7 +1864,7 @@ export default function Page() {
               </>
             )}
           </div>
-        </div>
+        </div></DeskSurface>
       )
     },
     wallet: {
@@ -1871,7 +1876,7 @@ export default function Page() {
       available: accessVisibility.tradingDesk,
       title: t("openPositions.title"),
       render: () => (
-        <div className="card dashboardInsightCard dashboardOpenPositionsCard dashboardWidgetCardFill">
+        <DeskSurface><div className="card dashboardInsightCard dashboardOpenPositionsCard dashboardWidgetCardFill">
           <div className="dashboardOpenPositionsHead">
             <div>
               <div className="dashboardOpenPositionsTitle">{t("openPositions.title")}</div>
@@ -1879,7 +1884,7 @@ export default function Page() {
             </div>
             <label className="dashboardOpenPositionsFilter">
               <span>{t("openPositions.filterLabel")}</span>
-              <select
+              <DeskSelect
                 className="select"
                 value={openPositionsExchangeFilter}
                 onChange={(event) => setOpenPositionsExchangeFilter(event.target.value)}
@@ -1890,7 +1895,7 @@ export default function Page() {
                     {item.exchange.toUpperCase()} · {item.label}
                   </option>
                 ))}
-              </select>
+              </DeskSelect>
             </label>
           </div>
 
@@ -1912,7 +1917,7 @@ export default function Page() {
             ) : (
               <>
                 <div className="dashboardOpenPositionsTableWrap">
-                  <table className="dashboardOpenPositionsTable">
+                  <DeskTable className="dashboardOpenPositionsTable">
                     <thead>
                       <tr>
                         <th>{t("openPositions.columns.exchange")}</th>
@@ -1970,7 +1975,7 @@ export default function Page() {
                         );
                       })}
                     </tbody>
-                  </table>
+                  </DeskTable>
                 </div>
 
                 <div className="dashboardOpenPositionsMobileList">
@@ -2022,7 +2027,7 @@ export default function Page() {
               </>
             )}
           </div>
-        </div>
+        </div></DeskSurface>
       )
     }
   }), [
@@ -2250,20 +2255,20 @@ export default function Page() {
           <div className="dashboardBuilderActions">
             {isEditMode ? (
               <>
-                <button type="button" className="btn btnPrimary" onClick={() => void handleSaveLayout()} disabled={layoutSaving}>
+                <DeskButton type="button" className="btn btnPrimary" onClick={() => void handleSaveLayout()} disabled={layoutSaving}>
                   <AppIcon name="save" />
                   {layoutSaving ? builderT("saving") : builderT("save")}
-                </button>
-                <button type="button" className="btn" onClick={handleDiscardLayout} disabled={layoutSaving}>
+                </DeskButton>
+                <DeskButton type="button" className="btn" onClick={handleDiscardLayout} disabled={layoutSaving}>
                   <AppIcon name="cancel" />
                   {builderT("discard")}
-                </button>
-                <button type="button" className="btn" onClick={handleRestoreDefaultLayout} disabled={layoutSaving}>
+                </DeskButton>
+                <DeskButton type="button" className="btn" onClick={handleRestoreDefaultLayout} disabled={layoutSaving}>
                   <AppIcon name="restore" />
                   {builderT("restoreDefault")}
-                </button>
+                </DeskButton>
                 <div className="dashboardBuilderAddWidgetWrap">
-                  <button
+                  <DeskButton
                     id="dashboardAddWidgetTrigger"
                     ref={addWidgetTriggerRef}
                     type="button"
@@ -2276,7 +2281,7 @@ export default function Page() {
                   >
                     <AppIcon name="add" />
                     {builderT("addWidget")}
-                  </button>
+                  </DeskButton>
                   {addWidgetMenuOpen ? (
                     <div
                       id="dashboardAddWidgetMenu"
@@ -2307,7 +2312,7 @@ export default function Page() {
                         <div className="dashboardBuilderAddWidgetEmpty" role="status">{builderT("addWidgetEmpty")}</div>
                       ) : (
                         hiddenAvailableItems.map((item) => (
-                          <button
+                          <DeskButton
                             key={item.id}
                             type="button"
                             className="dashboardBuilderAddWidgetItem"
@@ -2315,7 +2320,7 @@ export default function Page() {
                             role="menuitem"
                           >
                             {widgetContent[item.id].title}
-                          </button>
+                          </DeskButton>
                         ))
                       )}
                     </div>
@@ -2323,10 +2328,10 @@ export default function Page() {
                 </div>
               </>
             ) : (
-              <button type="button" className="btn" onClick={handleStartEdit} disabled={!canEditLayout || layoutLoading}>
+              <DeskButton type="button" className="btn" onClick={handleStartEdit} disabled={!canEditLayout || layoutLoading}>
                 <AppIcon name="edit" />
                 {canEditLayout ? builderT("edit") : builderT("editDisabledMobile")}
-              </button>
+              </DeskButton>
             )}
           </div>
         </div>

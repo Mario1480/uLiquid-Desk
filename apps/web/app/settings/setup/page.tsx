@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -70,14 +72,14 @@ export default function Setup() {
           <AppIcon name="create" />
           {t("newBot")}
         </Link>
-        <button onClick={loadBots} className="btn">
+        <DeskButton onClick={loadBots} className="btn">
           <AppIcon name="refresh" />
           {t("refreshList")}
-        </button>
+        </DeskButton>
       </div>
       {msg ? <p>{msg}</p> : null}
 
-      <div className="card" style={{ padding: 12 }}>
+      <DeskSurface><div className="card" style={{ padding: 12 }}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>{t("botsTitle")}</div>
         {loading ? (
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{tCommon("loading")}</div>
@@ -86,7 +88,7 @@ export default function Setup() {
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {bots.map((bot) => (
-              <div
+              <DeskSurface><div
                 key={bot.id}
                 className="card"
                 style={{
@@ -109,20 +111,20 @@ export default function Setup() {
 	                    <AppIcon name="open" />
 	                    {t("open")}
 	                  </Link>
-                  <button
+                  <DeskButton
                     className="btn btnStop"
 	                    onClick={() => setBotToDelete(bot)}
 	                    disabled={deletingId === bot.id}
 	                  >
 	                    <AppIcon name="delete" />
 	                    {deletingId === bot.id ? t("deleting") : t("delete")}
-                  </button>
+                  </DeskButton>
                 </div>
-              </div>
+              </div></DeskSurface>
             ))}
           </div>
         )}
-      </div>
+      </div></DeskSurface>
       <AdminConfirmDialog
         open={Boolean(botToDelete)}
         title={t("confirmDeleteTitle")}

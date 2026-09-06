@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
@@ -720,10 +725,10 @@ export default function StrategiesPage() {
           <p>{tMain("strategy.pageSubtitle")}</p>
         </div>
         {strategyEditingId ? (
-          <button className="btn" type="button" onClick={cancelStrategyPromptEdit} disabled={strategySaving}>
+          <DeskButton className="btn" type="button" onClick={cancelStrategyPromptEdit} disabled={strategySaving}>
             <AppIcon name="cancel" />
             {tMain("actions.cancel")}
-          </button>
+          </DeskButton>
         ) : null}
       </header>
 
@@ -737,7 +742,7 @@ export default function StrategiesPage() {
       ) : (
         <>
           <nav className="predictionBuilderStepper" aria-label={tMain("strategy.builder.stepsLabel")}>
-            <button
+            <DeskButton
               className={strategyBuilderStep === 1 ? "predictionBuilderStep predictionBuilderStepActive" : "predictionBuilderStep"}
               type="button"
               aria-current={strategyBuilderStep === 1 ? "step" : undefined}
@@ -750,8 +755,8 @@ export default function StrategiesPage() {
                 <strong>{tMain("strategy.builder.ideaStep")}</strong>
                 <small>{tMain("strategy.builder.ideaStepHint")}</small>
               </span>
-            </button>
-            <button
+            </DeskButton>
+            <DeskButton
               className={strategyBuilderStep === 2 ? "predictionBuilderStep predictionBuilderStepActive" : "predictionBuilderStep"}
               type="button"
               aria-current={strategyBuilderStep === 2 ? "step" : undefined}
@@ -765,8 +770,8 @@ export default function StrategiesPage() {
                 <strong>{tMain("strategy.builder.rulesStep")}</strong>
                 <small>{tMain("strategy.builder.rulesStepHint")}</small>
               </span>
-            </button>
-            <button
+            </DeskButton>
+            <DeskButton
               className={strategyBuilderStep === 3 ? "predictionBuilderStep predictionBuilderStepActive" : "predictionBuilderStep"}
               type="button"
               aria-current={strategyBuilderStep === 3 ? "step" : undefined}
@@ -778,7 +783,7 @@ export default function StrategiesPage() {
                 <strong>{tMain("strategy.builder.reviewStep")}</strong>
                 <small>{tMain("strategy.builder.reviewStepHint")}</small>
               </span>
-            </button>
+            </DeskButton>
           </nav>
 
           <details className="predictionTemplateLibrary">
@@ -809,7 +814,7 @@ export default function StrategiesPage() {
                       </span>
                     </div>
                     <div className="predictionTemplateActions">
-                      <button
+                      <DeskButton
                         className="btn"
                         type="button"
                         disabled={strategySaving || strategyGenerating || strategyDeletingId === item.id}
@@ -817,8 +822,8 @@ export default function StrategiesPage() {
                       >
                         <AppIcon name="edit" />
                         {tMain("actions.edit")}
-                      </button>
-                      <button
+                      </DeskButton>
+                      <DeskButton
                         className="btn btnDangerGhost"
                         type="button"
                         disabled={strategyDeletingId === item.id || strategySaving}
@@ -826,7 +831,7 @@ export default function StrategiesPage() {
                       >
                         <AppIcon name="delete" />
                         {strategyDeletingId === item.id ? tCommon("deleting") : tMain("actions.delete")}
-                      </button>
+                      </DeskButton>
                     </div>
                   </div>
                 );
@@ -850,7 +855,7 @@ export default function StrategiesPage() {
 
                   <label className="settingsField">
                     <span className="settingsFieldLabel">{tMain("strategy.promptName")}</span>
-                    <input
+                    <DeskInput
                       className="input"
                       value={strategyName}
                       maxLength={64}
@@ -862,22 +867,22 @@ export default function StrategiesPage() {
                   <fieldset className="predictionBuilderSegmentField">
                     <legend>{tMain("strategy.builder.strategyType")}</legend>
                     <div className="predictionBuilderSegmented">
-                      <button
+                      <DeskButton
                         type="button"
                         aria-pressed={strategyPromptMode === "trading_explainer"}
                         className={strategyPromptMode === "trading_explainer" ? "predictionBuilderSegmentActive" : ""}
                         onClick={() => handleStrategyPromptModeChange("trading_explainer")}
                       >
                         {tMain("strategy.builder.tradingSetup")}
-                      </button>
-                      <button
+                      </DeskButton>
+                      <DeskButton
                         type="button"
                         aria-pressed={strategyPromptMode === "market_analysis"}
                         className={strategyPromptMode === "market_analysis" ? "predictionBuilderSegmentActive" : ""}
                         onClick={() => handleStrategyPromptModeChange("market_analysis")}
                       >
                         {tMain("strategy.promptModeAnalysis")}
-                      </button>
+                      </DeskButton>
                     </div>
                   </fieldset>
 
@@ -904,19 +909,19 @@ export default function StrategiesPage() {
                   </div>
 
                   <div className="settingsPromptStarterRow">
-                    <button className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterTrendText"))}>
+                    <DeskButton className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterTrendText"))}>
                       {tMain("strategy.chat.starterTrend")}
-                    </button>
-                    <button className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterBreakoutText"))}>
+                    </DeskButton>
+                    <DeskButton className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterBreakoutText"))}>
                       {tMain("strategy.chat.starterBreakout")}
-                    </button>
-                    <button className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterRiskText"))}>
+                    </DeskButton>
+                    <DeskButton className="btn" type="button" disabled={strategyChatSending} onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterRiskText"))}>
                       {tMain("strategy.chat.starterRisk")}
-                    </button>
+                    </DeskButton>
                   </div>
 
                   <div className="settingsPromptChatInputRow predictionBuilderChatComposer">
-                    <textarea
+                    <DeskTextarea
                       className="input settingsPromptChatInput"
                       rows={4}
                       maxLength={1200}
@@ -925,7 +930,7 @@ export default function StrategiesPage() {
                       placeholder={tMain("strategy.chat.placeholder")}
                       disabled={strategyChatSending}
                     />
-                    <button
+                    <DeskButton
                       className="btn btnPrimary"
                       type="button"
                       disabled={strategyChatSending || !strategyChatInput.trim()}
@@ -933,7 +938,7 @@ export default function StrategiesPage() {
                     >
                       <AppIcon name="send" />
                       {strategyChatSending ? tMain("strategy.chat.thinking") : tMain("strategy.builder.sendToAi")}
-                    </button>
+                    </DeskButton>
                   </div>
                 </section>
 
@@ -966,14 +971,14 @@ export default function StrategiesPage() {
                         ))}
                       </div>
                       <div className="settingsPromptChatActions">
-                        <button className="btn btnPrimary" type="button" onClick={acceptStrategyDraftProposal}>
+                        <DeskButton className="btn btnPrimary" type="button" onClick={acceptStrategyDraftProposal}>
                           <AppIcon name="check" />
                           {tMain("strategy.builder.acceptDiff")}
-                        </button>
-                        <button className="btn" type="button" onClick={rejectStrategyDraftProposal}>
+                        </DeskButton>
+                        <DeskButton className="btn" type="button" onClick={rejectStrategyDraftProposal}>
                           <AppIcon name="cancel" />
                           {tMain("strategy.builder.rejectDiff")}
-                        </button>
+                        </DeskButton>
                       </div>
                     </div>
                   ) : null}
@@ -1014,10 +1019,10 @@ export default function StrategiesPage() {
                   </dl>
 
                   {strategyDraftHistory.length > 0 ? (
-                    <button className="btn predictionBuilderUndo" type="button" onClick={undoStrategyDraftChange}>
+                    <DeskButton className="btn predictionBuilderUndo" type="button" onClick={undoStrategyDraftChange}>
                       <AppIcon name="restore" />
                       {tMain("strategy.builder.undo")}
-                    </button>
+                    </DeskButton>
                   ) : null}
                 </aside>
               </div>
@@ -1028,14 +1033,14 @@ export default function StrategiesPage() {
                   <span>{tMain("strategy.builder.safetyShort")}</span>
                 </div>
                 <div className="predictionBuilderActionButtons">
-                  <button className="btn" type="button" onClick={syncStrategyDescriptionFromChat}>
+                  <DeskButton className="btn" type="button" onClick={syncStrategyDescriptionFromChat}>
                     <AppIcon name="refresh" />
                     {tMain("strategy.builder.updateDraft")}
-                  </button>
-                  <button className="btn btnPrimary" type="button" onClick={continueToStrategyRules}>
+                  </DeskButton>
+                  <DeskButton className="btn btnPrimary" type="button" onClick={continueToStrategyRules}>
                     {tMain("strategy.builder.continueRules")}
                     <AppIcon name="chevronRight" />
-                  </button>
+                  </DeskButton>
                 </div>
               </footer>
             </>
@@ -1059,7 +1064,7 @@ export default function StrategiesPage() {
                         <div className="predictionBuilderChoiceRow">
                           {STRATEGY_TIMEFRAME_OPTIONS.map((timeframe) => (
                             <label className={strategyTimeframes.includes(timeframe) ? "predictionBuilderChoice predictionBuilderChoiceActive" : "predictionBuilderChoice"} key={timeframe}>
-                              <input
+                              <DeskInput
                                 type="checkbox"
                                 checked={strategyTimeframes.includes(timeframe)}
                                 onChange={() => toggleStrategyTimeframe(timeframe)}
@@ -1071,33 +1076,33 @@ export default function StrategiesPage() {
                       </fieldset>
                       <label className="settingsField">
                         <span className="settingsFieldLabel">{tMain("strategy.runTimeframe")}</span>
-                        <select className="input" value={strategyRunTimeframe} onChange={(event) => setStrategyRunTimeframe(event.target.value as "" | StrategyTimeframe)} disabled={strategyTimeframes.length === 0}>
+                        <DeskSelect className="input" value={strategyRunTimeframe} onChange={(event) => setStrategyRunTimeframe(event.target.value as "" | StrategyTimeframe)} disabled={strategyTimeframes.length === 0}>
                           {strategyTimeframes.length === 0 ? <option value="">{tMain("strategy.noTimeframeLock")}</option> : null}
                           {strategyTimeframes.map((timeframe) => <option value={timeframe} key={timeframe}>{timeframe}</option>)}
-                        </select>
+                        </DeskSelect>
                       </label>
                       <div className="predictionBuilderHorizonField">
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.builder.horizon")}</span>
-                          <input className="input" type="number" min={1} value={strategyHorizonValue} onChange={(event) => setStrategyHorizonValue(event.target.value)} />
+                          <DeskInput className="input" type="number" min={1} value={strategyHorizonValue} onChange={(event) => setStrategyHorizonValue(event.target.value)} />
                         </label>
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.builder.horizonUnit")}</span>
-                          <select className="input" value={strategyHorizonUnit} onChange={(event) => setStrategyHorizonUnit(event.target.value as "minutes" | "hours" | "days")}>
+                          <DeskSelect className="input" value={strategyHorizonUnit} onChange={(event) => setStrategyHorizonUnit(event.target.value as "minutes" | "hours" | "days")}>
                             <option value="minutes">{tMain("strategy.builder.minutes")}</option>
                             <option value="hours">{tMain("strategy.builder.hours")}</option>
                             <option value="days">{tMain("strategy.builder.days")}</option>
-                          </select>
+                          </DeskSelect>
                         </label>
                       </div>
                       {strategyPromptMode === "trading_explainer" ? (
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.directionPreference")}</span>
-                          <select className="input" value={strategyDirectionPreference} onChange={(event) => setStrategyDirectionPreference(event.target.value as "long" | "short" | "either")}>
+                          <DeskSelect className="input" value={strategyDirectionPreference} onChange={(event) => setStrategyDirectionPreference(event.target.value as "long" | "short" | "either")}>
                             <option value="either">{tMain("strategy.directionEither")}</option>
                             <option value="long">{tMain("strategy.directionLong")}</option>
                             <option value="short">{tMain("strategy.directionShort")}</option>
-                          </select>
+                          </DeskSelect>
                         </label>
                       ) : null}
                     </div>
@@ -1114,15 +1119,15 @@ export default function StrategiesPage() {
                     <div className="predictionBuilderRuleGrid">
                       <label className="settingsField">
                         <span className="settingsFieldLabel">{tMain("strategy.builder.longRule")}</span>
-                        <textarea className="input" rows={3} maxLength={2000} value={strategyLongRule} onChange={(event) => setStrategyLongRule(event.target.value)} />
+                        <DeskTextarea className="input" rows={3} maxLength={2000} value={strategyLongRule} onChange={(event) => setStrategyLongRule(event.target.value)} />
                       </label>
                       <label className="settingsField">
                         <span className="settingsFieldLabel">{tMain("strategy.builder.shortRule")}</span>
-                        <textarea className="input" rows={3} maxLength={2000} value={strategyShortRule} onChange={(event) => setStrategyShortRule(event.target.value)} />
+                        <DeskTextarea className="input" rows={3} maxLength={2000} value={strategyShortRule} onChange={(event) => setStrategyShortRule(event.target.value)} />
                       </label>
                       <label className="settingsField predictionBuilderRuleWide">
                         <span className="settingsFieldLabel">{tMain("strategy.builder.noTradeRule")}</span>
-                        <textarea className="input" rows={3} maxLength={2000} value={strategyNoTradeRule} onChange={(event) => setStrategyNoTradeRule(event.target.value)} />
+                        <DeskTextarea className="input" rows={3} maxLength={2000} value={strategyNoTradeRule} onChange={(event) => setStrategyNoTradeRule(event.target.value)} />
                       </label>
                     </div>
                   </section>
@@ -1139,34 +1144,34 @@ export default function StrategiesPage() {
                       <div className="predictionBuilderRiskGrid">
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.builder.entryLevel")}</span>
-                          <input className="input" inputMode="decimal" value={strategyEntryLevel} onChange={(event) => setStrategyEntryLevel(event.target.value)} />
+                          <DeskInput className="input" inputMode="decimal" value={strategyEntryLevel} onChange={(event) => setStrategyEntryLevel(event.target.value)} />
                         </label>
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.builder.invalidationLevel")}</span>
-                          <input className="input" inputMode="decimal" value={strategyInvalidationLevel} onChange={(event) => setStrategyInvalidationLevel(event.target.value)} />
+                          <DeskInput className="input" inputMode="decimal" value={strategyInvalidationLevel} onChange={(event) => setStrategyInvalidationLevel(event.target.value)} />
                         </label>
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.builder.targetLevels")}</span>
-                          <input className="input" value={strategyTargetLevels} onChange={(event) => setStrategyTargetLevels(event.target.value)} placeholder="105, 110" />
+                          <DeskInput className="input" value={strategyTargetLevels} onChange={(event) => setStrategyTargetLevels(event.target.value)} placeholder="105, 110" />
                         </label>
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.confidenceTargetPct")}</span>
-                          <input className="input" type="number" min={0} max={100} step={1} value={strategyConfidenceTargetPct} onChange={(event) => setStrategyConfidenceTargetPct(event.target.value)} />
+                          <DeskInput className="input" type="number" min={0} max={100} step={1} value={strategyConfidenceTargetPct} onChange={(event) => setStrategyConfidenceTargetPct(event.target.value)} />
                         </label>
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.newsRiskMode")}</span>
-                          <select className="input" value={strategyNewsRiskMode} onChange={(event) => setStrategyNewsRiskMode(event.target.value as "off" | "block")}>
+                          <DeskSelect className="input" value={strategyNewsRiskMode} onChange={(event) => setStrategyNewsRiskMode(event.target.value as "off" | "block")}>
                             <option value="off">{tMain("strategy.newsRiskModeOff")}</option>
                             <option value="block">{tMain("strategy.newsRiskModeBlock")}</option>
-                          </select>
+                          </DeskSelect>
                         </label>
                         <label className="settingsField">
                           <span className="settingsFieldLabel">{tMain("strategy.slTpSource")}</span>
-                          <select className="input" value={strategySlTpSource} onChange={(event) => setStrategySlTpSource(event.target.value as "local" | "ai" | "hybrid")}>
+                          <DeskSelect className="input" value={strategySlTpSource} onChange={(event) => setStrategySlTpSource(event.target.value as "local" | "ai" | "hybrid")}>
                             <option value="local">{tMain("strategy.slTpSourceLocal")}</option>
                             <option value="ai">{tMain("strategy.slTpSourceAi")}</option>
                             <option value="hybrid">{tMain("strategy.slTpSourceHybrid")}</option>
-                          </select>
+                          </DeskSelect>
                         </label>
                       </div>
                     </section>
@@ -1184,7 +1189,7 @@ export default function StrategiesPage() {
                     <div className="predictionBuilderIndicatorToolbar">
                       <label className="predictionBuilderIndicatorSearch">
                         <AppIcon name="search" />
-                        <input
+                        <DeskInput
                           className="input"
                           type="search"
                           value={strategyIndicatorSearch}
@@ -1194,10 +1199,10 @@ export default function StrategiesPage() {
                       </label>
                       <div className="predictionBuilderChipRow">
                         {selectedStrategyIndicators.map((item) => (
-                          <button className="predictionBuilderChip predictionBuilderChipRemove" type="button" onClick={() => toggleStrategyIndicator(item.key)} key={item.key}>
+                          <DeskButton className="predictionBuilderChip predictionBuilderChipRemove" type="button" onClick={() => toggleStrategyIndicator(item.key)} key={item.key}>
                             {item.label}
                             <AppIcon name="close" />
-                          </button>
+                          </DeskButton>
                         ))}
                       </div>
                     </div>
@@ -1216,7 +1221,7 @@ export default function StrategiesPage() {
                           <div className="predictionBuilderIndicatorOptions">
                             {items.map((item) => (
                               <label className={strategyIndicatorKeys.includes(item.key) ? "predictionBuilderIndicatorOption predictionBuilderIndicatorOptionActive" : "predictionBuilderIndicatorOption"} key={item.key}>
-                                <input type="checkbox" checked={strategyIndicatorKeys.includes(item.key)} onChange={() => toggleStrategyIndicator(item.key)} />
+                                <DeskInput type="checkbox" checked={strategyIndicatorKeys.includes(item.key)} onChange={() => toggleStrategyIndicator(item.key)} />
                                 <span>
                                   <strong>{item.label}</strong>
                                   <small>{item.description}</small>
@@ -1242,7 +1247,7 @@ export default function StrategiesPage() {
                     </summary>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">{tMain("strategy.ohlcvBars")}</span>
-                      <input className="input" type="number" min={20} max={500} step={1} value={strategyOhlcvBars} onChange={(event) => setStrategyOhlcvBars(event.target.value)} />
+                      <DeskInput className="input" type="number" min={20} max={500} step={1} value={strategyOhlcvBars} onChange={(event) => setStrategyOhlcvBars(event.target.value)} />
                     </label>
                   </details>
                 </main>
@@ -1266,15 +1271,15 @@ export default function StrategiesPage() {
                     <progress value={strategyCompletionCount} max={strategyCompletionItems.length} />
                   </div>
                   {strategyCompletionCount < strategyCompletionItems.length ? (
-                    <div className="uiNotice uiNotice-warning predictionBuilderOverviewNotice">
+                    <DeskSurface><div className="uiNotice uiNotice-warning predictionBuilderOverviewNotice">
                       <AppIcon name="alerts" />
                       <span>{tMain("strategy.builder.incompleteHint")}</span>
-                    </div>
+                    </div></DeskSurface>
                   ) : (
-                    <div className="uiNotice uiNotice-success predictionBuilderOverviewNotice">
+                    <DeskSurface><div className="uiNotice uiNotice-success predictionBuilderOverviewNotice">
                       <AppIcon name="check" />
                       <span>{tMain("strategy.builder.completeHint")}</span>
-                    </div>
+                    </div></DeskSurface>
                   )}
                   {strategyDraftValidation && strategyDraftValidation.issues.length > 0 ? (
                     <div className="settingsDraftValidationError">
@@ -1282,27 +1287,27 @@ export default function StrategiesPage() {
                       <ul>{strategyDraftValidation.issues.map((issue) => <li key={issue.path + issue.code}>{issue.message}</li>)}</ul>
                     </div>
                   ) : null}
-                  <button className="btn predictionBuilderRefineButton" type="button" onClick={() => setStrategyBuilderStep(1)}>
+                  <DeskButton className="btn predictionBuilderRefineButton" type="button" onClick={() => setStrategyBuilderStep(1)}>
                     <AppIcon name="ai" />
                     {tMain("strategy.builder.refineWithAi")}
-                  </button>
+                  </DeskButton>
                   <span className="settingsMutedText">{tMain("strategy.builder.updatedNow")}</span>
                 </aside>
               </div>
 
               <footer className="predictionBuilderActionBar">
-                <button className="btn" type="button" onClick={() => setStrategyBuilderStep(1)}>
+                <DeskButton className="btn" type="button" onClick={() => setStrategyBuilderStep(1)}>
                   <AppIcon name="back" />
                   {tMain("strategy.builder.backToIdea")}
-                </button>
+                </DeskButton>
                 <div className="predictionBuilderSafety">
                   <AppIcon name="shield" />
                   <span>{tMain("strategy.builder.safetyShort")}</span>
                 </div>
-                <button className="btn btnPrimary" type="button" disabled={strategyGenerating} onClick={() => void generateStrategyPreview()}>
+                <DeskButton className="btn btnPrimary" type="button" disabled={strategyGenerating} onClick={() => void generateStrategyPreview()}>
                   <AppIcon name="preview" />
                   {strategyGenerating ? tMain("strategy.previewGenerating") : tMain("strategy.builder.reviewPreview")}
-                </button>
+                </DeskButton>
               </footer>
             </>
           ) : null}
@@ -1390,7 +1395,7 @@ export default function StrategiesPage() {
                         <AppIcon name="chevronDown" />
                       </span>
                     </summary>
-                    <textarea className="input" rows={16} maxLength={8000} value={strategyPreviewPromptText} onChange={(event) => setStrategyPreviewPromptText(event.target.value)} />
+                    <DeskTextarea className="input" rows={16} maxLength={8000} value={strategyPreviewPromptText} onChange={(event) => setStrategyPreviewPromptText(event.target.value)} />
                     {strategyPreviewMeta ? <span className="settingsMutedText">{tMain("strategy.previewHint", { mode: strategyPreviewMeta.mode, model: strategyPreviewMeta.model })}</span> : null}
                   </details>
                 </main>
@@ -1408,11 +1413,11 @@ export default function StrategiesPage() {
                     <div><dt>{tMain("strategy.builder.horizon")}</dt><dd>{strategyHorizonValue} {tMain("strategy.builder." + strategyHorizonUnit)}</dd></div>
                     <div><dt>{tMain("strategy.builder.selectedIndicators")}</dt><dd>{strategyIndicatorKeys.length}</dd></div>
                   </dl>
-                  <div className="uiNotice uiNotice-info predictionBuilderSaveNotice">
+                  <DeskSurface><div className="uiNotice uiNotice-info predictionBuilderSaveNotice">
                     <AppIcon name="shield" />
                     <span>{strategyPreviewSafety ? tMain("strategy.builder.previewSafetyVerified") : tMain("strategy.builder.privateTemplateNotice")}</span>
-                  </div>
-                  <button
+                  </div></DeskSurface>
+                  <DeskButton
                     className="btn btnPrimary predictionBuilderSaveButton"
                     type="button"
                     disabled={strategySaving || !strategyPreviewPromptText.trim() || strategyDraftValidation?.valid === false}
@@ -1420,10 +1425,10 @@ export default function StrategiesPage() {
                   >
                     <AppIcon name="save" />
                     {strategySaving ? tMain("strategy.previewSaving") : strategyEditingId ? tMain("strategy.builder.confirmUpdate") : tMain("strategy.builder.saveTemplate")}
-                  </button>
-                  <button className="predictionBuilderTextButton" type="button" onClick={() => setStrategyBuilderStep(2)} disabled={strategySaving}>
+                  </DeskButton>
+                  <DeskButton className="predictionBuilderTextButton" type="button" onClick={() => setStrategyBuilderStep(2)} disabled={strategySaving}>
                     {tMain("strategy.builder.backAndEdit")}
-                  </button>
+                  </DeskButton>
                   <span className="predictionBuilderDestination">
                     <AppIcon name="template" />
                     {tMain("strategy.builder.savedDestination")}

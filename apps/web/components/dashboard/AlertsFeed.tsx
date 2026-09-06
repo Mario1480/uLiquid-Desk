@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 
@@ -45,7 +46,7 @@ export default function AlertsFeed({ alerts }: { alerts: DashboardAlert[] }) {
   const t = useTranslations("dashboard.alerts");
 
   return (
-    <section className="card dashboardAlertsCard">
+    <DeskSurface><section className="card dashboardAlertsCard">
       <div className="dashboardAlertsHead">
         <div className="dashboardAlertsTitle">{t("title")}</div>
         {alerts.length > 0 ? <span className="dashboardAlertsCount">{alerts.length}</span> : null}
@@ -83,6 +84,6 @@ export default function AlertsFeed({ alerts }: { alerts: DashboardAlert[] }) {
           })}
         </div>
       )}
-    </section>
+    </section></DeskSurface>
   );
 }

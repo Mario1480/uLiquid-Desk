@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -440,7 +444,7 @@ export default function NotificationsPage() {
   return (
     <div className="settingsWrap">
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="card settingsSection" style={{ fontSize: 13 }}>
+      <DeskSurface><div className="card settingsSection" style={{ fontSize: 13 }}>
         <div className="settingsSectionHeader">
           <div style={{ fontWeight: 700 }}>{t("telegram.title")}</div>
           {linkStatus.connectUrl ? (
@@ -490,25 +494,25 @@ export default function NotificationsPage() {
             </div>
           ) : null}
 	          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-	            <button className="btn btnPrimary" type="button" onClick={startTelegramLink} disabled={!tokenConfigured || linking}>
+	            <DeskButton className="btn btnPrimary" type="button" onClick={startTelegramLink} disabled={!tokenConfigured || linking}>
 	              <AppIcon name="telegram" />
 	              {linking ? tCommon("saving") : t("telegram.connect")}
-	            </button>
+	            </DeskButton>
 	            {linkStatus.connectUrl ? (
 	              <a className="btn" href={linkStatus.connectUrl} target="_blank" rel="noreferrer">
 	                <AppIcon name="external" />
 	                {t("telegram.openBot")}
 	              </a>
 	            ) : null}
-	            <button className="btn" type="button" onClick={refreshTelegramLinkStatus} disabled={refreshingLink}>
+	            <DeskButton className="btn" type="button" onClick={refreshTelegramLinkStatus} disabled={refreshingLink}>
 	              <AppIcon name="refresh" />
 	              {refreshingLink ? tCommon("loading") : t("telegram.refreshStatus")}
-	            </button>
+	            </DeskButton>
 	            {linkStatus.status === "connected" ? (
-	              <button className="btn" type="button" onClick={disconnectTelegram} disabled={unlinking}>
+	              <DeskButton className="btn" type="button" onClick={disconnectTelegram} disabled={unlinking}>
 	                <AppIcon name="unlink" />
 	                {unlinking ? tCommon("saving") : t("telegram.disconnect")}
-	              </button>
+	              </DeskButton>
             ) : null}
           </div>
         </div>
@@ -539,7 +543,7 @@ export default function NotificationsPage() {
                   : !subscriptionEmailAvailable || !subscriptionTelegramAvailable;
               return (
                 <label className="subscriptionReminderChoice" key={channel} aria-disabled={unavailable}>
-                  <input
+                  <DeskInput
                     type="radio"
                     name="subscription-notification-channel"
                     checked={subscriptionChannel === channel}
@@ -556,27 +560,27 @@ export default function NotificationsPage() {
           </div>
           <label className="adminFormField">
             <span className="adminFormFieldLabel">{t("subscriptionReminders.language")}</span>
-            <select
+            <DeskSelect
               className="input"
               value={subscriptionLocale}
               onChange={(event) => setSubscriptionLocale(event.target.value === "en" ? "en" : "de")}
             >
               <option value="de">{t("subscriptionReminders.languages.de")}</option>
               <option value="en">{t("subscriptionReminders.languages.en")}</option>
-            </select>
+            </DeskSelect>
           </label>
           {subscriptionChannel !== "email" && linkStatus.status !== "connected" ? (
-            <div className="uiNotice uiNotice-warning">{t("subscriptionReminders.telegramFallback")}</div>
+            <DeskSurface><div className="uiNotice uiNotice-warning">{t("subscriptionReminders.telegramFallback")}</div></DeskSurface>
           ) : null}
           {!subscriptionEmailAvailable || !subscriptionTelegramAvailable ? (
-            <div className="uiNotice uiNotice-info">{t("subscriptionReminders.unavailableHint")}</div>
+            <DeskSurface><div className="uiNotice uiNotice-info">{t("subscriptionReminders.unavailableHint")}</div></DeskSurface>
           ) : null}
         </div>
         <div style={{ display: "grid", gap: 10, marginBottom: 10 }}>
           {manualFallbackEnabled ? (
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("telegram.chatIdFallback")}</span>
-              <input
+              <DeskInput
                 className="input"
                 placeholder="123456789"
                 value={chatId}
@@ -595,7 +599,7 @@ export default function NotificationsPage() {
                 : t("dailyCalendar.neverSent")}
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-              <input
+              <DeskInput
                 type="checkbox"
                 checked={dailyEnabled}
                 onChange={(e) => setDailyEnabled(e.target.checked)}
@@ -604,7 +608,7 @@ export default function NotificationsPage() {
             </label>
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.sendTimeLocal")}</span>
-              <input
+              <DeskInput
                 type="time"
                 className="input"
                 value={dailySendTimeLocal}
@@ -614,7 +618,7 @@ export default function NotificationsPage() {
             <div style={{ display: "grid", gap: 8 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.timezone")}</span>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <input
+                <DeskInput
                   type="radio"
                   name="daily-timezone-mode"
                   checked={dailyTimezoneMode === "device"}
@@ -623,7 +627,7 @@ export default function NotificationsPage() {
                 <span>{t("dailyCalendar.timezoneAuto")}</span>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <input
+                <DeskInput
                   type="radio"
                   name="daily-timezone-mode"
                   checked={dailyTimezoneMode === "manual"}
@@ -637,7 +641,7 @@ export default function NotificationsPage() {
               {dailyTimezoneMode === "manual" ? (
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.timezone")}</span>
-                  <input
+                  <DeskInput
                     className="input"
                     list="daily-calendar-timezones"
                     placeholder={t("dailyCalendar.timezoneManualPlaceholder")}
@@ -661,7 +665,7 @@ export default function NotificationsPage() {
                 {CALENDAR_CURRENCIES.map((entry) => {
                   const active = dailyCurrencies.includes(entry.code);
                   return (
-                    <button
+                    <DeskButton
                       key={entry.code}
                       type="button"
                       className="badge"
@@ -669,7 +673,7 @@ export default function NotificationsPage() {
                       onClick={() => toggleCurrency(entry.code)}
                     >
                       {entry.flag} {entry.code}
-                    </button>
+                    </DeskButton>
                   );
                 })}
               </div>
@@ -680,7 +684,7 @@ export default function NotificationsPage() {
                 {IMPACT_ORDER.map((impact) => {
                   const active = dailyImpacts.includes(impact);
                   return (
-                    <button
+                    <DeskButton
                       key={impact}
                       type="button"
                       className="badge"
@@ -688,7 +692,7 @@ export default function NotificationsPage() {
                       onClick={() => toggleImpact(impact)}
                     >
                       {t(`dailyCalendar.impact.${impact}`)}
-                    </button>
+                    </DeskButton>
                   );
                 })}
               </div>
@@ -740,7 +744,7 @@ export default function NotificationsPage() {
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <span className="badge">{token.enabled && !token.revokedAt ? t("mobilePush.active") : t("mobilePush.revoked")}</span>
                       {token.enabled && !token.revokedAt ? (
-                        <button
+                        <DeskButton
                           className="btn btnStop"
                           type="button"
                           onClick={() => setConfirmPushRevokeId(token.id)}
@@ -748,7 +752,7 @@ export default function NotificationsPage() {
                         >
                           <AppIcon name="delete" />
                           {revokingPushId === token.id ? tCommon("deleting") : t("mobilePush.revoke")}
-                        </button>
+                        </DeskButton>
                       ) : null}
                     </div>
                   </div>
@@ -760,23 +764,23 @@ export default function NotificationsPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          <button className="btn btnPrimary" onClick={saveConfig} disabled={saving}>
+          <DeskButton className="btn btnPrimary" onClick={saveConfig} disabled={saving}>
             <AppIcon name="save" />
             {saving ? tCommon("saving") : tCommon("saveSettings")}
-          </button>
-          <button className="btn" onClick={sendTest} disabled={sending}>
+          </DeskButton>
+          <DeskButton className="btn" onClick={sendTest} disabled={sending}>
             <AppIcon name="send" />
             {sending ? t("messages.sending") : t("messages.sendTest")}
-          </button>
-          <button className="btn" onClick={sendCalendarNow} disabled={sendingCalendar}>
+          </DeskButton>
+          <DeskButton className="btn" onClick={sendCalendarNow} disabled={sendingCalendar}>
             <AppIcon name="calendar" />
             {sendingCalendar ? t("messages.sending") : t("dailyCalendar.sendNow")}
-          </button>
+          </DeskButton>
         </div>
         {msg ? (
           <div style={{ marginTop: 10, color: "var(--muted)" }}>{msg}</div>
         ) : null}
-      </div>
+      </div></DeskSurface>
       <AdminConfirmDialog
         open={Boolean(confirmPushRevokeId)}
         title={t("mobilePush.confirmTitle")}

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState, type ReactNode } from "react";
 import { AppIcon } from "../AppIcon";
 
@@ -55,10 +57,10 @@ export default function Notice({
   if (hidden) return null;
 
   return (
-    <div className={cx("uiNotice", `uiNotice-${tone}`, canDismiss && "uiNoticeDismissible", className)} role={resolvedRole}>
+    <DeskSurface><div className={cx("uiNotice", `uiNotice-${tone}`, canDismiss && "uiNoticeDismissible", className)} role={resolvedRole}>
       <div className="uiNoticeContent">{children}</div>
       {canDismiss ? (
-        <button
+        <DeskButton
           aria-label={dismissLabel}
           className="uiNoticeDismiss"
           type="button"
@@ -71,8 +73,8 @@ export default function Notice({
           }}
         >
           <AppIcon name="close" />
-        </button>
+        </DeskButton>
       ) : null}
-    </div>
+    </div></DeskSurface>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
+import { DeskButton } from "@/components/desk/DeskButton";
 import type { ReactNode } from "react";
 import { AppIcon } from "../../app/components/AppIcon";
 
@@ -19,8 +21,8 @@ export default function PredictionDetailDrawer({
   children
 }: PredictionDetailDrawerProps) {
   return (
-    <div className="predictionDrawerBackdrop" role="presentation" onMouseDown={onClose}>
-      <aside
+    <DeskDialog onClose={onClose}><div className="predictionDrawerBackdrop" role="presentation" onMouseDown={onClose}>
+      <DeskDialogPanel><aside
         className="predictionDrawer"
         role="dialog"
         aria-modal="true"
@@ -32,12 +34,12 @@ export default function PredictionDetailDrawer({
             <div className="predictionSectionEyebrow">{subtitle}</div>
             <h2 id="prediction-detail-title" className="predictionDrawerTitle">{title}</h2>
           </div>
-          <button className="btn predictionDrawerClose" type="button" onClick={onClose} aria-label={closeLabel}>
+          <DeskButton className="btn predictionDrawerClose" type="button" onClick={onClose} aria-label={closeLabel}>
             <AppIcon name="close" />
-          </button>
+          </DeskButton>
         </header>
         <div className="predictionDrawerBody">{children}</div>
-      </aside>
-    </div>
+      </aside></DeskDialogPanel>
+    </div></DeskDialog>
   );
 }

@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -372,10 +376,10 @@ export default function RelayBotVaultFundingSection({
 
   if (overviewQuery.isLoading) {
     return (
-      <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
-        <div className="skeletonLine skeletonLineLg" />
-        <div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} />
-      </section>
+      <DeskSurface dense><section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
+        <GlassSkeleton className="skeletonLine skeletonLineLg" />
+        <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} />
+      </section></DeskSurface>
     );
   }
 
@@ -384,7 +388,7 @@ export default function RelayBotVaultFundingSection({
   }
 
   return (
-    <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection fundingRelayModalSection" : ""}`}>
+    <DeskSurface dense><section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection fundingRelayModalSection" : ""}`}>
       <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
         <div className="walletSectionIntro">
           {presentation === "modal" ? (
@@ -415,18 +419,18 @@ export default function RelayBotVaultFundingSection({
       </div>
 
       <div className="fundingRelayBalanceGrid">
-        <div className="uiMetricTile fundingRelayBalanceTile">
+        <DeskSurface dense><div className="uiMetricTile fundingRelayBalanceTile">
           <span className="uiMetricLabel">{sourceUsdcLabel}</span>
           <strong className="uiMetricValue">{displayBalance(sourceUsdcBalance)}</strong>
-        </div>
-        <div className="uiMetricTile fundingRelayBalanceTile">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="uiMetricTile fundingRelayBalanceTile">
           <span className="uiMetricLabel">{destinationUsdcLabel}</span>
           <strong className="uiMetricValue">{displayBalance(destinationUsdcBalance)}</strong>
-        </div>
-        <div className="uiMetricTile fundingRelayBalanceTile">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="uiMetricTile fundingRelayBalanceTile">
           <span className="uiMetricLabel">{t("balances.hyperEvmHype")}</span>
           <strong className="uiMetricValue">{displayBalance(overview.hyperEvm.hype, 6)}</strong>
-        </div>
+        </div></DeskSurface>
       </div>
 
       <div className="fundingRelayPanel">
@@ -435,7 +439,7 @@ export default function RelayBotVaultFundingSection({
           <strong>USDC</strong>
         </div>
         <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField fundingRelayAmountRow" : ""}`}>
-          <input
+          <DeskInput
             className="walletAmountInput"
             type="number"
             min="0"
@@ -448,7 +452,7 @@ export default function RelayBotVaultFundingSection({
             placeholder={t("amountPlaceholder")}
             disabled={busy}
           />
-          <button
+          <DeskButton
             type="button"
             className="btn"
             disabled={busy || !sourceUsdcBalance?.available}
@@ -459,14 +463,14 @@ export default function RelayBotVaultFundingSection({
           >
             <AppIcon name="max" />
             {t("maxButton")}
-          </button>
+          </DeskButton>
         </div>
       </div>
 
       {!isWithdrawal ? (
         <div className={`fundingRelayTopupCard${includeHypeTopup ? " isActive" : ""}`}>
           <label className="fundingRelayTopupToggle">
-            <input
+            <DeskInput
               type="checkbox"
               checked={includeHypeTopup}
               onChange={(event) => {
@@ -483,7 +487,7 @@ export default function RelayBotVaultFundingSection({
 
       {!isWithdrawal && includeHypeTopup ? (
         <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField fundingRelayAmountRow" : ""}`}>
-          <input
+          <DeskInput
             className="walletAmountInput"
             type="number"
             min="0"
@@ -501,43 +505,43 @@ export default function RelayBotVaultFundingSection({
       ) : null}
 
       <div className="fundingRelayQuoteGrid">
-        <div className="uiMetricTile fundingRelayQuoteTile">
+        <DeskSurface dense><div className="uiMetricTile fundingRelayQuoteTile">
           <span className="uiMetricLabel">{t("quote.usdcOut")}</span>
           <div className="uiMetricMeta">{usdcOut ? `${formatToken(usdcOut, 6)} USDC` : "-"}</div>
-        </div>
+        </div></DeskSurface>
         {!isWithdrawal ? (
-          <div className="uiMetricTile fundingRelayQuoteTile">
+          <DeskSurface dense><div className="uiMetricTile fundingRelayQuoteTile">
             <span className="uiMetricLabel">{t("quote.hypeOut")}</span>
             <div className="uiMetricMeta">{hypeOut ? `${formatToken(hypeOut, 6)} HYPE` : includeHypeTopup ? "-" : t("quote.notIncluded")}</div>
-          </div>
+          </div></DeskSurface>
         ) : null}
-        <div className="uiMetricTile fundingRelayQuoteTile">
+        <DeskSurface dense><div className="uiMetricTile fundingRelayQuoteTile">
           <span className="uiMetricLabel">{t("quote.relayFee")}</span>
           <div className="uiMetricMeta">{quoteFeesLabel(quote)}</div>
-        </div>
-        <div className="uiMetricTile fundingRelayQuoteTile">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="uiMetricTile fundingRelayQuoteTile">
           <span className="uiMetricLabel">{t("quote.eta")}</span>
           <div className="uiMetricMeta">{quoteEtaLabel(quote)}</div>
-        </div>
+        </div></DeskSurface>
       </div>
 
       {!isCorrectSourceChain ? (
 	        <div className="walletActionRow fundingModalPrimaryActionRow">
-	          <button type="button" className="btn btnPrimary" onClick={() => void handleSwitchToArbitrum()} disabled={busy}>
+	          <DeskButton type="button" className="btn btnPrimary" onClick={() => void handleSwitchToArbitrum()} disabled={busy}>
 	            <AppIcon name="switch" />
 	            {t("switchNetwork")}
-	          </button>
+	          </DeskButton>
 	        </div>
       ) : (
 	        <div className="walletActionRow fundingModalPrimaryActionRow">
-	          <button type="button" className="btn" onClick={() => void handleQuote()} disabled={busy}>
+	          <DeskButton type="button" className="btn" onClick={() => void handleQuote()} disabled={busy}>
 	            <AppIcon name="preview" />
 	            {state.phase === "quoting" ? t("quote.loadingShort") : t("quote.button")}
-	          </button>
-	          <button type="button" className="btn btnPrimary" onClick={() => void handleExecute()} disabled={busy || !walletClient || !(isWithdrawal ? hyperEvmPublicClient : arbitrumPublicClient)}>
+	          </DeskButton>
+	          <DeskButton type="button" className="btn btnPrimary" onClick={() => void handleExecute()} disabled={busy || !walletClient || !(isWithdrawal ? hyperEvmPublicClient : arbitrumPublicClient)}>
 	            <AppIcon name={isWithdrawal ? "withdraw" : "deposit"} />
 	            {busy && state.phase !== "quoting" ? t("execute.busy") : t("execute.button")}
-	          </button>
+	          </DeskButton>
         </div>
       )}
 
@@ -551,6 +555,6 @@ export default function RelayBotVaultFundingSection({
           ) : null}
         </div>
       ) : null}
-    </section>
+    </section></DeskSurface>
   );
 }

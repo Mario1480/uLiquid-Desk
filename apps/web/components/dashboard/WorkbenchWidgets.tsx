@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import {
   useCallback,
   useEffect,
@@ -80,7 +85,7 @@ export function WorkbenchFrame({
   actions?: ReactNode;
 }) {
   return (
-    <div className="card dashboardInsightCard dashboardWorkbenchCard dashboardWidgetCardFill">
+    <DeskSurface><div className="card dashboardInsightCard dashboardWorkbenchCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div className="dashboardCompactWidgetTitle">{title}</div>
         {actions}
@@ -88,7 +93,7 @@ export function WorkbenchFrame({
       <div className="dashboardWidgetScrollArea dashboardWorkbenchBody">
         {children}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }
 
@@ -224,17 +229,17 @@ export function NotesWidget() {
     <WorkbenchFrame
       title={t("notes.title")}
       actions={
-        <button
+        <DeskButton
           className="btn btnPrimary"
           disabled={busy || !doc}
           onClick={() => void save()}
         >
           <AppIcon name="save" />
           {t("save")}
-        </button>
+        </DeskButton>
       }
     >
-      <textarea
+      <DeskTextarea
         className="input dashboardWorkbenchTextarea"
         aria-label={t("notes.text")}
         placeholder={t("notes.text")}
@@ -246,7 +251,7 @@ export function NotesWidget() {
       {draft.checklist.map((item) => (
         <div className="dashboardWorkbenchRow" key={item.id}>
           <label className="dashboardWorkbenchCheck">
-            <input
+            <DeskInput
               type="checkbox"
               checked={item.done}
               disabled={busy}
@@ -261,7 +266,7 @@ export function NotesWidget() {
             />
             <span>{item.text}</span>
           </label>
-          <button
+          <DeskButton
             className="btn"
             disabled={busy}
             aria-label={t("remove")}
@@ -273,7 +278,7 @@ export function NotesWidget() {
             }
           >
             <AppIcon name="remove" />
-          </button>
+          </DeskButton>
         </div>
       ))}
       <form
@@ -291,7 +296,7 @@ export function NotesWidget() {
           setLine("");
         }}
       >
-        <input
+        <DeskInput
           className="input"
           value={line}
           maxLength={300}
@@ -300,7 +305,7 @@ export function NotesWidget() {
           disabled={busy || !doc}
           onChange={(e) => setLine(e.target.value)}
         />
-        <button
+        <DeskButton
           className="btn"
           disabled={
             busy || !doc || !line.trim() || draft.checklist.length >= 30
@@ -308,20 +313,20 @@ export function NotesWidget() {
         >
           <AppIcon name="add" />
           {t("add")}
-        </button>
+        </DeskButton>
       </form>
       {saved ? <span role="status">{t("saved")}</span> : null}
       {error ? (
         <div role="alert" className="dashboardWidgetInlineError">
           {t(error)}{" "}
-          <button
+          <DeskButton
             className="btn"
             disabled={busy}
             onClick={() => void refreshRevision()}
           >
             <AppIcon name="refresh" />
             {t("reloadRevision")}
-          </button>
+          </DeskButton>
         </div>
       ) : null}
     </WorkbenchFrame>
@@ -391,10 +396,10 @@ export function PriceAlertsWidget() {
     <WorkbenchFrame
       title={t("priceAlerts.title")}
       actions={
-        <button className="btn" disabled={busy} onClick={() => void check()}>
+        <DeskButton className="btn" disabled={busy} onClick={() => void check()}>
           <AppIcon name="refresh" />
           {t("refresh")}
-        </button>
+        </DeskButton>
       }
     >
       <form
@@ -415,7 +420,7 @@ export function PriceAlertsWidget() {
             ]);
         }}
       >
-        <select
+        <DeskSelect
           className="input"
           aria-label={t("symbol")}
           value={symbol}
@@ -424,8 +429,8 @@ export function PriceAlertsWidget() {
           {symbols.map((s) => (
             <option key={s}>{s}</option>
           ))}
-        </select>
-        <select
+        </DeskSelect>
+        <DeskSelect
           className="input"
           aria-label={t("priceAlerts.direction")}
           value={direction}
@@ -433,8 +438,8 @@ export function PriceAlertsWidget() {
         >
           <option value="above">{t("priceAlerts.above")}</option>
           <option value="below">{t("priceAlerts.below")}</option>
-        </select>
-        <input
+        </DeskSelect>
+        <DeskInput
           className="input"
           type="number"
           step="any"
@@ -446,13 +451,13 @@ export function PriceAlertsWidget() {
           value={target}
           onChange={(e) => setTarget(e.target.value)}
         />
-        <button
+        <DeskButton
           className="btn btnPrimary"
           disabled={!data || busy || (data?.value.items.length ?? 0) >= 20}
         >
           <AppIcon name="add" />
           {t("add")}
-        </button>
+        </DeskButton>
       </form>
       <div className="dashboardCompactWidgetSubtitle">
         {t("priceAlerts.scope")}
@@ -488,7 +493,7 @@ export function PriceAlertsWidget() {
                 </small>
               </div>
               <div className="dashboardWorkbenchActions">
-                <button
+                <DeskButton
                   className="btn"
                   disabled={busy}
                   aria-label={t(
@@ -521,8 +526,8 @@ export function PriceAlertsWidget() {
                           : "play"
                     }
                   />
-                </button>
-                <button
+                </DeskButton>
+                <DeskButton
                   className="btn"
                   disabled={busy}
                   aria-label={t("remove")}
@@ -533,7 +538,7 @@ export function PriceAlertsWidget() {
                   }
                 >
                   <AppIcon name="remove" />
-                </button>
+                </DeskButton>
               </div>
             </div>
           );
@@ -567,14 +572,14 @@ export function TradingSummaryWidget() {
     <WorkbenchFrame
       title={t("tradingSummary.title")}
       actions={
-        <button className="btn" disabled={loading} onClick={() => void load()}>
+        <DeskButton className="btn" disabled={loading} onClick={() => void load()}>
           <AppIcon name="refresh" />
           {t("refresh")}
-        </button>
+        </DeskButton>
       }
     >
       <div className="dashboardWorkbenchRow">
-        <select
+        <DeskSelect
           className="input"
           aria-label={t("period")}
           value={period}
@@ -582,8 +587,8 @@ export function TradingSummaryWidget() {
         >
           <option value="day">{t("day")}</option>
           <option value="week">{t("week")}</option>
-        </select>
-        <select
+        </DeskSelect>
+        <DeskSelect
           className="input"
           aria-label={t("source")}
           value={source}
@@ -594,12 +599,12 @@ export function TradingSummaryWidget() {
               {t(s)}
             </option>
           ))}
-        </select>
+        </DeskSelect>
       </div>
       {summary ? (
         <div className="dashboardWorkbenchMetrics">
           {(["pnl", "fees", "net", "trades", "winRate"] as const).map((key) => (
-            <div className="uiMetricTile" key={key}>
+            <DeskSurface><div className="uiMetricTile" key={key}>
               <span>{t(`tradingSummary.${key}`)}</span>
               <strong>
                 {key === "trades"
@@ -610,7 +615,7 @@ export function TradingSummaryWidget() {
                       : `${summary[key]!.toFixed(1)}%`
                     : money(summary[key])}
               </strong>
-            </div>
+            </div></DeskSurface>
           ))}
         </div>
       ) : (
@@ -667,26 +672,26 @@ export function TradeJournalWidget() {
       title={t("tradeJournal.title")}
       actions={
         <div className="dashboardWorkbenchActions">
-          <button
+          <DeskButton
             className="btn"
             disabled={busy || loading}
             onClick={() => void load()}
           >
             <AppIcon name="refresh" />
             {t("refresh")}
-          </button>
-          <button
+          </DeskButton>
+          <DeskButton
             className="btn"
             disabled={!data || busy}
             onClick={() => setEditor(!editor)}
           >
             <AppIcon name="add" />
             {t("manual")}
-          </button>
+          </DeskButton>
         </div>
       }
     >
-      <select
+      <DeskSelect
         className="input"
         aria-label={t("source")}
         value={source}
@@ -697,7 +702,7 @@ export function TradeJournalWidget() {
             {t(s)}
           </option>
         ))}
-      </select>
+      </DeskSelect>
       <small>{t("journal.coverage")}</small>
       {editor ? (
         <form
@@ -733,18 +738,18 @@ export function TradeJournalWidget() {
         >
           <label>
             {t("symbol")}
-            <input className="input" name="symbol" maxLength={32} required />
+            <DeskInput className="input" name="symbol" maxLength={32} required />
           </label>
           <label>
             {t("side")}
-            <select className="input" name="side">
+            <DeskSelect className="input" name="side">
               <option value="long">Long</option>
               <option value="short">Short</option>
-            </select>
+            </DeskSelect>
           </label>
           <label>
             {t("journal.entry")}
-            <input
+            <DeskInput
               className="input"
               name="entryAt"
               type="datetime-local"
@@ -753,7 +758,7 @@ export function TradeJournalWidget() {
           </label>
           <label>
             {t("journal.exit")}
-            <input
+            <DeskInput
               className="input"
               name="exitAt"
               type="datetime-local"
@@ -762,7 +767,7 @@ export function TradeJournalWidget() {
           </label>
           <label>
             {t("journal.grossPnl")}
-            <input
+            <DeskInput
               className="input"
               name="pnl"
               type="number"
@@ -772,7 +777,7 @@ export function TradeJournalWidget() {
           </label>
           <label>
             {t("tradingSummary.fees")}
-            <input
+            <DeskInput
               className="input"
               name="fees"
               type="number"
@@ -782,15 +787,15 @@ export function TradeJournalWidget() {
           </label>
           <label>
             {t("journal.note")}
-            <input className="input" name="note" maxLength={2000} />
+            <DeskInput className="input" name="note" maxLength={2000} />
           </label>
-          <button
+          <DeskButton
             className="btn btnPrimary"
             disabled={busy || (data?.document.value.manual.length ?? 0) >= 200}
           >
             <AppIcon name="save" />
             {t("save")}
-          </button>
+          </DeskButton>
         </form>
       ) : null}
       {data?.items
@@ -824,16 +829,16 @@ export function TradeJournalWidget() {
                 min
               </small>
               <div className="dashboardWorkbenchActions">
-                <button
+                <DeskButton
                   className="btn"
                   disabled={busy}
                   aria-label={t("journal.note")}
                   onClick={() => setNote({ id: row.id, text: row.note })}
                 >
                   <AppIcon name="edit" />
-                </button>
+                </DeskButton>
                 {row.source === "manual" ? (
-                  <button
+                  <DeskButton
                     className="btn"
                     disabled={busy}
                     aria-label={t("remove")}
@@ -848,7 +853,7 @@ export function TradeJournalWidget() {
                     }}
                   >
                     <AppIcon name="remove" />
-                  </button>
+                  </DeskButton>
                 ) : null}
               </div>
             </div>
@@ -876,17 +881,17 @@ export function TradeJournalWidget() {
                   );
                 }}
               >
-                <input
+                <DeskInput
                   className="input"
                   aria-label={t("journal.note")}
                   maxLength={2000}
                   value={note.text}
                   onChange={(e) => setNote({ ...note, text: e.target.value })}
                 />
-                <button className="btn" disabled={busy}>
+                <DeskButton className="btn" disabled={busy}>
                   <AppIcon name="save" />
                   {t("save")}
-                </button>
+                </DeskButton>
               </form>
             ) : row.note ? (
               <p>{row.note}</p>

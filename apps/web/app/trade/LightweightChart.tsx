@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   computeBreakerBlocksOverlay,
@@ -1642,7 +1644,7 @@ export function LightweightChart({
       </div>
       <div className="tradeChartMarkerToggles" style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12 }}>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input
+          <DeskInput
             type="checkbox"
             checked={showDecisionOverlay}
             onChange={(event) => setShowDecisionOverlay(event.target.checked)}
@@ -1650,7 +1652,7 @@ export function LightweightChart({
           {t("decisionOverlay.show")}
         </label>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input
+          <DeskInput
             type="checkbox"
             checked={showUpMarkers}
             onChange={(event) => setShowUpMarkers(event.target.checked)}
@@ -1658,7 +1660,7 @@ export function LightweightChart({
           {t("markers.showUp")}
         </label>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input
+          <DeskInput
             type="checkbox"
             checked={showDownMarkers}
             onChange={(event) => setShowDownMarkers(event.target.checked)}
@@ -1695,7 +1697,7 @@ export function LightweightChart({
           { key: "superOrderBlockFvgBos", label: t("indicators.superOrderBlockFvgBos") }
         ].map((item) => (
           <label key={item.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <input
+            <DeskInput
               type="checkbox"
               checked={indicatorToggles[item.key as keyof IndicatorToggleState]}
               onChange={(event) =>
@@ -1715,7 +1717,7 @@ export function LightweightChart({
           const preset = INDICATOR_PRESETS[presetKey];
           const selected = activePreset === presetKey;
           return (
-            <button
+            <DeskButton
               key={presetKey}
               type="button"
               className="btn"
@@ -1729,7 +1731,7 @@ export function LightweightChart({
               }}
             >
               {t(preset.labelKey)}
-            </button>
+            </DeskButton>
           );
         })}
       </div>

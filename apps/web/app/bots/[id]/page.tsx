@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -799,9 +804,9 @@ function BotDetailsPageContent() {
   if (!bot) {
     return (
       <div className="botsDetailPage">
-        <div className="card" style={{ padding: 14 }}>
+        <DeskSurface dense><div className="card" style={{ padding: 14 }}>
           {error ? `${t("loadError")}: ${error}` : t("loading")}
-        </div>
+        </div></DeskSurface>
       </div>
     );
   }
@@ -815,7 +820,7 @@ function BotDetailsPageContent() {
 
   return (
     <div className="botsDetailPage">
-      <div className="card botsSetupShell" style={{ marginBottom: 12 }}>
+      <DeskSurface dense><div className="card botsSetupShell" style={{ marginBottom: 12 }}>
         <div className="botsSetupHeader">
           <div className="botsSetupHeaderCopy">
             <div className="botsSetupSubtitle">{bot.exchange} · {bot.symbol}</div>
@@ -861,7 +866,7 @@ function BotDetailsPageContent() {
         </div>
 
 	        <div className="botsDetailToolbar">
-	          <button
+	          <DeskButton
               className={startStopUi.startClassName}
               onClick={() => {
                 if (bot.futuresConfig?.strategyKey === "prediction_copier") setStartConfirmationOpen(true);
@@ -871,21 +876,21 @@ function BotDetailsPageContent() {
             >
 	            <AppIcon name="play" />
 	            {startStopUi.startLabel}
-	          </button>
-	          <button className={startStopUi.stopClassName} onClick={() => void stopBot(false)} disabled={startStopUi.stopDisabled}>
+	          </DeskButton>
+	          <DeskButton className={startStopUi.stopClassName} onClick={() => void stopBot(false)} disabled={startStopUi.stopDisabled}>
 	            <AppIcon name="stop" />
 	            {startStopUi.stopLabel}
-	          </button>
-          <button
+	          </DeskButton>
+          <DeskButton
             className={startStopUi.stopClassName}
             onClick={() => void stopBot(true)}
 	            disabled={startStopUi.stopDisabled || !hasOpenPosition}
 	          >
 	            <AppIcon name="stop" />
 	            {busy === "stop" && stopAndCloseRequested ? t("actions.stoppingAndClosing") : t("actions.stopAndClose")}
-	          </button>
+	          </DeskButton>
         </div>
-      </div>
+      </div></DeskSurface>
 
       {error ? (
         <div className="botsSetupError" style={{ marginBottom: 12 }}>
@@ -894,9 +899,9 @@ function BotDetailsPageContent() {
       ) : null}
 
       {notice ? (
-        <div className="card" style={{ marginBottom: 12, padding: 12, border: "1px solid var(--line)" }}>
+        <DeskSurface dense><div className="card" style={{ marginBottom: 12, padding: 12, border: "1px solid var(--line)" }}>
           {notice}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       <BotAccordionSection title={t("sections.overview")}>
@@ -958,29 +963,29 @@ function BotDetailsPageContent() {
         ) : (
           <>
 	            <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-	              <button className="btn" onClick={createVault} disabled={vaultBusy !== null || Boolean(botVault)}>
+	              <DeskButton className="btn" onClick={createVault} disabled={vaultBusy !== null || Boolean(botVault)}>
 	                <AppIcon name="vault" />
 	                {vaultBusy === "create" ? "Creating..." : "Create Vault"}
-	              </button>
-              <input
+	              </DeskButton>
+              <DeskInput
                 className="input"
                 value={vaultFundingUsd}
                 onChange={(e) => setVaultFundingUsd(e.target.value)}
                 placeholder="Funding USDC"
                 style={{ minWidth: 120 }}
               />
-	              <button className="btn" onClick={fundVault} disabled={vaultBusy !== null || !botVault}>
+	              <DeskButton className="btn" onClick={fundVault} disabled={vaultBusy !== null || !botVault}>
 	                <AppIcon name="deposit" />
 	                {vaultBusy === "fund" ? "Funding..." : "Fund + Move to HyperCore"}
-	              </button>
-	              <button className="btn" onClick={claimProfit} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClaim}>
+	              </DeskButton>
+	              <DeskButton className="btn" onClick={claimProfit} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClaim}>
 	                <AppIcon name="withdraw" />
 	                {vaultBusy === "claim" ? "Claiming..." : "Claim Profit"}
-	              </button>
-	              <button className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClose}>
+	              </DeskButton>
+	              <DeskButton className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClose}>
 	                <AppIcon name="archive" />
 	                {vaultBusy === "end" ? "Ending..." : "End + Settle Vault"}
-	              </button>
+	              </DeskButton>
             </div>
             <div className="botReasonText" style={{ fontSize: 12 }}>
               Flow: create a persistent vault once, fund it with USDC, move liquidity to HyperCore, then reuse the same vault for future starts. `Stop` only cancels orders. `End` settles the bot cycle and fees, but keeps the vault conceptually reusable.
@@ -999,29 +1004,29 @@ function BotDetailsPageContent() {
           <InfoRow label="Secret ref" value={agentWallet?.secretRef ?? "-"} />
         </div>
         <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-          <input className="input" value={agentWalletInput} onChange={(e) => setAgentWalletInput(e.target.value)} placeholder="Agent wallet address" />
-	          <input className="input" value={agentSecretRefInput} onChange={(e) => setAgentSecretRefInput(e.target.value)} placeholder="Secret ref (optional)" />
-	          <button className="btn" onClick={saveAgentWallet} disabled={vaultBusy !== null || (botVault ? !botVaultCapabilities.canSetAgentWallet : false)}>
+          <DeskInput className="input" value={agentWalletInput} onChange={(e) => setAgentWalletInput(e.target.value)} placeholder="Agent wallet address" />
+	          <DeskInput className="input" value={agentSecretRefInput} onChange={(e) => setAgentSecretRefInput(e.target.value)} placeholder="Secret ref (optional)" />
+	          <DeskButton className="btn" onClick={saveAgentWallet} disabled={vaultBusy !== null || (botVault ? !botVaultCapabilities.canSetAgentWallet : false)}>
 	            <AppIcon name="save" />
 	            {vaultBusy === "agent-set" ? "Saving..." : "Save Agent Wallet"}
-	          </button>
+	          </DeskButton>
         </div>
         <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-	          <input className="input" value={agentThresholdInput} onChange={(e) => setAgentThresholdInput(e.target.value)} placeholder="Low HYPE threshold" />
-	          <button className="btn" onClick={saveAgentThreshold} disabled={vaultBusy !== null}>
+	          <DeskInput className="input" value={agentThresholdInput} onChange={(e) => setAgentThresholdInput(e.target.value)} placeholder="Low HYPE threshold" />
+	          <DeskButton className="btn" onClick={saveAgentThreshold} disabled={vaultBusy !== null}>
 	            <AppIcon name="save" />
 	            {vaultBusy === "agent-threshold" ? "Saving..." : "Save Threshold"}
-	          </button>
-	          <input className="input" value={agentFundHypeInput} onChange={(e) => setAgentFundHypeInput(e.target.value)} placeholder="Fund HYPE" />
-	          <button className="btn btnPrimary" onClick={fundAgentHype} disabled={vaultBusy !== null || isWalletPending || !agentWallet?.address}>
+	          </DeskButton>
+	          <DeskInput className="input" value={agentFundHypeInput} onChange={(e) => setAgentFundHypeInput(e.target.value)} placeholder="Fund HYPE" />
+	          <DeskButton className="btn btnPrimary" onClick={fundAgentHype} disabled={vaultBusy !== null || isWalletPending || !agentWallet?.address}>
 	            <AppIcon name="deposit" />
 	            {vaultBusy === "agent-fund" || isWalletPending ? "Funding..." : "Fund HYPE"}
-	          </button>
-	          <input className="input" value={agentWithdrawHypeInput} onChange={(e) => setAgentWithdrawHypeInput(e.target.value)} placeholder="Withdraw HYPE (optional)" />
-	          <button className="btn" onClick={withdrawAgentHype} disabled={vaultBusy !== null || !agentWallet?.address}>
+	          </DeskButton>
+	          <DeskInput className="input" value={agentWithdrawHypeInput} onChange={(e) => setAgentWithdrawHypeInput(e.target.value)} placeholder="Withdraw HYPE (optional)" />
+	          <DeskButton className="btn" onClick={withdrawAgentHype} disabled={vaultBusy !== null || !agentWallet?.address}>
 	            <AppIcon name="withdraw" />
 	            {vaultBusy === "agent-withdraw" ? "Withdrawing..." : "Withdraw HYPE"}
-	          </button>
+	          </DeskButton>
         </div>
         <div className="botReasonText" style={{ fontSize: 12 }}>
           The agent wallet is user-level and shared across this user&apos;s bots. Funding sends native HYPE on {TARGET_CHAIN_NAME} from your connected wallet to the saved agent wallet address. Withdraw sends HYPE back from the agent wallet to your linked user wallet.
@@ -1084,7 +1089,7 @@ function BotDetailsPageContent() {
             {t("copierAudit.performanceHint")}
           </div>
           <div className="botTradeHistoryTableWrap">
-            <table className="botTradeHistoryTable">
+            <DeskTable className="botTradeHistoryTable">
               <thead>
                 <tr>
                   <th>{t("copierAudit.columns.time")}</th>
@@ -1109,7 +1114,7 @@ function BotDetailsPageContent() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DeskTable>
           </div>
         </BotAccordionSection>
       ) : null}
@@ -1129,7 +1134,7 @@ function BotDetailsPageContent() {
           </div>
         ) : null}
         <div className="botTradeHistoryTableWrap">
-          <table className="botTradeHistoryTable">
+          <DeskTable className="botTradeHistoryTable">
             <thead>
               <tr>
                 <th>{t("openTrades.columns.side")}</th>
@@ -1157,13 +1162,13 @@ function BotDetailsPageContent() {
                   </td>
                   <td>{formatDateTime(openTrades.mergedView.openTs)}</td>
                   <td>
-                    <button
+                    <DeskButton
                       className="btn"
                       onClick={() => void closeOpenPositionManually()}
                       disabled={closingPosition}
                     >
                       {closingPosition ? t("openTrades.closingAction") : t("openTrades.closeAction")}
-                    </button>
+                    </DeskButton>
                   </td>
                 </tr>
               ) : (
@@ -1172,7 +1177,7 @@ function BotDetailsPageContent() {
                 </tr>
               )}
             </tbody>
-          </table>
+          </DeskTable>
         </div>
       </BotAccordionSection>
 
@@ -1180,15 +1185,15 @@ function BotDetailsPageContent() {
         <div className="botTradeHistoryFilters">
           <div className="fieldRow" style={{ marginBottom: 0 }}>
             <label>{t("history.filters.from")}</label>
-            <input type="date" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} />
+            <DeskInput type="date" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} />
           </div>
           <div className="fieldRow" style={{ marginBottom: 0 }}>
             <label>{t("history.filters.to")}</label>
-            <input type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} />
+            <DeskInput type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} />
           </div>
           <div className="fieldRow" style={{ marginBottom: 0 }}>
             <label>{t("history.filters.outcome")}</label>
-            <select value={historyOutcome} onChange={(e) => setHistoryOutcome(e.target.value)}>
+            <DeskSelect value={historyOutcome} onChange={(e) => setHistoryOutcome(e.target.value)}>
               <option value="all">{t("history.outcomes.all")}</option>
               <option value="tp_hit">{t("history.outcomes.tp_hit")}</option>
               <option value="sl_hit">{t("history.outcomes.sl_hit")}</option>
@@ -1196,12 +1201,12 @@ function BotDetailsPageContent() {
               <option value="manual_exit">{t("history.outcomes.manual_exit")}</option>
               <option value="time_stop">{t("history.outcomes.time_stop")}</option>
               <option value="unknown">{t("history.outcomes.unknown")}</option>
-            </select>
+            </DeskSelect>
 	          </div>
-	          <button className="btn" onClick={() => void loadHistory()} disabled={historyLoading}>
+	          <DeskButton className="btn" onClick={() => void loadHistory()} disabled={historyLoading}>
 	            <AppIcon name="refresh" />
 	            {historyLoading ? t("history.loading") : t("history.actions.refresh")}
-	          </button>
+	          </DeskButton>
         </div>
 
         <div className="botTradeHistorySummary">
@@ -1214,7 +1219,7 @@ function BotDetailsPageContent() {
         </div>
 
         <div className="botTradeHistoryTableWrap">
-          <table className="botTradeHistoryTable">
+          <DeskTable className="botTradeHistoryTable">
             <thead>
               <tr>
                 <th>{t("history.columns.entryTs")}</th>
@@ -1259,18 +1264,18 @@ function BotDetailsPageContent() {
                 ))
               )}
             </tbody>
-          </table>
+          </DeskTable>
         </div>
         {history?.nextCursor ? (
           <div style={{ marginTop: 10 }}>
-            <button
+            <DeskButton
               className="btn"
               onClick={() => void loadHistory({ cursor: history.nextCursor, append: true })}
 	              disabled={historyLoading}
 	            >
 	              <AppIcon name="add" />
 	              {historyLoading ? t("history.loading") : t("history.actions.loadMore")}
-	            </button>
+	            </DeskButton>
           </div>
         ) : null}
       </BotAccordionSection>
@@ -1345,10 +1350,10 @@ function BotAccordionSection({
 
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="card botsSetupMetricCard">
+    <DeskSurface dense><div className="card botsSetupMetricCard">
       <div className="botsSetupMetricLabel">{label}</div>
       <div className="botsSetupMetricValue botsSetupMetricValueCompact">{value}</div>
-    </div>
+    </div></DeskSurface>
   );
 }
 

@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
@@ -294,29 +297,29 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 
   const content = (
     <>
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {copyNotice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{copyNotice}</div> : null}
+      {error ? <DeskSurface><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
+      {copyNotice ? <DeskSurface><div className="card settingsSection settingsAlert settingsAlertSuccess">{copyNotice}</div></DeskSurface> : null}
 
       <section className="adminStatsGrid">
-        <div className="card adminStatsCard">
+        <DeskSurface><div className="card adminStatsCard">
           <div className="adminStatsLabel">Referral Code</div>
           <div className="adminStatsValue adminStatsValueSmall">{data?.profile.code ?? "—"}</div>
-        </div>
-        <div className="card adminStatsCard">
+        </div></DeskSurface>
+        <DeskSurface><div className="card adminStatsCard">
           <div className="adminStatsLabel">Affiliate Fee %</div>
           <div className="adminStatsValue">{(data?.effectiveFeeRatePct ?? 0).toFixed(2)}</div>
-        </div>
-        <div className="card adminStatsCard">
+        </div></DeskSurface>
+        <DeskSurface><div className="card adminStatsCard">
           <div className="adminStatsLabel">Referred Users</div>
           <div className="adminStatsValue">{data?.stats.referredUsers ?? 0}</div>
-        </div>
-        <div className="card adminStatsCard">
+        </div></DeskSurface>
+        <DeskSurface><div className="card adminStatsCard">
           <div className="adminStatsLabel">Unpaid</div>
           <div className="adminStatsValue">${(data?.stats.unpaidAffiliateUsd ?? 0).toFixed(2)}</div>
-        </div>
+        </div></DeskSurface>
       </section>
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 style={{ margin: 0 }}>Profitshare Rate</h3>
@@ -326,7 +329,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
         <div className="settingsFormGrid">
           <label className="settingsField">
             <span className="settingsFieldLabel">Affiliate Profitshare %</span>
-            <input
+            <DeskInput
               className="input"
               type="number"
               min={0}
@@ -338,7 +341,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">Adjust</span>
-            <input
+            <DeskInput
               type="range"
               min={0}
               max={maxSelfSelectedRate}
@@ -349,25 +352,25 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           </label>
         </div>
         <div className="adminStatsGrid" style={{ marginTop: 12 }}>
-          <div className="card adminStatsCard">
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">Platform</div>
             <div className="adminStatsValue">{platformProfitshareRate.toFixed(2)}%</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">Affiliate</div>
             <div className="adminStatsValue">{selectedProfitshareRate.toFixed(2)}%</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">Total</div>
             <div className="adminStatsValue">{newVaultTotalProfitsharePct.toFixed(2)}%</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">Source</div>
             <div className="adminStatsValue adminStatsValueSmall">{rateSourceLabel}</div>
-          </div>
+          </div></DeskSurface>
         </div>
         <div className="settingsActions" style={{ marginTop: 12 }}>
-	          <button
+	          <DeskButton
 	            className="btn btnPrimary"
 	            type="button"
 	            onClick={() => void saveProfitshareRate()}
@@ -375,8 +378,8 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	          >
 	            <AppIcon name="save" />
 	            {actionBusy === "profitshare-rate" ? "Saving…" : "Save profitshare"}
-	          </button>
-          <button
+	          </DeskButton>
+          <DeskButton
             className="btn"
             type="button"
 	            onClick={() => setProfitshareRateInput(String(data?.selfSelectedFeeRatePct ?? data?.effectiveFeeRatePct ?? 10))}
@@ -384,11 +387,11 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	          >
 	            <AppIcon name="reset" />
 	            Reset
-	          </button>
+	          </DeskButton>
         </div>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 style={{ margin: 0 }}>Referral Link</h3>
@@ -398,22 +401,22 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
         {loading ? <div className="settingsMutedText">Loading affiliate dashboard…</div> : null}
         <div className="settingsField">
           <span className="settingsFieldLabel">Link</span>
-          <input className="input" readOnly value={referralLink} placeholder="Referral link will appear here" />
+          <DeskInput className="input" readOnly value={referralLink} placeholder="Referral link will appear here" />
         </div>
 	        <div className="settingsActions">
-	          <button className="btn btnPrimary" type="button" onClick={() => void copyReferralLink()} disabled={!referralLink}>
+	          <DeskButton className="btn btnPrimary" type="button" onClick={() => void copyReferralLink()} disabled={!referralLink}>
 	            <AppIcon name="copy" />
 	            Copy link
-	          </button>
+	          </DeskButton>
         </div>
         {data?.referredBy ? (
           <div className="settingsMutedText">
             You are referred by {data.referredBy.email} since {formatDateTime(data.referredBy.assignedAt)}.
           </div>
         ) : null}
-      </section>
+      </section></DeskSurface>
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 style={{ margin: 0 }}>Payout Wallet</h3>
@@ -422,38 +425,38 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
         </div>
         <div className="settingsField">
           <span className="settingsFieldLabel">Address</span>
-          <input className="input" readOnly value={data?.payoutWallet?.address ?? ""} placeholder="Create payout wallet to receive V4 affiliate payouts" />
+          <DeskInput className="input" readOnly value={data?.payoutWallet?.address ?? ""} placeholder="Create payout wallet to receive V4 affiliate payouts" />
         </div>
 	        {data?.payoutWallet?.address ? (
 	          <div className="settingsActions" style={{ marginTop: 12 }}>
-	            <button className="btn" type="button" onClick={() => void copyPayoutWalletAddress()}>
+	            <DeskButton className="btn" type="button" onClick={() => void copyPayoutWalletAddress()}>
 	              <AppIcon name="copy" />
 	              Copy payout wallet address
-	            </button>
+	            </DeskButton>
               <HyperEvmAddressLink address={data.payoutWallet.address} />
           </div>
         ) : null}
         <div className="adminStatsGrid" style={{ marginTop: 12 }}>
-          <div className="card adminStatsCard">
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">Version</div>
             <div className="adminStatsValue">{data?.payoutWallet?.version ?? 0}</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">HYPE</div>
             <div className="adminStatsValue adminStatsValueSmall">{data?.payoutWallet?.hypeBalance ?? "—"}</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">USDC</div>
             <div className="adminStatsValue adminStatsValueSmall">{data?.payoutWallet?.usdcBalance ?? "—"}</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface><div className="card adminStatsCard">
             <div className="adminStatsLabel">Updated</div>
             <div className="adminStatsValue adminStatsValueSmall">{formatDateTime(data?.payoutWallet?.updatedAt ?? null)}</div>
-          </div>
+          </div></DeskSurface>
         </div>
         <div className="settingsActions" style={{ marginTop: 12 }}>
           {!data?.payoutWallet?.address ? (
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
 	              onClick={() => void runWalletAction("create")}
@@ -461,10 +464,10 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	            >
 	              <AppIcon name="wallet" />
 	              {actionBusy === "create" ? "Creating…" : "Create payout wallet"}
-	            </button>
+	            </DeskButton>
           ) : null}
           {data?.payoutWallet?.address ? (
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
 	              onClick={() => openPayoutModal("deposit-hype")}
@@ -472,9 +475,9 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	            >
 	              <AppIcon name="deposit" />
 	              {actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE"}
-	            </button>
+	            </DeskButton>
           ) : null}
-          <button
+          <DeskButton
             className="btn"
             type="button"
 	            onClick={() => openPayoutModal("withdraw-hype")}
@@ -482,8 +485,8 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	          >
 	            <AppIcon name="withdraw" />
 	            {actionBusy === "withdraw-hype" ? "Withdrawing…" : "Withdraw HYPE to linked wallet"}
-	          </button>
-          <button
+	          </DeskButton>
+          <DeskButton
             className="btn"
             type="button"
 	            onClick={() => openPayoutModal("withdraw-usdc")}
@@ -491,7 +494,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	          >
 	            <AppIcon name="withdraw" />
 	            {actionBusy === "withdraw-usdc" ? "Withdrawing…" : "Withdraw USDC to linked wallet"}
-          </button>
+          </DeskButton>
         </div>
         <div className="settingsMutedText" style={{ marginTop: 10 }}>
           New V4 affiliate payouts use this wallet when configured. Existing V4 vaults keep the recipient that was locked at deploy time.
@@ -501,9 +504,9 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
             Deposit sends native HYPE on {TARGET_CHAIN_NAME} from your connected wallet to the payout wallet. USDC can be sent manually to the copied address if needed.
           </div>
         ) : null}
-      </section>
+      </section></DeskSurface>
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 style={{ margin: 0 }}>Latest Accruals</h3>
@@ -535,7 +538,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
             ))}
           </div>
         )}
-      </section>
+      </section></DeskSurface>
 
       {activePayoutModal ? (
         <div className="fundingModalOverlay" role="presentation" onClick={() => setActivePayoutModal(null)}>
@@ -563,17 +566,17 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                 </h3>
                 <div className="walletMutedText">Payout wallet funding and withdrawals.</div>
               </div>
-              <button
+              <DeskButton
                 type="button"
                 className="fundingModalCloseButton"
                 aria-label="Close modal"
                 onClick={() => setActivePayoutModal(null)}
               >
                 <AppIcon name="close" />
-              </button>
+              </DeskButton>
             </div>
             <div className="fundingModalBody">
-              <section className="card walletCard fundingModalSection">
+              <DeskSurface><section className="card walletCard fundingModalSection">
                 <div className="walletSectionIntro fundingModalTitleBlock">
                   <div className="fundingModalDirectionPill">
                     {activePayoutModal === "deposit-hype"
@@ -590,7 +593,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                   </div>
                 </div>
                 <div className="walletAmountRow fundingAmountActionRow fundingModalAmountRow fundingModalAmountField">
-                  <input
+                  <DeskInput
                     className="input walletAmountInput"
                     value={
                       activePayoutModal === "deposit-hype"
@@ -633,11 +636,11 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                   </div>
                 ) : null}
 	                <div className="walletActionRow fundingModalPrimaryActionRow">
-	                  <button type="button" className="btn" onClick={() => setActivePayoutModal(null)}>
+	                  <DeskButton type="button" className="btn" onClick={() => setActivePayoutModal(null)}>
 	                    <AppIcon name="cancel" />
 	                    Cancel
-	                  </button>
-                  <button
+	                  </DeskButton>
+                  <DeskButton
                     type="button"
                     className="btn btnPrimary"
                     onClick={() => void (activePayoutModal === "deposit-hype"
@@ -655,9 +658,9 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
                       : activePayoutModal === "withdraw-hype"
                         ? (actionBusy === "withdraw-hype" ? "Withdrawing…" : "Withdraw HYPE")
                         : (actionBusy === "withdraw-usdc" ? "Withdrawing…" : "Withdraw USDC")}
-                  </button>
+                  </DeskButton>
                 </div>
-              </section>
+              </section></DeskSurface>
             </div>
           </div>
         </div>
@@ -671,7 +674,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 
   return (
     <div className="settingsWrap" style={{ maxWidth: 1100 }}>
-      <div className="card settingsSection">
+      <DeskSurface><div className="card settingsSection">
         <div className="settingsSectionHeader">
 	          <div>
 	            <h2 style={{ margin: 0 }}>Affiliate</h2>
@@ -682,7 +685,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
 	            Back to settings
 	          </Link>
 	        </div>
-      </div>
+      </div></DeskSurface>
       {content}
     </div>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
@@ -27,28 +29,28 @@ type FundingVaultOverview = {
 
 function DashboardWalletSkeleton() {
   return (
-    <div className="card dashboardInsightCard dashboardWalletCard" aria-hidden="true">
+    <DeskSurface dense><div className="card dashboardInsightCard dashboardWalletCard" aria-hidden="true">
       <div className="dashboardWalletHead">
         <div className="dashboardWalletIntro">
-          <div className="skeletonLine skeletonLineLg" />
-          <div className="skeletonLine skeletonLineMd" style={{ marginTop: 8 }} />
+          <GlassSkeleton className="skeletonLine skeletonLineLg" />
+          <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 8 }} />
         </div>
-        <div className="skeletonButton" />
+        <GlassSkeleton className="skeletonButton" />
       </div>
       <div className="dashboardWalletGrid">
         {Array.from({ length: 4 }).map((_, index) => (
           <div key={index} className="dashboardWalletTile dashboardWalletTileSkeleton">
-            <div className="skeletonLine skeletonLineSm" />
-            <div className="skeletonLine skeletonLineMd" />
-            <div className="skeletonLine skeletonLineSm" />
+            <GlassSkeleton className="skeletonLine skeletonLineSm" />
+            <GlassSkeleton className="skeletonLine skeletonLineMd" />
+            <GlassSkeleton className="skeletonLine skeletonLineSm" />
           </div>
         ))}
       </div>
       <div className="dashboardWalletFooter">
-        <div className="skeletonLine skeletonLineMd" />
-        <div className="skeletonButton" />
+        <GlassSkeleton className="skeletonLine skeletonLineMd" />
+        <GlassSkeleton className="skeletonButton" />
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }
 
@@ -80,7 +82,7 @@ function DashboardWalletCardContent() {
 
   if (!isConnected) {
     return (
-      <section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
+      <DeskSurface dense><section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
         <div className="dashboardWalletIntro">
           <div className="dashboardWalletTitle">{t("title")}</div>
           <div className="dashboardWalletSubtitle">{t("subtitle")}</div>
@@ -96,7 +98,7 @@ function DashboardWalletCardContent() {
             {t("open")}
           </Link>
         </div>
-      </section>
+      </section></DeskSurface>
     );
   }
 
@@ -106,7 +108,7 @@ function DashboardWalletCardContent() {
 
   if (overviewQuery.isError || !overviewQuery.data) {
     return (
-      <section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
+      <DeskSurface dense><section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
         <div className="dashboardWalletIntro">
           <div className="dashboardWalletTitle">{t("title")}</div>
           <div className="dashboardWalletSubtitle">{t("subtitle")}</div>
@@ -122,7 +124,7 @@ function DashboardWalletCardContent() {
             {t("open")}
           </Link>
         </div>
-      </section>
+      </section></DeskSurface>
     );
   }
 
@@ -155,7 +157,7 @@ function DashboardWalletCardContent() {
   });
 
   return (
-    <section className="card dashboardInsightCard dashboardWalletCard">
+    <DeskSurface dense><section className="card dashboardInsightCard dashboardWalletCard">
       <div className="dashboardWalletHead">
         <div className="dashboardWalletIntro">
           <div className="dashboardWalletTitle">{t("title")}</div>
@@ -221,7 +223,7 @@ function DashboardWalletCardContent() {
           {t("open")}
         </Link>
       </div>
-    </section>
+    </section></DeskSurface>
   );
 }
 

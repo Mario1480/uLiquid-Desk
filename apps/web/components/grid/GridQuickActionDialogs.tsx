@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { isBotVaultRuntimeModelRow } from "@mm/core/dist/botVaultRuntimeModel.js";
@@ -101,13 +105,13 @@ function QuickActionDialogFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="fundingModalOverlay" onClick={onClose}>
-      <div className="fundingModalCard" onClick={(event) => event.stopPropagation()}>
+    <DeskDialog onClose={onClose}><div className="fundingModalOverlay" onClick={onClose}>
+      <DeskDialogPanel><div className="fundingModalCard" onClick={(event) => event.stopPropagation()}>
         <div className="fundingModalHeader">
           <div className="fundingModalHeaderCompact" style={{ display: "flex" }}>
-            <button type="button" className="fundingModalCloseButton" onClick={onClose} aria-label="Close">
+            <DeskButton type="button" className="fundingModalCloseButton" onClick={onClose} aria-label="Close">
               <AppIcon name="close" />
-            </button>
+            </DeskButton>
           </div>
         </div>
         <div className="fundingModalBody">
@@ -119,16 +123,16 @@ function QuickActionDialogFrame({
               </div>
             </div>
             {error ? (
-              <div className="card" style={{ padding: 12, borderColor: "#ef4444" }}>{error}</div>
+              <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: "#ef4444" }}>{error}</div></DeskSurface>
             ) : null}
             {notice ? (
-              <div className="card" style={{ padding: 12, borderColor: "#22c55e" }}>{notice}</div>
+              <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: "#22c55e" }}>{notice}</div></DeskSurface>
             ) : null}
             {children}
           </div>
         </div>
-      </div>
-    </div>
+      </div></DeskDialogPanel>
+    </div></DeskDialog>
   );
 }
 
@@ -226,11 +230,11 @@ export function GridClaimDialog({ instance, onClose, onUpdated }: SharedDialogPr
       notice={notice}
       onClose={onClose}
     >
-      <div className="card" style={{ padding: 14, display: "grid", gap: 12 }}>
+      <DeskSurface dense><div className="card" style={{ padding: 14, display: "grid", gap: 12 }}>
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>{tGrid("quickClaimAmountLabel")}</span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
+            <DeskInput
               className="input"
               type="number"
               min="0.01"
@@ -238,7 +242,7 @@ export function GridClaimDialog({ instance, onClose, onUpdated }: SharedDialogPr
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
-            <button
+            <DeskButton
               type="button"
               className="btn"
               onClick={() => setAmount(formatAmountInput(preview?.maxClaimableUsd ?? 0))}
@@ -246,24 +250,24 @@ export function GridClaimDialog({ instance, onClose, onUpdated }: SharedDialogPr
           >
             <AppIcon name="max" />
             {tGrid("quickActionMax")}
-          </button>
+          </DeskButton>
           </div>
         </label>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-          <div className="card" style={{ padding: 10 }}>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <div className="settingsMutedText">{tGrid("quickClaimMaxLabel")}</div>
             <strong>{formatNumber(preview?.maxClaimableUsd ?? 0, 6)} {stablecoinLabel}</strong>
-          </div>
-          <div className="card" style={{ padding: 10 }}>
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <div className="settingsMutedText">{tGrid("quickClaimFeeLabel")}</div>
             <strong>{formatNumber(preview?.feeAmountUsd ?? 0, 6)} {stablecoinLabel}</strong>
             <div className="settingsMutedText">{formatNumber(preview?.feeRatePct ?? 0, 0)}%</div>
-          </div>
-          <div className="card" style={{ padding: 10 }}>
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <div className="settingsMutedText">{tGrid("quickClaimNetLabel")}</div>
             <strong>{formatNumber(preview?.netAmountUsd ?? 0, 6)} {stablecoinLabel}</strong>
-          </div>
+          </div></DeskSurface>
         </div>
 
         {loadingPreview ? (
@@ -271,11 +275,11 @@ export function GridClaimDialog({ instance, onClose, onUpdated }: SharedDialogPr
         ) : null}
 
 	        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-	          <button type="button" className="btn" onClick={onClose}>
+	          <DeskButton type="button" className="btn" onClick={onClose}>
 	            <AppIcon name="close" />
 	            {tGrid("catalogClose")}
-	          </button>
-	          <button
+	          </DeskButton>
+	          <DeskButton
 	            type="button"
 	            className="btn btnPrimary"
 	            onClick={() => void submitClaim()}
@@ -283,9 +287,9 @@ export function GridClaimDialog({ instance, onClose, onUpdated }: SharedDialogPr
 	          >
 	            <AppIcon name="withdraw" />
 	            {busy ? tGrid("saving") : tGrid("withdrawProfit")}
-	          </button>
+	          </DeskButton>
         </div>
-      </div>
+      </div></DeskSurface>
     </QuickActionDialogFrame>
   );
 }
@@ -400,29 +404,29 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
       notice={notice ?? flow.notice}
       onClose={onClose}
     >
-      <div className="card" style={{ padding: 14, display: "grid", gap: 12 }}>
+      <DeskSurface dense><div className="card" style={{ padding: 14, display: "grid", gap: 12 }}>
         <div style={{ display: "flex", gap: 8 }}>
-          <button
+          <DeskButton
             type="button"
 	            className={`btn ${mode === "add" ? "btnPrimary" : ""}`}
 	            onClick={() => setMode("add")}
 	          >
 	            <AppIcon name="add" />
 	            {tGrid("add")}
-	          </button>
-          <button
+	          </DeskButton>
+          <DeskButton
             type="button"
 	            className={`btn ${mode === "remove" ? "btnPrimary" : ""}`}
 	            onClick={() => setMode("remove")}
 	          >
 	            <AppIcon name="remove" />
 	            {tGrid("remove")}
-          </button>
+          </DeskButton>
         </div>
 
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 600 }}>{tGrid("quickMarginAmountLabel")}</span>
-          <input
+          <DeskInput
             className="input"
             type="number"
             min="0.01"
@@ -433,7 +437,7 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
         </label>
 
         {walletFundingRequired ? (
-          <div className="card" style={{ padding: 12, display: "grid", gap: 8 }}>
+          <DeskSurface dense><div className="card" style={{ padding: 12, display: "grid", gap: 8 }}>
             {!flow.linkedWalletAddress ? (
               <div className="settingsMutedText">{tOnchain("walletLinkRequired")}</div>
             ) : !flow.isConnected ? (
@@ -443,27 +447,27 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
             ) : flow.chainMismatch ? (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
 	                <div className="settingsMutedText">{tOnchain("wrongNetwork", { chain: TARGET_CHAIN_NAME })}</div>
-	                <button type="button" className="btn" onClick={() => void flow.requestChainSwitch()}>
+	                <DeskButton type="button" className="btn" onClick={() => void flow.requestChainSwitch()}>
 	                  <AppIcon name="switch" />
 	                  {tOnchain("switchNetwork")}
-	                </button>
+	                </DeskButton>
               </div>
             ) : (
               <div className="settingsMutedText">{tGrid("quickMarginWalletReady")}</div>
             )}
-          </div>
+          </div></DeskSurface>
         ) : null}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-          <div className="card" style={{ padding: 10 }}>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <div className="settingsMutedText">{tGrid("quickMarginCurrentLabel")}</div>
             <strong>{formatNumber(preview?.adjustment?.currentExtraMarginUsd ?? Number(instance.extraMarginUsd ?? 0), 2)} {stablecoinLabel}</strong>
-          </div>
-          <div className="card" style={{ padding: 10 }}>
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <div className="settingsMutedText">{tGrid("quickMarginProjectedLabel")}</div>
             <strong>{formatNumber(preview?.adjustment?.nextExtraMarginUsd ?? Number(instance.extraMarginUsd ?? 0), 2)} {stablecoinLabel}</strong>
-          </div>
-          <div className="card" style={{ padding: 10 }}>
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <div className="settingsMutedText">{tGrid("quickMarginLiqLabel")}</div>
             <strong>
               {formatNumber(currentLiquidationPrice, 2)}
@@ -473,7 +477,7 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
             <div className="settingsMutedText">
               {liqDelta == null ? "n/a" : `${liqDelta >= 0 ? "+" : ""}${formatNumber(liqDelta, 2)}`}
             </div>
-          </div>
+          </div></DeskSurface>
         </div>
 
         {preview?.adjustment ? (
@@ -496,11 +500,11 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
         ) : null}
 
 	        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-	          <button type="button" className="btn" onClick={onClose}>
+	          <DeskButton type="button" className="btn" onClick={onClose}>
 	            <AppIcon name="close" />
 	            {tGrid("catalogClose")}
-	          </button>
-	          <button
+	          </DeskButton>
+	          <DeskButton
 	            type="button"
 	            className="btn btnPrimary"
 	            onClick={() => void submitMarginAction()}
@@ -508,9 +512,9 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
 	          >
 	            <AppIcon name={mode === "add" ? "add" : "remove"} />
 	            {busy ? tGrid("saving") : mode === "add" ? tGrid("add") : tGrid("remove")}
-          </button>
+          </DeskButton>
         </div>
-      </div>
+      </div></DeskSurface>
     </QuickActionDialogFrame>
   );
 }

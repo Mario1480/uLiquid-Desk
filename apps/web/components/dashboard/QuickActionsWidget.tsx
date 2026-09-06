@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { AppIcon, type AppIconName } from "../../app/components/AppIcon";
@@ -18,7 +19,7 @@ export default function QuickActionsWidget({ visibility }: { visibility: AccessS
   ];
 
   return (
-    <div className="card dashboardInsightCard dashboardQuickActionsCard dashboardWidgetCardFill">
+    <DeskSurface><div className="card dashboardInsightCard dashboardQuickActionsCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div>
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>
@@ -38,6 +39,6 @@ export default function QuickActionsWidget({ visibility }: { visibility: AccessS
           </Link>
         ))}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

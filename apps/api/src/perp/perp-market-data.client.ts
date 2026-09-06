@@ -746,14 +746,17 @@ class BingxUsdMPerpClient implements PerpMarketDataClient {
 
   async getDepth(symbol: string, limit = 50) {
     const exchangeSymbol = toBingxSwapSymbol(symbol);
+    const requestedLimit = Number.isFinite(limit) ? Math.max(5, Math.min(200, Math.trunc(limit))) : 50;
+    // BingX accepts discrete sizes; preserve the caller's normalized coverage.
+    const providerLimit = [5, 10, 20, 50, 100, 500].find(value => value >= requestedLimit)!;
     const raw = await this.fetchJson("/openApi/swap/v2/quote/depth", {
       symbol: exchangeSymbol,
-      limit: Math.max(5, Math.min(200, Math.trunc(limit)))
+      limit: providerLimit
     });
     const row = toRecord(raw);
     return {
-      bids: parseOrderBookLevels(row?.bids),
-      asks: parseOrderBookLevels(row?.asks),
+      bids: parseOrderBookLevels(row?.bids).slice(0, requestedLimit),
+      asks: parseOrderBookLevels(row?.asks).slice(0, requestedLimit),
       ts: pickNumber(row, ["T", "ts", "timestamp", "time", "t"]),
       raw
     };

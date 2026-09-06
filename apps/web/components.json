@@ -1,0 +1,8 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": { "config": "", "css": "components/einui/theme.css", "baseColor": "slate", "cssVariables": true, "prefix": "ein" },
+  "aliases": { "components": "@/components", "utils": "@/components/einui/utils", "ui": "@/components/einui/liquid-glass", "lib": "@/lib", "hooks": "@/hooks" }
+}

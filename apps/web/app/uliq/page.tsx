@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
@@ -878,7 +882,7 @@ function UliqHubContent() {
   }
 
   if (!publicEnabled) {
-    return <div className="uiPage"><div className="uiNotice uiNotice-warning">{t("unavailable")}</div></div>;
+    return <div className="uiPage"><DeskSurface dense><div className="uiNotice uiNotice-warning">{t("unavailable")}</div></DeskSurface></div>;
   }
 
   return (
@@ -890,25 +894,25 @@ function UliqHubContent() {
         tone="accent"
         actions={(
           <>
-            <button type="button" className="btn btnPrimary" onClick={() => void runAction("watch-uliq", addUliqTokenToWallet)} disabled={!canSign || !overview?.tokenAddress || busy !== null}>
+            <DeskButton type="button" className="btn btnPrimary" onClick={() => void runAction("watch-uliq", addUliqTokenToWallet)} disabled={!canSign || !overview?.tokenAddress || busy !== null}>
               <AppIcon name="wallet" /> {t("token.addToWallet")}
-            </button>
-            <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
+            </DeskButton>
+            <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
               <AppIcon name="refresh" /> {t("refresh")}
-            </button>
+            </DeskButton>
           </>
         )}
       />
 
-      <div className="uiNotice uiNotice-warning uliqLegalNotice">
+      <DeskSurface dense><div className="uiNotice uiNotice-warning uliqLegalNotice">
         <AppIcon name="shield" />
         <div><strong>{t("testnetBadge")}</strong><span>{t("legalNotice")}</span></div>
-      </div>
-      {loading ? <div className="uiNotice uiNotice-info">{t("loading")}</div> : null}
-      {error ? <div className="uiNotice uiNotice-danger">{error}</div> : null}
-      {notice ? <div className="uiNotice uiNotice-success">{notice}</div> : null}
+      </div></DeskSurface>
+      {loading ? <DeskSurface dense><div className="uiNotice uiNotice-info">{t("loading")}</div></DeskSurface> : null}
+      {error ? <DeskSurface dense><div className="uiNotice uiNotice-danger">{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface dense><div className="uiNotice uiNotice-success">{notice}</div></DeskSurface> : null}
       {linkedWallet && (!isConnected || !walletMatches) ? (
-        <div className="uiNotice uiNotice-warning">{t("walletMismatch", { wallet: linkedWallet })}</div>
+        <DeskSurface dense><div className="uiNotice uiNotice-warning">{t("walletMismatch", { wallet: linkedWallet })}</div></DeskSurface>
       ) : null}
 
       <nav className="uliqRouteTabs" aria-label={t("tabs.label")}>
@@ -937,7 +941,7 @@ function UliqHubContent() {
             <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><span className="uliqSectionEyebrow">{t("overview.nextAction")}</span><h2 className="uiSectionTitle">{t(`overview.actions.${hubPresentation.nextAction}.title`)}</h2><p className="uiSectionDescription">{t(`overview.actions.${hubPresentation.nextAction}.description`)}</p></div><span className="uliqNextActionIcon"><AppIcon name={hubPresentation.nextAction === "CLAIM_VESTING" ? "withdraw" : hubPresentation.nextAction === "BUY_ROUND" ? "wallet" : hubPresentation.nextAction === "MANAGE_LOCK" ? "shield" : "refresh"} /></span></div>
             {hubPresentation.nextAction === "CLAIM_VESTING" ? <>
               <div className="uliqNextActionAmount">{formatRaw(vesting?.claimableRaw, 18)} ULIQ</div>
-              <button type="button" className="btn btnPrimary" disabled={!canSign || !vesting || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null || Boolean(pendingClaimForCurrentWallet)} onClick={() => void runAction("claim", claimVesting)}><AppIcon name="withdraw" /> {t(pendingClaimForCurrentWallet ? "vesting.claimPendingButton" : "vesting.claim")}</button>
+              <DeskButton type="button" className="btn btnPrimary" disabled={!canSign || !vesting || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null || Boolean(pendingClaimForCurrentWallet)} onClick={() => void runAction("claim", claimVesting)}><AppIcon name="withdraw" /> {t(pendingClaimForCurrentWallet ? "vesting.claimPendingButton" : "vesting.claim")}</DeskButton>
             </> : hubPresentation.nextAction === "NONE" ? null : <Link className="btn btnPrimary" href={withLocalePath(hubPresentation.nextAction === "MANAGE_LOCK" ? "/uliq/locking" : "/uliq/presale", locale as AppLocale)}><AppIcon name="open" /> {t(`overview.actions.${hubPresentation.nextAction}.cta`)}</Link>}
           </section>
 
@@ -953,7 +957,7 @@ function UliqHubContent() {
         </div>
 
         <section className="uiSection uliqActivitySection">
-          <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><div className="uliqActivityTitle"><h2 className="uiSectionTitle">{t("activity.title")}</h2>{activity?.partial ? <span className="uiStatusBadge uiStatusBadge-info">{t("activity.partial")}</span> : null}</div><p className="uiSectionDescription">{t("activity.description")}</p></div>{(activity?.items.length ?? 0) > 5 ? <button type="button" className="btn btnGhost" onClick={() => setActivityExpanded((value) => !value)}>{t(activityExpanded ? "activity.showLess" : "activity.viewAll")}</button> : null}</div>
+          <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><div className="uliqActivityTitle"><h2 className="uiSectionTitle">{t("activity.title")}</h2>{activity?.partial ? <span className="uiStatusBadge uiStatusBadge-info">{t("activity.partial")}</span> : null}</div><p className="uiSectionDescription">{t("activity.description")}</p></div>{(activity?.items.length ?? 0) > 5 ? <DeskButton type="button" className="btn btnGhost" onClick={() => setActivityExpanded((value) => !value)}>{t(activityExpanded ? "activity.showLess" : "activity.viewAll")}</DeskButton> : null}</div>
           {activity?.items.length ? <div className="uliqActivityList">{activity.items.slice(0, activityExpanded ? 25 : 5).map((item) => {
             const activityIcon = item.type === "VESTING_CLAIMED" || item.type === "TOKENS_UNLOCKED" ? "withdraw" : item.type === "TOKENS_LOCKED" ? "shield" : item.type === "LOCK_EXTENDED" ? "refresh" : item.type === "PRESALE_WITHDRAWN" ? "restore" : "check";
             const tone = item.type === "PRESALE_WITHDRAWN" ? "danger" : item.type === "TOKENS_LOCKED" || item.type === "LOCK_EXTENDED" ? "warning" : "success";
@@ -969,15 +973,15 @@ function UliqHubContent() {
             <span className={`uiStatusBadge uiStatusBadge-${statusTone(overview.state)}`}>{overview.state.replaceAll("_", " ")}</span>
           </div>
           <div className="uliqMetricGrid">
-            <div className="uiMetricTile"><span>{t("sale.raised")}</span><strong>{formatRaw(overview.totalRaisedUsdcRaw, 6, 2)} USDC</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.hardCap")}</span><strong>{formatRaw(overview.hardCapUsdcRaw, 6, 0)} USDC</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.maximum")}</span><strong>{formatRaw(overview.maximumPurchasableUsdcRaw, 6, 2)} USDC</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.remaining")}</span><strong>{formatRaw(remainingUsdcRaw, 6, 2)} USDC</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.price")}</span><strong>${overview.referencePriceUsd}</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.usdcBalance")}</span><strong>{formatRaw(usdcBalance.data?.toString(), 6, 2)} USDC</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.withdrawal")}</span><strong>{Number(overview.withdrawalPeriodSeconds).toLocaleString(locale)} s</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.ends")}</span><strong>{formatDate(overview.saleEnd, locale)}</strong></div>
-            <div className="uiMetricTile"><span>{t("sale.block")}</span><strong>#{overview.asOfBlock}</strong></div>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.raised")}</span><strong>{formatRaw(overview.totalRaisedUsdcRaw, 6, 2)} USDC</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.hardCap")}</span><strong>{formatRaw(overview.hardCapUsdcRaw, 6, 0)} USDC</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.maximum")}</span><strong>{formatRaw(overview.maximumPurchasableUsdcRaw, 6, 2)} USDC</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.remaining")}</span><strong>{formatRaw(remainingUsdcRaw, 6, 2)} USDC</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.price")}</span><strong>${overview.referencePriceUsd}</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.usdcBalance")}</span><strong>{formatRaw(usdcBalance.data?.toString(), 6, 2)} USDC</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.withdrawal")}</span><strong>{Number(overview.withdrawalPeriodSeconds).toLocaleString(locale)} s</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.ends")}</span><strong>{formatDate(overview.saleEnd, locale)}</strong></div></DeskSurface>
+            <DeskSurface dense><div className="uiMetricTile"><span>{t("sale.block")}</span><strong>#{overview.asOfBlock}</strong></div></DeskSurface>
           </div>
           <div className="uliqProgress" aria-label={`${saleProgress}%`}><span style={{ width: `${Math.min(100, saleProgress)}%` }} /></div>
         </section>
@@ -986,20 +990,20 @@ function UliqHubContent() {
       {activeView === "presale" && saleActive ? <div className="uliqTwoColumn uliqSingleView">
         <section className="uiSection">
           <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("purchase.title")}</h2><p className="uiSectionDescription">{t("purchase.description")}</p></div></div>
-          {overview && !saleActive ? <div className="uiNotice uiNotice-warning">{t("purchase.inactive", { state: overview.state })}</div> : null}
+          {overview && !saleActive ? <DeskSurface dense><div className="uiNotice uiNotice-warning">{t("purchase.inactive", { state: overview.state })}</div></DeskSurface> : null}
           <div className="uliqFormRow">
-            <label><span>{t("purchase.amount")}</span><input className="input" inputMode="decimal" value={purchaseAmount} onChange={(event) => { setPurchaseAmount(event.target.value); setQuote(null); }} placeholder="100.00" /></label>
-            <button type="button" className="btn" onClick={() => void requestQuote()} disabled={!saleActive || busy !== null}><AppIcon name="preview" /> {t("purchase.quote")}</button>
+            <label><span>{t("purchase.amount")}</span><DeskInput className="input" inputMode="decimal" value={purchaseAmount} onChange={(event) => { setPurchaseAmount(event.target.value); setQuote(null); }} placeholder="100.00" /></label>
+            <DeskButton type="button" className="btn" onClick={() => void requestQuote()} disabled={!saleActive || busy !== null}><AppIcon name="preview" /> {t("purchase.quote")}</DeskButton>
           </div>
           {quote ? (
             <div className="uliqQuote">
               <div><span>{t("purchase.accepted")}</span><strong>{formatRaw(quote.acceptedUsdcRaw, 6, 2)} USDC</strong></div>
               <div><span>{t("purchase.allocation")}</span><strong>{formatRaw(quote.uliqAllocationRaw, 18, 2)} ULIQ</strong></div>
               {quote.partialFill ? <p>{t("purchase.partial")}</p> : null}
-              <button type="button" className="btn btnPrimary" disabled={!saleActive || !canSign || busy !== null} onClick={() => void runAction("purchase", purchase)}><AppIcon name="wallet" /> {t("purchase.buy")}</button>
+              <DeskButton type="button" className="btn btnPrimary" disabled={!saleActive || !canSign || busy !== null} onClick={() => void runAction("purchase", purchase)}><AppIcon name="wallet" /> {t("purchase.buy")}</DeskButton>
             </div>
           ) : null}
-          <div className="uiNotice uiNotice-info">{t("purchase.pending")}</div>
+          <DeskSurface dense><div className="uiNotice uiNotice-info">{t("purchase.pending")}</div></DeskSurface>
         </section>
 
       </div> : null}
@@ -1009,16 +1013,16 @@ function UliqHubContent() {
           <section className="uiSection">
             <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("vesting.title")}</h2><p className="uiSectionDescription">{t("vesting.description")}</p></div></div>
             <div className="uliqMetricGrid uliqMetricGridCompact">
-              <div className="uiMetricTile"><span>{t("vesting.allocated")}</span><strong>{formatRaw(vesting.allocatedRaw, 18)} ULIQ</strong></div>
-              <div className="uiMetricTile"><span>{t("vesting.released")}</span><strong>{formatRaw(vesting.releasedRaw, 18)} ULIQ</strong></div>
-              <div className="uiMetricTile"><span>{t("vesting.unreleased")}</span><strong>{formatRaw(vesting.unreleasedRaw, 18)} ULIQ</strong></div>
-              <div className="uiMetricTile"><span>{t("vesting.claimable")}</span><strong>{formatRaw(vesting.claimableRaw, 18)} ULIQ</strong></div>
-              <div className="uiMetricTile"><span>{t("vesting.vested")}</span><strong>{formatRaw(vesting.vestedRaw, 18)} ULIQ</strong></div>
+              <DeskSurface dense><div className="uiMetricTile"><span>{t("vesting.allocated")}</span><strong>{formatRaw(vesting.allocatedRaw, 18)} ULIQ</strong></div></DeskSurface>
+              <DeskSurface dense><div className="uiMetricTile"><span>{t("vesting.released")}</span><strong>{formatRaw(vesting.releasedRaw, 18)} ULIQ</strong></div></DeskSurface>
+              <DeskSurface dense><div className="uiMetricTile"><span>{t("vesting.unreleased")}</span><strong>{formatRaw(vesting.unreleasedRaw, 18)} ULIQ</strong></div></DeskSurface>
+              <DeskSurface dense><div className="uiMetricTile"><span>{t("vesting.claimable")}</span><strong>{formatRaw(vesting.claimableRaw, 18)} ULIQ</strong></div></DeskSurface>
+              <DeskSurface dense><div className="uiMetricTile"><span>{t("vesting.vested")}</span><strong>{formatRaw(vesting.vestedRaw, 18)} ULIQ</strong></div></DeskSurface>
             </div>
             <div className="uliqSchedule"><span>{t("vesting.schedule")}</span><strong>{formatDate(vesting.vestingStart, locale)} → {formatDate(vesting.vestingEnd, locale)}</strong></div>
-            {!vesting.vestingStart ? <div className="uiNotice uiNotice-info">{t("vesting.waiting")}</div> : <div className="uliqProgress" aria-label={`${vestingProgress}%`}><span style={{ width: `${Math.min(100, vestingProgress)}%` }} /></div>}
-            {pendingClaimForCurrentWallet ? <div className="uiNotice uiNotice-info">{t("vesting.claimPending")}</div> : null}
-            <button type="button" className="btn btnPrimary" disabled={!canSign || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null || Boolean(pendingClaimForCurrentWallet)} onClick={() => void runAction("claim", claimVesting)}><AppIcon name="withdraw" /> {t(pendingClaimForCurrentWallet ? "vesting.claimPendingButton" : "vesting.claim")}</button>
+            {!vesting.vestingStart ? <DeskSurface dense><div className="uiNotice uiNotice-info">{t("vesting.waiting")}</div></DeskSurface> : <div className="uliqProgress" aria-label={`${vestingProgress}%`}><span style={{ width: `${Math.min(100, vestingProgress)}%` }} /></div>}
+            {pendingClaimForCurrentWallet ? <DeskSurface dense><div className="uiNotice uiNotice-info">{t("vesting.claimPending")}</div></DeskSurface> : null}
+            <DeskButton type="button" className="btn btnPrimary" disabled={!canSign || BigInt(vesting.claimableRaw) === BigInt(0) || busy !== null || Boolean(pendingClaimForCurrentWallet)} onClick={() => void runAction("claim", claimVesting)}><AppIcon name="withdraw" /> {t(pendingClaimForCurrentWallet ? "vesting.claimPendingButton" : "vesting.claim")}</DeskButton>
           </section>
         ) : null}
 
@@ -1027,9 +1031,9 @@ function UliqHubContent() {
             <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("locking.title")}</h2><p className="uiSectionDescription">{t("locking.description")}</p></div><div className="uliqHeaderMetric"><span>{t("locking.balance")}</span><strong>{formatRaw(locks.lockedBalanceRaw, 18)} ULIQ</strong></div></div>
             <div className="uliqFormRow uliqLockForm">
               <div className="uliqAvailableBalance"><span>{t("locking.available")}</span><strong>{formatRaw(entitlement?.walletRaw, 18)} ULIQ</strong></div>
-              <label><span>{t("locking.amount")}</span><input className="input" inputMode="decimal" value={lockAmount} onChange={(event) => setLockAmount(event.target.value)} placeholder="100000" /></label>
-              <label><span>{t("locking.duration")}</span><select className="input" value={lockDuration} onChange={(event) => setLockDuration(Number(event.target.value))}>{locks.supportedDurations.map((term) => <option key={term.durationDays} value={term.durationDays}>{t(`locking.terms.${term.billingMonths}`)}</option>)}</select></label>
-              <button type="button" className="btn btnPrimary" disabled={!canSign || busy !== null} onClick={() => void runAction("lock", lockTokens)}><AppIcon name="shield" /> {t("locking.lock")}</button>
+              <label><span>{t("locking.amount")}</span><DeskInput className="input" inputMode="decimal" value={lockAmount} onChange={(event) => setLockAmount(event.target.value)} placeholder="100000" /></label>
+              <label><span>{t("locking.duration")}</span><DeskSelect className="input" value={lockDuration} onChange={(event) => setLockDuration(Number(event.target.value))}>{locks.supportedDurations.map((term) => <option key={term.durationDays} value={term.durationDays}>{t(`locking.terms.${term.billingMonths}`)}</option>)}</DeskSelect></label>
+              <DeskButton type="button" className="btn btnPrimary" disabled={!canSign || busy !== null} onClick={() => void runAction("lock", lockTokens)}><AppIcon name="shield" /> {t("locking.lock")}</DeskButton>
             </div>
           </section>
         ) : null}
@@ -1049,7 +1053,7 @@ function UliqHubContent() {
                 <div><dt>{t("purchases.amount")}</dt><dd>{formatRaw(trackedPurchase.usdcAmountRaw ?? trackedPurchase.maxUsdcAmountRaw, 6, 2)} USDC</dd></div>
                 <div><dt>{t("purchases.allocation")}</dt><dd>{formatRaw(trackedPurchase.uliqAllocationRaw ?? trackedPurchase.minUliqAllocationRaw, 18, 2)} ULIQ</dd></div>
               </dl>
-              <div className={`uiNotice uiNotice-${presentation.noticeTone}`}>{presentation.message}</div>
+              <DeskSurface dense><div className={`uiNotice uiNotice-${presentation.noticeTone}`}>{presentation.message}</div></DeskSurface>
               <div className="uliqActions">
                 <a className="btn" href={`${process.env.NEXT_PUBLIC_ULIQ_EXPLORER_URL ?? "https://sepolia.arbiscan.io"}/tx/${trackedPurchase.transactionHash}`} target="_blank" rel="noreferrer"><AppIcon name="external" /> {t("purchases.transaction")}</a>
               </div>
@@ -1070,9 +1074,9 @@ function UliqHubContent() {
             <div><strong>#{purchaseRow.purchaseIdOnchain}</strong><span className="uliqStatusGroup"><span className="uiStatusBadge uiStatusBadge-success">{t("purchases.confirmationStatus.finalized")}</span><span className={`uiStatusBadge uiStatusBadge-${statusTone(settlementSyncPending ? "completed" : purchaseRow.status)}`}>{syncingStatus}</span></span></div>
             <dl><div><dt>{t("purchases.allocation")}</dt><dd>{formatRaw(purchaseRow.uliqAllocationRaw, 18)} ULIQ</dd></div><div><dt>{t("purchases.deadline")}</dt><dd>{formatDate(purchaseRow.withdrawalDeadline, locale)}</dd></div></dl>
             {purchaseRow.status === "PENDING_WITHDRAWAL" ? <div className="uliqActions">
-              <div className={`uiNotice ${settlementSyncPending ? "uiNotice-success" : "uiNotice-warning"}`}>{t(withdrawSyncPending ? "purchases.withdrawSyncingHint" : finalizeSyncPending ? "purchases.finalizeSyncingHint" : "purchases.pendingInactive")}</div>
-              <button type="button" className="btn" disabled={!canSign || deadlinePassed || busy !== null || settlementSyncPending} onClick={() => void runAction(`withdraw-${purchaseRow.id}`, () => withdrawPurchase(purchaseRow))}><AppIcon name="restore" /> {t(withdrawSyncPending ? "purchases.withdrawSyncing" : "purchases.withdraw")}</button>
-              <button type="button" className="btn btnPrimary" disabled={!canSign || !deadlinePassed || busy !== null || settlementSyncPending} onClick={() => void runAction(`finalize-${purchaseRow.id}`, () => finalizePurchase(purchaseRow))}><AppIcon name="check" /> {t(finalizeSyncPending ? "purchases.finalizeSyncing" : "purchases.finalize")}</button>
+              <DeskSurface dense><div className={`uiNotice ${settlementSyncPending ? "uiNotice-success" : "uiNotice-warning"}`}>{t(withdrawSyncPending ? "purchases.withdrawSyncingHint" : finalizeSyncPending ? "purchases.finalizeSyncingHint" : "purchases.pendingInactive")}</div></DeskSurface>
+              <DeskButton type="button" className="btn" disabled={!canSign || deadlinePassed || busy !== null || settlementSyncPending} onClick={() => void runAction(`withdraw-${purchaseRow.id}`, () => withdrawPurchase(purchaseRow))}><AppIcon name="restore" /> {t(withdrawSyncPending ? "purchases.withdrawSyncing" : "purchases.withdraw")}</DeskButton>
+              <DeskButton type="button" className="btn btnPrimary" disabled={!canSign || !deadlinePassed || busy !== null || settlementSyncPending} onClick={() => void runAction(`finalize-${purchaseRow.id}`, () => finalizePurchase(purchaseRow))}><AppIcon name="check" /> {t(finalizeSyncPending ? "purchases.finalizeSyncing" : "purchases.finalize")}</DeskButton>
             </div> : null}
           </article>;
           })}
@@ -1081,7 +1085,7 @@ function UliqHubContent() {
 
       {activeView === "locking" && locks ? <section className="uiSection">
         <div className="uiSectionHeader"><div className="uiSectionHeaderCopy"><h2 className="uiSectionTitle">{t("locking.positions")}</h2><p className="uiSectionDescription">{t("locking.positionsDescription")}</p></div></div>
-        {checkoutRequiredUntil ? <div className="uiNotice uiNotice-info">{t("locking.checkoutRequiredUntil", { until: formatDate(checkoutRequiredUntil, locale) })}</div> : null}
+        {checkoutRequiredUntil ? <DeskSurface dense><div className="uiNotice uiNotice-info">{t("locking.checkoutRequiredUntil", { until: formatDate(checkoutRequiredUntil, locale) })}</div></DeskSurface> : null}
         {locks.positions.length ? <div className="uliqPositionList">{locks.positions.map((position) => {
           const selectedMonths = extensionTerms[position.id] ?? (checkoutRequiredUntil ? 0 : 1);
           const selectedRequiredUntil = selectedMonths === 0
@@ -1109,9 +1113,9 @@ function UliqHubContent() {
               })}
             </div>
             {position.status !== "WITHDRAWN" ? <div className="uliqLockActions">
-              <label><span>{t("locking.extendFor")}</span><select className="input" value={selectedMonths} onChange={(event) => setExtensionTerms((current) => ({ ...current, [position.id]: Number(event.target.value) as 0 | 1 | 6 | 12 }))}>{checkoutRequiredUntil ? <option value={0}>{t("locking.requiredCheckoutTerm")} · {formatDate(checkoutRequiredUntil, locale)}</option> : null}{locks.coverageTerms.map((term) => <option key={term.billingMonths} value={term.billingMonths}>{t(`locking.terms.${term.billingMonths}`)} · {formatDate(term.requiredUntil, locale)}</option>)}</select></label>
-              <button type="button" className="btn" disabled={!canSign || busy !== null || !extensionNeeded} onClick={() => void runAction(`extend-${position.id}`, () => extendLock(position))}><AppIcon name="refresh" /> {t("locking.extend")}</button>
-              <button type="button" className="btn" disabled={!canSign || new Date(position.unlockAt).getTime() > Date.now() || busy !== null} onClick={() => void runAction(`unlock-${position.id}`, () => executePrepared("/uliq/locking/unlock/prepare", { lockId: position.lockIdOnchain, contractAddress: position.contractAddress }, t("locking.unlock")))}><AppIcon name="withdraw" /> {t("locking.unlock")}</button>
+              <label><span>{t("locking.extendFor")}</span><DeskSelect className="input" value={selectedMonths} onChange={(event) => setExtensionTerms((current) => ({ ...current, [position.id]: Number(event.target.value) as 0 | 1 | 6 | 12 }))}>{checkoutRequiredUntil ? <option value={0}>{t("locking.requiredCheckoutTerm")} · {formatDate(checkoutRequiredUntil, locale)}</option> : null}{locks.coverageTerms.map((term) => <option key={term.billingMonths} value={term.billingMonths}>{t(`locking.terms.${term.billingMonths}`)} · {formatDate(term.requiredUntil, locale)}</option>)}</DeskSelect></label>
+              <DeskButton type="button" className="btn" disabled={!canSign || busy !== null || !extensionNeeded} onClick={() => void runAction(`extend-${position.id}`, () => extendLock(position))}><AppIcon name="refresh" /> {t("locking.extend")}</DeskButton>
+              <DeskButton type="button" className="btn" disabled={!canSign || new Date(position.unlockAt).getTime() > Date.now() || busy !== null} onClick={() => void runAction(`unlock-${position.id}`, () => executePrepared("/uliq/locking/unlock/prepare", { lockId: position.lockIdOnchain, contractAddress: position.contractAddress }, t("locking.unlock")))}><AppIcon name="withdraw" /> {t("locking.unlock")}</DeskButton>
             </div> : null}
           </article>;
         })}</div> : <div className="uiEmptyState">{t("locking.empty")}</div>}

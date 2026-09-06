@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -88,11 +89,11 @@ export default function AdminGridHyperliquidPilotPage() {
       </div>
 
       {loading ? <div className="settingsMutedText">{tCommon("loading")}</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
 
       {data ? (
         <>
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("statusTitle")}</h3>
               <div className="settingsSectionMeta">
@@ -101,38 +102,38 @@ export default function AdminGridHyperliquidPilotPage() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-              <div className="card" style={{ padding: 10 }}>
+              <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                 <strong>{t("enabled")}</strong>
                 <div>{data.settings.enabled ? t("enabledYes") : t("enabledNo")}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
+              </div></DeskSurface>
+              <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                 <strong>{t("allowlistedUsers")}</strong>
                 <div>{data.counts.resolvedUsers} / {data.counts.configuredUsers}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
+              </div></DeskSurface>
+              <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                 <strong>{t("allowlistedWorkspaces")}</strong>
                 <div>{data.counts.resolvedWorkspaces} / {data.counts.configuredWorkspaces}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
+              </div></DeskSurface>
+              <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                 <strong>{t("demoGridBots")}</strong>
                 <div>{data.counts.hyperliquidDemoGridBots}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
+              </div></DeskSurface>
+              <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                 <strong>{t("demoGridBotsActive")}</strong>
                 <div>{data.counts.activeHyperliquidDemoGridBots}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
+              </div></DeskSurface>
+              <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                 <strong>{t("demoVaults")}</strong>
                 <div>{data.counts.hyperliquidDemoVaults}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
+              </div></DeskSurface>
+              <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                 <strong>{t("issues")}</strong>
                 <div>{data.counts.issueCount}</div>
-              </div>
+              </div></DeskSurface>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("recentEventsTitle")}</h3>
             </div>
@@ -141,7 +142,7 @@ export default function AdminGridHyperliquidPilotPage() {
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
                 {data.recentEvents.map((event) => (
-                  <div key={event.id} className="card" style={{ padding: 10 }}>
+                  <DeskSurface dense><div key={event.id} className="card" style={{ padding: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                       <strong>{event.kind}</strong>
                       <span className="settingsMutedText">{new Date(event.createdAt).toLocaleString()}</span>
@@ -167,11 +168,11 @@ export default function AdminGridHyperliquidPilotPage() {
                     {event.message ? (
                       <div style={{ marginTop: 8 }}>{event.message}</div>
                     ) : null}
-                  </div>
+                  </div></DeskSurface>
                 ))}
               </div>
             )}
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
     </div>

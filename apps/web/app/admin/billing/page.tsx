@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { isAddress } from "viem";
@@ -455,7 +458,7 @@ export default function AdminBillingPage() {
       {msg ? <AdminNotice tone="info">{msg}</AdminNotice> : null}
 
       <div className="billingAdminConfigGrid">
-        <section className="card settingsSection adminInlineForm billingAdminPaymentPanel">
+        <DeskSurface dense><section className="card settingsSection adminInlineForm billingAdminPaymentPanel">
           <div className="settingsSectionHeader">
             <div>
               <h3 className="adminSubsectionTitle">{t("paymentConfig.title")}</h3>
@@ -467,10 +470,10 @@ export default function AdminBillingPage() {
           </div>
           <div className="adminChoiceGrid">
             <FormField label={t("paymentConfig.treasuryAddress")} hint={t("paymentConfig.treasuryHint")}>
-              <input className="input subscriptionMono" value={treasuryAddress} onChange={(event) => setTreasuryAddress(event.target.value)} placeholder="0x..." autoComplete="off" spellCheck={false} />
+              <DeskInput className="input subscriptionMono" value={treasuryAddress} onChange={(event) => setTreasuryAddress(event.target.value)} placeholder="0x..." autoComplete="off" spellCheck={false} />
             </FormField>
             <FormField label={t("paymentConfig.confirmTreasuryAddress")} hint={t("paymentConfig.confirmTreasuryHint")}>
-              <input className="input subscriptionMono" value={treasuryAddressConfirmation} onChange={(event) => setTreasuryAddressConfirmation(event.target.value)} placeholder="0x..." autoComplete="off" spellCheck={false} />
+              <DeskInput className="input subscriptionMono" value={treasuryAddressConfirmation} onChange={(event) => setTreasuryAddressConfirmation(event.target.value)} placeholder="0x..." autoComplete="off" spellCheck={false} />
             </FormField>
           </div>
           <div className="billingPaymentMetrics">
@@ -485,9 +488,9 @@ export default function AdminBillingPage() {
           <AdminActionButton className="billingSectionAction" icon="save" variant="primary" onClick={() => void savePaymentConfig()} loading={savingId === "payment-config"} loadingLabel={tCommon("saving")}>
             {t("paymentConfig.save")}
           </AdminActionButton>
-        </section>
+        </section></DeskSurface>
 
-        <section className="card settingsSection adminInlineForm billingAdminFlagsPanel">
+        <DeskSurface dense><section className="card settingsSection adminInlineForm billingAdminFlagsPanel">
           <div className="settingsSectionHeader">
             <div>
               <h3 className="adminSubsectionTitle">{t("featureFlags.title")}</h3>
@@ -500,20 +503,20 @@ export default function AdminBillingPage() {
           <div className="billingFeatureToggleList">
             <label className="billingFeatureToggle">
               <span><strong>{t("featureFlags.billingEnabled.label")}</strong><small>{t("featureFlags.billingEnabled.hint")}</small></span>
-              <input type="checkbox" checked={billingEnabled} onChange={(event) => setBillingEnabled(event.target.checked)} aria-label={t("featureFlags.billingEnabled.label")} />
+              <DeskInput type="checkbox" checked={billingEnabled} onChange={(event) => setBillingEnabled(event.target.checked)} aria-label={t("featureFlags.billingEnabled.label")} />
             </label>
             <label className="billingFeatureToggle">
               <span><strong>{t("featureFlags.aiCreditBillingEnabled.label")}</strong><small>{t("featureFlags.aiCreditBillingEnabled.hint")}</small></span>
-              <input type="checkbox" checked={aiCreditBillingEnabled} onChange={(event) => setAiCreditBillingEnabled(event.target.checked)} aria-label={t("featureFlags.aiCreditBillingEnabled.label")} />
+              <DeskInput type="checkbox" checked={aiCreditBillingEnabled} onChange={(event) => setAiCreditBillingEnabled(event.target.checked)} aria-label={t("featureFlags.aiCreditBillingEnabled.label")} />
             </label>
           </div>
           <AdminActionButton className="billingSectionAction" icon="save" variant="primary" onClick={requestSaveFeatureFlags} loading={savingId === "flags"} loadingLabel={tCommon("saving")}>
             {t("featureFlags.save")}
           </AdminActionButton>
-        </section>
+        </section></DeskSurface>
       </div>
 
-      <section className="card settingsSection billingPackagesSection">
+      <DeskSurface dense><section className="card settingsSection billingPackagesSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 className="adminSubsectionTitle">{t("listTitle")}</h3>
@@ -537,7 +540,7 @@ export default function AdminBillingPage() {
             <PackageGroup title={t("packageSummary.addonGroup")} items={addonItems} drafts={drafts} expandedPackageId={expandedPackageId} savingId={savingId} locale={locale} onToggle={setExpandedPackageId} onDraftChange={(id, next) => setDrafts((current) => ({ ...current, [id]: next }))} onSave={savePackage} onDelete={setPendingDeleteId} />
           </div>
         )}
-      </section>
+      </section></DeskSurface>
 
       <section className="billingPackageTools">
         <div className="settingsSectionHeader">
@@ -547,7 +550,7 @@ export default function AdminBillingPage() {
           </div>
         </div>
         <div className="billingPackageToolGrid">
-          <article className={`card settingsSection billingPackageToolCard ${openTool === "create" ? "billingPackageToolCardOpen" : ""}`}>
+          <DeskSurface dense><article className={`card settingsSection billingPackageToolCard ${openTool === "create" ? "billingPackageToolCardOpen" : ""}`}>
             <div className="settingsSectionHeader">
               <div><h4 className="adminSubsectionTitle">{t("createTitle")}</h4><div className="adminSectionDescription">{t("createHelp")}</div></div>
               <AdminActionButton icon={openTool === "create" ? "close" : "create"} variant={openTool === "create" ? "secondary" : "primary"} aria-expanded={openTool === "create"} onClick={() => setOpenTool((current) => current === "create" ? null : "create")}>
@@ -561,9 +564,9 @@ export default function AdminBillingPage() {
                 <AdminActionButton className="billingSectionAction" icon="create" variant="primary" onClick={createPackage} loading={savingId === "new"} loadingLabel={tCommon("saving")}>{t("create")}</AdminActionButton>
               </div>
             ) : null}
-          </article>
+          </article></DeskSurface>
 
-          <article className={`card settingsSection billingPackageToolCard ${openTool === "credits" ? "billingPackageToolCardOpen" : ""}`}>
+          <DeskSurface dense><article className={`card settingsSection billingPackageToolCard ${openTool === "credits" ? "billingPackageToolCardOpen" : ""}`}>
             <div className="settingsSectionHeader">
               <div><h4 className="adminSubsectionTitle">{t("creditAdjustTitle")}</h4><div className="adminSectionDescription">{t("creditAdjustHelp")}</div></div>
               <AdminActionButton icon={openTool === "credits" ? "close" : "balance"} aria-expanded={openTool === "credits"} onClick={() => setOpenTool((current) => current === "credits" ? null : "credits")}>
@@ -572,13 +575,13 @@ export default function AdminBillingPage() {
             </div>
             {openTool === "credits" ? (
               <div className="billingPackageToolBody billingCreditAdjustmentForm">
-                <FormField label={t("userId")} hint={t("userIdHint")}><input className="input" placeholder={t("userIdPlaceholder")} value={adjustUserLookup} onChange={(event) => setAdjustUserLookup(event.target.value)} /></FormField>
-                <FormField label={t("deltaCredits")} hint={t("deltaCreditsHint")}><input className="input" inputMode="numeric" placeholder="0" value={adjustDelta} onChange={(event) => setAdjustDelta(event.target.value)} /></FormField>
-                <FormField label={t("note")} hint={t("noteHint")}><input className="input" placeholder={t("notePlaceholder")} value={adjustNote} onChange={(event) => setAdjustNote(event.target.value)} /></FormField>
+                <FormField label={t("userId")} hint={t("userIdHint")}><DeskInput className="input" placeholder={t("userIdPlaceholder")} value={adjustUserLookup} onChange={(event) => setAdjustUserLookup(event.target.value)} /></FormField>
+                <FormField label={t("deltaCredits")} hint={t("deltaCreditsHint")}><DeskInput className="input" inputMode="numeric" placeholder="0" value={adjustDelta} onChange={(event) => setAdjustDelta(event.target.value)} /></FormField>
+                <FormField label={t("note")} hint={t("noteHint")}><DeskInput className="input" placeholder={t("notePlaceholder")} value={adjustNote} onChange={(event) => setAdjustNote(event.target.value)} /></FormField>
                 <AdminActionButton className="billingSectionAction" icon="balance" variant="primary" onClick={adjustCredits} disabled={!canAdjustCredits} loading={savingId === "adjust"} loadingLabel={tCommon("saving")}>{t("adjust")}</AdminActionButton>
               </div>
             ) : null}
-          </article>
+          </article></DeskSurface>
         </div>
       </section>
       <AdminConfirmDialog
@@ -769,27 +772,27 @@ function PackageForm({
       <fieldset className="billingPackageFormGroup">
         <legend>{t("formGroups.identity")}</legend>
         <div className="adminFormGridCompact">
-          <FormField label={t("fields.code.label")} hint={t("fields.code.hint")}><input className="input" value={draft.code} placeholder="pro_monthly" onChange={(event) => setDraft({ ...draft, code: event.target.value })} /></FormField>
-          <FormField label={t("fields.name.label")} hint={t("fields.name.hint")}><input className="input" value={draft.name} placeholder={t("fields.name.placeholder")} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></FormField>
-          <FormField label={t("fields.description.label")} hint={t("fields.description.hint")}><input className="input" value={draft.description} placeholder={t("fields.description.placeholder")} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></FormField>
+          <FormField label={t("fields.code.label")} hint={t("fields.code.hint")}><DeskInput className="input" value={draft.code} placeholder="pro_monthly" onChange={(event) => setDraft({ ...draft, code: event.target.value })} /></FormField>
+          <FormField label={t("fields.name.label")} hint={t("fields.name.hint")}><DeskInput className="input" value={draft.name} placeholder={t("fields.name.placeholder")} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></FormField>
+          <FormField label={t("fields.description.label")} hint={t("fields.description.hint")}><DeskInput className="input" value={draft.description} placeholder={t("fields.description.placeholder")} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></FormField>
           <FormField label={t("fields.kind.label")} hint={t("fields.kind.hint")}>
-            <select className="input" value={draft.kind} onChange={(event) => updateKind(event.target.value as "plan" | "addon")}><option value="plan">{t("fields.kind.plan")}</option><option value="addon">{t("fields.kind.addon")}</option></select>
+            <DeskSelect className="input" value={draft.kind} onChange={(event) => updateKind(event.target.value as "plan" | "addon")}><option value="plan">{t("fields.kind.plan")}</option><option value="addon">{t("fields.kind.addon")}</option></DeskSelect>
           </FormField>
           {isPlan ? (
-            <FormField label={t("fields.plan.label")} hint={t("fields.plan.hint")}><select className="input" value={draft.plan} onChange={(event) => setDraft({ ...draft, plan: event.target.value as "free" | "pro" | "premium" | "" })}><option value="">{t("fields.plan.none")}</option><option value="free">{t("fields.plan.free")}</option><option value="pro">{t("fields.plan.pro")}</option><option value="premium">{t("fields.plan.premium")}</option></select></FormField>
+            <FormField label={t("fields.plan.label")} hint={t("fields.plan.hint")}><DeskSelect className="input" value={draft.plan} onChange={(event) => setDraft({ ...draft, plan: event.target.value as "free" | "pro" | "premium" | "" })}><option value="">{t("fields.plan.none")}</option><option value="free">{t("fields.plan.free")}</option><option value="pro">{t("fields.plan.pro")}</option><option value="premium">{t("fields.plan.premium")}</option></DeskSelect></FormField>
           ) : (
-            <FormField label={t("fields.addonType.label")} hint={t("fields.addonType.hint")}><select className="input" value={draft.addonType} onChange={(event) => setDraft({ ...draft, addonType: event.target.value as BillingAddonType })}><option value="running_bots">{t("fields.addonType.runningBots")}</option><option value="running_predictions_ai">{t("fields.addonType.runningPredictionsAi")}</option><option value="running_predictions_composite">{t("fields.addonType.runningPredictionsComposite")}</option><option value="ai_credits">{t("fields.addonType.aiCredits")}</option></select></FormField>
+            <FormField label={t("fields.addonType.label")} hint={t("fields.addonType.hint")}><DeskSelect className="input" value={draft.addonType} onChange={(event) => setDraft({ ...draft, addonType: event.target.value as BillingAddonType })}><option value="running_bots">{t("fields.addonType.runningBots")}</option><option value="running_predictions_ai">{t("fields.addonType.runningPredictionsAi")}</option><option value="running_predictions_composite">{t("fields.addonType.runningPredictionsComposite")}</option><option value="ai_credits">{t("fields.addonType.aiCredits")}</option></DeskSelect></FormField>
           )}
-          <FormField label={t("fields.sortOrder.label")} hint={t("fields.sortOrder.hint")}><input className="input" type="number" value={draft.sortOrder} placeholder="0" onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} /></FormField>
+          <FormField label={t("fields.sortOrder.label")} hint={t("fields.sortOrder.hint")}><DeskInput className="input" type="number" value={draft.sortOrder} placeholder="0" onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} /></FormField>
         </div>
       </fieldset>
 
       <fieldset className="billingPackageFormGroup">
         <legend>{t("formGroups.commerce")}</legend>
         <div className="adminFormGridCompact">
-          <FormField label={t("fields.priceCents.label")} hint={t("fields.priceCents.hint")}><input className="input" type="number" value={draft.priceCents} placeholder="2900" onChange={(event) => setDraft({ ...draft, priceCents: Number(event.target.value) })} /></FormField>
-          <FormField label={t("fields.billingMonths.label")} hint={t("fields.billingMonths.hint")}><input className="input" type="number" value={draft.billingMonths} placeholder="1" onChange={(event) => setDraft({ ...draft, billingMonths: Number(event.target.value) })} /></FormField>
-          <FormField label={t("fields.isActive.label")} hint={t("fields.isActive.hint")}><label className="adminCheckboxLabel billingPackageAvailability"><input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })} />{t("fields.isActive.value")}</label></FormField>
+          <FormField label={t("fields.priceCents.label")} hint={t("fields.priceCents.hint")}><DeskInput className="input" type="number" value={draft.priceCents} placeholder="2900" onChange={(event) => setDraft({ ...draft, priceCents: Number(event.target.value) })} /></FormField>
+          <FormField label={t("fields.billingMonths.label")} hint={t("fields.billingMonths.hint")}><DeskInput className="input" type="number" value={draft.billingMonths} placeholder="1" onChange={(event) => setDraft({ ...draft, billingMonths: Number(event.target.value) })} /></FormField>
+          <FormField label={t("fields.isActive.label")} hint={t("fields.isActive.hint")}><label className="adminCheckboxLabel billingPackageAvailability"><DeskInput type="checkbox" checked={draft.isActive} onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })} />{t("fields.isActive.value")}</label></FormField>
         </div>
       </fieldset>
 
@@ -798,18 +801,18 @@ function PackageForm({
         <div className="adminFormGridCompact">
           {isPlan ? (
             <>
-              <FormField label={t("fields.maxExchangeAccounts.label")} hint={t("fields.maxExchangeAccounts.hint")}><input className="input" value={draft.maxExchangeAccounts} placeholder={t("fields.maxExchangeAccounts.placeholder")} onChange={(event) => setDraft({ ...draft, maxExchangeAccounts: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
-              <FormField label={t("fields.maxRunningBots.label")} hint={t("fields.maxRunningBots.hint")}><input className="input" value={draft.maxRunningBots} placeholder="5" onChange={(event) => setDraft({ ...draft, maxRunningBots: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
-              <FormField label={t("fields.maxRunningPredictionsAi.label")} hint={t("fields.maxRunningPredictionsAi.hint")}><input className="input" value={draft.maxRunningPredictionsAi} placeholder="3" onChange={(event) => setDraft({ ...draft, maxRunningPredictionsAi: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
-              <FormField label={t("fields.maxRunningPredictionsComposite.label")} hint={t("fields.maxRunningPredictionsComposite.hint")}><input className="input" value={draft.maxRunningPredictionsComposite} placeholder="2" onChange={(event) => setDraft({ ...draft, maxRunningPredictionsComposite: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
-              <FormField label={t("fields.allowedExchanges.label")} hint={t("fields.allowedExchanges.hint")}><input className="input" value={draft.allowedExchanges} placeholder="*" onChange={(event) => setDraft({ ...draft, allowedExchanges: event.target.value })} /></FormField>
-              <FormField label={t("fields.monthlyAiCredits.label")} hint={t("fields.monthlyAiCredits.hint")}><input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.monthlyAiCredits} placeholder="10000" onChange={(event) => setDraft({ ...draft, monthlyAiCredits: event.target.value })} /></FormField>
+              <FormField label={t("fields.maxExchangeAccounts.label")} hint={t("fields.maxExchangeAccounts.hint")}><DeskInput className="input" value={draft.maxExchangeAccounts} placeholder={t("fields.maxExchangeAccounts.placeholder")} onChange={(event) => setDraft({ ...draft, maxExchangeAccounts: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
+              <FormField label={t("fields.maxRunningBots.label")} hint={t("fields.maxRunningBots.hint")}><DeskInput className="input" value={draft.maxRunningBots} placeholder="5" onChange={(event) => setDraft({ ...draft, maxRunningBots: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
+              <FormField label={t("fields.maxRunningPredictionsAi.label")} hint={t("fields.maxRunningPredictionsAi.hint")}><DeskInput className="input" value={draft.maxRunningPredictionsAi} placeholder="3" onChange={(event) => setDraft({ ...draft, maxRunningPredictionsAi: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
+              <FormField label={t("fields.maxRunningPredictionsComposite.label")} hint={t("fields.maxRunningPredictionsComposite.hint")}><DeskInput className="input" value={draft.maxRunningPredictionsComposite} placeholder="2" onChange={(event) => setDraft({ ...draft, maxRunningPredictionsComposite: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField>
+              <FormField label={t("fields.allowedExchanges.label")} hint={t("fields.allowedExchanges.hint")}><DeskInput className="input" value={draft.allowedExchanges} placeholder="*" onChange={(event) => setDraft({ ...draft, allowedExchanges: event.target.value })} /></FormField>
+              <FormField label={t("fields.monthlyAiCredits.label")} hint={t("fields.monthlyAiCredits.hint")}><DeskInput className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.monthlyAiCredits} placeholder="10000" onChange={(event) => setDraft({ ...draft, monthlyAiCredits: event.target.value })} /></FormField>
             </>
           ) : null}
-          {!isPlan && draft.addonType === "ai_credits" ? <FormField label={t("fields.aiCredits.label")} hint={t("fields.aiCredits.hint")}><input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.aiCredits} placeholder="250000" onChange={(event) => setDraft({ ...draft, aiCredits: event.target.value })} /></FormField> : null}
-          {!isPlan && draft.addonType === "running_bots" ? <FormField label={t("fields.deltaRunningBots.label")} hint={t("fields.deltaRunningBots.hint")}><input className="input" value={draft.deltaRunningBots} placeholder="1" onChange={(event) => setDraft({ ...draft, deltaRunningBots: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField> : null}
-          {!isPlan && draft.addonType === "running_predictions_ai" ? <FormField label={t("fields.deltaRunningPredictionsAi.label")} hint={t("fields.deltaRunningPredictionsAi.hint")}><input className="input" value={draft.deltaRunningPredictionsAi} placeholder="1" onChange={(event) => setDraft({ ...draft, deltaRunningPredictionsAi: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField> : null}
-          {!isPlan && draft.addonType === "running_predictions_composite" ? <FormField label={t("fields.deltaRunningPredictionsComposite.label")} hint={t("fields.deltaRunningPredictionsComposite.hint")}><input className="input" value={draft.deltaRunningPredictionsComposite} placeholder="1" onChange={(event) => setDraft({ ...draft, deltaRunningPredictionsComposite: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField> : null}
+          {!isPlan && draft.addonType === "ai_credits" ? <FormField label={t("fields.aiCredits.label")} hint={t("fields.aiCredits.hint")}><DeskInput className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.aiCredits} placeholder="250000" onChange={(event) => setDraft({ ...draft, aiCredits: event.target.value })} /></FormField> : null}
+          {!isPlan && draft.addonType === "running_bots" ? <FormField label={t("fields.deltaRunningBots.label")} hint={t("fields.deltaRunningBots.hint")}><DeskInput className="input" value={draft.deltaRunningBots} placeholder="1" onChange={(event) => setDraft({ ...draft, deltaRunningBots: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField> : null}
+          {!isPlan && draft.addonType === "running_predictions_ai" ? <FormField label={t("fields.deltaRunningPredictionsAi.label")} hint={t("fields.deltaRunningPredictionsAi.hint")}><DeskInput className="input" value={draft.deltaRunningPredictionsAi} placeholder="1" onChange={(event) => setDraft({ ...draft, deltaRunningPredictionsAi: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField> : null}
+          {!isPlan && draft.addonType === "running_predictions_composite" ? <FormField label={t("fields.deltaRunningPredictionsComposite.label")} hint={t("fields.deltaRunningPredictionsComposite.hint")}><DeskInput className="input" value={draft.deltaRunningPredictionsComposite} placeholder="1" onChange={(event) => setDraft({ ...draft, deltaRunningPredictionsComposite: event.target.value === "" ? "" : Number(event.target.value) })} /></FormField> : null}
         </div>
       </fieldset>
     </div>

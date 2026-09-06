@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -40,17 +41,17 @@ export default function AuditPage() {
     <div style={{ maxWidth: 980 }}>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       {!allowed ? (
-        <div className="card" style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>
+        <DeskSurface><div className="card" style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>
           {t("noPermission")}
-        </div>
+        </div></DeskSurface>
       ) : (
-        <div className="card" style={{ padding: 12 }}>
+        <DeskSurface><div className="card" style={{ padding: 12 }}>
           {items.length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("empty")}</div>
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {items.map((item) => (
-                <div key={item.id} className="card" style={{ padding: 8 }}>
+                <DeskSurface><div key={item.id} className="card" style={{ padding: 8 }}>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>{item.createdAt}</div>
                   <div style={{ fontWeight: 700 }}>{item.action}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>
@@ -61,11 +62,11 @@ export default function AuditPage() {
                       {JSON.stringify(item.meta, null, 2)}
                     </pre>
                   ) : null}
-                </div>
+                </div></DeskSurface>
               ))}
             </div>
           )}
-        </div>
+        </div></DeskSurface>
       )}
       {error ? <div style={{ fontSize: 12, color: "#ff6b6b", marginTop: 10 }}>{error}</div> : null}
     </div>

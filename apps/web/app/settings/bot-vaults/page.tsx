@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -245,10 +247,10 @@ export default function SettingsBotVaultsPage() {
               <AppIcon name="back" />
               {tCommon("backToSettings")}
             </Link>
-            <button className="btn" type="button" onClick={() => void loadOverview()} disabled={loading}>
+            <DeskButton className="btn" type="button" onClick={() => void loadOverview()} disabled={loading}>
               <AppIcon name="refresh" />
               {loading ? tCommon("loading") : tCommon("reload")}
-            </button>
+            </DeskButton>
           </>
         )}
       />
@@ -265,53 +267,53 @@ export default function SettingsBotVaultsPage() {
       ) : null}
 
       <section className="settingsHubSummary settingsBotVaultSummary" aria-label={t("summary.title")}>
-        <div className="uiMetricTile settingsSummaryTile settingsSummaryTile-info">
+        <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-info">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.total")}</span>
             <span className="settingsSummaryBadge settingsSummaryBadge-info">{t("summary.vaults")}</span>
           </div>
           <strong className="settingsSummaryValue">{loading && !counts ? tCommon("loading") : counts?.total ?? 0}</strong>
-        </div>
-        <div className="uiMetricTile settingsSummaryTile settingsSummaryTile-info">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-info">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.inUse")}</span>
             <span className="settingsSummaryBadge settingsSummaryBadge-info">{usageLabel("in_use")}</span>
           </div>
           <strong className="settingsSummaryValue">{counts?.in_use ?? 0}</strong>
-        </div>
-        <div className="uiMetricTile settingsSummaryTile settingsSummaryTile-success">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-success">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.unused")}</span>
             <span className="settingsSummaryBadge settingsSummaryBadge-success">{usageLabel("unused")}</span>
           </div>
           <strong className="settingsSummaryValue">{counts?.unused ?? 0}</strong>
-        </div>
-        <div className="uiMetricTile settingsSummaryTile settingsSummaryTile-danger">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-danger">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.errors")}</span>
             <span className="settingsSummaryBadge settingsSummaryBadge-danger">{usageLabel("error")}</span>
           </div>
           <strong className="settingsSummaryValue">{counts?.error ?? 0}</strong>
-        </div>
-        <div className="uiMetricTile settingsSummaryTile settingsSummaryTile-warning">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-warning">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.capital")}</span>
             <span className="settingsSummaryBadge settingsSummaryBadge-warning">{t("summary.tracked")}</span>
           </div>
           <strong className="settingsSummaryValue">{formatUsd(totals?.capitalUsd)}</strong>
           <small className="settingsSummaryMeta">{t("summary.residual", { amount: formatUsd(totals?.residualCapitalUsd) })}</small>
-        </div>
-        <div className="uiMetricTile settingsSummaryTile settingsSummaryTile-success">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-success">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.manualEmpty")}</span>
             <span className="settingsSummaryBadge settingsSummaryBadge-success">{t("summary.available")}</span>
           </div>
           <strong className="settingsSummaryValue">{counts?.manualEmptyAvailable ?? 0}</strong>
           <small className="settingsSummaryMeta">{t("summary.claimable", { amount: formatUsd(totals?.claimableProfitUsd) })}</small>
-        </div>
+        </div></DeskSurface>
       </section>
 
-      <section className="card settingsSection settingsBotVaultList">
+      <DeskSurface><section className="card settingsSection settingsBotVaultList">
         <div className="settingsSectionHeader">
           <div>
             <div className="settingsInlineTitle">{t("list.title")}</div>
@@ -366,11 +368,11 @@ export default function SettingsBotVaultsPage() {
                     {item.executionLastError ? <span className="settingsBotVaultErrorText">{item.executionLastError}</span> : null}
                   </div>
                   <div className="settingsBotVaultActions" role="cell">
-                    <button className="btn" type="button" onClick={() => void reconcile(item)} disabled={busy}>
+                    <DeskButton className="btn" type="button" onClick={() => void reconcile(item)} disabled={busy}>
                       <AppIcon name="refresh" />
                       {t("actions.reconcile")}
-                    </button>
-                    <button
+                    </DeskButton>
+                    <DeskButton
                       className={`btn ${manualEnabled ? "btnStop" : ""}`}
                       type="button"
                       onClick={() => manualType ? setPendingManualAction({ item, type: manualType }) : undefined}
@@ -379,7 +381,7 @@ export default function SettingsBotVaultsPage() {
                     >
                       <AppIcon name={manualType === "recover_closed" ? "restore" : "withdraw"} />
                       {manualActionLabel(manualType)}
-                    </button>
+                    </DeskButton>
                     {!manualEnabled && item.manualEmptyAction?.reason ? (
                       <span className="settingsBotVaultActionHint">{manualReasonLabel(item.manualEmptyAction.reason)}</span>
                     ) : null}
@@ -389,7 +391,7 @@ export default function SettingsBotVaultsPage() {
             })}
           </div>
         )}
-      </section>
+      </section></DeskSurface>
 
       <AdminConfirmDialog
         open={Boolean(pendingManualAction)}

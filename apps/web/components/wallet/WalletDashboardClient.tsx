@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAddress, parseEther } from "viem";
@@ -264,7 +269,7 @@ export default function WalletDashboardClient({
 
       {!masterAgentSummary?.address ? (
         <div className="walletAgentControls">
-          <button
+          <DeskButton
             type="button"
             className="btn btnPrimary"
             onClick={() => void createAgentWallet()}
@@ -272,18 +277,18 @@ export default function WalletDashboardClient({
           >
             <AppIcon name="wallet" />
             {agentSetupBusy === "create" ? t("agentActions.creatingWallet") : t("agentActions.createWallet")}
-          </button>
+          </DeskButton>
         </div>
       ) : null}
 
       <div className="walletAgentControls walletAgentThresholdRow">
-        <input
+        <DeskInput
           className="input"
           value={agentThresholdInput}
           onChange={(event) => setAgentThresholdInput(event.target.value)}
           placeholder={t("agentActions.thresholdPlaceholder")}
         />
-        <button
+        <DeskButton
           type="button"
           className="btn"
           onClick={() => void saveAgentThreshold()}
@@ -291,11 +296,11 @@ export default function WalletDashboardClient({
         >
           <AppIcon name="save" />
           {agentSetupBusy === "threshold" ? t("agentActions.savingThreshold") : t("agentActions.saveThreshold")}
-        </button>
+        </DeskButton>
       </div>
 
       <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
-        <button
+        <DeskButton
           type="button"
           className="btn btnPrimary"
           onClick={() => setActiveAgentModal("fund")}
@@ -303,8 +308,8 @@ export default function WalletDashboardClient({
         >
           <AppIcon name="deposit" />
           {agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund")}
-        </button>
-        <button
+        </DeskButton>
+        <DeskButton
           type="button"
           className="btn"
           onClick={() => setActiveAgentModal("withdraw")}
@@ -312,7 +317,7 @@ export default function WalletDashboardClient({
         >
           <AppIcon name="withdraw" />
           {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
-        </button>
+        </DeskButton>
         <HyperEvmAddressLink
           address={masterAgentSummary?.address}
           explorerUrl={transferConfig.hyperEvm.explorerUrl}
@@ -327,7 +332,7 @@ export default function WalletDashboardClient({
       <PageHeader title={t("title")} description={t("subtitle")} />
 
       <div className="walletStack">
-        <section className="card walletCard walletBotVaultSystemCard">
+        <DeskSurface dense><section className="card walletCard walletBotVaultSystemCard">
           <div className="walletSectionHeader">
             <div className="walletSectionIntro">
               <h3 className="walletSectionTitle">{t("botVaultSystemTitle")}</h3>
@@ -342,7 +347,7 @@ export default function WalletDashboardClient({
             <FundingVaultQuickCard onManage={() => setActiveBotVaultSystemModal("funding_vault")} />
             {agentWalletCard}
           </div>
-        </section>
+        </section></DeskSurface>
 
         <section className="walletEmbeddedSection walletHyperliquidTransferSection">
           <div className="walletSectionHeader">
@@ -355,8 +360,8 @@ export default function WalletDashboardClient({
         </section>
 
         {isConnected ? (
-          <section className="card walletCard walletAccordionCard">
-            <button
+          <DeskSurface dense><section className="card walletCard walletAccordionCard">
+            <DeskButton
               type="button"
               className="walletAccordionTrigger"
               onClick={() => setActivityOpen((value) => !value)}
@@ -377,15 +382,15 @@ export default function WalletDashboardClient({
                   ▾
                 </span>
               </div>
-            </button>
+            </DeskButton>
 
             {activityOpen ? (
               <div className="walletAccordionBody">
                 {activityQuery.isLoading ? (
                   <>
-                    <div className="skeletonLine skeletonLineLg" />
-                    <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
-                    <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
+                    <GlassSkeleton className="skeletonLine skeletonLineLg" />
+                    <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
+                    <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
                   </>
                 ) : activityQuery.data?.items?.length ? (
                   <div className="walletList">
@@ -416,14 +421,14 @@ export default function WalletDashboardClient({
                     })}
                     {activityQuery.data.items.length >= activityLimit && activityLimit < RECENT_ACTIVITY_MAX_LIMIT ? (
                       <div className="walletActionRow walletCardActions">
-                        <button
+                        <DeskButton
                           className="btn"
                           type="button"
                           onClick={() => setActivityLimit((limit) => Math.min(limit + RECENT_ACTIVITY_PAGE_SIZE, RECENT_ACTIVITY_MAX_LIMIT))}
                           disabled={activityQuery.isFetching}
                         >
                           {activityQuery.isFetching ? t("loadingMoreRecentActivity") : t("showMoreRecentActivity")}
-                        </button>
+                        </DeskButton>
                       </div>
                     ) : null}
                   </div>
@@ -432,13 +437,13 @@ export default function WalletDashboardClient({
                 )}
               </div>
             ) : null}
-          </section>
+          </section></DeskSurface>
         ) : null}
       </div>
 
       {activeBotVaultSystemModal ? (
-        <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveBotVaultSystemModal(null)}>
-          <div
+        <DeskDialog onClose={() => setActiveBotVaultSystemModal(null)}><div className="fundingModalOverlay" role="presentation" onClick={() => setActiveBotVaultSystemModal(null)}>
+          <DeskDialogPanel><div
             className="fundingModalCard"
             role="dialog"
             aria-modal="true"
@@ -452,14 +457,14 @@ export default function WalletDashboardClient({
             onClick={(event) => event.stopPropagation()}
           >
             <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
-              <button
+              <DeskButton
                 type="button"
                 className="fundingModalCloseButton"
                 aria-label={tFundingAction("modal.close")}
                 onClick={() => setActiveBotVaultSystemModal(null)}
               >
                 <AppIcon name="close" />
-              </button>
+              </DeskButton>
             </div>
             <div className="fundingModalBody">
               {activeBotVaultSystemModal === "botvault_funding" ? (
@@ -470,13 +475,13 @@ export default function WalletDashboardClient({
                 <FundingVaultManagementSection key="funding-vault-modal" />
               )}
             </div>
-          </div>
-        </div>
+          </div></DeskDialogPanel>
+        </div></DeskDialog>
       ) : null}
 
       {activeAgentModal ? (
-        <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveAgentModal(null)}>
-          <div
+        <DeskDialog onClose={() => setActiveAgentModal(null)}><div className="fundingModalOverlay" role="presentation" onClick={() => setActiveAgentModal(null)}>
+          <DeskDialogPanel><div
             className="fundingModalCard"
             role="dialog"
             aria-modal="true"
@@ -490,17 +495,17 @@ export default function WalletDashboardClient({
                 </h3>
                 <div className="walletMutedText">{t("agentActions.subtitle")}</div>
               </div>
-              <button
+              <DeskButton
                 type="button"
                 className="fundingModalCloseButton"
                 aria-label={t("agentActions.closeModal")}
                 onClick={() => setActiveAgentModal(null)}
               >
                 <AppIcon name="close" />
-              </button>
+              </DeskButton>
             </div>
             <div className="fundingModalBody">
-              <section className="card walletCard fundingModalSection">
+              <DeskSurface dense><section className="card walletCard fundingModalSection">
                 <div className="walletSectionIntro fundingModalTitleBlock">
                   <div className="fundingModalDirectionPill">
                     {activeAgentModal === "fund"
@@ -513,7 +518,7 @@ export default function WalletDashboardClient({
                   </div>
                 </div>
                 <div className="walletAmountRow fundingAmountActionRow fundingModalAmountRow fundingModalAmountField">
-                  <input
+                  <DeskInput
                     className="input walletAmountInput"
                     value={activeAgentModal === "fund" ? agentFundHypeInput : agentWithdrawHypeInput}
                     onChange={(event) => {
@@ -532,11 +537,11 @@ export default function WalletDashboardClient({
                 </div>
                 <div className="walletMutedText">{t("agentActions.hint", { chain: TARGET_CHAIN_NAME })}</div>
                 <div className="walletActionRow fundingModalPrimaryActionRow">
-	                  <button type="button" className="btn" onClick={() => setActiveAgentModal(null)}>
+	                  <DeskButton type="button" className="btn" onClick={() => setActiveAgentModal(null)}>
 	                    <AppIcon name="cancel" />
 	                    {t("agentActions.cancel")}
-	                  </button>
-                  <button
+	                  </DeskButton>
+                  <DeskButton
                     type="button"
                     className="btn btnPrimary"
 	                    onClick={() => void (activeAgentModal === "fund" ? fundAgentWallet() : withdrawAgentWallet())}
@@ -546,12 +551,12 @@ export default function WalletDashboardClient({
 	                    {activeAgentModal === "fund"
 	                      ? (agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund"))
                       : (agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw"))}
-                  </button>
+                  </DeskButton>
                 </div>
-              </section>
+              </section></DeskSurface>
             </div>
-          </div>
-        </div>
+          </div></DeskDialogPanel>
+        </div></DeskDialog>
       ) : null}
     </div>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, apiGet } from "../../../lib/api";
 
@@ -78,7 +80,7 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
   const health = score !== null ? healthLabel(score) : null;
 
   return (
-    <section className="card" style={{ padding: 12 }}>
+    <DeskSurface dense><section className="card" style={{ padding: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <h3 style={{ marginTop: 0, marginBottom: 0 }}>AI Insights (Read‑Only)</h3>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -101,18 +103,18 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
             </span>
           )}
           {(["24h", "7d"] as RangeKey[]).map((r) => (
-            <button
+            <DeskButton
               key={r}
               className={`btn ${range === r ? "btnPrimary" : ""}`}
               onClick={() => setRange(r)}
               disabled={loading}
             >
               {r}
-            </button>
+            </DeskButton>
           ))}
-          <button className="btn" onClick={load} disabled={loading}>
+          <DeskButton className="btn" onClick={load} disabled={loading}>
             {loading ? "Refreshing..." : "Refresh"}
-          </button>
+          </DeskButton>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>Last update: {lastUpdated}</div>
         </div>
       </div>
@@ -142,7 +144,7 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
       {insights.length > 0 ? (
         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
           {insights.map((ins, idx) => (
-            <div key={`${ins.title}-${idx}`} className="card" style={{ padding: 10 }}>
+            <DeskSurface dense><div key={`${ins.title}-${idx}`} className="card" style={{ padding: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <span
                   className="badge"
@@ -167,7 +169,7 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
                   Evidence: {JSON.stringify(ins.evidence)}
                 </div>
               ) : null}
-            </div>
+            </div></DeskSurface>
           ))}
         </div>
       ) : null}
@@ -175,6 +177,6 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
       <div style={{ marginTop: 10, fontSize: 11, color: "var(--muted)" }}>
         AI provides suggestions only. Changes must be applied manually.
       </div>
-    </section>
+    </section></DeskSurface>
   );
 }

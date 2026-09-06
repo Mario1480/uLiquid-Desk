@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
@@ -130,10 +135,10 @@ function FundingVaultAddressCopy({ vaultAddress }: { vaultAddress: string | null
         <div className="walletMutedText">{t("fundingVault.directDepositHint")}</div>
       </div>
       {vaultAddress ? (
-        <button type="button" className="btn" onClick={() => void copyAddress()}>
+        <DeskButton type="button" className="btn" onClick={() => void copyAddress()}>
           <AppIcon name="copy" />
           {copied ? t("fundingVault.copiedAddress") : t("fundingVault.copyAddress")}
-        </button>
+        </DeskButton>
       ) : null}
       <HyperEvmAddressLink address={vaultAddress} label="HyperEVMScan" />
     </div>
@@ -156,7 +161,7 @@ function FundingVaultInlineAddressCopy({ vaultAddress }: { vaultAddress: string 
   return (
     <span className="fundingVaultInlineAddress">
       <strong>{shortAddress(vaultAddress)}</strong>
-      <button
+      <DeskButton
         type="button"
         className="fundingVaultInlineCopyButton"
         onClick={() => void copyAddress()}
@@ -164,7 +169,7 @@ function FundingVaultInlineAddressCopy({ vaultAddress }: { vaultAddress: string 
         title={copied ? t("fundingVault.copiedAddress") : t("fundingVault.copyAddress")}
       >
         <AppIcon name={copied ? "check" : "copy"} />
-      </button>
+      </DeskButton>
     </span>
   );
 }
@@ -201,10 +206,10 @@ export function FundingVaultQuickCard({ onManage }: { onManage: () => void }) {
       {overviewQuery.isLoading ? <div className="walletMutedText">{t("fundingVault.loading")}</div> : null}
       {overviewQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(overviewQuery.error)}</div> : null}
       <div className="fundingQuickCardActions">
-        <button type="button" className="btn btnPrimary" onClick={onManage}>
+        <DeskButton type="button" className="btn btnPrimary" onClick={onManage}>
           <AppIcon name="manage" />
           {t("fundingVault.manage")}
-        </button>
+        </DeskButton>
         <HyperEvmAddressLink address={vault?.onchainAddress} label="View vault" />
       </div>
     </article>
@@ -250,14 +255,14 @@ export function BotVaultWalletQuickCard({ onFund, onWithdraw }: { onFund: () => 
       )}
       {fundingQuery.error ? <div className="walletNotice walletNoticeError">{errMsg(fundingQuery.error)}</div> : null}
       <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
-        <button type="button" className="btn btnPrimary" onClick={onFund} disabled={!isConnected || loading}>
+        <DeskButton type="button" className="btn btnPrimary" onClick={onFund} disabled={!isConnected || loading}>
           <AppIcon name="deposit" />
           {t("actions.botvaultFunding")}
-        </button>
-        <button type="button" className="btn" onClick={onWithdraw} disabled={!isConnected || loading}>
+        </DeskButton>
+        <DeskButton type="button" className="btn" onClick={onWithdraw} disabled={!isConnected || loading}>
           <AppIcon name="withdraw" />
           {t("actions.botvaultWithdrawal")}
-        </button>
+        </DeskButton>
       </div>
     </article>
   );
@@ -329,7 +334,7 @@ export function FundingVaultManagementSection() {
   }
 
   return (
-    <section className="card walletCard fundingModalSection">
+    <DeskSurface dense><section className="card walletCard fundingModalSection">
       <div className="walletSectionHeader fundingModalTitleBlock">
         <div className="walletSectionIntro">
           <h3 className="walletSectionTitle">{t("fundingVault.title")}</h3>
@@ -352,7 +357,7 @@ export function FundingVaultManagementSection() {
 
       <div className="fundingVaultModalControls">
         {!vault?.onchainAddress ? (
-          <button
+          <DeskButton
             type="button"
             className="btn btnPrimary"
             onClick={() => void executeWalletAction("create")}
@@ -360,10 +365,10 @@ export function FundingVaultManagementSection() {
           >
             <AppIcon name="create" />
             {flow.busyKey === "funding-vault-create" ? t("fundingVault.creating") : t("fundingVault.create")}
-          </button>
+          </DeskButton>
         ) : null}
         <div className="fundingVaultModalAmountGrid">
-          <input
+          <DeskInput
             className="input"
             type="number"
             min="0"
@@ -372,13 +377,13 @@ export function FundingVaultManagementSection() {
             onChange={(event) => setDepositAmount(event.target.value)}
             placeholder={t("fundingVault.depositPlaceholder")}
           />
-          <button type="button" className="btn" onClick={() => void executeWalletAction("deposit")} disabled={!ready || busy}>
+          <DeskButton type="button" className="btn" onClick={() => void executeWalletAction("deposit")} disabled={!ready || busy}>
             <AppIcon name="deposit" />
             {t("fundingVault.deposit")}
-          </button>
+          </DeskButton>
         </div>
         <div className="fundingVaultModalWithdrawGrid">
-          <input
+          <DeskInput
             className="input"
             type="number"
             min="0"
@@ -387,10 +392,10 @@ export function FundingVaultManagementSection() {
             onChange={(event) => setWithdrawAmount(event.target.value)}
             placeholder={t("fundingVault.withdrawPlaceholder")}
           />
-          <button type="button" className="btn" onClick={() => void executeWalletAction("withdraw")} disabled={!ready || busy}>
+          <DeskButton type="button" className="btn" onClick={() => void executeWalletAction("withdraw")} disabled={!ready || busy}>
             <AppIcon name="withdraw" />
             {t("fundingVault.ownerWithdraw")}
-          </button>
+          </DeskButton>
         </div>
       </div>
       <div className="fundingVaultModalFeedbackStack">
@@ -398,7 +403,7 @@ export function FundingVaultManagementSection() {
         {actionError ? <div className="walletNotice walletNoticeError">{actionError}</div> : null}
         {overviewQuery.isLoading ? <div className="walletMutedText">{t("fundingVault.loading")}</div> : null}
       </div>
-    </section>
+    </section></DeskSurface>
   );
 }
 
@@ -434,17 +439,17 @@ export default function FundingActionCenter({
   const anyError = isConnected ? fundingQuery.error || transferQuery.error : null;
 
   const activeModalDialog = activeModal ? (
-    <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveModal(null)}>
-      <div className="fundingModalCard" role="dialog" aria-modal="true" aria-label={modalTitle(t, activeModal)} onClick={(event) => event.stopPropagation()}>
+    <DeskDialog onClose={() => setActiveModal(null)}><div className="fundingModalOverlay" role="presentation" onClick={() => setActiveModal(null)}>
+      <DeskDialogPanel><div className="fundingModalCard" role="dialog" aria-modal="true" aria-label={modalTitle(t, activeModal)} onClick={(event) => event.stopPropagation()}>
         <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
-          <button
+          <DeskButton
             type="button"
             className="fundingModalCloseButton"
             aria-label={t("modal.close")}
             onClick={() => setActiveModal(null)}
           >
             <AppIcon name="close" />
-          </button>
+          </DeskButton>
         </div>
         <div className="fundingModalBody">
           {activeModal === "deposit" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="deposit" key="deposit-modal" /> : null}
@@ -452,8 +457,8 @@ export default function FundingActionCenter({
           {activeModal === "spot_perp" ? <HyperliquidUsdClassTransferSection config={fundingConfig} presentation="modal" initialDirection="perp_to_spot" key="spot-perp-modal" /> : null}
           {activeModal === "core_evm" ? <FundingTransferSection config={transferConfig} presentation="modal" initialDirection="core_to_evm" initialAsset="USDC" key="core-evm-modal" /> : null}
         </div>
-      </div>
-    </div>
+      </div></DeskDialogPanel>
+    </div></DeskDialog>
   ) : null;
 
   if (!isConnected) {
@@ -462,9 +467,9 @@ export default function FundingActionCenter({
         {embedded ? (
           <div className="walletNotice">{t("connectDescription")}</div>
         ) : (
-          <section className="card walletCard fundingActionShell">
+          <DeskSurface dense><section className="card walletCard fundingActionShell">
             <div className="walletNotice">{t("connectDescription")}</div>
-          </section>
+          </section></DeskSurface>
         )}
         {activeModalDialog}
       </section>
@@ -473,15 +478,15 @@ export default function FundingActionCenter({
 
   if (fundingQuery.isLoading || transferQuery.isLoading) {
     const loadingContent = (
-      <div className={embedded ? "fundingActionEmbeddedLoading" : "card walletCard fundingActionShell"}>
-        <div className="skeletonLine skeletonLineLg" />
-        <div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} />
+      <DeskSurface dense><div className={embedded ? "fundingActionEmbeddedLoading" : "card walletCard fundingActionShell"}>
+        <GlassSkeleton className="skeletonLine skeletonLineLg" />
+        <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} />
         <div className="walletInfoGrid" style={{ marginTop: 16 }}>
-          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
-          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
-          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
+          <div className="walletInfoTile"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
+          <div className="walletInfoTile"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
+          <div className="walletInfoTile"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
         </div>
-      </div>
+      </div></DeskSurface>
     );
 
     return (
@@ -523,14 +528,14 @@ export default function FundingActionCenter({
           <span>{t("cards.bridgeTiming")}: <strong>{t("cards.bridgeTimingValue")}</strong></span>
         </div>
         <div className="fundingQuickCardActions fundingQuickCardActionsSplit">
-          <button type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>
+          <DeskButton type="button" className="btn btnPrimary" onClick={() => setActiveModal("deposit")}>
             <AppIcon name="deposit" />
             {t("actions.deposit")}
-          </button>
-          <button type="button" className="btn" onClick={() => setActiveModal("withdraw")}>
+          </DeskButton>
+          <DeskButton type="button" className="btn" onClick={() => setActiveModal("withdraw")}>
             <AppIcon name="withdraw" />
             {t("actions.withdraw")}
-          </button>
+          </DeskButton>
         </div>
       </article>
 
@@ -546,10 +551,10 @@ export default function FundingActionCenter({
           <span>{t("cards.spotPerpTiming")}: <strong>{t("cards.spotPerpTimingValue")}</strong></span>
         </div>
         <div className="fundingQuickCardActions">
-          <button type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>
+          <DeskButton type="button" className="btn" onClick={() => setActiveModal("spot_perp")}>
             <AppIcon name="transfer" />
             {t("actions.spotPerp")}
-          </button>
+          </DeskButton>
         </div>
       </article>
 
@@ -566,10 +571,10 @@ export default function FundingActionCenter({
           <span>{t("cards.evmHype")}: <strong>{displayBalance(transfer.hyperEvm.hype.formatted, "HYPE", 4)}</strong></span>
         </div>
         <div className="fundingQuickCardActions">
-          <button type="button" className="btn" onClick={() => setActiveModal("core_evm")}>
+          <DeskButton type="button" className="btn" onClick={() => setActiveModal("core_evm")}>
             <AppIcon name="transfer" />
             {t("actions.coreEvm")}
-          </button>
+          </DeskButton>
         </div>
       </article>
     </div>
@@ -577,7 +582,7 @@ export default function FundingActionCenter({
 
   return (
     <section className={embedded ? "fundingActionEmbedded" : "walletStack"}>
-      {embedded ? fundingCards : <section className="card walletCard fundingActionShell">{fundingCards}</section>}
+      {embedded ? fundingCards : <DeskSurface dense><section className="card walletCard fundingActionShell">{fundingCards}</section></DeskSurface>}
       {activeModalDialog}
     </section>
   );

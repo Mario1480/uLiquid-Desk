@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
@@ -183,44 +186,44 @@ export default function AdminPredictionRefreshPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">
           {error}
-        </div>
+        </div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">
           {notice}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
         <>
           <section className="adminStatsGrid">
-            <div className="card adminStatsCard">
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("sourceLabel")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{settings?.source ?? "env"}</div>
               <div className="adminStatsHint">{t("controlsTitle")}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("lastUpdatedLabel")}</div>
               <div className="adminStatsValue adminStatsValueSmall">
                 {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
               </div>
               <div className="adminStatsHint">{t("loadDefaults")}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("fields.triggerDebounce.label")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{triggerDebounceSec}</div>
               <div className="adminStatsHint">{t("fields.aiCooldown.label")}: {aiCooldownSec}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("fields.unstableFlipLimit.label")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{unstableFlipLimit}</div>
               <div className="adminStatsHint">{t("fields.unstableFlipWindow.label")}: {unstableFlipWindowSeconds}</div>
-            </div>
+            </div></DeskSurface>
           </section>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader adminDetailSectionHeader">
               <h3 style={{ margin: 0 }}>{t("quickPresets")}</h3>
               <div className="adminDetailSectionDescription">
@@ -229,7 +232,7 @@ export default function AdminPredictionRefreshPage() {
             </div>
             <div className="adminInlineActions">
               {REFRESH_PRESETS.map((preset) => (
-                <button
+                <DeskButton
                   key={preset.key}
                   className="btn"
                   type="button"
@@ -237,15 +240,15 @@ export default function AdminPredictionRefreshPage() {
                   onClick={() => applyPreset(preset.values, t(`presets.${preset.key}.label`))}
                 >
                   {t(`presets.${preset.key}.label`)}
-                </button>
+                </DeskButton>
               ))}
-              <button className="btn" type="button" onClick={restoreDefaults}>
+              <DeskButton className="btn" type="button" onClick={restoreDefaults}>
                 {t("loadDefaults")}
-              </button>
+              </DeskButton>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader adminDetailSectionHeader">
               <h3 style={{ margin: 0 }}>{t("controlsTitle")}</h3>
               <div className="adminDetailSectionDescription">
@@ -257,7 +260,7 @@ export default function AdminPredictionRefreshPage() {
             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.triggerDebounce.label")}</span>
-              <input className="input" type="number" min={0} max={3600} value={triggerDebounceSec} onChange={(e) => setTriggerDebounceSec(e.target.value)} />
+              <DeskInput className="input" type="number" min={0} max={3600} value={triggerDebounceSec} onChange={(e) => setTriggerDebounceSec(e.target.value)} />
               <span className="settingsMutedText">
                 {t("fields.triggerDebounce.hint")}
               </span>
@@ -265,7 +268,7 @@ export default function AdminPredictionRefreshPage() {
 
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.aiCooldown.label")}</span>
-              <input className="input" type="number" min={30} max={3600} value={aiCooldownSec} onChange={(e) => setAiCooldownSec(e.target.value)} />
+              <DeskInput className="input" type="number" min={30} max={3600} value={aiCooldownSec} onChange={(e) => setAiCooldownSec(e.target.value)} />
               <span className="settingsMutedText">
                 {t("fields.aiCooldown.hint")}
               </span>
@@ -273,7 +276,7 @@ export default function AdminPredictionRefreshPage() {
 
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.eventThrottle.label")}</span>
-              <input className="input" type="number" min={0} max={3600} value={eventThrottleSec} onChange={(e) => setEventThrottleSec(e.target.value)} />
+              <DeskInput className="input" type="number" min={0} max={3600} value={eventThrottleSec} onChange={(e) => setEventThrottleSec(e.target.value)} />
               <span className="settingsMutedText">
                 {t("fields.eventThrottle.hint")}
               </span>
@@ -281,7 +284,7 @@ export default function AdminPredictionRefreshPage() {
 
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.hysteresisRatio.label")}</span>
-              <input className="input" type="number" min={0.2} max={0.95} step={0.01} value={hysteresisRatio} onChange={(e) => setHysteresisRatio(e.target.value)} />
+              <DeskInput className="input" type="number" min={0.2} max={0.95} step={0.01} value={hysteresisRatio} onChange={(e) => setHysteresisRatio(e.target.value)} />
               <span className="settingsMutedText">
                 {t("fields.hysteresisRatio.hint")}
               </span>
@@ -289,7 +292,7 @@ export default function AdminPredictionRefreshPage() {
 
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.unstableFlipLimit.label")}</span>
-              <input className="input" type="number" min={2} max={20} value={unstableFlipLimit} onChange={(e) => setUnstableFlipLimit(e.target.value)} />
+              <DeskInput className="input" type="number" min={2} max={20} value={unstableFlipLimit} onChange={(e) => setUnstableFlipLimit(e.target.value)} />
               <span className="settingsMutedText">
                 {t("fields.unstableFlipLimit.hint")}
               </span>
@@ -297,7 +300,7 @@ export default function AdminPredictionRefreshPage() {
 
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.unstableFlipWindow.label")}</span>
-              <input className="input" type="number" min={60} max={86400} value={unstableFlipWindowSeconds} onChange={(e) => setUnstableFlipWindowSeconds(e.target.value)} />
+              <DeskInput className="input" type="number" min={60} max={86400} value={unstableFlipWindowSeconds} onChange={(e) => setUnstableFlipWindowSeconds(e.target.value)} />
               <span className="settingsMutedText">
                 {t("fields.unstableFlipWindow.hint")}
               </span>
@@ -305,11 +308,11 @@ export default function AdminPredictionRefreshPage() {
             </div>
 
             <div className="adminInlineActions" style={{ marginTop: 14 }}>
-              <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
+              <DeskButton className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
                 {saving ? t("saving") : t("saveSettings")}
-              </button>
+              </DeskButton>
             </div>
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
     </div>

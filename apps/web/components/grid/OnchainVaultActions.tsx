@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { encodeFunctionData, erc20Abi, parseUnits, type Hex } from "viem";
@@ -469,7 +471,7 @@ function OnchainActionTimeline({
       {items.map((item) => {
         const tone = actionStatusTone(item.status);
         return (
-          <div
+          <DeskSurface dense><div
             key={item.id}
             className="card"
             style={{ padding: 10, borderColor: tone.borderColor }}
@@ -494,7 +496,7 @@ function OnchainActionTimeline({
                 <HyperEvmTxLink txHash={item.txHash} label={t("viewTransaction")} />
               </div>
             ) : null}
-          </div>
+          </div></DeskSurface>
         );
       })}
     </div>
@@ -538,10 +540,10 @@ function OnchainGuardrailNotice({
     return (
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
 	        <div className="settingsMutedText">{t("wrongNetwork", { chain: TARGET_CHAIN_NAME })}</div>
-	        <button className="btn" type="button" onClick={() => void onSwitchNetwork()}>
+	        <DeskButton className="btn" type="button" onClick={() => void onSwitchNetwork()}>
 	          <AppIcon name="switch" />
 	          {t("switchNetwork")}
-	        </button>
+	        </DeskButton>
       </div>
     );
   }
@@ -659,7 +661,7 @@ export function BotVaultOnchainActionsCard({
   }
 
   return (
-    <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+    <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
       <h3 style={{ marginTop: 0 }}>{t("botTitle")}</h3>
       <div className="settingsMutedText" style={{ marginBottom: 10 }}>
         {t("botMeta", {
@@ -683,7 +685,7 @@ export function BotVaultOnchainActionsCard({
       />
 
       {(waitingForReserveSignature || waitingForHypercoreFundingSignature || waitingForIndexer) ? (
-        <div className="card" style={{ padding: 10, marginBottom: 12, borderColor: "rgba(245,158,11,0.35)" }}>
+        <DeskSurface dense><div className="card" style={{ padding: 10, marginBottom: 12, borderColor: "rgba(245,158,11,0.35)" }}>
           <strong>{t("provisioningResumeTitle")}</strong>
           <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
             {waitingForReserveSignature
@@ -693,7 +695,7 @@ export function BotVaultOnchainActionsCard({
                 : t("provisioningResumeIndexerHint")}
           </div>
           {waitingForReserveSignature ? (
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
 	              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
@@ -701,10 +703,10 @@ export function BotVaultOnchainActionsCard({
 	            >
 	              <AppIcon name="deposit" />
 	              {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
-	            </button>
+	            </DeskButton>
           ) : null}
           {waitingForHypercoreFundingSignature ? (
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
 	              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
@@ -712,13 +714,13 @@ export function BotVaultOnchainActionsCard({
 	            >
 	              <AppIcon name="deposit" />
 	              {flow.busyKey === "fund-hypercore-bot-vault" ? t("buildingTx") : t("fundHypercoreAction")}
-	            </button>
+	            </DeskButton>
           ) : null}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {needsInitialReserve ? (
-        <div className="card" style={{ padding: 10, marginBottom: 12, borderColor: "rgba(245,158,11,0.35)" }}>
+        <DeskSurface dense><div className="card" style={{ padding: 10, marginBottom: 12, borderColor: "rgba(245,158,11,0.35)" }}>
           <strong>{t("reserveBotVaultAction")}</strong>
           <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
             {t("reservePendingHint", {
@@ -734,7 +736,7 @@ export function BotVaultOnchainActionsCard({
               })}
             </div>
           ) : null}
-          <button
+          <DeskButton
             className="btn btnPrimary"
             type="button"
 	            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
@@ -742,13 +744,13 @@ export function BotVaultOnchainActionsCard({
 	          >
 	            <AppIcon name="deposit" />
 	            {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
-	          </button>
-        </div>
+	          </DeskButton>
+        </div></DeskSurface>
       ) : null}
 
       {!showExistingBotVaultActions ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <div className="card" style={{ padding: 10 }}>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <strong>{t("createBotVault")}</strong>
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
               {botVault.lifecycle?.pendingActionType === "create_bot_vault"
@@ -779,16 +781,16 @@ export function BotVaultOnchainActionsCard({
                 })}
               </div>
             ) : null}
-          </div>
+          </div></DeskSurface>
         </div>
       ) : (
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-          <div className="card" style={{ padding: 10 }}>
+          <DeskSurface dense><div className="card" style={{ padding: 10 }}>
             <strong>{t("endBotOnlyTitle")}</strong>
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
               {t("endBotOnlyHint")}
             </div>
-          </div>
+          </div></DeskSurface>
         </div>
       )}
 
@@ -798,6 +800,6 @@ export function BotVaultOnchainActionsCard({
           <OnchainActionTimeline t={t} items={botActions.slice(0, 6)} />
         </div>
       </div>
-    </section>
+    </section></DeskSurface>
   );
 }

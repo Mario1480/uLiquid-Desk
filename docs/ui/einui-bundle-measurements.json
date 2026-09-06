@@ -1,0 +1,302 @@
+{
+  "method": "Unique initial assets referenced by Next client manifests; gzip per file, not observed network transfer. Same Next/Turbopack production mode. Gallery module isolation checked.",
+  "routes": [
+    {
+      "route": "page",
+      "before": {
+        "js": {
+          "bytes": 325117,
+          "gzipBytes": 85153,
+          "files": 7
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 554000,
+          "gzipBytes": 160726,
+          "files": 11
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 228883,
+        "jsGzipBytes": 75573,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "login/page",
+      "before": {
+        "js": {
+          "bytes": 2032183,
+          "gzipBytes": 596373,
+          "files": 17
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 2133859,
+          "gzipBytes": 630748,
+          "files": 20
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 101676,
+        "jsGzipBytes": 34375,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "trade/page",
+      "before": {
+        "js": {
+          "bytes": 609341,
+          "gzipBytes": 170607,
+          "files": 8
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 716635,
+          "gzipBytes": 206380,
+          "files": 11
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 107294,
+        "jsGzipBytes": 35773,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "bots/page",
+      "before": {
+        "js": {
+          "bytes": 219867,
+          "gzipBytes": 61939,
+          "files": 6
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 322951,
+          "gzipBytes": 96760,
+          "files": 9
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 103084,
+        "jsGzipBytes": 34821,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "agent-chat/page",
+      "before": {
+        "js": {
+          "bytes": 240867,
+          "gzipBytes": 67244,
+          "files": 6
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 495614,
+          "gzipBytes": 151743,
+          "files": 11
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 254747,
+        "jsGzipBytes": 84499,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "settings/page",
+      "before": {
+        "js": {
+          "bytes": 2046979,
+          "gzipBytes": 599384,
+          "files": 17
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 2176973,
+          "gzipBytes": 643396,
+          "files": 21
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 129994,
+        "jsGzipBytes": 44012,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "wallet/page",
+      "before": {
+        "js": {
+          "bytes": 1676609,
+          "gzipBytes": 482568,
+          "files": 23
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 1809437,
+          "gzipBytes": 527123,
+          "files": 27
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 132828,
+        "jsGzipBytes": 44555,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "uliq/page",
+      "before": {
+        "js": {
+          "bytes": 1373497,
+          "gzipBytes": 397626,
+          "files": 17
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 1476751,
+          "gzipBytes": 432194,
+          "files": 20
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 103254,
+        "jsGzipBytes": 34568,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    },
+    {
+      "route": "admin/system/page",
+      "before": {
+        "js": {
+          "bytes": 224127,
+          "gzipBytes": 64125,
+          "files": 8
+        },
+        "css": {
+          "bytes": 332576,
+          "gzipBytes": 59234,
+          "files": 4
+        }
+      },
+      "after": {
+        "js": {
+          "bytes": 325920,
+          "gzipBytes": 98520,
+          "files": 11
+        },
+        "css": {
+          "bytes": 457759,
+          "gzipBytes": 74362,
+          "files": 5
+        }
+      },
+      "delta": {
+        "jsBytes": 101793,
+        "jsGzipBytes": 34395,
+        "cssBytes": 125183,
+        "cssGzipBytes": 15128
+      }
+    }
+  ]
+}

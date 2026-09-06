@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
 import { useEffect, useState } from "react";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { AppIcon } from "./AppIcon";
@@ -81,7 +84,7 @@ export default function ReauthDialog({ open, onClose, onVerified }: Props) {
   if (!open) return null;
 
   return (
-    <div
+    <DeskDialog onClose={onClose}><div
       style={{
         position: "fixed",
         inset: 0,
@@ -92,7 +95,7 @@ export default function ReauthDialog({ open, onClose, onVerified }: Props) {
         zIndex: 50
       }}
     >
-      <div className="card" style={{ padding: 16, width: 360, maxWidth: "92vw" }}>
+      <DeskDialogPanel label="Re-auth required"><div className="card" data-ein-surface="true" role="dialog" aria-label="Re-auth required" style={{ padding: 16, width: 360, maxWidth: "92vw" }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>Re-auth required</div>
         <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12 }}>
           {otpEnabled
@@ -102,11 +105,11 @@ export default function ReauthDialog({ open, onClose, onVerified }: Props) {
         <div style={{ display: "grid", gap: 8 }}>
           {otpEnabled ? (
             <>
-              <button className="btn" onClick={sendCode} disabled={sending}>
+              <DeskButton className="btn" onClick={sendCode} disabled={sending}>
                 <AppIcon name="mail" />
                 {sending ? "Sending..." : "Send code"}
-              </button>
-              <input
+              </DeskButton>
+              <DeskInput
                 className="input"
                 placeholder="6-digit code"
                 value={code}
@@ -116,7 +119,7 @@ export default function ReauthDialog({ open, onClose, onVerified }: Props) {
               />
             </>
           ) : (
-            <input
+            <DeskInput
               className="input"
               type="password"
               placeholder="Password"
@@ -124,22 +127,22 @@ export default function ReauthDialog({ open, onClose, onVerified }: Props) {
               onChange={(e) => setPassword(e.target.value)}
             />
           )}
-          <button
+          <DeskButton
             className="btn btnPrimary"
             onClick={verify}
             disabled={verifying || (otpEnabled ? code.trim().length !== 6 : password.length < 6)}
           >
             <AppIcon name="check" />
             {verifying ? "Verifying..." : "Verify"}
-          </button>
-          <button className="btn" onClick={onClose}>
+          </DeskButton>
+          <DeskButton className="btn" onClick={onClose}>
             <AppIcon name="cancel" />
             Cancel
-          </button>
+          </DeskButton>
           {status ? <div style={{ fontSize: 12, opacity: 0.8 }}>{status}</div> : null}
           {error ? <div style={{ fontSize: 12, color: "var(--danger)" }}>{error}</div> : null}
         </div>
-      </div>
-    </div>
+      </div></DeskDialogPanel>
+    </div></DeskDialog>
   );
 }

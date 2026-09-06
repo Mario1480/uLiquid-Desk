@@ -78,6 +78,9 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 
 ## Engineering and Operations
 
+- [Ein UI integration and acceptance](ui/einui-integration.md)
+- [Ein UI route migration inventory](ui/einui-route-inventory.md)
+- [Ein UI validation, screenshots and release gates](ui/einui-validation.md)
 - [Phase 2 — Shared Data and Existing AI Upgrade](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md)
 - [Go-live master plan](go-live-master-plan.md)
 - [Go-live readiness follow-ups](go-live-readiness-followups.md)

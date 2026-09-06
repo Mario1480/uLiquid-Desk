@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -411,7 +413,7 @@ export default function AppSidebar({
   }, [featureGates, hasPlatformAdminAccess, hrefFor, pathnameWithoutLocale, tNav, tSidebar, visibility]);
 
   return (
-    <aside
+    <DeskSurface><aside
       id="appSidebar"
       className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}
       role={mobileMode ? "dialog" : undefined}
@@ -427,7 +429,7 @@ export default function AppSidebar({
               <span className="appSidebarLogoText">{tCommon("betaLabel", { version: appReleaseVersion })}</span>
             </span>
           </Link>
-          <button
+          <DeskButton
             type="button"
             className="appSidebarClose"
             onClick={onClose}
@@ -435,7 +437,7 @@ export default function AppSidebar({
             title={tSidebar("close")}
           >
             <AppIcon name="close" />
-          </button>
+          </DeskButton>
         </div>
 
         {navigationGroups.map((group) => (
@@ -485,7 +487,7 @@ export default function AppSidebar({
         </section>
 
         <div className="appSidebarFooter">
-          <button
+          <DeskButton
             type="button"
             className="appSidebarLink appSidebarLogoutButton"
             onClick={() => void handleLogout()}
@@ -495,9 +497,9 @@ export default function AppSidebar({
             <span className="appSidebarLinkLabel">
               {logoutLoading ? tNav("loggingOut") : tNav("logout")}
             </span>
-          </button>
+          </DeskButton>
         </div>
       </div>
-    </aside>
+    </aside></DeskSurface>
   );
 }

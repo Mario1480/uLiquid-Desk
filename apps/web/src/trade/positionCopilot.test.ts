@@ -6,8 +6,8 @@ import {
   POSITION_COPILOT_MANUAL_REVIEW_HREF
 } from "./positionCopilot.js";
 
-test("Position Copilot CTA only navigates to the manual positions review", () => {
-  assert.equal(POSITION_COPILOT_MANUAL_REVIEW_HREF, "#trade-positions");
+test("Position Copilot CTA only navigates to the read-only Agent Chat", () => {
+  assert.equal(POSITION_COPILOT_MANUAL_REVIEW_HREF, "/agent-chat");
   assert.equal(isReadOnlyPositionCopilotNavigation(POSITION_COPILOT_MANUAL_REVIEW_HREF), true);
   assert.equal(isReadOnlyPositionCopilotNavigation("/api/orders"), false);
   assert.equal(isReadOnlyPositionCopilotNavigation("/api/positions/close"), false);

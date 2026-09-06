@@ -121,3 +121,35 @@ test("unexpected AI tool calls are rejected and fall back to deterministic analy
   assert.equal(result.analysis.readOnly, true);
   assert.equal(result.analysis.riskLevel, "critical");
 });
+
+test("findings deduplicate stable codes, known stop-loss aliases and identical text without lowering severity", async () => {
+  resetAiAnalyzerState();
+  const position = { ...snapshot(), stopLossPrice: null };
+  const result = await analyzePositionSnapshot({ snapshot: position, userId: "dedupe-owner", language: "en",
+    callAiChat: async messages => {
+      assert.match(messages[0].content, /Return only additional findings/);
+      return { content: JSON.stringify({ summary: "Existing deterministic warnings remain authoritative.", thesisStatus: "unknown", riskLevel: "low",
+        riskFactors: [
+          { code: "no_stop_loss", severity: "high", message: "No stop-loss is visible in the position snapshot." },
+          { code: "stop_loss_missing", severity: "low", message: "The stop-loss is absent." },
+          { code: "liquidation_distance_critical", severity: "low", message: "Duplicate low-severity wording." },
+          { code: "book_thin", severity: "medium", message: "Book coverage is limited." },
+          { code: "book_coverage", severity: "low", message: "Book coverage is limited!" },
+          { code: "other_risk", severity: "medium", message: "Independent context is unavailable." }
+        ], events: [
+          { code: "liquidation_proximity", severity: "low", message: "Duplicate event wording." },
+          { code: "context_changed", severity: "medium", message: "A distinct change remains visible." }
+        ] }), toolCalls: [], usage: {}, model: "fixture", provider: "openai" as const, finishReason: "stop" };
+    } });
+  assert.equal(result.analysis.riskLevel, "critical");
+  assert.equal(result.analysis.riskFactors.filter(f => f.code === "stop_loss_missing").length, 1);
+  const stop = result.analysis.riskFactors.find(f => f.code === "stop_loss_missing")!;
+  assert.equal(stop.severity, "high");
+  assert.equal(stop.message, "No stop-loss is visible in the snapshot.");
+  assert.equal(result.analysis.riskFactors.filter(f => f.code === "liquidation_distance_critical").length, 1);
+  assert.equal(result.analysis.riskFactors.find(f => f.code === "liquidation_distance_critical")!.severity, "critical");
+  assert.equal(result.analysis.riskFactors.filter(f => f.code.startsWith("book_")).length, 1);
+  assert.ok(result.analysis.riskFactors.some(f => f.code === "other_risk"));
+  assert.equal(result.analysis.events.filter(f => f.code === "liquidation_proximity").length, 1);
+  assert.ok(result.analysis.events.some(f => f.code === "context_changed"));
+});

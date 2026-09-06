@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -72,7 +75,7 @@ function QuickActionIconButton({
   children: ReactNode;
 }) {
   return (
-    <button
+    <DeskButton
       type="button"
       aria-label={label}
       disabled={disabled}
@@ -98,7 +101,7 @@ function QuickActionIconButton({
       }}
     >
       {children}
-    </button>
+    </DeskButton>
   );
 }
 
@@ -340,7 +343,7 @@ function GridBotsDashboardPageContent() {
   if (!gridFeatureEnabled) {
     return (
       <div className="botsPage">
-        <div className="card" style={{ padding: 16 }}>
+        <DeskSurface dense><div className="card" style={{ padding: 16 }}>
           <h2 style={{ marginTop: 0 }}>{tGrid("title")}</h2>
           <div className="settingsMutedText" style={{ marginBottom: 12 }}>
             {tCommon("licenseGate.body", { feature: "Grid bots" })}
@@ -349,7 +352,7 @@ function GridBotsDashboardPageContent() {
             <AppIcon name="subscription" />
             {tCommon("licenseGate.cta")}
           </Link>
-        </div>
+        </div></DeskSurface>
       </div>
     );
   }
@@ -440,7 +443,7 @@ function GridBotsDashboardPageContent() {
         density="compact"
         actions={
           <label className="settingsMutedText gridRunningArchiveToggle">
-            <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
+            <DeskInput type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
             <span>{tGrid("showArchived")}</span>
           </label>
         }
@@ -679,7 +682,7 @@ function GridBotsDashboardPageContent() {
                       </div>
                     </div>
                     <div className="gridRunningCardActions">
-                      <button
+                      <DeskButton
                         type="button"
                         className="btn btnPause"
                         onClick={() => void runInstanceAction(instance, toggleAction)}
@@ -687,8 +690,8 @@ function GridBotsDashboardPageContent() {
 	                      >
 	                        <AppIcon name={toggleAction === "resume" ? "play" : "pause"} />
 	                        {busyInstanceAction === `${instance.id}:${toggleAction}` ? tGrid("loadingInstances") : toggleLabel}
-	                      </button>
-                      <button
+	                      </DeskButton>
+                      <DeskButton
                         type="button"
                         className="btn"
                         onClick={() => void runInstanceAction(instance, "stop")}
@@ -696,8 +699,8 @@ function GridBotsDashboardPageContent() {
 	                      >
 	                        <AppIcon name="stop" />
 	                        {busyInstanceAction === `${instance.id}:stop` ? tGrid("loadingInstances") : tInstance("stop")}
-	                      </button>
-                      <button
+	                      </DeskButton>
+                      <DeskButton
                         type="button"
                         className="btn btnStop"
                         onClick={() => void runInstanceAction(instance, "end")}
@@ -705,7 +708,7 @@ function GridBotsDashboardPageContent() {
 	                      >
 	                        <AppIcon name="archive" />
 	                        {busyInstanceAction === `${instance.id}:end` ? tGrid("loadingInstances") : tInstance("end")}
-	                      </button>
+	                      </DeskButton>
                     </div>
                   </div>
                 );

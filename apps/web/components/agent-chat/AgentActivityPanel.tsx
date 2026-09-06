@@ -1,3 +1,5 @@
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSelect } from "@/components/desk/DeskSelect";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { AppIcon } from "../../app/components/AppIcon";
@@ -14,9 +16,9 @@ export default function AgentActivityPanel({ logs, loading, error = false, onClo
   const log = useMemo(() => logs.find((item) => item.runId === selectedRunId) ?? logs[0] ?? null, [logs, selectedRunId]);
   return (
     <aside className="agentChatActivity agentChatDecisionLog" aria-live="polite" aria-label={t("decisionLog.title")}>
-      <div className="agentChatPanelHeader"><strong>{t("decisionLog.title")}</strong>{onClose ? <button type="button" className="btn agentChatMobileClose" onClick={onClose}><AppIcon name="close" />{t("actions.close")}</button> : null}</div>
+      <div className="agentChatPanelHeader"><strong>{t("decisionLog.title")}</strong>{onClose ? <DeskButton type="button" className="btn agentChatMobileClose" onClick={onClose}><AppIcon name="close" />{t("actions.close")}</DeskButton> : null}</div>
       {error ? <p role="alert" className="agentChatMuted">{t("decisionLog.loadError")}</p> : null}
-      {logs.length > 1 ? <label className="agentChatDecisionSelect"><span>{t("decisionLog.recentRuns")}</span><select className="input" value={log?.runId ?? ""} onChange={(event) => setSelectedRunId(event.target.value)}>{logs.map((item) => <option key={item.runId} value={item.runId}>{new Date(item.createdAt).toLocaleString(locale)} · {item.state}</option>)}</select></label> : null}
+      {logs.length > 1 ? <label className="agentChatDecisionSelect"><span>{t("decisionLog.recentRuns")}</span><DeskSelect className="input" value={log?.runId ?? ""} onChange={(event) => setSelectedRunId(event.target.value)}>{logs.map((item) => <option key={item.runId} value={item.runId}>{new Date(item.createdAt).toLocaleString(locale)} · {item.state}</option>)}</DeskSelect></label> : null}
       {loading && logs.length === 0 ? <div className="agentChatActivityEmpty"><span className="agentChatSpinner" />{t("decisionLog.loading")}</div> : !log ? <p className="agentChatMuted">{t("decisionLog.empty")}</p> : <div className="agentChatDecisionBody">
         <div className="agentChatNoExecution"><AppIcon name="shield" /><strong>{t("decisionLog.noExecution")}</strong></div>
         <p className="agentChatMuted">{t("decisionLog.recordedEvidence")}</p>
