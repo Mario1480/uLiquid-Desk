@@ -34,6 +34,11 @@
 
 /* AI Agent Chat: compact, read-only analysis workspace. */
 
+/* A transformed shell would anchor fixed chat drawers to the page, not the viewport. */
+.appMain:has(.agentChatPage) {
+  animation: none;
+}
+
 .agentChatPage {
   gap: 12px;
 }

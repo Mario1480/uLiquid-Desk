@@ -6,7 +6,7 @@ import { sharedDerivativesStore, projectDerivativesSnapshot } from "../../market
 import { evaluateMarketFeature } from "../features/registry.js";
 import { storedFeatureEvidence, marketSnapshotEvidenceSchema, featureMatchesSnapshot } from "../features/evidence.js";
 import { pinRunSnapshot } from "../../market-data/snapshotCache.js";
-import { sharedMarketStore, projectMarketSnapshot, providerObservedAt, normalizeSharedCandles,
+import { sharedMarketStore, projectMarketSnapshot, providerObservedAt, normalizeSharedCandles, normalizeSharedOrderbook,
   type MarketDataset, type MarketDatasetKey, type MarketDatasetData, type SharedMarketRead } from "../../market-data/sharedMarket.js";
 import { createPerpMarketDataClient } from "../../perp/perp-market-data.client.js";
 import { createSpotClient } from "../../spot/spot-client-factory.js";
@@ -436,7 +436,7 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     }
   }),
   descriptor({
-    id: "market.get_orderbook", version: 3, routineIds: [AGENT_ROUTINE_IDS.orderbookSnapshot], title: "Order book", description: "Shared bounded order-book levels with versioned depth features.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["spot", "perp"], inputSchema: orderbookArgsSchema,
+    id: "market.get_orderbook", version: 4, routineIds: [AGENT_ROUTINE_IDS.orderbookSnapshot], title: "Order book", description: "Shared bounded order-book levels with versioned depth features.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["spot", "perp"], inputSchema: orderbookArgsSchema,
     toolDefinition: tool("market_get_orderbook", "Load a bounded normalized cross-venue order book.", { ...marketCommon, limit: { type: "integer", minimum: 5, maximum: 100 } }),
     async execute(context, input) {
       const args = orderbookArgsSchema.parse(input); const marketType = args.marketType ?? context.marketType; const symbol = normalizeSymbol(args.symbol ?? context.symbol);
@@ -444,8 +444,7 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
         { providerId: marketProviderId(venue, marketType), sourceVenue: venue, marketType, symbol, dataset: "orderbook", schemaVersion: "1.0.0", limit: args.limit },
         () => readMarketClient(venue, marketType, async client => {
           const depth = await client.getDepth(symbol, args.limit);
-          return { data: { bids: depth.bids.slice(0, args.limit) as Array<[number, number]>, asks: depth.asks.slice(0, args.limit) as Array<[number, number]> },
-            observedAt: providerObservedAt(depth.ts), warnings: [] };
+          return normalizeSharedOrderbook(depth, marketType, venue, args.limit);
         })) });
       const data = result.data.snapshot.data;
       const feature = evaluateMarketFeature<ReturnType<typeof analyzeOrderbookSnapshot>>("orderbook.snapshot", data, result.data.snapshot.id);

@@ -28,6 +28,15 @@ export type MarketDatasetData = {
   candles: z.infer<typeof candleDataSchema>; ticker: z.infer<typeof tickerDataSchema>; orderbook: z.infer<typeof bookDataSchema>;
 };
 export type MarketDataset = keyof MarketDatasetData;
+
+export function normalizeSharedOrderbook(depth: { bids: unknown; asks: unknown; ts?: unknown }, marketType: "spot" | "perp", venue: string, limit: number) {
+  const numeric = z.union([z.number().finite(), z.string().trim().regex(/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/).transform(Number).pipe(z.number().finite())]);
+  const levels = z.array(z.tuple([numeric, numeric]));
+  const data = { bids: levels.parse(depth.bids).slice(0, limit), asks: levels.parse(depth.asks).slice(0, limit) };
+  // Binance Spot REST depth supplies an update sequence, not an observation timestamp.
+  const observedAt = marketType === "spot" && venue === "binance" ? null : providerObservedAt(depth.ts);
+  return { data, observedAt, warnings: [] as string[] };
+}
 export type SharedMarketSnapshot<D extends MarketDataset = MarketDataset> = {
   id: string; key: Extract<MarketDatasetKey, { dataset: D }>;
   data: MarketDatasetData[D]; observedAt: string | null; fetchedAt: string; warnings: string[];
