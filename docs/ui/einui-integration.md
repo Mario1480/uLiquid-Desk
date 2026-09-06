@@ -1,6 +1,6 @@
 # Ein UI integration
 
-Status: local implementation and build validation complete; release acceptance remains open. On 2026-09-06 Mario approved publishing the completed UI changes together with the Copilot corrections. Deployment and target-environment verification are tracked separately. See the [validation report](einui-validation.md) for measured results and limitations.
+Status: published and deployed to production API/web on 2026-09-06 at code `111b9de6e`, following Mario's approval to release UI and Copilot corrections together. Runtime checks passed; post-release authenticated browser acceptance remains open because the Mac was locked. See the [release evidence](../archive/tasks/2026-09-06-einui-copilot-production-release.md) and [validation report](einui-validation.md) for results and limitations.
 
 ## Approved scope
 
@@ -86,7 +86,7 @@ A pre-existing Zod/non-strict TypeScript error in the Dashboard layout consumer 
 - [x] Final build, typecheck, test and bundle evidence refreshed after component edits.
 - [x] Native desktop Safari form/dialog/focus smoke.
 - [ ] Populated account/financial screen regression matrix, full accessibility and sustained performance acceptance.
-- [ ] Reconcile concurrent work and branch divergence before release; current bundle numbers describe the combined checkout.
+- [x] Reconcile concurrent UI/Copilot changes on `origin/main`, retaining the published Dashboard fix and excluding older unpublished ULIQ history. Local bundle numbers still describe the original combined checkout.
 - [x] Mario approved the UI as ready and explicitly authorized the combined commit, push and deployment on 2026-09-06.
 
 Report baseline-only failures separately; do not silently waive them. Rebuild release artifacts using the authorized environment, never deploy a mock-API QA build. Rollback uses the previous web artifact or reviewed migration reverts, not a destructive reset of the diverged checkout.
