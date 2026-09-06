@@ -230,6 +230,26 @@ test("OHLCV and indicators share run-pinned candles and expose stored feature va
   assert.equal((indicators.meta.featureSnapshots?.[0].value as any).values.sma20, 101);
 });
 
+test("owned BingX zero-price skill result remains read-only and carries corrected provenance", async () => {
+  const context = marketContext({ profile: resolveBuiltinAgentProfile("position_copilot"), selectedExchangeAccountId: "fixture-account",
+    db: { exchangeAccount: { findFirst: async ({ where }: any) => {
+      assert.deepEqual(where, { id: "fixture-account", userId: "user-a" });
+      return { id: "fixture-account", exchange: "bingx", label: "Synthetic account" };
+    } } } });
+  context.positionRefs.set("fixture-position", { symbol: "FIXTUREUSDT", side: "long", size: 1, entryPrice: 100, markPrice: 100,
+    liquidationPrice: 0, liquidationDistancePct: null, stopLossPrice: 90 });
+  const skill = getAgentSkillByToolName("risk_analyze_position_snapshot")!;
+  const result = await executeAgentSkill(skill, context, { positionRef: "fixture-position" });
+  assert.equal((result.data as any).riskLevel, "low");
+  assert.equal((result.data as any).dataQuality.state, "complete");
+  assert.equal((result.data as any).readOnly, true);
+  assert.ok((result.data as any).events.some((e: any) => e.code === "no_liquidation_price"));
+  assert.equal(skill.version, 2);
+  assert.equal(skill.sideEffect, false);
+  assert.equal(context.profile.version, 6);
+  assert.deepEqual(result.meta.routineVersions, [{ id: "position.snapshot.v1", version: "1.1.0" }, { id: "position.risk.v1", version: "1.1.0" }]);
+});
+
 test("ticker and book skills persist separate datasets and safe book analytics", async (t) => {
   const at = Date.parse("2026-09-05T10:00:00Z");
   t.mock.method(Date, "now", () => at);

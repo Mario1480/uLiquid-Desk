@@ -68,7 +68,7 @@ const snapshotSchema = z.object({
   marginMode: z.enum(["isolated", "cross"]).nullable(),
   marginUsd: z.number().finite().positive().nullable(),
   notionalUsd: z.number().finite().positive().nullable(),
-  liquidationPrice: z.number().finite().positive().nullable(),
+  liquidationPrice: z.number().finite().nonnegative().nullable(),
   liquidationDistancePct: z.number().finite().nullable(),
   roePct: z.number().finite().nullable(),
   pnlPct: z.number().finite().nullable(),

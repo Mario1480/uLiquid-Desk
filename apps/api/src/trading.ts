@@ -1,4 +1,5 @@
 import { prisma } from "@mm/db";
+import { normalizePositionLiquidation } from "@mm/futures-core";
 import {
   createPaperExecutionContextForVenueResolution,
   createResolvedFuturesAdapter,
@@ -838,14 +839,7 @@ function buildPositionRiskFields(input: {
   const marginUsd = toPositiveNumber(input.marginUsd) ?? (
     notionalUsd !== null && leverage !== null && leverage > 0 ? notionalUsd / leverage : null
   );
-  const liquidationPrice = toPositiveNumber(input.liquidationPrice);
-  const liquidationDistancePct = toNumber(input.liquidationDistancePct) ?? (
-    liquidationPrice !== null && markPrice !== null && markPrice > 0
-      ? input.side === "short"
-        ? ((liquidationPrice - markPrice) / markPrice) * 100
-        : ((markPrice - liquidationPrice) / markPrice) * 100
-      : null
-  );
+  const { liquidationPrice, liquidationDistancePct } = normalizePositionLiquidation(input);
   const pnlPct = toNumber(input.pnlPct) ?? (
     pnl !== null && notionalUsd !== null && notionalUsd > 0 ? (pnl / notionalUsd) * 100 : null
   );

@@ -6,7 +6,7 @@ test("built-in profiles are versioned and contain no side-effect skills", () => 
   const market = resolveBuiltinAgentProfile("market_analyst");
   const position = resolveBuiltinAgentProfile("position_copilot");
   assert.equal(market.version, 5);
-  assert.equal(position.version, 5);
+  assert.equal(position.version, 6);
   assert.equal(market.actionLevel, "public_data");
   assert.equal(position.actionLevel, "account_read");
   assert.equal(position.enabledSkillIds.includes("risk.analyze_portfolio"), true);

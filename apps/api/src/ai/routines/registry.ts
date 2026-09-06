@@ -125,6 +125,7 @@ const positionSnapshotOutputSchema = z.object({
   notionalUsd: nullableFiniteNumber,
   liquidationPrice: nullableFiniteNumber,
   liquidationDistancePct: nullableFiniteNumber,
+  liquidationStatus: z.enum(["available", "no_liquidation_price", "unavailable", "not_applicable"]),
   roePct: nullableFiniteNumber,
   pnlPct: nullableFiniteNumber,
   stopLossPrice: nullableFiniteNumber,
@@ -184,8 +185,8 @@ export const AGENT_ROUTINES: readonly AgentRoutineDescriptor[] = [
   { id: AGENT_ROUTINE_IDS.fundingSnapshot, version: "1.0.0", owner: "futures-core", inputSchema: fundingInputSchema, outputSchema: fundingOutputSchema, execute: analyzeFundingSnapshot },
   { id: AGENT_ROUTINE_IDS.openInterestSnapshot, version: "1.0.0", owner: "futures-core", inputSchema: openInterestInputSchema, outputSchema: openInterestOutputSchema, execute: analyzeOpenInterestSnapshot },
   { id: AGENT_ROUTINE_IDS.orderbookSnapshot, version: "1.0.0", owner: "futures-core", inputSchema: orderbookInputSchema, outputSchema: orderbookOutputSchema, execute: analyzeOrderbookSnapshot },
-  { id: AGENT_ROUTINE_IDS.positionSnapshot, version: "1.0.0", owner: "position-copilot", inputSchema: positionInputSchema, outputSchema: positionSnapshotOutputSchema, execute: (value) => buildPositionCopilotSnapshot(positionInputSchema.parse(value).input) },
-  { id: AGENT_ROUTINE_IDS.positionRisk, version: "1.0.0", owner: "position-copilot", inputSchema: positionInputSchema, outputSchema: positionRiskOutputSchema, execute: (value) => { const parsed = positionInputSchema.parse(value); const snapshot = buildPositionCopilotSnapshot(parsed.input); return { routineId: AGENT_ROUTINE_IDS.positionRisk, analysis: buildDeterministicPositionAnalysis(snapshot, new Date(), parsed.locale ?? "en") }; } }
+  { id: AGENT_ROUTINE_IDS.positionSnapshot, version: "1.1.0", owner: "position-copilot", inputSchema: positionInputSchema, outputSchema: positionSnapshotOutputSchema, execute: (value) => buildPositionCopilotSnapshot(positionInputSchema.parse(value).input) },
+  { id: AGENT_ROUTINE_IDS.positionRisk, version: "1.1.0", owner: "position-copilot", inputSchema: positionInputSchema, outputSchema: positionRiskOutputSchema, execute: (value) => { const parsed = positionInputSchema.parse(value); const snapshot = buildPositionCopilotSnapshot(parsed.input); return { routineId: AGENT_ROUTINE_IDS.positionRisk, analysis: buildDeterministicPositionAnalysis(snapshot, new Date(), parsed.locale ?? "en") }; } }
 ];
 
 const routinesById = new Map(AGENT_ROUTINES.map((routine) => [routine.id, routine]));

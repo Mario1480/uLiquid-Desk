@@ -95,3 +95,4 @@ Meta fields: `tickSize`, `stepSize`, `minNotional` (minQty/maxQty deprecated)
 ## 5) Notes / Risks
 - Open orders response may not include `clientOrderID` consistently; preserve it when present.
 - WebSocket is not part of v1. REST snapshots are used for current normalized read/execution paths.
+- Preserve zero liquidation prices through the shared `normalizePositionLiquidation` contract. A reported zero is not a zero-percent liquidation distance. See the [local correction and rollout gates](preflight.md#liquidation-snapshot-contract--local-correction-2026-09-06).

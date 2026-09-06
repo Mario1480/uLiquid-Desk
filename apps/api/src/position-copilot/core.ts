@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import { normalizePositionLiquidation } from "@mm/futures-core";
+
+export const POSITION_LIQUIDATION_POLICY = "A BingX liquidationPrice of 0 means no positive liquidation price is reported, not a 0% liquidation distance or guaranteed permanent immunity. Never infer liquidation proximity from that zero or from null/missing data. Preserve other risk warnings.";
 
 export type PositionCopilotMarketType = "spot" | "perp";
 export type PositionCopilotRiskLevel = "low" | "medium" | "high" | "critical";
@@ -20,6 +23,7 @@ export type PositionCopilotSnapshot = {
   notionalUsd: number | null;
   liquidationPrice: number | null;
   liquidationDistancePct: number | null;
+  liquidationStatus: "available" | "no_liquidation_price" | "unavailable" | "not_applicable";
   roePct: number | null;
   pnlPct: number | null;
   stopLossPrice: number | null;
@@ -66,6 +70,8 @@ const RISK_WEIGHT: Record<PositionCopilotRiskLevel, number> = {
 };
 
 function toFiniteNumber(value: unknown): number | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -92,9 +98,18 @@ function stableStringify(value: unknown): string {
 export function buildPositionCopilotSnapshot(input: Record<string, unknown>): PositionCopilotSnapshot {
   const marketType: PositionCopilotMarketType = input.marketType === "spot" ? "spot" : "perp";
   const side = input.side === "short" ? "short" : "long";
+  const exchange = String(input.exchange ?? "").trim().toLowerCase().slice(0, 40);
+  const liquidation = normalizePositionLiquidation({ ...input, side });
+  const liquidationStatus: PositionCopilotSnapshot["liquidationStatus"] = marketType === "spot"
+    ? "not_applicable"
+    : liquidation.liquidationPrice === 0 && exchange === "bingx"
+      ? "no_liquidation_price"
+      : liquidation.liquidationPrice === 0 || (liquidation.liquidationPrice === null && liquidation.liquidationDistancePct === null)
+        ? "unavailable"
+        : "available";
   return {
     exchangeAccountId: String(input.exchangeAccountId ?? "").trim().slice(0, 100),
-    exchange: String(input.exchange ?? "").trim().toLowerCase().slice(0, 40),
+    exchange,
     marketType,
     symbol: normalizeSymbol(input.symbol),
     side,
@@ -112,8 +127,9 @@ export function buildPositionCopilotSnapshot(input: Record<string, unknown>): Po
           : null,
     marginUsd: marketType === "spot" ? null : toPositiveNumber(input.marginUsd),
     notionalUsd: toPositiveNumber(input.notionalUsd),
-    liquidationPrice: marketType === "spot" ? null : toPositiveNumber(input.liquidationPrice),
-    liquidationDistancePct: marketType === "spot" ? null : toFiniteNumber(input.liquidationDistancePct),
+    liquidationPrice: marketType === "spot" ? null : liquidation.liquidationPrice,
+    liquidationDistancePct: marketType === "spot" ? null : liquidation.liquidationDistancePct,
+    liquidationStatus,
     roePct: marketType === "spot" ? null : toFiniteNumber(input.roePct),
     pnlPct: toFiniteNumber(input.pnlPct),
     stopLossPrice: toPositiveNumber(input.stopLossPrice),
@@ -145,6 +161,7 @@ export function buildDeterministicPositionAnalysis(
     liquidationEvent: (distance: number) => `Die Liquidationsdistanz beträgt ${distance.toFixed(2)} %.`,
     liquidationHigh: "Die Liquidationsdistanz ist eng.",
     liquidationWatch: "Die Liquidationsdistanz sollte beobachtet werden.",
+    noLiquidationPrice: "Kein Liquidationspreis von der Börse ausgewiesen. Dies ist keine Garantie dauerhafter Liquidationsfreiheit.",
     stopLossMissing: "Im Snapshot ist kein Stop-Loss sichtbar.",
     drawdownHigh: "Die Position weist einen wesentlichen Drawdown auf.",
     drawdownEvent: "Die Verlustkennzahlen haben eine hohe Risikoschwelle überschritten.",
@@ -160,6 +177,7 @@ export function buildDeterministicPositionAnalysis(
     liquidationEvent: (distance: number) => `Liquidation distance is ${distance.toFixed(2)}%.`,
     liquidationHigh: "Liquidation distance is tight.",
     liquidationWatch: "Liquidation distance should be monitored.",
+    noLiquidationPrice: "No liquidation price reported by the exchange. This does not guarantee permanent protection from liquidation.",
     stopLossMissing: "No stop-loss is visible in the snapshot.",
     drawdownHigh: "The position is in a material drawdown.",
     drawdownEvent: "Loss metrics crossed a high-risk threshold.",
@@ -180,11 +198,15 @@ export function buildDeterministicPositionAnalysis(
   if (snapshot.size <= 0) missingFields.push("size");
   if (snapshot.markPrice === null) missingFields.push("markPrice");
   if (snapshot.entryPrice === null) missingFields.push("entryPrice");
-  if (snapshot.marketType === "perp" && snapshot.liquidationDistancePct === null) {
+  const noLiquidationPrice = snapshot.marketType === "perp" && snapshot.exchange === "bingx" && snapshot.liquidationPrice === 0;
+  if (snapshot.marketType === "perp" && snapshot.liquidationDistancePct === null && !noLiquidationPrice) {
     missingFields.push("liquidationDistancePct");
   }
 
-  const liqDistance = snapshot.liquidationDistancePct;
+  if (noLiquidationPrice) {
+    events.push({ code: "no_liquidation_price", severity: "low", message: copy.noLiquidationPrice });
+  }
+  const liqDistance = snapshot.liquidationPrice === 0 ? null : snapshot.liquidationDistancePct;
   if (snapshot.marketType === "perp" && liqDistance !== null) {
     if (liqDistance <= 5) {
       riskLevel = "critical";

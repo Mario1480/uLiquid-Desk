@@ -1,4 +1,4 @@
-import type { MarginMode } from "@mm/futures-core";
+import { normalizePositionLiquidation, type MarginMode } from "@mm/futures-core";
 
 export type PositionRiskMetricsInput = {
   side: "long" | "short";
@@ -62,14 +62,7 @@ export function buildPositionRiskMetrics(input: PositionRiskMetricsInput): Posit
   const marginUsd = sanitizePositive(input.marginUsd) ?? (
     notionalUsd !== null && leverage !== null && leverage > 0 ? notionalUsd / leverage : null
   );
-  const liquidationPrice = sanitizePositive(input.liquidationPrice);
-  const liquidationDistancePct = toFiniteNumberOrNull(input.liquidationDistancePct) ?? (
-    liquidationPrice !== null && markPrice !== null && markPrice > 0
-      ? input.side === "short"
-        ? ((liquidationPrice - markPrice) / markPrice) * 100
-        : ((markPrice - liquidationPrice) / markPrice) * 100
-      : null
-  );
+  const { liquidationPrice, liquidationDistancePct } = normalizePositionLiquidation(input);
   const pnlPct = toFiniteNumberOrNull(input.pnlPct) ?? (
     pnl !== null && notionalUsd !== null && notionalUsd > 0 ? (pnl / notionalUsd) * 100 : null
   );

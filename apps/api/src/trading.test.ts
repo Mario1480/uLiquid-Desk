@@ -12,6 +12,7 @@ import {
   createPaperStateSnapshot,
   isPaperStopTriggered,
   liquidatePaperPositionsIfNeeded,
+  listPositions,
   normalizeOrderBookPayload,
   normalizeTickerPayload,
   normalizeTradesPayload,
@@ -45,6 +46,14 @@ const realisticPaperPolicy: PaperSimulationPolicy = {
   fundingIntervalMinutes: 60,
   startBalanceUsd: 1000
 };
+
+test("legacy position bridge preserves provider zero without a computed liquidation distance", async () => {
+  const positions = await listPositions({ positionApi: { getAllPositions: async () => [0, null, 98].map(liquidationPrice => ({
+    symbol: "FIXTUREUSDT", holdSide: "long", total: 1, openPriceAvg: 100, markPrice: 100, liquidationPrice
+  })) } } as any);
+  assert.deepEqual(positions.map(p => p.liquidationPrice), [0, null, 98]);
+  assert.deepEqual(positions.map(p => p.liquidationDistancePct), [null, null, 2]);
+});
 
 test("normalizeSymbolInput strips separators", () => {
   assert.equal(normalizeSymbolInput("btc_usdt"), "BTCUSDT");

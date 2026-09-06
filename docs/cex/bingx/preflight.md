@@ -132,6 +132,24 @@ Status: implemented for native REST v1. Spot and USD-M perpetual swap public/pri
 - newClientOrderId supported on place order.
 - Open orders response example does not show clientOrderID (confirm if available).
 
+## Liquidation Snapshot Contract — Local Correction (2026-09-06)
+
+Status: implemented and fixture-tested locally; publication authorized on 2026-09-06, release validation and deployment pending.
+
+The native positions endpoint can report a numeric `liquidationPrice: 0`. Preserve that value instead of collapsing it into missing data. The official [BingX account API reference](https://github.com/BingX-API/api-ai-skills/blob/main/skills/swap-account/SKILL.md) identifies the positions endpoint and field. The [CCXT BingX parsing discussion](https://github.com/ccxt/ccxt/pull/30034) independently describes a zero-price sentinel; it is not a guarantee about future liquidation risk.
+
+- Shared normalization preserves numeric/string zero and returns a null liquidation distance, even if a conflicting zero distance is supplied.
+- BingX Copilot snapshots expose `liquidationStatus: no_liquidation_price`; this state does not cause a proximity warning or a missing-distance warning.
+- Missing, blank, invalid and non-finite values remain unavailable. Zero semantics for other venues are not certified by this change and remain degraded in Copilot.
+- A positive liquidation price with a genuine zero/negative distance remains critical. Drawdown, missing stop-loss and stale/incomplete data warnings remain active.
+- Desktop/mobile positions display a localized no-price label; unavailable distances are not colored as zero-distance alarms.
+- Position snapshot/risk routines are `1.1.0`; affected account-position/risk skills are version `2`; built-in Position Copilot is version `6`. The direct Copilot cache namespace is `v3`.
+- Existing conversations and Decision Logs remain historical evidence. They are not rewritten; corrected analysis requires a new run after rollout.
+
+Validation: futures-core 19/19; focused futures-exchange contracts/metrics 20/20; Agent Chat 101/101; Copilot/trading 39/39; Agent Chat UI 9/9; futures-exchange build, API typecheck, i18n integrity and whitespace checks passed. Focused tests and Agent Chat completed naturally without forced process termination.
+
+Remaining gates: web typecheck reports an unrelated error in the unchanged `apps/api/src/dashboard/layout.ts:206`. Local browser acceptance at `http://127.0.0.1:3107/en/trade` with synthetic-only API data is not established: Turbopack returned `ERR_TOO_MANY_REDIRECTS`, and the Webpack retry timed out after 60 seconds before DOM readiness. No successful rendered desktop/mobile acceptance is claimed. Production deployment and a fresh read-only analysis are separate, pending authorization. No credentials, private position details, exchange writes, or new AI calls were used for implementation validation.
+
 ## Time-in-force / Post-only
 - TBD (confirm post-only + TIF values)
 

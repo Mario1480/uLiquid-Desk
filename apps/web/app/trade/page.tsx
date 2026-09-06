@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { normalizePositionLiquidation } from "@mm/futures-core";
 import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -505,14 +506,7 @@ function normalizeDeskPositions(rows: unknown[]): PositionItem[] {
       const marginUsd = toPositiveOrNull(row.marginUsd) ?? (
         notionalUsd !== null && leverage !== null ? notionalUsd / leverage : null
       );
-      const liquidationPrice = toPositiveOrNull(row.liquidationPrice);
-      const liquidationDistancePct = toFiniteOrNull(row.liquidationDistancePct) ?? (
-        liquidationPrice !== null && markPrice !== null && markPrice > 0
-          ? side === "short"
-            ? ((liquidationPrice - markPrice) / markPrice) * 100
-            : ((markPrice - liquidationPrice) / markPrice) * 100
-          : null
-      );
+      const { liquidationPrice, liquidationDistancePct } = normalizePositionLiquidation({ ...row, side });
       const pnlPct = toFiniteOrNull(row.pnlPct) ?? (
         unrealizedPnl !== null && notionalUsd !== null && notionalUsd > 0 ? (unrealizedPnl / notionalUsd) * 100 : null
       );
@@ -3175,8 +3169,8 @@ function TradePageContent() {
                             <td style={{ padding: "8px 6px" }}>{fmt(position.marginUsd, 2)}</td>
                             <td style={{ padding: "8px 6px", color: (position.roePct ?? 0) >= 0 ? "#34d399" : "#f87171" }}>{fmtPct(position.roePct, 2)}</td>
                             <td style={{ padding: "8px 6px", color: (position.pnlPct ?? 0) >= 0 ? "#34d399" : "#f87171" }}>{fmtPct(position.pnlPct, 2)}</td>
-                            <td style={{ padding: "8px 6px" }}>{fmt(position.liquidationPrice, 4)}</td>
-                            <td style={{ padding: "8px 6px", color: (position.liquidationDistancePct ?? 0) > 0 ? "inherit" : "#f87171" }}>{fmtPct(position.liquidationDistancePct, 2)}</td>
+                            <td style={{ padding: "8px 6px" }}>{position.liquidationPrice === 0 ? t("positions.noLiquidationPrice") : fmt(position.liquidationPrice, 4)}</td>
+                            <td style={{ padding: "8px 6px", color: position.liquidationDistancePct !== null && position.liquidationDistancePct <= 0 ? "#f87171" : "inherit" }}>{fmtPct(position.liquidationDistancePct, 2)}</td>
                             <td style={{ padding: "8px 6px" }}>
                               {isSpotMode ? (
                                 "-"
@@ -3358,10 +3352,10 @@ function TradePageContent() {
                             <span>{t("positions.columns.pnlPct")}</span>
                             <strong style={{ color: (position.pnlPct ?? 0) >= 0 ? "#34d399" : "#f87171" }}>{fmtPct(position.pnlPct, 2)}</strong>
                           </div>
-                          <div className="tradeMobileRow"><span>{t("positions.columns.liquidation")}</span><strong>{fmt(position.liquidationPrice, 4)}</strong></div>
+                          <div className="tradeMobileRow"><span>{t("positions.columns.liquidation")}</span><strong>{position.liquidationPrice === 0 ? t("positions.noLiquidationPrice") : fmt(position.liquidationPrice, 4)}</strong></div>
                           <div className="tradeMobileRow">
                             <span>{t("positions.columns.liqDistance")}</span>
-                            <strong style={{ color: (position.liquidationDistancePct ?? 0) > 0 ? "inherit" : "#f87171" }}>{fmtPct(position.liquidationDistancePct, 2)}</strong>
+                            <strong style={{ color: position.liquidationDistancePct !== null && position.liquidationDistancePct <= 0 ? "#f87171" : "inherit" }}>{fmtPct(position.liquidationDistancePct, 2)}</strong>
                           </div>
                           <div className="tradeMobileRow">
                             <span>{t("positions.columns.stopLoss")}</span>

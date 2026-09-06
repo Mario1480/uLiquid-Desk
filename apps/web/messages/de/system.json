@@ -1310,6 +1310,7 @@
       "error": "Der Position Copilot konnte nicht aktualisiert werden ({error})."
     },
     "positions": {
+      "noLiquidationPrice": "Kein Liquidationspreis ausgewiesen",
       "hint": "Offene Positionen im aktiven Account.",
       "symbol": "Symbol",
       "empty": "Keine offenen Positionen.",
