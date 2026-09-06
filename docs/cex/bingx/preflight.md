@@ -134,7 +134,7 @@ Status: implemented for native REST v1. Spot and USD-M perpetual swap public/pri
 
 ## Liquidation Snapshot Contract — Local Correction (2026-09-06)
 
-Status: implemented and fixture-tested locally; publication authorized on 2026-09-06, release validation and deployment pending.
+Status: published and deployed to production API/web on 2026-09-06 at code commit `0128b6f7a`. Runtime health and synthetic checks passed; a fresh authenticated user analysis remains the acceptance follow-up. See the [release evidence](../../archive/tasks/2026-09-06-liquidation-zero-production-release.md).
 
 The native positions endpoint can report a numeric `liquidationPrice: 0`. Preserve that value instead of collapsing it into missing data. The official [BingX account API reference](https://github.com/BingX-API/api-ai-skills/blob/main/skills/swap-account/SKILL.md) identifies the positions endpoint and field. The [CCXT BingX parsing discussion](https://github.com/ccxt/ccxt/pull/30034) independently describes a zero-price sentinel; it is not a guarantee about future liquidation risk.
 
@@ -148,7 +148,9 @@ The native positions endpoint can report a numeric `liquidationPrice: 0`. Preser
 
 Validation: futures-core 19/19; focused futures-exchange contracts/metrics 20/20; Agent Chat 101/101; Copilot/trading 39/39; Agent Chat UI 9/9; futures-exchange build, API typecheck, i18n integrity and whitespace checks passed. Focused tests and Agent Chat completed naturally without forced process termination.
 
-Remaining gates: web typecheck reports an unrelated error in the unchanged `apps/api/src/dashboard/layout.ts:206`. Local browser acceptance at `http://127.0.0.1:3107/en/trade` with synthetic-only API data is not established: Turbopack returned `ERR_TOO_MANY_REDIRECTS`, and the Webpack retry timed out after 60 seconds before DOM readiness. No successful rendered desktop/mobile acceptance is claimed. Production deployment and a fresh read-only analysis are separate, pending authorization. No credentials, private position details, exchange writes, or new AI calls were used for implementation validation.
+Release validation: API and web typechecks passed on the clean `origin/main` release base, which already contains the independent dashboard layout correction absent from the original local checkout. Both Docker production builds passed. No new migration was introduced or applied; runtime configuration and unrelated service containers remained unchanged.
+
+Remaining acceptance: the initial local browser attempt at `http://127.0.0.1:3107/en/trade` with synthetic-only API data was not established (Turbopack redirect loop; Webpack DOM-readiness timeout). This is not evidence of a production routing failure. A fresh authenticated analysis and desktop/mobile rendering review of the corrected zero-price state remain pending after the successful production deployment. No private position details, exchange writes, or new AI calls were used for release validation.
 
 ## Time-in-force / Post-only
 - TBD (confirm post-only + TIF values)
