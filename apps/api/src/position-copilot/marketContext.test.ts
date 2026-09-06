@@ -61,15 +61,44 @@ test("Paper resolves its owner's linked venue and unsupported derivatives never 
   } finally { deps.createClient = originalClient; deps.resolveLinked = originalLinked; }
 });
 
-test("spot and unknown venues remain explicit and never create a client", async () => {
+test("unknown venues remain explicit and never create a client", async () => {
   const original = deps.createClient;
   deps.createClient = () => { assert.fail("unexpected client"); };
   try {
-    for (const [marketType, exchange, reason] of [["spot", "binance", "spot_market_features_not_integrated"], ["perp", "unknown", "market_data_venue_unsupported"]] as const) {
+    for (const [marketType, exchange, reason] of [["spot", "unknown", "market_data_venue_unsupported"], ["perp", "unknown", "market_data_venue_unsupported"]] as const) {
       const result = await loadPositionMarketContext({ userId: "owner", account: { id: "account", exchange }, symbol: "BTCUSDT", marketType });
       assert.equal(result.quality, "unavailable"); assert.deepEqual(result.warningCodes, [reason]);
     }
   } finally { deps.createClient = original; }
+});
+
+test("spot context shares bounded public candles/book without derivatives or private credentials", async t => {
+  const now = Date.now();
+  let candles = 0, books = 0;
+  t.mock.method(deps, "createClient", () => { assert.fail("spot must not use a perpetual client"); });
+  t.mock.method(deps, "createSpotClient", (account: any) => {
+    assert.equal(account.userId, "public");
+    assert.equal(account.apiKey, ""); assert.equal(account.apiSecret, "");
+    return {
+      getCandles: async ({ limit, timeframe }: any) => {
+        assert.equal(limit, 100); assert.equal(timeframe, "1h"); candles++;
+        return Array.from({ length: 100 }, (_, i) => [now - (100 - i) * 3600000, 100, 101, 99, 100, 1]);
+      },
+      getDepth: async (_symbol: string, limit: number) => {
+        assert.equal(limit, 25); books++;
+        return { bids: [[99.99, 1]], asks: [[100.01, 2]] };
+      }
+    } as any;
+  });
+  const request = { userId: "owner", account: { id: "private-spot", exchange: "binance" }, symbol: "SPOTCONTEXTUSDT", marketType: "spot" as const };
+  const [a, b] = await Promise.all([loadPositionMarketContext(request), loadPositionMarketContext(request)]);
+  assert.equal(candles, 1); assert.equal(books, 1);
+  assert.deepEqual(a, b);
+  assert.equal(a.featureSnapshots.length, 2);
+  assert.ok(a.snapshotManifest.every(s => s.market.marketType === "spot" && s.market.providerId === "uliquid-native-spot:binance"));
+  assert.ok(a.warningCodes.includes("provider_timestamp_missing"));
+  assert.ok(!a.warningCodes.includes("funding_unsupported"));
+  assert.doesNotMatch(JSON.stringify(a), /private-spot|apiKey|funding-snapshot/);
 });
 
 test("standalone BingX context uses native depth normalization while retaining 25-level evidence", async t => {
