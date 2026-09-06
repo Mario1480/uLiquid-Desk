@@ -1851,5 +1851,19 @@
       },
       "initialSeedLine": "Initial-Seed: Seite {side} · Qty {qty} · Notional {notional} USDT · Margin {margin} USDT ({pct}%)"
     }
+  },
+  "uiGallery": {
+    "title": "Ein-UI-Komponentengalerie",
+    "description": "Vollständige lokale Ein-UI-Sammlung mit Ocean-Palette und einfarbigen Buttons.",
+    "component": "Komponente",
+    "theme": "Vorschaupalette",
+    "samples": "Nur lokale Beispieldaten. Es werden keine Orders, Zahlungen, Registrierungen oder Nachrichten ausgelöst.",
+    "pause": "Vorschau pausieren",
+    "resume": "Vorschau fortsetzen",
+    "paused": "Vorschau pausiert, solange sie unsichtbar oder manuell angehalten ist.",
+    "localAction": "Lokale Beispielaktion abgeschlossen. Keine echte Aktion ausgeführt.",
+    "coverage": "{count} ausführbare Beispiele für die Upstream-Registry und die Dashboard-Vorlage der Website.",
+    "loading": "Administratorzugriff wird geprüft…",
+    "denied": "Administratorzugriff erforderlich."
   }
 }

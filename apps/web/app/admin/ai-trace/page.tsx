@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -293,7 +296,7 @@ export default function AdminAiTracePage() {
 
       {isSuperadmin ? (
         <>
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("budgetTitle")}</h3>
             </div>
@@ -369,9 +372,9 @@ export default function AdminAiTracePage() {
                 Last trim flags: {settings?.payloadBudget?.lastMetrics?.trimFlags.join(", ")}
               </div>
             ) : null}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("traceSettingsTitle")}</h3>
             </div>
@@ -382,7 +385,7 @@ export default function AdminAiTracePage() {
 
             <div className="indicatorScopeGrid">
               <label className="inlineCheck">
-                <input
+                <DeskInput
                   type="checkbox"
                   checked={enabled}
                   onChange={(e) => setEnabled(e.target.checked)}
@@ -394,7 +397,7 @@ export default function AdminAiTracePage() {
             <div className="indicatorScopeGrid" style={{ marginTop: 10 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Max systemMessage chars</span>
-                <input
+                <DeskInput
                   className="input"
                   type="number"
                   min={500}
@@ -406,7 +409,7 @@ export default function AdminAiTracePage() {
 
               <label className="settingsField">
                 <span className="settingsFieldLabel">Max userPayload chars</span>
-                <input
+                <DeskInput
                   className="input"
                   type="number"
                   min={1000}
@@ -418,7 +421,7 @@ export default function AdminAiTracePage() {
 
               <label className="settingsField">
                 <span className="settingsFieldLabel">Max rawResponse chars</span>
-                <input
+                <DeskInput
                   className="input"
                   type="number"
                   min={500}
@@ -437,9 +440,9 @@ export default function AdminAiTracePage() {
                 {t("reload")}
               </AdminActionButton>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("traceLogs")} ({totalLogs})</h3>
             </div>
@@ -447,17 +450,17 @@ export default function AdminAiTracePage() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               <label className="settingsField" style={{ minWidth: 160 }}>
                 <span className="settingsFieldLabel">Limit</span>
-                <select className="input" value={logLimit} onChange={(e) => setLogLimit(e.target.value)}>
+                <DeskSelect className="input" value={logLimit} onChange={(e) => setLogLimit(e.target.value)}>
                   <option value="50">50</option>
                   <option value="100">100</option>
                   <option value="200">200</option>
                   <option value="500">500</option>
-                </select>
+                </DeskSelect>
               </label>
 
               <label className="settingsField" style={{ minWidth: 280 }}>
                 <span className="settingsFieldLabel">{t("filterByUser")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={logUserFilter}
                   onChange={(e) => {
@@ -475,12 +478,12 @@ export default function AdminAiTracePage() {
                       {user.email ? `${user.email} (${user.id})` : user.id}
                     </option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
 
               <label className="settingsField" style={{ minWidth: 200 }}>
                 <span className="settingsFieldLabel">Delete logs older than (days)</span>
-                <input
+                <DeskInput
                   className="input"
                   type="number"
                   min={1}
@@ -594,7 +597,7 @@ export default function AdminAiTracePage() {
                 ))}
               </div>
             )}
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
       <AdminConfirmDialog

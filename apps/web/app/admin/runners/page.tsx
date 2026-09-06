@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { apiGet } from "../../../lib/api";
 import AdminEmptyState from "../_components/AdminEmptyState";
@@ -41,7 +42,7 @@ export default function AdminRunnersPage() {
     <div className="adminPageStack">
       <AdminPageHeader title="Runners" description="Infrastructure health view with heartbeat-derived status and bot assignment counts." />
       {loading ? <div className="settingsMutedText">Loading runners…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
       {data?.items?.length > 0 ? (
         <>
           <AdminTable columns={["Runner", "Status", "Last Heartbeat", "Assigned Bots", "Error Count", "Version", "Region", "Host"]}>

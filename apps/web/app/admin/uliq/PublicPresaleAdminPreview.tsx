@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { formatUnits } from "viem";
@@ -214,9 +216,9 @@ export default function PublicPresaleAdminPreview() {
       <AdminPageHeader eyebrow={t("productionEyebrow")} title={t("productionTitle")} description={t("productionSubtitle")} />
       <div className="adminToolbarRow">
         <AdminNotice tone="warning">{t("productionPendingNotice")}</AdminNotice>
-        <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
+        <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
           <AppIcon name="refresh" /> {t("refresh")}
-        </button>
+        </DeskButton>
       </div>
       {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
       {notice ? <AdminNotice tone="success" onDismiss={() => setNotice(null)}>{notice}</AdminNotice> : null}
@@ -266,7 +268,7 @@ export default function PublicPresaleAdminPreview() {
                     <div className="adminFormGridCompact">
                       <label className="adminFormField">
                         <span className="adminFormFieldLabel">{t("presaleStart")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="datetime-local"
                           min={localDateTimeMin()}
@@ -276,7 +278,7 @@ export default function PublicPresaleAdminPreview() {
                       </label>
                       <label className="adminFormField">
                         <span className="adminFormFieldLabel">{t("presaleEnd")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="datetime-local"
                           min={draft.saleStart || localDateTimeMin()}
@@ -300,35 +302,35 @@ export default function PublicPresaleAdminPreview() {
                     ) : null}
                     <div className="adminToolbarRow">
                       {round.onchain?.state === 0 && !round.onchain.inventoryFunded ? (
-                        <button type="button" className="btn" onClick={() => requestReauth("inventory-fund", round.id)}>
+                        <DeskButton type="button" className="btn" onClick={() => requestReauth("inventory-fund", round.id)}>
                           <AppIcon name="funding" /> {t("presaleInventoryFundPrepareSafe")}
-                        </button>
+                        </DeskButton>
                       ) : null}
                       {round.onchain && ["DRAFT_ONLY", "DRIFTED", "PREPARED"].includes(round.onchain.bindingStatus) ? (
-                        <button type="button" className="btn" onClick={() => requestReauth("schedule-prepare", round.id)} disabled={!data.presaleSchedule.version}>
+                        <DeskButton type="button" className="btn" onClick={() => requestReauth("schedule-prepare", round.id)} disabled={!data.presaleSchedule.version}>
                           <AppIcon name="shield" /> {t("presaleSchedulePrepareSafe")}
-                        </button>
+                        </DeskButton>
                       ) : null}
                       {round.onchain?.bindingStatus === "BOUND" && round.onchain.state === 0 ? (
-                        <button type="button" className="btn" onClick={() => requestReauth("ready-prepare", round.id)} disabled={!round.onchain.inventoryFunded}>
+                        <DeskButton type="button" className="btn" onClick={() => requestReauth("ready-prepare", round.id)} disabled={!round.onchain.inventoryFunded}>
                           <AppIcon name="shield" /> {t("presaleReadyPrepareSafe")}
-                        </button>
+                        </DeskButton>
                       ) : null}
                       {round.onchain && round.onchain.state >= 4 && round.onchain.pendingPurchaseCount === "0" && round.onchain.unsoldReleasedUliqRaw === "0" && BigInt(round.onchain.unsoldInventoryUliqRaw) > BigInt(0) ? (
-                        <button type="button" className="btn" onClick={() => requestReauth("inventory-release", round.id)}>
+                        <DeskButton type="button" className="btn" onClick={() => requestReauth("inventory-release", round.id)}>
                           <AppIcon name="wallet" /> {t("presaleUnsoldReleasePrepareSafe")}
-                        </button>
+                        </DeskButton>
                       ) : null}
                     </div>
                     {inventoryActionId && inventoryActionRoundId === round.id ? (
                       <div className="adminFormGridCompact">
                         <label className="adminFormField">
                           <span className="adminFormFieldLabel">{t("presaleInventoryExecutionHash")}</span>
-                          <input className="input uliqMono" value={inventoryExecutionHash} placeholder="0x…" onChange={(event) => setInventoryExecutionHash(event.target.value.trim())} />
+                          <DeskInput className="input uliqMono" value={inventoryExecutionHash} placeholder="0x…" onChange={(event) => setInventoryExecutionHash(event.target.value.trim())} />
                         </label>
-                        <button type="button" className="btn" onClick={() => requestReauth("inventory-record", round.id)} disabled={!/^0x[0-9a-fA-F]{64}$/.test(inventoryExecutionHash)}>
+                        <DeskButton type="button" className="btn" onClick={() => requestReauth("inventory-record", round.id)} disabled={!/^0x[0-9a-fA-F]{64}$/.test(inventoryExecutionHash)}>
                           <AppIcon name="audit" /> {t("presaleInventoryRecordExecution")}
-                        </button>
+                        </DeskButton>
                       </div>
                     ) : null}
                   </div>
@@ -337,7 +339,7 @@ export default function PublicPresaleAdminPreview() {
             </div>
             <label className="adminFormField">
               <span className="adminFormFieldLabel">{t("presaleScheduleReason")}</span>
-              <input
+              <DeskInput
                 className="input"
                 value={reason}
                 maxLength={500}
@@ -346,20 +348,20 @@ export default function PublicPresaleAdminPreview() {
               />
               <span className="adminFormFieldHint">{t("presaleScheduleReasonProgress", { count: reason.trim().length })}</span>
             </label>
-            <button
+            <DeskButton
               type="button"
               className="btn btnPrimary"
               onClick={() => requestReauth("schedule-save")}
               disabled={!scheduleValid || reason.trim().length < 8}
             >
               <AppIcon name="save" /> {t("presaleScheduleSave")}
-            </button>
+            </DeskButton>
           </AdminDetailSection>
           <AdminDetailSection title={t("payload")} description={preparationLabel ?? undefined}>
             {preparation ? (
               <>
                 <pre className="card uliqAdminPayload uliqMono">{JSON.stringify(preparation, null, 2)}</pre>
-                <button type="button" className="btn" onClick={() => void copyPayload()}><AppIcon name="copy" /> {t("copy")}</button>
+                <DeskButton type="button" className="btn" onClick={() => void copyPayload()}><AppIcon name="copy" /> {t("copy")}</DeskButton>
               </>
             ) : <div className="settingsMutedText">{t("noPayload")}</div>}
           </AdminDetailSection>

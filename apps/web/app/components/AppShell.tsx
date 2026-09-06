@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
@@ -144,7 +145,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {mobileSidebarMode && sidebarOpen ? (
-        <button
+        <DeskButton
           type="button"
           className="appSidebarBackdrop appSidebarBackdropOpen"
           onClick={() => setSidebarOpen(false)}

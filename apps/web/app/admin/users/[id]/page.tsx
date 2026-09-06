@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -397,34 +401,34 @@ export default function AdminUserDetailPage() {
       />
 
       {loading ? <div className="settingsMutedText">Loading user detail…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface> : null}
 
       {data ? (
         <>
           <section className="adminStatsGrid">
-            <div className="card adminStatsCard">
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">Account Status</div>
               <AdminStatusBadge value={data.status} />
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">Last Login</div>
               <div className="adminStatsValue adminStatsValueSmall">{formatDateTime(data.lastLoginAt)}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">Last Active</div>
               <div className="adminStatsValue adminStatsValueSmall">{formatDateTime(data.lastActiveAt)}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">Created</div>
               <div className="adminStatsValue adminStatsValueSmall">{formatDateTime(data.createdAt)}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">Backend Admin Access</div>
               <div className="adminStatsValue adminStatsValueSmall">
                 {data.isSuperadmin ? "implicit via superadmin" : data.hasAdminBackendAccess ? "enabled" : "disabled"}
               </div>
-            </div>
+            </div></DeskSurface>
           </section>
 
           <div className="adminDetailGrid">
@@ -478,7 +482,7 @@ export default function AdminUserDetailPage() {
                   >
                     <label className="settingsField">
                       <span className="settingsFieldLabel">Override Affiliate Fee %</span>
-                      <input
+                      <DeskInput
                         className="input"
                         type="number"
                         min={0}
@@ -491,7 +495,7 @@ export default function AdminUserDetailPage() {
                     </label>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">Reason</span>
-                      <input
+                      <DeskInput
                         className="input"
                         value={affiliateDraftReason}
                         onChange={(event) => setAffiliateDraftReason(event.target.value)}
@@ -499,12 +503,12 @@ export default function AdminUserDetailPage() {
                       />
                     </label>
                     <div className="adminInlineActions">
-                      <button type="submit" className="btn btnPrimary" disabled={submittingAffiliate}>
+                      <DeskButton type="submit" className="btn btnPrimary" disabled={submittingAffiliate}>
                         {submittingAffiliate ? "Saving…" : "Save override"}
-                      </button>
-                      <button type="button" className="btn" onClick={() => void clearAffiliateOverride()} disabled={submittingAffiliate}>
+                      </DeskButton>
+                      <DeskButton type="button" className="btn" onClick={() => void clearAffiliateOverride()} disabled={submittingAffiliate}>
                         Clear override
-                      </button>
+                      </DeskButton>
                     </div>
                   </form>
                 </div>
@@ -556,25 +560,25 @@ export default function AdminUserDetailPage() {
                   <div className="adminFilterGrid">
                     <label className="settingsField">
                       <span className="settingsFieldLabel">Manual plan</span>
-                      <select className="input" value={planDraft} onChange={(event) => setPlanDraft(event.target.value as "pro" | "premium")}>
+                      <DeskSelect className="input" value={planDraft} onChange={(event) => setPlanDraft(event.target.value as "pro" | "premium")}>
                         <option value="pro">Pro</option>
                         <option value="premium">Premium</option>
-                      </select>
+                      </DeskSelect>
                     </label>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">Valid until</span>
-                      <input className="input" type="date" min={new Date().toISOString().slice(0, 10)} value={planValidUntil} onChange={(event) => setPlanValidUntil(event.target.value)} />
+                      <DeskInput className="input" type="date" min={new Date().toISOString().slice(0, 10)} value={planValidUntil} onChange={(event) => setPlanValidUntil(event.target.value)} />
                     </label>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">Reason (required)</span>
-                      <input className="input" value={planReason} onChange={(event) => setPlanReason(event.target.value)} placeholder="Reason for manual access" />
+                      <DeskInput className="input" value={planReason} onChange={(event) => setPlanReason(event.target.value)} placeholder="Reason for manual access" />
                     </label>
                   </div>
                   <div className="adminInlineActions">
                     {[1, 3, 12].map((months) => (
-                      <button className="btn" type="button" key={months} onClick={() => setPlanValidUntil(addMonthsDateValue(months))}>
+                      <DeskButton className="btn" type="button" key={months} onClick={() => setPlanValidUntil(addMonthsDateValue(months))}>
                         {months} month{months === 1 ? "" : "s"}
-                      </button>
+                      </DeskButton>
                     ))}
                     <AdminActionButton icon="save" variant="primary" type="submit" disabled={!planReason.trim() || !planValidUntil} loading={submittingPlan} loadingLabel="Saving...">
                       Save override
@@ -596,7 +600,7 @@ export default function AdminUserDetailPage() {
                 <form className="adminInlineForm" onSubmit={handlePasswordReset}>
                   <label className="settingsField">
                     <span className="settingsFieldLabel">Reset Password</span>
-                    <input className="input" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} placeholder="Enter a new temporary password" />
+                    <DeskInput className="input" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} placeholder="Enter a new temporary password" />
                   </label>
                   <div className="adminInlineActions">
                     <AdminActionButton icon="key" type="button" onClick={generateTemporaryPassword}>

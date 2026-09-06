@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskDialog, DeskDialogPanel } from "@/components/desk/DeskDialog";
+import { DeskButton } from "@/components/desk/DeskButton";
 import type { ReactNode } from "react";
 import { AppIcon } from "../../app/components/AppIcon";
 
@@ -33,8 +35,8 @@ export default function PredictionCreateWizard(props: PredictionCreateWizardProp
   const isLast = stepIndex === props.steps.length - 1;
 
   return (
-    <div className="predictionWizardBackdrop" role="presentation" onMouseDown={props.onClose}>
-      <section
+    <DeskDialog onClose={props.onClose}><div className="predictionWizardBackdrop" role="presentation" onMouseDown={props.onClose}>
+      <DeskDialogPanel><section
         className="predictionWizard"
         role="dialog"
         aria-modal="true"
@@ -47,9 +49,9 @@ export default function PredictionCreateWizard(props: PredictionCreateWizardProp
             <h2 id="prediction-wizard-title" className="predictionWizardTitle">{props.title}</h2>
             <p className="predictionWizardDescription">{props.description}</p>
           </div>
-          <button className="btn predictionDrawerClose" type="button" onClick={props.onClose} aria-label={props.closeLabel}>
+          <DeskButton className="btn predictionDrawerClose" type="button" onClick={props.onClose} aria-label={props.closeLabel}>
             <AppIcon name="close" />
-          </button>
+          </DeskButton>
         </header>
         <ol className="predictionWizardSteps" aria-label={props.title}>
           {props.steps.map((entry, index) => (
@@ -60,23 +62,23 @@ export default function PredictionCreateWizard(props: PredictionCreateWizardProp
         </ol>
         <div className="predictionWizardBody" data-step={props.step}>{props.children}</div>
         <footer className="predictionWizardFooter">
-          <button className="btn" type="button" onClick={isFirst ? props.onClose : props.onBack}>
+          <DeskButton className="btn" type="button" onClick={isFirst ? props.onClose : props.onBack}>
             <AppIcon name={isFirst ? "close" : "back"} />
             {isFirst ? props.closeLabel : props.backLabel}
-          </button>
+          </DeskButton>
           {isLast ? (
-            <button className="btn btnPrimary" type="button" onClick={props.onGenerate} disabled={!props.canGenerate || props.generating}>
+            <DeskButton className="btn btnPrimary" type="button" onClick={props.onGenerate} disabled={!props.canGenerate || props.generating}>
               <AppIcon name="create" />
               {props.generating ? props.generatingLabel : props.generateLabel}
-            </button>
+            </DeskButton>
           ) : (
-            <button className="btn btnPrimary" type="button" onClick={props.onNext}>
+            <DeskButton className="btn btnPrimary" type="button" onClick={props.onNext}>
               {props.nextLabel}
               <AppIcon name="chevronRight" />
-            </button>
+            </DeskButton>
           )}
         </footer>
-      </section>
-    </div>
+      </section></DeskDialogPanel>
+    </div></DeskDialog>
   );
 }

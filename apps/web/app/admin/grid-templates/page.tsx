@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -1339,7 +1344,7 @@ export default function AdminGridTemplatesPage() {
       {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
       {notice ? <AdminNotice tone="success">{notice}</AdminNotice> : null}
 
-      <section className="card settingsSection">
+      <DeskSurface dense><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <h3 style={{ margin: 0 }}>{tCreate("createTitle")}</h3>
           <div className="settingsSectionMeta">{tCreate("createMeta")}</div>
@@ -1349,12 +1354,12 @@ export default function AdminGridTemplatesPage() {
           <div className="gridTemplateSubsectionTitle">{tCreate("sections.basicSettings")}</div>
           <label>
             {tCreate("fields.name")}
-            <input className="input" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required />
+            <DeskInput className="input" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required />
           </label>
           <label>
             {tCreate("fields.symbol")}
             {symbolOptionsError || symbolOptions.length === 0 ? (
-              <input
+              <DeskInput
                 className="input"
                 value={form.symbol}
                 onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))}
@@ -1362,13 +1367,13 @@ export default function AdminGridTemplatesPage() {
               />
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
-                <input
+                <DeskInput
                   className="input"
                   value={symbolSearch}
                   onChange={(event) => setSymbolSearch(event.target.value.toUpperCase())}
                   placeholder={tCreate("fields.symbolSearchPlaceholder")}
                 />
-                <select
+                <DeskSelect
                   className="input"
                   value={normalizedFormSymbol}
                   onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))}
@@ -1386,7 +1391,7 @@ export default function AdminGridTemplatesPage() {
                       {formatSymbolForDisplay(item.symbol, stablecoinLabel)}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
                     </option>
                   ))}
-                </select>
+                </DeskSelect>
               </div>
             )}
             {symbolOptionsLoading ? <div className="settingsMutedText">{tCreate("hints.loadingSymbols")}</div> : null}
@@ -1396,7 +1401,7 @@ export default function AdminGridTemplatesPage() {
             <div className="settingsFieldLabel">{tCreate("fields.mode")}</div>
             <div className="gridModeButtonGroup">
               {(["long", "short", "neutral", "cross"] as const).map((mode) => (
-                <button
+                <DeskButton
                   key={mode}
                   type="button"
                   className={`btn ${form.mode === mode ? "btnPrimary" : ""}`}
@@ -1414,7 +1419,7 @@ export default function AdminGridTemplatesPage() {
                   }))}
                 >
                   {labelFromMode(mode, tCreate)}
-                </button>
+                </DeskButton>
               ))}
             </div>
           </div>
@@ -1422,94 +1427,94 @@ export default function AdminGridTemplatesPage() {
             <>
               <label>
                 {tCreate("fields.crossLongLowerPrice")}
-                <input className="input" type="number" step="0.0001" min="0" value={form.crossLongLowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossLongLowerPrice: event.target.value }))} required />
+                <DeskInput className="input" type="number" step="0.0001" min="0" value={form.crossLongLowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossLongLowerPrice: event.target.value }))} required />
               </label>
               <label>
                 {tCreate("fields.crossLongUpperPrice")}
-                <input className="input" type="number" step="0.0001" min="0" value={form.crossLongUpperPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossLongUpperPrice: event.target.value }))} required />
+                <DeskInput className="input" type="number" step="0.0001" min="0" value={form.crossLongUpperPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossLongUpperPrice: event.target.value }))} required />
               </label>
               <label>
                 {tCreate("fields.crossLongGridCount")}
-                <input className="input" type="number" min="2" max="500" value={form.crossLongGridCount} onChange={(event) => setForm((prev) => ({ ...prev, crossLongGridCount: event.target.value }))} required />
+                <DeskInput className="input" type="number" min="2" max="500" value={form.crossLongGridCount} onChange={(event) => setForm((prev) => ({ ...prev, crossLongGridCount: event.target.value }))} required />
               </label>
               <label>
                 {tCreate("fields.crossShortLowerPrice")}
-                <input className="input" type="number" step="0.0001" min="0" value={form.crossShortLowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossShortLowerPrice: event.target.value }))} required />
+                <DeskInput className="input" type="number" step="0.0001" min="0" value={form.crossShortLowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossShortLowerPrice: event.target.value }))} required />
               </label>
               <label>
                 {tCreate("fields.crossShortUpperPrice")}
-                <input className="input" type="number" step="0.0001" min="0" value={form.crossShortUpperPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossShortUpperPrice: event.target.value }))} required />
+                <DeskInput className="input" type="number" step="0.0001" min="0" value={form.crossShortUpperPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossShortUpperPrice: event.target.value }))} required />
               </label>
               <label>
                 {tCreate("fields.crossShortGridCount")}
-                <input className="input" type="number" min="2" max="500" value={form.crossShortGridCount} onChange={(event) => setForm((prev) => ({ ...prev, crossShortGridCount: event.target.value }))} required />
+                <DeskInput className="input" type="number" min="2" max="500" value={form.crossShortGridCount} onChange={(event) => setForm((prev) => ({ ...prev, crossShortGridCount: event.target.value }))} required />
               </label>
             </>
           ) : (
             <>
               <label>
                 {tCreate("fields.lowerPrice")}
-                <input className="input" type="number" step="0.0001" min="0" value={form.lowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, lowerPrice: event.target.value }))} required />
+                <DeskInput className="input" type="number" step="0.0001" min="0" value={form.lowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, lowerPrice: event.target.value }))} required />
               </label>
               <label>
                 {tCreate("fields.upperPrice")}
-                <input className="input" type="number" step="0.0001" min="0" value={form.upperPrice} onChange={(event) => setForm((prev) => ({ ...prev, upperPrice: event.target.value }))} required />
+                <DeskInput className="input" type="number" step="0.0001" min="0" value={form.upperPrice} onChange={(event) => setForm((prev) => ({ ...prev, upperPrice: event.target.value }))} required />
               </label>
               <label>
                 {tCreate("fields.gridCount")}
-                <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => ({ ...prev, gridCount: event.target.value }))} required />
+                <DeskInput className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => ({ ...prev, gridCount: event.target.value }))} required />
               </label>
             </>
           )}
           <label>
             {tCreate("fields.leverageFixed")}
-            <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => ({ ...prev, leverage: event.target.value }))} required />
+            <DeskInput className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => ({ ...prev, leverage: event.target.value }))} required />
             {selectedSymbolMaxLeverage !== null ? (
               <div className="settingsMutedText">{tCreate("hints.symbolMaxLeverage", { max: selectedSymbolMaxLeverage })}</div>
             ) : null}
           </label>
           <label>
             {tCreate("fields.tpDefaultPct")}
-            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.tpDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, tpDefaultPct: event.target.value }))} />
+            <DeskInput className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.tpDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, tpDefaultPct: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.slDefaultPrice")}
-            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.slDefaultPrice} onChange={(event) => setForm((prev) => ({ ...prev, slDefaultPrice: event.target.value }))} />
+            <DeskInput className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.slDefaultPrice} onChange={(event) => setForm((prev) => ({ ...prev, slDefaultPrice: event.target.value }))} />
           </label>
 
           <div className="gridTemplateSubsectionTitle">{tCreate("sections.advancedSettings")}</div>
           <label>
             {tCreate("fields.gridMode")}
-            <select className="input" value={form.gridMode} onChange={(event) => setForm((prev) => ({ ...prev, gridMode: event.target.value as GridPriceMode }))}>
+            <DeskSelect className="input" value={form.gridMode} onChange={(event) => setForm((prev) => ({ ...prev, gridMode: event.target.value as GridPriceMode }))}>
               <option value="arithmetic">{labelFromGridMode("arithmetic", tCreate)}</option>
               <option value="geometric">{labelFromGridMode("geometric", tCreate)}</option>
-            </select>
+            </DeskSelect>
           </label>
           <label>
             {tCreate("fields.allocationMode")}
-            <select className="input" value={form.allocationMode} onChange={(event) => setForm((prev) => ({ ...prev, allocationMode: event.target.value as GridAllocationMode }))}>
+            <DeskSelect className="input" value={form.allocationMode} onChange={(event) => setForm((prev) => ({ ...prev, allocationMode: event.target.value as GridAllocationMode }))}>
               <option value="EQUAL_NOTIONAL_PER_GRID">{labelFromAllocationMode("EQUAL_NOTIONAL_PER_GRID", tCreate)}</option>
               <option value="EQUAL_BASE_QTY_PER_GRID">{labelFromAllocationMode("EQUAL_BASE_QTY_PER_GRID", tCreate)}</option>
               <option value="WEIGHTED_NEAR_PRICE" disabled>{tCreate("comingSoon.weightedNearPrice")}</option>
-            </select>
+            </DeskSelect>
           </label>
           {form.mode === "cross" ? (
             <>
               <label>
                 {tCreate("fields.budgetSplitPolicy")}
-                <select className="input" value={form.budgetSplitPolicy} onChange={(event) => setForm((prev) => ({ ...prev, budgetSplitPolicy: event.target.value as GridBudgetSplitPolicy }))}>
+                <DeskSelect className="input" value={form.budgetSplitPolicy} onChange={(event) => setForm((prev) => ({ ...prev, budgetSplitPolicy: event.target.value as GridBudgetSplitPolicy }))}>
                   <option value="FIXED_50_50">{labelFromBudgetSplitPolicy("FIXED_50_50", tCreate)}</option>
                   <option value="FIXED_CUSTOM">{labelFromBudgetSplitPolicy("FIXED_CUSTOM", tCreate)}</option>
                   <option value="DYNAMIC_BY_PRICE_POSITION" disabled>{tCreate("comingSoon.dynamicByPricePosition")}</option>
-                </select>
+                </DeskSelect>
               </label>
               <label>
                 {tCreate("fields.longBudgetPct")}
-                <input className="input" type="number" min="0" max="100" step="0.01" value={form.longBudgetPct} disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"} onChange={(event) => setForm((prev) => ({ ...prev, longBudgetPct: event.target.value }))} />
+                <DeskInput className="input" type="number" min="0" max="100" step="0.01" value={form.longBudgetPct} disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"} onChange={(event) => setForm((prev) => ({ ...prev, longBudgetPct: event.target.value }))} />
               </label>
               <label>
                 {tCreate("fields.shortBudgetPct")}
-                <input className="input" type="number" min="0" max="100" step="0.01" value={form.shortBudgetPct} disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"} onChange={(event) => setForm((prev) => ({ ...prev, shortBudgetPct: event.target.value }))} />
+                <DeskInput className="input" type="number" min="0" max="100" step="0.01" value={form.shortBudgetPct} disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"} onChange={(event) => setForm((prev) => ({ ...prev, shortBudgetPct: event.target.value }))} />
               </label>
             </>
           ) : (
@@ -1519,144 +1524,144 @@ export default function AdminGridTemplatesPage() {
           )}
           <label>
             {tCreate("fields.marginPolicy")}
-            <select className="input" value={form.marginPolicy} onChange={(event) => setForm((prev) => ({ ...prev, marginPolicy: event.target.value as GridMarginPolicy }))}>
+            <DeskSelect className="input" value={form.marginPolicy} onChange={(event) => setForm((prev) => ({ ...prev, marginPolicy: event.target.value as GridMarginPolicy }))}>
               <option value="MANUAL_ONLY">{labelFromMarginPolicy("MANUAL_ONLY", tCreate)}</option>
               <option value="AUTO_ALLOWED">{labelFromMarginPolicy("AUTO_ALLOWED", tCreate)}</option>
-            </select>
+            </DeskSelect>
           </label>
           <label>
             {tCreate("fields.autoReservePolicy")}
-            <select className="input" value={form.autoReservePolicy} onChange={(event) => setForm((prev) => ({ ...prev, autoReservePolicy: event.target.value as GridAutoReservePolicy }))}>
+            <DeskSelect className="input" value={form.autoReservePolicy} onChange={(event) => setForm((prev) => ({ ...prev, autoReservePolicy: event.target.value as GridAutoReservePolicy }))}>
               <option value="LIQ_GUARD_MAX_GRID">{labelFromAutoReservePolicy("LIQ_GUARD_MAX_GRID", tCreate)}</option>
               <option value="FIXED_RATIO">{labelFromAutoReservePolicy("FIXED_RATIO", tCreate)}</option>
-            </select>
+            </DeskSelect>
           </label>
           <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span className="settingsMutedText" style={{ fontSize: 12 }}>{tCreate("fields.preset")}</span>
             {(["CONSERVATIVE", "BALANCED", "AGGRESSIVE"] as const).map((presetKey) => (
-              <button key={presetKey} type="button" className="btn" onClick={() => applyAutoReservePreset(presetKey)}>
+              <DeskButton key={presetKey} type="button" className="btn" onClick={() => applyAutoReservePreset(presetKey)}>
                 {tCreate(AUTO_RESERVE_PRESETS[presetKey].labelKey)}
-              </button>
+              </DeskButton>
             ))}
           </div>
           <label>
             {tCreate("fields.autoReserveFixedGridPct")}
-            <input className="input" type="number" min="0" max="100" step="0.01" value={form.autoReserveFixedGridPct} disabled={form.autoReservePolicy !== "FIXED_RATIO"} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveFixedGridPct: event.target.value }))} />
+            <DeskInput className="input" type="number" min="0" max="100" step="0.01" value={form.autoReserveFixedGridPct} disabled={form.autoReservePolicy !== "FIXED_RATIO"} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveFixedGridPct: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.autoReserveTargetLiqDistancePct")}
-            <input className="input" type="number" min="0" max="100" step="0.01" placeholder={tCreate("fields.defaultVenueSystem")} value={form.autoReserveTargetLiqDistancePct} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveTargetLiqDistancePct: event.target.value }))} />
+            <DeskInput className="input" type="number" min="0" max="100" step="0.01" placeholder={tCreate("fields.defaultVenueSystem")} value={form.autoReserveTargetLiqDistancePct} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveTargetLiqDistancePct: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.autoReserveMaxPreviewIterations")}
-            <input className="input" type="number" min="1" max="16" step="1" value={form.autoReserveMaxPreviewIterations} disabled={form.autoReservePolicy !== "LIQ_GUARD_MAX_GRID"} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveMaxPreviewIterations: event.target.value }))} />
+            <DeskInput className="input" type="number" min="1" max="16" step="1" value={form.autoReserveMaxPreviewIterations} disabled={form.autoReservePolicy !== "LIQ_GUARD_MAX_GRID"} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveMaxPreviewIterations: event.target.value }))} />
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
-            <input type="checkbox" checked={form.initialSeedEnabled} onChange={(event) => setForm((prev) => ({ ...prev, initialSeedEnabled: event.target.checked }))} />
+            <DeskInput type="checkbox" checked={form.initialSeedEnabled} onChange={(event) => setForm((prev) => ({ ...prev, initialSeedEnabled: event.target.checked }))} />
             <span>{tCreate("fields.initialSeedEnabled")}</span>
           </label>
           <label>
             {tCreate("fields.initialSeedPct")}
-            <input className="input" type="number" min="0" max="60" step="0.1" value={form.initialSeedPct} onChange={(event) => setForm((prev) => ({ ...prev, initialSeedPct: event.target.value }))} />
+            <DeskInput className="input" type="number" min="0" max="60" step="0.1" value={form.initialSeedPct} onChange={(event) => setForm((prev) => ({ ...prev, initialSeedPct: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.activeOrderWindowSize")}
-            <input className="input" type="number" min="40" max="120" step="1" value={form.activeOrderWindowSize} onChange={(event) => setForm((prev) => ({ ...prev, activeOrderWindowSize: event.target.value }))} />
+            <DeskInput className="input" type="number" min="40" max="120" step="1" value={form.activeOrderWindowSize} onChange={(event) => setForm((prev) => ({ ...prev, activeOrderWindowSize: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.recenterDriftLevels")}
-            <input className="input" type="number" min="1" max="10" step="1" value={form.recenterDriftLevels} onChange={(event) => setForm((prev) => ({ ...prev, recenterDriftLevels: event.target.value }))} />
+            <DeskInput className="input" type="number" min="1" max="10" step="1" value={form.recenterDriftLevels} onChange={(event) => setForm((prev) => ({ ...prev, recenterDriftLevels: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.slippageDefaultPct")}
-            <input className="input" type="number" min="0.0001" max="5" step="0.0001" value={form.slippageDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, slippageDefaultPct: event.target.value }))} required />
+            <DeskInput className="input" type="number" min="0.0001" max="5" step="0.0001" value={form.slippageDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, slippageDefaultPct: event.target.value }))} required />
           </label>
           {form.marginPolicy === "AUTO_ALLOWED" ? (
             <>
               <label>
                 {replaceStablecoinUnit(tCreate("fields.autoMarginMaxUsdt"), stablecoinLabel)}
-                <input className="input" type="number" min="0" step="0.01" value={form.autoMarginMaxUSDT} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginMaxUSDT: event.target.value }))} />
+                <DeskInput className="input" type="number" min="0" step="0.01" value={form.autoMarginMaxUSDT} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginMaxUSDT: event.target.value }))} />
               </label>
               <label>
                 {tCreate("fields.autoMarginTrigger")}
-                <select className="input" value={form.autoMarginTriggerType} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginTriggerType: event.target.value as GridAutoMarginTriggerType }))}>
+                <DeskSelect className="input" value={form.autoMarginTriggerType} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginTriggerType: event.target.value as GridAutoMarginTriggerType }))}>
                   <option value="LIQ_DISTANCE_PCT_BELOW">{labelFromTriggerType("LIQ_DISTANCE_PCT_BELOW", tCreate)}</option>
                   <option value="MARGIN_RATIO_ABOVE">{labelFromTriggerType("MARGIN_RATIO_ABOVE", tCreate)}</option>
-                </select>
+                </DeskSelect>
               </label>
               <label>
                 {tCreate("fields.autoMarginTriggerValue")}
-                <input className="input" type="number" min="0.00001" step="0.00001" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginTriggerValue: event.target.value }))} />
+                <DeskInput className="input" type="number" min="0.00001" step="0.00001" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginTriggerValue: event.target.value }))} />
               </label>
               <label>
                 {replaceStablecoinUnit(tCreate("fields.autoMarginStepUsdt"), stablecoinLabel)}
-                <input className="input" type="number" min="0.01" step="0.01" value={form.autoMarginStepUSDT} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginStepUSDT: event.target.value }))} />
+                <DeskInput className="input" type="number" min="0.01" step="0.01" value={form.autoMarginStepUSDT} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginStepUSDT: event.target.value }))} />
               </label>
               <label>
                 {tCreate("fields.autoMarginCooldownSec")}
-                <input className="input" type="number" min="0" step="1" value={form.autoMarginCooldownSec} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginCooldownSec: event.target.value }))} />
+                <DeskInput className="input" type="number" min="0" step="1" value={form.autoMarginCooldownSec} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginCooldownSec: event.target.value }))} />
               </label>
             </>
           ) : null}
           <label>
             {tCreate("fields.version")}
-            <input className="input" type="number" min="1" step="1" value={form.version} onChange={(event) => setForm((prev) => ({ ...prev, version: event.target.value }))} />
+            <DeskInput className="input" type="number" min="1" step="1" value={form.version} onChange={(event) => setForm((prev) => ({ ...prev, version: event.target.value }))} />
           </label>
           <label style={{ gridColumn: "1 / -1" }}>
             {tCreate("fields.description")}
-            <textarea className="input" rows={3} value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
+            <DeskTextarea className="input" rows={3} value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.catalogCategory")}
-            <input className="input" value={form.catalogCategory} onChange={(event) => setForm((prev) => ({ ...prev, catalogCategory: event.target.value }))} />
+            <DeskInput className="input" value={form.catalogCategory} onChange={(event) => setForm((prev) => ({ ...prev, catalogCategory: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.catalogTags")}
-            <input className="input" value={form.catalogTags} onChange={(event) => setForm((prev) => ({ ...prev, catalogTags: event.target.value }))} placeholder={tCreate("fields.catalogTagsPlaceholder")} />
+            <DeskInput className="input" value={form.catalogTags} onChange={(event) => setForm((prev) => ({ ...prev, catalogTags: event.target.value }))} placeholder={tCreate("fields.catalogTagsPlaceholder")} />
           </label>
           <label>
             {tCreate("fields.catalogDifficulty")}
-            <select className="input" value={form.catalogDifficulty} onChange={(event) => setForm((prev) => ({ ...prev, catalogDifficulty: event.target.value as GridCatalogDifficulty }))}>
+            <DeskSelect className="input" value={form.catalogDifficulty} onChange={(event) => setForm((prev) => ({ ...prev, catalogDifficulty: event.target.value as GridCatalogDifficulty }))}>
               <option value="BEGINNER">{tCreate("enums.catalogDifficulty.BEGINNER")}</option>
               <option value="ADVANCED">{tCreate("enums.catalogDifficulty.ADVANCED")}</option>
               <option value="EXPERT">{tCreate("enums.catalogDifficulty.EXPERT")}</option>
-            </select>
+            </DeskSelect>
           </label>
           <label>
             {tCreate("fields.catalogRiskLevel")}
-            <select className="input" value={form.catalogRiskLevel} onChange={(event) => setForm((prev) => ({ ...prev, catalogRiskLevel: event.target.value as GridCatalogRiskLevel }))}>
+            <DeskSelect className="input" value={form.catalogRiskLevel} onChange={(event) => setForm((prev) => ({ ...prev, catalogRiskLevel: event.target.value as GridCatalogRiskLevel }))}>
               <option value="LOW">{tCreate("enums.catalogRiskLevel.LOW")}</option>
               <option value="MEDIUM">{tCreate("enums.catalogRiskLevel.MEDIUM")}</option>
               <option value="HIGH">{tCreate("enums.catalogRiskLevel.HIGH")}</option>
-            </select>
+            </DeskSelect>
           </label>
           <label>
             {tCreate("fields.catalogImageUrl")}
-            <input className="input" type="url" value={form.catalogImageUrl} onChange={(event) => setForm((prev) => ({ ...prev, catalogImageUrl: event.target.value }))} placeholder="https://..." />
+            <DeskInput className="input" type="url" value={form.catalogImageUrl} onChange={(event) => setForm((prev) => ({ ...prev, catalogImageUrl: event.target.value }))} placeholder="https://..." />
           </label>
           <label>
             {tCreate("fields.catalogSortOrder")}
-            <input className="input" type="number" step="1" value={form.catalogSortOrder} onChange={(event) => setForm((prev) => ({ ...prev, catalogSortOrder: event.target.value }))} />
+            <DeskInput className="input" type="number" step="1" value={form.catalogSortOrder} onChange={(event) => setForm((prev) => ({ ...prev, catalogSortOrder: event.target.value }))} />
           </label>
           <label style={{ gridColumn: "1 / -1" }}>
             {tCreate("fields.catalogShortDescription")}
-            <textarea className="input" rows={2} value={form.catalogShortDescription} onChange={(event) => setForm((prev) => ({ ...prev, catalogShortDescription: event.target.value }))} />
+            <DeskTextarea className="input" rows={2} value={form.catalogShortDescription} onChange={(event) => setForm((prev) => ({ ...prev, catalogShortDescription: event.target.value }))} />
           </label>
           <label className="settingsToggle">
-            <input type="checkbox" checked={form.catalogFeatured} onChange={(event) => setForm((prev) => ({ ...prev, catalogFeatured: event.target.checked }))} />
+            <DeskInput type="checkbox" checked={form.catalogFeatured} onChange={(event) => setForm((prev) => ({ ...prev, catalogFeatured: event.target.checked }))} />
             <span>{tCreate("fields.catalogFeatured")}</span>
           </label>
 
           <label className="settingsToggle">
-            <input type="checkbox" checked={form.marginPolicy === "AUTO_ALLOWED"} readOnly />
+            <DeskInput type="checkbox" checked={form.marginPolicy === "AUTO_ALLOWED"} readOnly />
             <span>{tCreate("fields.allowAutoMarginDerived")}</span>
           </label>
           <label className="settingsToggle">
-            <input type="checkbox" checked={form.allowManualMarginAdjust} onChange={(event) => setForm((prev) => ({ ...prev, allowManualMarginAdjust: event.target.checked }))} />
+            <DeskInput type="checkbox" checked={form.allowManualMarginAdjust} onChange={(event) => setForm((prev) => ({ ...prev, allowManualMarginAdjust: event.target.checked }))} />
             <span>{tCreate("fields.allowManualMarginAdjust")}</span>
           </label>
           <label className="settingsToggle">
-            <input type="checkbox" checked={form.allowProfitWithdraw} onChange={(event) => setForm((prev) => ({ ...prev, allowProfitWithdraw: event.target.checked }))} />
+            <DeskInput type="checkbox" checked={form.allowProfitWithdraw} onChange={(event) => setForm((prev) => ({ ...prev, allowProfitWithdraw: event.target.checked }))} />
             <span>{tCreate("fields.allowProfitWithdraw")}</span>
           </label>
 
@@ -1673,7 +1678,7 @@ export default function AdminGridTemplatesPage() {
         </form>
 
         <div className="gridTemplatePreviewSticky">
-        <div className="card settingsSection">
+        <DeskSurface dense><div className="card settingsSection">
           <div className="settingsSectionHeader">
             <h4 style={{ margin: 0 }}>{tCreate("preview.title")}</h4>
             <div className="settingsSectionMeta">{tCreate("preview.meta")}</div>
@@ -1685,7 +1690,7 @@ export default function AdminGridTemplatesPage() {
           <div className="settingsFormGrid gridTemplatePreviewInputGrid" style={{ marginTop: 12 }}>
             <label>
               {tCreate("preview.fields.exchangeAccount")}
-              <select
+              <DeskSelect
                 className="input"
                 value={previewAccountId}
                 onChange={(event) => setPreviewAccountId(event.target.value)}
@@ -1696,11 +1701,11 @@ export default function AdminGridTemplatesPage() {
                     {account.label} ({account.exchange}{account.marketDataExchange ? ` -> ${account.marketDataExchange}` : ""})
                   </option>
                 ))}
-              </select>
+              </DeskSelect>
             </label>
             <label>
               {replaceStablecoinUnit(tCreate("preview.fields.investUsd"), stablecoinLabel)}
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min="0.01"
@@ -1711,7 +1716,7 @@ export default function AdminGridTemplatesPage() {
             </label>
             <label>
               {replaceStablecoinUnit(tCreate("preview.fields.extraMarginUsd"), stablecoinLabel)}
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min="0"
@@ -1723,7 +1728,7 @@ export default function AdminGridTemplatesPage() {
             </label>
             <label>
               {tCreate("preview.fields.marginMode")}
-              <select
+              <DeskSelect
                 className="input"
                 value={previewMarginMode}
                 onChange={(event) => {
@@ -1733,11 +1738,11 @@ export default function AdminGridTemplatesPage() {
               >
                 <option value="MANUAL">{tCreate("preview.fields.manual")}</option>
                 <option value="AUTO" disabled={form.marginPolicy !== "AUTO_ALLOWED"}>{tCreate("preview.fields.auto")}</option>
-              </select>
+              </DeskSelect>
             </label>
             <label>
               {tCreate("preview.fields.triggerPriceOptional")}
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min="0"
@@ -1748,7 +1753,7 @@ export default function AdminGridTemplatesPage() {
             </label>
             <label>
               {tCreate("preview.fields.tpPct")}
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min="0"
@@ -1759,7 +1764,7 @@ export default function AdminGridTemplatesPage() {
             </label>
             <label>
               {tCreate("preview.fields.slPrice")}
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min="0"
@@ -1770,7 +1775,7 @@ export default function AdminGridTemplatesPage() {
             </label>
             <label>
               {tCreate("preview.fields.markPriceOverrideOptional")}
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min="0"
@@ -1788,7 +1793,7 @@ export default function AdminGridTemplatesPage() {
             <AdminNotice tone="danger">{previewError}</AdminNotice>
           ) : null}
           {preview ? (
-            <div
+            <DeskSurface dense><div
               className="card settingsSection gridTemplatePreviewCard"
               style={{
                 marginTop: 12,
@@ -1880,18 +1885,18 @@ export default function AdminGridTemplatesPage() {
                   ))}
                 </div>
               ) : null}
-            </div>
+            </div></DeskSurface>
           ) : null}
+        </div></DeskSurface>
         </div>
         </div>
-        </div>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card settingsSection" style={{ marginTop: 12 }}>
+      <DeskSurface dense><section className="card settingsSection" style={{ marginTop: 12 }}>
         <div className="settingsSectionHeader">
           <h3 style={{ margin: 0 }}>{tCreate("list.title")}</h3>
           <label className="settingsToggle" style={{ margin: 0 }}>
-            <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
+            <DeskInput type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
             <span>{tCreate("list.showArchived")}</span>
           </label>
         </div>
@@ -1903,7 +1908,7 @@ export default function AdminGridTemplatesPage() {
         ) : (
           <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
             {activeItems.map((template) => (
-              <article key={template.id} className="card" style={{ padding: 12 }}>
+              <DeskSurface dense><article key={template.id} className="card" style={{ padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontWeight: 700 }}>{template.name}</div>
@@ -1945,11 +1950,11 @@ export default function AdminGridTemplatesPage() {
                     </AdminActionButton>
                   </div>
                 </div>
-              </article>
+              </article></DeskSurface>
             ))}
           </div>
         )}
-      </section>
+      </section></DeskSurface>
       <AdminConfirmDialog
         open={Boolean(pendingDeleteTemplate)}
         title={tCreate("list.actions.delete")}

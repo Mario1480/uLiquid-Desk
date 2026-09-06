@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -802,21 +806,21 @@ function SubscriptionOrderPageContent() {
         <p className="subscriptionPortalMuted">{t("order.subtitle")}</p>
       </div>
 
-      <div className="card subscriptionOrderCard">
+      <DeskSurface><div className="card subscriptionOrderCard">
         {loading ? (
           <div className="subscriptionPortalMuted">{tCommon("loading")}</div>
         ) : (
           <div className="subscriptionOrderGrid">
             <div className="subscriptionOrderSection">
               <div className="subscriptionOrderSectionTitle">{t("order.packageLabel")}</div>
-              <select className="input" value={selectedPlanId} onChange={(event) => setSelectedPlanId(event.target.value)}>
+              <DeskSelect className="input" value={selectedPlanId} onChange={(event) => setSelectedPlanId(event.target.value)}>
                 <option value="">{t("order.noPlanSelected")}</option>
                 {model.planPackages.map((pkg) => (
                   <option key={pkg.id} value={pkg.id}>
                     {pkg.name} - {centsToCurrency(pkg.priceCents)} / {Math.max(1, pkg.billingMonths)}m
                   </option>
                 ))}
-              </select>
+              </DeskSelect>
               {!model.hasPlans ? <div className="subscriptionPortalMuted">{t("order.noPlans")}</div> : null}
               {selectedPlanPackage ? (
                 <div className="subscriptionOrderIncluded">
@@ -826,12 +830,12 @@ function SubscriptionOrderPageContent() {
                   <div>{t("order.includedPredictionsComposite", { running: selectedPlanPackage.maxRunningPredictionsComposite ?? 0 })}</div>
                   <div>{t("order.includedAiTokens", { tokens: selectedPlanPackage.monthlyAiCredits })}</div>
                   {isImmediatePremiumUpgrade && payload?.upgradePreview ? (
-                    <div className="uiNotice uiNotice-success">
+                    <DeskSurface><div className="uiNotice uiNotice-success">
                       {t("order.immediateUpgrade", {
                         amount: centsToCurrency(payload.upgradePreview.differenceCents),
                         endsAt: new Date(payload.upgradePreview.sourceTermEndsAt).toLocaleDateString(locale)
                       })}
-                    </div>
+                    </div></DeskSurface>
                   ) : null}
                 </div>
               ) : null}
@@ -841,15 +845,15 @@ function SubscriptionOrderPageContent() {
               <div className="subscriptionOrderSectionHead">
                 <div className="subscriptionOrderSectionTitle">{t("order.capacityAddonsTitle")}</div>
                 {selectedAddonUnits > 0 ? (
-                  <button type="button" className="btn" onClick={resetAddons}>
+                  <DeskButton type="button" className="btn" onClick={resetAddons}>
                     <AppIcon name="reset" />
                     {t("order.clearCapacityAddons")}
-                  </button>
+                  </DeskButton>
                 ) : null}
               </div>
               <div className="subscriptionPortalMuted">{t("order.selectedCapacityUnits", { count: selectedAddonUnits })}</div>
               {!canSelectAddons ? (
-                <div className="uiNotice uiNotice-info">{t("order.addonsRequirePro")}</div>
+                <DeskSurface><div className="uiNotice uiNotice-info">{t("order.addonsRequirePro")}</div></DeskSurface>
               ) : null}
               {!model.hasAddons ? (
                 <div className="subscriptionPortalMuted">{t("order.noCapacityAddons")}</div>
@@ -873,13 +877,13 @@ function SubscriptionOrderPageContent() {
                           <div className="subscriptionAddonPrice">{centsToCurrency(pkg.priceCents)}</div>
                         </div>
                         <div className="subscriptionAddonQuantityWrap">
-                          <button type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity - 1)} disabled={!canSelectAddons || quantity === 0} aria-label={`decrease ${pkg.name}`}>
+                          <DeskButton type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity - 1)} disabled={!canSelectAddons || quantity === 0} aria-label={`decrease ${pkg.name}`}>
                             <AppIcon name="remove" />
-                          </button>
+                          </DeskButton>
                           <span className="subscriptionAddonQuantityValue">{quantity}</span>
-                          <button type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity + 1)} disabled={!canSelectAddons || quantity >= 20} aria-label={`increase ${pkg.name}`}>
+                          <DeskButton type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity + 1)} disabled={!canSelectAddons || quantity >= 20} aria-label={`increase ${pkg.name}`}>
                             <AppIcon name="add" />
-                          </button>
+                          </DeskButton>
                         </div>
                       </div>
                     );
@@ -910,11 +914,11 @@ function SubscriptionOrderPageContent() {
                   <div className="subscriptionOrderSummaryItem subscriptionOrderSummaryStrong"><span>{t("order.checkoutTotal")}</span><span>{centsToCurrency(checkoutTotal)}</span></div>
                   {publicUliqEnabled ? (
                     <label className="subscriptionUliqDiscountToggle">
-                      <input type="checkbox" checked={applyUliqDiscount} onChange={(event) => setApplyUliqDiscount(event.target.checked)} disabled={hasBlockingCheckout} />
+                      <DeskInput type="checkbox" checked={applyUliqDiscount} onChange={(event) => setApplyUliqDiscount(event.target.checked)} disabled={hasBlockingCheckout} />
                       <span><strong>{tUliq("apply")}</strong><small>{tUliq("hint")}</small></span>
                     </label>
                   ) : null}
-                  <button
+                  <DeskButton
                     type="button"
                     className="btn btnPrimary subscriptionOrderPayButton"
                     onClick={() => void startCartCheckout()}
@@ -922,7 +926,7 @@ function SubscriptionOrderPageContent() {
                   >
                     <AppIcon name="billing" />
                     {checkoutLoading ? t("order.creatingPayment") : hasBlockingCheckout ? t("order.payment.activeOrder") : t("order.payWithUsdc")}
-                  </button>
+                  </DeskButton>
                 </>
               ) : (
                 <div className="subscriptionPortalMuted">{t("order.selectPackageFirst")}</div>
@@ -930,10 +934,10 @@ function SubscriptionOrderPageContent() {
             </div>
           </div>
         )}
-      </div>
+      </div></DeskSurface>
 
       {activeCheckout && payment ? (
-        <section className="card subscriptionPaymentPanel">
+        <DeskSurface><section className="card subscriptionPaymentPanel">
           <div className="subscriptionCardHead">
             <div>
               <div className="subscriptionCardTitle">{t("order.payment.title")}</div>
@@ -1004,31 +1008,31 @@ function SubscriptionOrderPageContent() {
           </div>
 
           {!linkedWalletMatchesCheckout && linkedWalletAddress && expectedSenderAddress ? (
-            <div className="uiNotice uiNotice-warning">
+            <DeskSurface><div className="uiNotice uiNotice-warning">
               {t("order.payment.checkoutWalletChanged", {
                 expected: shortenWalletAddress(expectedSenderAddress),
                 linked: shortenWalletAddress(linkedWalletAddress)
               })}
-            </div>
+            </div></DeskSurface>
           ) : null}
           {linkedWalletMatchesCheckout && !connectedWalletMatchesCheckout && isConnected ? (
-            <div className="uiNotice uiNotice-warning">
+            <DeskSurface><div className="uiNotice uiNotice-warning">
               {t("order.payment.walletMismatch", { wallet: shortenWalletAddress(expectedSenderAddress) })}
-            </div>
+            </div></DeskSurface>
           ) : null}
           {paymentStage === "review_required" ? (
-            <div className="uiNotice uiNotice-warning">{t("order.payment.reviewRequired")}</div>
+            <DeskSurface><div className="uiNotice uiNotice-warning">{t("order.payment.reviewRequired")}</div></DeskSurface>
           ) : null}
           {["expired", "failed"].includes(activeCheckout.status) && payment.txHash ? (
-            <div className="uiNotice uiNotice-warning">{t("order.payment.expiredTransactionRecovery")}</div>
+            <DeskSurface><div className="uiNotice uiNotice-warning">{t("order.payment.expiredTransactionRecovery")}</div></DeskSurface>
           ) : null}
           {paymentStage === "confirmed" ? (
-            <div className="uiNotice uiNotice-success">{t("order.payment.confirmed")}</div>
+            <DeskSurface><div className="uiNotice uiNotice-success">{t("order.payment.confirmed")}</div></DeskSurface>
           ) : null}
 
           <div className="subscriptionPaymentActions">
             {!["submitted", "confirming", "confirmed", "review_required"].includes(paymentStage) ? (
-              <button
+              <DeskButton
                 type="button"
                 className="btn btnPrimary"
                 onClick={() => void primaryPaymentAction.action()}
@@ -1036,23 +1040,23 @@ function SubscriptionOrderPageContent() {
               >
                 <AppIcon name={primaryPaymentAction.icon} />
                 {paymentStage === "awaiting_signature" ? t("order.payment.awaitingSignature") : primaryPaymentAction.label}
-              </button>
+              </DeskButton>
             ) : null}
             {payment.txHash && activeCheckout.status === "pending" ? (
-              <button type="button" className="btn" onClick={() => void retrySubmitTransaction()} disabled={statusLoading}>
+              <DeskButton type="button" className="btn" onClick={() => void retrySubmitTransaction()} disabled={statusLoading}>
                 <AppIcon name="send" />
                 {t("order.payment.submitAgain")}
-              </button>
+              </DeskButton>
             ) : null}
-            <button type="button" className="btn" onClick={() => void reconcileOrder()} disabled={statusLoading}>
+            <DeskButton type="button" className="btn" onClick={() => void reconcileOrder()} disabled={statusLoading}>
               <AppIcon name="refresh" />
               {statusLoading ? t("order.payment.checkingStatus") : t("order.payment.checkStatus")}
-            </button>
+            </DeskButton>
             {activeCheckout.status === "pending" && !payment.txHash ? (
-              <button type="button" className="btn" onClick={() => void cancelOpenOrder()} disabled={statusLoading}>
+              <DeskButton type="button" className="btn" onClick={() => void cancelOpenOrder()} disabled={statusLoading}>
                 <AppIcon name="close" />
                 {t("order.payment.cancelOrder")}
-              </button>
+              </DeskButton>
             ) : null}
             {payment.txHash && transactionUrl ? (
               <a className="btn" href={transactionUrl} target="_blank" rel="noreferrer">
@@ -1071,7 +1075,7 @@ function SubscriptionOrderPageContent() {
               })}</span>
             </div>
           ) : null}
-        </section>
+        </section></DeskSurface>
       ) : null}
 
       <div className="subscriptionOrderSimpleHint">{t("order.cartHint")}</div>

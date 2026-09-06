@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { apiGet } from "../../../lib/api";
 import AdminEmptyState from "../_components/AdminEmptyState";
@@ -43,17 +45,17 @@ export default function AdminStatisticsPage() {
         <div className="adminFilterGrid">
           <label className="settingsField">
             <span className="settingsFieldLabel">Time Window</span>
-            <select className="input" value={period} onChange={(event) => setPeriod(event.target.value)}>
+            <DeskSelect className="input" value={period} onChange={(event) => setPeriod(event.target.value)}>
               <option value="7d">7d</option>
               <option value="30d">30d</option>
               <option value="90d">90d</option>
               <option value="all">all</option>
-            </select>
+            </DeskSelect>
           </label>
         </div>
       </AdminFilterBar>
       {loading ? <div className="settingsMutedText">Loading statistics…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
       {data ? (
         <>
           <section className="adminStatsGrid">
@@ -63,22 +65,22 @@ export default function AdminStatisticsPage() {
             <AdminStatsCard label="Total Alerts" value={data.kpis?.totalAlerts ?? 0} />
           </section>
           <section className="adminOverviewGrid">
-            <article className="card settingsSection">
+            <DeskSurface dense><article className="card settingsSection">
               <div className="settingsSectionHeader"><h3 style={{ margin: 0 }}>Registrations Over Time</h3></div>
               <div className="adminMiniChart">{(data.registrationsOverTime ?? []).map((point: any) => <div key={point.date} className="adminMiniChartRow"><span>{point.date}</span><strong>{point.count}</strong></div>)}</div>
-            </article>
-            <article className="card settingsSection">
+            </article></DeskSurface>
+            <DeskSurface dense><article className="card settingsSection">
               <div className="settingsSectionHeader"><h3 style={{ margin: 0 }}>Workspaces Over Time</h3></div>
               <div className="adminMiniChart">{(data.workspacesOverTime ?? []).map((point: any) => <div key={point.date} className="adminMiniChartRow"><span>{point.date}</span><strong>{point.count}</strong></div>)}</div>
-            </article>
-            <article className="card settingsSection">
+            </article></DeskSurface>
+            <DeskSurface dense><article className="card settingsSection">
               <div className="settingsSectionHeader"><h3 style={{ margin: 0 }}>Runner Uptime Summary</h3></div>
               <div className="adminKeyValueList">
                 <div className="adminKeyValueRow"><span>Total</span><strong>{data.runnerUptimeSummary?.total ?? 0}</strong></div>
                 <div className="adminKeyValueRow"><span>Online</span><strong>{data.runnerUptimeSummary?.online ?? 0}</strong></div>
                 <div className="adminKeyValueRow"><span>Offline</span><strong>{data.runnerUptimeSummary?.offline ?? 0}</strong></div>
               </div>
-            </article>
+            </article></DeskSurface>
           </section>
         </>
       ) : null}

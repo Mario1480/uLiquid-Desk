@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
@@ -74,14 +76,14 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
       </div>
 
       {!isConnected ? (
-        <div className="card walletCard walletEmptyState">
+        <DeskSurface dense><div className="card walletCard walletEmptyState">
           <h3 style={{ marginTop: 0 }}>{t("connectTitle")}</h3>
           <div className="walletMutedText">{t("connectDescription")}</div>
-        </div>
+        </div></DeskSurface>
       ) : historyQuery.isLoading ? (
         <div className="walletStack">
-          <div className="card walletCard"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
-          <div className="card walletCard"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
+          <DeskSurface dense><div className="card walletCard"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div></DeskSurface>
+          <DeskSurface dense><div className="card walletCard"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div></DeskSurface>
         </div>
       ) : historyQuery.error ? (
         <div className="walletNotice walletNoticeError">
@@ -89,7 +91,7 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
         </div>
       ) : (
         <div className="walletStack">
-          <section className="card walletCard">
+          <DeskSurface dense><section className="card walletCard">
             <div className="walletSectionHeader">
               <div className="walletSectionIntro">
                 <h3 className="walletSectionTitle">{t("trackingModeTitle")}</h3>
@@ -103,14 +105,14 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
               ) : null}
             </div>
             <div className="walletNotice">{historyQuery.data?.note ?? t("trackingNoteFallback")}</div>
-          </section>
+          </section></DeskSurface>
 
           {historyQuery.data?.items?.length ? (
             <div className="walletStack">
               {historyQuery.data.items.map((item) => {
                 const txUrl = resolveExplorerUrl(config, item.chainId, item.txHash);
                 return (
-                  <article key={item.id} className="card walletCard">
+                  <DeskSurface dense><article key={item.id} className="card walletCard">
                     <div className="walletSectionHeader">
                       <div className="walletSectionIntro">
                         <h3 className="walletSectionTitle">{item.title}</h3>
@@ -144,15 +146,15 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
                         </a>
                       ) : null}
                     </div>
-                  </article>
+                  </article></DeskSurface>
                 );
               })}
             </div>
           ) : (
-            <div className="card walletCard walletEmptyState">
+            <DeskSurface dense><div className="card walletCard walletEmptyState">
               <h3 style={{ marginTop: 0 }}>{t("emptyTitle")}</h3>
               <div className="walletMutedText">{t("emptyDescription")}</div>
-            </div>
+            </div></DeskSurface>
           )}
         </div>
       )}

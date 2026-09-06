@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
@@ -117,12 +120,12 @@ function LoginPageContent() {
   return (
     <div className="container authPage">
       <h1 className="authHeading">{t("signIn")}</h1>
-      <div className="card authCard">
+      <DeskSurface><div className="card authCard">
         <LegalRiskNotice compact />
         <form onSubmit={submit} className="authForm">
           <label className="authLabel">
             {t("email")}
-            <input
+            <DeskInput
               className="input"
               type="email"
               value={email}
@@ -133,7 +136,7 @@ function LoginPageContent() {
           </label>
           <label className="authLabel">
             {t("password")}
-            <input
+            <DeskInput
               className="input"
               type="password"
               value={password}
@@ -143,10 +146,10 @@ function LoginPageContent() {
             />
           </label>
           <div className="authActions">
-            <button className="btn btnPrimary" type="submit" disabled={!email || !password}>
+            <DeskButton className="btn btnPrimary" type="submit" disabled={!email || !password}>
               <AppIcon name="login" />
               {t("signInButton")}
-            </button>
+            </DeskButton>
             <Link href={withLocalePath("/register", locale)} className="btn">
               <AppIcon name="register" />
               {t("createAccount")}
@@ -169,7 +172,7 @@ function LoginPageContent() {
         </form>
         <div className="authDivider">
           {!isConnected ? <div className="authWalletMeta">{t("siwe.connectWalletFirst")}</div> : null}
-          <button
+          <DeskButton
             className="btn"
             type="button"
             onClick={() => void submitSiwe()}
@@ -177,7 +180,7 @@ function LoginPageContent() {
           >
             <AppIcon name="wallet" />
             {t("siwe.signInButton")}
-          </button>
+          </DeskButton>
           {isConnected && address ? (
             <div className="authWalletMeta">
               {t("siwe.connectedWallet", { wallet: shortenWalletAddress(address) || address })}
@@ -186,7 +189,7 @@ function LoginPageContent() {
           {siweStatus ? <div className="authMessage">{siweStatus}</div> : null}
           {siweError ? <div className="authError">{siweError}</div> : null}
         </div>
-      </div>
+      </div></DeskSurface>
     </div>
   );
 }

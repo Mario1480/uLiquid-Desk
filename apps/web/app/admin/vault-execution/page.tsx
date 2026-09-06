@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import type { Hex } from "viem";
@@ -329,31 +332,31 @@ function AdminVaultExecutionPageContent() {
       {isSuperadmin ? (
         <>
         <section className="adminStatsGrid">
-          <div className="card adminStatsCard">
+          <DeskSurface dense><div className="card adminStatsCard">
             <div className="adminStatsLabel">{t("sectionTitle")}</div>
             <div className="adminStatsValue adminStatsValueSmall">{t(`modes.${mode}.label`)}</div>
             <div className="adminStatsHint">{t("sourceLabel")}: {settings?.source ?? "env"}</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card adminStatsCard">
             <div className="adminStatsLabel">{t("providerLabel")}</div>
             <div className="adminStatsValue adminStatsValueSmall">{t(`providers.${provider}.label`)}</div>
             <div className="adminStatsHint">{t("providerSourceLabel")}: {settings?.providerSource ?? "env"}</div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card adminStatsCard">
             <div className="adminStatsLabel">{t("pilotStatusLabel")}</div>
             <div className="adminStatsValue adminStatsValueSmall">{pilotEnabled ? t("enabledValue") : t("disabledValue")}</div>
             <div className="adminStatsHint">
               {parseListInput(pilotUserIdsInput).length} users · {parseListInput(pilotWorkspaceIdsInput).length} workspaces
             </div>
-          </div>
-          <div className="card adminStatsCard">
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card adminStatsCard">
             <div className="adminStatsLabel">{t("treasury.syncStatusLabel")}</div>
             <div className="adminStatsValue adminStatsValueSmall">{treasurySettings?.onchainSyncStatus ?? "missing"}</div>
             <div className="adminStatsHint">{t("treasury.feeRateSyncStatusLabel")}: {treasurySettings?.feeRateSyncStatus ?? "missing"}</div>
-          </div>
+          </div></DeskSurface>
         </section>
 
-        <section className="card settingsSection">
+        <DeskSurface dense><section className="card settingsSection">
           <div className="settingsSectionHeader adminDetailSectionHeader">
             <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
             <div className="adminDetailSectionDescription">
@@ -368,7 +371,7 @@ function AdminVaultExecutionPageContent() {
                 className={`adminChoiceCard ${mode === entry ? "adminChoiceCardActive" : ""}`.trim()}
               >
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
+                  <DeskInput
                     type="radio"
                     checked={mode === entry}
                     onChange={() => setMode(entry)}
@@ -391,7 +394,7 @@ function AdminVaultExecutionPageContent() {
                 className={`adminChoiceCard ${provider === entry ? "adminChoiceCardActive" : ""}`.trim()}
               >
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
+                  <DeskInput
                     type="radio"
                     checked={provider === entry}
                     onChange={() => setProvider(entry)}
@@ -412,13 +415,13 @@ function AdminVaultExecutionPageContent() {
             </div>
             <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("pilot.subtitle")}</div>
             <label className="inlineCheck" style={{ marginBottom: 12 }}>
-              <input type="checkbox" checked={pilotEnabled} onChange={(event) => setPilotEnabled(event.target.checked)} />
+              <DeskInput type="checkbox" checked={pilotEnabled} onChange={(event) => setPilotEnabled(event.target.checked)} />
               <span>{t("pilot.enabledLabel")}</span>
             </label>
             <div className="settingsFormGrid">
               <label>
                 {t("pilot.allowedUserIds")}
-                <textarea
+                <DeskTextarea
                   className="input"
                   rows={5}
                   value={pilotUserIdsInput}
@@ -428,7 +431,7 @@ function AdminVaultExecutionPageContent() {
               </label>
               <label>
                 {t("pilot.allowedWorkspaceIds")}
-                <textarea
+                <DeskTextarea
                   className="input"
                   rows={5}
                   value={pilotWorkspaceIdsInput}
@@ -445,9 +448,9 @@ function AdminVaultExecutionPageContent() {
               {t("save")}
             </AdminActionButton>
           </div>
-        </section>
+        </section></DeskSurface>
 
-        <section className="card settingsSection">
+        <DeskSurface dense><section className="card settingsSection">
           <div className="settingsSectionHeader adminDetailSectionHeader">
             <h3 style={{ margin: 0 }}>{t("treasury.title")}</h3>
             <div className="adminDetailSectionDescription">{t("treasury.subtitle")}</div>
@@ -455,12 +458,12 @@ function AdminVaultExecutionPageContent() {
 
           <div className="settingsFormGrid">
             <label className="inlineCheck" style={{ marginTop: 26 }}>
-              <input type="checkbox" checked={treasuryEnabled} onChange={(event) => setTreasuryEnabled(event.target.checked)} />
+              <DeskInput type="checkbox" checked={treasuryEnabled} onChange={(event) => setTreasuryEnabled(event.target.checked)} />
               <span>{t("treasury.enabledLabel")}</span>
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("treasury.walletLabel")}</span>
-              <input
+              <DeskInput
                 className="input"
                 value={treasuryWalletAddress}
                 onChange={(event) => setTreasuryWalletAddress(event.target.value)}
@@ -469,7 +472,7 @@ function AdminVaultExecutionPageContent() {
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("treasury.feeRateLabel")}</span>
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min="0"
@@ -569,7 +572,7 @@ function AdminVaultExecutionPageContent() {
             <strong>{t("treasury.payoutsTitle")}</strong>
             <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
               {treasuryPayouts.slice(0, 8).map((item) => (
-                <div key={item.id} className="card" style={{ padding: 10 }}>
+                <DeskSurface dense><div key={item.id} className="card" style={{ padding: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                     <strong>{`${item.feeAmountUsd.toFixed(2)} USD`}</strong>
                     <span className="settingsMutedText">{item.createdAt ? new Date(item.createdAt).toLocaleString() : t("never")}</span>
@@ -580,12 +583,12 @@ function AdminVaultExecutionPageContent() {
                       recipient: shortAddress(String(item.metadata?.treasuryRecipient ?? treasurySettings?.onchainRecipient ?? ""))
                     })}
                   </div>
-                </div>
+                </div></DeskSurface>
               ))}
               {treasuryPayouts.length === 0 ? <div className="settingsMutedText">{t("treasury.noPayouts")}</div> : null}
             </div>
           </div>
-        </section>
+        </section></DeskSurface>
         </>
       ) : null}
     </div>

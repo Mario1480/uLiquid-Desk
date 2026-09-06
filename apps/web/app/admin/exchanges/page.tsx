@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState, type CSSProperties } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -137,27 +140,27 @@ export default function AdminExchangesPage() {
         <Link className="btn" href={withLocalePath("/admin", locale)}>
           {tCommon("backToAdmin")}
         </Link>
-        <button className="btn" type="button" onClick={() => void loadAll()} disabled={loading}>
+        <DeskButton className="btn" type="button" onClick={() => void loadAll()} disabled={loading}>
           {loading ? t("loading") : t("refresh")}
-        </button>
+        </DeskButton>
       </div>
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">
           {error}
-        </div>
+        </div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">
           {notice}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
         <>
           {venueSummary ? (
-            <section className="card settingsSection">
+            <DeskSurface dense><section className="card settingsSection">
               <div className="settingsSectionHeader">
                 <h3 style={{ margin: 0 }}>{t("healthTitle")}</h3>
               </div>
@@ -165,15 +168,15 @@ export default function AdminExchangesPage() {
                 {t("healthUpdated", { updatedAt: fmtDate(venueSummary.updatedAt) })}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 10 }}>
-                <div className="card" style={{ padding: 10 }}><strong>{t("healthCards.clean")}</strong><div>{venueSummary.counts.clean}</div></div>
-                <div className="card" style={{ padding: 10 }}><strong>{t("healthCards.warning")}</strong><div>{venueSummary.counts.warning}</div></div>
-                <div className="card" style={{ padding: 10 }}><strong>{t("healthCards.blocked")}</strong><div>{venueSummary.counts.blocked}</div></div>
-                <div className="card" style={{ padding: 10 }}><strong>{t("healthCards.unknown")}</strong><div>{venueSummary.counts.unknown}</div></div>
+                <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("healthCards.clean")}</strong><div>{venueSummary.counts.clean}</div></div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("healthCards.warning")}</strong><div>{venueSummary.counts.warning}</div></div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("healthCards.blocked")}</strong><div>{venueSummary.counts.blocked}</div></div></DeskSurface>
+                <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("healthCards.unknown")}</strong><div>{venueSummary.counts.unknown}</div></div></DeskSurface>
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
                 {venueSummary.items.map((item) => (
-                  <div key={item.venue} className="card" style={{ padding: 12 }}>
+                  <DeskSurface dense><div key={item.venue} className="card" style={{ padding: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                       <div>
                         <strong>{item.label}</strong>
@@ -237,13 +240,13 @@ export default function AdminExchangesPage() {
                         </span>
                       ))}
                     </div>
-                  </div>
+                  </div></DeskSurface>
                 ))}
               </div>
-            </section>
+            </section></DeskSurface>
           ) : null}
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
             </div>
@@ -253,7 +256,7 @@ export default function AdminExchangesPage() {
             <div style={{ display: "grid", gap: 6 }}>
               {exchangeOptions.map((option, idx) => (
                 <label key={option.value} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
+                  <DeskInput
                     type="checkbox"
                     checked={option.enabled}
                     onChange={(e) =>
@@ -267,11 +270,11 @@ export default function AdminExchangesPage() {
               ))}
             </div>
             <div style={{ marginTop: 10 }}>
-              <button className="btn btnPrimary" onClick={() => void saveExchanges()}>
+              <DeskButton className="btn btnPrimary" onClick={() => void saveExchanges()}>
                 {t("save")}
-              </button>
+              </DeskButton>
             </div>
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
     </div>

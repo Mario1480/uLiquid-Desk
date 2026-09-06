@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
@@ -54,15 +55,15 @@ export default function AdminWorkspaceDetailPage() {
         actions={[{ href: withLocalePath("/admin/workspaces", locale), label: "Back to workspaces" }]}
       />
       {loading ? <div className="settingsMutedText">Loading workspace detail…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
 
       {data ? (
         <>
           <section className="adminStatsGrid">
-            <div className="card adminStatsCard"><div className="adminStatsLabel">Owner</div><div className="adminStatsValue adminStatsValueSmall">{data.owner?.email ?? "—"}</div></div>
-            <div className="card adminStatsCard"><div className="adminStatsLabel">Members</div><div className="adminStatsValue">{data.usage?.membersCount ?? 0}</div></div>
-            <div className="card adminStatsCard"><div className="adminStatsLabel">Bots</div><div className="adminStatsValue">{data.usage?.botsCount ?? 0}</div></div>
-            <div className="card adminStatsCard"><div className="adminStatsLabel">Running Bots</div><div className="adminStatsValue">{data.usage?.runningBots ?? 0}</div></div>
+            <DeskSurface dense><div className="card adminStatsCard"><div className="adminStatsLabel">Owner</div><div className="adminStatsValue adminStatsValueSmall">{data.owner?.email ?? "—"}</div></div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard"><div className="adminStatsLabel">Members</div><div className="adminStatsValue">{data.usage?.membersCount ?? 0}</div></div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard"><div className="adminStatsLabel">Bots</div><div className="adminStatsValue">{data.usage?.botsCount ?? 0}</div></div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard"><div className="adminStatsLabel">Running Bots</div><div className="adminStatsValue">{data.usage?.runningBots ?? 0}</div></div></DeskSurface>
           </section>
 
           <div className="adminDetailGrid">

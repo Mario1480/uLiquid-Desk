@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -1133,15 +1138,15 @@ export default function AdminIndicatorSettingsPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
         <>
-          <section className="card settingsSection indicatorCatalogSection">
+          <DeskSurface dense><section className="card settingsSection indicatorCatalogSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("catalog.title")}</h3>
               <span className="indicatorCatalogScopeChip">
@@ -1174,7 +1179,7 @@ export default function AdminIndicatorSettingsPage() {
                     key={group.key}
                     className={`settingsAccordionItem ${isOpen ? "settingsAccordionItemOpen" : ""}`}
                   >
-                    <button
+                    <DeskButton
                       type="button"
                       className="settingsAccordionTrigger"
                       onClick={() => toggleCatalogGroup(group.key)}
@@ -1189,7 +1194,7 @@ export default function AdminIndicatorSettingsPage() {
                           ▾
                         </span>
                       </span>
-                    </button>
+                    </DeskButton>
                     {isOpen ? (
                       <div className="settingsAccordionBody">
                         <div className="settingsMutedText">{group.description}</div>
@@ -1242,9 +1247,9 @@ export default function AdminIndicatorSettingsPage() {
                 );
               })}
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection indicatorOverrideSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection indicatorOverrideSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{editingId ? t("override.editTitle") : t("override.createTitle")}</h3>
               <span className="indicatorOverrideModeChip">
@@ -1263,29 +1268,29 @@ export default function AdminIndicatorSettingsPage() {
             <div className="indicatorScopeGrid">
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("override.scope")}</span>
-                <select className="input" value={scopeType} onChange={(e) => setScopeType(e.target.value as ScopeType)}>
+                <DeskSelect className="input" value={scopeType} onChange={(e) => setScopeType(e.target.value as ScopeType)}>
                   {SCOPE_OPTIONS.map((value) => (
                     <option key={value} value={value}>
                       {value}
                     </option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("override.exchange")}</span>
-                <input className="input" value={exchange} onChange={(e) => setExchange(e.target.value)} placeholder="bitget" />
+                <DeskInput className="input" value={exchange} onChange={(e) => setExchange(e.target.value)} placeholder="bitget" />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("override.accountId")}</span>
-                <input className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={scopeType !== "account"} placeholder={scopeType === "account" ? "acc_..." : t("override.accountOnly")} />
+                <DeskInput className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={scopeType !== "account"} placeholder={scopeType === "account" ? "acc_..." : t("override.accountOnly")} />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("override.symbol")}</span>
-                <input className="input" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} disabled={scopeType !== "symbol" && scopeType !== "symbol_tf"} placeholder={scopeType === "symbol" || scopeType === "symbol_tf" ? "BTCUSDT" : t("override.symbolOnly")} />
+                <DeskInput className="input" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} disabled={scopeType !== "symbol" && scopeType !== "symbol_tf"} placeholder={scopeType === "symbol" || scopeType === "symbol_tf" ? "BTCUSDT" : t("override.symbolOnly")} />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("override.timeframe")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={timeframe}
                   onChange={(e) => setTimeframe(parseTimeframe(e.target.value))}
@@ -1296,230 +1301,230 @@ export default function AdminIndicatorSettingsPage() {
                       {value}
                     </option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
             </div>
             </div>
 
             <div className="settingsAccordion indicatorOverrideAccordion">
               <div className={`settingsAccordionItem ${openIndicatorSections.stochRsi ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("stochRsi")} aria-expanded={openIndicatorSections.stochRsi}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("stochRsi")} aria-expanded={openIndicatorSections.stochRsi}>
                   <span>{t("sections.stochRsi")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.stochRsi ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.stochRsi ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rsiLen")}</span><input className="input" type="number" value={config.indicatorsV2.stochrsi.rsiLen} onChange={(e) => setIndicatorsV2StochRsi("rsiLen", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.stochLen")}</span><input className="input" type="number" value={config.indicatorsV2.stochrsi.stochLen} onChange={(e) => setIndicatorsV2StochRsi("stochLen", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.smoothK")}</span><input className="input" type="number" value={config.indicatorsV2.stochrsi.smoothK} onChange={(e) => setIndicatorsV2StochRsi("smoothK", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.smoothD")}</span><input className="input" type="number" value={config.indicatorsV2.stochrsi.smoothD} onChange={(e) => setIndicatorsV2StochRsi("smoothD", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rsiLen")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.stochrsi.rsiLen} onChange={(e) => setIndicatorsV2StochRsi("rsiLen", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.stochLen")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.stochrsi.stochLen} onChange={(e) => setIndicatorsV2StochRsi("stochLen", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.smoothK")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.stochrsi.smoothK} onChange={(e) => setIndicatorsV2StochRsi("smoothK", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.smoothD")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.stochrsi.smoothD} onChange={(e) => setIndicatorsV2StochRsi("smoothD", parseNumber(e.target.value))} /></label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.volume ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("volume")} aria-expanded={openIndicatorSections.volume}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("volume")} aria-expanded={openIndicatorSections.volume}>
                   <span>{t("sections.volume")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.volume ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.volume ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.lookback")}</span><input className="input" type="number" value={config.indicatorsV2.volume.lookback} onChange={(e) => setIndicatorsV2Volume("lookback", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.emaFast")}</span><input className="input" type="number" value={config.indicatorsV2.volume.emaFast} onChange={(e) => setIndicatorsV2Volume("emaFast", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.emaSlow")}</span><input className="input" type="number" value={config.indicatorsV2.volume.emaSlow} onChange={(e) => setIndicatorsV2Volume("emaSlow", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.lookback")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.volume.lookback} onChange={(e) => setIndicatorsV2Volume("lookback", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.emaFast")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.volume.emaFast} onChange={(e) => setIndicatorsV2Volume("emaFast", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.emaSlow")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.volume.emaSlow} onChange={(e) => setIndicatorsV2Volume("emaSlow", parseNumber(e.target.value))} /></label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.fvg ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("fvg")} aria-expanded={openIndicatorSections.fvg}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("fvg")} aria-expanded={openIndicatorSections.fvg}>
                   <span>{t("sections.fvg")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.fvg ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.fvg ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.lookback")}</span><input className="input" type="number" value={config.indicatorsV2.fvg.lookback} onChange={(e) => setIndicatorsV2Fvg("lookback", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fillRule")}</span><select className="input" value={config.indicatorsV2.fvg.fillRule} onChange={(e) => setIndicatorsV2Fvg("fillRule", parseFvgFillRule(e.target.value))}><option value="overlap">overlap</option><option value="mid_touch">mid_touch</option></select></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.lookback")}</span><DeskInput className="input" type="number" value={config.indicatorsV2.fvg.lookback} onChange={(e) => setIndicatorsV2Fvg("lookback", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fillRule")}</span><DeskSelect className="input" value={config.indicatorsV2.fvg.fillRule} onChange={(e) => setIndicatorsV2Fvg("fillRule", parseFvgFillRule(e.target.value))}><option value="overlap">overlap</option><option value="mid_touch">mid_touch</option></DeskSelect></label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.breakerBlocks ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("breakerBlocks")} aria-expanded={openIndicatorSections.breakerBlocks}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("breakerBlocks")} aria-expanded={openIndicatorSections.breakerBlocks}>
                   <span>{t("sections.breakerBlocks")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.breakerBlocks ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.breakerBlocks ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.breakerLen")}</span><input className="input" type="number" min={1} max={10} value={config.indicatorsV2.breakerBlocks.len} onChange={(e) => setIndicatorsV2BreakerBlocks("len", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rrTp1")}</span><input className="input" type="number" min={0.2} max={100} step={0.1} value={config.indicatorsV2.breakerBlocks.rrTp1} onChange={(e) => setIndicatorsV2BreakerBlocks("rrTp1", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rrTp2")}</span><input className="input" type="number" min={0.2} max={100} step={0.1} value={config.indicatorsV2.breakerBlocks.rrTp2} onChange={(e) => setIndicatorsV2BreakerBlocks("rrTp2", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rrTp3")}</span><input className="input" type="number" min={0.2} max={100} step={0.1} value={config.indicatorsV2.breakerBlocks.rrTp3} onChange={(e) => setIndicatorsV2BreakerBlocks("rrTp3", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.pdTextColor")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.pdTextColor} onChange={(e) => setIndicatorsV2BreakerBlocks("pdTextColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.pdSwingLineColor")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.pdSwingLineColor} onChange={(e) => setIndicatorsV2BreakerBlocks("pdSwingLineColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.tpColor")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.tpColor} onChange={(e) => setIndicatorsV2BreakerBlocks("tpColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbPlusColorA")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbPlusColorA} onChange={(e) => setIndicatorsV2BreakerBlocks("bbPlusColorA", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbPlusColorB")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbPlusColorB} onChange={(e) => setIndicatorsV2BreakerBlocks("bbPlusColorB", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.swingBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.swingBullColor} onChange={(e) => setIndicatorsV2BreakerBlocks("swingBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbMinusColorA")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbMinusColorA} onChange={(e) => setIndicatorsV2BreakerBlocks("bbMinusColorA", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbMinusColorB")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbMinusColorB} onChange={(e) => setIndicatorsV2BreakerBlocks("bbMinusColorB", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.swingBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.breakerBlocks.swingBearColor} onChange={(e) => setIndicatorsV2BreakerBlocks("swingBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.breakerLen")}</span><DeskInput className="input" type="number" min={1} max={10} value={config.indicatorsV2.breakerBlocks.len} onChange={(e) => setIndicatorsV2BreakerBlocks("len", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rrTp1")}</span><DeskInput className="input" type="number" min={0.2} max={100} step={0.1} value={config.indicatorsV2.breakerBlocks.rrTp1} onChange={(e) => setIndicatorsV2BreakerBlocks("rrTp1", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rrTp2")}</span><DeskInput className="input" type="number" min={0.2} max={100} step={0.1} value={config.indicatorsV2.breakerBlocks.rrTp2} onChange={(e) => setIndicatorsV2BreakerBlocks("rrTp2", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rrTp3")}</span><DeskInput className="input" type="number" min={0.2} max={100} step={0.1} value={config.indicatorsV2.breakerBlocks.rrTp3} onChange={(e) => setIndicatorsV2BreakerBlocks("rrTp3", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.pdTextColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.pdTextColor} onChange={(e) => setIndicatorsV2BreakerBlocks("pdTextColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.pdSwingLineColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.pdSwingLineColor} onChange={(e) => setIndicatorsV2BreakerBlocks("pdSwingLineColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.tpColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.tpColor} onChange={(e) => setIndicatorsV2BreakerBlocks("tpColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbPlusColorA")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbPlusColorA} onChange={(e) => setIndicatorsV2BreakerBlocks("bbPlusColorA", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbPlusColorB")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbPlusColorB} onChange={(e) => setIndicatorsV2BreakerBlocks("bbPlusColorB", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.swingBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.swingBullColor} onChange={(e) => setIndicatorsV2BreakerBlocks("swingBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbMinusColorA")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbMinusColorA} onChange={(e) => setIndicatorsV2BreakerBlocks("bbMinusColorA", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bbMinusColorB")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.bbMinusColorB} onChange={(e) => setIndicatorsV2BreakerBlocks("bbMinusColorB", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.swingBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.swingBearColor} onChange={(e) => setIndicatorsV2BreakerBlocks("swingBearColor", e.target.value)} /></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.breakerCandleOnlyBody} onChange={(e) => setIndicatorsV2BreakerBlocks("breakerCandleOnlyBody", e.target.checked)} /> {t("fields.breakerCandleOnlyBody")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.breakerCandle2Last} onChange={(e) => setIndicatorsV2BreakerBlocks("breakerCandle2Last", e.target.checked)} /> {t("fields.breakerCandle2Last")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.tillFirstBreak} onChange={(e) => setIndicatorsV2BreakerBlocks("tillFirstBreak", e.target.checked)} /> {t("fields.tillFirstBreak")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.onlyWhenInPDarray} onChange={(e) => setIndicatorsV2BreakerBlocks("onlyWhenInPDarray", e.target.checked)} /> {t("fields.onlyWhenInPDarray")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.showPDarray} onChange={(e) => setIndicatorsV2BreakerBlocks("showPDarray", e.target.checked)} /> {t("fields.showPDarray")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.showBreaks} onChange={(e) => setIndicatorsV2BreakerBlocks("showBreaks", e.target.checked)} /> {t("fields.showBreaks")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.showSPD} onChange={(e) => setIndicatorsV2BreakerBlocks("showSPD", e.target.checked)} /> {t("fields.showSPD")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.breakerBlocks.enableTp} onChange={(e) => setIndicatorsV2BreakerBlocks("enableTp", e.target.checked)} /> {t("fields.enableTp")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.breakerCandleOnlyBody} onChange={(e) => setIndicatorsV2BreakerBlocks("breakerCandleOnlyBody", e.target.checked)} /> {t("fields.breakerCandleOnlyBody")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.breakerCandle2Last} onChange={(e) => setIndicatorsV2BreakerBlocks("breakerCandle2Last", e.target.checked)} /> {t("fields.breakerCandle2Last")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.tillFirstBreak} onChange={(e) => setIndicatorsV2BreakerBlocks("tillFirstBreak", e.target.checked)} /> {t("fields.tillFirstBreak")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.onlyWhenInPDarray} onChange={(e) => setIndicatorsV2BreakerBlocks("onlyWhenInPDarray", e.target.checked)} /> {t("fields.onlyWhenInPDarray")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.showPDarray} onChange={(e) => setIndicatorsV2BreakerBlocks("showPDarray", e.target.checked)} /> {t("fields.showPDarray")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.showBreaks} onChange={(e) => setIndicatorsV2BreakerBlocks("showBreaks", e.target.checked)} /> {t("fields.showBreaks")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.showSPD} onChange={(e) => setIndicatorsV2BreakerBlocks("showSPD", e.target.checked)} /> {t("fields.showSPD")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.enableTp} onChange={(e) => setIndicatorsV2BreakerBlocks("enableTp", e.target.checked)} /> {t("fields.enableTp")}</label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.superOrderBlockFvgBos ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("superOrderBlockFvgBos")} aria-expanded={openIndicatorSections.superOrderBlockFvgBos}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("superOrderBlockFvgBos")} aria-expanded={openIndicatorSections.superOrderBlockFvgBos}>
                   <span>{t("sections.superOrderBlockFvgBos")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.superOrderBlockFvgBos ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.superOrderBlockFvgBos ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.pivotLookup")}</span><input className="input" type="number" min={1} max={5} value={config.indicatorsV2.superOrderBlockFvgBos.pivotLookup} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("pivotLookup", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbEmaPeriod")}</span><input className="input" type="number" min={1} max={500} value={config.indicatorsV2.superOrderBlockFvgBos.hvbEMAPeriod} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbEMAPeriod", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbMultiplier")}</span><input className="input" type="number" min={1} max={100} step={0.1} value={config.indicatorsV2.superOrderBlockFvgBos.hvbMultiplier} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbMultiplier", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obMaxBoxSet")}</span><input className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.obMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obMaxBoxSet", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgMaxBoxSet")}</span><input className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.fvgMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgMaxBoxSet", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbMaxBoxSet")}</span><input className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.rjbMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbMaxBoxSet", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosMaxBoxSet")}</span><input className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.bosMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosMaxBoxSet", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBoxLength")}</span><input className="input" type="number" min={1} max={5} value={config.indicatorsV2.superOrderBlockFvgBos.bosBoxLength} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxLength", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBorderTransparency")}</span><input className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.obBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBorderTransparency", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBorderTransparency")}</span><input className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.fvgBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBorderTransparency", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBorderTransparency")}</span><input className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.rjbBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBorderTransparency", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBorderTransparency")}</span><input className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.bosBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBorderTransparency", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.pivotLookup")}</span><DeskInput className="input" type="number" min={1} max={5} value={config.indicatorsV2.superOrderBlockFvgBos.pivotLookup} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("pivotLookup", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbEmaPeriod")}</span><DeskInput className="input" type="number" min={1} max={500} value={config.indicatorsV2.superOrderBlockFvgBos.hvbEMAPeriod} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbEMAPeriod", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbMultiplier")}</span><DeskInput className="input" type="number" min={1} max={100} step={0.1} value={config.indicatorsV2.superOrderBlockFvgBos.hvbMultiplier} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbMultiplier", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obMaxBoxSet")}</span><DeskInput className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.obMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obMaxBoxSet", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgMaxBoxSet")}</span><DeskInput className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.fvgMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgMaxBoxSet", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbMaxBoxSet")}</span><DeskInput className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.rjbMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbMaxBoxSet", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosMaxBoxSet")}</span><DeskInput className="input" type="number" min={1} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.bosMaxBoxSet} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosMaxBoxSet", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBoxLength")}</span><DeskInput className="input" type="number" min={1} max={5} value={config.indicatorsV2.superOrderBlockFvgBos.bosBoxLength} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxLength", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBorderTransparency")}</span><DeskInput className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.obBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBorderTransparency", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBorderTransparency")}</span><DeskInput className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.fvgBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBorderTransparency", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBorderTransparency")}</span><DeskInput className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.rjbBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBorderTransparency", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBorderTransparency")}</span><DeskInput className="input" type="number" min={0} max={100} value={config.indicatorsV2.superOrderBlockFvgBos.bosBorderTransparency} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBorderTransparency", parseNumber(e.target.value))} /></label>
 
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBearColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.mitOBColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.mitOBColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("mitOBColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBearColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgStructBreakingColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgStructBreakingColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgStructBreakingColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.mitFVGColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.mitFVGColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("mitFVGColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.rjbBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.rjbBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBearColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.mitRJBColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.mitRJBColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("mitRJBColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.bosBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.bosBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBearColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.hvbBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.hvbBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbBearColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.ppddBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.ppddBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("ppddBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.ppddBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.ppddBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("ppddBearColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obfvgBullColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obfvgBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obfvgBullColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obfvgBearColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obfvgBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obfvgBearColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.pvtTopColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.pvtTopColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("pvtTopColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.pvtBottomColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.pvtBottomColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("pvtBottomColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.mitOBColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.mitOBColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("mitOBColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgStructBreakingColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgStructBreakingColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgStructBreakingColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.mitFVGColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.mitFVGColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("mitFVGColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.rjbBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.rjbBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.mitRJBColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.mitRJBColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("mitRJBColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.bosBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.bosBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.hvbBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.hvbBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.hvbBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("hvbBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.ppddBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.ppddBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("ppddBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.ppddBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.ppddBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("ppddBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obfvgBullColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obfvgBullColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obfvgBullColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obfvgBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obfvgBearColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obfvgBearColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.pvtTopColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.pvtTopColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("pvtTopColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.pvtBottomColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.pvtBottomColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("pvtBottomColor", e.target.value)} /></label>
 
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBoxBorderStyle")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.obBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></select></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBoxBorderStyle")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.fvgBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></select></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBoxBorderStyle")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.rjbBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></select></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBoxBorderStyle")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.bosBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></select></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obBoxBorderStyle")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.obBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></DeskSelect></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgBoxBorderStyle")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.fvgBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></DeskSelect></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbBoxBorderStyle")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.rjbBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></DeskSelect></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosBoxBorderStyle")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.bosBoxBorderStyle} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxBorderStyle", e.target.value as any)}><option value="solid">solid</option><option value="dashed">dashed</option><option value="dotted">dotted</option></DeskSelect></label>
 
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obLabelColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obLabelColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgLabelColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgLabelColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbLabelColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.rjbLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbLabelColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosLabelColor")}</span><input className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.bosLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosLabelColor", e.target.value)} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.obLabelSize")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.obLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgLabelSize")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.fvgLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbLabelSize")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.rjbLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosLabelSize")}</span><select className="input" value={config.indicatorsV2.superOrderBlockFvgBos.bosLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obLabelColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.obLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obLabelColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgLabelColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.fvgLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgLabelColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbLabelColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.rjbLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbLabelColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosLabelColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.superOrderBlockFvgBos.bosLabelColor} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosLabelColor", e.target.value)} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.obLabelSize")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.obLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("obLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</DeskSelect></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.fvgLabelSize")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.fvgLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("fvgLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</DeskSelect></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rjbLabelSize")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.rjbLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("rjbLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</DeskSelect></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.bosLabelSize")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.bosLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</DeskSelect></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotOB", e.target.checked)} /> {t("fields.plotOB")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitOB", e.target.checked)} /> {t("fields.filterMitOB")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotFVG", e.target.checked)} /> {t("fields.plotFVG")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotStructureBreakingFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotStructureBreakingFVG", e.target.checked)} /> {t("fields.plotStructureBreakingFVG")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitFVG", e.target.checked)} /> {t("fields.filterMitFVG")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotRJB", e.target.checked)} /> {t("fields.plotRJB")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitRJB", e.target.checked)} /> {t("fields.filterMitRJB")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotPVT} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotPVT", e.target.checked)} /> {t("fields.plotPVT")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotBOS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotBOS", e.target.checked)} /> {t("fields.plotBOS")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBullishBoS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBullishBoS", e.target.checked)} /> {t("fields.useHighLowForBullishBoS")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBearishBoS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBearishBoS", e.target.checked)} /> {t("fields.useHighLowForBearishBoS")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.bosBoxFlag} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxFlag", e.target.checked)} /> {t("fields.bosBoxFlag")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotHVB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotHVB", e.target.checked)} /> {t("fields.plotHVB")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotPPDD} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotPPDD", e.target.checked)} /> {t("fields.plotPPDD")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotOBFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotOBFVG", e.target.checked)} /> {t("fields.plotOBFVG")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelOB", e.target.checked)} /> {t("fields.plotLabelOB")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelFVG", e.target.checked)} /> {t("fields.plotLabelFVG")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelRJB", e.target.checked)} /> {t("fields.plotLabelRJB")}</label>
-                      <label className="inlineCheck"><input type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelBOS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelBOS", e.target.checked)} /> {t("fields.plotLabelBOS")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotOB", e.target.checked)} /> {t("fields.plotOB")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitOB", e.target.checked)} /> {t("fields.filterMitOB")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotFVG", e.target.checked)} /> {t("fields.plotFVG")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotStructureBreakingFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotStructureBreakingFVG", e.target.checked)} /> {t("fields.plotStructureBreakingFVG")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitFVG", e.target.checked)} /> {t("fields.filterMitFVG")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotRJB", e.target.checked)} /> {t("fields.plotRJB")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitRJB", e.target.checked)} /> {t("fields.filterMitRJB")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotPVT} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotPVT", e.target.checked)} /> {t("fields.plotPVT")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotBOS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotBOS", e.target.checked)} /> {t("fields.plotBOS")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBullishBoS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBullishBoS", e.target.checked)} /> {t("fields.useHighLowForBullishBoS")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBearishBoS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBearishBoS", e.target.checked)} /> {t("fields.useHighLowForBearishBoS")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.bosBoxFlag} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxFlag", e.target.checked)} /> {t("fields.bosBoxFlag")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotHVB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotHVB", e.target.checked)} /> {t("fields.plotHVB")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotPPDD} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotPPDD", e.target.checked)} /> {t("fields.plotPPDD")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotOBFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotOBFVG", e.target.checked)} /> {t("fields.plotOBFVG")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelOB", e.target.checked)} /> {t("fields.plotLabelOB")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelFVG", e.target.checked)} /> {t("fields.plotLabelFVG")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelRJB", e.target.checked)} /> {t("fields.plotLabelRJB")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelBOS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelBOS", e.target.checked)} /> {t("fields.plotLabelBOS")}</label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.rangesSessions ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("rangesSessions")} aria-expanded={openIndicatorSections.rangesSessions}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("rangesSessions")} aria-expanded={openIndicatorSections.rangesSessions}>
                   <span>{t("sections.rangesSessions")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.rangesSessions ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.rangesSessions ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.openingRangeMin")}</span><input className="input" type="number" min={1} max={180} value={config.advancedIndicators.openingRangeMin} onChange={(e) => setAdvancedIndicatorsNumber("openingRangeMin", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.adrLen")}</span><input className="input" type="number" min={1} max={365} value={config.advancedIndicators.adrLen} onChange={(e) => setAdvancedIndicatorsNumber("adrLen", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.awrLen")}</span><input className="input" type="number" min={1} max={52} value={config.advancedIndicators.awrLen} onChange={(e) => setAdvancedIndicatorsNumber("awrLen", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.amrLen")}</span><input className="input" type="number" min={1} max={24} value={config.advancedIndicators.amrLen} onChange={(e) => setAdvancedIndicatorsNumber("amrLen", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rdLen")}</span><input className="input" type="number" min={1} max={365} value={config.advancedIndicators.rdLen} onChange={(e) => setAdvancedIndicatorsNumber("rdLen", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.rwLen")}</span><input className="input" type="number" min={1} max={104} value={config.advancedIndicators.rwLen} onChange={(e) => setAdvancedIndicatorsNumber("rwLen", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.openingRangeMin")}</span><DeskInput className="input" type="number" min={1} max={180} value={config.advancedIndicators.openingRangeMin} onChange={(e) => setAdvancedIndicatorsNumber("openingRangeMin", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.adrLen")}</span><DeskInput className="input" type="number" min={1} max={365} value={config.advancedIndicators.adrLen} onChange={(e) => setAdvancedIndicatorsNumber("adrLen", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.awrLen")}</span><DeskInput className="input" type="number" min={1} max={52} value={config.advancedIndicators.awrLen} onChange={(e) => setAdvancedIndicatorsNumber("awrLen", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.amrLen")}</span><DeskInput className="input" type="number" min={1} max={24} value={config.advancedIndicators.amrLen} onChange={(e) => setAdvancedIndicatorsNumber("amrLen", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rdLen")}</span><DeskInput className="input" type="number" min={1} max={365} value={config.advancedIndicators.rdLen} onChange={(e) => setAdvancedIndicatorsNumber("rdLen", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.rwLen")}</span><DeskInput className="input" type="number" min={1} max={104} value={config.advancedIndicators.rwLen} onChange={(e) => setAdvancedIndicatorsNumber("rwLen", parseNumber(e.target.value))} /></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><input type="checkbox" checked={config.advancedIndicators.sessionsUseDST} onChange={(e) => setAdvancedIndicatorsSessionsUseDst(e.target.checked)} /> {t("fields.sessionsUseDst")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.advancedIndicators.sessionsUseDST} onChange={(e) => setAdvancedIndicatorsSessionsUseDst(e.target.checked)} /> {t("fields.sessionsUseDst")}</label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.smc ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("smc")} aria-expanded={openIndicatorSections.smc}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("smc")} aria-expanded={openIndicatorSections.smc}>
                   <span>{t("sections.smc")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.smc ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.smc ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.internalLen")}</span><input className="input" type="number" min={2} max={50} value={config.advancedIndicators.smcInternalLength} onChange={(e) => setAdvancedIndicatorsNumber("smcInternalLength", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.swingLen")}</span><input className="input" type="number" min={10} max={250} value={config.advancedIndicators.smcSwingLength} onChange={(e) => setAdvancedIndicatorsNumber("smcSwingLength", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.equalLen")}</span><input className="input" type="number" min={1} max={50} value={config.advancedIndicators.smcEqualLength} onChange={(e) => setAdvancedIndicatorsNumber("smcEqualLength", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.equalThreshold")}</span><input className="input" type="number" min={0} max={0.5} step={0.01} value={config.advancedIndicators.smcEqualThreshold} onChange={(e) => setAdvancedIndicatorsNumber("smcEqualThreshold", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">{t("fields.maxOrderBlocks")}</span><input className="input" type="number" min={1} max={50} value={config.advancedIndicators.smcMaxOrderBlocks} onChange={(e) => setAdvancedIndicatorsNumber("smcMaxOrderBlocks", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.internalLen")}</span><DeskInput className="input" type="number" min={2} max={50} value={config.advancedIndicators.smcInternalLength} onChange={(e) => setAdvancedIndicatorsNumber("smcInternalLength", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.swingLen")}</span><DeskInput className="input" type="number" min={10} max={250} value={config.advancedIndicators.smcSwingLength} onChange={(e) => setAdvancedIndicatorsNumber("smcSwingLength", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.equalLen")}</span><DeskInput className="input" type="number" min={1} max={50} value={config.advancedIndicators.smcEqualLength} onChange={(e) => setAdvancedIndicatorsNumber("smcEqualLength", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.equalThreshold")}</span><DeskInput className="input" type="number" min={0} max={0.5} step={0.01} value={config.advancedIndicators.smcEqualThreshold} onChange={(e) => setAdvancedIndicatorsNumber("smcEqualThreshold", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">{t("fields.maxOrderBlocks")}</span><DeskInput className="input" type="number" min={1} max={50} value={config.advancedIndicators.smcMaxOrderBlocks} onChange={(e) => setAdvancedIndicatorsNumber("smcMaxOrderBlocks", parseNumber(e.target.value))} /></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><input type="checkbox" checked={config.advancedIndicators.smcFvgAutoThreshold} onChange={(e) => setAdvancedIndicatorsSmcFvgAutoThreshold(e.target.checked)} /> {t("fields.fvgAutoThreshold")}</label>
+                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.advancedIndicators.smcFvgAutoThreshold} onChange={(e) => setAdvancedIndicatorsSmcFvgAutoThreshold(e.target.checked)} /> {t("fields.fvgAutoThreshold")}</label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.aiGating ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("aiGating")} aria-expanded={openIndicatorSections.aiGating}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("aiGating")} aria-expanded={openIndicatorSections.aiGating}>
                   <span>{t("sections.aiGating")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.aiGating ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.aiGating ? (
                   <div className="settingsAccordionBody">
                     <div className="indicatorInlineChecks">
                       <label className="inlineCheck">
-                        <input
+                        <DeskInput
                           type="checkbox"
                           checked={config.aiGating.enabled}
                           onChange={(e) => setAiGatingEnabled(e.target.checked)}
@@ -1530,7 +1535,7 @@ export default function AdminIndicatorSettingsPage() {
                     <div className="indicatorConfigGrid">
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.minConfidenceForExplain")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="number"
                           min={0}
@@ -1544,7 +1549,7 @@ export default function AdminIndicatorSettingsPage() {
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.minConfidenceForNeutralExplain")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="number"
                           min={0}
@@ -1558,7 +1563,7 @@ export default function AdminIndicatorSettingsPage() {
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.confidenceJumpThreshold")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="number"
                           min={0}
@@ -1572,7 +1577,7 @@ export default function AdminIndicatorSettingsPage() {
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.nearKeyLevel")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="number"
                           min={0.05}
@@ -1586,7 +1591,7 @@ export default function AdminIndicatorSettingsPage() {
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.highImportanceMin")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="number"
                           min={1}
@@ -1600,7 +1605,7 @@ export default function AdminIndicatorSettingsPage() {
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.maxHighPriorityPerHour")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="number"
                           min={1}
@@ -1618,22 +1623,22 @@ export default function AdminIndicatorSettingsPage() {
                       {t("fields.recentEventBars")}
                     </div>
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">5m</span><input className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["5m"]} onChange={(e) => setAiGatingRecentEventBars("5m", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">15m</span><input className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["15m"]} onChange={(e) => setAiGatingRecentEventBars("15m", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">1h</span><input className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["1h"]} onChange={(e) => setAiGatingRecentEventBars("1h", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">4h</span><input className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["4h"]} onChange={(e) => setAiGatingRecentEventBars("4h", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">1d</span><input className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["1d"]} onChange={(e) => setAiGatingRecentEventBars("1d", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">5m</span><DeskInput className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["5m"]} onChange={(e) => setAiGatingRecentEventBars("5m", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">15m</span><DeskInput className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["15m"]} onChange={(e) => setAiGatingRecentEventBars("15m", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">1h</span><DeskInput className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["1h"]} onChange={(e) => setAiGatingRecentEventBars("1h", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">4h</span><DeskInput className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["4h"]} onChange={(e) => setAiGatingRecentEventBars("4h", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">1d</span><DeskInput className="input" type="number" min={1} max={100} step={1} value={config.aiGating.recentEventBars["1d"]} onChange={(e) => setAiGatingRecentEventBars("1d", parseNumber(e.target.value))} /></label>
                     </div>
 
                     <div className="settingsMutedText indicatorConfigHint" style={{ marginTop: 8 }}>
                       {t("fields.aiCooldownPerTf")}
                     </div>
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">5m</span><input className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["5m"]} onChange={(e) => setAiGatingCooldownSec("5m", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">15m</span><input className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["15m"]} onChange={(e) => setAiGatingCooldownSec("15m", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">1h</span><input className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["1h"]} onChange={(e) => setAiGatingCooldownSec("1h", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">4h</span><input className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["4h"]} onChange={(e) => setAiGatingCooldownSec("4h", parseNumber(e.target.value))} /></label>
-                      <label className="settingsField"><span className="mutedTiny">1d</span><input className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["1d"]} onChange={(e) => setAiGatingCooldownSec("1d", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">5m</span><DeskInput className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["5m"]} onChange={(e) => setAiGatingCooldownSec("5m", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">15m</span><DeskInput className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["15m"]} onChange={(e) => setAiGatingCooldownSec("15m", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">1h</span><DeskInput className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["1h"]} onChange={(e) => setAiGatingCooldownSec("1h", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">4h</span><DeskInput className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["4h"]} onChange={(e) => setAiGatingCooldownSec("4h", parseNumber(e.target.value))} /></label>
+                      <label className="settingsField"><span className="mutedTiny">1d</span><DeskInput className="input" type="number" min={0} max={86400} step={1} value={config.aiGating.aiCooldownSec["1d"]} onChange={(e) => setAiGatingCooldownSec("1d", parseNumber(e.target.value))} /></label>
                     </div>
 
                     <div className="settingsMutedText indicatorConfigHint" style={{ marginTop: 8 }}>
@@ -1645,21 +1650,21 @@ export default function AdminIndicatorSettingsPage() {
                       </div>
                     ) : null}
                     <div className="indicatorConfigGrid">
-                      <label className="settingsField"><span className="mutedTiny">5m</span><input className="input" type="number" min={60} max={86400} step={1} value={config.aiGating.refreshIntervalSec["5m"]} onChange={(e) => setAiGatingRefreshIntervalSec("5m", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
-                      <label className="settingsField"><span className="mutedTiny">15m</span><input className="input" type="number" min={120} max={86400} step={1} value={config.aiGating.refreshIntervalSec["15m"]} onChange={(e) => setAiGatingRefreshIntervalSec("15m", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
-                      <label className="settingsField"><span className="mutedTiny">1h</span><input className="input" type="number" min={180} max={86400} step={1} value={config.aiGating.refreshIntervalSec["1h"]} onChange={(e) => setAiGatingRefreshIntervalSec("1h", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
-                      <label className="settingsField"><span className="mutedTiny">4h</span><input className="input" type="number" min={300} max={86400} step={1} value={config.aiGating.refreshIntervalSec["4h"]} onChange={(e) => setAiGatingRefreshIntervalSec("4h", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
-                      <label className="settingsField"><span className="mutedTiny">1d</span><input className="input" type="number" min={600} max={86400} step={1} value={config.aiGating.refreshIntervalSec["1d"]} onChange={(e) => setAiGatingRefreshIntervalSec("1d", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
+                      <label className="settingsField"><span className="mutedTiny">5m</span><DeskInput className="input" type="number" min={60} max={86400} step={1} value={config.aiGating.refreshIntervalSec["5m"]} onChange={(e) => setAiGatingRefreshIntervalSec("5m", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
+                      <label className="settingsField"><span className="mutedTiny">15m</span><DeskInput className="input" type="number" min={120} max={86400} step={1} value={config.aiGating.refreshIntervalSec["15m"]} onChange={(e) => setAiGatingRefreshIntervalSec("15m", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
+                      <label className="settingsField"><span className="mutedTiny">1h</span><DeskInput className="input" type="number" min={180} max={86400} step={1} value={config.aiGating.refreshIntervalSec["1h"]} onChange={(e) => setAiGatingRefreshIntervalSec("1h", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
+                      <label className="settingsField"><span className="mutedTiny">4h</span><DeskInput className="input" type="number" min={300} max={86400} step={1} value={config.aiGating.refreshIntervalSec["4h"]} onChange={(e) => setAiGatingRefreshIntervalSec("4h", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
+                      <label className="settingsField"><span className="mutedTiny">1d</span><DeskInput className="input" type="number" min={600} max={86400} step={1} value={config.aiGating.refreshIntervalSec["1d"]} onChange={(e) => setAiGatingRefreshIntervalSec("1d", parseNumber(e.target.value))} disabled={refreshIntervalsDisabled} /></label>
                     </div>
                   </div>
                 ) : null}
               </div>
 
               <div className={`settingsAccordionItem ${openIndicatorSections.liquiditySweeps ? "settingsAccordionItemOpen" : ""}`}>
-                <button type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("liquiditySweeps")} aria-expanded={openIndicatorSections.liquiditySweeps}>
+                <DeskButton type="button" className="settingsAccordionTrigger" onClick={() => toggleIndicatorSection("liquiditySweeps")} aria-expanded={openIndicatorSections.liquiditySweeps}>
                   <span>{t("sections.liquiditySweeps")}</span>
                   <span className={`settingsAccordionChevron ${openIndicatorSections.liquiditySweeps ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
-                </button>
+                </DeskButton>
                 {openIndicatorSections.liquiditySweeps ? (
                   <div className="settingsAccordionBody">
                     <div className="settingsMutedText indicatorConfigHint">
@@ -1668,32 +1673,32 @@ export default function AdminIndicatorSettingsPage() {
                     <div className="indicatorConfigGrid">
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.sweepLen")}</span>
-                        <input className="input" type="number" value={config.liquiditySweeps.len} onChange={(e) => setLiquiditySweepsNumber("len", parseNumber(e.target.value))} />
+                        <DeskInput className="input" type="number" value={config.liquiditySweeps.len} onChange={(e) => setLiquiditySweepsNumber("len", parseNumber(e.target.value))} />
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.mode")}</span>
-                        <select className="input" value={config.liquiditySweeps.mode} onChange={(e) => setLiquiditySweepsMode(parseLiquiditySweepsMode(e.target.value))}>
+                        <DeskSelect className="input" value={config.liquiditySweeps.mode} onChange={(e) => setLiquiditySweepsMode(parseLiquiditySweepsMode(e.target.value))}>
                           <option value="wicks">wicks</option>
                           <option value="outbreak_retest">outbreak_retest</option>
                           <option value="both">both</option>
-                        </select>
+                        </DeskSelect>
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.maxBars")}</span>
-                        <input className="input" type="number" value={config.liquiditySweeps.maxBars} onChange={(e) => setLiquiditySweepsNumber("maxBars", parseNumber(e.target.value))} />
+                        <DeskInput className="input" type="number" value={config.liquiditySweeps.maxBars} onChange={(e) => setLiquiditySweepsNumber("maxBars", parseNumber(e.target.value))} />
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.maxRecentEvents")}</span>
-                        <input className="input" type="number" value={config.liquiditySweeps.maxRecentEvents} onChange={(e) => setLiquiditySweepsNumber("maxRecentEvents", parseNumber(e.target.value))} />
+                        <DeskInput className="input" type="number" value={config.liquiditySweeps.maxRecentEvents} onChange={(e) => setLiquiditySweepsNumber("maxRecentEvents", parseNumber(e.target.value))} />
                       </label>
                       <label className="settingsField">
                         <span className="mutedTiny">{t("fields.maxActiveZones")}</span>
-                        <input className="input" type="number" value={config.liquiditySweeps.maxActiveZones} onChange={(e) => setLiquiditySweepsNumber("maxActiveZones", parseNumber(e.target.value))} />
+                        <DeskInput className="input" type="number" value={config.liquiditySweeps.maxActiveZones} onChange={(e) => setLiquiditySweepsNumber("maxActiveZones", parseNumber(e.target.value))} />
                       </label>
                     </div>
                     <div className="indicatorInlineChecks">
                       <label className="inlineCheck">
-                        <input type="checkbox" checked={config.liquiditySweeps.extend} onChange={(e) => setLiquiditySweepsExtend(e.target.checked)} />
+                        <DeskInput type="checkbox" checked={config.liquiditySweeps.extend} onChange={(e) => setLiquiditySweepsExtend(e.target.checked)} />
                         {t("fields.extendZones")}
                       </label>
                     </div>
@@ -1703,13 +1708,13 @@ export default function AdminIndicatorSettingsPage() {
             </div>
 
             <div className="indicatorFormActions">
-              <button className="btn btnPrimary" type="button" disabled={saving || !canSave} onClick={save}>{saving ? t("saving") : editingId ? t("override.update") : t("override.create")}</button>
-              <button className="btn" type="button" onClick={() => void refreshResolvedPreview()}>{t("override.previewResolved")}</button>
-              <button className="btn" type="button" onClick={resetForm}>{t("override.resetForm")}</button>
+              <DeskButton className="btn btnPrimary" type="button" disabled={saving || !canSave} onClick={save}>{saving ? t("saving") : editingId ? t("override.update") : t("override.create")}</DeskButton>
+              <DeskButton className="btn" type="button" onClick={() => void refreshResolvedPreview()}>{t("override.previewResolved")}</DeskButton>
+              <DeskButton className="btn" type="button" onClick={resetForm}>{t("override.resetForm")}</DeskButton>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader"><h3 style={{ margin: 0 }}>{t("overrides.title")}</h3></div>
             <div className="adminDetailSectionDescription" style={{ marginBottom: 10 }}>
               Saved overrides are applied by scope. Review the target and update time here before editing, cloning or removing one.
@@ -1717,7 +1722,7 @@ export default function AdminIndicatorSettingsPage() {
             {items.length === 0 ? <div className="settingsMutedText">{t("overrides.empty")}</div> : (
               <div className="adminTableWrap">
                 <div className="adminTableScroller">
-                <table className="adminTable">
+                <DeskTable className="adminTable">
                   <thead>
                     <tr>
                       <th>{t("overrides.scope")}</th>
@@ -1740,13 +1745,13 @@ export default function AdminIndicatorSettingsPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </DeskTable>
                 </div>
               </div>
             )}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader"><h3 style={{ margin: 0 }}>{t("preview.title")}</h3></div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
               {t("preview.hash")}: {resolved?.hash ?? "-"}
@@ -1754,7 +1759,7 @@ export default function AdminIndicatorSettingsPage() {
             <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>
               {JSON.stringify(resolved?.config ?? FALLBACK_DEFAULTS, null, 2)}
             </pre>
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
       <AdminConfirmDialog

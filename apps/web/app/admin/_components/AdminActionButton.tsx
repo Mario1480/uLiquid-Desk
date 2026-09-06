@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import type { ButtonHTMLAttributes } from "react";
 import { AppIcon, type AppIconName } from "../../components/AppIcon";
 
@@ -33,13 +34,13 @@ export default function AdminActionButton({
   const variantClass = VARIANT_CLASS[variant];
 
   return (
-    <button
+    <DeskButton
       {...props}
       className={`btn ${variantClass} ${className}`.trim()}
       disabled={disabled || loading}
     >
       <AppIcon name={loading ? "refresh" : icon} className={loading ? "adminSpinIcon" : undefined} />
       {loading && loadingLabel ? loadingLabel : children}
-    </button>
+    </DeskButton>
   );
 }

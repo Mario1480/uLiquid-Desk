@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -785,7 +790,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {detail && detail.state !== "archived" ? (
-              <button
+              <DeskButton
                 type="button"
                 className="btn btnStop"
                 onClick={() => void endBot()}
@@ -793,7 +798,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               >
                 <AppIcon name="stop" />
                 {busyAction === "end" ? tGrid("loading") : tGrid("end")}
-              </button>
+              </DeskButton>
             ) : null}
             <Link href={withLocalePath("/bots/catalog", locale)} className="btn">
               <AppIcon name="back" />
@@ -807,11 +812,11 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
         </div>
       ) : null}
 
-      {error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div> : null}
-      {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
+      {error ? <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div></DeskSurface> : null}
 
       {!loading && detail ? (
-        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
           <div className="gridDetailShellHead gridDetailShellHeadInlineTabs">
             <div>
               <div style={{ fontWeight: 700, fontSize: embedded ? 20 : 24, lineHeight: 1.1 }}>
@@ -835,21 +840,21 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
           ) : null}
           <div className="gridDetailTabs">
             {(["overview", "placed", "fills", "events", "params"] as const).map((tab) => (
-              <button
+              <DeskButton
                 key={tab}
                 type="button"
                 className={`gridDetailTab ${activeTab === tab ? "gridDetailTabActive" : ""}`}
                 onClick={() => setActiveTab(tab)}
               >
                 {tGrid(`tabs.${tab}`)}
-              </button>
+              </DeskButton>
             ))}
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
 
       {!loading && detail && activeTab === "overview" ? (
-        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
           <div className="gridOverviewPanel">
             <section className="gridOverviewAllocCard">
               <div className="gridOverviewSectionTitle">{tGrid("overviewAllocTitle")}</div>
@@ -1235,45 +1240,45 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               </section>
             ) : null}
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
 
       {!loading && detail && activeTab === "params" ? (
-        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
           <h3 style={{ marginTop: 0 }}>{tGrid("riskControlsTitle")}</h3>
           <form className="settingsFormGrid" onSubmit={saveRisk}>
             <label>
               {tGrid("tpTargetType")}
-              <select className="input" value={tpTargetType} onChange={(event) => setTpTargetType(event.target.value === "usdc" ? "usdc" : "pct")}>
+              <DeskSelect className="input" value={tpTargetType} onChange={(event) => setTpTargetType(event.target.value === "usdc" ? "usdc" : "pct")}>
                 <option value="pct">{tGrid("tpTargetPct")}</option>
                 <option value="usdc">{tGrid("tpTargetUsdc")}</option>
-              </select>
+              </DeskSelect>
             </label>
             {tpTargetType === "pct" ? (
               <label>
                 {tGrid("tpPct")}
-                <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+                <DeskInput className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
               </label>
             ) : (
               <label>
                 {tGrid("tpProfitUsd")}
-                <input className="input" type="number" min="0" step="0.01" value={tpProfitUsd} onChange={(event) => setTpProfitUsd(event.target.value)} />
+                <DeskInput className="input" type="number" min="0" step="0.01" value={tpProfitUsd} onChange={(event) => setTpProfitUsd(event.target.value)} />
               </label>
             )}
             <label>
               {tGrid("tpAction")}
-              <select className="input" value={tpAction} onChange={(event) => setTpAction(event.target.value === "end" ? "end" : "stop")}>
+              <DeskSelect className="input" value={tpAction} onChange={(event) => setTpAction(event.target.value === "end" ? "end" : "stop")}>
                 <option value="stop">{tGrid("tpActionStop")}</option>
                 <option value="end">{tGrid("tpActionEnd")}</option>
-              </select>
+              </DeskSelect>
             </label>
             <label>
               {tGrid("slPrice")}
-              <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPct(event.target.value)} />
+              <DeskInput className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPct(event.target.value)} />
             </label>
             <label>
               {tGrid("marginMode")}
-              <select
+              <DeskSelect
                 className="input"
                 value={marginMode}
                 disabled={detail?.marginPolicy !== "AUTO_ALLOWED" || detail?.state === "archived"}
@@ -1281,20 +1286,20 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               >
                 <option value="MANUAL">{tGrid("marginModeManual")}</option>
                 <option value="AUTO">{tGrid("marginModeAuto")}</option>
-              </select>
+              </DeskSelect>
             </label>
             <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
-	              <button className="btn btnPrimary" type="submit" disabled={busyAction !== null || detail?.state === "archived"}>
+	              <DeskButton className="btn btnPrimary" type="submit" disabled={busyAction !== null || detail?.state === "archived"}>
 	                <AppIcon name="save" />
 	                {busyAction === "risk" ? tGrid("saving") : tGrid("saveRisk")}
-	              </button>
+	              </DeskButton>
             </div>
           </form>
-        </section>
+        </section></DeskSurface>
       ) : null}
 
       {!loading && detail && activeTab === "placed" ? (
-        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
           <h3 style={{ marginTop: 0 }}>{tGrid("ladderTitle")}</h3>
           <div className="gridPlacedPanel">
             <div className="gridPlacedHero">
@@ -1371,12 +1376,12 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
           </div>
 
           {isAdminViewer ? (
-            <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+            <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
               <details>
                 <summary style={{ cursor: "pointer", fontWeight: 700, userSelect: "none" }}>{tGrid("openOrdersTitle")}</summary>
                 <div className="settingsMutedText" style={{ marginTop: 8, marginBottom: 8 }}>{tGrid("openOrdersAdminHint")}</div>
                 <div className="tableWrap">
-                  <table className="tableCompact">
+                  <DeskTable className="tableCompact">
                     <thead>
                       <tr>
                         <th>{tGrid("tableUpdated")}</th>
@@ -1405,16 +1410,16 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </DeskTable>
                 </div>
               </details>
-            </section>
+            </section></DeskSurface>
           ) : null}
-        </section>
+        </section></DeskSurface>
       ) : null}
 
       {!loading && detail && activeTab === "fills" ? (
-        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
           <div className="gridTransactionsStats">
             <div className="gridTransactionsStatCard">
               <div className="gridTransactionsStatLabel">{tGrid("fills24hTxs")}</div>
@@ -1517,11 +1522,11 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               );
             })}
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
 
       {!loading && detail && activeTab === "events" ? (
-        <section className="card" style={{ padding: 12 }}>
+        <DeskSurface dense><section className="card" style={{ padding: 12 }}>
           <h3 style={{ marginTop: 0 }}>{tGrid("recentEventsTitle")}</h3>
           {groupedNoiseEventCount > 0 ? (
             <div className="settingsMutedText" style={{ marginBottom: 10 }}>
@@ -1529,7 +1534,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
             </div>
           ) : null}
           <div className="tableWrap">
-            <table className="tableCompact">
+            <DeskTable className="tableCompact">
               <thead>
                 <tr>
                   <th>{tGrid("tableTime")}</th>
@@ -1553,9 +1558,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DeskTable>
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
     </div>
   );

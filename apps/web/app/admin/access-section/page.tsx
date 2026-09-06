@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
@@ -114,14 +117,14 @@ export default function AdminAccessSectionPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
-        <section className="card settingsSection">
+        <DeskSurface dense><section className="card settingsSection">
           <div className="settingsSectionHeader">
             <h3 className="adminSubsectionTitle">{t("sectionTitle")}</h3>
             <div className="settingsSectionMeta">
@@ -136,7 +139,7 @@ export default function AdminAccessSectionPage() {
                 <strong><AppIcon name="settings" /> {t("maintenanceTitle")}</strong>
                 <small>{t("maintenanceHint")}</small>
               </span>
-              <input
+              <DeskInput
                 type="checkbox"
                 checked={maintenanceEnabled}
                 onChange={(event) => setMaintenanceEnabled(event.target.checked)}
@@ -154,7 +157,7 @@ export default function AdminAccessSectionPage() {
                 <span>
                   <strong><AppIcon name={item.icon} /> {t(`visibility.${item.key}` as any)}</strong>
                 </span>
-                <input
+                <DeskInput
                   type="checkbox"
                   checked={visibility[item.key]}
                   onChange={(event) => setVisibility((prev) => ({
@@ -167,11 +170,11 @@ export default function AdminAccessSectionPage() {
           </div>
 
           <div className="adminInlineActions">
-            <button className="btn" type="button" onClick={loadDefaults}>
+            <DeskButton className="btn" type="button" onClick={loadDefaults}>
               <AppIcon name="restore" />
               {t("loadDefaults")}
-            </button>
-            <button
+            </DeskButton>
+            <DeskButton
               className="btn btnPrimary"
               type="button"
               onClick={() => void save()}
@@ -179,9 +182,9 @@ export default function AdminAccessSectionPage() {
             >
               <AppIcon name="save" />
               {saving ? t("saving") : t("saveSettings")}
-            </button>
+            </DeskButton>
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
     </div>
   );

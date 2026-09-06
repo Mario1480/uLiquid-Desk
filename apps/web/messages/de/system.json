@@ -1294,7 +1294,14 @@
         "invalidated": "widerlegt",
         "unknown": "unklar"
       },
-      "dataQuality": "Daten: {state}",
+      "dataQuality": "Positionsdaten: {state}",
+      "marketDataQuality": "Marktkontext: {state}",
+      "marketQuality": {
+        "fresh": "aktuell",
+        "stale": "veraltet",
+        "degraded": "eingeschränkt",
+        "unavailable": "nicht verfügbar"
+      },
       "quality": {
         "complete": "vollständig",
         "degraded": "eingeschränkt"

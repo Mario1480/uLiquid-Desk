@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -126,7 +129,7 @@ export default function PrivacySettingsPage() {
         </Notice>
       ) : null}
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <div className="settingsInlineTitle">{t("export.title")}</div>
@@ -138,18 +141,18 @@ export default function PrivacySettingsPage() {
           </span>
         </div>
         <div className="settingsMutedText">{t("export.meta")}</div>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card settingsSection settingsDangerSection">
+      <DeskSurface><section className="card settingsSection settingsDangerSection">
         <div className="settingsSectionHeader">
           <div>
             <div className="settingsInlineTitle">{t("delete.title")}</div>
             <div className="settingsMutedText">{t("delete.description")}</div>
           </div>
-          <button className="btn" type="button" onClick={loadAll} disabled={loading}>
+          <DeskButton className="btn" type="button" onClick={loadAll} disabled={loading}>
             <AppIcon name="refresh" />
             {tCommon("reload")}
-          </button>
+          </DeskButton>
         </div>
 
         {loading ? (
@@ -179,7 +182,7 @@ export default function PrivacySettingsPage() {
             <div className="settingsFormGrid settingsTwoColGrid">
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("delete.confirmEmail")}</span>
-                <input
+                <DeskInput
                   className="input"
                   value={confirmEmail}
                   onChange={(event) => setConfirmEmail(event.target.value)}
@@ -189,7 +192,7 @@ export default function PrivacySettingsPage() {
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("delete.confirmText")}</span>
-                <input
+                <DeskInput
                   className="input"
                   value={confirmText}
                   onChange={(event) => setConfirmText(event.target.value)}
@@ -200,7 +203,7 @@ export default function PrivacySettingsPage() {
             </div>
 
             <div className="settingsHubInlineActions">
-              <button
+              <DeskButton
                 className="btn btnStop"
                 type="button"
                 onClick={() => setConfirmOpen(true)}
@@ -208,11 +211,11 @@ export default function PrivacySettingsPage() {
               >
                 <AppIcon name="delete" />
                 {deleting ? t("delete.deleting") : t("delete.action")}
-              </button>
+              </DeskButton>
             </div>
           </div>
         )}
-      </section>
+      </section></DeskSurface>
 
       <AdminConfirmDialog
         open={confirmOpen}

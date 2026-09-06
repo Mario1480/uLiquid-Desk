@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useTranslations } from "next-intl";
 import { AppIcon } from "../components/AppIcon";
 
@@ -36,7 +37,7 @@ export default function HelpPage() {
         </div>
       </div>
 
-      <section className="card authCard">
+      <DeskSurface><section className="card authCard">
         <h3 className="authHeading">{t("quickLinks")}</h3>
         <div className="helpQuickLinks">
           {sections.map((s) => (
@@ -46,9 +47,9 @@ export default function HelpPage() {
             </a>
           ))}
         </div>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card authCard">
+      <DeskSurface><section className="card authCard">
         <h3 className="authHeading">{t("docs.title")}</h3>
         <div className="helpContactCopy">{t("docs.body")}</div>
         <div>
@@ -57,9 +58,9 @@ export default function HelpPage() {
             {t("docs.cta")}
           </a>
         </div>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card authCard">
+      <DeskSurface><section className="card authCard">
         <div className="helpSectionList">
           {sections.map((section) => (
             <details key={section.id} id={section.id} className="helpDetailCard">
@@ -72,9 +73,9 @@ export default function HelpPage() {
             </details>
           ))}
         </div>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card authCard">
+      <DeskSurface><section className="card authCard">
         <h3 className="authHeading">{t("contactTitle")}</h3>
         <div className="helpContactCopy">{t("contactBody")}</div>
         <div>
@@ -83,7 +84,7 @@ export default function HelpPage() {
             support@uliquid.vip
           </a>
         </div>
-      </section>
+      </section></DeskSurface>
     </div>
   );
 }

@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -302,14 +307,14 @@ export default function AdminAiPromptGeneratorPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface>
       ) : null}
 
       {isAdmin ? (
-        <section className="card settingsSection" style={{ marginBottom: 12 }}>
+        <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
           <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{t("formTitle")}</h3>
           </div>
@@ -317,7 +322,7 @@ export default function AdminAiPromptGeneratorPage() {
           <div className="settingsTwoColGrid" style={{ marginBottom: 8 }}>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("promptName")}</span>
-              <input
+              <DeskInput
                 className="input"
                 value={name}
                 maxLength={64}
@@ -326,18 +331,18 @@ export default function AdminAiPromptGeneratorPage() {
               />
             </label>
             <label className="inlineCheck" style={{ marginTop: 24 }}>
-              <input type="checkbox" checked={setActive} onChange={(event) => setSetActive(event.target.checked)} />
+              <DeskInput type="checkbox" checked={setActive} onChange={(event) => setSetActive(event.target.checked)} />
               {t("setActive")}
             </label>
             <label className="inlineCheck" style={{ marginTop: 24 }}>
-              <input type="checkbox" checked={isPublic} onChange={(event) => setIsPublic(event.target.checked)} />
+              <DeskInput type="checkbox" checked={isPublic} onChange={(event) => setIsPublic(event.target.checked)} />
               {t("publicPrompt")}
             </label>
           </div>
 
           <label className="settingsField" style={{ marginBottom: 10 }}>
             <span className="settingsFieldLabel">{t("strategyDescription")}</span>
-            <textarea
+            <DeskTextarea
               className="input"
               rows={8}
               maxLength={8000}
@@ -351,14 +356,14 @@ export default function AdminAiPromptGeneratorPage() {
           <div className="settingsTwoColGrid" style={{ marginBottom: 10 }}>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("promptMode")}</span>
-              <select
+              <DeskSelect
                 className="input"
                 value={promptMode}
                 onChange={(event) => handlePromptModeChange(event.target.value as PromptMode)}
               >
                 <option value="trading_explainer">{t("promptModeTrading")}</option>
                 <option value="market_analysis">{t("promptModeAnalysis")}</option>
-              </select>
+              </DeskSelect>
               <span className="settingsMutedText">
                 {promptMode === "market_analysis" ? t("analysisAutoDefaultsHint") : t("promptModeHint")}
               </span>
@@ -372,7 +377,7 @@ export default function AdminAiPromptGeneratorPage() {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                 {TIMEFRAME_OPTIONS.map((tf) => (
                   <label key={`tf-${tf}`} className="inlineCheck">
-                    <input
+                    <DeskInput
                       type="checkbox"
                       checked={timeframes.includes(tf)}
                       onChange={() => toggleTimeframe(tf)}
@@ -384,7 +389,7 @@ export default function AdminAiPromptGeneratorPage() {
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("runTimeframe")}</span>
-              <select
+              <DeskSelect
                 className="input"
                 value={runTimeframe}
                 onChange={(event) => setRunTimeframe(event.target.value as "" | "5m" | "15m" | "1h" | "4h" | "1d")}
@@ -394,7 +399,7 @@ export default function AdminAiPromptGeneratorPage() {
                 {timeframes.map((tf) => (
                   <option key={`run-${tf}`} value={tf}>{tf}</option>
                 ))}
-              </select>
+              </DeskSelect>
             </label>
           </div>
 
@@ -403,7 +408,7 @@ export default function AdminAiPromptGeneratorPage() {
               <>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{t("directionPreference")}</span>
-                  <select
+                  <DeskSelect
                     className="input"
                     value={directionPreference}
                     onChange={(event) => setDirectionPreference(event.target.value as "long" | "short" | "either")}
@@ -411,11 +416,11 @@ export default function AdminAiPromptGeneratorPage() {
                     <option value="either">{t("directionEither")}</option>
                     <option value="long">{t("directionLong")}</option>
                     <option value="short">{t("directionShort")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{t("confidenceTargetPct")}</span>
-                  <input
+                  <DeskInput
                     className="input"
                     type="number"
                     min={0}
@@ -427,7 +432,7 @@ export default function AdminAiPromptGeneratorPage() {
                 </label>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{t("slTpSource")}</span>
-                  <select
+                  <DeskSelect
                     className="input"
                     value={slTpSource}
                     onChange={(event) => setSlTpSource(event.target.value as "local" | "ai" | "hybrid")}
@@ -435,24 +440,24 @@ export default function AdminAiPromptGeneratorPage() {
                     <option value="local">{t("slTpSourceLocal")}</option>
                     <option value="ai">{t("slTpSourceAi")}</option>
                     <option value="hybrid">{t("slTpSourceHybrid")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{t("newsRiskMode")}</span>
-                  <select
+                  <DeskSelect
                     className="input"
                     value={newsRiskMode}
                     onChange={(event) => setNewsRiskMode(event.target.value as "off" | "block")}
                   >
                     <option value="off">{t("newsRiskModeOff")}</option>
                     <option value="block">{t("newsRiskModeBlock")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
               </>
             ) : null}
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("ohlcvBars")}</span>
-              <input
+              <DeskInput
                 className="input"
                 type="number"
                 min={20}
@@ -465,12 +470,12 @@ export default function AdminAiPromptGeneratorPage() {
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            <button className="btn" type="button" onClick={() => setIndicatorKeys(availableIndicators.map((item) => item.key))}>
+            <DeskButton className="btn" type="button" onClick={() => setIndicatorKeys(availableIndicators.map((item) => item.key))}>
               {t("selectAllIndicators")}
-            </button>
-            <button className="btn" type="button" onClick={() => setIndicatorKeys([])}>
+            </DeskButton>
+            <DeskButton className="btn" type="button" onClick={() => setIndicatorKeys([])}>
               {t("clearIndicators")}
-            </button>
+            </DeskButton>
           </div>
 
           <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", marginBottom: 10 }}>
@@ -489,7 +494,7 @@ export default function AdminAiPromptGeneratorPage() {
                       gap: 8
                     }}
                   >
-                    <input
+                    <DeskInput
                       type="checkbox"
                       checked={indicatorKeys.includes(item.key)}
                       onChange={() => toggleIndicator(item.key)}
@@ -506,16 +511,16 @@ export default function AdminAiPromptGeneratorPage() {
           </div>
 
           <div className="indicatorFormActions" style={{ marginTop: 8 }}>
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
               disabled={saving || previewLoading}
               onClick={() => void generatePreview()}
             >
               {previewLoading ? t("previewGenerating") : t("generatePreview")}
-            </button>
+            </DeskButton>
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
 
       {previewOpen ? (
@@ -534,7 +539,7 @@ export default function AdminAiPromptGeneratorPage() {
             if (!previewSaving) setPreviewOpen(false);
           }}
         >
-          <div
+          <DeskSurface dense><div
             className="card"
             style={{ width: "min(1000px, 95vw)", maxHeight: "90vh", display: "grid", gap: 10, padding: 16 }}
             onClick={(event) => event.stopPropagation()}
@@ -547,31 +552,31 @@ export default function AdminAiPromptGeneratorPage() {
                 ? t("previewHint", { mode: previewMeta.mode, model: previewMeta.model })
                 : t("previewHint", { mode: "fallback", model: "n/a" })}
             </div>
-            <textarea className="input" rows={18} readOnly value={previewPromptText} />
+            <DeskTextarea className="input" rows={18} readOnly value={previewPromptText} />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button
+              <DeskButton
                 className="btn"
                 type="button"
                 disabled={previewSaving}
                 onClick={() => setPreviewOpen(false)}
               >
                 {t("previewCancel")}
-              </button>
-              <button
+              </DeskButton>
+              <DeskButton
                 className="btn btnPrimary"
                 type="button"
                 disabled={previewSaving}
                 onClick={() => void saveFromPreview()}
               >
                 {previewSaving ? t("previewSaving") : t("previewSave")}
-              </button>
+              </DeskButton>
             </div>
-          </div>
+          </div></DeskSurface>
         </div>
       ) : null}
 
       {generatedPromptText ? (
-        <section className="card settingsSection" style={{ marginBottom: 12 }}>
+        <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
           <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{t("resultTitle")}</h3>
           </div>
@@ -584,8 +589,8 @@ export default function AdminAiPromptGeneratorPage() {
               })
               : ""}
           </div>
-          <textarea className="input" rows={18} value={generatedPromptText} readOnly />
-        </section>
+          <DeskTextarea className="input" rows={18} value={generatedPromptText} readOnly />
+        </section></DeskSurface>
       ) : null}
     </div>
   );

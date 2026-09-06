@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -206,7 +208,7 @@ function HubCard({
     );
   }
 
-  return <div className={`card settingsHubCard ${disabled ? "settingsHubCardDisabled" : ""}`}>{content}</div>;
+  return <DeskSurface><div className={`card settingsHubCard ${disabled ? "settingsHubCardDisabled" : ""}`}>{content}</div></DeskSurface>;
 }
 
 function SettingsHubContent() {
@@ -451,10 +453,10 @@ function SettingsHubContent() {
                 {t("actions.admin")}
               </Link>
             ) : null}
-            <button className="btn" type="button" onClick={() => void loadHub()} disabled={loading}>
+            <DeskButton className="btn" type="button" onClick={() => void loadHub()} disabled={loading}>
               <AppIcon name="refresh" />
               {loading ? tCommon("loading") : tCommon("reload")}
-            </button>
+            </DeskButton>
           </>
         )}
       />
@@ -471,7 +473,7 @@ function SettingsHubContent() {
       ) : null}
 
       <div className="settingsHubSummary">
-        <div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${accountTone}`}>
+        <DeskSurface><div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${accountTone}`}>
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.account")}</span>
             <span className={`settingsSummaryBadge settingsSummaryBadge-${accountTone}`}>
@@ -479,8 +481,8 @@ function SettingsHubContent() {
             </span>
           </div>
           <strong className="settingsSummaryValue">{loading ? tCommon("loading") : me?.email ?? "-"}</strong>
-        </div>
-        <div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${exchangeTone}`}>
+        </div></DeskSurface>
+        <DeskSurface><div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${exchangeTone}`}>
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.exchanges")}</span>
             <span className={`settingsSummaryBadge settingsSummaryBadge-${exchangeTone}`}>
@@ -491,8 +493,8 @@ function SettingsHubContent() {
           <small className="settingsSummaryMeta">
             {exchangeHealthIssues > 0 ? t("summary.exchangeIssues", { count: exchangeHealthIssues }) : t("summary.exchangeHealthy")}
           </small>
-        </div>
-        <div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${walletTone}`}>
+        </div></DeskSurface>
+        <DeskSurface><div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${walletTone}`}>
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.wallet")}</span>
             <span className={`settingsSummaryBadge settingsSummaryBadge-${walletTone}`}>
@@ -501,7 +503,7 @@ function SettingsHubContent() {
           </div>
           <strong className="settingsSummaryValue">{linkedWalletAddress ? shortenWalletAddress(linkedWalletAddress) : t("summary.notLinked")}</strong>
           <small className="settingsSummaryMeta">{walletStatusText}</small>
-        </div>
+        </div></DeskSurface>
       </div>
 
       <div className="settingsHubGroups">
@@ -527,12 +529,12 @@ function SettingsHubContent() {
             actionLabel={t("actions.switch")}
           >
             <div className="settingsHubInlineActions">
-              <button className={`btn ${locale === "en" ? "btnPrimary" : ""}`} type="button" onClick={() => switchLocale("en")} disabled={locale === "en"}>
+              <DeskButton className={`btn ${locale === "en" ? "btnPrimary" : ""}`} type="button" onClick={() => switchLocale("en")} disabled={locale === "en"}>
                 EN
-              </button>
-              <button className={`btn ${locale === "de" ? "btnPrimary" : ""}`} type="button" onClick={() => switchLocale("de")} disabled={locale === "de"}>
+              </DeskButton>
+              <DeskButton className={`btn ${locale === "de" ? "btnPrimary" : ""}`} type="button" onClick={() => switchLocale("de")} disabled={locale === "de"}>
                 DE
-              </button>
+              </DeskButton>
             </div>
           </HubCard>
           <HubCard
@@ -584,15 +586,15 @@ function SettingsHubContent() {
                 </div>
               </div>
               <div className="settingsWalletLinkActions">
-                <button className="btn btnPrimary" type="button" onClick={() => void linkConnectedWalletAction()} disabled={walletActionBusy || !isWalletConnected}>
+                <DeskButton className="btn btnPrimary" type="button" onClick={() => void linkConnectedWalletAction()} disabled={walletActionBusy || !isWalletConnected}>
                   <AppIcon name="link" />
                   {walletLinking ? t("wallet.linking") : linkedWalletAddress ? t("wallet.relink") : t("wallet.link")}
-                </button>
+                </DeskButton>
                 {linkedWalletAddress ? (
-                  <button className="btn btnStop" type="button" onClick={() => setConfirmWalletUnlink(true)} disabled={walletActionBusy}>
+                  <DeskButton className="btn btnStop" type="button" onClick={() => setConfirmWalletUnlink(true)} disabled={walletActionBusy}>
                     <AppIcon name="unlink" />
                     {walletUnlinking ? t("wallet.unlinking") : t("wallet.unlink")}
-                  </button>
+                  </DeskButton>
                 ) : null}
               </div>
               {walletLinkStatus ? <div className="settingsMutedText">{walletLinkStatus}</div> : null}

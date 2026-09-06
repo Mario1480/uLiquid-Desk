@@ -1,3 +1,4 @@
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import type { ReactNode } from "react";
 
 type MetricTileTone = "neutral" | "info" | "success" | "warning" | "danger" | "accent";
@@ -22,10 +23,10 @@ export default function MetricTile({
   className
 }: MetricTileProps) {
   return (
-    <div className={cx("uiMetricTile", `uiMetricTile-${tone}`, className)}>
+    <DeskSurface><div className={cx("uiMetricTile", `uiMetricTile-${tone}`, className)}>
       <div className="uiMetricLabel">{label}</div>
       <div className="uiMetricValue">{value}</div>
       {meta ? <div className="uiMetricMeta">{meta}</div> : null}
-    </div>
+    </div></DeskSurface>
   );
 }

@@ -22,6 +22,7 @@ export const POSITION_COPILOT_SYSTEM_MESSAGE = buildAiAgentSystemMessage("positi
   "You are the read-only uLiquid Position Copilot.",
   "Explain the supplied position snapshot in plain language. Never recommend or perform an order, close, reduction, TP/SL change, leverage change, margin change, copier-rule change, wallet signature or other execution action.",
   "Do not invent missing market data. Return only the requested JSON.",
+  "Deterministic risk factors and events are retained by the server. Return only additional findings, not paraphrases of existing ones. If referencing an existing finding, reuse its exact code. Distinguish position-data completeness from market-context quality.",
   POSITION_LIQUIDATION_POLICY,
   FEATURE_CONTEXT_POLICY
 ].join(" "));
@@ -99,10 +100,30 @@ function mergeAnalysis(
     riskLevel,
     thesisStatus: deterministic.dataQuality.state === "degraded" ? "unknown" : ai.thesisStatus,
     summary: ai.summary,
-    riskFactors: [...deterministic.riskFactors, ...ai.riskFactors].slice(0, 10),
-    events: [...deterministic.events, ...ai.events].slice(0, 10),
+    riskFactors: mergeFindings(deterministic.riskFactors, ai.riskFactors),
+    events: mergeFindings(deterministic.events, ai.events),
     generatedAt: now.toISOString()
   };
+}
+
+function mergeFindings(deterministic: PositionCopilotFinding[], additional: PositionCopilotFinding[]): PositionCopilotFinding[] {
+  const normalizeMessage = (message: string) => message.normalize("NFKC").toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu, " ").trim();
+  const canonicalCode = (code: string) => {
+    const normalized = code.toLowerCase();
+    return ["no_stop_loss", "missing_stop_loss", "stop_loss_not_visible", "no_visible_stop_loss", "missing_sl", "sl_missing"].includes(normalized)
+      ? "stop_loss_missing" : normalized;
+  };
+  const merged: PositionCopilotFinding[] = [];
+  for (const finding of [...deterministic, ...additional]) {
+    const existing = merged.find(row => canonicalCode(row.code) === canonicalCode(finding.code)
+      || normalizeMessage(row.message) === normalizeMessage(finding.message));
+    if (existing) {
+      if (RISK_WEIGHT[finding.severity] > RISK_WEIGHT[existing.severity]) existing.severity = finding.severity;
+    } else {
+      merged.push({ ...finding });
+    }
+  }
+  return merged.slice(0, 10);
 }
 
 const POSITION_COPILOT_RESPONSE_FORMAT: NonNullable<CallAiChatOptions["responseFormat"]> = {
@@ -175,7 +196,7 @@ export async function analyzePositionSnapshot(params: {
   let provider: string | null = null;
   let model: string | null = null;
   const guarded = await analyzeWithAiGuards<{ analysis: PositionCopilotAnalysis; marketContext: MarketFeatureContext | null }>({
-    cacheKey: `position-copilot:v3:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
+    cacheKey: `position-copilot:v4:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
     ttlSec: 300,
     rateLimitPerMin: 12,
     aiModel: "position-copilot",

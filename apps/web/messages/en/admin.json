@@ -1629,7 +1629,7 @@
         "investGreaterThanZero": "Invest (USDT) must be greater than 0.",
         "extraMarginNonNegative": "Extra margin (USDT) must be >= 0.",
         "tpRange": "TP % must be between 0 and 200.",
-      "slRange": "SL price must be between 0 and 200.",
+        "slRange": "SL price must be between 0 and 200.",
         "triggerGreaterThanZero": "Trigger price must be greater than 0.",
         "markOverrideGreaterThanZero": "Mark price override must be greater than 0."
       },
@@ -1851,5 +1851,19 @@
         "no": "no"
       }
     }
+  },
+  "uiGallery": {
+    "title": "Ein UI component gallery",
+    "description": "Complete local Ein UI collection using the Ocean palette and solid buttons.",
+    "component": "Component",
+    "theme": "Preview palette",
+    "samples": "Illustrative local data only. No orders, payments, registrations or messages are sent.",
+    "pause": "Pause preview",
+    "resume": "Resume preview",
+    "paused": "Preview paused while hidden or manually paused.",
+    "localAction": "Local sample action completed. No live operation was performed.",
+    "coverage": "{count} executable examples, covering the upstream registry and the website dashboard template.",
+    "loading": "Checking administrator access…",
+    "denied": "Administrator access required."
   }
 }

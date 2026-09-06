@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -61,7 +62,7 @@ export default function AuthHeader() {
             })}
           </nav>
 
-          <ClientErrorBoundary fallback={<button className="appHeaderWalletTrigger" type="button" disabled>Wallet unavailable</button>}>
+          <ClientErrorBoundary fallback={<DeskButton className="appHeaderWalletTrigger" type="button" disabled>Wallet unavailable</DeskButton>}>
             <WalletConnectionWidget />
           </ClientErrorBoundary>
 

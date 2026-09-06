@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
@@ -35,23 +37,23 @@ export default function VaultsIndexClient({ _config }: { _config: WalletFeatureC
       </div>
 
       {!isConnected ? (
-        <div className="card walletCard walletEmptyState">
+        <DeskSurface dense><div className="card walletCard walletEmptyState">
           <h3 style={{ marginTop: 0 }}>{t("connectTitle")}</h3>
           <div className="walletMutedText">{t("connectDescription")}</div>
-        </div>
+        </div></DeskSurface>
       ) : vaultsQuery.error ? (
         <div className="walletNotice walletNoticeError">
           {String((vaultsQuery.error as Error)?.message ?? t("loadError"))}
         </div>
       ) : vaultsQuery.isLoading ? (
         <div className="walletVaultGrid">
-          <div className="card walletCard"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
-          <div className="card walletCard"><div className="skeletonLine skeletonLineLg" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div>
+          <DeskSurface dense><div className="card walletCard"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div></DeskSurface>
+          <DeskSurface dense><div className="card walletCard"><GlassSkeleton className="skeletonLine skeletonLineLg" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} /></div></DeskSurface>
         </div>
       ) : vaultsQuery.data?.items?.length ? (
         <div className="walletVaultGrid">
           {vaultsQuery.data.items.map((vault) => (
-            <article key={vault.vaultAddress} className="card walletCard walletVaultCard">
+            <DeskSurface dense><article key={vault.vaultAddress} className="card walletCard walletVaultCard">
               <div className="walletSectionHeader">
                 <div className="walletSectionIntro">
                   <h3 className="walletSectionTitle">{vault.name ?? t("unnamedVault")}</h3>
@@ -84,14 +86,14 @@ export default function VaultsIndexClient({ _config }: { _config: WalletFeatureC
                   {t("openVault")}
                 </Link>
               </div>
-            </article>
+            </article></DeskSurface>
           ))}
         </div>
       ) : (
-        <div className="card walletCard walletEmptyState">
+        <DeskSurface dense><div className="card walletCard walletEmptyState">
           <h3 style={{ marginTop: 0 }}>{t("emptyTitle")}</h3>
           <div className="walletMutedText">{t("emptyDescription")}</div>
-        </div>
+        </div></DeskSurface>
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import type { CSSProperties } from "react";
 
 type LiveViewProps = {
@@ -10,7 +11,7 @@ type LiveViewProps = {
 
 export function LiveView({ runtime }: LiveViewProps) {
   return (
-    <section className="card" style={{ padding: 12 }}>
+    <DeskSurface dense><section className="card" style={{ padding: 12 }}>
       <h3 style={{ marginTop: 0 }}>Live Runtime</h3>
       {!runtime ? (
         <div style={{ fontSize: 12, opacity: 0.8 }}>No runtime records yet.</div>
@@ -21,16 +22,16 @@ export function LiveView({ runtime }: LiveViewProps) {
           <Kv k="Updated" v={formatUpdated(runtime.updatedAt)} />
         </div>
       )}
-    </section>
+    </section></DeskSurface>
   );
 }
 
 function Kv({ k, v }: { k: string; v: string }) {
   return (
-    <div className="card" style={{ padding: "8px 10px" }}>
+    <DeskSurface dense><div className="card" style={{ padding: "8px 10px" }}>
       <div style={{ fontSize: 11, opacity: 0.7 }}>{k}</div>
       <div style={{ fontSize: 13 }}>{v}</div>
-    </div>
+    </div></DeskSurface>
   );
 }
 

@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -320,10 +324,10 @@ export default function ExchangeAccountsPage() {
               <AppIcon name="back" />
               {tCommon("backToSettings")}
             </Link>
-            <button className="btn" type="button" onClick={() => void loadAll()} disabled={loading}>
+            <DeskButton className="btn" type="button" onClick={() => void loadAll()} disabled={loading}>
               <AppIcon name="refresh" />
               {loading ? tCommon("loading") : tCommon("reload")}
-            </button>
+            </DeskButton>
           </>
         )}
       />
@@ -339,7 +343,7 @@ export default function ExchangeAccountsPage() {
         </Notice>
       ) : null}
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 style={{ margin: 0 }}>{t("create.title")}</h3>
@@ -352,20 +356,20 @@ export default function ExchangeAccountsPage() {
           <div className="settingsTwoColGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.exchange")}</span>
-              <select className="input" value={exchange} onChange={(event) => setExchange(event.target.value)}>
+              <DeskSelect className="input" value={exchange} onChange={(event) => setExchange(event.target.value)}>
                 {exchangeOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
-              </select>
+              </DeskSelect>
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.label")}</span>
-              <input className="input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder={t("fields.labelPlaceholder")} />
+              <DeskInput className="input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder={t("fields.labelPlaceholder")} />
             </label>
             {paperMode ? (
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.marketDataAccount")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={marketDataExchangeAccountId}
                   onChange={(event) => setMarketDataExchangeAccountId(event.target.value)}
@@ -377,44 +381,44 @@ export default function ExchangeAccountsPage() {
                       {account.label} ({account.exchange.toUpperCase()})
                     </option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
             ) : (
               <>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{exchange === "hyperliquid" ? t("fields.walletAddress") : t("fields.apiKey")}</span>
-                  <input className="input" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" />
+                  <DeskInput className="input" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" />
                 </label>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{exchange === "hyperliquid" ? t("fields.privateKey") : t("fields.apiSecret")}</span>
-                  <input className="input" type="password" value={apiSecret} onChange={(event) => setApiSecret(event.target.value)} autoComplete="new-password" />
+                  <DeskInput className="input" type="password" value={apiSecret} onChange={(event) => setApiSecret(event.target.value)} autoComplete="new-password" />
                 </label>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{passphraseRequired ? t("fields.passphraseRequired") : t("fields.passphraseOptional")}</span>
-                  <input className="input" type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} autoComplete="new-password" />
+                  <DeskInput className="input" type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} autoComplete="new-password" />
                 </label>
               </>
             )}
           </div>
 
           <div className="settingsWalletLinkActions">
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="submit"
               disabled={saving || !label.trim() || (credentialsRequired && (!apiKey.trim() || !apiSecret.trim())) || (passphraseRequired && !passphrase.trim()) || (paperMode && !marketDataExchangeAccountId)}
             >
               <AppIcon name="create" />
               {saving ? tCommon("saving") : t("create.submit")}
-            </button>
+            </DeskButton>
             <Link className="btn" href={withLocalePath("/settings/risk", locale)}>
               <AppIcon name="risk" />
               {t("create.riskLink")}
             </Link>
           </div>
         </form>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h3 style={{ margin: 0 }}>{t("list.title")}</h3>
@@ -434,7 +438,7 @@ export default function ExchangeAccountsPage() {
               const isEditing = editingAccountId === account.id;
               const marginCoin = account.futuresBudget?.marginCoin ?? (account.exchange === "hyperliquid" ? "USDC" : "USDT");
               return (
-                <div className="card settingsAccountCard" key={account.id}>
+                <DeskSurface><div className="card settingsAccountCard" key={account.id}>
                   <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <strong>{account.label}</strong>
@@ -471,77 +475,77 @@ export default function ExchangeAccountsPage() {
                         <div className="settingsTwoColGrid">
                           <label className="settingsField">
                             <span className="settingsFieldLabel">{t("fields.label")}</span>
-                            <input className="input" value={editLabel} onChange={(event) => setEditLabel(event.target.value)} />
+                            <DeskInput className="input" value={editLabel} onChange={(event) => setEditLabel(event.target.value)} />
                           </label>
                           {account.exchange === "paper" ? (
                             <label className="settingsField">
                               <span className="settingsFieldLabel">{t("fields.marketDataAccount")}</span>
-                              <select className="input" value={editMarketDataExchangeAccountId} onChange={(event) => setEditMarketDataExchangeAccountId(event.target.value)}>
+                              <DeskSelect className="input" value={editMarketDataExchangeAccountId} onChange={(event) => setEditMarketDataExchangeAccountId(event.target.value)}>
                                 {marketDataAccounts.map((marketDataAccount) => (
                                   <option key={marketDataAccount.id} value={marketDataAccount.id}>
                                     {marketDataAccount.label} ({marketDataAccount.exchange.toUpperCase()})
                                   </option>
                                 ))}
-                              </select>
+                              </DeskSelect>
                             </label>
                           ) : (
                             <>
                               <label className="settingsField">
                                 <span className="settingsFieldLabel">{account.exchange === "hyperliquid" ? t("fields.walletAddress") : t("fields.apiKey")}</span>
-                                <input className="input" value={editApiKey} onChange={(event) => setEditApiKey(event.target.value)} placeholder={t("fields.keepCurrent")} />
+                                <DeskInput className="input" value={editApiKey} onChange={(event) => setEditApiKey(event.target.value)} placeholder={t("fields.keepCurrent")} />
                               </label>
                               <label className="settingsField">
                                 <span className="settingsFieldLabel">{account.exchange === "hyperliquid" ? t("fields.privateKey") : t("fields.apiSecret")}</span>
-                                <input className="input" type="password" value={editApiSecret} onChange={(event) => setEditApiSecret(event.target.value)} placeholder={t("fields.keepCurrent")} />
+                                <DeskInput className="input" type="password" value={editApiSecret} onChange={(event) => setEditApiSecret(event.target.value)} placeholder={t("fields.keepCurrent")} />
                               </label>
                               <label className="settingsField">
                                 <span className="settingsFieldLabel">{t("fields.passphraseOptional")}</span>
-                                <input className="input" type="password" value={editPassphrase} onChange={(event) => setEditPassphrase(event.target.value)} placeholder={t("fields.keepCurrent")} />
+                                <DeskInput className="input" type="password" value={editPassphrase} onChange={(event) => setEditPassphrase(event.target.value)} placeholder={t("fields.keepCurrent")} />
                               </label>
                               <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <input type="checkbox" checked={editClearPassphrase} onChange={(event) => setEditClearPassphrase(event.target.checked)} disabled={Boolean(editPassphrase.trim())} />
+                                <DeskInput type="checkbox" checked={editClearPassphrase} onChange={(event) => setEditClearPassphrase(event.target.checked)} disabled={Boolean(editPassphrase.trim())} />
                                 <span>{t("fields.clearPassphrase")}</span>
                               </label>
                             </>
                           )}
                         </div>
                         <div className="settingsWalletLinkActions">
-                          <button className="btn btnPrimary" type="button" onClick={() => void saveAccount(account)} disabled={savingEditId === account.id || !editLabel.trim()}>
+                          <DeskButton className="btn btnPrimary" type="button" onClick={() => void saveAccount(account)} disabled={savingEditId === account.id || !editLabel.trim()}>
                             <AppIcon name="save" />
                             {savingEditId === account.id ? tCommon("saving") : tCommon("saveSettings")}
-                          </button>
-                          <button className="btn" type="button" onClick={cancelEditingAccount} disabled={savingEditId === account.id}>
+                          </DeskButton>
+                          <DeskButton className="btn" type="button" onClick={cancelEditingAccount} disabled={savingEditId === account.id}>
                             <AppIcon name="cancel" />
                             {t("actions.cancel")}
-                          </button>
+                          </DeskButton>
                         </div>
                       </div>
                     ) : null}
                   </div>
                   <div className="settingsAccountActions">
-                    <button className="btn" type="button" onClick={() => void syncAccount(account.id)} disabled={syncingId === account.id}>
+                    <DeskButton className="btn" type="button" onClick={() => void syncAccount(account.id)} disabled={syncingId === account.id}>
                       <AppIcon name="refresh" />
                       {syncingId === account.id ? t("actions.testing") : t("actions.test")}
-                    </button>
+                    </DeskButton>
                     {!account.systemManaged ? (
                       <>
-                        <button className="btn" type="button" onClick={() => startEditingAccount(account)}>
+                        <DeskButton className="btn" type="button" onClick={() => startEditingAccount(account)}>
                           <AppIcon name="edit" />
                           {t("actions.edit")}
-                        </button>
-                        <button className="btn btnStop" type="button" onClick={() => setDeleteId(account.id)} disabled={deletingId === account.id}>
+                        </DeskButton>
+                        <DeskButton className="btn btnStop" type="button" onClick={() => setDeleteId(account.id)} disabled={deletingId === account.id}>
                           <AppIcon name="delete" />
                           {deletingId === account.id ? tCommon("deleting") : t("actions.delete")}
-                        </button>
+                        </DeskButton>
                       </>
                     ) : null}
                   </div>
-                </div>
+                </div></DeskSurface>
               );
             })}
           </div>
         )}
-      </section>
+      </section></DeskSurface>
 
       <AdminConfirmDialog
         open={Boolean(deleteId)}

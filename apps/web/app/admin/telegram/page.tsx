@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -120,24 +122,24 @@ export default function AdminTelegramPage() {
       {isSuperadmin ? (
         <>
           <section className="adminStatsGrid">
-            <div className="card adminStatsCard">
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("configured")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{telegramConfigured ? t("yes") : t("no")}</div>
               <div className="adminStatsHint">{t("sectionTitle")}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("currentToken")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{telegramMasked || "-"}</div>
               <div className="adminStatsHint">{t("botToken")}</div>
-            </div>
-            <div className="card adminStatsCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card adminStatsCard">
               <div className="adminStatsLabel">{t("chatId")}</div>
               <div className="adminStatsValue adminStatsValueSmall">{telegramChatId || "-"}</div>
               <div className="adminStatsHint">{t("sendTest")}</div>
-            </div>
+            </div></DeskSurface>
           </section>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader adminDetailSectionHeader">
               <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
               <div className="adminDetailSectionDescription">
@@ -151,7 +153,7 @@ export default function AdminTelegramPage() {
           <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("botToken")}</span>
-              <input
+              <DeskInput
                 className="input"
                 placeholder={telegramMasked ?? "123456:ABC..."}
                 value={telegramToken}
@@ -160,7 +162,7 @@ export default function AdminTelegramPage() {
             </label>
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("chatId")}</span>
-              <input className="input" value={telegramChatId} onChange={(e) => setTelegramChatId(e.target.value)} />
+              <DeskInput className="input" value={telegramChatId} onChange={(e) => setTelegramChatId(e.target.value)} />
             </label>
           </div>
           <div className="adminInlineActions" style={{ marginTop: 14 }}>
@@ -174,7 +176,7 @@ export default function AdminTelegramPage() {
               {t("sendTest")}
             </AdminActionButton>
           </div>
-        </section>
+        </section></DeskSurface>
         </>
       ) : null}
       <AdminConfirmDialog

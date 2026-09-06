@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export type SymbolSearchOption = {
@@ -138,7 +140,7 @@ export default function SymbolSearchSelect({
 
   return (
     <div className={wrapperClassName} onMouseDown={cancelClose}>
-      <input
+      <DeskInput
         className="input symbolSearchSelectInput"
         value={query}
         disabled={disabled}
@@ -195,7 +197,7 @@ export default function SymbolSearchSelect({
               const active = index === activeIndex;
               const normalized = normalizeSymbol(option.symbol);
               return (
-                <button
+                <DeskButton
                   id={`${listboxId}-${index}`}
                   key={`${normalized}-${index}`}
                   type="button"
@@ -212,7 +214,7 @@ export default function SymbolSearchSelect({
                       {option.meta ?? restrictedLabel}
                     </span>
                   ) : null}
-                </button>
+                </DeskButton>
               );
             })
           )}

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import {
@@ -208,7 +210,7 @@ export default function MetricsSection(props: MetricsSectionProps) {
   const showEmpty = !loading && !error && chartPoints.length === 0;
 
   return (
-    <section className="card" style={{ padding: 12 }}>
+    <DeskSurface dense><section className="card" style={{ padding: 12 }}>
       <div
         style={{
           display: "flex",
@@ -223,7 +225,7 @@ export default function MetricsSection(props: MetricsSectionProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {RANGES.map((r) => (
-              <button
+              <DeskButton
                 key={r}
                 className={`btn ${range === r ? "btnPrimary" : ""} ${loading ? "btnDisabled" : ""}`}
                 onClick={() => setRange(r)}
@@ -231,7 +233,7 @@ export default function MetricsSection(props: MetricsSectionProps) {
                 type="button"
               >
                 {rangeConfig[r].label}
-              </button>
+              </DeskButton>
             ))}
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>Last update: {lastUpdateLabel}</div>
@@ -239,7 +241,7 @@ export default function MetricsSection(props: MetricsSectionProps) {
       </div>
 
       {error ? (
-        <div
+        <DeskSurface dense><div
           className="card"
           style={{
             marginTop: 10,
@@ -254,10 +256,10 @@ export default function MetricsSection(props: MetricsSectionProps) {
           }}
         >
           <div style={{ fontSize: 13 }}>Metrics failed: {error}</div>
-          <button className="btn" onClick={() => void loadMetrics()} type="button">
+          <DeskButton className="btn" onClick={() => void loadMetrics()} type="button">
             Retry
-          </button>
-        </div>
+          </DeskButton>
+        </div></DeskSurface>
       ) : null}
 
       {loading ? (
@@ -431,13 +433,13 @@ export default function MetricsSection(props: MetricsSectionProps) {
           </div>
         </>
       ) : null}
-    </section>
+    </section></DeskSurface>
   );
 }
 
 function KpiCard(props: { label: string; value: string; suffix?: string }) {
   return (
-    <div className="card" style={{ padding: 10 }}>
+    <DeskSurface dense><div className="card" style={{ padding: 10 }}>
       <div className="adminMeta">{props.label}</div>
       <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>
         {props.value}
@@ -445,16 +447,16 @@ function KpiCard(props: { label: string; value: string; suffix?: string }) {
           <span style={{ fontSize: 12, marginLeft: 6, color: "var(--muted)" }}>{props.suffix}</span>
         ) : null}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }
 
 function ChartCard(props: { title: string; style?: CSSProperties; children: React.ReactNode }) {
   return (
-    <div className="card" style={props.style}>
+    <DeskSurface dense><div className="card" style={props.style}>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{props.title}</div>
       <div style={{ flex: 1 }}>{props.children}</div>
-    </div>
+    </div></DeskSurface>
   );
 }
 
@@ -466,7 +468,7 @@ function MetricsTooltip(props: { active?: boolean; payload?: any[]; label?: numb
   if (entries.length === 0) return null;
 
   return (
-    <div
+    <DeskSurface dense><div
       className="card"
       style={{
         padding: 8,
@@ -484,6 +486,6 @@ function MetricsTooltip(props: { active?: boolean; payload?: any[]; label?: numb
           </div>
         ))}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

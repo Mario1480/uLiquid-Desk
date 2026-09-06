@@ -1,3 +1,4 @@
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import type { ReactNode } from "react";
 
 type SectionTone = "neutral" | "info" | "success" | "warning" | "danger" | "accent";
@@ -27,7 +28,7 @@ export default function Section({
   className
 }: SectionProps) {
   return (
-    <section className={cx("card uiSection", `uiSection-${tone}`, `uiSection-${density}`, className)}>
+    <DeskSurface><section className={cx("card uiSection", `uiSection-${tone}`, `uiSection-${density}`, className)}>
       {title || description || actions ? (
         <div className="uiSectionHeader">
           <div className="uiSectionHeaderCopy">
@@ -38,6 +39,6 @@ export default function Section({
         </div>
       ) : null}
       {children !== undefined && children !== null ? <div className="uiSectionBody">{children}</div> : null}
-    </section>
+    </section></DeskSurface>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import { useLocale, useTranslations } from "next-intl";
@@ -668,9 +670,9 @@ function UliqAdminPageContent() {
       <AdminPageHeader eyebrow={t("eyebrow")} title={t("title")} description={t("subtitle")} />
       <div className="adminToolbarRow">
         <AdminNotice tone="warning">{t("testnetNotice")}</AdminNotice>
-        <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
+        <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
           <AppIcon name="refresh" /> {t("refresh")}
-        </button>
+        </DeskButton>
       </div>
       {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
       {notice ? <AdminNotice tone="success" onDismiss={() => setNotice(null)}>{notice}</AdminNotice> : null}
@@ -722,7 +724,7 @@ function UliqAdminPageContent() {
                     <div className="adminFormGridCompact">
                       <label className="adminFormField">
                         <span className="adminFormFieldLabel">{t("presaleStart")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="datetime-local"
                           min={localDateTimeMin()}
@@ -732,7 +734,7 @@ function UliqAdminPageContent() {
                       </label>
                       <label className="adminFormField">
                         <span className="adminFormFieldLabel">{t("presaleEnd")}</span>
-                        <input
+                        <DeskInput
                           className="input"
                           type="datetime-local"
                           min={draft.saleStart || localDateTimeMin()}
@@ -758,7 +760,7 @@ function UliqAdminPageContent() {
                       </div>
                     ) : null}
                     {round.onchain?.state === 0 && !round.onchain.inventoryFunded ? (
-                      <button
+                      <DeskButton
                         type="button"
                         className="btn"
                         onClick={() => {
@@ -767,10 +769,10 @@ function UliqAdminPageContent() {
                         }}
                       >
                         <AppIcon name="funding" /> {t("presaleInventoryFundPrepareSafe")}
-                      </button>
+                      </DeskButton>
                     ) : null}
                     {round.onchain && ["DRAFT_ONLY", "DRIFTED", "PREPARED"].includes(round.onchain.bindingStatus) ? (
-                      <button
+                      <DeskButton
                         type="button"
                         className="btn"
                         onClick={() => {
@@ -780,10 +782,10 @@ function UliqAdminPageContent() {
                         disabled={!data.presaleSchedule.version}
                       >
                         <AppIcon name="shield" /> {t("presaleSchedulePrepareSafe")}
-                      </button>
+                      </DeskButton>
                     ) : null}
                     {round.onchain?.bindingStatus === "BOUND" && round.onchain.state === 0 ? (
-                      <button
+                      <DeskButton
                         type="button"
                         className="btn"
                         onClick={() => {
@@ -793,10 +795,10 @@ function UliqAdminPageContent() {
                         disabled={!round.onchain.inventoryFunded}
                       >
                         <AppIcon name="shield" /> {t("presaleReadyPrepareSafe")}
-                      </button>
+                      </DeskButton>
                     ) : null}
                     {round.onchain && round.onchain.state >= 4 && round.onchain.pendingPurchaseCount === "0" && round.onchain.unsoldReleasedUliqRaw === "0" && BigInt(round.onchain.unsoldInventoryUliqRaw) > BigInt(0) ? (
-                      <button
+                      <DeskButton
                         type="button"
                         className="btn"
                         onClick={() => {
@@ -805,27 +807,27 @@ function UliqAdminPageContent() {
                         }}
                       >
                         <AppIcon name="wallet" /> {t("presaleUnsoldReleasePrepareSafe")}
-                      </button>
+                      </DeskButton>
                     ) : null}
                     {inventoryActionId && inventoryActionRoundId === round.id ? (
                       <div className="adminFormGridCompact">
                         <label className="adminFormField">
                           <span className="adminFormFieldLabel">{t("presaleInventoryExecutionHash")}</span>
-                          <input
+                          <DeskInput
                             className="input uliqMono"
                             value={inventoryExecutionHash}
                             placeholder="0x…"
                             onChange={(event) => setInventoryExecutionHash(event.target.value.trim())}
                           />
                         </label>
-                        <button
+                        <DeskButton
                           type="button"
                           className="btn"
                           onClick={() => requestReauth("inventory-record")}
                           disabled={!/^0x[0-9a-fA-F]{64}$/.test(inventoryExecutionHash)}
                         >
                           <AppIcon name="audit" /> {t("presaleInventoryRecordExecution")}
-                        </button>
+                        </DeskButton>
                       </div>
                     ) : null}
                   </div>
@@ -834,7 +836,7 @@ function UliqAdminPageContent() {
             </div>
             <label className="adminFormField">
               <span className="adminFormFieldLabel">{t("presaleScheduleReason")}</span>
-              <input
+              <DeskInput
                 className="input"
                 value={roundScheduleReason}
                 maxLength={500}
@@ -843,33 +845,33 @@ function UliqAdminPageContent() {
               />
               <span className="adminFormFieldHint">{t("presaleScheduleReasonProgress", { count: roundScheduleReason.trim().length })}</span>
             </label>
-            <button
+            <DeskButton
               type="button"
               className="btn btnPrimary"
               onClick={() => requestReauth("presale-schedule")}
               disabled={!roundScheduleValid || roundScheduleReason.trim().length < 8}
             >
               <AppIcon name="save" /> {t("presaleScheduleSave")}
-            </button>
+            </DeskButton>
             {scheduleActionId ? (
               <div className="adminFormGridCompact">
                 <label className="adminFormField">
                   <span className="adminFormFieldLabel">{t("presaleScheduleExecutionHash")}</span>
-                  <input
+                  <DeskInput
                     className="input uliqMono"
                     value={scheduleExecutionHash}
                     placeholder="0x…"
                     onChange={(event) => setScheduleExecutionHash(event.target.value.trim())}
                   />
                 </label>
-                <button
+                <DeskButton
                   type="button"
                   className="btn"
                   onClick={() => requestReauth("schedule-record")}
                   disabled={!/^0x[0-9a-fA-F]{64}$/.test(scheduleExecutionHash)}
                 >
                   <AppIcon name="audit" /> {t("presaleScheduleRecordExecution")}
-                </button>
+                </DeskButton>
               </div>
             ) : null}
           </AdminDetailSection>
@@ -934,9 +936,9 @@ function UliqAdminPageContent() {
               {data.tiers.map((tier) => <div className="adminKeyValueRow" key={tier.id}><strong>{tier.code} · v{tier.version}</strong><span>${tier.minUsdValue} · Sub {tier.subscriptionDiscountBps / 100}% · AI {tier.aiDiscountBps / 100}%</span></div>)}
             </div>
             <div className="adminToolbarRow">
-              <button type="button" className="btn" onClick={() => setTierBenefitDrafts((current) => applyUliqBenefitPreset(current, data.benefitPreset))}>
+              <DeskButton type="button" className="btn" onClick={() => setTierBenefitDrafts((current) => applyUliqBenefitPreset(current, data.benefitPreset))}>
                 <AppIcon name="refresh" /> {t("tierBenefitsApplyPreset")}
-              </button>
+              </DeskButton>
             </div>
             <div className="adminListStack">
               {tierBenefitDrafts.map((draft, index) => (
@@ -947,7 +949,7 @@ function UliqAdminPageContent() {
                   </label>
                   <label className="adminFormField">
                     <span className="adminFormFieldLabel">{t("tierBenefitsMinimumUsd")}</span>
-                    <input
+                    <DeskInput
                       className="input"
                       inputMode="decimal"
                       value={draft.minUsdValue}
@@ -961,26 +963,26 @@ function UliqAdminPageContent() {
                   </label>
                   <label className="adminFormField">
                     <span className="adminFormFieldLabel">{t("tierBenefitsSubscriptionPercent")}</span>
-                    <input className="input" inputMode="decimal" value={draft.subscriptionDiscountPercent} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subscriptionDiscountPercent: event.target.value } : item))} />
+                    <DeskInput className="input" inputMode="decimal" value={draft.subscriptionDiscountPercent} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subscriptionDiscountPercent: event.target.value } : item))} />
                   </label>
                   <label className="adminFormField">
                     <span className="adminFormFieldLabel">{t("tierBenefitsAiPercent")}</span>
-                    <input className="input" inputMode="decimal" value={draft.aiDiscountPercent} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, aiDiscountPercent: event.target.value } : item))} />
+                    <DeskInput className="input" inputMode="decimal" value={draft.aiDiscountPercent} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, aiDiscountPercent: event.target.value } : item))} />
                   </label>
                   <label className="adminFormField">
                     <span className="adminFormFieldLabel">{t("tierBenefitsAiCap")}</span>
-                    <input className="input" inputMode="decimal" value={draft.aiCreditDiscountMonthlyUsd} placeholder={t("tierBenefitsAiCapPlaceholder")} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, aiCreditDiscountMonthlyUsd: event.target.value } : item))} />
+                    <DeskInput className="input" inputMode="decimal" value={draft.aiCreditDiscountMonthlyUsd} placeholder={t("tierBenefitsAiCapPlaceholder")} onChange={(event) => setTierBenefitDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, aiCreditDiscountMonthlyUsd: event.target.value } : item))} />
                   </label>
                 </div>
               ))}
             </div>
             <label className="adminFormField">
               <span className="adminFormFieldLabel">{t("tierBenefitsReason")}</span>
-              <input className="input" value={tierBenefitReason} maxLength={500} placeholder={t("tierBenefitsReasonPlaceholder")} onChange={(event) => setTierBenefitReason(event.target.value)} />
+              <DeskInput className="input" value={tierBenefitReason} maxLength={500} placeholder={t("tierBenefitsReasonPlaceholder")} onChange={(event) => setTierBenefitReason(event.target.value)} />
               <span className="adminFormFieldHint">{t("tierBenefitsReasonProgress", { count: tierBenefitReason.trim().length })}</span>
               <span className="adminFormFieldHint">{t("tierBenefitsCapHint")}</span>
             </label>
-            <button
+            <DeskButton
               type="button"
               className="btn btnPrimary"
               onClick={() => requestReauth("tier-benefits")}
@@ -988,7 +990,7 @@ function UliqAdminPageContent() {
               title={tierBenefitReason.trim().length < 8 ? t("tierBenefitsReasonRequired") : undefined}
             >
               <AppIcon name="save" /> {t("tierBenefitsSave")}
-            </button>
+            </DeskButton>
           </AdminDetailSection>
 
           <AdminDetailSection title={t("lockGateTitle")} description={t("lockGateDescription")}>
@@ -1022,23 +1024,23 @@ function UliqAdminPageContent() {
             <div className="adminFormGridCompact">
               <label className="adminFormField">
                 <span className="adminFormFieldLabel">{t("treasuryDesired")}</span>
-                <input className="input uliqMono" value={treasuryInput} onChange={(event) => setTreasuryInput(event.target.value.trim())} placeholder="0x…" />
+                <DeskInput className="input uliqMono" value={treasuryInput} onChange={(event) => setTreasuryInput(event.target.value.trim())} placeholder="0x…" />
                 <span className="adminFormFieldHint">{t("treasuryDesiredHint")}</span>
               </label>
             </div>
             <div className="adminToolbarRow">
-              <button type="button" className="btn btnPrimary" onClick={() => requestReauth("treasury-save")} disabled={!treasuryInput}>
+              <DeskButton type="button" className="btn btnPrimary" onClick={() => requestReauth("treasury-save")} disabled={!treasuryInput}>
                 <AppIcon name="save" /> {t("treasurySave")}
-              </button>
-              <button type="button" className="btn" onClick={() => requestReauth("treasury-propose")} disabled={data.treasury.syncStatus !== "proposal_required"}>
+              </DeskButton>
+              <DeskButton type="button" className="btn" onClick={() => requestReauth("treasury-propose")} disabled={data.treasury.syncStatus !== "proposal_required"}>
                 <AppIcon name="send" /> {t("treasuryPropose")}
-              </button>
-              <button type="button" className="btn" onClick={() => requestReauth("treasury-accept")} disabled={data.treasury.syncStatus !== "acceptance_required"}>
+              </DeskButton>
+              <DeskButton type="button" className="btn" onClick={() => requestReauth("treasury-accept")} disabled={data.treasury.syncStatus !== "acceptance_required"}>
                 <AppIcon name="check" /> {t("treasuryAccept")}
-              </button>
-              <button type="button" className="btn" onClick={() => requestReauth("treasury-cancel")} disabled={!data.treasury.pendingTreasury}>
+              </DeskButton>
+              <DeskButton type="button" className="btn" onClick={() => requestReauth("treasury-cancel")} disabled={!data.treasury.pendingTreasury}>
                 <AppIcon name="cancel" /> {t("treasuryCancel")}
-              </button>
+              </DeskButton>
             </div>
           </AdminDetailSection>
 
@@ -1048,14 +1050,14 @@ function UliqAdminPageContent() {
               <div className="adminKeyValueRow"><span>{t("pending")}</span><strong>{data.overview.pendingPurchaseCount}</strong></div>
               <div className="adminKeyValueRow"><span>{t("presaleInventory")}</span><strong>{formatToken(data.overview.presaleInventoryUliqRaw, 18, 0)} ULIQ</strong></div>
             </div>
-            <button
+            <DeskButton
               type="button"
               className="btn btnPrimary"
               onClick={() => requestReauth("dex-pending")}
               disabled={data.overview.state !== "ENDED" || data.overview.pendingPurchaseCount !== "0"}
             >
               <AppIcon name="launch" /> {t("dexPendingPrepare")}
-            </button>
+            </DeskButton>
           </AdminDetailSection>
 
           <AdminDetailSection title={t("safeTitle")} description={t("safeDescription")}>
@@ -1080,7 +1082,7 @@ function UliqAdminPageContent() {
             <div className="adminFormGridCompact">
               <label className="adminFormField">
                 <span className="adminFormFieldLabel">{t("timestamp")}</span>
-                <input
+                <DeskInput
                   className="input"
                   type="datetime-local"
                   min={localDateTimeMin()}
@@ -1092,7 +1094,7 @@ function UliqAdminPageContent() {
               </label>
             </div>
             <label className="uliqLaunchConfirmation">
-              <input type="checkbox" checked={poolReady} onChange={(event) => setPoolReady(event.target.checked)} disabled={data.overview.state !== "DEX_PENDING" || dexSubmitting} />
+              <DeskInput type="checkbox" checked={poolReady} onChange={(event) => setPoolReady(event.target.checked)} disabled={data.overview.state !== "DEX_PENDING" || dexSubmitting} />
               <span>{t("externalPoolConfirmation")}</span>
             </label>
             <div className="adminKeyValueList">
@@ -1102,22 +1104,22 @@ function UliqAdminPageContent() {
             {!isConnected ? <AdminNotice tone="warning">{t("walletRequired")}</AdminNotice> : null}
             {isConnected && !ownerMatches ? <AdminNotice tone="warning">{t("ownerMismatch", { owner: data.treasury.owner })}</AdminNotice> : null}
             <div className="adminToolbarRow">
-              <button
+              <DeskButton
                 type="button"
                 className="btn btnPrimary"
                 onClick={() => requestReauth("dex-submit")}
                 disabled={!dexPreflightReady || !isConnected || !ownerMatches}
               >
                 <AppIcon name="launch" /> {dexSubmitting ? t("awaitingSignature") : t("submitLaunch")}
-              </button>
-              <button
+              </DeskButton>
+              <DeskButton
                 type="button"
                 className="btn"
                 onClick={() => requestReauth("dex-prepare")}
                 disabled={!dexPreflightReady}
               >
                 <AppIcon name="shield" /> {t("prepareSafeFallback")}
-              </button>
+              </DeskButton>
             </div>
             {activeDexTracking ? (
               <AdminNotice tone={dexTrackingTone(activeDexTracking.confirmationStatus)}>
@@ -1133,7 +1135,7 @@ function UliqAdminPageContent() {
             {preparation ? (
               <>
                 <pre className="card uliqAdminPayload uliqMono">{JSON.stringify(preparation, null, 2)}</pre>
-                <button type="button" className="btn" onClick={() => void copyPayload()}><AppIcon name="copy" /> {t("copy")}</button>
+                <DeskButton type="button" className="btn" onClick={() => void copyPayload()}><AppIcon name="copy" /> {t("copy")}</DeskButton>
               </>
             ) : <div className="settingsMutedText">{t("noPayload")}</div>}
           </AdminDetailSection>

@@ -1294,7 +1294,14 @@
         "invalidated": "invalidated",
         "unknown": "unknown"
       },
-      "dataQuality": "Data: {state}",
+      "dataQuality": "Position data: {state}",
+      "marketDataQuality": "Market context: {state}",
+      "marketQuality": {
+        "fresh": "fresh",
+        "stale": "stale",
+        "degraded": "degraded",
+        "unavailable": "unavailable"
+      },
       "quality": {
         "complete": "complete",
         "degraded": "degraded"

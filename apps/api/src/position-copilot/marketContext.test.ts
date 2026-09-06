@@ -71,3 +71,31 @@ test("spot and unknown venues remain explicit and never create a client", async 
     }
   } finally { deps.createClient = original; }
 });
+
+test("standalone BingX context uses native depth normalization while retaining 25-level evidence", async t => {
+  const now = Date.now();
+  let depthCalls = 0;
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    const parsed = new URL(url);
+    if (parsed.pathname === "/openApi/swap/v2/quote/depth") {
+      depthCalls++;
+      assert.equal(parsed.searchParams.get("limit"), "50");
+      return new Response(JSON.stringify({ code: 0, data: {
+        bids: Array.from({ length: 50 }, (_, i) => [100 - i / 100, 1]),
+        asks: Array.from({ length: 50 }, (_, i) => [101 + i / 100, 1]), T: now
+      } }));
+    }
+    assert.equal(parsed.pathname, "/openApi/swap/v3/quote/klines");
+    return new Response(JSON.stringify({ code: 0, data: Array.from({ length: 100 }, (_, i) => ({
+      time: now - (100 - i) * 3600000, open: "100", high: "102", low: "99", close: "101", volume: "5"
+    })) }));
+  });
+  const result = await loadPositionMarketContext({ userId: "owner", account: { id: "fixture-account", exchange: "bingx" }, symbol: "DEPTHFIXUSDT", marketType: "perp" });
+  assert.equal(depthCalls, 1);
+  assert.ok(!result.warningCodes.includes("orderbook_snapshot_unavailable"));
+  assert.ok(result.warningCodes.includes("funding_unsupported"));
+  assert.ok(result.warningCodes.includes("open_interest_unsupported"));
+  assert.equal(result.snapshotManifest.find(s => s.dataset === "orderbook")!.limit, 25);
+  assert.equal(result.snapshotManifest.find(s => s.dataset === "orderbook")!.quality, "fresh");
+  assert.ok(result.featureSnapshots.some(f => f.id === "orderbook.snapshot"));
+});

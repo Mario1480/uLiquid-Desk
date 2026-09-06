@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -415,10 +420,10 @@ export default function FundingTransferSection({
 
   if (!isConnected) {
     return (
-      <div className="card walletCard walletEmptyState">
+      <DeskSurface dense><div className="card walletCard walletEmptyState">
         <h3 style={{ marginTop: 0 }}>{t("connectTitle")}</h3>
         <div className="walletMutedText">{t("connectDescription")}</div>
-      </div>
+      </div></DeskSurface>
     );
   }
 
@@ -426,14 +431,14 @@ export default function FundingTransferSection({
     return (
       <div className="walletStack">
         <div className="walletMetricsGrid fundingMetricsGrid">
-          <div className="card walletCard">
-            <div className="skeletonLine skeletonLineLg" />
-            <div className="skeletonLine skeletonLineMd" style={{ marginTop: 14 }} />
-          </div>
-          <div className="card walletCard">
-            <div className="skeletonLine skeletonLineLg" />
-            <div className="skeletonLine skeletonLineMd" style={{ marginTop: 14 }} />
-          </div>
+          <DeskSurface dense><div className="card walletCard">
+            <GlassSkeleton className="skeletonLine skeletonLineLg" />
+            <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 14 }} />
+          </div></DeskSurface>
+          <DeskSurface dense><div className="card walletCard">
+            <GlassSkeleton className="skeletonLine skeletonLineLg" />
+            <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 14 }} />
+          </div></DeskSurface>
         </div>
       </div>
     );
@@ -453,24 +458,24 @@ export default function FundingTransferSection({
     <div className={`walletStack${presentation === "modal" ? " fundingModalSection" : ""}`}>
       {presentation === "card" ? (
         <div className="fundingCalloutGrid">
-        <div className="card walletCard fundingCalloutCard">
+        <DeskSurface dense><div className="card walletCard fundingCalloutCard">
           <strong>{t("calloutDomainsTitle")}</strong>
           <div className="walletMutedText">{overview.protocol.domainsDescription}</div>
-        </div>
-        <div className="card walletCard fundingCalloutCard">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="card walletCard fundingCalloutCard">
           <strong>{t("calloutCoreGasTitle")}</strong>
           <div className="walletMutedText">{t("calloutCoreGasBody")}</div>
-        </div>
-        <div className="card walletCard fundingCalloutCard">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="card walletCard fundingCalloutCard">
           <strong>{t("calloutEvmGasTitle")}</strong>
           <div className="walletMutedText">{t("calloutEvmGasBody")}</div>
-        </div>
+        </div></DeskSurface>
         </div>
       ) : null}
 
       {presentation === "card" ? (
       <section className="walletMetricsGrid fundingMetricsGrid">
-        <article className="card walletCard fundingMetricCard">
+        <DeskSurface dense><article className="card walletCard fundingMetricCard">
           <div className="walletSectionHeader">
             <div className="walletSectionIntro">
               <h3 className="walletSectionTitle">{t("hyperCoreCardTitle")}</h3>
@@ -495,9 +500,9 @@ export default function FundingTransferSection({
               <strong>{displayBalance(overview.hyperCore.hype)}</strong>
             </div>
           </div>
-        </article>
+        </article></DeskSurface>
 
-        <article className="card walletCard fundingMetricCard">
+        <DeskSurface dense><article className="card walletCard fundingMetricCard">
           <div className="walletSectionHeader">
             <div className="walletSectionIntro">
               <h3 className="walletSectionTitle">{t("hyperEvmCardTitle")}</h3>
@@ -522,11 +527,11 @@ export default function FundingTransferSection({
               <strong>{displayBalance(overview.hyperEvm.hype)}</strong>
             </div>
           </div>
-        </article>
+        </article></DeskSurface>
       </section>
       ) : null}
 
-      <section className="card walletCard fundingTransferCard">
+      <DeskSurface dense><section className="card walletCard fundingTransferCard">
         <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
           <div className="walletSectionIntro">
             <h3 className="walletSectionTitle">{presentation === "modal" ? t(direction === "core_to_evm" ? "submitToHyperEvm" : "submitToHyperCore") : t("transferCardTitle")}</h3>
@@ -536,42 +541,42 @@ export default function FundingTransferSection({
 
         {presentation === "card" ? (
           <div className="fundingDirectionRow fundingSegmentedRow">
-            <button
+            <DeskButton
               type="button"
 	              className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
 	              onClick={() => setDirection("core_to_evm")}
 	            >
 	              <AppIcon name="transfer" />
 	              {t("moveToHyperEvm")}
-	            </button>
-            <button
+	            </DeskButton>
+            <DeskButton
               type="button"
 	              className={`btn ${direction === "evm_to_core" ? "btnPrimary" : ""}`}
 	              onClick={() => setDirection("evm_to_core")}
 	            >
 	              <AppIcon name="transfer" />
 	              {t("moveToHyperCore")}
-	            </button>
+	            </DeskButton>
           </div>
         ) : null}
 
         {presentation === "modal" ? (
           <>
             <div className="fundingModalCompactSwitch" role="tablist" aria-label={t("transferCardTitle")}>
-              <button
+              <DeskButton
                 type="button"
                 className={`fundingModalCompactSwitchButton ${direction === "core_to_evm" ? "isActive" : ""}`}
                 onClick={() => setDirection("core_to_evm")}
               >
                 {tCommon("locationHyperCore")} ↔ {tCommon("locationHyperEvm")}
-              </button>
-              <button
+              </DeskButton>
+              <DeskButton
                 type="button"
                 className={`fundingModalCompactSwitchButton ${direction === "evm_to_core" ? "isActive" : ""}`}
                 onClick={() => setDirection("evm_to_core")}
               >
                 {tCommon("locationHyperEvm")} ↔ {tCommon("locationHyperCore")}
-              </button>
+              </DeskButton>
             </div>
             <div className="fundingModalAmountMeta">
               <span>{t("fromLabel")}</span>
@@ -582,7 +587,7 @@ export default function FundingTransferSection({
               <strong>{locationTo}</strong>
             </div>
             <label className="settingsField">
-              <select
+              <DeskSelect
                 className="input walletAmountInput"
                 value={asset}
                 onChange={(event) => {
@@ -592,14 +597,14 @@ export default function FundingTransferSection({
               >
                 <option value="USDC">USDC</option>
                 <option value="HYPE">HYPE</option>
-              </select>
+              </DeskSelect>
             </label>
           </>
         ) : (
           <>
             <div className="fundingAssetRow fundingSegmentedRow">
               {(["USDC", "HYPE"] as const).map((candidate) => (
-                <button
+                <DeskButton
                   key={candidate}
                   type="button"
                   className={`btn ${asset === candidate ? "btnPrimary" : ""}`}
@@ -608,7 +613,7 @@ export default function FundingTransferSection({
                   }}
                 >
                   {candidate}
-                </button>
+                </DeskButton>
               ))}
             </div>
 
@@ -638,21 +643,21 @@ export default function FundingTransferSection({
         {presentation === "card" ? <div className="walletFormDivider" /> : null}
 
         <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
-          <input
+          <DeskInput
             className="input walletAmountInput"
             inputMode="decimal"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             placeholder={t("amountPlaceholder")}
           />
-          <button
+          <DeskButton
             type="button"
 	            className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"}
 	            onClick={() => setAmount(sourceBalance?.formatted ?? "")}
 	          >
 	            <AppIcon name="max" />
 	            {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", asset === "USDC" ? 2 : 4)}
-	          </button>
+	          </DeskButton>
         </div>
 
         {capability && !capability.supported ? (
@@ -681,7 +686,7 @@ export default function FundingTransferSection({
         {presentation === "card" ? <div className="walletFormDivider" /> : null}
 
         <div className={presentation === "modal" ? "walletActionRow fundingModalPrimaryActionRow" : "walletActionRow walletCardActions fundingPrimaryActionRow"}>
-          <button
+          <DeskButton
             type="button"
             className="btn btnPrimary"
             onClick={() => {
@@ -697,7 +702,7 @@ export default function FundingTransferSection({
 	            {(direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain)
 	              ? direction === "core_to_evm" ? tErrors("switchToArbitrum") : t("switchNetworkButton")
               : direction === "core_to_evm" ? t("submitToHyperEvm") : t("submitToHyperCore")}
-          </button>
+          </DeskButton>
         </div>
         {transferDisabledReason && presentation === "card" ? (
           <div className="walletMutedText">{transferDisabledReason}</div>
@@ -705,7 +710,7 @@ export default function FundingTransferSection({
         {direction === "evm_to_core" && asset === "USDC" && presentation === "card" ? (
           <div className="walletMutedText">{t("evmToCoreUsdcHint")}</div>
         ) : null}
-      </section>
+      </section></DeskSurface>
     </div>
   );
 }

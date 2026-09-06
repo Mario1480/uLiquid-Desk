@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPost } from "../../../lib/api";
@@ -217,18 +221,18 @@ export default function AdminUsersPage() {
       <form className="settingsSection adminInlineForm" onSubmit={handleCreateUser}>
         <div className="settingsSectionHeader">
           <h3 className="adminSectionTitle">Create User</h3>
-          <button type="submit" className="btn btnPrimary" disabled={creating || !newEmail.trim()}>
+          <DeskButton type="submit" className="btn btnPrimary" disabled={creating || !newEmail.trim()}>
             {creating ? "Creating…" : "Create user"}
-          </button>
+          </DeskButton>
         </div>
         <div className="adminFilterGrid">
           <label className="settingsField">
             <span className="settingsFieldLabel">Email</span>
-            <input className="input" type="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="user@example.com" />
+            <DeskInput className="input" type="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="user@example.com" />
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">Initial Password</span>
-            <input className="input" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Optional - generate temporary password if empty" />
+            <DeskInput className="input" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Optional - generate temporary password if empty" />
           </label>
         </div>
       </form>
@@ -237,35 +241,35 @@ export default function AdminUsersPage() {
         <div className="adminFilterGrid">
           <label className="settingsField">
             <span className="settingsFieldLabel">Search</span>
-            <input className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Name or email" />
+            <DeskInput className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Name or email" />
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">Status</span>
-            <select className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
+            <DeskSelect className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
               <option value="">All</option>
               {data?.filterOptions.status?.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            </DeskSelect>
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">Role</span>
-            <select className="input" value={role} onChange={(event) => { setPage(1); setRole(event.target.value); }}>
+            <DeskSelect className="input" value={role} onChange={(event) => { setPage(1); setRole(event.target.value); }}>
               <option value="">All</option>
               {data?.filterOptions.role?.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            </DeskSelect>
           </label>
           <label className="settingsField">
             <span className="settingsFieldLabel">License</span>
-            <select className="input" value={licenseStatus} onChange={(event) => { setPage(1); setLicenseStatus(event.target.value); }}>
+            <DeskSelect className="input" value={licenseStatus} onChange={(event) => { setPage(1); setLicenseStatus(event.target.value); }}>
               <option value="">All</option>
               {data?.filterOptions.licenseStatus?.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            </DeskSelect>
           </label>
         </div>
       </AdminFilterBar>
 
       {loading ? <div className="settingsMutedText">Loading users…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface> : null}
 
       {data && data.items.length > 0 ? (
         <>
@@ -310,7 +314,7 @@ export default function AdminUsersPage() {
                 <td>{formatDateTime(user.createdAt)}</td>
                 <td>
                   {!user.isSuperadmin && user.id !== currentUserId ? (
-                    <button
+                    <DeskButton
                       type="button"
                       className="btn btnStop"
                       title="Delete user"
@@ -321,7 +325,7 @@ export default function AdminUsersPage() {
                       }}
                     >
                       <AppIcon name="delete" />
-                    </button>
+                    </DeskButton>
                   ) : (
                     <span className="settingsMutedText">Protected</span>
                   )}

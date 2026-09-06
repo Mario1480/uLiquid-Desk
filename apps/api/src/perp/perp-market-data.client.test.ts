@@ -50,3 +50,28 @@ test("keeps MEXC OI and BingX derivatives unsupported", () => {
   assert.equal(bingx.fundingRate, null);
   assert.equal(bingx.openInterest, null);
 });
+
+test("BingX maps depth coverage to valid native limits and trims without changing timestamps", async t => {
+  let expectedLimit = 50;
+  t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, "/openApi/swap/v2/quote/depth");
+    assert.equal(parsed.searchParams.get("symbol"), "ADA-USDT");
+    assert.equal(parsed.searchParams.get("limit"), String(expectedLimit));
+    assert.equal(options.method, "GET");
+    assert.deepEqual(options.headers, { Accept: "application/json" });
+    const bids = Array.from({ length: expectedLimit }, (_, i) => [String(100 - i / 100), "1"]);
+    const asks = Array.from({ length: expectedLimit }, (_, i) => [String(101 + i / 100), "2"]);
+    return new Response(JSON.stringify({ code: 0, data: { bids, asks, T: 1700000000000 } }));
+  });
+  const client = createPerpMarketDataClient({ id: "public:bingx", userId: "public", exchange: "bingx", label: "public", apiKey: "", apiSecret: "", passphrase: null, marketDataExchangeAccountId: null });
+  for (const [requested, upstream, returned] of [[25, 50, 25], [20, 20, 20], [7, 10, 7], [101, 500, 101], [1000, 500, 200], [0, 5, 5], [NaN, 50, 50], [Infinity, 50, 50]]) {
+    expectedLimit = upstream;
+    const result = await client.getDepth("ADAUSDT", requested);
+    assert.equal(result.bids.length, returned);
+    assert.equal(result.asks.length, returned);
+    assert.equal(result.ts, 1700000000000);
+    assert.deepEqual(result.bids[0], [100, 1]);
+  }
+  await client.close();
+});

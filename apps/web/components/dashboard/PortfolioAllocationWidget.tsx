@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import type { ExchangeAccountOverview } from "../../app/components/ExchangeAccountOverviewCard";
@@ -80,13 +82,13 @@ export default function PortfolioAllocationWidget({
   }).format(value);
 
   return (
-    <div className="card dashboardInsightCard dashboardPortfolioAllocationCard dashboardWidgetCardFill">
+    <DeskSurface><div className="card dashboardInsightCard dashboardPortfolioAllocationCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div>
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>
           <div className="dashboardCompactWidgetSubtitle">{t("subtitle")}</div>
         </div>
-        <select
+        <DeskSelect
           className="select dashboardPortfolioFilter"
           value={accountFilter}
           onChange={(event) => setAccountFilter(event.target.value)}
@@ -98,7 +100,7 @@ export default function PortfolioAllocationWidget({
               {account.exchange.toUpperCase()} · {account.label}
             </option>
           ))}
-        </select>
+        </DeskSelect>
       </div>
 
       {loading && accounts.length === 0 ? (
@@ -137,6 +139,6 @@ export default function PortfolioAllocationWidget({
         <span>{t("openExposure", { count: filteredPositions.length })}</span>
         <strong>{money(exposure)}</strong>
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

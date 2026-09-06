@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -165,16 +167,16 @@ export default function MarketIntelligencePage() {
         title={t("title")}
         description={t("subtitle")}
         actions={(
-          <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
+          <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
             <AppIcon name="refresh" />
             {t("refresh")}
-          </button>
+          </DeskButton>
         )}
       />
 
       <div className="marketIntelligenceToolbar" role="group" aria-label={t("horizonLabel")}>
         {(["intraday", "24h", "7d"] as Horizon[]).map((entry) => (
-          <button
+          <DeskButton
             key={entry}
             type="button"
             className={`btn ${horizon === entry ? "btnPrimary" : ""}`}
@@ -182,30 +184,30 @@ export default function MarketIntelligencePage() {
             aria-pressed={horizon === entry}
           >
             {t(`horizons.${entry}`)}
-          </button>
+          </DeskButton>
         ))}
       </div>
 
-      {error ? <div className="uiNotice uiNotice-danger">{t("loadError")}: {error}</div> : null}
-      {incomplete ? <div className="uiNotice uiNotice-warning">{t("dataIncomplete")}</div> : null}
+      {error ? <DeskSurface><div className="uiNotice uiNotice-danger">{t("loadError")}: {error}</div></DeskSurface> : null}
+      {incomplete ? <DeskSurface><div className="uiNotice uiNotice-warning">{t("dataIncomplete")}</div></DeskSurface> : null}
 
       <section className="marketIntelligenceMetrics" aria-label={t("overviewTitle")}>
-        <div className="uiMetricTile">
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("risk")}</span>
           <strong>{payload?.summary.overallRisk ?? (loading ? "…" : "unknown")}</strong>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("tone")}</span>
           <strong>{payload?.summary.sentiment ?? (loading ? "…" : "neutral")}</strong>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("providers")}</span>
           <strong>{healthyProviders}/{providers.length}</strong>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface><div className="uiMetricTile">
           <span>{t("updated")}</span>
           <strong>{payload ? new Date(payload.summary.generatedAt).toLocaleTimeString() : "–"}</strong>
-        </div>
+        </div></DeskSurface>
       </section>
 
       <div className="marketIntelligenceGrid">
@@ -330,7 +332,7 @@ export default function MarketIntelligencePage() {
         {!analysesLoading && analyses.length === 0 ? <div className="uiEmptyState">{t("savedAnalysesEmpty")}</div> : null}
         <div className="marketIntelligenceHistoryList">
           {analyses.map((analysis) => (
-            <button key={analysis.id} type="button" onClick={() => setSelectedAnalysis(analysis)}>
+            <DeskButton key={analysis.id} type="button" onClick={() => setSelectedAnalysis(analysis)}>
               <div>
                 <strong>{analysis.title}</strong>
                 <span>{new Date(analysis.generatedAt).toLocaleString()} · {t(`horizons.${analysis.horizon}`)}</span>
@@ -339,7 +341,7 @@ export default function MarketIntelligencePage() {
               <span className="badge">{analysis.sentiment}</span>
               {analysis.degraded ? <span className="uiStatusBadge uiStatusBadge-warning">{t("degraded")}</span> : null}
               <AppIcon name="chevronRight" />
-            </button>
+            </DeskButton>
           ))}
         </div>
       </section>
@@ -352,11 +354,11 @@ export default function MarketIntelligencePage() {
           onClose={() => setSelectedAnalysis(null)}
         >
           <div className="marketIntelligenceAnalysisDetail">
-            {selectedAnalysis.degraded ? <div className="uiNotice uiNotice-warning">{t("savedAnalysisDegraded")}</div> : null}
+            {selectedAnalysis.degraded ? <DeskSurface><div className="uiNotice uiNotice-warning">{t("savedAnalysisDegraded")}</div></DeskSurface> : null}
             <section className="marketIntelligenceMetrics" aria-label={t("overviewTitle")}>
-              <div className="uiMetricTile"><span>{t("risk")}</span><strong>{selectedAnalysis.overallRisk}</strong></div>
-              <div className="uiMetricTile"><span>{t("tone")}</span><strong>{selectedAnalysis.sentiment}</strong></div>
-              <div className="uiMetricTile"><span>{t("dataAge")}</span><strong>{selectedAnalysis.payload.context.dataAgeSeconds ?? "–"}s</strong></div>
+              <DeskSurface><div className="uiMetricTile"><span>{t("risk")}</span><strong>{selectedAnalysis.overallRisk}</strong></div></DeskSurface>
+              <DeskSurface><div className="uiMetricTile"><span>{t("tone")}</span><strong>{selectedAnalysis.sentiment}</strong></div></DeskSurface>
+              <DeskSurface><div className="uiMetricTile"><span>{t("dataAge")}</span><strong>{selectedAnalysis.payload.context.dataAgeSeconds ?? "–"}s</strong></div></DeskSurface>
             </section>
             <section className="uiSection">
               <div className="uiSectionHeader"><h2>{t("driversTitle")}</h2></div>

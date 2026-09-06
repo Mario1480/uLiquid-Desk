@@ -1,0 +1,151 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(ein);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(ein) source(none);
+@import "tw-animate-css";
+@source "./**/*.{ts,tsx}";
+@source "../desk/**/*.{ts,tsx}";
+@custom-variant dark (&:is(.dark *, [data-ein-theme] *));
+
+/* Prefix applies to utilities and Tailwind variables; no Preflight is imported. */
+@theme {
+  --color-cyan-500: #24e6f2;
+  --color-blue-500: #3478fa;
+  --color-purple-500: #8854f6;
+  --color-pink-500: #dc48f5;
+  --color-cyan-100: #b7faff;
+}
+@theme inline {
+  --color-background: var(--ein-background);
+  --color-foreground: var(--ein-foreground);
+  --color-primary: var(--ein-action);
+  --color-primary-foreground: #fff;
+  --color-border: #b7faff40;
+  --color-input: #b7faff40;
+  --color-ring: #24e6f2;
+  --color-muted: #16253a;
+  --color-muted-foreground: #b9c9de;
+  --color-accent: #173659;
+  --color-accent-foreground: #fff;
+  --color-popover: #0b172a;
+  --color-popover-foreground: #f2f7ff;
+}
+:root {
+  --ein-background: #040817;
+  --ein-foreground: #f2f7ff;
+  --ein-ocean-cyan: #24e6f2;
+  --ein-ocean-blue: #3478fa;
+  --ein-ocean-violet: #8854f6;
+  --ein-ocean-magenta: #dc48f5;
+  --ein-ocean-ice: #b7faff;
+  /* Accessible solid shade of Ocean blue for normal-size white labels. */
+  --ein-action: #2865dc;
+  --ein-glass-glow-cyan: #24e6f24d;
+  --ein-glass-glow-blue: #3478fa4d;
+  --ein-glass-glow-purple: #8854f64d;
+  --ein-glass-highlight: #b7faff33;
+  --ein-glass-shadow: #0000005e;
+  --color-bg-app: var(--ein-background);
+  --color-bg-app-alt: #071222;
+  --color-surface-1: #071222e6;
+  --color-surface-2: #0b172af0;
+  --color-surface-3: #102039f5;
+  --color-surface-elevated: #112239fa;
+  --color-brand-primary: var(--ein-ocean-blue);
+  --color-brand-secondary: var(--ein-ocean-cyan);
+  --color-accent: var(--ein-ocean-ice);
+  --color-focus-ring: var(--ein-ocean-cyan);
+  --color-text-muted: #a5b6cd;
+}
+.ein-card-material, [data-ein-surface] {
+  background: linear-gradient(110deg, #24e6f212, #3478fa0f 52%, #8854f612), #071222c9;
+  border: 1px solid #b7faff26;
+  box-shadow: 0 8px 24px #00000029, inset 0 1px 0 #b7faff12;
+  backdrop-filter: blur(16px);
+}
+[data-ein-density="dense"] { background-color: #071222f5; backdrop-filter: none; }
+.ein-native-control { color-scheme: dark; accent-color: var(--ein-action); }
+.ein-native-control:focus-visible, [data-ein-button]:focus-visible, .ein-gallery :focus-visible {
+  outline: 2px solid var(--ein-ocean-cyan); outline-offset: 3px;
+}
+[data-ein-table] { border-color: #b7faff26; }
+.ein-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #90a8c4; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; color: #fff; }
+.ein-button-md { min-height: 40px; padding: 8px 16px; }
+.ein-button-sm { min-height: 32px; padding: 6px 12px; font-size: 12px; }
+.ein-button-lg { min-height: 48px; padding: 12px 24px; }
+.ein-button-icon { height: 40px; width: 40px; }
+.ein-button-default { background-color: #172a43; }
+.ein-button-primary { background-color: var(--ein-action); border-color: #719dff; }
+.ein-button-outline, .ein-button-ghost { background-color: transparent; }
+.ein-button-ghost { border-color: transparent; }
+.ein-button-destructive { background-color: #b42336; border-color: #ef7b8a; }
+.ein-button:hover { background-color: #253c58; }
+.ein-button-primary:hover { background-color: #2159c9; }
+.ein-button-destructive:hover { background-color: #981f30; }
+.ein-button:disabled { opacity: .55; cursor: not-allowed; }
+/* This rule also neutralizes legacy product button gradients and transforms. */
+[data-ein-button], .btn, .ein-gallery button {
+  background-image: none !important; box-shadow: none !important; transform: none !important;
+  transition-property: color, background-color, border-color, outline-color !important;
+}
+[data-ein-button]::before, [data-ein-button]::after, .btn::before, .btn::after { display: none !important; }
+.btnPrimary { background: var(--ein-action) !important; color: #fff !important; border-color: #719dff !important; }
+.btnStart { background: #187448 !important; color: #fff !important; }
+.btnPause { background: #986000 !important; color: #fff !important; }
+.btnStop { background: #b42336 !important; color: #fff !important; }
+.ein-gallery { min-width: 0; display: grid; gap: 20px; }
+.ein-gallery-preview { padding: 20px; min-width: 0; overflow: auto; border: 1px solid #b7faff40; border-radius: 16px; background: #071222; }
+.ein-demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.ein-demo-stack { display: grid; gap: 16px; }
+.ein-gallery [data-ein-theme="aurora"] { --ein-color-cyan-500: #a855f7; --ein-color-blue-500: #d946ef; --ein-color-purple-500: #ec4899; }
+.ein-gallery [data-ein-theme="forest"] { --ein-color-cyan-500: #10b981; --ein-color-blue-500: #14b8a6; --ein-color-purple-500: #06b6d4; }
+@keyframes ein-ripple { from { transform: scale(0); opacity: 1; } to { transform: scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  [class*="ein:"], [data-ein-surface], [data-ein-button], .ein-gallery * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  [data-ein-surface], [class*="ein:backdrop-blur"] { background-color: #102039 !important; }
+}
+@media (max-width: 600px) { .ein-gallery-preview { padding: 12px; } }
+
+[data-ein-preview-theme="aurora"] { --ein-color-cyan-500: #a855f7; --ein-color-blue-500: #d946ef; --ein-color-purple-500: #ec4899; }
+[data-ein-preview-theme="forest"] { --ein-color-cyan-500: #10b981; --ein-color-blue-500: #14b8a6; --ein-color-purple-500: #06b6d4; }
+[data-ein-portal] > [data-state] { z-index: 1400; }
+[data-ein-portal] :is([role="dialog"], [role="alertdialog"]) { background-color: #0b172af5; max-height: calc(100dvh - 32px); overflow-y: auto; }
+.ein-admin-confirm { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.ein-gallery-preview { min-height: 180px; scroll-margin-top: 140px; }
+.ein-gallery select { max-width: 100%; min-height: 40px; }
+.ein-gallery .ein-demo-row > label { min-width: 0; max-width: 100%; }
+.ein-pricing-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(240px,100%),1fr)); gap: 20px; }
+.ein-pricing-heading { display: grid; gap: 16px; margin-bottom: 24px; }
+.ein-pricing-features { padding-left: 20px; }
+.ein-pricing-features li { display: flex; gap: 8px; margin-block: 12px; }
+.ein-pricing-price { display: flex; flex-wrap: wrap; gap: 8px; }
+.ein-pricing-price strong { font-size: 28px; }
+
+.ein-command-input { width: 100%; box-sizing: border-box; padding: 12px; margin-top: 20px; border: 1px solid #8197b3; border-radius: 8px; background: #071222; color: #f2f7ff; }
+.ein-command-option { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border: 0; border-radius: 8px; text-align: left; background: transparent; color: #f2f7ff; cursor: pointer; }
+.ein-command-option[aria-selected="true"] { background: #1b385d; }
+.ein-command-option small { display: block; color: #b9c9de; }
+.ein-gallery-preview :is(input, textarea, select, [role="checkbox"], [role="radio"], [role="switch"], [role="combobox"]) { border-color: #8197b3; }
+[data-ein-portal] :is([role="tooltip"], [data-radix-popper-content-wrapper]) { z-index: 1450; }
+[data-ein-button].btnPrimary { background: var(--ein-action) !important; color: #fff !important; }
+[data-ein-button].btnStart { background: #187448 !important; color: #fff !important; }
+[data-ein-button].btnPause { background: #986000 !important; color: #fff !important; }
+[data-ein-button].btnStop { background: #b42336 !important; color: #fff !important; }
+
+.ein-skeleton { position: relative; overflow: hidden; background-color: #ffffff0d; }
+.ein-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg,transparent,#ffffff1a,transparent); transform: translateX(-100%); animation: ein-shimmer 2s infinite; }
+@keyframes ein-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .ein-skeleton::after { animation: none; } }
+[data-ein-table] thead { background-color: #0e1c30; }
+[data-ein-table] :is(th,td) { border-color: #b7faff26; }
+[data-ein-table] tbody tr:hover { background-color: #b7faff08; }
+.card[data-ein-surface], :is(.dashboardPage,.settingsPage,.adminPage,.uiPage) .card[data-ein-surface] { background: linear-gradient(110deg,#24e6f212,#3478fa0f 52%,#8854f612),#071222e6 !important; box-shadow: 0 8px 24px #00000029,inset 0 1px 0 #b7faff12 !important; }
+.card[data-ein-density="dense"] { background-color: #071222fa !important; }
+
+[data-ein-portal] [role="alertdialog"] { width: min(24rem, calc(100vw - 32px)); }
+/* Persistent notices retain their business meaning on the shared glass material. */
+[data-ein-surface].uiNotice-info { border-color: #38bdf86b; }
+[data-ein-surface].uiNotice-success { border-color: #22c55e80; }
+[data-ein-surface].uiNotice-warning { border-color: #f59e0b85; }
+[data-ein-surface].uiNotice-danger { border-color: #ef44448c; }

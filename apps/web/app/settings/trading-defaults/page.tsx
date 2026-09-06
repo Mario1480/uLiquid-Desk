@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -177,16 +181,16 @@ export default function TradingDefaultsPage() {
         </Notice>
       ) : null}
 
-      <section className="card settingsSection">
+      <DeskSurface><section className="card settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <div className="settingsInlineTitle">{t("form.title")}</div>
             <div className="settingsMutedText">{t("form.description")}</div>
           </div>
-          <button className="btn" type="button" onClick={loadAll} disabled={loading}>
+          <DeskButton className="btn" type="button" onClick={loadAll} disabled={loading}>
             <AppIcon name="refresh" />
             {tCommon("reload")}
-          </button>
+          </DeskButton>
         </div>
 
         {loading ? (
@@ -195,7 +199,7 @@ export default function TradingDefaultsPage() {
           <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("fields.exchangeAccount")}</span>
-              <select
+              <DeskSelect
                 className="input"
                 value={settings.exchangeAccountId ?? ""}
                 onChange={(event) => setSettings((current) => ({ ...current, exchangeAccountId: event.target.value || null }))}
@@ -206,24 +210,24 @@ export default function TradingDefaultsPage() {
                     {account.label} ({account.exchange.toUpperCase()})
                   </option>
                 ))}
-              </select>
+              </DeskSelect>
             </label>
 
             <div className="settingsFormGrid settingsTradingDefaultsGrid">
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.marketType")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={settings.marketType}
                   onChange={(event) => setSettings((current) => ({ ...current, marketType: event.target.value === "spot" ? "spot" : "perp" }))}
                 >
                   <option value="perp">{t("marketTypes.perp")}</option>
                   <option value="spot">{t("marketTypes.spot")}</option>
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.marginMode")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={settings.marginMode ?? ""}
                   onChange={(event) => setSettings((current) => ({
@@ -234,11 +238,11 @@ export default function TradingDefaultsPage() {
                   <option value="">{t("fields.noDefault")}</option>
                   <option value="cross">{t("marginModes.cross")}</option>
                   <option value="isolated">{t("marginModes.isolated")}</option>
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.leverage")}</span>
-                <input
+                <DeskInput
                   className="input"
                   type="number"
                   min={1}
@@ -252,7 +256,7 @@ export default function TradingDefaultsPage() {
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.quoteCurrency")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={settings.quoteCurrency ?? ""}
                   onChange={(event) => setSettings((current) => ({ ...current, quoteCurrency: event.target.value || null }))}
@@ -261,11 +265,11 @@ export default function TradingDefaultsPage() {
                   {QUOTE_CURRENCIES.map((quote) => (
                     <option key={quote} value={quote}>{quote}</option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.symbol")}</span>
-                <input
+                <DeskInput
                   className="input"
                   value={settings.symbol ?? ""}
                   onChange={(event) => setSettings((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
@@ -274,7 +278,7 @@ export default function TradingDefaultsPage() {
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.timeframe")}</span>
-                <select
+                <DeskSelect
                   className="input"
                   value={settings.timeframe ?? ""}
                   onChange={(event) => setSettings((current) => ({ ...current, timeframe: event.target.value || null }))}
@@ -283,11 +287,11 @@ export default function TradingDefaultsPage() {
                   {TIMEFRAMES.map((timeframe) => (
                     <option key={timeframe} value={timeframe}>{timeframe}</option>
                   ))}
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">{t("fields.timezone")}</span>
-                <input
+                <DeskInput
                   className="input"
                   list="settings-trading-timezones"
                   value={settings.timezone ?? ""}
@@ -335,14 +339,14 @@ export default function TradingDefaultsPage() {
             </div>
 
             <div className="settingsHubInlineActions">
-              <button className="btn btnPrimary" type="button" onClick={save} disabled={saving}>
+              <DeskButton className="btn btnPrimary" type="button" onClick={save} disabled={saving}>
                 <AppIcon name="save" />
                 {saving ? tCommon("saving") : tCommon("saveSettings")}
-              </button>
+              </DeskButton>
             </div>
           </div>
         )}
-      </section>
+      </section></DeskSurface>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -37,7 +38,7 @@ export default function VaultsPage() {
   if (!vaultsEnabled) {
     return (
       <div className="walletPage">
-        <div className="card walletCard walletEmptyState">
+        <DeskSurface><div className="card walletCard walletEmptyState">
           <h2 style={{ marginTop: 0 }}>Vaults</h2>
           <div className="walletMutedText" style={{ marginBottom: 12 }}>
             {tCommon("licenseGate.body", { feature: "Vaults" })}
@@ -46,7 +47,7 @@ export default function VaultsPage() {
 	            <AppIcon name="subscription" />
 	            {tCommon("licenseGate.cta")}
 	          </Link>
-        </div>
+        </div></DeskSurface>
       </div>
     );
   }

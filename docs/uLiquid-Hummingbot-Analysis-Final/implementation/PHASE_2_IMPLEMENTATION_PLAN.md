@@ -126,6 +126,24 @@ This item is not silently moved to a later roadmap phase. Phase 2 closeout must 
 
 Complete the remaining 2C/2E gates: decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and finish target-environment positive-position and stale/fallback acceptance. The controlled fixtures below do not replace those live gates. Do not create production positions or corrupt production data to manufacture fixtures. Prepare the 2D historical coverage/storage design before any migration or backfill.
 
+### Live acceptance update — 2026-09-06
+
+- [x] Reconfirmed public Market Analyst feature values and exact snapshot/provenance persistence after full reload, plus English/German mobile Decision Log rendering.
+- [x] Verified that the successful zero-liquidation-price Copilot run survives reload/recent-run selection and remains separate from later failed runs.
+- [x] Verified two real budget-exceeded runs retain their available evidence without inventing a recommendation; credit reservations returned to zero.
+- [x] Completed a standalone manual analysis of an open position with technical-indicator context and correct zero-price risk semantics. This does not close exact standalone cached-feature provenance acceptance.
+- [x] Implement a local correction for reproducible Agent Chat position-plus-market-context budget exhaustion: advertise only eligible tools and reserve the existing final model call for synthesis, without raising limits. The earlier live requests failed; post-release positive acceptance remains open.
+- [x] Correct standalone BingX depth normalization locally: fetch the supported 50-level book for requested 25-level coverage and trim the normalized result. The patched client's public read smoke returned 25 bids/asks with a provider timestamp.
+- [x] Separate standalone position-data completeness from market-context quality in English/German and deduplicate deterministic/model findings without lowering severity. Local component browser acceptance passed.
+- [ ] Publish the local corrections with separate authorization and repeat the real Position Copilot plus market-context analysis, standalone BingX analysis and cached/reloaded evidence checks.
+- [ ] Keep genuine stale/auto-fallback acceptance, the controlled benchmark, exact standalone cache evidence, and historical/spot scope decisions open.
+
+See [dated live acceptance findings](../../archive/tasks/2026-09-06-phase2-live-acceptance-findings.md) for reproduction, evidence boundaries and the 127-credit test total. This was testing only: no code or production configuration was changed and no deployment was performed. Phase 2 remains incomplete.
+
+### Local correction follow-up — 2026-09-06
+
+Mario subsequently authorized fixing those findings. The corrections above are implemented and locally verified, not published. Market Analyst is version 6, Position Copilot is version 7 and the standalone explanation cache namespace is `v4`; routine/skill calculation contracts and read-only permissions are unchanged. Agent Chat 106/106, standalone Copilot 26/26, web Agent Chat 9/9 and web Copilot 4/4 passed with normal exits, as did API/web typechecks, i18n and whitespace checks. See [local correction evidence](../../archive/tasks/2026-09-06-phase2-copilot-local-corrections.md) for boundaries and remaining live gates. The earlier live findings remain historical observations; no new live AI success or Phase 2 completion is claimed.
+
 ## Authorized release and Chrome acceptance — 2026-09-05
 
 - Release commit `4afc5dec80041d6137f8463af9d54036d2665d4e` was pushed to `origin/main` and deployed to production. API and web were rebuilt and recreated with `--no-deps`; runner, PostgreSQL, Redis, Python and proxy container IDs were preserved. No environment or feature-gate values changed and no migrations were pending.

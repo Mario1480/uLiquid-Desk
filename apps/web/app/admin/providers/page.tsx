@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -117,7 +121,7 @@ export default function AdminProvidersPage() {
       {error ? <AdminNotice tone="danger">{error}</AdminNotice> : null}
       {notice ? <AdminNotice tone="success">{notice}</AdminNotice> : null}
 
-      <section className="settingsSection">
+      <DeskSurface dense><section className="settingsSection">
         <div className="settingsSectionHeader">
           <div>
             <h2>{t("automation.title")}</h2>
@@ -163,24 +167,24 @@ export default function AdminProvidersPage() {
             {jobs.marketIntelligenceRefresh?.lastError ?? jobs.economicCalendarDailyTelegram?.lastError}
           </AdminNotice>
         ) : null}
-      </section>
+      </section></DeskSurface>
 
-      <section className="settingsSection">
+      <DeskSurface dense><section className="settingsSection">
         <div className="adminProviderToolbar">
           <div>
             <h2>{t("overview")}</h2>
             <p>{t("overviewDescription")}</p>
           </div>
-          <button className="btn btnPrimary" type="button" onClick={() => void refresh()} disabled={busy !== null}>
+          <DeskButton className="btn btnPrimary" type="button" onClick={() => void refresh()} disabled={busy !== null}>
             <AppIcon name="refresh" />
             {t("resync")}
-          </button>
+          </DeskButton>
         </div>
 
         {loading ? <div className="uiEmptyState">{t("loading")}</div> : null}
         {!loading && items.length === 0 ? <div className="uiEmptyState">{t("empty")}</div> : null}
         <div className="adminProviderTableWrap">
-          <table className="adminTable">
+          <DeskTable className="adminTable">
             <thead>
               <tr>
                 <th>{t("columns.provider")}</th>
@@ -202,7 +206,7 @@ export default function AdminProvidersPage() {
                   <td>{provider.lastSuccessAt ? new Date(provider.lastSuccessAt).toLocaleString() : "–"}</td>
                   <td>{provider.itemCount ?? "–"}</td>
                   <td>
-                    <select
+                    <DeskSelect
                       className="input"
                       value={provider.licenseStatus ?? "pending_review"}
                       onChange={(event) => void update(provider, {
@@ -214,10 +218,10 @@ export default function AdminProvidersPage() {
                       <option value="pending_review">pending_review</option>
                       <option value="approved">approved</option>
                       <option value="blocked">blocked</option>
-                    </select>
+                    </DeskSelect>
                   </td>
                   <td>
-                    <button
+                    <DeskButton
                       type="button"
                       className="btn"
                       onClick={() => void update(provider, { enabled: !provider.enabled })}
@@ -225,14 +229,14 @@ export default function AdminProvidersPage() {
                     >
                       <AppIcon name={provider.enabled ? "pause" : "start"} />
                       {provider.enabled ? t("disable") : t("enable")}
-                    </button>
+                    </DeskButton>
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </DeskTable>
         </div>
-      </section>
+      </section></DeskSurface>
     </div>
   );
 }

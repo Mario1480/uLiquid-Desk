@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -207,9 +209,9 @@ function BotsPageContent() {
 
       <div className="botGrid">
         {loading ? (
-          <div className="card" style={{ padding: 16 }}>{t("loading")}</div>
+          <DeskSurface dense><div className="card" style={{ padding: 16 }}>{t("loading")}</div></DeskSurface>
         ) : bots.length === 0 ? (
-          <div className="card" style={{ padding: 16 }}>
+          <DeskSurface dense><div className="card" style={{ padding: 16 }}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>{t("emptyTitle")}</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
               {t("emptyHint")}
@@ -218,7 +220,7 @@ function BotsPageContent() {
               <AppIcon name="create" />
               {t("actions.createBot")}
             </Link>
-          </div>
+          </div></DeskSurface>
         ) : (
           bots.map((bot) => {
             const openPosition = bot.trade?.openSide && Number(bot.trade?.openQty ?? 0) > 0
@@ -232,7 +234,7 @@ function BotsPageContent() {
               stopping: t("actions.stopping")
             });
             return (
-            <article key={bot.id} className="card botCard">
+            <DeskSurface dense><article key={bot.id} className="card botCard">
               <div className="botCardHeader">
                 <div>
                   <div className="botName">{bot.name}</div>
@@ -317,32 +319,32 @@ function BotsPageContent() {
 	                  <AppIcon name="open" />
 	                  {t("actions.open")}
 	                </Link>
-	                <button
+	                <DeskButton
 	                  className={startStopUi.startClassName}
 	                  onClick={() => void startBot(bot)}
 	                  disabled={startStopUi.startDisabled}
 	                >
 	                  <AppIcon name="play" />
 	                  {startStopUi.startLabel}
-	                </button>
-                <button
+	                </DeskButton>
+                <DeskButton
                   className={startStopUi.stopClassName}
 	                  onClick={() => void stopBot(bot)}
 	                  disabled={startStopUi.stopDisabled}
 	                >
 	                  <AppIcon name="stop" />
 	                  {startStopUi.stopLabel}
-	                </button>
-                <button
+	                </DeskButton>
+                <DeskButton
                   className="btn btnStop"
 	                  onClick={() => void removeBot(bot)}
 	                  disabled={busy != null}
 	                >
 	                  <AppIcon name="delete" />
 	                  {busy === "delete" ? t("actions.deleting") : t("actions.delete")}
-	                </button>
+	                </DeskButton>
               </div>
-            </article>
+            </article></DeskSurface>
           );
         })
         )}

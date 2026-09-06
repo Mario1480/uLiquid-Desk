@@ -1,3 +1,4 @@
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { resolveRequestLocale } from "../../i18n/request";
@@ -215,41 +216,41 @@ export default async function CookieInformationPage() {
         <div className="legalPageMeta">{copy.meta}</div>
       </header>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>{copy.introTitle}</h2>
         <p>{copy.intro}</p>
         <p>{copy.noTracking}</p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>{copy.cookiesTitle}</h2>
         <StorageList entries={copy.cookies} />
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>{copy.browserStorageTitle}</h2>
         <p>{copy.browserStorageIntro}</p>
         <StorageList entries={copy.browserStorage} />
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>{copy.controlsTitle}</h2>
         <ul>{copy.controls.map((item) => <li key={item}>{item}</li>)}</ul>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>{copy.externalTitle}</h2>
         <p>{copy.external}</p>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card legalPageSection">
+      <DeskSurface><section className="card legalPageSection">
         <h2>{copy.relatedTitle}</h2>
         <p>
           <Link href={withLocalePath("/privacy", locale)}>{copy.privacy}</Link>{" · "}
           <Link href={withLocalePath("/terms", locale)}>{copy.terms}</Link>
         </p>
         <p>{copy.contact}</p>
-      </section>
+      </section></DeskSurface>
     </main>
   );
 }

@@ -1,3 +1,5 @@
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 type AdminTableProps = {
   columns: string[];
   children: React.ReactNode;
@@ -7,9 +9,9 @@ type AdminTableProps = {
 
 export default function AdminTable({ columns, children, loading = false, emptyMessage }: AdminTableProps) {
   return (
-    <div className="settingsSection adminTableWrap">
+    <DeskSurface dense><div className="settingsSection adminTableWrap">
       <div className="adminTableScroller">
-        <table className="adminTable">
+        <DeskTable className="adminTable">
           <thead>
             <tr>
               {columns.map((column) => (
@@ -30,8 +32,8 @@ export default function AdminTable({ columns, children, loading = false, emptyMe
               children
             )}
           </tbody>
-        </table>
+        </DeskTable>
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

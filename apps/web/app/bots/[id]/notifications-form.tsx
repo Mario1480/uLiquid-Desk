@@ -1,3 +1,5 @@
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
 type NotificationsFormProps = {
   notify: any;
   onChange: (next: any) => void;
@@ -15,7 +17,7 @@ export function NotificationsForm({ notify, onChange, onSave, canSave, saveLabel
       </div>
       <label className="fieldRow">
         <span style={{ fontSize: 13 }}>Enable funds warning</span>
-        <input
+        <DeskInput
           type="checkbox"
           checked={Boolean(notify.fundsWarnEnabled)}
           onChange={(e) => onChange({ ...notify, fundsWarnEnabled: e.target.checked })}
@@ -28,7 +30,7 @@ export function NotificationsForm({ notify, onChange, onSave, canSave, saveLabel
             Warn when funds drop below this reserve above required budgets.
           </span>
         </span>
-        <input
+        <DeskInput
           className="input"
           inputMode="decimal"
           value={formatPct(notify.fundsWarnPct)}
@@ -36,13 +38,13 @@ export function NotificationsForm({ notify, onChange, onSave, canSave, saveLabel
         />
       </label>
       <div style={{ marginTop: 10 }}>
-        <button
+        <DeskButton
           className={`btn btnPrimary ${!canSave ? "btnDisabled" : ""}`}
           onClick={onSave}
           disabled={!canSave}
         >
           {saveLabel}
-        </button>
+        </DeskButton>
       </div>
     </details>
   );

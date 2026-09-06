@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -71,32 +75,32 @@ export default function GlobalDefaultsPage() {
     <div style={{ maxWidth: 980 }}>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       {!allowed ? (
-        <div className="card" style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>
+        <DeskSurface><div className="card" style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>
           {t("superadminOnly")}
-        </div>
+        </div></DeskSurface>
       ) : (
-        <div className="card" style={{ padding: 12 }}>
+        <DeskSurface><div className="card" style={{ padding: 12 }}>
           <div style={{ display: "grid", gap: 8 }}>
             <label style={{ fontSize: 13 }}>
               {t("key")}
-              <input className="input" value={key} onChange={(e) => setKey(e.target.value)} />
+              <DeskInput className="input" value={key} onChange={(e) => setKey(e.target.value)} />
             </label>
             <label style={{ fontSize: 13 }}>
               {t("jsonValue")}
-              <textarea
+              <DeskTextarea
                 className="input"
                 style={{ minHeight: 160 }}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
             </label>
-	            <button className="btn btnPrimary" onClick={save}>
+	            <DeskButton className="btn btnPrimary" onClick={save}>
 	              <AppIcon name="save" />
 	              {t("save")}
-	            </button>
+	            </DeskButton>
             {status ? <div style={{ fontSize: 12, opacity: 0.7 }}>{status}</div> : null}
           </div>
-        </div>
+        </div></DeskSurface>
       )}
       {error ? <div style={{ fontSize: 12, color: "#ff6b6b", marginTop: 10 }}>{error}</div> : null}
     </div>

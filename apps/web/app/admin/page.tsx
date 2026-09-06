@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
@@ -95,7 +96,7 @@ export default function AdminOverviewPage() {
       />
 
       {loading ? <div className="settingsMutedText">Loading platform overview…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
 
       {data ? (
         <>
@@ -112,7 +113,7 @@ export default function AdminOverviewPage() {
           </section>
 
           <section className="adminOverviewTopGrid">
-            <article className="settingsSection adminOverviewPanel">
+            <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
                 <h3 className="adminSectionTitle">System Health</h3>
               </div>
@@ -138,9 +139,9 @@ export default function AdminOverviewPage() {
                   <strong className="adminHealthStatValue">{data.systemHealth.bots.errored}</strong>
                 </div>
               </div>
-            </article>
+            </article></DeskSurface>
 
-            <article className="settingsSection adminOverviewPanel adminOverviewPanelWide">
+            <DeskSurface dense><article className="settingsSection adminOverviewPanel adminOverviewPanelWide">
               <div className="settingsSectionHeader">
                 <h3 className="adminSectionTitle">User Growth</h3>
                 <div className="adminSectionMeta">
@@ -161,11 +162,11 @@ export default function AdminOverviewPage() {
                   </div>
                 ))}
               </div>
-            </article>
+            </article></DeskSurface>
           </section>
 
           <section className="adminOverviewGrid">
-            <article className="settingsSection adminOverviewPanel">
+            <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
                 <h3 className="adminSectionTitle">License Health</h3>
               </div>
@@ -177,9 +178,9 @@ export default function AdminOverviewPage() {
                   </div>
                 ))}
               </div>
-            </article>
+            </article></DeskSurface>
 
-            <article className="settingsSection adminOverviewPanel">
+            <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
 	                <h3 className="adminSectionTitle">Latest Critical Alerts</h3>
 	                <Link className="btn" href={withLocalePath("/admin/alerts", locale)}>
@@ -209,9 +210,9 @@ export default function AdminOverviewPage() {
               ) : (
                 <AdminEmptyState title="No critical alerts" description="The backfilled and live alert stream is currently clear." />
               )}
-            </article>
+            </article></DeskSurface>
 
-            <article className="settingsSection adminOverviewPanel">
+            <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
 	                <h3 className="adminSectionTitle">Recent Audit Events</h3>
 	                <Link className="btn" href={withLocalePath("/admin/audit", locale)}>
@@ -238,9 +239,9 @@ export default function AdminOverviewPage() {
               ) : (
                 <AdminEmptyState title="No admin audit entries yet" description="New platform-admin mutations will appear here." />
               )}
-            </article>
+            </article></DeskSurface>
 
-            <article className="settingsSection adminOverviewPanel">
+            <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
 	                <h3 className="adminSectionTitle">Bots With Errors</h3>
 	                <Link className="btn" href={withLocalePath("/admin/bots", locale)}>
@@ -265,7 +266,7 @@ export default function AdminOverviewPage() {
               ) : (
                 <AdminEmptyState title="No errored bots" description="No bots are currently flagged with runtime or status errors." />
               )}
-            </article>
+            </article></DeskSurface>
           </section>
         </>
       ) : null}

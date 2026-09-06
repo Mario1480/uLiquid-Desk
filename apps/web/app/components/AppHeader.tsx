@@ -1,5 +1,9 @@
 "use client";
 
+import { GlassAvatar, GlassAvatarFallback } from "@/components/einui/liquid-glass/glass-avatar";
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -494,10 +498,10 @@ export default function AppHeader({
   }
 
   return (
-    <header className="appHeader appHeaderCompact">
+    <DeskSurface><header className="appHeader appHeaderCompact">
       <div className="container appHeaderInner">
         <div className="appHeaderMobileStart">
-          <button
+          <DeskButton
             id="appSidebarToggle"
             className="appBurger appBurgerVisible"
             aria-label={tNav("toggleMenu")}
@@ -507,7 +511,7 @@ export default function AppHeader({
             type="button"
           >
             <AppIcon name={sidebarOpen ? "close" : "menu"} />
-          </button>
+          </DeskButton>
           <Link href={withLocalePath("/", locale)} className="appLogo appHeaderMobileLogo" aria-label="uLiquid Desk">
             <img src="/images/logo-256.png" alt="uLiquid Desk logo" className="appLogoMark" />
             <span className="appHeaderBrandName">uLiquid</span>
@@ -519,7 +523,7 @@ export default function AppHeader({
             <span className="appHeaderSearchIcon" aria-hidden="true">
               <AppIcon name="search" />
             </span>
-            <input
+            <DeskInput
               ref={searchInputRef}
               className="input appHeaderSearchInput"
               value={query}
@@ -549,18 +553,18 @@ export default function AppHeader({
                 activeIndex >= 0 ? `appHeaderSearchResult-${filteredItems[activeIndex]?.key}` : undefined
               }
             />
-            <button type="submit" className="appHeaderSearchSubmit" aria-label={tHeader("searchButton")}>
+            <DeskButton type="submit" className="appHeaderSearchSubmit" aria-label={tHeader("searchButton")}>
               <span className="appHeaderSearchShortcut" aria-hidden="true">
                 <kbd>Ctrl/⌘</kbd><kbd>K</kbd>
               </span>
               <span className="appHeaderSearchSubmitIcon" aria-hidden="true"><AppIcon name="search" /></span>
-            </button>
+            </DeskButton>
             {showSearchResults ? (
               <div id="appHeaderSearchResults" className="appHeaderSearchResults" role="listbox">
                 {filteredItems.map((item, index) => {
                   const isActive = index === activeIndex;
                   return (
-                    <button
+                    <DeskButton
                       key={item.key}
                       id={`appHeaderSearchResult-${item.key}`}
                       type="button"
@@ -573,7 +577,7 @@ export default function AppHeader({
                       onClick={() => navigateToHref(item.href)}
                     >
                       <span className="appHeaderSearchResultLabel">{item.label}</span>
-                    </button>
+                    </DeskButton>
                   );
                 })}
               </div>
@@ -583,7 +587,7 @@ export default function AppHeader({
 
         <div className="appHeaderToolbar">
           <div ref={languageMenuRef} className="appHeaderMenuAnchor">
-            <button
+            <DeskButton
               type="button"
               className={`appHeaderPillButton ${openMenu === "language" ? "appHeaderPillButtonOpen" : ""}`}
               onClick={() => setOpenMenu((current) => (current === "language" ? null : "language"))}
@@ -594,7 +598,7 @@ export default function AppHeader({
               <span className="appHeaderLanguageIcon" aria-hidden="true"><AppIcon name="exchange" /></span>
               <span className="appHeaderLanguageCode">{currentLanguage.label}</span>
               <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
-            </button>
+            </DeskButton>
             {openMenu === "language" ? (
               <div
                 className="appHeaderMenuPanel appHeaderMenuPanelCompact"
@@ -602,7 +606,7 @@ export default function AppHeader({
                 onKeyDown={handleMenuNavigation}
               >
                 {LANGUAGE_OPTIONS.map((option) => (
-                  <button
+                  <DeskButton
                     key={option.locale}
                     type="button"
                     className={`appHeaderMenuLink ${option.locale === locale ? "appHeaderMenuLinkActive" : ""}`}
@@ -611,7 +615,7 @@ export default function AppHeader({
                   >
                     <span className="appHeaderMenuIcon appHeaderLanguageFlag" aria-hidden="true">{option.label}</span>
                     <span>{tHeader(`language.${option.locale}`)}</span>
-                  </button>
+                  </DeskButton>
                 ))}
               </div>
             ) : null}
@@ -630,12 +634,12 @@ export default function AppHeader({
 
           <AiCreditHeaderPill />
 
-          <ClientErrorBoundary fallback={<button className="btn" type="button" disabled>Wallet unavailable</button>}>
+          <ClientErrorBoundary fallback={<DeskButton className="btn" type="button" disabled>Wallet unavailable</DeskButton>}>
             <WalletConnectionWidget />
           </ClientErrorBoundary>
 
           <div ref={alertsMenuRef} className="appHeaderMenuAnchor">
-            <button
+            <DeskButton
               type="button"
               className={`appHeaderIconButton ${openMenu === "alerts" ? "appHeaderIconButtonOpen" : ""}`}
               onClick={() => setOpenMenu((current) => (current === "alerts" ? null : "alerts"))}
@@ -645,7 +649,7 @@ export default function AppHeader({
             >
               <AppIcon name="alerts" />
               {alertCount > 0 ? <span className="appHeaderBellBadge">{alertCount}</span> : null}
-            </button>
+            </DeskButton>
             {openMenu === "alerts" ? (
               <div
                 className="appHeaderMenuPanel appHeaderAlertsPanel"
@@ -696,7 +700,7 @@ export default function AppHeader({
           </div>
 
           <div ref={userMenuRef} className="appHeaderMenuAnchor">
-            <button
+            <DeskButton
               type="button"
               className={`appHeaderUserTrigger ${openMenu === "user" ? "appHeaderUserTriggerOpen" : ""}`}
               onClick={() => setOpenMenu((current) => (current === "user" ? null : "user"))}
@@ -704,12 +708,12 @@ export default function AppHeader({
               aria-expanded={openMenu === "user"}
               aria-label={tHeader("userMenu")}
             >
-              <span className="appHeaderAvatar" aria-hidden="true">{userInitials}</span>
+              <GlassAvatar className="appHeaderAvatar" aria-hidden="true"><GlassAvatarFallback>{userInitials}</GlassAvatarFallback></GlassAvatar>
               <span className="appHeaderUserTriggerMeta">
                 <span className="appHeaderUserTriggerName">{username}</span>
               </span>
               <span className="appHeaderChevron" aria-hidden="true"><AppIcon name="chevronDown" /></span>
-            </button>
+            </DeskButton>
             {openMenu === "user" ? (
               <div
                 className="appHeaderMenuPanel appHeaderUserPanel"
@@ -717,7 +721,7 @@ export default function AppHeader({
                 onKeyDown={handleMenuNavigation}
               >
                 <div className="appHeaderUserPanelHeader">
-                  <span className="appHeaderAvatar appHeaderAvatarLarge" aria-hidden="true">{userInitials}</span>
+                  <GlassAvatar className="appHeaderAvatar appHeaderAvatarLarge" aria-hidden="true"><GlassAvatarFallback>{userInitials}</GlassAvatarFallback></GlassAvatar>
                   <div className="appHeaderUserPanelText">
                     <div className="appHeaderUserPanelName">{username}</div>
                     <div className="appHeaderUserPanelSubtext" title={userSubtitle}>{userSubtitle}</div>
@@ -741,7 +745,7 @@ export default function AppHeader({
                   <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="settings" /></span>
                   <span>{tHeader("user.settings")}</span>
                 </Link>
-                <button
+                <DeskButton
                   type="button"
                   className="appHeaderMenuLink appHeaderMenuLinkDanger"
                   onClick={() => void handleLogout()}
@@ -750,12 +754,12 @@ export default function AppHeader({
                 >
                   <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="logout" /></span>
                   <span>{logoutLoading ? tNav("loggingOut") : tNav("logout")}</span>
-                </button>
+                </DeskButton>
               </div>
             ) : null}
           </div>
         </div>
       </div>
-    </header>
+    </header></DeskSurface>
   );
 }

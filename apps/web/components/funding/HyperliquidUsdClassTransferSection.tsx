@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -227,23 +231,23 @@ export default function HyperliquidUsdClassTransferSection({
 
   if (!isConnected) {
     return (
-      <div className="card walletCard walletEmptyState">
+      <DeskSurface dense><div className="card walletCard walletEmptyState">
         <h3 style={{ marginTop: 0 }}>{t("connectTitle")}</h3>
         <div className="walletMutedText">{t("connectDescription")}</div>
-      </div>
+      </div></DeskSurface>
     );
   }
 
   if (overviewQuery.isLoading) {
     return (
-      <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
-        <div className="skeletonLine skeletonLineLg" />
-        <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
+      <DeskSurface dense><section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
+        <GlassSkeleton className="skeletonLine skeletonLineLg" />
+        <GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
         <div className="walletInfoGrid" style={{ marginTop: 12 }}>
-          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
-          <div className="walletInfoTile"><div className="skeletonLine skeletonLineSm" /><div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
+          <div className="walletInfoTile"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
+          <div className="walletInfoTile"><GlassSkeleton className="skeletonLine skeletonLineSm" /><GlassSkeleton className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} /></div>
         </div>
-      </section>
+      </section></DeskSurface>
     );
   }
 
@@ -258,7 +262,7 @@ export default function HyperliquidUsdClassTransferSection({
   if (!overview) return null;
 
   return (
-    <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
+    <DeskSurface dense><section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
       <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
         <div className="walletSectionIntro">
           <h3 className="walletSectionTitle">{presentation === "modal" ? t(directionIsToPerp ? "submitToPerp" : "submitToSpot") : t("title")}</h3>
@@ -306,36 +310,36 @@ export default function HyperliquidUsdClassTransferSection({
         <div className="walletNotice">
           <div>{t("switchToArbitrum")}</div>
           <div style={{ marginTop: 10 }}>
-            <button
+            <DeskButton
               type="button"
               className="btn"
               onClick={() => void switchChainAsync({ chainId: config.arbitrum.chainId })}
             >
               <AppIcon name="switch" />
               {t("switchToArbitrumButton")}
-            </button>
+            </DeskButton>
           </div>
         </div>
       ) : null}
 
       {presentation === "card" ? (
         <div className="fundingDirectionRow fundingSegmentedRow">
-          <button
+          <DeskButton
             type="button"
             className={`btn ${direction === "perp_to_spot" ? "btnPrimary" : ""}`}
             onClick={() => setDirection("perp_to_spot")}
           >
             <AppIcon name="transfer" />
             {t("moveToSpot")}
-          </button>
-          <button
+          </DeskButton>
+          <DeskButton
             type="button"
             className={`btn ${direction === "spot_to_perp" ? "btnPrimary" : ""}`}
             onClick={() => setDirection("spot_to_perp")}
           >
             <AppIcon name="transfer" />
             {t("moveToPerp")}
-          </button>
+          </DeskButton>
         </div>
       ) : null}
 
@@ -343,20 +347,20 @@ export default function HyperliquidUsdClassTransferSection({
         {presentation === "modal" ? (
           <>
             <div className="fundingModalCompactSwitch" role="tablist" aria-label={t("title")}>
-              <button
+              <DeskButton
                 type="button"
                 className={`fundingModalCompactSwitchButton ${direction === "perp_to_spot" ? "isActive" : ""}`}
                 onClick={() => setDirection("perp_to_spot")}
               >
                 {t("perpLabel")} ↔ {t("spotLabel")}
-              </button>
-              <button
+              </DeskButton>
+              <DeskButton
                 type="button"
                 className={`fundingModalCompactSwitchButton ${direction === "spot_to_perp" ? "isActive" : ""}`}
                 onClick={() => setDirection("spot_to_perp")}
               >
                 {t("spotLabel")} ↔ {t("perpLabel")}
-              </button>
+              </DeskButton>
             </div>
             <div className="fundingModalAmountMeta">
               <span>{t("sourceBalanceLabel")}</span>
@@ -396,21 +400,21 @@ export default function HyperliquidUsdClassTransferSection({
         )}
 
         <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
-          <input
+          <DeskInput
             className="input walletAmountInput"
             inputMode="decimal"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             placeholder={t("amountPlaceholder")}
           />
-          <button
+          <DeskButton
             type="button"
             className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"}
             onClick={() => setAmount(sourceBalance?.formatted ?? "")}
           >
             <AppIcon name="max" />
             {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", 2)}
-          </button>
+          </DeskButton>
           {presentation === "card" && overview.bridge.links.officialAppUrl ? (
             <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
               <AppIcon name="external" />
@@ -428,7 +432,7 @@ export default function HyperliquidUsdClassTransferSection({
         ) : null}
 
         <div className={presentation === "modal" ? "walletActionRow fundingModalPrimaryActionRow" : "walletActionRow walletCardActions fundingPrimaryActionRow"}>
-          <button
+          <DeskButton
             type="button"
             className="btn btnPrimary"
             onClick={() => {
@@ -442,9 +446,9 @@ export default function HyperliquidUsdClassTransferSection({
           >
             <AppIcon name={!isCorrectSignatureChain ? "switch" : "transfer"} />
             {!isCorrectSignatureChain ? t("switchToArbitrumButton") : directionIsToPerp ? t("submitToPerp") : t("submitToSpot")}
-          </button>
+          </DeskButton>
         </div>
       </div>
-    </section>
+    </section></DeskSurface>
   );
 }

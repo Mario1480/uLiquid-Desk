@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -423,7 +428,7 @@ export default function UserGridTemplateCreatePage() {
 
   return (
     <div className="botsPage gridCatalogPage">
-      <section className="card gridCatalogHero">
+      <DeskSurface dense><section className="card gridCatalogHero">
         <div className="gridCatalogHeroCopy">
           <div className="gridCatalogHeroText">
             <h1 className="gridCatalogHeroTitle">{tGrid("templateCreateTitle")}</h1>
@@ -437,7 +442,7 @@ export default function UserGridTemplateCreatePage() {
         <div className="gridCatalogHeroActions">
           <Link href={withLocalePath("/bots/catalog", locale)} className="btn">{tGrid("templateCreateBack")}</Link>
         </div>
-      </section>
+      </section></DeskSurface>
 
       {error ? (
         <Notice tone="danger" className="card gridCatalogStatus gridCatalogStatusError" dismissible onDismiss={() => setError(null)}>
@@ -451,7 +456,7 @@ export default function UserGridTemplateCreatePage() {
       ) : null}
 
       <form onSubmit={saveTemplate} className="gridTemplateCreateLayout">
-        <section className="card gridCatalogSection">
+        <DeskSurface dense><section className="card gridCatalogSection">
           <div className="gridCatalogSectionHeader">
             <div>
               <strong className="gridCatalogSectionTitle">{tGrid("templateCreateBasicTitle")}</strong>
@@ -461,7 +466,7 @@ export default function UserGridTemplateCreatePage() {
           <div className="gridCatalogLaunchGrid">
             <label className="gridCatalogField">
               {tGrid("templateCreateName")}
-              <input className="input" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} />
+              <DeskInput className="input" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateSymbol")}
@@ -482,59 +487,59 @@ export default function UserGridTemplateCreatePage() {
             </label>
             <label className="gridCatalogField gridTemplateCreateFullSpan">
               {tGrid("templateCreateDescription")}
-              <textarea className="input" rows={3} maxLength={280} value={description} onChange={(event) => setDescription(event.target.value)} />
+              <DeskTextarea className="input" rows={3} maxLength={280} value={description} onChange={(event) => setDescription(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateMode")}
-              <select className="input" value={mode} onChange={(event) => setMode(event.target.value as UserTemplateMode)}>
+              <DeskSelect className="input" value={mode} onChange={(event) => setMode(event.target.value as UserTemplateMode)}>
                 <option value="long">Long</option>
                 <option value="short">Short</option>
                 <option value="neutral">Neutral</option>
-              </select>
+              </DeskSelect>
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateGridMode")}
-              <select className="input" value={gridMode} onChange={(event) => setGridMode(event.target.value as GridPriceMode)}>
+              <DeskSelect className="input" value={gridMode} onChange={(event) => setGridMode(event.target.value as GridPriceMode)}>
                 <option value="arithmetic">Arithmetic</option>
                 <option value="geometric">Geometric</option>
-              </select>
+              </DeskSelect>
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateLowerPrice")}
-              <input className="input" type="number" min="0" step="0.0001" value={lowerPrice} onChange={(event) => setLowerPrice(event.target.value)} />
+              <DeskInput className="input" type="number" min="0" step="0.0001" value={lowerPrice} onChange={(event) => setLowerPrice(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateUpperPrice")}
-              <input className="input" type="number" min="0" step="0.0001" value={upperPrice} onChange={(event) => setUpperPrice(event.target.value)} />
+              <DeskInput className="input" type="number" min="0" step="0.0001" value={upperPrice} onChange={(event) => setUpperPrice(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateGridCount")}
-              <input className="input" type="number" min="2" max="500" step="1" value={gridCount} onChange={(event) => setGridCount(event.target.value)} />
+              <DeskInput className="input" type="number" min="2" max="500" step="1" value={gridCount} onChange={(event) => setGridCount(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateLeverage")}
-              <input className="input" type="number" min="1" max="125" step="1" value={leverage} onChange={(event) => setLeverage(event.target.value)} />
+              <DeskInput className="input" type="number" min="1" max="125" step="1" value={leverage} onChange={(event) => setLeverage(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("tpPct")}
-              <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+              <DeskInput className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("slPrice")}
-              <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
+              <DeskInput className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreatePreviewInvest")}
-              <input className="input" type="number" min="1" step="0.01" value={previewInvestUsd} onChange={(event) => setPreviewInvestUsd(event.target.value)} />
+              <DeskInput className="input" type="number" min="1" step="0.01" value={previewInvestUsd} onChange={(event) => setPreviewInvestUsd(event.target.value)} />
             </label>
             <label className="gridCatalogField">
               {tGrid("templateCreateProfitshare")}
-              <input className="input" type="number" min="0" max="25" step="0.01" value={creatorProfitSharePct} onChange={(event) => setCreatorProfitSharePct(event.target.value)} />
+              <DeskInput className="input" type="number" min="0" max="25" step="0.01" value={creatorProfitSharePct} onChange={(event) => setCreatorProfitSharePct(event.target.value)} />
             </label>
           </div>
-        </section>
+        </section></DeskSurface>
 
-        <aside className="card gridCatalogPreview gridTemplateCreatePreviewPanel">
+        <DeskSurface dense><aside className="card gridCatalogPreview gridTemplateCreatePreviewPanel">
           <div className="gridCatalogPreviewHeader">
             <div>
               <strong>{tGrid("templateCreatePreviewTitle")}</strong>
@@ -553,22 +558,22 @@ export default function UserGridTemplateCreatePage() {
 
           <label className="gridCatalogField">
             {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("templateCreateExchangeAccount")}
-            <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)} disabled={loading}>
+            <DeskSelect className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)} disabled={loading}>
               {accounts.length > 0 ? accounts.map((row) => (
                 <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
               )) : <option value="">{loading ? tGrid("loadingTemplates") : tGrid("noExecutionAccountsOption")}</option>}
-            </select>
+            </DeskSelect>
           </label>
 
           {accounts.length === 0 && !loading ? (
-            <div className="card gridCatalogCallout gridCatalogCalloutWarn">
+            <DeskSurface dense><div className="card gridCatalogCallout gridCatalogCalloutWarn">
               <div className="gridCatalogCalloutTitle">{tGrid("noExecutionAccountsTitle")}</div>
               <div className="gridCatalogCalloutBody">{tGrid("noExecutionAccountsBody")}</div>
               <div className="gridCatalogCalloutBody">
                 {tGrid("noExecutionAccountsHint", { exchanges: [...allowedGridExchanges].join(", ") })}
               </div>
               <Link href={withLocalePath("/settings", locale)} className="btn">{tGrid("openExchangeSettings")}</Link>
-            </div>
+            </div></DeskSurface>
           ) : null}
 
           {pilotAccess?.provider === "hyperliquid_demo" && usesHyperliquidMarketData(selectedAccount) ? (
@@ -576,14 +581,14 @@ export default function UserGridTemplateCreatePage() {
           ) : null}
 
           <section className="gridCatalogPreviewSummaryGrid">
-            <div className="card gridCatalogStatCard">
+            <DeskSurface dense><div className="card gridCatalogStatCard">
               <strong className="gridCatalogStatLabel">{replaceStablecoinUnit(tGrid("investTotalBudget"), stablecoinLabel)}</strong>
               <div className="gridCatalogStatValue">{formatNumber(Number(previewInvestUsd), 2)} {stablecoinLabel}</div>
-            </div>
-            <div className="card gridCatalogStatCard">
+            </div></DeskSurface>
+            <DeskSurface dense><div className="card gridCatalogStatCard">
               <strong className="gridCatalogStatLabel">{tGrid("marginMode")}</strong>
               <div className="gridCatalogStatValue">AUTO</div>
-            </div>
+            </div></DeskSurface>
           </section>
 
           {preview ? (
@@ -617,11 +622,11 @@ export default function UserGridTemplateCreatePage() {
                       : tGrid("templateCreatePreviewRequired")}
               </div>
             </div>
-            <button className="btn btnPrimary" type="submit" disabled={!canSave}>
+            <DeskButton className="btn btnPrimary" type="submit" disabled={!canSave}>
               {saving ? tGrid("templateCreateSaving") : tGrid("templateCreateSave")}
-            </button>
+            </DeskButton>
           </div>
-        </aside>
+        </aside></DeskSurface>
       </form>
     </div>
   );

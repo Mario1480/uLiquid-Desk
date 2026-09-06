@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -1066,7 +1070,7 @@ function GridBotCatalogPageContent() {
 
   return (
     <div className="botsPage gridCatalogPage">
-      <section className="card gridCatalogHero">
+      <DeskSurface dense><section className="card gridCatalogHero">
         <div className="gridCatalogHeroCopy">
           <div className="gridCatalogHeroText">
             <h1 className="gridCatalogHeroTitle">{tGrid("catalogTitle")}</h1>
@@ -1093,7 +1097,7 @@ function GridBotCatalogPageContent() {
 	            {tGrid("catalogFallbackCta")}
 	          </Link>
 	        </div>
-      </section>
+      </section></DeskSurface>
 
       {error || flow.error ? (
         <Notice tone="danger" className="card gridCatalogStatus gridCatalogStatusError" dismissible onDismiss={error ? () => setError(null) : undefined}>
@@ -1105,94 +1109,94 @@ function GridBotCatalogPageContent() {
           {notice ?? flow.notice}
         </Notice>
       ) : null}
-      <section className="card gridCatalogFilters">
+      <DeskSurface dense><section className="card gridCatalogFilters">
         <div className="gridCatalogFilterGrid">
           <label className="gridCatalogField">
             {tGrid("catalogSearch")}
-            <input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tGrid("catalogSearchPlaceholder")} />
+            <DeskInput className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tGrid("catalogSearchPlaceholder")} />
           </label>
           <label className="gridCatalogField">
             {tGrid("catalogCategory")}
-            <select className="input" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
+            <DeskSelect className="input" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
               {filters.categories.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
+            </DeskSelect>
           </label>
           <label className="gridCatalogField">
             {tGrid("catalogTag")}
-            <select className="input" value={selectedTag} onChange={(event) => setSelectedTag(event.target.value)}>
+            <DeskSelect className="input" value={selectedTag} onChange={(event) => setSelectedTag(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
               {filters.tags.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
+            </DeskSelect>
           </label>
           <label className="gridCatalogField">
             {tGrid("catalogDifficulty")}
-            <select className="input" value={selectedDifficulty} onChange={(event) => setSelectedDifficulty(event.target.value)}>
+            <DeskSelect className="input" value={selectedDifficulty} onChange={(event) => setSelectedDifficulty(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
               {filters.difficulties.map((value) => <option key={value} value={value}>{tGrid(`catalogDifficultyValues.${value}`)}</option>)}
-            </select>
+            </DeskSelect>
           </label>
           <label className="gridCatalogField">
             {tGrid("catalogRisk")}
-            <select className="input" value={selectedRisk} onChange={(event) => setSelectedRisk(event.target.value)}>
+            <DeskSelect className="input" value={selectedRisk} onChange={(event) => setSelectedRisk(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
               {filters.risks.map((value) => <option key={value} value={value}>{tGrid(`catalogRiskValues.${value}`)}</option>)}
-            </select>
+            </DeskSelect>
           </label>
         </div>
         <div className="gridCatalogFilterFooter">
           <label className="settingsToggle gridCatalogToggle">
-            <input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
+            <DeskInput type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
             <span>{tGrid("catalogFavoritesOnly")}</span>
           </label>
           <label className="settingsToggle gridCatalogToggle">
-            <input type="checkbox" checked={ownOnly} onChange={(event) => setOwnOnly(event.target.checked)} />
+            <DeskInput type="checkbox" checked={ownOnly} onChange={(event) => setOwnOnly(event.target.checked)} />
             <span>{tGrid("catalogOwnOnly")}</span>
           </label>
           <div className="gridCatalogFilterActions">
             <div className="gridCatalogViewToggle" role="group" aria-label={tGrid("catalogViewLabel")}>
-              <button
+              <DeskButton
                 className={`btn gridCatalogViewButton ${catalogView === "grid" ? "gridCatalogViewButtonActive" : ""}`}
                 type="button"
 	                onClick={() => setCatalogView("grid")}
 	              >
 	                <AppIcon name="grid" />
 	                {tGrid("catalogViewGrid")}
-	              </button>
-              <button
+	              </DeskButton>
+              <DeskButton
                 className={`btn gridCatalogViewButton ${catalogView === "list" ? "gridCatalogViewButtonActive" : ""}`}
                 type="button"
 	                onClick={() => setCatalogView("list")}
 	              >
 	                <AppIcon name="list" />
 	                {tGrid("catalogViewList")}
-	              </button>
+	              </DeskButton>
             </div>
 	            {hasActiveFilters ? (
-	              <button className="btn" type="button" onClick={resetFilters}>
+	              <DeskButton className="btn" type="button" onClick={resetFilters}>
 	                <AppIcon name="reset" />
 	                {tGrid("catalogResetFilters")}
-	              </button>
+	              </DeskButton>
 	            ) : null}
           </div>
         </div>
-      </section>
+      </section></DeskSurface>
 
       {(loadingCatalog || loadingMeta) ? (
-        <div className="card gridCatalogState">{tGrid("catalogLoading")}</div>
+        <DeskSurface dense><div className="card gridCatalogState">{tGrid("catalogLoading")}</div></DeskSurface>
       ) : templates.length === 0 ? (
-        <div className="card gridCatalogState">
+        <DeskSurface dense><div className="card gridCatalogState">
 	          <div className="gridCatalogStateTitle">{tGrid("catalogEmptyTitle")}</div>
 	          <div className="gridCatalogStateBody">{tGrid("catalogEmptyBody")}</div>
-	          <button className="btn" type="button" onClick={resetFilters}>
+	          <DeskButton className="btn" type="button" onClick={resetFilters}>
 	            <AppIcon name="reset" />
 	            {tGrid("catalogResetFilters")}
-	          </button>
-        </div>
+	          </DeskButton>
+        </div></DeskSurface>
       ) : (
         <div className={`gridCatalogGrid ${catalogView === "list" ? "gridCatalogGridList" : ""}`}>
           {templates.map((template) => (
-            <article
+            <DeskSurface dense><article
               key={template.id}
               className={`card gridCatalogCard ${catalogView === "list" ? "gridCatalogCardList" : ""}`}
               onClick={() => openTemplate(template.id)}
@@ -1225,7 +1229,7 @@ function GridBotCatalogPageContent() {
                       {template.catalogShortDescription || template.description || tGrid("catalogNoDescription")}
                     </div>
                   </div>
-                  <button
+                  <DeskButton
                     type="button"
                     className={`btn gridCatalogFavoriteButton ${template.isFavorite ? "btnPrimary" : ""}`}
                     onClick={(event) => {
@@ -1237,7 +1241,7 @@ function GridBotCatalogPageContent() {
 	                  >
 	                    <AppIcon name="favorite" />
 	                    {favoriteBusyId === template.id ? "..." : template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
-	                  </button>
+	                  </DeskButton>
                 </div>
 
                 <div className="gridCatalogBadgeRow">
@@ -1260,7 +1264,7 @@ function GridBotCatalogPageContent() {
                   </div>
                 ) : null}
               </div>
-            </article>
+            </article></DeskSurface>
           ))}
         </div>
       )}
@@ -1270,7 +1274,7 @@ function GridBotCatalogPageContent() {
           className="gridCatalogDrawerBackdrop"
           onClick={closeDrawer}
         >
-          <aside
+          <DeskSurface dense><aside
             className="card gridCatalogDrawer"
             onClick={(event) => event.stopPropagation()}
           >
@@ -1281,10 +1285,10 @@ function GridBotCatalogPageContent() {
                   {selectedTemplate.catalogShortDescription || selectedTemplate.description || tGrid("catalogNoDescription")}
                 </div>
               </div>
-	              <button className="btn" type="button" onClick={closeDrawer}>
+	              <DeskButton className="btn" type="button" onClick={closeDrawer}>
 	                <AppIcon name="close" />
 	                {tGrid("catalogClose")}
-	              </button>
+	              </DeskButton>
             </div>
 
               <div className="gridCatalogDrawerIntro">
@@ -1324,32 +1328,32 @@ function GridBotCatalogPageContent() {
             </div>
 
             <div className="gridCatalogStatsGrid">
-              <div className="card gridCatalogStatCard">
+              <DeskSurface dense><div className="card gridCatalogStatCard">
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateSymbol")}</strong>
                 <div className="gridCatalogStatValue">{selectedTemplate.symbol}</div>
-              </div>
-                <div className="card gridCatalogStatCard">
+              </div></DeskSurface>
+                <DeskSurface dense><div className="card gridCatalogStatCard">
                   <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateMode")}</strong>
                   <div className="gridCatalogStatValue">{formatCatalogEnumLabel(selectedTemplate.mode)} · {formatCatalogEnumLabel(selectedTemplate.gridMode)}</div>
-                </div>
-              <div className="card gridCatalogStatCard">
+                </div></DeskSurface>
+              <DeskSurface dense><div className="card gridCatalogStatCard">
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateRange")}</strong>
                 <div className="gridCatalogStatValue">{rangeSummary(selectedTemplate)}</div>
-              </div>
-              <div className="card gridCatalogStatCard">
+              </div></DeskSurface>
+              <DeskSurface dense><div className="card gridCatalogStatCard">
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateLeverage")}</strong>
                 <div className="gridCatalogStatValue">{selectedTemplate.leverageDefault}x</div>
-              </div>
+              </div></DeskSurface>
               {selectedTemplate.isOwnTemplate ? (
-                <div className="card gridCatalogStatCard">
+                <DeskSurface dense><div className="card gridCatalogStatCard">
                   <strong className="gridCatalogStatLabel">{tGrid("catalogCreatorProfitShare")}</strong>
                   <div className="gridCatalogStatValue">{formatNumber(Number(selectedTemplate.creatorProfitSharePct ?? 0), 2)}%</div>
-                </div>
+                </div></DeskSurface>
               ) : null}
             </div>
 
             <form onSubmit={createInstance} className="gridCatalogLaunchForm">
-              <section className="card gridCatalogSection">
+              <DeskSurface dense><section className="card gridCatalogSection">
                 <div className="gridCatalogSectionHeader">
                   <div>
                     <strong className="gridCatalogSectionTitle">{tGrid("launchSetupTitle")}</strong>
@@ -1403,29 +1407,29 @@ function GridBotCatalogPageContent() {
                 <div className="gridCatalogLaunchGrid">
                   <label className="gridCatalogField">
                     {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
-                    <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
+                    <DeskSelect className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
                       {accounts.length > 0 ? accounts.map((row) => (
                         <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
                       )) : <option value="">{tGrid("noExecutionAccountsOption")}</option>}
-                    </select>
+                    </DeskSelect>
                   </label>
                     {usesHyperliquidMarketData(selectedAccount) ? (
                       <>
                         <label className="gridCatalogField">
                           {tGrid("launchFundingSourceLabel")}
-                          <select className="input" value={fundingSource} onChange={(event) => setFundingSource(event.target.value === "funding_vault" ? "funding_vault" : "wallet_direct")}>
+                          <DeskSelect className="input" value={fundingSource} onChange={(event) => setFundingSource(event.target.value === "funding_vault" ? "funding_vault" : "wallet_direct")}>
                             <option value="wallet_direct">{tGrid("launchFundingSourceWallet")}</option>
                             <option value="funding_vault" disabled={!fundingVaultReady}>{tGrid("launchFundingSourceVault")}</option>
-                          </select>
+                          </DeskSelect>
                         </label>
                         <label className="gridCatalogField">
                         {tGrid("botVaultReuseLabel")}
-                        <select className="input" value={selectedBotVaultId} onChange={(event) => setSelectedBotVaultId(event.target.value)}>
+                        <DeskSelect className="input" value={selectedBotVaultId} onChange={(event) => setSelectedBotVaultId(event.target.value)}>
                           <option value="">{tGrid("botVaultReuseCreateNew")}</option>
                           {reusableBotVaults.map((row) => (
                             <option key={row.id} value={row.id}>{formatReusableBotVaultOption(row, stablecoinLabel)}</option>
                           ))}
-                        </select>
+                        </DeskSelect>
                       </label>
                       <div className="gridCatalogSectionHint">
                         {selectedReusableBotVault
@@ -1442,38 +1446,38 @@ function GridBotCatalogPageContent() {
                   ) : null}
                   <label className="gridCatalogField">
                     {replaceStablecoinUnit(autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest"), stablecoinLabel)}
-                    <input className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
+                    <DeskInput className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
                   </label>
                   {!autoMarginActive ? (
                     <label className="gridCatalogField">
                       {replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}
-                      <input className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
+                      <DeskInput className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
                     </label>
                   ) : null}
                   <label className="gridCatalogField">
                     {tGrid("triggerPrice")}
-                    <input className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
+                    <DeskInput className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
                   </label>
                   <label className="gridCatalogField">
                     {tGrid("tpPct")}
-                    <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+                    <DeskInput className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
                   </label>
                   <label className="gridCatalogField">
                     {tGrid("slPrice")}
-                    <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
+                    <DeskInput className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
                   </label>
                   <label className="gridCatalogField">
                     {tGrid("marginMode")}
-                    <select className="input" value={marginMode} disabled={selectedTemplate.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
+                    <DeskSelect className="input" value={marginMode} disabled={selectedTemplate.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
                       <option value="MANUAL">{tGrid("marginModeManualOption")}</option>
                       <option value="AUTO">{tGrid("marginModeAutoOption")}</option>
-                    </select>
+                    </DeskSelect>
                   </label>
                 </div>
-              </section>
+              </section></DeskSurface>
 
               {accounts.length === 0 ? (
-                <div className="card gridCatalogCallout gridCatalogCalloutWarn">
+                <DeskSurface dense><div className="card gridCatalogCallout gridCatalogCalloutWarn">
                   <div className="gridCatalogCalloutTitle">{tGrid("noExecutionAccountsTitle")}</div>
                   <div className="gridCatalogCalloutBody">{tGrid("noExecutionAccountsBody")}</div>
                   <div className="gridCatalogCalloutBody">
@@ -1483,31 +1487,31 @@ function GridBotCatalogPageContent() {
 	                    <AppIcon name="settings" />
 	                    {tGrid("openExchangeSettings")}
 	                  </Link>
-                </div>
+                </div></DeskSurface>
               ) : null}
 
               {preview ? (
                 <section className="gridCatalogPreviewSummaryGrid">
-                  <div className="card gridCatalogStatCard">
+                  <DeskSurface dense><div className="card gridCatalogStatCard">
                     <strong className="gridCatalogStatLabel">{replaceStablecoinUnit(tGrid("investTotalBudget"), stablecoinLabel)}</strong>
                     <div className="gridCatalogStatValue">{formatNumber(preview.allocation.totalBudgetUsd, 2)} {stablecoinLabel}</div>
-                  </div>
-                  <div className="card gridCatalogStatCard">
+                  </div></DeskSurface>
+                  <DeskSurface dense><div className="card gridCatalogStatCard">
                     <strong className="gridCatalogStatLabel">{replaceStablecoinUnit(tGrid("invest"), stablecoinLabel)}</strong>
                     <div className="gridCatalogStatValue">{formatNumber(preview.allocation.gridInvestUsd, 2)} {stablecoinLabel}</div>
-                  </div>
-                  <div className="card gridCatalogStatCard">
+                  </div></DeskSurface>
+                  <DeskSurface dense><div className="card gridCatalogStatCard">
                     <strong className="gridCatalogStatLabel">{replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}</strong>
                     <div className="gridCatalogStatValue">{formatNumber(preview.allocation.extraMarginUsd, 2)} {stablecoinLabel}</div>
-                  </div>
-                  <div className="card gridCatalogStatCard">
+                  </div></DeskSurface>
+                  <DeskSurface dense><div className="card gridCatalogStatCard">
                     <strong className="gridCatalogStatLabel">{tGrid("targetLiqDistance")}</strong>
                     <div className="gridCatalogStatValue">{formatNumber(preview.allocation.targetLiqDistancePct, 2)}%</div>
-                  </div>
+                  </div></DeskSurface>
                 </section>
               ) : null}
 
-              <div className={`card gridCatalogPreview ${previewInsufficient ? "gridCatalogPreviewInsufficient" : liqRiskActive ? "gridCatalogPreviewRisk" : ""}`}>
+              <DeskSurface dense><div className={`card gridCatalogPreview ${previewInsufficient ? "gridCatalogPreviewInsufficient" : liqRiskActive ? "gridCatalogPreviewRisk" : ""}`}>
                 <div className="gridCatalogPreviewHeader">
                   <div>
                     <strong>{tGrid("previewTitle")}</strong>
@@ -1551,7 +1555,7 @@ function GridBotCatalogPageContent() {
                 ) : null}
                 {previewError ? <div className="gridCatalogPreviewWarning gridCatalogPreviewError">{previewError}</div> : null}
                 {liqRiskActive && preview ? <div className="gridCatalogPreviewWarning">{tGrid("liqRiskWarning", { actual: formatNumber(preview.liq.worstCaseLiqDistancePct, 2), min: formatNumber(preview.liq.liqDistanceMinPct, 2) })}</div> : null}
-              </div>
+              </div></DeskSurface>
 
               <div className="gridCatalogActionRow">
                 <div className="gridCatalogActionMeta">
@@ -1575,23 +1579,23 @@ function GridBotCatalogPageContent() {
                               : tGrid("previewWaiting")}
                   </div>
                 </div>
-	                <button className="btn" type="button" onClick={closeDrawer}>
+	                <DeskButton className="btn" type="button" onClick={closeDrawer}>
 	                  <AppIcon name="close" />
 	                  {tGrid("catalogClose")}
-	                </button>
-	                <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
+	                </DeskButton>
+	                <DeskButton className="btn btnPrimary" type="submit" disabled={!canCreate}>
 	                  <AppIcon name="launch" />
 	                  {creating ? tGrid("creating") : tGrid("catalogStart")}
-	                </button>
+	                </DeskButton>
               </div>
             </form>
-          </aside>
+          </aside></DeskSurface>
         </div>
       ) : null}
 
       {createdInstanceId && provisioningMeta ? (
         <div className="gridCatalogProgressBackdrop">
-          <section className="card gridCatalogProgressModal" aria-live="polite" aria-busy={!provisioningFinished}>
+          <DeskSurface dense><section className="card gridCatalogProgressModal" aria-live="polite" aria-busy={!provisioningFinished}>
             <div className="gridCatalogProgressHeader">
               <div>
                 <div className="gridCatalogProgressTitle">{tGrid("provisioningTrackerTitle")}</div>
@@ -1660,7 +1664,7 @@ function GridBotCatalogPageContent() {
                 <div className="gridCatalogActionMeta">
                   <div className="gridCatalogActionMetaHint">{tGrid("provisioningWalletSignatureRequired")}</div>
                 </div>
-                <button
+                <DeskButton
                   className="btn btnPrimary"
                   type="button"
                   disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
@@ -1668,7 +1672,7 @@ function GridBotCatalogPageContent() {
                 >
                   <AppIcon name="deposit" />
                   {provisioningSignatureButtonLabel}
-                </button>
+                </DeskButton>
               </div>
             ) : null}
 
@@ -1699,13 +1703,13 @@ function GridBotCatalogPageContent() {
                 <div className="gridCatalogActionMeta">
                   <div className="gridCatalogActionMetaHint">{tGrid("provisioningTrackerReadyToClose")}</div>
 	                </div>
-	                <button className="btn btnPrimary" type="button" onClick={closeProvisioningTracker}>
+	                <DeskButton className="btn btnPrimary" type="button" onClick={closeProvisioningTracker}>
 	                  <AppIcon name="check" />
 	                  {tGrid("catalogClose")}
-	                </button>
+	                </DeskButton>
               </div>
             ) : null}
-          </section>
+          </section></DeskSurface>
         </div>
       ) : null}
     </div>

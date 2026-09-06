@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -99,18 +102,18 @@ export default function AdminPredictionDefaultsPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">
           {error}
-        </div>
+        </div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">
           {notice}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
-        <section className="card settingsSection">
+        <DeskSurface dense><section className="card settingsSection">
           <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{t("globalDefaultsTitle")}</h3>
           </div>
@@ -121,7 +124,7 @@ export default function AdminPredictionDefaultsPage() {
 
           <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("signalMode")}</span>
-            <select
+            <DeskSelect
               className="input"
               value={signalMode}
               onChange={(e) => setSignalMode(e.target.value as SignalMode)}
@@ -129,21 +132,21 @@ export default function AdminPredictionDefaultsPage() {
               <option value="local_only">{t("modes.localOnly")}</option>
               <option value="ai_only">{t("modes.aiOnly")}</option>
               <option value="both">{t("modes.both")}</option>
-            </select>
+            </DeskSelect>
             <span style={{ fontSize: 11, color: "var(--muted)" }}>
               {t("signalModeHint", { current: signalModeLabel(signalMode, t) })}.
             </span>
           </label>
 
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            <button className="btn" type="button" onClick={loadDefaults}>
+            <DeskButton className="btn" type="button" onClick={loadDefaults}>
               {t("loadDefaults")}
-            </button>
-            <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
+            </DeskButton>
+            <DeskButton className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
               {saving ? t("saving") : t("saveSettings")}
-            </button>
+            </DeskButton>
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
     </div>
   );

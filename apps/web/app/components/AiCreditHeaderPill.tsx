@@ -1,5 +1,6 @@
 "use client";
 
+import { GlassTooltip, GlassTooltipProvider, GlassTooltipTrigger, GlassTooltipContent } from "@/components/einui/liquid-glass/glass-tooltip";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -55,15 +56,14 @@ export default function AiCreditHeaderPill() {
     : t("loading");
 
   return (
-    <Link
+    <GlassTooltipProvider><GlassTooltip><GlassTooltipTrigger asChild><Link
       href={withLocalePath("/settings/subscription", locale)}
       className={`appHeaderCreditPill appHeaderCreditPill-${summary?.warningLevel ?? "none"}`}
-      title={label}
       aria-label={label}
     >
       <span className="appHeaderCreditIcon" aria-hidden="true"><AppIcon name="ai" /></span>
       <span className="appHeaderCreditLabel">{t("short")}</span>
       <strong className="appHeaderCreditValue">{available}</strong>
-    </Link>
+    </Link></GlassTooltipTrigger><GlassTooltipContent>{label}</GlassTooltipContent></GlassTooltip></GlassTooltipProvider>
   );
 }

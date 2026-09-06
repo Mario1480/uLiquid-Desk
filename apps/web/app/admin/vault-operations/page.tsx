@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../../lib/api";
@@ -272,7 +274,7 @@ export default function AdminVaultOperationsPage() {
 
       {payload ? (
         <>
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("summaryTitle")}</h3>
             </div>
@@ -291,9 +293,9 @@ export default function AdminVaultOperationsPage() {
               <AdminStatsCard label={t("cards.pendingOnchainActions")} value={payload.counts.pendingOnchainActions} />
               <AdminStatsCard label={t("cards.laggingVaults")} value={payload.counts.laggingReconciliationCount} />
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("lifecycleTitle")}</h3>
             </div>
@@ -304,17 +306,17 @@ export default function AdminVaultOperationsPage() {
               {lifecycleEntries.length === 0 ? (
                 <div className="settingsMutedText">{t("noLifecycleData")}</div>
               ) : lifecycleEntries.map(([state, count]) => (
-                <div key={state} className="card" style={{ padding: 10 }}>
+                <DeskSurface dense><div key={state} className="card" style={{ padding: 10 }}>
                   <div style={{ marginBottom: 8 }}>
                     <StatusPill label={t(`lifecycle.${state}`)} value={state} />
                   </div>
                   <strong>{count}</strong>
-                </div>
+                </div></DeskSurface>
               ))}
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("queueTitle")}</h3>
             </div>
@@ -327,7 +329,7 @@ export default function AdminVaultOperationsPage() {
                   })}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                  <div className="card" style={{ padding: 10 }}>
+                  <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                     <strong>{t("queueBotTitle")}</strong>
                     <div className="settingsMutedText" style={{ marginTop: 6 }}>
                       {t("queueCounts", {
@@ -337,8 +339,8 @@ export default function AdminVaultOperationsPage() {
                         failed: String(queueMetrics.botQueue?.failed ?? 0)
                       })}
                     </div>
-                  </div>
-                  <div className="card" style={{ padding: 10 }}>
+                  </div></DeskSurface>
+                  <DeskSurface dense><div className="card" style={{ padding: 10 }}>
                     <strong>{t("queueBacktestTitle")}</strong>
                     <div className="settingsMutedText" style={{ marginTop: 6 }}>
                       {t("queueCounts", {
@@ -348,15 +350,15 @@ export default function AdminVaultOperationsPage() {
                         failed: String(queueMetrics.backtestQueue?.failed ?? 0)
                       })}
                     </div>
-                  </div>
+                  </div></DeskSurface>
                 </div>
               </>
             ) : (
               <div className="settingsMutedText">{t("queueUnavailable")}</div>
             )}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("reconciliationTitle")}</h3>
             </div>
@@ -366,13 +368,13 @@ export default function AdminVaultOperationsPage() {
                   {t("reconciliationMeta", { updatedAt: fmtDate(reconciliation.updatedAt) })}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 10 }}>
-                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.clean")}</strong><div>{reconciliation.counts.clean}</div></div>
-                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.warning")}</strong><div>{reconciliation.counts.warning}</div></div>
-                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.drift")}</strong><div>{reconciliation.counts.drift_detected}</div></div>
-                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.blocked")}</strong><div>{reconciliation.counts.blocked}</div></div>
+                  <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.clean")}</strong><div>{reconciliation.counts.clean}</div></div></DeskSurface>
+                  <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.warning")}</strong><div>{reconciliation.counts.warning}</div></div></DeskSurface>
+                  <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.drift")}</strong><div>{reconciliation.counts.drift_detected}</div></div></DeskSurface>
+                  <DeskSurface dense><div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.blocked")}</strong><div>{reconciliation.counts.blocked}</div></div></DeskSurface>
                 </div>
                 <div className="tableWrap">
-                  <table className="tableCompact">
+                  <DeskTable className="tableCompact">
                     <thead>
                       <tr>
                         <th>{t("cols.user")}</th>
@@ -415,15 +417,15 @@ export default function AdminVaultOperationsPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </DeskTable>
                 </div>
               </>
             ) : (
               <div className="settingsMutedText">{t("reconciliationUnavailable")}</div>
             )}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("safetyTitle")}</h3>
             </div>
@@ -440,15 +442,15 @@ export default function AdminVaultOperationsPage() {
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
               {t("safetyReason", { reason: payload.safety.reason ?? t("none") })}
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("jobsTitle")}</h3>
             </div>
             <div style={{ display: "grid", gap: 8 }}>
               {Object.entries(payload.health).map(([key, value]) => (
-                <div key={key} className="card" style={{ padding: 10 }}>
+                <DeskSurface dense><div key={key} className="card" style={{ padding: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <strong>{key}</strong>
                     <StatusPill
@@ -468,17 +470,17 @@ export default function AdminVaultOperationsPage() {
                       {t("jobError", { error: value.lastError, at: fmtDate(value.lastErrorAt) })}
                     </div>
                   ) : null}
-                </div>
+                </div></DeskSurface>
               ))}
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("issuesTitle")}</h3>
             </div>
             <div className="tableWrap">
-              <table className="tableCompact">
+              <DeskTable className="tableCompact">
                 <thead>
                   <tr>
                     <th>{t("cols.user")}</th>
@@ -505,11 +507,11 @@ export default function AdminVaultOperationsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DeskTable>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("laggingTitle")}</h3>
             </div>
@@ -517,7 +519,7 @@ export default function AdminVaultOperationsPage() {
               {t("laggingHint", { seconds: String(payload.thresholds.reconciliationLagAlertSeconds) })}
             </div>
             <div className="tableWrap">
-              <table className="tableCompact">
+              <DeskTable className="tableCompact">
                 <thead>
                   <tr>
                     <th>{t("cols.user")}</th>
@@ -544,16 +546,16 @@ export default function AdminVaultOperationsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DeskTable>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 className="adminSubsectionTitle">{t("actionsTitle")}</h3>
             </div>
             <div className="tableWrap">
-              <table className="tableCompact">
+              <DeskTable className="tableCompact">
                 <thead>
                   <tr>
                     <th>{t("cols.action")}</th>
@@ -576,9 +578,9 @@ export default function AdminVaultOperationsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DeskTable>
             </div>
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
     </div>

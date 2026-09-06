@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -583,10 +587,10 @@ function GridBotsCreatePageContent() {
         </div>
       </div>
 
-      {error || flow.error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error ?? flow.error}</div> : null}
-      {notice || flow.notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice ?? flow.notice}</div> : null}
+      {error || flow.error ? <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error ?? flow.error}</div></DeskSurface> : null}
+      {notice || flow.notice ? <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice ?? flow.notice}</div></DeskSurface> : null}
       {createdInstanceId && createdInstance?.provisioningStatus ? (
-        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <div>
               <div style={{ fontWeight: 700 }}>{tGrid("provisioningStatusTitle")}</div>
@@ -602,7 +606,7 @@ function GridBotsCreatePageContent() {
               : tGrid("provisioningIndexerWaiting")}
           </div>
           {canResumeProvisioningSignature ? (
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
               style={{ marginTop: 10 }}
@@ -611,7 +615,7 @@ function GridBotsCreatePageContent() {
             >
               <AppIcon name="deposit" />
               {provisioningSignatureButtonLabel}
-            </button>
+            </DeskButton>
           ) : null}
           {createdInstance.botVault?.id ? (
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
@@ -637,10 +641,10 @@ function GridBotsCreatePageContent() {
               })}
             </div>
           ) : null}
-        </section>
+        </section></DeskSurface>
       ) : null}
 
-      <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+      <DeskSurface dense><section className="card" style={{ padding: 12, marginBottom: 12 }}>
         <div className="gridCreateHero">
           <div>
             <h3 style={{ marginTop: 0 }}>{tGrid("createTitle")}</h3>
@@ -654,18 +658,18 @@ function GridBotsCreatePageContent() {
         ) : (
           <form onSubmit={createInstance} className="gridCreateLayout">
             <div className="gridCreateFormColumn">
-              <div className="card" style={{ padding: 12 }}>
+              <DeskSurface dense><div className="card" style={{ padding: 12 }}>
                 <label>
                   {tGrid("template")}
-                  <select className="input" value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                  <DeskSelect className="input" value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
                     {templates.map((row) => (
                       <option key={row.id} value={row.id}>{row.name}</option>
                     ))}
-                  </select>
+                  </DeskSelect>
                 </label>
                 <label>
                   {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
-                  <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
+                  <DeskSelect className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
                     {accounts.length > 0 ? (
                       accounts.map((row) => (
                         <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
@@ -673,18 +677,18 @@ function GridBotsCreatePageContent() {
                     ) : (
                       <option value="">{tGrid("noExecutionAccountsOption")}</option>
                     )}
-                  </select>
+                  </DeskSelect>
                 </label>
                 {usesHyperliquidMarketData(selectedAccount) ? (
                   <>
                     <label>
                       {tGrid("botVaultReuseLabel")}
-                      <select className="input" value={selectedBotVaultId} onChange={(event) => setSelectedBotVaultId(event.target.value)}>
+                      <DeskSelect className="input" value={selectedBotVaultId} onChange={(event) => setSelectedBotVaultId(event.target.value)}>
                         <option value="">{tGrid("botVaultReuseCreateNew")}</option>
                         {reusableBotVaults.map((row) => (
                           <option key={row.id} value={row.id}>{formatReusableBotVaultOption(row, stablecoinLabel)}</option>
                         ))}
-                      </select>
+                      </DeskSelect>
                     </label>
                     <div className="settingsMutedText">
                       {selectedReusableBotVault
@@ -703,7 +707,7 @@ function GridBotsCreatePageContent() {
                   <div className="settingsMutedText">{tGrid("pilotBadge")}</div>
                 ) : null}
                 {accounts.length === 0 ? (
-                  <div className="card" style={{ padding: 12, marginTop: 8, borderColor: "var(--warn)" }}>
+                  <DeskSurface dense><div className="card" style={{ padding: 12, marginTop: 8, borderColor: "var(--warn)" }}>
                     <div style={{ fontWeight: 700, marginBottom: 6 }}>{tGrid("noExecutionAccountsTitle")}</div>
                     <div className="settingsMutedText" style={{ marginBottom: 8 }}>
                       {tGrid("noExecutionAccountsBody")}
@@ -714,66 +718,66 @@ function GridBotsCreatePageContent() {
                     <Link href="/settings" className="btn">
                       {tGrid("openExchangeSettings")}
                     </Link>
-                  </div>
+                  </div></DeskSurface>
                 ) : null}
                 <label>
                   {replaceStablecoinUnit(autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest"), stablecoinLabel)}
-                  <input className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
+                  <DeskInput className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
                 </label>
                 {!autoMarginActive ? (
                   <label>
                     {replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}
-                    <input className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
+                    <DeskInput className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
                   </label>
                 ) : null}
                 <label>
                   {tGrid("triggerPrice")}
-                  <input className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
+                  <DeskInput className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
                 </label>
                 <label>
                   {tGrid("tpTargetType")}
-                  <select className="input" value={tpTargetType} onChange={(event) => setTpTargetType(event.target.value === "usdc" ? "usdc" : "pct")}>
+                  <DeskSelect className="input" value={tpTargetType} onChange={(event) => setTpTargetType(event.target.value === "usdc" ? "usdc" : "pct")}>
                     <option value="pct">{tGrid("tpTargetPct")}</option>
                     <option value="usdc">{tGrid("tpTargetUsdc")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
                 {tpTargetType === "pct" ? (
                   <label>
                     {tGrid("tpPct")}
-                    <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+                    <DeskInput className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
                   </label>
                 ) : (
                   <label>
                     {tGrid("tpProfitUsd")}
-                    <input className="input" type="number" min="0" step="0.01" value={tpProfitUsd} onChange={(event) => setTpProfitUsd(event.target.value)} />
+                    <DeskInput className="input" type="number" min="0" step="0.01" value={tpProfitUsd} onChange={(event) => setTpProfitUsd(event.target.value)} />
                   </label>
                 )}
                 <label>
                   {tGrid("tpAction")}
-                  <select className="input" value={tpAction} onChange={(event) => setTpAction(event.target.value === "end" ? "end" : "stop")}>
+                  <DeskSelect className="input" value={tpAction} onChange={(event) => setTpAction(event.target.value === "end" ? "end" : "stop")}>
                     <option value="stop">{tGrid("tpActionStop")}</option>
                     <option value="end">{tGrid("tpActionEnd")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
                 <label>
                   {tGrid("slPrice")}
-                  <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
+                  <DeskInput className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
                 </label>
                 <label>
                   {tGrid("marginMode")}
-                  <select className="input" value={marginMode} disabled={selectedTemplate?.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
+                  <DeskSelect className="input" value={marginMode} disabled={selectedTemplate?.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
                     <option value="MANUAL">{tGrid("marginModeManual")}</option>
                     <option value="AUTO">{tGrid("marginModeAuto")}</option>
-                  </select>
+                  </DeskSelect>
                 </label>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-                  <button className="btn btnPrimary" type="submit" disabled={!canCreate}>{saving ? tGrid("creating") : tGrid("create")}</button>
+                  <DeskButton className="btn btnPrimary" type="submit" disabled={!canCreate}>{saving ? tGrid("creating") : tGrid("create")}</DeskButton>
                 </div>
-              </div>
+              </div></DeskSurface>
             </div>
 
             <div className="gridCreatePreviewColumn">
-              <div className="card" style={{ padding: 12, borderColor: previewInsufficient ? "#ef4444" : liqRiskActive ? "#f59e0b" : "var(--border)" }}>
+              <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: previewInsufficient ? "#ef4444" : liqRiskActive ? "#f59e0b" : "var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                   <strong>{tGrid("previewTitle")}</strong>
                   {previewLoading ? <span className="badge badgeWarn">{tGrid("previewUpdating")}</span> : previewInsufficient ? <span className="badge badgeDanger">{tGrid("previewInsufficient")}</span> : preview ? <span className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</span> : <span className="badge">{tGrid("previewWaiting")}</span>}
@@ -844,11 +848,11 @@ function GridBotsCreatePageContent() {
                 {previewError ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{previewError}</div> : null}
                 {liqRiskActive && preview ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{tGrid("liqRiskWarning", { actual: formatNumber(preview.liq.worstCaseLiqDistancePct, 2), min: formatNumber(preview.liq.liqDistanceMinPct, 2) })}</div> : null}
                 {selectedTemplate ? <div className="settingsMutedText" style={{ marginTop: 10 }}>{tGrid("templateBoundsSimple", { leverage: String(selectedTemplate.leverageDefault), slippage: formatNumber(selectedTemplate.slippageDefaultPct, 4) })}</div> : null}
-              </div>
+              </div></DeskSurface>
             </div>
           </form>
         )}
-      </section>
+      </section></DeskSurface>
     </div>
   );
 }

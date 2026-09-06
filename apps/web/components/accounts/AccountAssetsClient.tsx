@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -186,7 +191,7 @@ export default function AccountAssetsClient() {
         title={t("title")}
         description={t("subtitle")}
         actions={(
-          <button
+          <DeskButton
             type="button"
             className="btn btnPrimary"
             onClick={() => void query.refetch()}
@@ -194,7 +199,7 @@ export default function AccountAssetsClient() {
           >
             <AppIcon name="refresh" />
             {query.isFetching ? t("actions.refreshing") : t("actions.refresh")}
-          </button>
+          </DeskButton>
         )}
       />
 
@@ -206,31 +211,31 @@ export default function AccountAssetsClient() {
       ) : null}
 
       <section className="accountsSummaryGrid" aria-label={t("summary.ariaLabel")}>
-        <div className="uiMetricTile">
+        <DeskSurface dense><div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.accounts")}</div>
           <div className="uiMetricValue">{isInitialLoading ? "--" : summary.accounts}</div>
           <div className="uiMetricMeta">{t("summary.visible")}</div>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.assets")}</div>
           <div className="uiMetricValue">{isInitialLoading ? "--" : summary.assets}</div>
           <div className="uiMetricMeta">{t("summary.spotAssets")}</div>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.perpAccounts")}</div>
           <div className="uiMetricValue">{isInitialLoading ? "--" : summary.perpAccounts}</div>
           <div className="uiMetricMeta">{t("summary.perpEnabled")}</div>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.approxUsd")}</div>
           <div className="uiMetricValue">{isInitialLoading ? "--" : formatUsd(summary.approxUsd)}</div>
           <div className="uiMetricMeta">{t("summary.spotAndPerp")}</div>
-        </div>
-        <div className="uiMetricTile">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="uiMetricTile">
           <div className="uiMetricLabel">{t("summary.partialErrors")}</div>
           <div className="uiMetricValue">{isInitialLoading ? "--" : summary.partialErrors}</div>
           <div className="uiMetricMeta">{formatDateTime(query.data?.meta.updatedAt)}</div>
-        </div>
+        </div></DeskSurface>
       </section>
 
       <Section
@@ -242,7 +247,7 @@ export default function AccountAssetsClient() {
         <div className="accountsFilters">
           <label className="accountsFilterField">
             <span>{t("filters.account")}</span>
-            <select
+            <DeskSelect
               className="input"
               value={accountFilter}
               onChange={(event) => setAccountFilter(event.target.value)}
@@ -251,11 +256,11 @@ export default function AccountAssetsClient() {
               {accountOptions.map((account) => (
                 <option key={account.id} value={account.id}>{account.label}</option>
               ))}
-            </select>
+            </DeskSelect>
           </label>
           <label className="accountsFilterField">
             <span>{t("filters.exchange")}</span>
-            <select
+            <DeskSelect
               className="input"
               value={exchangeFilter}
               onChange={(event) => setExchangeFilter(event.target.value)}
@@ -264,11 +269,11 @@ export default function AccountAssetsClient() {
               {exchangeOptions.map((exchange) => (
                 <option key={exchange} value={exchange}>{exchange.toUpperCase()}</option>
               ))}
-            </select>
+            </DeskSelect>
           </label>
           <label className="accountsFilterField">
             <span>{t("filters.asset")}</span>
-            <input
+            <DeskInput
               className="input"
               value={assetSearch}
               onChange={(event) => setAssetSearch(event.target.value)}
@@ -276,7 +281,7 @@ export default function AccountAssetsClient() {
             />
           </label>
           <label className="accountsZeroToggle">
-            <input
+            <DeskInput
               type="checkbox"
               checked={includeZero}
               onChange={(event) => setIncludeZero(event.target.checked)}
@@ -301,7 +306,7 @@ export default function AccountAssetsClient() {
       ) : (
         <div className="accountsStack">
           {visibleAccounts.map((account) => (
-            <section key={account.exchangeAccountId} className="card accountsAccountCard">
+            <DeskSurface dense><section key={account.exchangeAccountId} className="card accountsAccountCard">
               <header className="accountsAccountHeader">
                 <div>
                   <h2 className="accountsAccountTitle">
@@ -346,7 +351,7 @@ export default function AccountAssetsClient() {
                 ) : (
                   <>
                     <div className="accountsDesktopTableWrap">
-                      <table className="accountsAssetTable">
+                      <DeskTable className="accountsAssetTable">
                         <thead>
                           <tr>
                             <th>{t("table.asset")}</th>
@@ -369,7 +374,7 @@ export default function AccountAssetsClient() {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </DeskTable>
                     </div>
 
                     <div className="accountsMobileAssetList">
@@ -428,7 +433,7 @@ export default function AccountAssetsClient() {
                   </div>
                 )}
               </div>
-            </section>
+            </section></DeskSurface>
           ))}
         </div>
       )}

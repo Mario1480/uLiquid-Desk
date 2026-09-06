@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -91,14 +94,14 @@ export default function AdminServerInfoPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
-        <section className="card settingsSection">
+        <DeskSurface dense><section className="card settingsSection">
           <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
             <div className="settingsSectionMeta">
@@ -110,7 +113,7 @@ export default function AdminServerInfoPage() {
           <div style={{ display: "grid", gap: 10, maxWidth: 420 }}>
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fieldLabel")}</span>
-              <input
+              <DeskInput
                 className="input"
                 value={serverIpAddress}
                 onChange={(event) => setServerIpAddress(event.target.value)}
@@ -124,16 +127,15 @@ export default function AdminServerInfoPage() {
           </div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-            <button className="btn" type="button" onClick={loadDefault}>
+            <DeskButton className="btn" type="button" onClick={loadDefault}>
               {t("loadDefault")}
-            </button>
-            <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
+            </DeskButton>
+            <DeskButton className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
               {saving ? t("saving") : t("save")}
-            </button>
+            </DeskButton>
           </div>
-        </section>
+        </section></DeskSurface>
       ) : null}
     </div>
   );
 }
-

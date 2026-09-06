@@ -203,7 +203,9 @@ export function normalizeDashboardLayoutValue(value: unknown): DashboardLayoutRe
     if (!parsed.success) continue;
     if (seen.has(parsed.data.id)) continue;
     seen.add(parsed.data.id);
-    parsedItems.push(parsed.data);
+    // Explicit fields retain required keys when consumed by the non-strict web TS project.
+    const { id, visible, x, y, w, h } = parsed.data;
+    parsedItems.push({ id, visible, x, y, w, h });
   }
 
   const matchesLegacyLayout = layoutItemsEqual(

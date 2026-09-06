@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -645,7 +648,7 @@ export default function AdminApiKeysPage() {
 
       {isSuperadmin ? (
         <>
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("ai.sectionTitle")}</h3>
             </div>
@@ -707,7 +710,7 @@ export default function AdminApiKeysPage() {
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.providerLabel")}</span>
-              <select
+              <DeskSelect
                 className="select"
                 value={aiProvider}
                 onChange={(e) => {
@@ -731,12 +734,12 @@ export default function AdminApiKeysPage() {
                 {providerOptions.map((provider) => (
                   <option key={provider} value={provider}>{provider}</option>
                 ))}
-              </select>
+              </DeskSelect>
             </label>
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.baseUrlLabel")}</span>
-              <input
+              <DeskInput
                 className="input"
                 type="text"
                 placeholder="https://api.openai.com/v1"
@@ -772,7 +775,7 @@ export default function AdminApiKeysPage() {
                           {openAiModelRoutingSources[modelClass].toUpperCase()}
                         </span>
                       </span>
-                      <input
+                      <DeskInput
                         className="input"
                         type="text"
                         value={openAiModelRouting[modelClass]}
@@ -797,7 +800,7 @@ export default function AdminApiKeysPage() {
               <>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{t("ai.modelLabel")}</span>
-                  <input className="input" type="text" value={aiModel} onChange={(event) => setAiModel(event.target.value)} list="ai-model-presets" placeholder={t("ai.modelPlaceholder")} />
+                  <DeskInput className="input" type="text" value={aiModel} onChange={(event) => setAiModel(event.target.value)} list="ai-model-presets" placeholder={t("ai.modelPlaceholder")} />
                 </label>
                 <div className="adminAiModelRoutingActions">
                   <AdminActionButton icon="save" variant="primary" onClick={() => void saveAiModel()}>{t("ai.modelSave")}</AdminActionButton>
@@ -812,7 +815,7 @@ export default function AdminApiKeysPage() {
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.newKey")}</span>
-              <input
+              <DeskInput
                 className="input"
                 type="password"
                 placeholder="sk-..."
@@ -870,7 +873,7 @@ export default function AdminApiKeysPage() {
 
                 <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.saladRuntime.apiBaseUrlLabel")}</span>
-                  <input
+                  <DeskInput
                     className="input"
                     type="text"
                     value={saladRuntimeConfig.apiBaseUrl}
@@ -885,7 +888,7 @@ export default function AdminApiKeysPage() {
                 </label>
                 <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.saladRuntime.organizationLabel")}</span>
-                  <input
+                  <DeskInput
                     className="input"
                     type="text"
                     value={saladRuntimeConfig.organization}
@@ -900,7 +903,7 @@ export default function AdminApiKeysPage() {
                 </label>
                 <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.saladRuntime.projectLabel")}</span>
-                  <input
+                  <DeskInput
                     className="input"
                     type="text"
                     value={saladRuntimeConfig.project}
@@ -915,7 +918,7 @@ export default function AdminApiKeysPage() {
                 </label>
                 <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.saladRuntime.containerLabel")}</span>
-                  <input
+                  <DeskInput
                     className="input"
                     type="text"
                     value={saladRuntimeConfig.container}
@@ -974,7 +977,7 @@ export default function AdminApiKeysPage() {
                 </div>
               </section>
             ) : null}
-          </section>
+          </section></DeskSurface>
 
         </>
       ) : null}

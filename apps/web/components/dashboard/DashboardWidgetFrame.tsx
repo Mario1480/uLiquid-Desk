@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import type { DragEvent, PointerEvent, ReactNode } from "react";
 import type { DashboardLayoutItem } from "../../src/dashboard/layout";
 import { AppIcon } from "../../app/components/AppIcon";
@@ -46,7 +47,7 @@ export default function DashboardWidgetFrame({
     >
       {editable ? (
         <div className="dashboardWidgetFrameToolbar">
-          <button
+          <DeskButton
             type="button"
             className="dashboardWidgetFrameHandle"
             draggable
@@ -56,11 +57,11 @@ export default function DashboardWidgetFrame({
             title={`${title} bewegen`}
           >
             <AppIcon name="drag" />
-          </button>
+          </DeskButton>
           <div className="dashboardWidgetFrameTitle" title={title}>
             {title}
           </div>
-          <button
+          <DeskButton
             type="button"
             className="dashboardWidgetFrameHide"
             onClick={onHide}
@@ -68,7 +69,7 @@ export default function DashboardWidgetFrame({
             title={`${title} ausblenden`}
           >
             <AppIcon name="close" />
-          </button>
+          </DeskButton>
         </div>
       ) : null}
 
@@ -77,7 +78,7 @@ export default function DashboardWidgetFrame({
       </div>
 
       {editable ? (
-        <button
+        <DeskButton
           type="button"
           className="dashboardWidgetResizeHandle"
           onPointerDown={onResizeStart}
@@ -85,7 +86,7 @@ export default function DashboardWidgetFrame({
           title={`${title} Größe ändern`}
         >
           <AppIcon name="resize" />
-        </button>
+        </DeskButton>
       ) : null}
     </div>
   );

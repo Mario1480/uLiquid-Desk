@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { AppIcon } from "../../app/components/AppIcon";
@@ -60,16 +62,16 @@ export default function NetworkStatusWidget({ accounts }: { accounts: ExchangeAc
         : "operational";
 
   return (
-    <div className="card dashboardInsightCard dashboardNetworkStatusCard dashboardWidgetCardFill">
+    <DeskSurface><div className="card dashboardInsightCard dashboardNetworkStatusCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div>
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>
           <div className="dashboardCompactWidgetSubtitle">{t("subtitle")}</div>
         </div>
-        <button type="button" className="btn" onClick={() => void load()} disabled={loading}>
+        <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
           <AppIcon name="refresh" />
           {t("refresh")}
-        </button>
+        </DeskButton>
       </div>
 
       {loading && !response ? <div className="dashboardCompactWidgetState">{t("loading")}</div> : null}
@@ -118,6 +120,6 @@ export default function NetworkStatusWidget({ accounts }: { accounts: ExchangeAc
           <span>{t("checked", { time: new Date(response.checkedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) })}</span>
         ) : null}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import { apiGet } from "../../../lib/api";
 import AdminEmptyState from "../_components/AdminEmptyState";
@@ -45,18 +48,18 @@ export default function AdminLicensesPage() {
       <AdminPageHeader title="Licenses" description="Subscription-backed operational license inventory with verification state visibility." />
       <AdminFilterBar>
         <div className="adminFilterGrid">
-          <label className="settingsField"><span className="settingsFieldLabel">Search</span><input className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Email or license id" /></label>
+          <label className="settingsField"><span className="settingsFieldLabel">Search</span><DeskInput className="input" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Email or license id" /></label>
           <label className="settingsField">
             <span className="settingsFieldLabel">Status</span>
-            <select className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
+            <DeskSelect className="input" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
               <option value="">All</option>
               {data?.filterOptions?.status?.map((option: string) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            </DeskSelect>
           </label>
         </div>
       </AdminFilterBar>
       {loading ? <div className="settingsMutedText">Loading licenses…</div> : null}
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
       {data?.items?.length > 0 ? (
         <>
           <AdminTable columns={["Identifier", "Status", "Assigned User", "Workspace", "Plan", "Instance", "Last Verification", "Expires", "Created", "Verification"]}>

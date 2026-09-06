@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -228,7 +232,7 @@ export default function SubscriptionPage() {
       </div>
 
       {loading ? (
-        <div className="card subscriptionPortalLoading">{tCommon("loading")}</div>
+        <DeskSurface><div className="card subscriptionPortalLoading">{tCommon("loading")}</div></DeskSurface>
       ) : model ? (
         <>
           <section className="subscriptionPricingSection" aria-labelledby="subscription-pricing-title">
@@ -255,7 +259,7 @@ export default function SubscriptionPage() {
                   && (plan.plan !== "premium" || model.plan !== "pro" || premiumUpgrade)
                 );
                 return (
-                  <article key={plan.code} className={`card subscriptionPricingCard ${plan.plan === "premium" ? "subscriptionPricingCardPremium" : ""}`}>
+                  <DeskSurface><article key={plan.code} className={`card subscriptionPricingCard ${plan.plan === "premium" ? "subscriptionPricingCardPremium" : ""}`}>
                     <div className="subscriptionPricingCardHead">
                       <div>
                         <span className="subscriptionPricingPlan">{t(`license.plans.${plan.plan}`)}</span>
@@ -298,14 +302,14 @@ export default function SubscriptionPage() {
                           : t("pricing.notPurchasable")}
                       </span>
                     )}
-                  </article>
+                  </article></DeskSurface>
                 );
               })}
             </div>
           </section>
 
           <div className="subscriptionPortalGrid">
-            <div className="card subscriptionPortalCard">
+            <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardHead">
                 <div className="subscriptionCardTitle">{t("license.cards.status")}</div>
                 <span className={`subscriptionStatusBadge ${model.status === "active" ? "subscriptionStatusBadgeActive" : model.status === "grace" ? "subscriptionStatusBadgeGrace" : "subscriptionStatusBadgeInactive"}`}>
@@ -348,9 +352,9 @@ export default function SubscriptionPage() {
                   {t("license.fallbackMode", { reason: model.fallbackReason })}
                 </div>
               ) : null}
-            </div>
+            </div></DeskSurface>
 
-            <div className="card subscriptionPortalCard">
+            <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardTitle">{t("license.cards.account")}</div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.email")}</span>
@@ -360,9 +364,9 @@ export default function SubscriptionPage() {
                 <span>{t("license.labels.userId")}</span>
                 <span className="subscriptionMono">{model.account.userId ?? "-"}</span>
               </div>
-            </div>
+            </div></DeskSurface>
 
-            <div className="card subscriptionPortalCard">
+            <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardTitle">{t("license.cards.limits")}</div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.bots")}</span>
@@ -392,9 +396,9 @@ export default function SubscriptionPage() {
                   <small>{t("license.paperExcluded")}</small>
                 </span>
               </div>
-            </div>
+            </div></DeskSurface>
 
-            <div className="card subscriptionPortalCard">
+            <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardTitle">{t("license.cards.features")}</div>
               <div className="subscriptionFeatureWrap">
                 <span className={`subscriptionFeatureBadge ${model.features.proPlan ? "subscriptionFeatureBadgeOn" : ""}`}>
@@ -410,9 +414,9 @@ export default function SubscriptionPage() {
                   {t("license.features.capacityTopup")}
                 </span>
               </div>
-            </div>
+            </div></DeskSurface>
 
-            <div className="card subscriptionPortalCard">
+            <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardTitle">{t("license.cards.aiWallet")}</div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.aiBalance")}</span>
@@ -438,9 +442,9 @@ export default function SubscriptionPage() {
                 <span>{t("license.labels.aiUsedMonth")}</span>
                 <span>{aiCredits ? formatAiCreditAmount(aiCredits.usedThisMonth, locale) : "0"}</span>
               </div>
-            </div>
+            </div></DeskSurface>
 
-            <div className="card subscriptionPortalCard">
+            <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardTitle">{t("license.cards.instance")}</div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.serverIp")}</span>
@@ -450,7 +454,7 @@ export default function SubscriptionPage() {
 	                <AppIcon name="billing" />
 	                {t("license.openOrderPage")}
 	              </Link>
-            </div>
+            </div></DeskSurface>
           </div>
 
           {aiCredits && aiCredits.warningLevel !== "none" ? (
@@ -459,7 +463,7 @@ export default function SubscriptionPage() {
             </div>
           ) : null}
 
-          <div className="card subscriptionPortalUpgradeCard">
+          <DeskSurface><div className="card subscriptionPortalUpgradeCard">
             <div>
               <div className="subscriptionCardTitle">{t("credits.limitsTitle")}</div>
               <div className="subscriptionPortalMuted">{t("credits.limitsDescription")}</div>
@@ -467,24 +471,24 @@ export default function SubscriptionPage() {
             <div className="subscriptionCreditLimitFields">
               <label>
                 <span>{t("credits.dailyLimit")}</span>
-                <input className="input" inputMode="numeric" pattern="[0-9]*" value={dailyLimit} onChange={(event) => setDailyLimit(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
+                <DeskInput className="input" inputMode="numeric" pattern="[0-9]*" value={dailyLimit} onChange={(event) => setDailyLimit(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
               </label>
               <label>
                 <span>{t("credits.monthlyLimit")}</span>
-                <input className="input" inputMode="numeric" pattern="[0-9]*" value={monthlyLimit} onChange={(event) => setMonthlyLimit(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
+                <DeskInput className="input" inputMode="numeric" pattern="[0-9]*" value={monthlyLimit} onChange={(event) => setMonthlyLimit(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
               </label>
               <label>
                 <span>{t("credits.maxRun")}</span>
-                <input className="input" inputMode="numeric" pattern="[0-9]*" value={maxRunCredits} onChange={(event) => setMaxRunCredits(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
+                <DeskInput className="input" inputMode="numeric" pattern="[0-9]*" value={maxRunCredits} onChange={(event) => setMaxRunCredits(event.target.value.replace(/\D/g, ""))} placeholder={t("credits.noLimit")} />
               </label>
-              <button className="btn btnPrimary" type="button" disabled={savingCreditLimits} onClick={() => void saveCreditLimits()}>
+              <DeskButton className="btn btnPrimary" type="button" disabled={savingCreditLimits} onClick={() => void saveCreditLimits()}>
                 <AppIcon name="save" />
                 {savingCreditLimits ? t("credits.saving") : t("credits.saveLimits")}
-              </button>
+              </DeskButton>
             </div>
-          </div>
+          </div></DeskSurface>
 
-          <div className="card subscriptionPortalOrdersCard">
+          <DeskSurface><div className="card subscriptionPortalOrdersCard">
             <div className="subscriptionCardHead">
               <div>
                 <div className="subscriptionCardTitle">{t("credits.usageTitle")}</div>
@@ -496,7 +500,7 @@ export default function SubscriptionPage() {
               </Link>
             </div>
             <div className="subscriptionTableScroll">
-              <table className="table subscriptionOrdersTable subscriptionAiUsageTable">
+              <DeskTable className="table subscriptionOrdersTable subscriptionAiUsageTable">
                 <thead>
                   <tr>
                     <th>{t("credits.createdAt")}</th>
@@ -542,31 +546,31 @@ export default function SubscriptionPage() {
                     <tr><td colSpan={6} className="subscriptionPortalMuted">{t("credits.usageEmpty")}</td></tr>
                   ) : null}
                 </tbody>
-              </table>
+              </DeskTable>
             </div>
             <div className="subscriptionAiUsageFooter">
               <span className="subscriptionPortalMuted">{t("credits.loadedCount", { count: aiUsage.length })}</span>
               {aiUsagePage.hasMore ? (
-                <button className="btn" type="button" disabled={aiUsageLoadingMore} onClick={() => void loadMoreAiUsage()}>
+                <DeskButton className="btn" type="button" disabled={aiUsageLoadingMore} onClick={() => void loadMoreAiUsage()}>
                   <AppIcon name="chevronDown" />
                   {aiUsageLoadingMore ? t("credits.loadingMore") : t("credits.loadMore")}
-                </button>
+                </DeskButton>
               ) : aiUsage.length > 0 ? (
                 <span className="subscriptionPortalMuted">{t("credits.historyComplete")}</span>
               ) : null}
             </div>
-          </div>
+          </div></DeskSurface>
 
-          <div className="card subscriptionPortalOrdersCard">
+          <DeskSurface><div className="card subscriptionPortalOrdersCard">
 	            <div className="subscriptionCardHead">
 	              <div className="subscriptionCardTitle">{t("orders.title")}</div>
-	              <button className="btn" type="button" onClick={() => void load()}>
+	              <DeskButton className="btn" type="button" onClick={() => void load()}>
 	                <AppIcon name="refresh" />
 	                {t("orders.refresh")}
-	              </button>
+	              </DeskButton>
             </div>
             <div style={{ overflowX: "auto" }}>
-              <table className="table subscriptionOrdersTable">
+              <DeskTable className="table subscriptionOrdersTable">
                 <thead>
                   <tr>
                     <th>{t("orders.createdAt")}</th>
@@ -610,11 +614,11 @@ export default function SubscriptionPage() {
                     </tr>
                   ) : null}
                 </tbody>
-              </table>
+              </DeskTable>
             </div>
-          </div>
+          </div></DeskSurface>
 
-          <div className="card subscriptionPortalUpgradeCard">
+          <DeskSurface><div className="card subscriptionPortalUpgradeCard">
             <div>
               <div className="subscriptionCardTitle">{t("license.upgradeTitle")}</div>
               <div className="subscriptionPortalMuted">{t("license.upgradeDescription")}</div>
@@ -623,10 +627,10 @@ export default function SubscriptionPage() {
 	              <AppIcon name="billing" />
 	              {t("license.openOrderPage")}
 	            </Link>
-          </div>
+          </div></DeskSurface>
         </>
       ) : (
-        <div className="card subscriptionPortalLoading">{t("messages.noData")}</div>
+        <DeskSurface><div className="card subscriptionPortalLoading">{t("messages.noData")}</div></DeskSurface>
       )}
 
       {message ? <div className="subscriptionPortalMessage">{message}</div> : null}

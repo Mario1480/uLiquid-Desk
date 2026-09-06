@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSelect } from "@/components/desk/DeskSelect";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
@@ -105,7 +106,7 @@ export function LiquidationDistanceWidget({
         );
   return (
     <WorkbenchFrame title={t("liquidationDistance.title")}>
-      <select
+      <DeskSelect
         className="input"
         aria-label={t("account")}
         value={account}
@@ -117,7 +118,7 @@ export function LiquidationDistanceWidget({
             {label}
           </option>
         ))}
-      </select>
+      </DeskSelect>
       {degraded ? (
         <div role="status" className="dashboardWidgetInlineError">
           {t("delayed")}

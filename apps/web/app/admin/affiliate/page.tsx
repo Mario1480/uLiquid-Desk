@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import AdminPageHeader from "../_components/AdminPageHeader";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
@@ -86,29 +90,29 @@ export default function AdminAffiliatePage() {
         description="Global affiliate fee configuration and current accrual footprint."
       />
 
-      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
-      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
+      {error ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface> : null}
+      {notice ? <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface> : null}
 
       <section className="adminStatsGrid">
-        <div className="card adminStatsCard">
+        <DeskSurface dense><div className="card adminStatsCard">
           <div className="adminStatsLabel">Profiles</div>
           <div className="adminStatsValue">{summary?.profileCount ?? 0}</div>
-        </div>
-        <div className="card adminStatsCard">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="card adminStatsCard">
           <div className="adminStatsLabel">Active Referrals</div>
           <div className="adminStatsValue">{summary?.activeReferralCount ?? 0}</div>
-        </div>
-        <div className="card adminStatsCard">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="card adminStatsCard">
           <div className="adminStatsLabel">Accrued</div>
           <div className="adminStatsValue">${(summary?.totalAffiliateAccruedUsd ?? 0).toFixed(2)}</div>
-        </div>
-        <div className="card adminStatsCard">
+        </div></DeskSurface>
+        <DeskSurface dense><div className="card adminStatsCard">
           <div className="adminStatsLabel">Unpaid</div>
           <div className="adminStatsValue">${(summary?.totalAffiliateUnpaidUsd ?? 0).toFixed(2)}</div>
-        </div>
+        </div></DeskSurface>
       </section>
 
-      <section className="card settingsSection">
+      <DeskSurface dense><section className="card settingsSection">
         <div className="settingsSectionHeader">
 	          <div>
 	            <h3 style={{ margin: 0 }}>Program Settings</h3>
@@ -121,15 +125,15 @@ export default function AdminAffiliatePage() {
         <div className="settingsFormGrid">
           <label className="settingsField">
             <span className="settingsFieldLabel">Program Enabled</span>
-            <select className="input" value={enabled ? "enabled" : "disabled"} onChange={(event) => setEnabled(event.target.value === "enabled")}>
+            <DeskSelect className="input" value={enabled ? "enabled" : "disabled"} onChange={(event) => setEnabled(event.target.value === "enabled")}>
               <option value="disabled">disabled</option>
               <option value="enabled">enabled</option>
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="settingsField">
             <span className="settingsFieldLabel">Platform Fee %</span>
-            <input
+            <DeskInput
               className="input"
               type="number"
               min={0}
@@ -142,7 +146,7 @@ export default function AdminAffiliatePage() {
 
           <label className="settingsField">
             <span className="settingsFieldLabel">Default Affiliate Fee %</span>
-	            <input
+	            <DeskInput
 	              className="input"
 	              type="number"
 	              min={0}
@@ -155,14 +159,14 @@ export default function AdminAffiliatePage() {
         </div>
 
         <div className="settingsActions">
-          <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
+          <DeskButton className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
             {saving ? "Saving…" : "Save settings"}
-          </button>
-          <button className="btn" type="button" onClick={() => void load()} disabled={loading || saving}>
+          </DeskButton>
+          <DeskButton className="btn" type="button" onClick={() => void load()} disabled={loading || saving}>
             Reload
-          </button>
+          </DeskButton>
         </div>
-      </section>
+      </section></DeskSurface>
     </div>
   );
 }

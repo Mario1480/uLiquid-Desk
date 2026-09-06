@@ -1,5 +1,10 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -2286,7 +2291,7 @@ export default function PredictionsPage() {
         onClose={() => setExpandedDetailId(null)}
       >
       <div className="predictionDetailStack">
-        <div className="card predictionDetailPanel">
+        <DeskSurface><div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
             <div className="predictionDetailHeaderCopy">
               <span className="predictionSectionEyebrow">{tPred("detail.overviewEyebrow")}</span>
@@ -2295,21 +2300,21 @@ export default function PredictionsPage() {
           </div>
 
           <div className="predictionContextSummaryGrid">
-            <div className="card predictionContextSummaryCard">
+            <DeskSurface><div className="card predictionContextSummaryCard">
               <div className="predictionIndicatorTitle">{tPred("detail.selectedSignal")}</div>
               <div className="predictionIndicatorValue">{activeSignal}</div>
               <div className="predictionIndicatorMeta">
                 conf {fmtConfidence(activeConfidence)} · move {activeMove.toFixed(2)}%
               </div>
-            </div>
-            <div className="card predictionContextSummaryCard">
+            </div></DeskSurface>
+            <DeskSurface><div className="card predictionContextSummaryCard">
               <div className="predictionIndicatorTitle">{tPred("detail.signalSource")}</div>
               <div className="predictionIndicatorValue">{effectiveSource === "ai" ? tPred("detail.sourceAi") : tPred("detail.sourceLocal")}</div>
               <div className="predictionIndicatorMeta">
                 {tPred("create.signalMode")}: {signalModeLabel(row.signalMode, modeLabels)}
               </div>
-            </div>
-            <div className="card predictionContextSummaryCard">
+            </div></DeskSurface>
+            <DeskSurface><div className="card predictionContextSummaryCard">
               <div className="predictionIndicatorTitle">{tPred("detail.strategy")}</div>
               <div className="predictionIndicatorValue predictionIndicatorValueWrap">
                 {strategyRefLabel(strategyRef, {
@@ -2323,14 +2328,14 @@ export default function PredictionsPage() {
                   ? tPred("detail.runStatus", { status: strategyRunOutput.status })
                   : tPred("detail.runStatusUnknown")}
               </div>
-            </div>
-            <div className="card predictionContextSummaryCard">
+            </div></DeskSurface>
+            <DeskSurface><div className="card predictionContextSummaryCard">
               <div className="predictionIndicatorTitle">{tPred("detail.lastUpdated")}</div>
               <div className="predictionIndicatorValue">{formatRelativeTime(updatedAtIso, nowMs)}</div>
               <div className="predictionIndicatorMeta">
                 {updatedAtIso ? new Date(updatedAtIso).toLocaleString() : "n/a"}
               </div>
-            </div>
+            </div></DeskSurface>
           </div>
 
           <div className="predictionContextRow">
@@ -2368,7 +2373,7 @@ export default function PredictionsPage() {
 
           <div className="predictionIndicatorGrid">
             {showLocalAiComparison ? (
-              <div className="card predictionIndicatorCard">
+              <DeskSurface><div className="card predictionIndicatorCard">
                 <div className="predictionIndicatorTitle">{tPred("detail.localVsAi")}</div>
                 <div className="predictionIndicatorValue">
                   {(localPrediction?.signal ?? row.signal)} / {aiPrediction?.signal ?? "n/a"}
@@ -2376,9 +2381,9 @@ export default function PredictionsPage() {
                 <div className="predictionIndicatorMeta">
                   local {fmtConfidence(localPrediction?.confidence ?? row.confidence)} · ai {aiPrediction ? fmtConfidence(aiPrediction.confidence) : "n/a"}
                 </div>
-              </div>
+              </div></DeskSurface>
             ) : null}
-            <div className="card predictionIndicatorCard">
+            <DeskSurface><div className="card predictionIndicatorCard">
               <div className="predictionIndicatorTitle">{tPred("detail.evaluated")}</div>
               <div className="predictionIndicatorValue">{realizedEvaluatedAt ? tPred("detail.yes") : tPred("detail.no")}</div>
               <div className="predictionIndicatorMeta">
@@ -2386,44 +2391,44 @@ export default function PredictionsPage() {
                   ? tPred("detail.evaluatedAt", { value: new Date(realizedEvaluatedAt).toLocaleString() })
                   : tPred("detail.horizonPending")}
               </div>
-            </div>
-            <div className="card predictionIndicatorCard">
+            </div></DeskSurface>
+            <DeskSurface><div className="card predictionIndicatorCard">
               <div className="predictionIndicatorTitle">{tPred("detail.realizedReturnPct")}</div>
               <div className="predictionIndicatorValue">{fmtNum(realizedReturnPct, 4)}</div>
-            </div>
-            <div className="card predictionIndicatorCard">
+            </div></DeskSurface>
+            <DeskSurface><div className="card predictionIndicatorCard">
               <div className="predictionIndicatorTitle">{tPred("detail.directionalHit")}</div>
               <div className="predictionIndicatorValue">
                 {realizedHit === null ? "n/a" : realizedHit ? tPred("detail.hit") : tPred("detail.miss")}
               </div>
-            </div>
-            <div className="card predictionIndicatorCard">
+            </div></DeskSurface>
+            <DeskSurface><div className="card predictionIndicatorCard">
               <div className="predictionIndicatorTitle">{tPred("detail.absError")}</div>
               <div className="predictionIndicatorValue">{fmtNum(realizedAbsError, 4)}</div>
-            </div>
-            <div className="card predictionIndicatorCard">
+            </div></DeskSurface>
+            <DeskSurface><div className="card predictionIndicatorCard">
               <div className="predictionIndicatorTitle">{tPred("detail.sqError")}</div>
               <div className="predictionIndicatorValue">{fmtNum(realizedSqError, 4)}</div>
-            </div>
+            </div></DeskSurface>
             {indicators ? (
               <>
-                <div className="card predictionIndicatorCard">
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">RSI (14)</div>
                   <div className="predictionIndicatorValue">{fmtNum(indicators.rsi_14, 2)}</div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">MACD (line / signal / hist)</div>
                   <div className="predictionIndicatorValue">
                     {fmtNum(indicators.macd?.line, 4)} / {fmtNum(indicators.macd?.signal, 4)} / {fmtNum(indicators.macd?.hist, 4)}
                   </div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">Bollinger (width% / pos)</div>
                   <div className="predictionIndicatorValue">
                     {fmtNum(indicators.bb?.width_pct, 2)} / {fmtNum(indicators.bb?.pos, 3)}
                   </div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">VWAP (value / dist%)</div>
                   <div className="predictionIndicatorValue">
                     {fmtNum(indicators.vwap?.value, 2)} / {fmtNum(indicators.vwap?.dist_pct, 2)}
@@ -2431,20 +2436,20 @@ export default function PredictionsPage() {
                   <div className="predictionIndicatorMeta">
                     mode: {indicators.vwap?.mode ?? "n/a"}
                   </div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">ADX (ADX / +DI / -DI)</div>
                   <div className="predictionIndicatorValue">
                     {fmtNum(indicators.adx?.adx_14, 2)} / {fmtNum(indicators.adx?.plus_di_14, 2)} / {fmtNum(indicators.adx?.minus_di_14, 2)}
                   </div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">StochRSI (%K / %D / value)</div>
                   <div className="predictionIndicatorValue">
                     {fmtNum(indicators.stochrsi?.k, 1)} / {fmtNum(indicators.stochrsi?.d, 1)} / {fmtNum(indicators.stochrsi?.value, 1)}
                   </div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">Volume (z / rel / trend%)</div>
                   <div className="predictionIndicatorValue">
                     {fmtNum(indicators.volume?.vol_z, 3)} / {fmtNum(indicators.volume?.rel_vol, 3)} / {fmtNum(indicators.volume?.vol_trend, 2)}
@@ -2452,8 +2457,8 @@ export default function PredictionsPage() {
                   <div className="predictionIndicatorMeta">
                     EMA fast/slow: {fmtNum(indicators.volume?.vol_ema_fast, 2)} / {fmtNum(indicators.volume?.vol_ema_slow, 2)}
                   </div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">FVG (open bull / bear)</div>
                   <div className="predictionIndicatorValue">
                     {fmtNum(indicators.fvg?.open_bullish_count, 0)} / {fmtNum(indicators.fvg?.open_bearish_count, 0)}
@@ -2461,18 +2466,18 @@ export default function PredictionsPage() {
                   <div className="predictionIndicatorMeta">
                     bull dist: {fmtNum(indicators.fvg?.nearest_bullish_gap?.dist_pct, 2)}% · bear dist: {fmtNum(indicators.fvg?.nearest_bearish_gap?.dist_pct, 2)}%
                   </div>
-                </div>
-                <div className="card predictionIndicatorCard">
+                </div></DeskSurface>
+                <DeskSurface><div className="card predictionIndicatorCard">
                   <div className="predictionIndicatorTitle">ATR %</div>
                   <div className="predictionIndicatorValue">{fmtNum(indicators.atr_pct, 4)}</div>
-                </div>
+                </div></DeskSurface>
               </>
             ) : (
-              <div className="card predictionIndicatorCard">
+              <DeskSurface><div className="card predictionIndicatorCard">
                 <div className="predictionIndicatorTitle">{tPred("detail.indicators")}</div>
                 <div className="predictionIndicatorValue">n/a</div>
                 <div className="predictionIndicatorMeta">{tPred("detail.noIndicators")}</div>
-              </div>
+              </div></DeskSurface>
             )}
           </div>
           {Object.keys(strategyRunOutput).length > 0 || Object.keys(strategyRunDebug).length > 0 ? (
@@ -2501,20 +2506,20 @@ export default function PredictionsPage() {
               </pre>
             </details>
           ) : null}
-        </div>
+        </div></DeskSurface>
 
         {marketIntelligenceAllowed && (
           detailSnapshot.marketIntelligencePolicy === "include"
           || marketIntelligenceFacts.length > 0
           || marketIntelligenceEvents.length > 0
         ) ? (
-          <div className="card predictionDetailPanel">
+          <DeskSurface><div className="card predictionDetailPanel">
             <div className="predictionDetailHeaderCopy">
               <span className="predictionSectionEyebrow">{tPred("detail.marketIntelligenceEyebrow")}</span>
               <strong>{tPred("detail.marketIntelligenceTitle")}</strong>
             </div>
             {marketIntelligenceSnapshot.degraded === true ? (
-              <div className="uiNotice uiNotice-warning">{tPred("detail.marketIntelligenceDegraded")}</div>
+              <DeskSurface><div className="uiNotice uiNotice-warning">{tPred("detail.marketIntelligenceDegraded")}</div></DeskSurface>
             ) : null}
             <div className="predictionIntelligenceSnapshotMeta">
               <span className="badge">{tPred("detail.factsCount", { count: marketIntelligenceFacts.length })}</span>
@@ -2548,10 +2553,10 @@ export default function PredictionsPage() {
             {marketIntelligenceWarnings.length > 0 ? (
               <p className="predictionIndicatorMeta">{marketIntelligenceWarnings.join(" · ")}</p>
             ) : null}
-          </div>
+          </div></DeskSurface>
         ) : null}
 
-        <div className="card predictionDetailPanel predictionDecisionPanel">
+        <DeskSurface><div className="card predictionDetailPanel predictionDecisionPanel">
           <div className="predictionDetailHeaderCopy">
             <span className="predictionSectionEyebrow">{tPred("detail.tradePlanEyebrow")}</span>
             <strong>{tPred("detail.tradePlan")}</strong>
@@ -2582,7 +2587,7 @@ export default function PredictionsPage() {
               <p>{row.exchange.toUpperCase()} · {updatedAtIso ? new Date(updatedAtIso).toLocaleString() : "n/a"}</p>
             </div>
           </div>
-        </div>
+        </div></DeskSurface>
 
         <PredictionCopierEligibility
           eligible={copierEligible}
@@ -2598,7 +2603,7 @@ export default function PredictionsPage() {
           actionLabel={tPred("copier.configure")}
         />
 
-        <div className="card predictionDetailPanel">
+        <DeskSurface><div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
             <div className="predictionDetailHeaderCopy">
               <span className="predictionSectionEyebrow">{tPred("detail.timelineEyebrow")}</span>
@@ -2606,14 +2611,14 @@ export default function PredictionsPage() {
             </div>
             <div className="predictionDetailHeaderActions">
               <span className="predictionIndicatorMeta">{tPred("detail.eventsCount", { count: events.length })}</span>
-              <button
+              <DeskButton
                 className="btn predictionMiniBtn"
                 type="button"
                 onClick={() => toggleEventLog(rowId)}
               >
                 <AppIcon name="detail" />
                 {eventsExpanded ? tPred("detail.hideLog") : tPred("detail.showLog")}
-              </button>
+              </DeskButton>
             </div>
           </div>
 
@@ -2656,20 +2661,20 @@ export default function PredictionsPage() {
               {tPred("detail.expandForEvents")}
             </div>
           )}
-        </div>
+        </div></DeskSurface>
         <div className="predictionDetailActionsBar">
-          <button className="btn btnPrimary" type="button" onClick={() => void sendToDesk(row.id)} disabled={!canSendToDesk(row, signalSource)}>
+          <DeskButton className="btn btnPrimary" type="button" onClick={() => void sendToDesk(row.id)} disabled={!canSendToDesk(row, signalSource)}>
             <AppIcon name="trading" />
             {tPred("detail.openTradingDesk")}
-          </button>
-          <button className="btn" type="button" onClick={() => { setExpandedDetailId(null); openPredictionWizard(row); }}>
+          </DeskButton>
+          <DeskButton className="btn" type="button" onClick={() => { setExpandedDetailId(null); openPredictionWizard(row); }}>
             <AppIcon name="copy" />
             {tPred("detail.createSimilar")}
-          </button>
-          <button className="btn" type="button" onClick={() => { setExpandedDetailId(null); setActiveView("active"); }}>
+          </DeskButton>
+          <DeskButton className="btn" type="button" onClick={() => { setExpandedDetailId(null); setActiveView("active"); }}>
             <AppIcon name="preview" />
             {tPred("detail.monitorMarket")}
-          </button>
+          </DeskButton>
           <Link className="btn" href={withLocalePath("/strategies", locale)}>
             <AppIcon name="template" />
             {tPred("detail.saveTemplate")}
@@ -2686,16 +2691,16 @@ export default function PredictionsPage() {
         title={tPred("title")}
         description={tPred("subtitle")}
         actions={(
-          <button className="btn btnPrimary" type="button" onClick={() => openPredictionWizard()}>
+          <DeskButton className="btn btnPrimary" type="button" onClick={() => openPredictionWizard()}>
             <AppIcon name="create" />
             {tPred("navigation.newAnalysis")}
-          </button>
+          </DeskButton>
         )}
       />
 
       <nav className="predictionTabs" aria-label={tPred("navigation.label")}>
         {(["overview", "active", "history", "performance"] as PredictionsView[]).map((view) => (
-          <button
+          <DeskButton
             key={view}
             className={`predictionTab ${activeView === view ? "predictionTabActive" : ""}`}
             type="button"
@@ -2704,12 +2709,12 @@ export default function PredictionsPage() {
           >
             <AppIcon name={view === "performance" ? "performance" : view === "active" ? "play" : view === "history" ? "list" : "dashboard"} />
             {tPred(`navigation.${view}`)}
-          </button>
+          </DeskButton>
         ))}
       </nav>
 
       <PredictionsOverview active={activeView === "overview"}>
-      <section className="card predictionsSection predictionQuickStatsSection">
+      <DeskSurface><section className="card predictionsSection predictionQuickStatsSection">
         <div className="predictionQuickStatsGrid">
           <MetricTile
             className="predictionQuickStat"
@@ -2756,15 +2761,15 @@ export default function PredictionsPage() {
             tone="accent"
           />
         </div>
-      </section>
+      </section></DeskSurface>
 
-      <section className="card predictionsSection predictionRecentSection">
+      <DeskSurface><section className="card predictionsSection predictionRecentSection">
         <div className="predictionsListHeader">
           <div className="predictionsListTitle">{tPred("overview.recentPredictions")}</div>
-          <button className="btn" type="button" onClick={() => setActiveView("history")}>
+          <DeskButton className="btn" type="button" onClick={() => setActiveView("history")}>
             <AppIcon name="list" />
             {tPred("overview.viewHistory")}
-          </button>
+          </DeskButton>
         </div>
         {recentPredictions.length === 0 ? (
           <div className="predictionsListState">{tPred("feed.noPredictions")}</div>
@@ -2775,19 +2780,19 @@ export default function PredictionsPage() {
               const signal = resolveSignal(row, source);
               const isFinal = row.outcomeStatus === "closed" && Boolean(row.outcomeEvaluatedAt ?? row.realizedEvaluatedAt);
               return (
-                <button className="predictionRecentRow" type="button" key={row.id} onClick={() => void togglePredictionDetail(row.id)}>
+                <DeskButton className="predictionRecentRow" type="button" key={row.id} onClick={() => void togglePredictionDetail(row.id)}>
                   <span className="predictionRecentSymbol">{row.symbol}</span>
                   <span>{row.marketType} · {row.timeframe}</span>
                   <span className="badge" style={signalBadgeStyle(signal)}>{signal}</span>
                   <span>{fmtConfidence(resolveConfidence(row, source))}</span>
                   <span>{isFinal ? tPred("overview.finalEvaluation") : tPred("overview.currentOutcome")}</span>
                   <AppIcon name="chevronRight" />
-                </button>
+                </DeskButton>
               );
             })}
           </div>
         )}
-      </section>
+      </section></DeskSurface>
       </PredictionsOverview>
 
       {(activeView === "active" || wizardOpen) ? (
@@ -2814,7 +2819,7 @@ export default function PredictionsPage() {
           : void createPrediction()}
       >
       <ActivePredictions active>
-      <section className={`card predictionsSection predictionCreateSection ${wizardOpen ? "predictionCreateWizardMode" : "predictionActiveSchedulesMode"}`}>
+      <DeskSurface><section className={`card predictionsSection predictionCreateSection ${wizardOpen ? "predictionCreateWizardMode" : "predictionActiveSchedulesMode"}`}>
         <div className="predictionCreateHeader">
           <div>
             <div className="predictionCreateTitle">
@@ -2844,7 +2849,7 @@ export default function PredictionsPage() {
         </div>
         <div className="predictionCreateGrid">
           <div className="predictionAnalysisKindGrid" data-wizard-section="type">
-            <button
+            <DeskButton
               type="button"
               className={`predictionAnalysisKindOption ${analysisKind === "trading_with_intelligence" ? "predictionAnalysisKindOptionActive" : ""}`}
               onClick={() => setAnalysisKind("trading_with_intelligence")}
@@ -2852,9 +2857,9 @@ export default function PredictionsPage() {
               <AppIcon name="predictions" />
               <strong>{marketIntelligenceAllowed ? tPred("wizard.types.tradingTitle") : tPred("create.title")}</strong>
               <span>{marketIntelligenceAllowed ? tPred("wizard.types.tradingDescription") : tPred("create.hint")}</span>
-            </button>
+            </DeskButton>
             {marketIntelligenceAllowed ? (
-              <button
+              <DeskButton
                 type="button"
                 className={`predictionAnalysisKindOption ${analysisKind === "market_intelligence" ? "predictionAnalysisKindOptionActive" : ""}`}
                 onClick={() => setAnalysisKind("market_intelligence")}
@@ -2862,7 +2867,7 @@ export default function PredictionsPage() {
                 <AppIcon name="news" />
                 <strong>{tPred("wizard.types.marketIntelligenceTitle")}</strong>
                 <span>{tPred("wizard.types.marketIntelligenceDescription")}</span>
-              </button>
+              </DeskButton>
             ) : null}
           </div>
 
@@ -2871,7 +2876,7 @@ export default function PredictionsPage() {
             <div className="predictionCreateHint">{tPred("wizard.intelligenceHorizonHint")}</div>
             <div className="predictionIntelligenceHorizon" role="group" aria-label={tPred("wizard.intelligenceHorizon") }>
               {(["intraday", "24h", "7d"] as MarketIntelligenceHorizon[]).map((horizon) => (
-                <button
+                <DeskButton
                   key={horizon}
                   type="button"
                   className={`btn ${marketIntelligenceHorizon === horizon ? "btnPrimary" : ""}`}
@@ -2879,7 +2884,7 @@ export default function PredictionsPage() {
                   onClick={() => setMarketIntelligenceHorizon(horizon)}
                 >
                   {tPred(`wizard.intelligenceHorizons.${horizon}`)}
-                </button>
+                </DeskButton>
               ))}
             </div>
           </div>
@@ -2889,7 +2894,7 @@ export default function PredictionsPage() {
             <div className="predictionCreateHint">
               {tPred("create.strategyHint")}
             </div>
-            <select
+            <DeskSelect
               className="input"
               value={newStrategySelectValue}
               onChange={(e) => setNewStrategySelectValue(e.target.value)}
@@ -2938,7 +2943,7 @@ export default function PredictionsPage() {
                   ))}
                 </optgroup>
               ) : null}
-            </select>
+            </DeskSelect>
             <div className="predictionCreateHint">
               {tPred("create.selected")}: {strategyRefLabel(selectedStrategyRef, {
                 aiPromptTemplateName: selectedPrompt?.name ?? null,
@@ -2974,7 +2979,7 @@ export default function PredictionsPage() {
           <label className="predictionCreateField" data-wizard-section="market">
             <div className="predictionCreateLabel">{tPred("create.exchangeAccount")}</div>
             <div className="predictionCreateHint">{tPred("create.exchangeAccountHint")}</div>
-            <select
+            <DeskSelect
               className="input"
               value={createAccountId}
               onChange={(e) => setCreateAccountId(e.target.value)}
@@ -2989,7 +2994,7 @@ export default function PredictionsPage() {
                   </option>
                 ))
               )}
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="predictionCreateField" data-wizard-section="market">
@@ -3011,10 +3016,10 @@ export default function PredictionsPage() {
           <label className="predictionCreateField" data-wizard-section="market">
             <div className="predictionCreateLabel">{tPred("create.marketType")}</div>
             <div className="predictionCreateHint">{tPred("create.marketTypeHint")}</div>
-            <select className="input" value={newMarketType} onChange={(e) => setNewMarketType(e.target.value as PredictionMarketType)}>
+            <DeskSelect className="input" value={newMarketType} onChange={(e) => setNewMarketType(e.target.value as PredictionMarketType)}>
               <option value="perp">perp</option>
               <option value="spot">spot</option>
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="predictionCreateField" data-wizard-section="advanced">
@@ -3024,7 +3029,7 @@ export default function PredictionsPage() {
                 ? tPred("create.timeframePromptLocked", { timeframe: selectedPromptLockedTimeframe })
                 : tPred("create.timeframeHint")}
             </div>
-            <select
+            <DeskSelect
               className="input"
               value={effectiveCreateTimeframe}
               onChange={(e) => setNewTimeframe(e.target.value as PredictionTimeframe)}
@@ -3033,38 +3038,38 @@ export default function PredictionsPage() {
               {TIMEFRAMES.map((tf) => (
                 <option key={tf} value={tf}>{tf}</option>
               ))}
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="predictionCreateField" data-wizard-section="advanced">
             <div className="predictionCreateLabel">{tPred("wizard.analysisHorizon")}</div>
             <div className="predictionCreateHint">{tPred("wizard.analysisHorizonHint")}</div>
-            <select className="input" value={newHorizonMs} onChange={(e) => setNewHorizonMs(Number(e.target.value))}>
+            <DeskSelect className="input" value={newHorizonMs} onChange={(e) => setNewHorizonMs(Number(e.target.value))}>
               <option value={60 * 60 * 1000}>1h</option>
               <option value={4 * 60 * 60 * 1000}>4h</option>
               <option value={12 * 60 * 60 * 1000}>12h</option>
               <option value={24 * 60 * 60 * 1000}>1d</option>
               <option value={3 * 24 * 60 * 60 * 1000}>3d</option>
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="predictionCreateField" data-wizard-section="advanced">
             <div className="predictionCreateLabel">{tPred("create.responseLanguage")}</div>
             <div className="predictionCreateHint">{tPred("create.responseLanguageHint")}</div>
-            <select
+            <DeskSelect
               className="input"
               value={newResponseLanguage}
               onChange={(e) => setNewResponseLanguage(e.target.value as ResponseLanguage)}
             >
               <option value="de">{tPred("create.responseLanguageGerman")}</option>
               <option value="en">{tPred("create.responseLanguageEnglish")}</option>
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="predictionCreateField" data-wizard-section="advanced">
             <div className="predictionCreateLabel">{tPred("create.leverage")}</div>
             <div className="predictionCreateHint">{tPred("create.leverageHint")}</div>
-            <input
+            <DeskInput
               className="input"
               type="number"
               step="1"
@@ -3190,7 +3195,7 @@ export default function PredictionsPage() {
           </div>
 
           <div className="predictionCreateActions">
-            <button
+            <DeskButton
               className="btn btnPrimary"
               type="button"
               disabled={creating || createBlockedByLimit || createBlockedByFeature}
@@ -3198,11 +3203,11 @@ export default function PredictionsPage() {
             >
               <AppIcon name="create" />
               {creating ? tPred("create.creating") : tPred("create.createPrediction")}
-            </button>
+            </DeskButton>
           </div>
         </div>
 
-        <div className="card predictionSubCard">
+        <DeskSurface><div className="card predictionSubCard">
           <div className="predictionSubCardHeader">
             <div className="predictionSubCardTitle">{tPred("running.title")}</div>
             <div className="predictionSubCardHint">
@@ -3217,7 +3222,7 @@ export default function PredictionsPage() {
               })}
             </div>
             <div className="predictionsRunningActions">
-              <select
+              <DeskSelect
                 className="input"
                 value={runningStatusFilter}
                 onChange={(e) => setRunningStatusFilter(e.target.value as RunningStatusFilter)}
@@ -3226,8 +3231,8 @@ export default function PredictionsPage() {
                 <option value="all">{tPred("running.statusAll")}</option>
                 <option value="running">{tPred("running.statusRunning")}</option>
                 <option value="paused">{tPred("running.statusPaused")}</option>
-              </select>
-              <button
+              </DeskSelect>
+              <DeskButton
                 className="btn"
                 type="button"
                 onClick={() => {
@@ -3237,7 +3242,7 @@ export default function PredictionsPage() {
               >
                 <AppIcon name="refresh" />
                 {runningLoading ? tPred("running.refreshing") : tPred("running.refresh")}
-              </button>
+              </DeskButton>
             </div>
           </div>
 
@@ -3254,7 +3259,7 @@ export default function PredictionsPage() {
           ) : (
             <>
             <div className="predictionsRunningDesktopTable" style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <DeskTable style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ textAlign: "left", color: "var(--muted)" }}>
                     <th style={{ padding: "8px 6px" }}>{tPred("running.pair")}</th>
@@ -3324,7 +3329,7 @@ export default function PredictionsPage() {
                             : tPred("running.in", { value: fmtMs(row.dueInSec * 1000) })}
                       </td>
                       <td style={{ padding: "8px 6px", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <button
+                        <DeskButton
                           className="btn"
                           type="button"
                           disabled={runningActionId === row.id}
@@ -3332,8 +3337,8 @@ export default function PredictionsPage() {
                         >
                           <AppIcon name={row.paused ? "play" : "pause"} />
                           {row.paused ? tPred("running.resume") : tPred("running.pausePrediction")}
-                        </button>
-                        <button
+                        </DeskButton>
+                        <DeskButton
                           className="btn"
                           type="button"
                           disabled={runningActionId === row.id}
@@ -3341,13 +3346,13 @@ export default function PredictionsPage() {
                         >
                           <AppIcon name="delete" />
                           {tPred("running.delete")}
-                        </button>
+                        </DeskButton>
                       </td>
 	                    </tr>
 	                    );
 	                  })}
                 </tbody>
-              </table>
+              </DeskTable>
             </div>
             <div className="predictionsRunningMobileList">
 	              {filteredRunningRows.map((row) => {
@@ -3355,7 +3360,7 @@ export default function PredictionsPage() {
 	                const latest = rows.find((candidate) => candidate.symbol === row.symbol && candidate.timeframe === row.timeframe && candidate.marketType === row.marketType) ?? null;
 	                const latestSource = latest ? getEffectiveRowSource(latest, signalSource) : signalSource;
 	                return (
-	                <div key={`${row.id}_mobile`} className="card predictionRunningCard">
+	                <DeskSurface><div key={`${row.id}_mobile`} className="card predictionRunningCard">
 	                  <div className="predictionRunningCardHeader">
 	                    <div className="predictionRunningCardSymbol">{row.symbol}</div>
 	                    <span className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
@@ -3412,7 +3417,7 @@ export default function PredictionsPage() {
                         : tPred("running.in", { value: fmtMs(row.dueInSec * 1000) })}</strong>
                   </div>
                   <div className="predictionRunningCardActions">
-                    <button
+                    <DeskButton
                       className="btn"
                       type="button"
                       disabled={runningActionId === row.id}
@@ -3420,8 +3425,8 @@ export default function PredictionsPage() {
                     >
                       <AppIcon name={row.paused ? "play" : "pause"} />
                       {row.paused ? tPred("running.resume") : tPred("running.pausePrediction")}
-                    </button>
-                    <button
+                    </DeskButton>
+                    <DeskButton
                       className="btn"
                       type="button"
                       disabled={runningActionId === row.id}
@@ -3429,17 +3434,17 @@ export default function PredictionsPage() {
                     >
                       <AppIcon name="delete" />
                       {tPred("running.delete")}
-                    </button>
+                    </DeskButton>
                   </div>
-	                </div>
+	                </div></DeskSurface>
 	                );
 	              })}
             </div>
             </>
           )}
-        </div>
+        </div></DeskSurface>
 
-      </section>
+      </section></DeskSurface>
       </ActivePredictions>
       </PredictionCreateWizard>
       ) : null}
@@ -3453,7 +3458,7 @@ export default function PredictionsPage() {
       {notice ? <PredictionAlert tone="warning" title={tPred("alerts.notice")} message={notice} /> : null}
 
       <PredictionHistory active={activeView === "history"}>
-      <section className="card predictionsSection">
+      <DeskSurface><section className="card predictionsSection">
         <div className="predictionsListHeader">
           <div className="predictionsListTitle">{tPred("feed.title")}</div>
           <div className="predictionsListHint">
@@ -3475,7 +3480,7 @@ export default function PredictionsPage() {
             ) : null}
           </div>
           <div className="predictionsFiltersActions">
-            <button
+            <DeskButton
               className="btn"
               type="button"
               onClick={resetFilters}
@@ -3483,8 +3488,8 @@ export default function PredictionsPage() {
             >
               <AppIcon name="reset" />
               {tPred("feed.resetFilters")}
-            </button>
-            <button
+            </DeskButton>
+            <DeskButton
               className="btn"
               type="button"
               onClick={() => {
@@ -3498,62 +3503,62 @@ export default function PredictionsPage() {
             >
               <AppIcon name="refresh" />
               {loading ? tPred("running.refreshing") : tPred("running.refresh")}
-            </button>
+            </DeskButton>
           </div>
         </div>
         <div className="predictionsFiltersGrid">
-          <input
+          <DeskInput
             className="input"
             placeholder={tPred("feed.filterSymbol")}
             value={filterSymbol}
             onChange={(e) => setFilterSymbol(e.target.value)}
           />
-          <select className="input" value={filterSignal} onChange={(e) => setFilterSignal(e.target.value as PredictionSignal | "all")}>
+          <DeskSelect className="input" value={filterSignal} onChange={(e) => setFilterSignal(e.target.value as PredictionSignal | "all")}>
             <option value="all">{tPred("feed.allSignals")}</option>
             <option value="up">up</option>
             <option value="down">down</option>
             <option value="neutral">neutral</option>
-          </select>
-          <select className="input" value={filterTimeframe} onChange={(e) => setFilterTimeframe(e.target.value as PredictionTimeframe | "all")}>
+          </DeskSelect>
+          <DeskSelect className="input" value={filterTimeframe} onChange={(e) => setFilterTimeframe(e.target.value as PredictionTimeframe | "all")}>
             <option value="all">{tPred("feed.allTf")}</option>
             {TIMEFRAMES.map((tf) => (
               <option key={tf} value={tf}>{tf}</option>
             ))}
-          </select>
-          <select className="input" value={filterMarket} onChange={(e) => setFilterMarket(e.target.value as PredictionMarketType | "all")}>
+          </DeskSelect>
+          <DeskSelect className="input" value={filterMarket} onChange={(e) => setFilterMarket(e.target.value as PredictionMarketType | "all")}>
             <option value="all">{tPred("history.allMarkets")}</option>
             <option value="spot">Spot</option>
             <option value="perp">Perpetual</option>
-          </select>
-          <input
+          </DeskSelect>
+          <DeskInput
             className="input"
             placeholder={tPred("history.filterPrompt")}
             value={filterPrompt}
             onChange={(e) => setFilterPrompt(e.target.value)}
           />
-          <select className="input" value={filterProvider} onChange={(e) => setFilterProvider(e.target.value as HistoryProviderFilter)}>
+          <DeskSelect className="input" value={filterProvider} onChange={(e) => setFilterProvider(e.target.value as HistoryProviderFilter)}>
             <option value="all">{tPred("history.allProviders")}</option>
             <option value="ai">AI</option>
             <option value="local">Rules</option>
             <option value="composite">Rules + AI</option>
-          </select>
-          <select className="input" value={filterResult} onChange={(e) => setFilterResult(e.target.value as HistoryResultFilter)}>
+          </DeskSelect>
+          <DeskSelect className="input" value={filterResult} onChange={(e) => setFilterResult(e.target.value as HistoryResultFilter)}>
             <option value="all">{tPred("history.allResults")}</option>
             <option value="pending">{tPred("history.pending")}</option>
             <option value="closed">{tPred("history.final")}</option>
             <option value="tp">TP</option>
             <option value="sl">SL</option>
             <option value="expired">{tPred("history.expired")}</option>
-          </select>
-          <select className="input" value={signalSource} onChange={(e) => setSignalSource(e.target.value as SignalSource)}>
+          </DeskSelect>
+          <DeskSelect className="input" value={signalSource} onChange={(e) => setSignalSource(e.target.value as SignalSource)}>
             <option value="local">{tPred("feed.signalSourceLocal")}</option>
             <option value="ai">{tPred("feed.signalSourceAi")}</option>
-          </select>
-          <select className="input" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
+          </DeskSelect>
+          <DeskSelect className="input" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
             <option value="newest">{tPred("feed.sortNewest")}</option>
             <option value="confidence">{tPred("feed.sortConfidence")}</option>
             <option value="move">{tPred("feed.sortMove")}</option>
-          </select>
+          </DeskSelect>
         </div>
 
         <div className="predictionsListContent">
@@ -3569,7 +3574,7 @@ export default function PredictionsPage() {
           ) : (
             <>
           <div className="predictionsDesktopTableWrap">
-            <table className="predictionsTable">
+            <DeskTable className="predictionsTable">
               <thead>
                 <tr style={{ textAlign: "left", color: "var(--muted)" }}>
                   <th style={{ padding: "8px 6px" }}>{tPred("feed.table.symbol")}</th>
@@ -3731,7 +3736,7 @@ export default function PredictionsPage() {
                               {actionState.label}
                             </span>
                             {actionState.state === "ready" ? (
-                              <button
+                              <DeskButton
                                 className="btn btnPrimary"
                                 onClick={() => void sendToDesk(row.id)}
                                 disabled={sendingId === row.id || !actionState.canSend}
@@ -3739,9 +3744,9 @@ export default function PredictionsPage() {
                               >
                                 <AppIcon name="trading" />
                                 {sendingId === row.id ? tPred("feed.sending") : tPred("feed.sendToTradingDesk")}
-                              </button>
+                              </DeskButton>
                             ) : null}
-                            <button
+                            <DeskButton
                               className="btn"
                               type="button"
                               onClick={() => void togglePredictionDetail(row.id)}
@@ -3749,7 +3754,7 @@ export default function PredictionsPage() {
                             >
                               <AppIcon name="detail" />
                               {expanded ? tPred("feed.hideDetails") : tPred("feed.details")}
-                            </button>
+                            </DeskButton>
                           </div>
                         </td>
                       </tr>
@@ -3764,7 +3769,7 @@ export default function PredictionsPage() {
                   );
                 })}
               </tbody>
-            </table>
+            </DeskTable>
           </div>
 
           <div className="predictionsMobileList">
@@ -3793,7 +3798,7 @@ export default function PredictionsPage() {
                       : "predictionReasonBadgeUnknown";
 
               return (
-                <div
+                <DeskSurface><div
                   key={`${row.id}_mobile`}
                   className={`card predictionRowCard ${mobileCardStateClass(actionState.state)}`}
                 >
@@ -3881,7 +3886,7 @@ export default function PredictionsPage() {
                       {actionState.label}
                     </span>
                     {actionState.state === "ready" ? (
-                      <button
+                      <DeskButton
                         className="btn btnPrimary"
                         onClick={() => void sendToDesk(row.id)}
                         disabled={sendingId === row.id || !actionState.canSend}
@@ -3889,9 +3894,9 @@ export default function PredictionsPage() {
                       >
                         <AppIcon name="trading" />
                         {sendingId === row.id ? tPred("feed.sending") : tPred("feed.sendToTradingDesk")}
-                      </button>
+                      </DeskButton>
                     ) : null}
-                    <button
+                    <DeskButton
                       className="btn"
                       type="button"
                       onClick={() => void togglePredictionDetail(row.id)}
@@ -3899,7 +3904,7 @@ export default function PredictionsPage() {
                     >
                       <AppIcon name="detail" />
                       {expanded ? tPred("feed.hideDetails") : tPred("feed.details")}
-                    </button>
+                    </DeskButton>
                   </div>
 
                   {expanded ? (
@@ -3907,18 +3912,18 @@ export default function PredictionsPage() {
                       {renderIndicatorDetail(row)}
                     </div>
                   ) : null}
-                </div>
+                </div></DeskSurface>
               );
             })}
           </div>
             </>
           )}
         </div>
-      </section>
+      </section></DeskSurface>
       </PredictionHistory>
 
       <PredictionPerformance active={activeView === "performance"}>
-      <section className="card predictionsSection">
+      <DeskSurface><section className="card predictionsSection">
         <div className="predictionsPerformanceHeader">
           <div>
             <div className="predictionCreateTitle">{tPred("performance.title")}</div>
@@ -3934,7 +3939,7 @@ export default function PredictionsPage() {
             ) : null}
           </div>
           <div className="predictionsPerformanceActions">
-            <button
+            <DeskButton
               className="btn"
               type="button"
               onClick={() => void resetPerformanceStats()}
@@ -3942,7 +3947,7 @@ export default function PredictionsPage() {
             >
               <AppIcon name="reset" />
               {resettingPerformance ? tPred("running.refreshing") : tPred("performance.reset")}
-            </button>
+            </DeskButton>
           </div>
         </div>
         <div className="predictionsQualityGrid">
@@ -4000,7 +4005,7 @@ export default function PredictionsPage() {
                 }}
               />
               <div className="predictionCalibrationTableWrap">
-                <table className="predictionCalibrationTable">
+                <DeskTable className="predictionCalibrationTable">
                   <thead>
                     <tr>
                       <th>{tPred("performance.bin")}</th>
@@ -4021,12 +4026,12 @@ export default function PredictionsPage() {
                         </tr>
                       ))}
                   </tbody>
-                </table>
+                </DeskTable>
               </div>
             </div>
           )}
         </div>
-      </section>
+      </section></DeskSurface>
       </PredictionPerformance>
     </div>
   );

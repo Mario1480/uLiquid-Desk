@@ -1,5 +1,7 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
@@ -90,7 +92,7 @@ export default function TopMoversWidget() {
   }
 
   return (
-    <div className="card dashboardInsightCard dashboardTopMoversCard dashboardWidgetCardFill">
+    <DeskSurface><div className="card dashboardInsightCard dashboardTopMoversCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div>
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>
@@ -98,7 +100,7 @@ export default function TopMoversWidget() {
         </div>
         <div className="dashboardTopMoversTabs" role="tablist" aria-label={t("marketType")}>
           {(["spot", "perp"] as const).map((type) => (
-            <button
+            <DeskButton
               key={type}
               type="button"
               role="tab"
@@ -108,7 +110,7 @@ export default function TopMoversWidget() {
               onClick={() => void selectMarket(type)}
             >
               {t(type)}
-            </button>
+            </DeskButton>
           ))}
         </div>
       </div>
@@ -128,6 +130,6 @@ export default function TopMoversWidget() {
         <span>{response?.source ?? "Binance"} · {t("liquidityFilter")}</span>
         {response?.degraded || error ? <span className="dashboardWidgetInlineError">{t("degraded")}</span> : null}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

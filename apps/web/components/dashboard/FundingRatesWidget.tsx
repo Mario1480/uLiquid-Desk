@@ -1,5 +1,8 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { apiGet, apiPut } from "../../lib/api";
@@ -83,26 +86,26 @@ export default function FundingRatesWidget() {
   }
 
   return (
-    <div className="card dashboardInsightCard dashboardFundingRatesCard dashboardWidgetCardFill">
+    <DeskSurface dense><div className="card dashboardInsightCard dashboardFundingRatesCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div>
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>
           <div className="dashboardCompactWidgetSubtitle">{t("subtitle")}</div>
         </div>
-        <button type="button" className="btn" onClick={() => setEditing((value) => !value)}>
+        <DeskButton type="button" className="btn" onClick={() => setEditing((value) => !value)}>
           <AppIcon name={editing ? "check" : "edit"} />
           {editing ? t("done") : t("edit")}
-        </button>
+        </DeskButton>
       </div>
 
       {editing ? (
         <div className="dashboardWidgetSelectionPanel">
           <div className="dashboardWatchlistAddRow">
-            <select className="select" value={addSymbol} onChange={(event) => setAddSymbol(event.target.value)}>
+            <DeskSelect className="select" value={addSymbol} onChange={(event) => setAddSymbol(event.target.value)}>
               <option value="">{t("chooseMarket")}</option>
               {remainingSymbols.map((symbol) => <option key={symbol} value={symbol}>{symbol.replace("USDT", "")}</option>)}
-            </select>
-            <button
+            </DeskSelect>
+            <DeskButton
               type="button"
               className="btn btnPrimary"
               disabled={!addSymbol || saving || (response?.symbols.length ?? 0) >= 6}
@@ -114,13 +117,13 @@ export default function FundingRatesWidget() {
             >
               <AppIcon name="add" />
               {t("add")}
-            </button>
+            </DeskButton>
           </div>
           <div className="dashboardWatchlistEditList">
             {(response?.symbols ?? []).map((symbol) => (
               <div key={symbol} className="dashboardWatchlistEditRow">
                 <span>{symbol.replace("USDT", "")} <small>/ USDT Perp</small></span>
-                <button
+                <DeskButton
                   type="button"
                   className="dashboardWatchlistRemove"
                   disabled={saving || response?.symbols.length === 1}
@@ -129,7 +132,7 @@ export default function FundingRatesWidget() {
                   title={t("remove", { symbol: symbol.replace("USDT", "") })}
                 >
                   <AppIcon name="remove" />
-                </button>
+                </DeskButton>
               </div>
             ))}
           </div>
@@ -169,6 +172,6 @@ export default function FundingRatesWidget() {
         {response?.degraded || error ? <span className="dashboardWidgetInlineError">{t("degraded")}</span> : null}
         {response?.fetchedAt ? <span>{new Date(response.fetchedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span> : null}
       </div>
-    </div>
+    </div></DeskSurface>
   );
 }

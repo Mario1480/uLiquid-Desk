@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
@@ -23,8 +24,8 @@ export default function LogoutButton() {
   }
 
   return (
-    <button className="btn" onClick={logout} disabled={loading}>
+    <DeskButton className="btn" onClick={logout} disabled={loading}>
       {loading ? tNav("loggingOut") : tNav("logout")}
-    </button>
+    </DeskButton>
   );
 }

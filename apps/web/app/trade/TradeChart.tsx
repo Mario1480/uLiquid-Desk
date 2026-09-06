@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
 import { memo, useCallback, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AdvancedChart } from "./AdvancedChart";
@@ -33,7 +34,7 @@ export const TradeChart = memo(function TradeChart({
         <div style={{ display: "grid", gap: 6 }}>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("engineSelector.title")}</div>
           <div className="tradeOrderModeSwitch">
-            <button
+            <DeskButton
               className={`tradeOrderModeBtn ${chartEngine === "advanced" ? "tradeOrderModeBtnActive" : ""}`}
               type="button"
               onClick={() => {
@@ -42,8 +43,8 @@ export const TradeChart = memo(function TradeChart({
               }}
             >
               {t("engineSelector.advanced")}
-            </button>
-            <button
+            </DeskButton>
+            <DeskButton
               className={`tradeOrderModeBtn ${chartEngine === "lightweight" ? "tradeOrderModeBtnActive" : ""}`}
               type="button"
               onClick={() => {
@@ -52,7 +53,7 @@ export const TradeChart = memo(function TradeChart({
               }}
             >
               {t("engineSelector.lightweight")}
-            </button>
+            </DeskButton>
           </div>
         </div>
       </div>

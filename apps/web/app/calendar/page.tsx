@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../lib/api";
@@ -358,10 +362,10 @@ export default function CalendarPage() {
     <div className="calendarPage calendarProPage">
       <PageHeader title={t("title")} description={t("subtitle")} />
 
-      <div className="card calendarFilterCard calendarProControls">
+      <DeskSurface><div className="card calendarFilterCard calendarProControls">
         <div className="calendarProTabRow" role="group" aria-label={t("title")}>
           {tabDefs.map((tab) => (
-            <button
+            <DeskButton
               key={tab.key}
               type="button"
               className={`calendarProTab ${dayTab === tab.key ? "calendarProTabActive" : ""}`}
@@ -369,23 +373,23 @@ export default function CalendarPage() {
               aria-pressed={dayTab === tab.key}
             >
               {tab.label}
-            </button>
+            </DeskButton>
           ))}
-          <button
+          <DeskButton
             type="button"
 	            className="btn calendarProTabRefresh"
 	            onClick={() => void load()}
 	          >
 	            <AppIcon name="refresh" />
 	            {t("actions.refresh")}
-	          </button>
+	          </DeskButton>
         </div>
 
         <div className="calendarFilterGrid calendarProFilterGrid">
           <label className="calendarFilterField calendarFilterFieldCurrency">
             <div className="calendarProFilterLabel">{t("filters.currency")}</div>
             <div className="calendarCurrencyToggleRow">
-              <button
+              <DeskButton
                 type="button"
                 className={`badge calendarCurrencyToggle ${
                   selectedCurrencies.length === CALENDAR_CURRENCIES.length
@@ -396,9 +400,9 @@ export default function CalendarPage() {
                 aria-pressed={selectedCurrencies.length === CALENDAR_CURRENCIES.length}
               >
                 <span className="calendarCurrencyToggleCode">{t("filters.all")}</span>
-              </button>
+              </DeskButton>
               {CALENDAR_CURRENCIES.map((entry) => (
-                <button
+                <DeskButton
                   key={entry.code}
                   type="button"
                   className={`badge calendarCurrencyToggle ${
@@ -411,7 +415,7 @@ export default function CalendarPage() {
                 >
                   <span className="calendarCurrencyToggleFlag">{entry.flag}</span>
                   <span className="calendarCurrencyToggleCode">{entry.code}</span>
-                </button>
+                </DeskButton>
               ))}
             </div>
           </label>
@@ -419,7 +423,7 @@ export default function CalendarPage() {
           <label className="calendarFilterField">
             <div className="calendarProFilterLabel">{t("filters.impact")}</div>
             <div className="calendarImpactToggleRow">
-              <button
+              <DeskButton
                 type="button"
                 className={`badge ${
                   sortedImpacts.length === IMPACT_ORDER.length
@@ -430,11 +434,11 @@ export default function CalendarPage() {
                 aria-pressed={sortedImpacts.length === IMPACT_ORDER.length}
               >
                 {t("filters.all")}
-              </button>
+              </DeskButton>
               {IMPACT_ORDER.map((entry) => {
                 const active = impacts.includes(entry);
                 return (
-                  <button
+                  <DeskButton
                     key={entry}
                     type="button"
                     className={`badge ${impactClass(entry)} ${active ? "calendarProImpactToggleActive" : "calendarProImpactToggleInactive"}`}
@@ -442,7 +446,7 @@ export default function CalendarPage() {
                     aria-pressed={active}
                   >
                     {t(`impact.${entry}`)}
-                  </button>
+                  </DeskButton>
                 );
               })}
             </div>
@@ -450,7 +454,7 @@ export default function CalendarPage() {
 
           <label className="calendarFilterField">
             <div className="calendarProFilterLabel">{t("search.placeholder")}</div>
-            <input
+            <DeskInput
               className="input calendarProSearch"
               type="search"
               value={searchQuery}
@@ -463,7 +467,7 @@ export default function CalendarPage() {
 
           <label className="calendarFilterField calendarFilterFieldDate">
             <div className="calendarProFilterLabel">{t("filters.from")}</div>
-            <input
+            <DeskInput
               className="input calendarDateInput"
               type="date"
               lang={dateLocale}
@@ -478,7 +482,7 @@ export default function CalendarPage() {
 
           <label className="calendarFilterField calendarFilterFieldDate">
             <div className="calendarProFilterLabel">{t("filters.to")}</div>
-            <input
+            <DeskInput
               className="input calendarDateInput"
               type="date"
               lang={dateLocale}
@@ -492,16 +496,16 @@ export default function CalendarPage() {
           </label>
 
         </div>
-      </div>
+      </div></DeskSurface>
 
       {preferencesSaveError ? (
-        <div className="card calendarErrorCard calendarProErrorCard">
+        <DeskSurface><div className="card calendarErrorCard calendarProErrorCard">
           <strong>{t("preferencesSaveError")}:</strong> {preferencesSaveError}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {nextSummary ? (
-        <div className={`card calendarSummaryCard calendarProStatusStrip ${nextSummary.blackoutActive || nextSummary.degraded ? "calendarProStatusStripAlert" : ""}`}>
+        <DeskSurface><div className={`card calendarSummaryCard calendarProStatusStrip ${nextSummary.blackoutActive || nextSummary.degraded ? "calendarProStatusStripAlert" : ""}`}>
           <div className="calendarProStatusTitle">
             {nextSummary.degraded
               ? t("summary.degraded")
@@ -522,16 +526,16 @@ export default function CalendarPage() {
           ) : (
             <div className="calendarProStatusText">{t("summary.noUpcoming")}</div>
           )}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {error ? (
-        <div className="card calendarErrorCard calendarProErrorCard">
+        <DeskSurface><div className="card calendarErrorCard calendarProErrorCard">
           <strong>{t("loadError")}:</strong> {error}
-        </div>
+        </div></DeskSurface>
       ) : null}
 
-      <div className="card calendarEventsCard calendarProEventsCard">
+      <DeskSurface><div className="card calendarEventsCard calendarProEventsCard">
         <div className="calendarProEventsHeader">
           <div className="calendarProEventsTitle">{t("eventsTitle")}</div>
           {!loading ? <div className="calendarProEventsCount">{filteredEvents.length}</div> : null}
@@ -546,7 +550,7 @@ export default function CalendarPage() {
         ) : (
           <>
             <div className="calendarProTableWrap">
-              <table className="calendarProTable">
+              <DeskTable className="calendarProTable">
                 <thead>
                   <tr>
                     <th scope="col">{t("table.event")}</th>
@@ -580,12 +584,12 @@ export default function CalendarPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DeskTable>
             </div>
 
             <div className="calendarProMobileList">
               {filteredEvents.map((event) => (
-                <article key={event.id} className="card calendarProMobileCard">
+                <DeskSurface><article key={event.id} className="card calendarProMobileCard">
                   <div className="calendarProMobileHead">
                     <div className="calendarProMobileTitle">{event.title}</div>
                     <span className={`badge ${impactClass(event.impact)}`}>{t(`impact.${event.impact}`)}</span>
@@ -598,12 +602,12 @@ export default function CalendarPage() {
                     <span>{t("table.previous")}: {fmtNumber(event.previous)}</span>
                     <span>{t("table.actual")}: {fmtNumber(event.actual)}</span>
                   </div>
-                </article>
+                </article></DeskSurface>
               ))}
             </div>
           </>
         )}
-      </div>
+      </div></DeskSurface>
     </div>
   );
 }

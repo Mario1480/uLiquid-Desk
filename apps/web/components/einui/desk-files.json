@@ -1,0 +1,278 @@
+{
+  "description": "Desk adoption snapshot. Original website hashes remain in source.json. Update only after reviewing a source diff.",
+  "adaptations": [
+    "Tailwind ein prefix and matching class merge",
+    "Ocean semantic mapping, isolated materials, portal themes and fallbacks",
+    "Solid accessible buttons with native HTML contracts and no ripple/scale/glow",
+    "Native input, textarea, select, table and Slot surface compatibility",
+    "Modal focus, command palette semantics and spotlight positioning",
+    "CSS-only skeletons and reduced-motion support",
+    "Local pricing fixtures and lazy isolated interactive gallery"
+  ],
+  "files": [
+    {
+      "path": "IllustrativeControl.tsx",
+      "sha256": "a36c30b98672c24c833277ee1e6f7456e7df91b797d348ce46aa0861b812f2fa"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "7704ee4a0d901e9b04ed3ab9449d1d4eef09f8a85d1f48797a709864f371d046"
+    },
+    {
+      "path": "blocks/admin/loading.tsx",
+      "sha256": "9e1ac4077d21536321677f9b65d9cf9ab3c44496a8d336c502a58570df373ac2"
+    },
+    {
+      "path": "blocks/admin/page.tsx",
+      "sha256": "95d3591b9d5cc9a6774ceb6a62538935cfcd64481175187c3f02bc992228132a"
+    },
+    {
+      "path": "blocks/auth/forgot-password-page.tsx",
+      "sha256": "1b6f5d52973e4bdb86c91866c58f4fa4e3a6def98413488e97460661dd271854"
+    },
+    {
+      "path": "blocks/auth/login-page.tsx",
+      "sha256": "4393d9db9c72d624fa382d86a2f29c1d6046df88f084e15485d985c6917b0392"
+    },
+    {
+      "path": "blocks/auth/signup-page.tsx",
+      "sha256": "cc883c1c5d4d35efdfbae33396923c26808c583795fdd573cac9f1d599ce695d"
+    },
+    {
+      "path": "blocks/dashboard/page.tsx",
+      "sha256": "d39ffd97c863c183b764777c379845774198d74e517e005cb39c779078696e5a"
+    },
+    {
+      "path": "blocks/pricing/page.tsx",
+      "sha256": "598258e7954a7db5d0c57f82b661e6f871af9bdefd4c27a7e89dbc2f4bf41f84"
+    },
+    {
+      "path": "blocks/pricing/sample-pricing.ts",
+      "sha256": "eb14f07f1d51c00c7e3666be30f0e50a2d057dc53a8122ad8bbd277f4fcf1905"
+    },
+    {
+      "path": "gallery/AdapterContract.tsx",
+      "sha256": "92563bb4035236d97a251ba350ed1f08882f1068bf733bcb1f59d4746581bc1c"
+    },
+    {
+      "path": "gallery/Effects.tsx",
+      "sha256": "f1e2b5e5dcc6f86a1a88ca9f4ad0624d7cf76fd17e46efbe1a3a6645e3c354a0"
+    },
+    {
+      "path": "gallery/Gallery.tsx",
+      "sha256": "79ec54652ceff2563ccffe3195d19cfcfcc8106703d50de29c320dcbfc93cf8c"
+    },
+    {
+      "path": "gallery/Overlays.tsx",
+      "sha256": "9b621456a0a4cf17c7d809ee12d81fd237cf75bedd780a0db7bb31863cadd5ea"
+    },
+    {
+      "path": "gallery/Primitives.tsx",
+      "sha256": "760be73ad7cecb9b6ecd92ced5f1dace616da664ec6e88008b9673742f327ea5"
+    },
+    {
+      "path": "gallery/Templates.tsx",
+      "sha256": "9fd6cbda54522509efcade674850252583ec0f41c8ca7cd7a9f12c6636041483"
+    },
+    {
+      "path": "gallery/Widgets.tsx",
+      "sha256": "ed6dd136cee39fd722d180126600294672ef592bd115d4fa8960ccd8f92c3e16"
+    },
+    {
+      "path": "innovative/glass-command-palette.tsx",
+      "sha256": "2fa36fd27302f1acf4b901f416c056ee0b45a4d51e7f62e53fb96a04fd38ddf8"
+    },
+    {
+      "path": "innovative/glass-dock.tsx",
+      "sha256": "68fa29f24108bf8c510af78f4347a9bb2975e13bf6bd6f6890ef422cfa7219be"
+    },
+    {
+      "path": "innovative/glass-gauge.tsx",
+      "sha256": "a16ce3b5443651dd2d23e768f70d7c290c4a9e3910c68dd2b3269d0a6d45b2f7"
+    },
+    {
+      "path": "innovative/glass-morph-card.tsx",
+      "sha256": "e3e282a7ca05b7ace091f0204309838282677500eac2e343f3680ecdf0b74df1"
+    },
+    {
+      "path": "innovative/glass-notification.tsx",
+      "sha256": "65f66786452f6a1ac6c783593bc3e8c216b62f404e040c14a97fbc2470d228b3"
+    },
+    {
+      "path": "innovative/glass-orb.tsx",
+      "sha256": "62682d9dbd1e4ad099e2c6133c69413c63487f999969809f75547c883a8916ae"
+    },
+    {
+      "path": "innovative/glass-ripple.tsx",
+      "sha256": "85317c854654b2cb320382a83cf919f00e394a0a3a16b26e2607ae85275e4f20"
+    },
+    {
+      "path": "innovative/glass-spotlight.tsx",
+      "sha256": "978e7a998363fc8dc669d0138aaccef08e20585428880d62bd26318b8596aaee"
+    },
+    {
+      "path": "innovative/glass-timeline.tsx",
+      "sha256": "df4a58b322cc59edb1d1f63ab8a4f699147995497a1aacbf40d11d3712af8d39"
+    },
+    {
+      "path": "innovative/glass-waveform.tsx",
+      "sha256": "3b205ba77ba8d0d278815ae584445f647bd939218120032c414821979fda45a7"
+    },
+    {
+      "path": "innovative/index.ts",
+      "sha256": "dcb6f9f4a3233ad109804c415f42485c1c55a21c647a4dd776e5010ef7ce4c0e"
+    },
+    {
+      "path": "label.tsx",
+      "sha256": "f9e7689c6d6484d3f186a1e5750b05306833f9fbd8a52ba654d5a066225d6ed2"
+    },
+    {
+      "path": "liquid-glass/glass-alert-dialog.tsx",
+      "sha256": "dd8c12ad0fc0afdd9567f6aed6b37454cc3f00b61c01d69e4ab434e56d20057d"
+    },
+    {
+      "path": "liquid-glass/glass-avatar.tsx",
+      "sha256": "54caf0aa95ba77530c58893fc59e4838b707c78efad044d6b796a81ce62aea81"
+    },
+    {
+      "path": "liquid-glass/glass-badge.tsx",
+      "sha256": "d99e70d622904115885a72420de24129bae4da818b5a459c50146de0139979c2"
+    },
+    {
+      "path": "liquid-glass/glass-breadcrumb.tsx",
+      "sha256": "a8a2d4a2400dfe8c8ceb833266dcc1a20cdd4c23fa91bc5bbb534be97eb920eb"
+    },
+    {
+      "path": "liquid-glass/glass-button.tsx",
+      "sha256": "5384d4cdb7b95bd7b0a965704e049b1105399d5a5daf4c1fde1d8127904a67e9"
+    },
+    {
+      "path": "liquid-glass/glass-card.tsx",
+      "sha256": "7bbd8cc6b6dda15a6521490ba8b0cb319e0aa765414cea0d8a3d97ffd76967cb"
+    },
+    {
+      "path": "liquid-glass/glass-checkbox.tsx",
+      "sha256": "40747c0a1c1ef8c68caa687c60de42ef2804aa0fe69f097bdf99ea0e9e25ef05"
+    },
+    {
+      "path": "liquid-glass/glass-dialog.tsx",
+      "sha256": "19acb99104c83a8736eb5ff793966096cb4d7690c65ada8e17c2233a254a0d70"
+    },
+    {
+      "path": "liquid-glass/glass-input.tsx",
+      "sha256": "c3d555b6fb006c96d8d58f6fc5ba10c2b3caafb68a07302ae8cd1fdcdaf07863"
+    },
+    {
+      "path": "liquid-glass/glass-native-select.tsx",
+      "sha256": "212825389745104c745c4af8fd1818f3ca10f71aedcc4d7e9c3736f2dd197bf8"
+    },
+    {
+      "path": "liquid-glass/glass-popover.tsx",
+      "sha256": "2fb08d02a3a8631d91342d25b4d39ca489641039d296a879b431791f1d954e64"
+    },
+    {
+      "path": "liquid-glass/glass-progress.tsx",
+      "sha256": "8acc4deb491aa936430f62a45646dee99999a6c798778b0b546dc173eb697739"
+    },
+    {
+      "path": "liquid-glass/glass-radio.tsx",
+      "sha256": "8c3fe56104771a7561f17deb7b71873f32d7c529efc6ec026b10bac77d3caeb6"
+    },
+    {
+      "path": "liquid-glass/glass-scroll-area.tsx",
+      "sha256": "39d6699b7643223c1769ae02488461a92006484fb56cc3bd38cbf0801adeb9df"
+    },
+    {
+      "path": "liquid-glass/glass-select.tsx",
+      "sha256": "7986bdd52e5f986d8536d70a3b01f270c1fbadcb0671b43c468d7ac7e27db726"
+    },
+    {
+      "path": "liquid-glass/glass-separator.tsx",
+      "sha256": "2148aff34a056826a96fe6e1429183623e25569b44cc36779ea44a9d487ff17e"
+    },
+    {
+      "path": "liquid-glass/glass-sheet.tsx",
+      "sha256": "743a69ef2b9ee82b25db656c6e41b7b2caea9d5d90d116c007a1c9d18c970d2b"
+    },
+    {
+      "path": "liquid-glass/glass-skeleton.tsx",
+      "sha256": "bfbaf71b3ebb8eaa5891315661b041cf2e6e4c1b2f23ec0c693b0bfd8a41e424"
+    },
+    {
+      "path": "liquid-glass/glass-slider.tsx",
+      "sha256": "53c4dc22aabdb4d7f09dd6de5e448cdfa44b0392c0c1ca0a919c591139940dd8"
+    },
+    {
+      "path": "liquid-glass/glass-switch.tsx",
+      "sha256": "8ef907dab036614beba0e1a89b524c584a9b08ec78a065c14ff14e4585bddbcd"
+    },
+    {
+      "path": "liquid-glass/glass-table.tsx",
+      "sha256": "d6928434e17a03bec417f394c009a7a2f6ff8f4a921ed3a858b7506d2a47461a"
+    },
+    {
+      "path": "liquid-glass/glass-tabs.tsx",
+      "sha256": "440539f1139fab946e8bd1f90e1decd1424daf8daa30b79b9acfef6fad17e6c1"
+    },
+    {
+      "path": "liquid-glass/glass-textarea.tsx",
+      "sha256": "722e4d84a709b37c76d66b4b4a23837db21119bf83d6b0df87325206123db501"
+    },
+    {
+      "path": "liquid-glass/glass-tooltip.tsx",
+      "sha256": "5e13c305d387925f94b48ad3bcc6fdac2465c6a213193412b3584b42d4a62eae"
+    },
+    {
+      "path": "liquid-glass/index.ts",
+      "sha256": "f49e645c419b5c4178de8718535f91d74f02f5c2fd70f88f68f5ae8759ad6216"
+    },
+    {
+      "path": "portal-theme.tsx",
+      "sha256": "66d0f956d99961656499efc6305227b4de478e5c497676692bac6c3308e07d1d"
+    },
+    {
+      "path": "registry.upstream.json",
+      "sha256": "f062f6019e993652dd78a263bceef8d9e6e455d0f0e38f91151941f233b1365d"
+    },
+    {
+      "path": "source.json",
+      "sha256": "b9599ee696bf60d4418700c70512e524f57e4109170ec6256545015798da5558"
+    },
+    {
+      "path": "theme.css",
+      "sha256": "cd93978049bb9806e7d9dcba830aaf25c4f83cc434a570a5054d8cb3d76fd507"
+    },
+    {
+      "path": "utils.ts",
+      "sha256": "59a5923dae65ad2616dbd94d9f0ae3f7139fdf5831e2dba35eef50733ed35912"
+    },
+    {
+      "path": "widgets/base-widget.tsx",
+      "sha256": "1face6bfdf2baeef143daa91959de1112ab05e00b3754f0b8ec0c0eccc589270"
+    },
+    {
+      "path": "widgets/calendar-widget.tsx",
+      "sha256": "892114a2f4c51af4ee55784a7d41e9a3dc3c2bff326ed30a7f98ab1a29640c88"
+    },
+    {
+      "path": "widgets/clock-widget.tsx",
+      "sha256": "db667d072291c933aa3c215029cbc0c7f615127e66641ce6897c805994ddbd4a"
+    },
+    {
+      "path": "widgets/index.ts",
+      "sha256": "194e4ed1d5c2c0bfd48882d6e847a9bfdd4028eb6044264b7436ee74fdf9b2e9"
+    },
+    {
+      "path": "widgets/stats-widget.tsx",
+      "sha256": "77d07e871a14faddec783e6cdb6f59de55648a292201537982025515815e00e0"
+    },
+    {
+      "path": "widgets/stock-widget.tsx",
+      "sha256": "77c18a76c6ddb2d2a876d6cc71f806cd144dbfdadfb725f04885dfc0fc58a762"
+    },
+    {
+      "path": "widgets/weather-widget.tsx",
+      "sha256": "62da5ec75e227cf5c4c0c9382b4213144825f342db2270ad5969fc720856dea5"
+    }
+  ]
+}

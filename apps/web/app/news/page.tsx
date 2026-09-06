@@ -1,5 +1,9 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
@@ -143,9 +147,9 @@ export default function NewsPage() {
     <div className="newsPage newsProPage">
       <PageHeader title={t("title")} description={t("subtitle")} />
 
-      <div className="card newsFilterCard newsProControls">
+      <DeskSurface><div className="card newsFilterCard newsProControls">
         <div className="newsProTabRow">
-          <button
+          <DeskButton
             type="button"
             className={`newsProTab ${mode === "all" ? "newsProTabActive" : ""}`}
             onClick={() => {
@@ -155,8 +159,8 @@ export default function NewsPage() {
             aria-pressed={mode === "all"}
           >
             {t("tabs.all")}
-          </button>
-          <button
+          </DeskButton>
+          <DeskButton
             type="button"
             className={`newsProTab ${mode === "crypto" ? "newsProTabActive" : ""}`}
             onClick={() => {
@@ -166,8 +170,8 @@ export default function NewsPage() {
             aria-pressed={mode === "crypto"}
           >
             {t("tabs.crypto")}
-          </button>
-          <button
+          </DeskButton>
+          <DeskButton
             type="button"
             className={`newsProTab ${mode === "general" ? "newsProTabActive" : ""}`}
             onClick={() => {
@@ -177,21 +181,21 @@ export default function NewsPage() {
             aria-pressed={mode === "general"}
           >
             {t("tabs.general")}
-          </button>
-          <button
+          </DeskButton>
+          <DeskButton
             type="button"
             className="btn newsProTabRefresh"
             onClick={() => void load()}
           >
             <AppIcon name="refresh" />
             {t("actions.refresh")}
-          </button>
+          </DeskButton>
         </div>
 
         <div className="newsFilterGrid newsProFilterGrid">
           <label className="newsFilterField">
             <div className="newsProFilterLabel">{t("filters.limit")}</div>
-            <select
+            <DeskSelect
               className="input"
               value={limit}
               onChange={(event) => {
@@ -203,23 +207,23 @@ export default function NewsPage() {
               <option value={20}>20</option>
               <option value={30}>30</option>
               <option value={50}>50</option>
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="newsFilterField">
             <div className="newsProFilterLabel">{t("filters.page")}</div>
-            <select className="input" value={page} onChange={(event) => setPage(Number(event.target.value))}>
+            <DeskSelect className="input" value={page} onChange={(event) => setPage(Number(event.target.value))}>
               {Array.from({ length: 6 }).map((_, index) => (
                 <option key={index + 1} value={index + 1}>
                   {index + 1}
                 </option>
               ))}
-            </select>
+            </DeskSelect>
           </label>
 
           <label className="newsFilterField">
             <div className="newsProFilterLabel">{t("filters.search")}</div>
-            <input
+            <DeskInput
               className="input"
               placeholder={t("filters.searchPlaceholder")}
               value={search}
@@ -232,7 +236,7 @@ export default function NewsPage() {
 
           <label className="newsFilterField">
             <div className="newsProFilterLabel">{t("filters.from")}</div>
-            <input
+            <DeskInput
               className="input"
               type="date"
               value={from}
@@ -244,7 +248,7 @@ export default function NewsPage() {
           </label>
           <label className="newsFilterField">
             <div className="newsProFilterLabel">{t("filters.to")}</div>
-            <input
+            <DeskInput
               className="input"
               type="date"
               value={to}
@@ -255,10 +259,10 @@ export default function NewsPage() {
             />
           </label>
         </div>
-      </div>
+      </div></DeskSurface>
 
       {meta ? (
-        <div className="card newsMetaCard newsProStatusStrip">
+        <DeskSurface><div className="card newsMetaCard newsProStatusStrip">
           <div className="newsProStatusTitle">{t("meta.mode")}: {meta.mode}</div>
           <div className="newsProStatusMeta">
             <span className="newsProStatusTag">{t("meta.cache")}: {meta.cache}</span>
@@ -275,14 +279,14 @@ export default function NewsPage() {
               <span className="newsProStatusTag">{t("meta.partial")}</span>
             ) : null}
           </div>
-        </div>
+        </div></DeskSurface>
       ) : null}
 
       {error ? (
-        <div className="card newsErrorCard newsProErrorCard">{t("loadError")}: {error}</div>
+        <DeskSurface><div className="card newsErrorCard newsProErrorCard">{t("loadError")}: {error}</div></DeskSurface>
       ) : null}
 
-      <div className="card newsListCard newsProListCard">
+      <DeskSurface><div className="card newsListCard newsProListCard">
         {loading ? (
           <div className="newsProStateText">{t("loading")}</div>
         ) : items.length === 0 ? (
@@ -290,7 +294,7 @@ export default function NewsPage() {
         ) : (
           <div className="newsList newsProList">
             {items.map((item) => (
-              <article className="card newsItemCard newsProItemCard" key={item.id}>
+              <DeskSurface><article className="card newsItemCard newsProItemCard" key={item.id}>
                 <div className="newsItemContent">
                   <div className="newsItemHeader newsProItemHeader">
                     <span className={`badge ${item.feed === "crypto" ? "newsBadgeCrypto" : "newsBadgeGeneral"}`}>
@@ -310,11 +314,11 @@ export default function NewsPage() {
                 {item.imageUrl ? (
                   <img src={item.imageUrl} alt={item.title} className="newsItemImage" loading="lazy" />
                 ) : null}
-              </article>
+              </article></DeskSurface>
             ))}
           </div>
         )}
-      </div>
+      </div></DeskSurface>
     </div>
   );
 }

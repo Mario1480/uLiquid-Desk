@@ -1,5 +1,11 @@
 "use client";
 
+import { DeskButton } from "@/components/desk/DeskButton";
+import { DeskInput } from "@/components/desk/DeskInput";
+import { DeskSelect } from "@/components/desk/DeskSelect";
+import { DeskSurface } from "@/components/desk/DeskSurface";
+import { DeskTable } from "@/components/desk/DeskTable";
+import { DeskTextarea } from "@/components/desk/DeskTextarea";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -526,15 +532,15 @@ export default function AdminAiPromptsPage() {
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">{error}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertError">{error}</div></DeskSurface>
       ) : null}
       {notice ? (
-        <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div>
+        <DeskSurface dense><div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div></DeskSurface>
       ) : null}
 
       {isSuperadmin ? (
         <>
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("licensePolicyTitle")}</h3>
             </div>
@@ -563,9 +569,9 @@ export default function AdminAiPromptsPage() {
                 </div>
               </div>
             </div>
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("promptLibraryTitle")}</h3>
             </div>
@@ -579,10 +585,10 @@ export default function AdminAiPromptsPage() {
               <div className="settingsTwoColGrid" style={{ marginBottom: 8 }}>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">Prompt name</span>
-                  <input className="input" value={promptName} onChange={(e) => setPromptName(e.target.value)} placeholder="z. B. RSI Mean Reversion" />
+                  <DeskInput className="input" value={promptName} onChange={(e) => setPromptName(e.target.value)} placeholder="z. B. RSI Mean Reversion" />
                 </label>
                 <label className="inlineCheck" style={{ marginTop: 26 }}>
-                  <input type="checkbox" checked={promptIsPublic} onChange={(e) => setPromptIsPublic(e.target.checked)} />
+                  <DeskInput type="checkbox" checked={promptIsPublic} onChange={(e) => setPromptIsPublic(e.target.checked)} />
                   {t("publicPrompt")}
                 </label>
               </div>
@@ -590,14 +596,14 @@ export default function AdminAiPromptsPage() {
               <div className="settingsTwoColGrid" style={{ marginBottom: 8 }}>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{t("promptMode")}</span>
-                  <select
+                  <DeskSelect
                     className="input"
                     value={promptMode}
                     onChange={(e) => handlePromptModeChange(e.target.value as PromptMode)}
                   >
                     <option value="trading_explainer">{t("promptModeTrading")}</option>
                     <option value="market_analysis">{t("promptModeAnalysis")}</option>
-                  </select>
+                  </DeskSelect>
                   <span className="settingsMutedText">
                     {promptMode === "market_analysis"
                       ? t("analysisAutoDefaultsHint")
@@ -613,7 +619,7 @@ export default function AdminAiPromptsPage() {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                     {TIMEFRAME_OPTIONS.map((tf) => (
                       <label key={`tf-${tf}`} className="inlineCheck">
-                        <input
+                        <DeskInput
                           type="checkbox"
                           checked={promptTimeframes.includes(tf)}
                           onChange={() => togglePromptTimeframe(tf)}
@@ -625,7 +631,7 @@ export default function AdminAiPromptsPage() {
                 </label>
                 <label className="settingsField">
                   <span className="settingsFieldLabel">{t("runTimeframe")}</span>
-                  <select
+                  <DeskSelect
                     className="input"
                     value={promptRunTimeframe}
                     onChange={(e) => setPromptRunTimeframe(e.target.value as "" | "5m" | "15m" | "1h" | "4h" | "1d")}
@@ -637,12 +643,12 @@ export default function AdminAiPromptsPage() {
                     {promptTimeframes.map((tf) => (
                       <option key={`run-${tf}`} value={tf}>{tf}</option>
                     ))}
-                  </select>
+                  </DeskSelect>
                 </label>
                 {promptMode === "trading_explainer" ? (
                   <label className="settingsField">
                     <span className="settingsFieldLabel">Direction preference</span>
-                    <select
+                    <DeskSelect
                       className="input"
                       value={promptDirectionPreference}
                       onChange={(e) => setPromptDirectionPreference(e.target.value as "long" | "short" | "either")}
@@ -650,7 +656,7 @@ export default function AdminAiPromptsPage() {
                       <option value="either">either</option>
                       <option value="long">long only</option>
                       <option value="short">short only</option>
-                    </select>
+                    </DeskSelect>
                   </label>
                 ) : null}
               </div>
@@ -660,7 +666,7 @@ export default function AdminAiPromptsPage() {
                   <>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">Confidence target (%)</span>
-                      <input
+                      <DeskInput
                         className="input"
                         type="number"
                         min={0}
@@ -672,7 +678,7 @@ export default function AdminAiPromptsPage() {
                     </label>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">{t("slTpSource")}</span>
-                      <select
+                      <DeskSelect
                         className="input"
                         value={promptSlTpSource}
                         onChange={(e) => setPromptSlTpSource(e.target.value as "local" | "ai" | "hybrid")}
@@ -680,7 +686,7 @@ export default function AdminAiPromptsPage() {
                         <option value="local">{t("slTpSourceLocal")}</option>
                         <option value="ai">{t("slTpSourceAi")}</option>
                         <option value="hybrid">{t("slTpSourceHybrid")}</option>
-                      </select>
+                      </DeskSelect>
                       <span className="settingsMutedText">
                         {promptSlTpSource === "ai"
                           ? t("slTpSourceHintAi")
@@ -691,20 +697,20 @@ export default function AdminAiPromptsPage() {
                     </label>
                     <label className="settingsField">
                       <span className="settingsFieldLabel">{t("newsRiskMode")}</span>
-                      <select
+                      <DeskSelect
                         className="input"
                         value={promptNewsRiskMode}
                         onChange={(e) => setPromptNewsRiskMode(e.target.value as "off" | "block")}
                       >
                         <option value="off">{t("newsRiskModeOff")}</option>
                         <option value="block">{t("newsRiskModeBlock")}</option>
-                      </select>
+                      </DeskSelect>
                     </label>
                   </>
                 ) : null}
                 <label className="settingsField">
                   <span className="settingsFieldLabel">OHLCV bars for AI</span>
-                  <input
+                  <DeskInput
                     className="input"
                     type="number"
                     min={20}
@@ -718,19 +724,19 @@ export default function AdminAiPromptsPage() {
 
               <label className="settingsField" style={{ marginBottom: 8 }}>
                 <span className="settingsFieldLabel">AI instructions</span>
-                <textarea className="input" rows={6} maxLength={8000} value={promptText} onChange={(e) => setPromptText(e.target.value)} />
+                <DeskTextarea className="input" rows={6} maxLength={8000} value={promptText} onChange={(e) => setPromptText(e.target.value)} />
                 <span className="settingsMutedText">Characters: {promptText.length}/8000</span>
               </label>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                  <button className="btn" type="button" onClick={() => setAllPromptIndicators(true)}>Select all indicators</button>
-                <button className="btn" type="button" onClick={() => setAllPromptIndicators(false)}>{t("clearIndicators")}</button>
+                  <DeskButton className="btn" type="button" onClick={() => setAllPromptIndicators(true)}>Select all indicators</DeskButton>
+                <DeskButton className="btn" type="button" onClick={() => setAllPromptIndicators(false)}>{t("clearIndicators")}</DeskButton>
               </div>
 
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
                 {availableIndicators.map((item) => (
                   <label key={`prompt-${item.key}`} className="inlineCheck" style={{ border: "1px solid rgba(255, 193, 7, 0.2)", borderRadius: 8, padding: "8px 10px", alignItems: "flex-start", gap: 8 }}>
-                    <input type="checkbox" checked={promptIndicatorKeys.includes(item.key)} onChange={() => togglePromptIndicator(item.key)} style={{ marginTop: 2 }} />
+                    <DeskInput type="checkbox" checked={promptIndicatorKeys.includes(item.key)} onChange={() => togglePromptIndicator(item.key)} style={{ marginTop: 2 }} />
                     <span style={{ display: "grid", gap: 2 }}>
                       <span style={{ fontSize: 13, fontWeight: 700 }}>{item.label}</span>
                       <span className="settingsMutedText">{item.description}</span>
@@ -740,11 +746,11 @@ export default function AdminAiPromptsPage() {
               </div>
 
               <div className="indicatorFormActions" style={{ marginTop: 10 }}>
-                <button className="btn btnPrimary" type="button" onClick={() => void savePromptDraft()} disabled={saving}>
+                <DeskButton className="btn btnPrimary" type="button" onClick={() => void savePromptDraft()} disabled={saving}>
                   {saving ? t("saving") : editingPromptId ? t("updatePrompt") : t("createPrompt")}
-                </button>
-                <button className="btn" type="button" onClick={resetPromptForm}>{t("resetForm")}</button>
-                <button className="btn" type="button" onClick={loadDefaultsToForm}>{t("loadDefaults")}</button>
+                </DeskButton>
+                <DeskButton className="btn" type="button" onClick={resetPromptForm}>{t("resetForm")}</DeskButton>
+                <DeskButton className="btn" type="button" onClick={loadDefaultsToForm}>{t("loadDefaults")}</DeskButton>
               </div>
             </div>
 
@@ -753,7 +759,7 @@ export default function AdminAiPromptsPage() {
             ) : (
               <div className="adminTableWrap">
                 <div className="adminTableScroller">
-                <table className="adminTable">
+                <DeskTable className="adminTable">
                   <thead>
                     <tr>
                       <th>Name</th>
@@ -795,22 +801,22 @@ export default function AdminAiPromptsPage() {
                           <td>{activePromptId === prompt.id ? "active" : "-"}</td>
                           <td>
                             <div className="adminInlineActions">
-                              <button className="btn" type="button" onClick={() => setActivePromptId(prompt.id)}>{t("setActive")}</button>
-                              <button className="btn" type="button" onClick={() => loadPromptIntoForm(prompt)}>{t("edit")}</button>
-                              <button className="btn" type="button" onClick={() => deletePrompt(prompt.id)}>{t("delete")}</button>
+                              <DeskButton className="btn" type="button" onClick={() => setActivePromptId(prompt.id)}>{t("setActive")}</DeskButton>
+                              <DeskButton className="btn" type="button" onClick={() => loadPromptIntoForm(prompt)}>{t("edit")}</DeskButton>
+                              <DeskButton className="btn" type="button" onClick={() => deletePrompt(prompt.id)}>{t("delete")}</DeskButton>
                             </div>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
-                </table>
+                </DeskTable>
                 </div>
               </div>
             )}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection" style={{ marginBottom: 12 }}>
+          <DeskSurface dense><section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("previewTitle")}</h3>
             </div>
@@ -821,59 +827,59 @@ export default function AdminAiPromptsPage() {
             <div className="indicatorScopeGrid" style={{ marginBottom: 8 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Exchange</span>
-                <input className="input" value={previewExchange} onChange={(e) => setPreviewExchange(e.target.value)} />
+                <DeskInput className="input" value={previewExchange} onChange={(e) => setPreviewExchange(e.target.value)} />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Account ID</span>
-                <input className="input" value={previewAccountId} onChange={(e) => setPreviewAccountId(e.target.value)} />
+                <DeskInput className="input" value={previewAccountId} onChange={(e) => setPreviewAccountId(e.target.value)} />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Symbol</span>
-                <input className="input" value={previewSymbol} onChange={(e) => setPreviewSymbol(toUpperSymbol(e.target.value))} />
+                <DeskInput className="input" value={previewSymbol} onChange={(e) => setPreviewSymbol(toUpperSymbol(e.target.value))} />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Market</span>
-                <select className="input" value={previewMarketType} onChange={(e) => setPreviewMarketType(e.target.value as "spot" | "perp")}>
+                <DeskSelect className="input" value={previewMarketType} onChange={(e) => setPreviewMarketType(e.target.value as "spot" | "perp")}>
                   <option value="perp">perp</option>
                   <option value="spot">spot</option>
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Timeframe</span>
-                <select className="input" value={previewTimeframe} onChange={(e) => setPreviewTimeframe(e.target.value)}>
+                <DeskSelect className="input" value={previewTimeframe} onChange={(e) => setPreviewTimeframe(e.target.value)}>
                   {TIMEFRAME_OPTIONS.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
-                </select>
+                </DeskSelect>
               </label>
             </div>
 
             <div className="indicatorScopeGrid" style={{ marginBottom: 8 }}>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Prediction signal</span>
-                <select className="input" value={previewSignal} onChange={(e) => setPreviewSignal(e.target.value as "up" | "down" | "neutral")}>
+                <DeskSelect className="input" value={previewSignal} onChange={(e) => setPreviewSignal(e.target.value as "up" | "down" | "neutral")}>
                   <option value="up">up</option>
                   <option value="down">down</option>
                   <option value="neutral">neutral</option>
-                </select>
+                </DeskSelect>
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Expected move %</span>
-                <input className="input" type="number" value={previewExpectedMovePct} onChange={(e) => setPreviewExpectedMovePct(e.target.value)} />
+                <DeskInput className="input" type="number" value={previewExpectedMovePct} onChange={(e) => setPreviewExpectedMovePct(e.target.value)} />
               </label>
               <label className="settingsField">
                 <span className="settingsFieldLabel">Confidence (0..1)</span>
-                <input className="input" type="number" min={0} max={1} step={0.01} value={previewConfidence} onChange={(e) => setPreviewConfidence(e.target.value)} />
+                <DeskInput className="input" type="number" min={0} max={1} step={0.01} value={previewConfidence} onChange={(e) => setPreviewConfidence(e.target.value)} />
               </label>
             </div>
 
             <label className="settingsField" style={{ marginBottom: 8 }}>
               <span className="settingsFieldLabel">featureSnapshot JSON</span>
-              <textarea className="input" rows={12} value={previewFeatureSnapshot} onChange={(e) => setPreviewFeatureSnapshot(e.target.value)} />
+              <DeskTextarea className="input" rows={12} value={previewFeatureSnapshot} onChange={(e) => setPreviewFeatureSnapshot(e.target.value)} />
             </label>
 
             <div className="indicatorFormActions" style={{ marginBottom: 10 }}>
-              <button className="btn btnPrimary" type="button" disabled={previewLoading} onClick={() => void runPreview()}>
+              <DeskButton className="btn btnPrimary" type="button" disabled={previewLoading} onClick={() => void runPreview()}>
                 {previewLoading ? t("generatingPreview") : t("generatePayload")}
-              </button>
+              </DeskButton>
             </div>
 
             {previewOutput ? (
@@ -881,16 +887,16 @@ export default function AdminAiPromptsPage() {
                 {previewOutput}
               </pre>
             ) : null}
-          </section>
+          </section></DeskSurface>
 
-          <section className="card settingsSection">
+          <DeskSurface dense><section className="card settingsSection">
             <div className="indicatorFormActions">
-              <button className="btn btnPrimary" type="button" disabled={saving} onClick={() => void saveAll()}>
+              <DeskButton className="btn btnPrimary" type="button" disabled={saving} onClick={() => void saveAll()}>
                 {saving ? t("saving") : t("saveAll")}
-              </button>
-              <button className="btn" type="button" onClick={() => void loadAll()}>{t("reloadFromDb")}</button>
+              </DeskButton>
+              <DeskButton className="btn" type="button" onClick={() => void loadAll()}>{t("reloadFromDb")}</DeskButton>
             </div>
-          </section>
+          </section></DeskSurface>
         </>
       ) : null}
     </div>
