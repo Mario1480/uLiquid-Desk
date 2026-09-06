@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadPositionMarketContext, positionMarketContextDependencies as deps } from "./marketContext.js";
+import { historyFeatureDependencies } from "../ai/features/history.js";
+import { createPublicHistoryStore } from "../market-data/derivativesHistory.js";
 
-test("standalone Copilot reads shared public features once, retaining source, nulls and versions", async () => {
+test("standalone Copilot reads shared public features once, retaining source, nulls and versions", async t => {
+  t.mock.method(deps, "readHistory", async () => { throw new Error("fixture_history_unavailable"); });
   const original = deps.createClient;
   const calls = { derivatives: 0, candles: 0, book: 0 };
   const now = Date.now();
@@ -33,6 +36,32 @@ test("standalone Copilot reads shared public features once, retaining source, nu
     assert.equal(JSON.stringify(a).includes("private-account"), false);
     assert.ok(a.featureSnapshots.every(f => f.version === "1.0.0" && f.routineVersions.length === 1));
   } finally { deps.createClient = original; }
+});
+
+test("standalone Copilot carries both same-venue histories through six validated feature contracts", async t => {
+  const at = Date.now();
+  const store = createPublicHistoryStore({ now: () => at, fetch: (async url => {
+    const request = new URL(String(url)); assert.equal(request.hostname, "fapi.binance.com");
+    const funding = request.pathname.includes("fundingRate");
+    return new Response(JSON.stringify(Array.from({ length: 40 }, (_, i) => funding
+      ? { symbol: "HISTORYUSDT", fundingTime: at - (39 - i) * 28800000, fundingRate: "0.0001", rateType: "Regular" }
+      : { symbol: "HISTORYUSDT", timestamp: at - (39 - i) * 3600000, sumOpenInterest: String(100 + i), sumOpenInterestValue: "1000" })));
+  }) as typeof fetch });
+  t.mock.method(historyFeatureDependencies.store, "read", store.read);
+  t.mock.method(deps, "createClient", () => ({
+    getDerivativesSnapshot: async () => ({ fundingRate: 0, fundingIntervalHours: 8, openInterest: 10, openInterestUnit: "base_asset",
+      contractSize: null, markPrice: 100, observedAt: new Date(at).toISOString(), sourceTimestampProvided: true, warnings: [] }),
+    getCandles: async () => Array.from({ length: 100 }, (_, i) => [at - (100 - i) * 3600000, 100, 101, 99, 100, 1]),
+    getDepth: async () => ({ bids: [[99, 1]], asks: [[101, 2]], ts: at }), close: async () => undefined
+  }) as any);
+  const result = await loadPositionMarketContext({ userId: "owner", account: { id: "private-id", exchange: "binance" }, symbol: "HISTORYUSDT", marketType: "perp" });
+  assert.equal(result.featureSnapshots.length, 6); assert.equal(result.snapshotManifest.length, 5);
+  const histories = result.featureSnapshots.filter(f => f.id === "derivatives.history-summary");
+  assert.equal(histories.length, 2);
+  assert.equal((histories.find(f => (f.value as any).kind === "funding")!.value as any).changeBps, null);
+  assert.equal((histories.find(f => (f.value as any).kind === "open_interest")!.value as any).change, 39);
+  assert.ok(result.snapshotManifest.every(s => s.market.sourceVenue === "binance"));
+  assert.doesNotMatch(JSON.stringify(result), /private-id|"points"/);
 });
 
 test("Paper resolves its owner's linked venue and unsupported derivatives never hit an endpoint", async () => {

@@ -150,12 +150,14 @@
     "coverageLimit": "Requested coverage: {count} rows / levels",
     "nonAtomic": "Datasets are not observed atomically.",
     "datasets": {
+      "derivatives_history": "Funding / OI history",
       "derivatives": "Derivatives",
       "candles": "Candles",
       "ticker": "Ticker",
       "orderbook": "Order book"
     },
     "units": {
+      "rate": "rate (decimal)",
       "base_asset": "base units",
       "quote_asset": "quote units",
       "contracts": "contracts",
@@ -163,6 +165,19 @@
       "unknown": "unknown units"
     },
     "metrics": {
+      "historySamples": "Valid observations",
+      "historyMinimumSamples": "Minimum statistical sample",
+      "historyStart": "Actual window start",
+      "historyEnd": "Actual window end",
+      "historyCoverage": "Requested window coverage",
+      "historyCadence": "Observation interval",
+      "historyLatest": "Last historical value",
+      "historyMean": "Sample mean",
+      "historyChange": "Window change",
+      "historyChangePct": "Window change (%)",
+      "historyPercentile": "Last value: sample percentile",
+      "historyZScore": "Last value: sample Z-score",
+      "historyExcluded": "Excluded observations",
       "fundingBps": "Funding",
       "fundingInterval": "Funding interval",
       "annualizedEstimate": "Simple annualized estimate",

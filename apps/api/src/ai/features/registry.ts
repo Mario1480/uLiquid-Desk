@@ -4,6 +4,7 @@ import { AGENT_ROUTINE_IDS, executeAgentRoutine, getAgentRoutine, routineVersion
 
 // Features identify reusable outputs; routines remain the only calculation authority.
 export const MARKET_FEATURES = {
+  "derivatives.history-summary": { version: "1.0.0", routineId: AGENT_ROUTINE_IDS.derivativesHistory },
   "technical.indicator-summary": { version: "1.0.0", routineId: AGENT_ROUTINE_IDS.technicalIndicatorSummary },
   "derivatives.funding-snapshot": { version: "1.0.0", routineId: AGENT_ROUTINE_IDS.fundingSnapshot },
   "derivatives.open-interest-snapshot": { version: "1.0.0", routineId: AGENT_ROUTINE_IDS.openInterestSnapshot },

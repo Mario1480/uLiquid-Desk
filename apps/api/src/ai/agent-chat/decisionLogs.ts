@@ -46,7 +46,7 @@ function featureVersions(value: unknown): AgentDecisionLog["evidence"][number]["
     const row = record(item);
     const id = text(row.id); const version = text(row.version);
     const snapshotId = text(row.snapshotId); const inputSnapshotId = text(row.inputSnapshotId);
-    return id && /^(technical\.indicator-summary|derivatives\.(funding|open-interest)-snapshot|orderbook\.snapshot)$/.test(id)
+    return id && /^(technical\.indicator-summary|derivatives\.(funding|open-interest)-snapshot|derivatives\.history-summary|orderbook\.snapshot)$/.test(id)
       && version && /^\d+\.\d+\.\d+$/.test(version)
       && snapshotId && /^fs_[a-f0-9]{64}$/.test(snapshotId)
       && inputSnapshotId && /^mds_[a-f0-9]{64}$/.test(inputSnapshotId)
@@ -102,7 +102,7 @@ export function projectDecisionLogs(runs: any[], messages: any[]): AgentDecision
     });
     const snapshotManifest = [...new Map(evidence.flatMap(item => item.marketSnapshot ? [[item.marketSnapshot.id, item.marketSnapshot] as const] : [])).values()];
     const sources = new Set(snapshotManifest.map(item => `${item.market.providerId}:${item.market.sourceVenue}`));
-    const instantTimes = snapshotManifest.filter(item => item.dataset !== "candles" && item.observedAt).map(item => Date.parse(item.observedAt!));
+    const instantTimes = snapshotManifest.filter(item => item.dataset !== "candles" && item.dataset !== "derivatives_history" && item.observedAt).map(item => Date.parse(item.observedAt!));
     const skew = instantTimes.length > 1 && Math.max(...instantTimes) - Math.min(...instantTimes) > 120_000;
     const reasonCodes = [...new Set([
       ...evidence.flatMap((item) => item.warningCodes),

@@ -7,10 +7,12 @@ import { sharedMarketStore, normalizeSharedCandles, normalizeSharedOrderbook, ty
 import { evaluateMarketFeature, type MarketFeatureId } from "../ai/features/registry.js";
 import { marketSnapshotEvidenceSchema, storedFeatureEvidence, type MarketSnapshotEvidence, type StoredFeatureEvidence } from "../ai/features/evidence.js";
 import { buildMarketFeatureContext } from "../ai/features/context.js";
+import { readHistoryFeature } from "../ai/features/history.js";
 
 // Called only after entitlement and account ownership checks. Factories receive
 // synthetic public credentials, never the selected account's private credentials.
 export const positionMarketContextDependencies = {
+  readHistory: readHistoryFeature,
   resolveLinked: resolveMarketDataTradingAccount,
   createClient: createPerpMarketDataClient,
   createSpotClient
@@ -94,9 +96,19 @@ export async function loadPositionMarketContext(params: {
         }));
       addSnapshot(read);
       addFeature("orderbook.snapshot", read.snapshot.data, read.snapshot.id);
-    })().catch(() => { warnings.push("orderbook_snapshot_unavailable"); })
+    })().catch(() => { warnings.push("orderbook_snapshot_unavailable"); }),
+    ...(["funding", "open_interest"] as const).map(async kind => {
+      if (params.marketType === "spot") return;
+      if (capability.marketData[kind === "funding" ? "fundingHistory" : "openInterestHistory"] !== "native") {
+        warnings.push(`${kind}_history_unsupported`); return;
+      }
+      try {
+        const history = await positionMarketContextDependencies.readHistory({ venue: sourceVenue, symbol: params.symbol, kind });
+        snapshots.push(history.snapshot); features.push(history.feature);
+      } catch { warnings.push(`${kind}_history_unavailable`); }
+    })
   ]);
-  snapshots.sort((a, b) => a.dataset.localeCompare(b.dataset));
-  features.sort((a, b) => a.id.localeCompare(b.id));
+  snapshots.sort((a, b) => a.dataset.localeCompare(b.dataset) || a.id.localeCompare(b.id));
+  features.sort((a, b) => a.id.localeCompare(b.id) || a.inputSnapshotId.localeCompare(b.inputSnapshotId));
   return buildMarketFeatureContext(snapshots, features, warnings.sort());
 }

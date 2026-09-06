@@ -77,3 +77,18 @@ test("stored evidence has a hard byte budget and a bounded feature list", () => 
   assert.throws(() => storedFeatureEvidence({ id: feature.id, version: feature.version, snapshotId: feature.snapshotId, inputSnapshotId: feature.inputSnapshotId },
     { ...(feature.value as any), quality: { state: "degraded", reasons: ["x".repeat(10000)] } }, feature.routineVersions), /budget_exceeded/);
 });
+
+test("history summaries replay without raw rows and cannot masquerade as current snapshots", () => {
+  const input = { kind: "funding", unit: "rate", requestedStart: Date.parse(at) - 86400000, requestedEnd: Date.parse(at),
+    evaluatedAt: Date.parse(at), points: [], warningCodes: [], excludedRows: 0, conflictingDuplicates: false, truncated: false };
+  const feature = evaluateMarketFeature("derivatives.history-summary", input, `mds_${"c".repeat(64)}`);
+  const saved = { ...summary(), featureSnapshots: [storedFeatureEvidence(feature.ref, feature.value, feature.routineVersions)],
+    marketSnapshot: { ...summary().marketSnapshot, id: feature.ref.inputSnapshotId, dataset: "derivatives_history", limit: 200,
+      quality: "unavailable", observedAt: null, ageMs: null } };
+  const result = log([JSON.parse(JSON.stringify(saved))]);
+  assert.equal(result.evidence[0].featureSnapshots.length, 1);
+  assert.deepEqual(result.evidence[0].featureSnapshots[0].value, feature.value);
+  assert.equal(JSON.stringify(result).includes('"points"'), false);
+  saved.marketSnapshot.dataset = "derivatives";
+  assert.equal(log([saved]).evidence[0].featureSnapshots.length, 0);
+});

@@ -196,7 +196,7 @@ export async function analyzePositionSnapshot(params: {
   let provider: string | null = null;
   let model: string | null = null;
   const guarded = await analyzeWithAiGuards<{ analysis: PositionCopilotAnalysis; marketContext: MarketFeatureContext | null }>({
-    cacheKey: `position-copilot:v5:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
+    cacheKey: `position-copilot:v6:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
     ttlSec: 300,
     rateLimitPerMin: 12,
     aiModel: "position-copilot",

@@ -6,6 +6,8 @@ import { sharedDerivativesStore, projectDerivativesSnapshot } from "../../market
 import { evaluateMarketFeature } from "../features/registry.js";
 import { storedFeatureEvidence, marketSnapshotEvidenceSchema, featureMatchesSnapshot } from "../features/evidence.js";
 import { pinRunSnapshot } from "../../market-data/snapshotCache.js";
+import { readHistoryFeature, requireHistoryCapability } from "../features/history.js";
+import { derivativesHistoryOutputSchema } from "../routines/derivativesHistory.js";
 import { sharedMarketStore, projectMarketSnapshot, providerObservedAt, normalizeSharedCandles, normalizeSharedOrderbook,
   type MarketDataset, type MarketDatasetKey, type MarketDatasetData, type SharedMarketRead } from "../../market-data/sharedMarket.js";
 import { createPerpMarketDataClient } from "../../perp/perp-market-data.client.js";
@@ -55,6 +57,7 @@ const indicatorsArgsSchema = candlesArgsSchema.extend({
   indicators: z.array(z.enum(["sma20", "ema50", "rsi14", "atr14"])).max(8).optional()
 }).strict();
 const orderbookArgsSchema = marketArgsSchema.extend({ limit: z.number().int().min(5).max(100).default(25) }).strict();
+const derivativesArgsSchema = marketArgsSchema.extend({ history: z.boolean().default(false) }).strict();
 const intelligenceArgsSchema = z.object({ symbol: symbolSchema.optional(), horizon: z.enum(["intraday", "24h", "7d"]).default("24h") }).strict();
 const predictionArgsSchema = z.object({ symbol: symbolSchema.optional(), limit: z.number().int().min(1).max(20).default(10) }).strict();
 const portfolioArgsSchema = z.object({ accountRef: z.literal("selected").default("selected"), symbol: symbolSchema.optional() }).strict();
@@ -175,6 +178,7 @@ async function withPublicVenue<T>(params: {
   let firstError = "";
   for (let index = 0; index < candidates.length; index += 1) {
     const venue = candidates[index];
+    params.context.signal?.throwIfAborted();
     try {
       return {
         data: await params.read(venue),
@@ -337,8 +341,8 @@ const SKILL_OUTPUT_SCHEMAS: Record<string, z.ZodTypeAny> = {
   "market.get_indicators": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), interval: timeframeSchema, values: z.record(nullableNumberSchema) }).strict(),
   "market.get_ticker": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), last: nullableNumberSchema, mark: nullableNumberSchema, bid: nullableNumberSchema, ask: nullableNumberSchema }).strict(),
   "market.get_orderbook": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), bids: z.array(z.tuple([z.number().finite(), z.number().finite()])), asks: z.array(z.tuple([z.number().finite(), z.number().finite()])), analytics: analyticsOutputSchema }).strict(),
-  "market.get_funding_rate": z.object({ symbol: z.string(), fundingRate: nullableNumberSchema, analytics: analyticsOutputSchema }).strict(),
-  "market.get_open_interest": z.object({ symbol: z.string(), openInterest: nullableNumberSchema, analytics: analyticsOutputSchema }).strict(),
+  "market.get_funding_rate": z.union([z.object({ symbol: z.string(), fundingRate: nullableNumberSchema, analytics: analyticsOutputSchema }).strict(), z.object({ symbol: z.string(), history: derivativesHistoryOutputSchema.extend({ kind: z.literal("funding") }) }).strict()]),
+  "market.get_open_interest": z.union([z.object({ symbol: z.string(), openInterest: nullableNumberSchema, analytics: analyticsOutputSchema }).strict(), z.object({ symbol: z.string(), history: derivativesHistoryOutputSchema.extend({ kind: z.literal("open_interest") }) }).strict()]),
   "market.get_contract_info": z.object({ symbol: z.string(), marketType: z.enum(["spot", "perp"]), contract: genericObjectSchema.nullable() }).strict(),
   "intelligence.get_news": genericObjectArraySchema,
   "intelligence.get_economic_events": genericObjectArraySchema,
@@ -456,11 +460,29 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     }
   }),
   ...(["market.get_funding_rate", "market.get_open_interest"] as const).map((id) => descriptor({
-    id, version: 4, routineIds: [id.endsWith("funding_rate") ? AGENT_ROUTINE_IDS.fundingSnapshot : AGENT_ROUTINE_IDS.openInterestSnapshot], title: id.endsWith("funding_rate") ? "Funding rate" : "Open interest", description: "Run-pinned perpetual-market snapshot with persisted versioned features.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: marketArgsSchema,
-    toolDefinition: tool(id.replaceAll(".", "_"), `Load normalized ${id.endsWith("funding_rate") ? "funding rate" : "open interest"}.`, marketCommon),
+    id, version: 5, routineIds: [id.endsWith("funding_rate") ? AGENT_ROUTINE_IDS.fundingSnapshot : AGENT_ROUTINE_IDS.openInterestSnapshot, AGENT_ROUTINE_IDS.derivativesHistory], title: id.endsWith("funding_rate") ? "Funding rate" : "Open interest", description: "Run-pinned current snapshot or bounded historical summary with persisted versioned features.", category: "market", accessLevel: "public_data", maxCallsPerRun: 2, timeoutMs: 8_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: derivativesArgsSchema,
+    toolDefinition: tool(id.replaceAll(".", "_"), `Load normalized ${id.endsWith("funding_rate") ? "funding rate" : "open interest"}. Set history=true for a separate bounded historical summary, not a current quote. History has independent provider support; keep the same explicit venue for comparisons.`, { ...marketCommon, history: { type: "boolean", description: "Optional historical summary instead of current snapshot; default false." } }),
     async execute(context, input) {
-      const args = marketArgsSchema.parse(input); const symbol = normalizeSymbol(args.symbol ?? context.symbol);
+      const args = derivativesArgsSchema.parse(input); const symbol = normalizeSymbol(args.symbol ?? context.symbol);
       const isFunding = id.endsWith("funding_rate");
+      if (args.history) {
+        const result = await withPublicVenue({ context, requested: args.venue, marketType: "perp", read: async venue => {
+          const request = { venue, symbol, kind: isFunding ? "funding" as const : "open_interest" as const };
+          try { requireHistoryCapability(request); }
+          catch { throw new AgentChatError("agent_chat_venue_unsupported", 400, `${request.kind}_history_unsupported`); }
+          return pinRunSnapshot(context, JSON.stringify({ dataset: "derivatives_history", ...request }), () => readHistoryFeature(request));
+        } });
+        const { value, snapshot, feature, cacheHit } = result.data;
+        const response = ok(id, { symbol, history: value }, { venue: snapshot.market.sourceVenue, provider: snapshot.market.providerId,
+          observedAt: snapshot.observedAt ?? undefined, timestampSource: snapshot.observedAt ? "provider" : "unknown",
+          quality: value.quality.state, stale: value.quality.state === "stale", degraded: value.quality.state !== "fresh", cacheHit,
+          fallbackUsed: result.resolution.fallbackUsed, warnings: [...value.quality.reasons, ...(result.resolution.fallbackReason ? [result.resolution.fallbackReason] : [])] });
+        response.meta.fetchedAt = snapshot.fetchedAt; response.meta.ageMs = snapshot.ageMs;
+        response.meta.marketSnapshot = snapshot; response.meta.featureSnapshots = [feature];
+        const { value: _value, routineVersions: _versions, ...ref } = feature;
+        response.meta.featureVersions = [ref];
+        return response;
+      }
       const result = await withPublicVenue({ context, requested: args.venue, marketType: "perp", read: (venue) => readDerivativesSnapshot(context, venue, symbol, isFunding ? "fundingRate" : "openInterest") });
       const shared = result.data;
       const data = shared.snapshot.data;
@@ -651,7 +673,11 @@ export async function executeAgentSkill(skill: AgentSkillDescriptor, context: Ag
       return storedFeatureEvidence({ id, version, snapshotId, inputSnapshotId }, feature.value, feature.routineVersions);
     });
   } catch { throw new AgentChatError("agent_chat_tool_result_invalid", 502, `Invalid evidence from ${skill.id}.`); }
-  sanitized.meta.routineVersions = routineVersionRefs(skill.routineIds as readonly AgentRoutineId[]);
+  const executedIds = sanitized.meta.featureSnapshots?.length
+    ? [...new Set(sanitized.meta.featureSnapshots.flatMap(feature => feature.routineVersions.map(ref => ref.id)))] as AgentRoutineId[]
+    : skill.routineIds as readonly AgentRoutineId[];
+  if (executedIds.some(id => !skill.routineIds.includes(id))) throw new AgentChatError("agent_chat_tool_result_invalid", 502);
+  sanitized.meta.routineVersions = routineVersionRefs(executedIds);
   if (skill.accessLevel === "public_data" && skill.cacheTtlMs > 0) {
     for (const [key, entry] of publicCache) if (entry.expiresAt <= Date.now()) publicCache.delete(key);
     if (publicCache.size >= 128) publicCache.delete(publicCache.keys().next().value!);

@@ -1,6 +1,6 @@
 import type { AgentFeatureSnapshot } from "./contracts";
 
-export type FeatureMetricRow = { key: string; value: number | null; unit: string; band?: number };
+export type FeatureMetricRow = { key: string; value: number | null; unit: string; band?: number; format?: "date" };
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -11,6 +11,18 @@ export function featureMetricRows(feature: AgentFeatureSnapshot): FeatureMetricR
   const value = record(feature.value);
   const row = (key: string, raw: unknown, unit = "", band?: number): FeatureMetricRow => ({ key,
     value: typeof raw === "number" && Number.isFinite(raw) ? raw : null, unit, ...(band === undefined ? {} : { band }) });
+  if (feature.id === "derivatives.history-summary") {
+    const funding = value.kind === "funding";
+    const unit = funding ? "rate" : ["base_asset", "contracts", "provider_native"].includes(String(value.unit)) ? String(value.unit) : "unknown";
+    return [row("historySamples", value.sampleCount), row("historyMinimumSamples", value.minimumStatisticsSamples),
+      { ...row("historyStart", value.actualStart), format: "date" }, { ...row("historyEnd", value.actualEnd), format: "date" },
+      row("historyCoverage", typeof value.coverageRatio === "number" ? value.coverageRatio * 100 : null, "%"),
+      row("historyCadence", typeof value.cadenceMs === "number" ? value.cadenceMs / 3_600_000 : null, "h"),
+      row("historyLatest", value.latestValue, unit), row("historyMean", value.mean, unit),
+      row("historyChange", funding ? value.changeBps : value.change, funding ? "bps" : unit),
+      ...(!funding ? [row("historyChangePct", value.changePct, "%"), row("oiNotional", value.latestReportedNotional, "USD")] : []),
+      row("historyPercentile", value.percentile, "%"), row("historyZScore", value.zScore), row("historyExcluded", value.excludedRows)];
+  }
   if (feature.id === "derivatives.funding-snapshot") return [row("fundingBps", value.rateBps, "bps"),
     row("fundingInterval", value.fundingIntervalHours, "h"),
     row("annualizedEstimate", typeof value.annualizedEstimate === "number" ? value.annualizedEstimate * 100 : null, "%")];

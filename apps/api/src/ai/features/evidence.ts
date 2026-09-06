@@ -3,23 +3,24 @@ import { marketIdentitySchema } from "../../market-data/sharedMarket.js";
 import { getAgentRoutine } from "../routines/registry.js";
 import { MARKET_FEATURES, type MarketFeatureId, type MarketFeatureRef } from "./registry.js";
 
-const referenceSchema = z.object({ id: z.enum(["technical.indicator-summary", "derivatives.funding-snapshot", "derivatives.open-interest-snapshot", "orderbook.snapshot"]),
+const referenceSchema = z.object({ id: z.enum(["technical.indicator-summary", "derivatives.funding-snapshot", "derivatives.open-interest-snapshot", "orderbook.snapshot", "derivatives.history-summary"]),
   version: z.literal("1.0.0"), snapshotId: z.string().regex(/^fs_[a-f0-9]{64}$/), inputSnapshotId: z.string().regex(/^mds_[a-f0-9]{64}$/) }).strict();
 export const marketSnapshotEvidenceSchema = z.object({
   id: z.string().regex(/^mds_[a-f0-9]{64}$/), schemaVersion: z.literal("1.0.0"), freshnessPolicyVersion: z.literal("1.0.0"),
-  market: marketIdentitySchema, dataset: z.enum(["derivatives", "candles", "ticker", "orderbook"]),
+  market: marketIdentitySchema, dataset: z.enum(["derivatives", "candles", "ticker", "orderbook", "derivatives_history"]),
   interval: z.enum(["5m", "15m", "1h", "4h", "1d"]).nullable(), limit: z.number().int().min(1).max(1000).nullable(),
   observedAt: z.string().datetime().nullable(), fetchedAt: z.string().datetime(), ageMs: z.number().finite().nonnegative().nullable(),
   quality: z.enum(["fresh", "stale", "degraded", "unavailable"]), warningCodes: z.array(z.string().max(160)).max(32),
   atomicObservation: z.literal(false)
 }).strict().refine(row => row.dataset === "candles" ? row.interval !== null && row.limit !== null
-  : row.dataset === "orderbook" ? row.interval === null && row.limit !== null
+  : row.dataset === "orderbook" || row.dataset === "derivatives_history" ? row.interval === null && row.limit !== null
   : row.interval === null && row.limit === null, "snapshot_coverage_invalid");
 export type MarketSnapshotEvidence = z.infer<typeof marketSnapshotEvidenceSchema>;
 export type StoredFeatureEvidence = MarketFeatureRef & { value: unknown; routineVersions: Array<{ id: string; version: string }> };
 export function featureMatchesSnapshot(feature: StoredFeatureEvidence, snapshot: MarketSnapshotEvidence): boolean {
-  const dataset = feature.id === "technical.indicator-summary" ? "candles" : feature.id === "orderbook.snapshot" ? "orderbook" : "derivatives";
-  return feature.inputSnapshotId === snapshot.id && snapshot.dataset === dataset;
+  const dataset = feature.id === "technical.indicator-summary" ? "candles" : feature.id === "orderbook.snapshot" ? "orderbook" : feature.id === "derivatives.history-summary" ? "derivatives_history" : "derivatives";
+  return feature.inputSnapshotId === snapshot.id && snapshot.dataset === dataset
+    && (dataset !== "derivatives_history" || snapshot.market.marketType === "perp");
 }
 
 // The v1 output schemas are immutable replay contracts. Future feature versions
@@ -35,9 +36,9 @@ export function storedFeatureEvidence(ref: MarketFeatureRef, value: unknown, rou
   return evidence;
 }
 
-export function parseStoredFeatures(raw: unknown): StoredFeatureEvidence[] {
+export function parseStoredFeatures(raw: unknown, limit: 4 | 6 = 4): StoredFeatureEvidence[] {
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 4).flatMap(item => {
+  return raw.slice(0, limit).flatMap(item => {
     if (!item || typeof item !== "object") return [];
     try {
       const { id, version, snapshotId, inputSnapshotId, value, routineVersions } = item;
