@@ -1,6 +1,6 @@
 # Phase 2 closeout — spot context and drawer slice
 
-Status: published and deployed to production API/web as `9c31dbe6b`; technical smokes passed. Authenticated browser acceptance is blocked by the locked Mac. Historical storage selection remains pending. Not Phase 2 completion.
+Status: published and deployed to production API/web as `9c31dbe6b`; technical smokes and the subsequent mobile, Spot Agent Chat and genuine auto-fallback browser checks passed. Historical storage selection and remaining gates below are pending. Not Phase 2 completion.
 
 Mario authorized completing the remaining Phase 2 work, including the previously discussed publication and acceptance steps. Trading actions, account settings, new monitoring activations and database migrations remain outside this slice. The historical storage strategy is awaiting an explicit owner choice.
 
@@ -20,9 +20,9 @@ The existing native client and official [Binance Spot API documentation](https:/
 
 ## Open acceptance
 
-- Target-environment mobile acceptance; the correction is deployed, but Computer Use reported the Mac locked and automatic unlock failed. No alternate browser access was attempted.
+- Target-environment mobile acceptance passed after Mario unlocked the Mac; see the subsequent browser evidence below. The earlier locked-Mac attempt remains an unsuccessful attempt, not passing evidence.
 - Exact standalone cached evidence at the live consumer boundary.
-- Genuine stale/eligible fallback scenarios and controlled fixed-prompt comparison.
+- Genuine stale scenarios and controlled fixed-prompt comparison. Eligible auto-fallback passed in the subsequent check below.
 - Historical strategy, provider coverage and approved storage scope. No history feature or migration is claimed here.
 
 ## Verification and release evidence
@@ -36,3 +36,12 @@ The existing native client and official [Binance Spot API documentation](https:/
 - The running API exported Market Analyst v7 and Position Copilot v8. A public Binance spot read returned both features, forming-candle degradation and null orderbook observation time with `provider_timestamp_missing`. The running web's CSS includes the scoped animation correction.
 - Rollback images retained as `uliquid-desk-api:phase2-spot-rollback-20260906` and `uliquid-desk-web:phase2-spot-rollback-20260906`. No rollback was required or rehearsed.
 - No new paid model calls, trades, account changes, notification activations or raw-history collection occurred. Public provider probes do not close the authenticated cache, stale/fallback or benchmark gates.
+
+## Subsequent authenticated acceptance after unlock
+
+- Chrome, production `/en/agent-chat` and `/de/agent-chat`, 390×844: the Decision Log panel bounds were y=253.203125 to y=844; shell transform was `none`. Internal scrolling reached 1688 px without moving the panel out of the viewport. Close, reopen and German full-page reload passed. No horizontal overflow was observed. Screenshots were visually inspected.
+- Desktop 1512×862: expected URL/title and populated Agent Chat, no framework overlay or horizontal overflow. The captured 36 warning/error entries were extension-origin; no application-origin warning/error appeared. The temporary viewport was reset and English restored.
+- A new Binance BTCUSDT Spot conversation completed with Market Analyst v7, indicators v3 and orderbook v4, taking 10.8 seconds and 64 AI Credits. Both market features were present. Missing book observation time and the forming candle were explicitly degraded; no derivative or private account read was requested. Expanded Decision Log text matched exactly after reload.
+- A separate Firefox Position Copilot v8 conversation selected the existing BingX account, `auto`, ADAUSDT perpetual, and requested only public Funding with an explicitly permitted alternate source. It completed in 6.1 seconds and cost 37 AI Credits. The one successful evidence skill was Funding v4; actual source was Hyperliquid, with `agent_chat_venue_unsupported`, alternative-source and missing-provider-timestamp warnings. No portfolio, balance or order skill appeared. This is a genuine capability fallback, not a manufactured outage or cross-venue substitution under an explicit venue restriction.
+- Expanded fallback Decision Log text matched exactly after reload, ignoring accessibility node numbers. Both account headers confirmed zero reservations. Total additional cost: **101 AI Credits**.
+- These were bounded functional checks, not the controlled before/after benchmark. No standalone private-position cache hit, naturally stale observation, historical feature, migration or Phase 2 completion is claimed. No orders, account settings, notification activations or provider configuration were changed.
