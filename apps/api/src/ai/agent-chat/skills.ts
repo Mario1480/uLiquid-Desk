@@ -527,7 +527,7 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     }
   }),
   descriptor({
-    id: "portfolio.get_positions", title: "Positions", description: "Read-only selected-account positions.", category: "portfolio", accessLevel: "account_read", maxCallsPerRun: 2, timeoutMs: 10_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioArgsSchema,
+    id: "portfolio.get_positions", version: 2, title: "Positions", description: "Read-only selected-account positions.", category: "portfolio", accessLevel: "account_read", maxCallsPerRun: 2, timeoutMs: 10_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioArgsSchema,
     toolDefinition: tool("portfolio_get_positions", "Load read-only positions from the server-bound selected account. Omit symbol to load every open position.", { accountRef: { type: "string", enum: ["selected"] }, symbol: { type: "string" } }),
     async execute(context, input) {
       const args = portfolioArgsSchema.parse(input); const loaded = await loadPerpPositions(context, args.symbol ? normalizeSymbol(args.symbol) : undefined);
@@ -536,7 +536,7 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     }
   }),
   descriptor({
-    id: "risk.analyze_portfolio", routineIds: [AGENT_ROUTINE_IDS.positionSnapshot, AGENT_ROUTINE_IDS.positionRisk], title: "Portfolio risk", description: "Deterministic read-only risk analysis for every open position in the selected account.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 1, timeoutMs: 12_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioRiskArgsSchema,
+    id: "risk.analyze_portfolio", version: 2, routineIds: [AGENT_ROUTINE_IDS.positionSnapshot, AGENT_ROUTINE_IDS.positionRisk], title: "Portfolio risk", description: "Deterministic read-only risk analysis for every open position in the selected account.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 1, timeoutMs: 12_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: portfolioRiskArgsSchema,
     toolDefinition: tool("risk_analyze_portfolio", "Analyze all open positions in the server-bound selected account. This tool never requires a symbol.", { accountRef: { type: "string", enum: ["selected"] } }),
     async execute(context, input) {
       portfolioRiskArgsSchema.parse(input);
@@ -581,7 +581,7 @@ export const AGENT_SKILLS: readonly AgentSkillDescriptor[] = [
     }
   }),
   descriptor({
-    id: "risk.analyze_position_snapshot", routineIds: [AGENT_ROUTINE_IDS.positionSnapshot, AGENT_ROUTINE_IDS.positionRisk], title: "Position risk", description: "Shared deterministic Position Copilot analysis.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 2, timeoutMs: 4_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: riskArgsSchema,
+    id: "risk.analyze_position_snapshot", version: 2, routineIds: [AGENT_ROUTINE_IDS.positionSnapshot, AGENT_ROUTINE_IDS.positionRisk], title: "Position risk", description: "Shared deterministic Position Copilot analysis.", category: "risk", accessLevel: "account_read", maxCallsPerRun: 2, timeoutMs: 4_000, cacheTtlMs: 0, supportedMarketTypes: ["perp"], inputSchema: riskArgsSchema,
     toolDefinition: tool("risk_analyze_position_snapshot", "Analyze a previously loaded opaque position reference with deterministic risk rules.", { positionRef: { type: "string" } }),
     async execute(context, input) {
       const args = riskArgsSchema.parse(input); let position = context.positionRefs.get(args.positionRef) as NormalizedPosition | undefined;

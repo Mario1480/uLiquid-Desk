@@ -45,7 +45,7 @@ export const BUILTIN_AGENT_PROFILES: Record<AgentProfileKey, ResolvedAgentProfil
     name: "Position Copilot",
     description: "Read-only account and deterministic position risk analysis.",
     baseProfileKey: "position_copilot",
-    version: 5,
+    version: 6,
     enabledSkillIds: [...POSITION_SKILLS],
     allowedExchangeAccountIds: [],
     preferredVenue: "auto",

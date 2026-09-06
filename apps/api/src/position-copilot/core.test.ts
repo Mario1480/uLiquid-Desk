@@ -60,6 +60,51 @@ test("critical liquidation distance produces critical read-only analysis", () =>
   assert.ok(analysis.riskFactors.some((row) => row.code === "liquidation_distance_critical"));
 });
 
+test("BingX zero price is explicit, non-critical and distinct from missing data", () => {
+  for (const side of ["long", "short"]) {
+    const snapshot = perpSnapshot({ exchange: "bingx", side, liquidationPrice: "0.0", liquidationDistancePct: 0 });
+    const analysis = buildDeterministicPositionAnalysis(snapshot);
+    assert.equal(snapshot.liquidationPrice, 0);
+    assert.equal(snapshot.liquidationDistancePct, null);
+    assert.equal(snapshot.liquidationStatus, "no_liquidation_price");
+    assert.equal(analysis.dataQuality.state, "complete");
+    assert.notEqual(analysis.riskLevel, "critical");
+    assert.ok(analysis.events.some(row => row.code === "no_liquidation_price"));
+    assert.equal(analysis.riskFactors.some(row => row.code.startsWith("liquidation_distance")), false);
+    assert.match(buildDeterministicPositionAnalysis(snapshot, new Date(), "de").events[0].message, /Kein Liquidationspreis/);
+    assert.equal(shouldNotifyForPositionCopilot({ mode: "critical_only", analysis, now: new Date(), state: { previousSnapshotHash: null, previousRiskLevel: null, lastNotifiedAt: null } }).notify, false);
+  }
+});
+
+test("missing numeric fields stay missing and unknown provider zero semantics remain degraded", () => {
+  for (const value of [null, undefined, "", " ", NaN, Infinity, false]) {
+    const snapshot = perpSnapshot({ liquidationPrice: value, liquidationDistancePct: value, pnlPct: value, roePct: value });
+    assert.equal(snapshot.liquidationDistancePct, null);
+    assert.equal(snapshot.pnlPct, null);
+    assert.equal(snapshot.roePct, null);
+    assert.equal(snapshot.liquidationStatus, "unavailable");
+    const analysis = buildDeterministicPositionAnalysis(snapshot);
+    assert.equal(analysis.dataQuality.state, "degraded");
+    assert.ok(analysis.dataQuality.missingFields.includes("liquidationDistancePct"));
+    assert.equal(analysis.events.some(row => row.code === "liquidation_proximity"), false);
+  }
+  const unverified = perpSnapshot({ exchange: "other", liquidationPrice: 0, liquidationDistancePct: null });
+  assert.equal(unverified.liquidationStatus, "unavailable");
+  assert.equal(buildDeterministicPositionAnalysis(unverified).dataQuality.state, "degraded");
+});
+
+test("zero price preserves other risk warnings and genuine zero distance remains critical", () => {
+  const analysis = buildDeterministicPositionAnalysis(perpSnapshot({ exchange: "bingx", liquidationPrice: 0, liquidationDistancePct: null, roePct: -30, stopLossPrice: null }));
+  assert.equal(analysis.riskLevel, "high");
+  assert.ok(analysis.riskFactors.some(row => row.code === "drawdown_high"));
+  assert.ok(analysis.riskFactors.some(row => row.code === "stop_loss_missing"));
+  const stale = buildDeterministicPositionAnalysis(perpSnapshot({ exchange: "bingx", liquidationPrice: 0, liquidationDistancePct: null, dataDegraded: true }));
+  assert.equal(stale.dataQuality.state, "degraded");
+  assert.ok(stale.riskFactors.some(row => row.code === "data_quality_degraded"));
+  assert.equal(buildDeterministicPositionAnalysis(perpSnapshot({ liquidationPrice: 64000, liquidationDistancePct: 0 })).riskLevel, "critical");
+  assert.notEqual(hashPositionCopilotSnapshot(perpSnapshot({ exchange: "bingx", liquidationPrice: 0, liquidationDistancePct: null })), hashPositionCopilotSnapshot(perpSnapshot({ exchange: "bingx", liquidationPrice: null, liquidationDistancePct: null })));
+});
+
 test("deterministic fallback follows the requested German locale", () => {
   const analysis = buildDeterministicPositionAnalysis(perpSnapshot(), new Date("2026-08-02T12:00:00.000Z"), "de");
   assert.match(analysis.summary, /kritisches Positionsrisiko/i);
@@ -82,6 +127,7 @@ test("spot snapshot does not require liquidation fields", () => {
   });
   const analysis = buildDeterministicPositionAnalysis(snapshot);
   assert.equal(analysis.dataQuality.missingFields.includes("liquidationDistancePct"), false);
+  assert.equal(snapshot.liquidationStatus, "not_applicable");
 });
 
 test("degraded snapshot exposes missing fields", () => {

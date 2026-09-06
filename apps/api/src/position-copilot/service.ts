@@ -10,6 +10,7 @@ import { getAiToolDefinitionsForAgent } from "../ai/tools/index.js";
 import { FEATURE_CONTEXT_POLICY, buildMarketFeatureContext, type MarketFeatureContext } from "../ai/features/context.js";
 import {
   buildDeterministicPositionAnalysis,
+  POSITION_LIQUIDATION_POLICY,
   type PositionCopilotAnalysis,
   type PositionCopilotFinding,
   type PositionCopilotRiskLevel,
@@ -21,6 +22,7 @@ export const POSITION_COPILOT_SYSTEM_MESSAGE = buildAiAgentSystemMessage("positi
   "You are the read-only uLiquid Position Copilot.",
   "Explain the supplied position snapshot in plain language. Never recommend or perform an order, close, reduction, TP/SL change, leverage change, margin change, copier-rule change, wallet signature or other execution action.",
   "Do not invent missing market data. Return only the requested JSON.",
+  POSITION_LIQUIDATION_POLICY,
   FEATURE_CONTEXT_POLICY
 ].join(" "));
 
@@ -173,7 +175,7 @@ export async function analyzePositionSnapshot(params: {
   let provider: string | null = null;
   let model: string | null = null;
   const guarded = await analyzeWithAiGuards<{ analysis: PositionCopilotAnalysis; marketContext: MarketFeatureContext | null }>({
-    cacheKey: `position-copilot:v2:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
+    cacheKey: `position-copilot:v3:${params.loadMarketContext ? "features" : "snapshot"}:${params.userId}:${language}:${deterministic.snapshotHash}`,
     ttlSec: 300,
     rateLimitPerMin: 12,
     aiModel: "position-copilot",

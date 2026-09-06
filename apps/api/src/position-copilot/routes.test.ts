@@ -248,6 +248,43 @@ test("owned manual analysis persists the exact public context without activating
   });
 });
 
+test("BingX zero price passes the route contract and persists a non-critical read-only result", async () => {
+  await withPositionFeatureFlags({ AI_POSITION_COPILOT_ENABLED: "true" }, async () => {
+    resetAiAnalyzerState();
+    const app = createFakeApp();
+    let trace: any;
+    let modelMessages = "";
+    registerPositionCopilotRoutes(app as any, {
+      db: {
+        exchangeAccount: { findFirst: async ({ where }: any) => { assert.equal(where.userId, "user_1"); return { id: "account_1", exchange: "bingx" }; } },
+        botTradeHistory: { findFirst: async () => null },
+        globalSetting: { findUnique: async () => null },
+        aiTraceLog: { create: async ({ data }: any) => { trace = data; } }
+      },
+      loadMarketContext: async () => buildMarketFeatureContext([], [], ["market_context_unavailable"]),
+      callAiChat: async messages => {
+        modelMessages = JSON.stringify(messages);
+        throw new Error("fixture_fallback");
+      },
+      dispatchPositionCopilotNotification: async () => { assert.fail("manual analysis must not notify"); },
+      ...capabilityDeps({ "product.ai_position_copilot": true })
+    });
+    const body = validAnalyzeBody();
+    body.snapshot.liquidationPrice = 0;
+    body.snapshot.liquidationDistancePct = 0;
+    const res = createRes();
+    await app.handler("/api/position-copilot/analyze")({ body }, res);
+    assert.equal(res.statusCode, 200);
+    assert.notEqual(res.body.analysis.riskLevel, "critical");
+    assert.ok(res.body.analysis.events.some((e: any) => e.code === "no_liquidation_price"));
+    assert.equal(res.body.analysis.dataQuality.state, "complete");
+    const { marketContext: _marketContext, ...persistedAnalysis } = trace.parsedResponse;
+    assert.deepEqual(persistedAnalysis, res.body.analysis);
+    assert.match(modelMessages, /no_liquidation_price/);
+    assert.match(modelMessages, /not a 0% liquidation distance/);
+  });
+});
+
 test("positive-position route uses real shared feature contracts and preserves stale evidence with cached risk", async t => {
   await withPositionFeatureFlags({ AI_POSITION_COPILOT_ENABLED: "true" }, async () => {
     resetAiAnalyzerState();

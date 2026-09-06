@@ -1311,6 +1311,7 @@
     },
     "positions": {
       "hint": "Open positions in the active account.",
+      "noLiquidationPrice": "No liquidation price reported",
       "symbol": "Symbol",
       "empty": "No open positions.",
       "columns": {
