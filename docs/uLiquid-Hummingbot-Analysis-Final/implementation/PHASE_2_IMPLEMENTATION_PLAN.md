@@ -68,7 +68,8 @@ Mario selected existing exchange histories without a new database on 2026-09-06.
 
 - [x] Implement the local bounded public history reader, deterministic registered summary routine and replayable Feature Registry contract. Public probes cover Binance Funding/OI and Bitget/MEXC Funding; missing historical cadence remains explicit.
 - [x] Integrate historical capabilities, existing AI consumers and user-facing evidence; verify permissions, provider coverage and unsupported paths with deterministic fixtures. Funding/OI skills v5, Market Analyst v8, Position Copilot v9 and standalone explanation cache v6. Initial historical coverage is explicitly bounded to Binance Funding/OI and Bitget/MEXC Funding; other histories fail closed.
-- [ ] Release and perform authenticated historical-feature acceptance. The local foundation is not a deployed historical AI feature.
+- [x] Publish and deploy historical consumers to production API/web as `41299926e`; both services healthy, public running-image smokes passed and no other services changed. See the [release evidence](../../archive/tasks/2026-09-06-phase2-provider-history-release.md).
+- [ ] Perform authenticated historical-feature/reload/mobile acceptance. The initial Computer Use attempt was blocked by the locked Mac; public probes do not close this gate.
 
 Historical changes, percentiles and Z-scores now use the separate bounded provider-history path, not the five-second current-snapshot cache. Coverage, cadence/unit safeguards, sample sufficiency and backfill limits are documented in the selected-mode decision. Until enough comparable observations exist, return unavailable statistics and explicit reasons; never derive a trend from one snapshot or mix venues/units silently. No persistence migration or collector is part of this implementation.
 
