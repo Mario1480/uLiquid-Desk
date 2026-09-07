@@ -21,6 +21,12 @@ The listing deployment succeeded despite Remix reporting `_context7.t3.error.ind
 
 ## Live-read enablement attempt
 
+### Authenticated Alchemy setup follow-up
+
+Created `ULIQ Presale Mainnet` in Mario's Alchemy team with Arbitrum and Node API. The private Mainnet endpoint was stored only in protected server configuration. A complete overview snapshot compared Alchemy with the official Arbitrum RPC at finalized block `502738411`; both rounds returned `configurationStatus: VALID`, purchases disabled, and inventory unfunded. This verifies that snapshot only, not sustained availability.
+
+The 500-block historical-log probe failed on Alchemy Free with its explicit 10-block request limit; the official RPC returned the event. The existing indexer compares logs from both providers, so the pair is not yet usable for complete indexing. Public live-read flags were restored to false and the API recreated; preview and purchase-disabled status remain. No web replacement or paid upgrade was performed. The Alchemy PAYG dialog was opened for owner review: $0.45 per million CUs for the first 300M/month, $0.40 thereafter, no monthly platform fee, and a temporary $5 card hold. A tariff decision or a separately validated indexer adaptation remains necessary before enablement.
+
 Mario requested removing preview mode. A production read-only enablement attempt failed validation: PublicNode rejected archive reads; dRPC returned upstream usage-limit errors during the complete snapshot; pairing 1RPC with the official Arbitrum endpoint produced a missing-trie-node error at the common finalized block. The public overview returned HTTP 503. Finality and independent-provider comparison were not weakened.
 
 Both public-presale enablement flags were restored to false and the API was recreated. The web build was not deployed; the existing preview frontend remains running. Purchases remain disabled and automatic finalization remains OFF. Removing preview mode is pending two reliable RPC endpoints supporting the complete finalized-state snapshot and historical log ranges. Confirmed contract addresses remain configured.

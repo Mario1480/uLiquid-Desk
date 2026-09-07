@@ -231,7 +231,7 @@ export function createUliqJobs(db: any) {
     publicPresaleIndexer: createPollingJob({
       name: "uliq_public_presale_indexer",
       enabled: publicPresaleEnabled,
-      pollMs: intervalMs("ULIQ_PUBLIC_PRESALE_INDEXER_INTERVAL_SECONDS", 15),
+      pollMs: intervalMs("ULIQ_PUBLIC_PRESALE_INDEXER_INTERVAL_SECONDS", 60),
       run: async () => {
         try {
           return await getPublicPresaleIndexer().runOnce();

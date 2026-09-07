@@ -324,23 +324,41 @@ export class UliqPublicPresaleIndexerService {
       throw new Error("uliq_public_presale_rpc_log_mismatch");
     }
     const logs = primaryLogs;
+    for (const log of logs) {
+      if (log.removed || log.blockNumber < fromBlock || log.blockNumber > toBlock
+        || !addresses.includes(log.address.toLowerCase())) {
+        throw new Error("uliq_public_presale_rpc_invalid_log");
+      }
+    }
+    // Finalized range coverage comes from matching logs and a persisted end checkpoint.
+    // Empty intermediate blocks need neither individual RPC reads nor database rows.
+    const requiredBlocks = [...new Set([toBlock, ...logs.map((log) => log.blockNumber)])]
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
     const blocks = new Map<bigint, { hash: Hex; parentHash: Hex; timestamp: Date }>();
-    for (let blockNumber = fromBlock; blockNumber <= toBlock; blockNumber += 1n) {
+    for (const blockNumber of requiredBlocks) {
       const [primary, secondary] = await Promise.all([
         this.rpc.primary.getBlock({ blockNumber }),
         this.rpc.secondary.getBlock({ blockNumber })
       ]);
-      if (!primary.hash || primary.hash !== secondary.hash) throw new Error("uliq_public_presale_rpc_block_mismatch");
+      if (!primary.hash || primary.hash !== secondary.hash
+        || primary.number !== blockNumber || secondary.number !== blockNumber) {
+        throw new Error("uliq_public_presale_rpc_block_mismatch");
+      }
       blocks.set(blockNumber, {
         hash: primary.hash,
         parentHash: primary.parentHash,
         timestamp: new Date(Number(primary.timestamp) * 1_000)
       });
     }
+    for (const log of logs) {
+      if (!sameAddress(log.blockHash, blocks.get(log.blockNumber)!.hash)) {
+        throw new Error("uliq_public_presale_rpc_log_block_mismatch");
+      }
+    }
 
     let processedEvents = 0;
     await this.db.$transaction(async (tx: any) => {
-      for (let blockNumber = fromBlock; blockNumber <= toBlock; blockNumber += 1n) {
+      for (const blockNumber of requiredBlocks) {
         const block = blocks.get(blockNumber)!;
         await tx.onchainIndexedEvent.upsert({
           where: { eventKey: `${cursorKey}:block:${blockNumber}` },
