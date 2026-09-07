@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   LOCALE_COOKIE_NAME,
   extractLocaleFromPathname,
+  isEnglishOnlyPath,
   resolvePreferredLocale,
   withLocalePath,
   type AppLocale
@@ -210,6 +211,13 @@ export async function proxy(req: NextRequest) {
       cookieLocale: req.cookies.get(LOCALE_COOKIE_NAME)?.value ?? null,
       acceptLanguage: req.headers.get("accept-language")
     });
+
+  if (isEnglishOnlyPath(pathname)) {
+    if (localeFromPath !== "en") {
+      return redirectToLocalizedPath(req, "en", pathnameWithoutLocale);
+    }
+    return rewriteLocalizedRequest(req, pathnameWithoutLocale, "en");
+  }
 
   if (!localeFromPath) {
     if (pathname.startsWith("/api") || isPublicAssetPath(pathname)) {

@@ -3,21 +3,29 @@
     "title": "ULIQ Presale | uLiquid Desk",
     "description": "Beide ULIQ-Presale-Runden prüfen, Wallet verbinden, Käufe verfolgen und Vesting verwalten."
   },
-  "header": { "deskLogin": "Desk-Login" },
+  "header": {
+    "deskLogin": "Desk-Login"
+  },
   "hero": {
+    "paymentTokenContract": "USDC-Token-Vertrag",
     "eyebrow": "ULIQ · Arbitrum",
     "title": "ULIQ Presale",
     "description": "Zwei transparente Runden mit walletbasiertem Zugang, Onchain-Abwicklung und eigenem Vesting je Runde.",
     "preview": "Öffentliche Vorschau",
     "finalizedBlock": "Finalisierter Block {block}",
     "contractsPending": "Contract-Adressen folgen später",
-    "presaleContractsPending": "Token deployed · Presale-Contracts folgen später",
+    "presaleContractsPending": "Token bereitgestellt · Presale-, Vesting- und Listing-Adressen stehen noch aus",
     "tokenContract": "ULIQ-Token-Contract",
-    "previewNotice": "Dies ist eine nicht transaktionale UI-Vorschau mit den freigegebenen Rundenparametern. Contract-Daten, Wallet-Bestätigung und Käufe bleiben bis zur separaten Onchain-Freigabe deaktiviert.",
+    "previewNotice": "Der Presale ist noch nicht geöffnet. Diese Vorschau zeigt die freigegebenen Rundenparameter. Live-Vertragsdaten, Wallet-Bestätigung und Käufe werden nach Deployment, Konfiguration und Aktivierung verfügbar.",
     "refresh": "Aktualisieren",
     "unavailable": "Der öffentliche Presale ist in dieser Umgebung noch nicht konfiguriert."
   },
-  "tabs": { "label": "Presale-Bereiche", "presale": "Presale", "vesting": "Vesting", "terms": "Presale-Bedingungen" },
+  "tabs": {
+    "label": "Presale-Bereiche",
+    "presale": "Presale",
+    "vesting": "Vesting",
+    "terms": "Presale-Bedingungen"
+  },
   "rounds": {
     "title": "Presale-Runden",
     "description": "Beide Runden teilen einen globalen Listing-Zeitpunkt, behalten aber getrennte Caps, Wallet-Limits und Vesting-Pools.",
@@ -121,12 +129,58 @@
   "terms": {
     "eyebrow": "Rechtliches",
     "title": "ULIQ Presale-Bedingungen",
-    "description": "Die eigenen, versionierten Presale-Bedingungen werden hier nach der rechtlichen Freigabe veröffentlicht.",
-    "pendingTitle": "Bedingungen noch nicht veröffentlicht",
-    "pendingDescription": "Bis eine freigegebene Version samt Text-Hash konfiguriert ist, hält die Anwendung alle Kaufaktionen deaktiviert.",
+    "description": "Bedingungen zur Teilnahme am ULIQ-Presale, einschließlich Zahlung, Rücktritt, Zuteilung und Vesting.",
+    "pendingTitle": "Entwurf · 7. September 2026",
+    "pendingDescription": "Die in eckigen Klammern markierten Anbieterangaben müssen noch ergänzt werden. Dieser Entwurf ist noch keine endgültige Kaufvereinbarung.",
     "platformTerms": "Nutzungsbedingungen",
     "privacy": "Datenschutzerklärung",
-    "risk": "Crypto Risk Disclosure"
+    "risk": "Crypto Risk Disclosure",
+    "sections": {
+      "seller": {
+        "title": "1. Anbieter und Geltungsbereich",
+        "body": "Diese Bedingungen beschreiben den Kauf von ULIQ über den uLiquid Desk Presale. Verkäufer: [VOLLSTÄNDIGER FIRMENNAME]. Geschäftsanschrift: [STRASSE UND HAUSNUMMER, POSTLEITZAHL, ORT, LAND]. Registerangaben: [REGISTER UND NUMMER, FALLS ZUTREFFEND]. Kontakt für Käufe, Rücktritte und Beschwerden: [KONTAKT-E-MAIL]. Für die Nutzung von uLiquid Desk gelten ergänzend die Plattformbedingungen und Datenschutzhinweise."
+      },
+      "token": {
+        "title": "2. Token und Netzwerk",
+        "body": "ULIQ ist der für die Nutzung innerhalb von uLiquid Desk vorgesehene Utility-Token. Ein Kauf gewährt für sich genommen keine Unternehmensanteile, Dividenden, Kapitalrückzahlung oder garantierte Rendite. Der Presale verwendet Arbitrum One (Chain-ID 42161). ULIQ: 0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd. Zahlungen werden ausschließlich in nativem USDC auf diesem Netzwerk angenommen: 0xaf88d065e77c8cC2239327C5EDb3A432268e5831. Sende keine Beträge direkt an einen Token-Contract oder eine Adresse aus einer unaufgeforderten Nachricht."
+      },
+      "rounds": {
+        "title": "3. Verkaufsrunden und Kauflimits",
+        "body": "Runde 1 umfasst bis zu 50.000.000 ULIQ zu 0,002 USDC je ULIQ bei einer Obergrenze von 100.000 USDC. Der Mindestkauf beträgt 500 USDC, das kumulierte Maximum 10.000 USDC je Wallet. Runde 2 umfasst bis zu 100.000.000 ULIQ zu 0,0035 USDC je ULIQ bei einer Obergrenze von 350.000 USDC. Der Mindestkauf beträgt 100 USDC, das kumulierte Maximum 5.000 USDC je Wallet. Die Limits gelten getrennt je Runde. Ein wirksamer Rücktritt gibt Kaufkapazität wieder frei. Es gibt kein Mindestfinanzierungsziel, dessen Unterschreitung automatisch eine Rückzahlung auslöst. Beginn und Ende jeder Runde werden vor der Teilnahme auf der Presale-Seite angezeigt."
+      },
+      "purchase": {
+        "title": "4. Kaufablauf und Verwahrung",
+        "body": "Prüfe vor der Bestätigung die aktive Runde, den angenommenen USDC-Betrag, die ULIQ-Zuteilung und die Wallet-Transaktion. Eine Token-Freigabe allein ist noch kein Kauf. Ein bestätigter Kauf erzeugt zunächst eine ausstehende Zuteilung und liefert noch keine frei übertragbaren ULIQ. Ausstehende USDC bleiben im Custody-Contract der jeweiligen Runde. Bei Finalisierung gehen die USDC an die vom Verkäufer festgelegte Safe-Treasury und die vollständige ULIQ-Zuteilung an den Vesting-Contract der Runde. Nutze eine selbst kontrollierte Wallet und prüfe das Netzwerk."
+      },
+      "withdrawal": {
+        "title": "5. Rücktritt und Rückzahlung",
+        "body": "Die vertragliche Rücktrittsfrist beträgt 14 Tage (1.209.600 Sekunden) ab dem erfassten Kaufzeitpunkt. Der Käufer kann seinen eigenen ausstehenden Kauf bis einschließlich der für diesen Kauf angezeigten Frist zurückziehen. Ein erfolgreicher Rücktritt storniert die Zuteilung und zahlt den vollständigen erfassten USDC-Betrag an die kaufende Wallet zurück. Nutze dazu die Rücktrittsfunktion in der Kaufhistorie. Wende dich bei Zugangsproblemen oder anderen Rücktrittsanfragen zeitnah mit Wallet-Adresse und Transaktionsreferenz an [KONTAKT-E-MAIL]; übermittle niemals private Schlüssel oder eine Wiederherstellungsphrase. Nach Finalisierung bietet der Contract keinen Rücktritt von diesem Kauf mehr an. Weitergehende gesetzlich vorgeschriebene Rechte und Ansprüche bleiben unberührt."
+      },
+      "finalization": {
+        "title": "6. Finalisierung und Verkaufsabschluss",
+        "body": "Nach Ablauf der Rücktrittsfrist kann jeder einen ausstehenden Kauf zugunsten des ursprünglichen Käufers finalisieren. Der Aufrufer erhält keinen Anteil an dessen Zuteilung. Eine Verkaufspause verhindert neue Käufe, beseitigt aber nicht verfügbare Rücktritts- oder Finalisierungsmöglichkeiten. Das Ende einer Runde wickelt nicht automatisch alle Käufe ab. Beide Runden müssen frei von ausstehenden Käufen und für das Listing bereit sein, bevor der gemeinsame Listing-Zeitpunkt festgelegt werden kann. Runde 2 kann erst nach dem Ende von Runde 1 starten. Die Finalisierung ist von der späteren Freigabe gevesteter Tokens getrennt."
+      },
+      "vesting": {
+        "title": "7. Vesting und Tokenabruf",
+        "body": "Beide Runden verwenden einen gemeinsamen Listing-Zeitpunkt. In Runde 1 werden beim Listing 5 % der finalisierten Zuteilung abrufbar. Die übrigen 95 % werden nach einer Wartefrist von 90 Tagen über 548 Tage linear freigegeben. In Runde 2 werden beim Listing 25 % abrufbar; die übrigen 75 % werden ohne zusätzliche Wartefrist über 274 Tage linear freigegeben. Vor dem gemeinsamen Listing-Zeitpunkt sind keine ULIQ abrufbar. Der Abruf erfolgt durch die begünstigte Wallet; eine Freigabe sendet nicht automatisch eine Transaktion. Es besteht kein Anspruch auf eine vorzeitige Freigabe nach dem vereinbarten Vesting-Plan. Freiwilliges Locking von ULIQ in der Wallet ist eine separate Handlung und erfolgt nicht automatisch durch den Presale."
+      },
+      "listing": {
+        "title": "8. Listing und Ausnahmefälle",
+        "body": "Das Projekt verpflichtet sich zum Listing von ULIQ. Der Zeitplan wird über die offiziellen Projektkanäle bekannt gegeben. Ein Listing garantiert weder einen Marktpreis noch Handelsvolumen, Liquidität oder Zugang zu jeder Börse. Die Contracts bieten keine automatische vollständige Verkaufsstornierung und keine allein durch eine Listing-Verzögerung ausgelöste Rückzahlung. Ausnahmefälle werden vom Verkäufer geprüft und manuell abgewickelt; betroffene Käufer werden über die jeweils vorgesehene Lösung informiert. Eine manuelle USDC-Zahlung hebt einen bestehenden Onchain-Vesting-Anspruch nicht automatisch auf und verändert ihn nicht. Zwingende Käuferrechte bleiben unberührt."
+      },
+      "fees": {
+        "title": "9. Netzwerkgebühren und Wallet-Sicherheit",
+        "body": "Wallet-Transaktionen auf Arbitrum benötigen ETH für Netzwerkgebühren. Prüfe die in deiner Wallet angezeigte Gebühr vor jeder Signatur. Bei einem Rücktritt erstattet der Contract den erfassten USDC-Betrag; ETH-Netzwerkgebühren erstattet er selbst nicht. Eine gesetzlich vorgeschriebene Kostenerstattung bleibt unberührt. Teile keine privaten Schlüssel oder Wiederherstellungsphrasen. Transaktionen an ein falsches Netzwerk oder eine falsche Adresse können unwiederbringlich sein. Der Verkäufer kann weder für dich signieren noch den Zugang zu einer Wallet mit verlorenen Schlüsseln wiederherstellen."
+      },
+      "risks": {
+        "title": "10. Risiken und Verantwortung",
+        "body": "Tokenkäufe sind mit Risiken verbunden, darunter Wertverlust, eingeschränkte Liquidität, Smart-Contract-Fehler, Netzwerkausfälle, Beschränkungen durch den USDC-Emittenten oder der Verlust der USDC-Wertbindung sowie Verzögerungen bei Projektleistungen. Der eingesetzte Wert kann vollständig verloren gehen. Ein Presale-Preis ist kein garantierter späterer Marktpreis. Prüfe, ob der Kauf zu deinen Umständen passt, und lies die verlinkten Risikohinweise. Diese Bedingungen schließen keine Haftung oder Ansprüche aus, deren Ausschluss gesetzlich unzulässig wäre."
+      },
+      "version": {
+        "title": "11. Version, Kontakt und zwingende Rechte",
+        "body": "Die vervollständigten Bedingungen müssen eine Version und ein Veröffentlichungsdatum tragen. Für einen Kauf gilt die dafür vorgelegte und akzeptierte Fassung; eine spätere Fassung verändert für sich genommen keinen bestehenden Kauf oder dessen unveränderlichen Vesting-Plan. Für kaufbezogene Unterstützung und Beschwerden wende dich an [KONTAKT-E-MAIL]. Anbietername, Anschrift und Kontakt müssen ergänzt werden, bevor dieser Entwurf als endgültige Bedingungen verwendet wird. Zwingender Verbraucherschutz und sonstige unabhängig vom Wortlaut geltende Rechte bleiben unberührt."
+      }
+    }
   },
   "common": {
     "loading": "Presale-Daten werden geladen …",

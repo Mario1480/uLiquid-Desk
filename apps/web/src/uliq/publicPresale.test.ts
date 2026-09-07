@@ -44,12 +44,14 @@ test("preview exposes the deployed token only on Arbitrum One without activating
   const mainnet = createPublicPresalePreviewOverview();
   assert.equal(mainnet.tokenAddress, "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd");
   assert.equal(mainnet.explorerUrl, "https://arbiscan.io");
+  assert.equal(mainnet.paymentTokenAddress, "0xaf88d065e77c8cC2239327C5EDb3A432268e5831");
   assert.equal(mainnet.purchasesEnabled, false);
   assert.equal(mainnet.rounds.every((round) => round.contractAddress === "0x0000000000000000000000000000000000000000" && !round.purchaseEnabled), true);
   for (const chainId of [421614, 1]) {
     const preview = createPublicPresalePreviewOverview(chainId);
     assert.equal(preview.tokenAddress, "0x0000000000000000000000000000000000000000");
     assert.equal(preview.explorerUrl, null);
+    assert.equal(preview.paymentTokenAddress, "0x0000000000000000000000000000000000000000");
   }
 });
 

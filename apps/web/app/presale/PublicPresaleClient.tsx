@@ -2,6 +2,7 @@
 import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 import { DeskAnchor } from "@/components/desk/DeskAnchor";
 import { DeskBadge } from "@/components/desk/DeskBadge";
+import { GlassProgress } from "@/components/einui/liquid-glass/glass-progress";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -44,7 +45,7 @@ type Quote = {
 
 function formatRaw(value: string | null | undefined, decimals: number, maximumFractionDigits = 2): string {
   try {
-    return Number(formatUnits(BigInt(value ?? "0"), decimals)).toLocaleString(undefined, { maximumFractionDigits });
+    return Number(formatUnits(BigInt(value ?? "0"), decimals)).toLocaleString("en-US", { maximumFractionDigits });
   } catch {
     return "0";
   }
@@ -111,8 +112,8 @@ function RoundCard({ round, current, locale }: { round: PublicPresaleRound; curr
         <div><span>{t("rounds.unlock")}</span><strong>{Number(round.initialUnlockBps) / 100}%</strong></div>
         <div><span>{t("rounds.vesting")}</span><strong>{cliffDays > 0 ? t("rounds.cliffVesting", { cliff: cliffDays, vesting: vestingDays }) : t("rounds.linearVesting", { vesting: vestingDays })}</strong></div>
       </div>
-      <div className="publicPresaleProgress" aria-label={`${progress.toFixed(2)}%`}>
-        <div className="publicPresaleProgressTrack"><span style={{ width: `${Math.min(100, progress)}%` }} /></div>
+      <div className="publicPresaleProgress">
+        <GlassProgress value={Math.min(100, progress)} aria-label={`${t("rounds.round", { number: round.number })}: ${t("rounds.raised")}`} getValueLabel={() => `${progress.toFixed(2)}%`} />
         <div className="publicPresaleProgressMeta">
           <span>{t("rounds.raised")}: {formatRaw(round.totalRaisedUsdcRaw, 6, 0)} USDC</span>
           <strong>{progress.toFixed(2)}%</strong>
@@ -252,6 +253,9 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
   }
 
   async function executeTransaction(tx: PublicPreparedTransaction, onSubmitted?: (hash: Hex) => Promise<void> | void) {
+    if (previewOnly || !overview || tx.chainId !== overview.chainId || !/^0x[\da-f]{40}$/i.test(tx.to) || /^0x0{40}$/i.test(tx.to)) {
+      throw new Error(t("hero.unavailable"));
+    }
     if (!address || !connectedMatchesSession) throw new Error(t("common.walletRequired"));
     if (tx.expectedSender && tx.expectedSender.toLowerCase() !== address.toLowerCase()) throw new Error(t("access.wrongWallet"));
     if (chainId !== tx.chainId) await switchChainAsync({ chainId: tx.chainId });
@@ -361,11 +365,16 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
           <h1>{view === "vesting" ? t("vesting.title") : t("hero.title")}</h1>
           <p>{view === "vesting" ? t("vesting.description") : t("hero.description")}</p>
           <div className="publicPresaleHeroMeta">
-            <DeskBadge className="uiStatusBadge uiStatusBadge-warning">{t("hero.preview")}</DeskBadge>
+            {previewOnly ? <DeskBadge className="uiStatusBadge uiStatusBadge-warning">{t("hero.preview")}</DeskBadge> : null}
             <span>{previewOnly ? t(overview.explorerUrl && !/^0x0{40}$/i.test(overview.tokenAddress) ? "hero.presaleContractsPending" : "hero.contractsPending") : t("hero.finalizedBlock", { block: overview.asOfBlock })}</span>
             {overview.explorerUrl && !/^0x0{40}$/i.test(overview.tokenAddress) ? (
               <DeskAnchor className="btn" href={`${overview.explorerUrl}/token/${overview.tokenAddress}`} target="_blank" rel="noreferrer" title={overview.tokenAddress}>
                 <AppIcon name="external" /> {t("hero.tokenContract")}: {overview.tokenAddress.slice(0, 8)}…{overview.tokenAddress.slice(-6)}
+              </DeskAnchor>
+            ) : null}
+            {overview.explorerUrl && !/^0x0{40}$/i.test(overview.paymentTokenAddress) ? (
+              <DeskAnchor className="btn" href={`${overview.explorerUrl}/token/${overview.paymentTokenAddress}`} target="_blank" rel="noreferrer" title={overview.paymentTokenAddress}>
+                <AppIcon name="external" /> {t("hero.paymentTokenContract")}: {overview.paymentTokenAddress.slice(0, 8)}…{overview.paymentTokenAddress.slice(-6)}
               </DeskAnchor>
             ) : null}
           </div>

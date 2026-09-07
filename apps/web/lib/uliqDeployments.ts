@@ -5,3 +5,8 @@ export const ULIQ_ARBITRUM_ONE_TOKEN = {
   address: "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
   explorerUrl: "https://arbiscan.io"
 } as const;
+
+export const USDC_ARBITRUM_ONE_TOKEN = {
+  chainId: 42_161,
+  address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+} as const;

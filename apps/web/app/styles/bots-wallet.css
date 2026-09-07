@@ -281,6 +281,18 @@
   max-width: 900px;
 }
 
+.publicPresaleTermsContent {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.publicPresaleTermsContent p {
+  margin: 10px 0 0;
+  line-height: 1.7;
+}
+
 .publicPresaleLegalPending {
   display: flex;
   gap: 14px;

@@ -1,4 +1,10 @@
 # ULIQ Presale V2 Mainnet Role Matrix
+## Owner approval of items 1–3 — 2026-09-07
+
+Mario explicitly approved the presented Safe addresses, parameters and admin rights, sale timing, and final contract wiring/deployment configuration ("alles richtig und gebe es hiermit frei"). This closes the requested owner review; do not request the same approval again. The approved Admin Safe is `0xf6EB22eC94be977A668967f44F89eB1e056FF70f`; the approved inventory source and USDC treasury Safe is `0x9C96F9AE59e30786fD325EFD969884FC1f751739`. Existing contract rights are approved as presented; disabling ownership renunciation was a recommendation and is not silently implemented by this record.
+
+Approval and supplied execution inputs are separate: the reviewed timing table still contains no actual start/end dates for either round, and no final deployed-address manifest is present. Mario's message supplies no timestamps or new deployment addresses. Record those missing values before execution; never invent them or describe an unperformed onchain verification as completed. Requesting the four missing dates is a data clarification, not a repeat approval request. Independent audit and runtime/deployment evidence remain separate. No transaction was performed when recording this approval.
+
 
 Status: owner policy approval recorded on 2026-09-07; exact roles and contract powers prepared for Mario's review. Historical Safe observations below are unchanged; no deployment or live activation performed.
 

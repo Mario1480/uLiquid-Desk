@@ -1,4 +1,5 @@
 import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
@@ -33,13 +34,16 @@ export default async function PublicPresaleTermsPage() {
         </DeskLink>
       </header>
 
-      <section className="uiSection publicPresaleLegalPending">
-        <span className="uliqSummaryIcon"><AppIcon name="detail" /></span>
-        <div>
-          <h2 className="uiSectionTitle">{t("terms.pendingTitle")}</h2>
-          <p className="uiSectionDescription">{t("terms.pendingDescription")}</p>
-        </div>
-      </section>
+      <DeskSurface>
+        <article className="uiSection publicPresaleTermsContent" aria-label={t("terms.title")}>
+          {(["seller", "token", "rounds", "purchase", "withdrawal", "finalization", "vesting", "listing", "fees", "risks", "version"] as const).map((section) => (
+            <section key={section} aria-labelledby={`terms-${section}`}>
+              <h2 id={`terms-${section}`} className="uiSectionTitle">{t(`terms.sections.${section}.title`)}</h2>
+              <p>{t(`terms.sections.${section}.body`)}</p>
+            </section>
+          ))}
+        </article>
+      </DeskSurface>
 
       <nav className="publicPresaleLegalLinks" aria-label={t("terms.eyebrow")}>
         <DeskLink className="btn" href={withLocalePath("/terms", locale)}>{t("terms.platformTerms")}</DeskLink>

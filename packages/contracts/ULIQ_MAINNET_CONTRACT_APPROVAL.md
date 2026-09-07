@@ -1,6 +1,13 @@
 # ULIQ Mainnet contract inputs and authority review
 
-Date: 2026-09-07. Status: prepared for Mario's explicit review of item 3; no deployment or live activation performed.
+Date: 2026-09-07. Status: owner approval of items 1–3 recorded; exact sale timestamps still need to be supplied. No deployment or live activation performed.
+
+
+## Owner approval of items 1–3 — 2026-09-07
+
+Mario explicitly approved the presented Safe addresses, parameters and admin rights, sale timing, and final contract wiring/deployment configuration ("alles richtig und gebe es hiermit frei"). This closes the requested owner review; do not request the same approval again. The approved Admin Safe is `0xf6EB22eC94be977A668967f44F89eB1e056FF70f`; the approved inventory source and USDC treasury Safe is `0x9C96F9AE59e30786fD325EFD969884FC1f751739`. Existing contract rights are approved as presented; disabling ownership renunciation was a recommendation and is not silently implemented by this record.
+
+Approval and supplied execution inputs are separate: the reviewed timing table still contains no actual start/end dates for either round, and no final deployed-address manifest is present. Mario's message supplies no timestamps or new deployment addresses. Record those missing values before execution; never invent them or describe an unperformed onchain verification as completed. Requesting the four missing dates is a data clarification, not a repeat approval request. Independent audit and runtime/deployment evidence remain separate. No transaction was performed when recording this approval.
 
 ## Decisions already supplied by Mario
 
@@ -8,7 +15,7 @@ Date: 2026-09-07. Status: prepared for Mario's explicit review of item 3; no dep
 - Mario released the previously raised cancellation/safeguarding project gate and selected Safe-based treasury custody. This records the project owner's approval; it does not assert that an external legal opinion was received.
 - Mainnet locker adaptation is authorized. Team/manual vesting is out of the current scope.
 - Use native Arbitrum USDC in the local configuration templates and future constructor inputs.
-- The contract rights, final addresses and parameters below remain for Mario's requested review. These decisions do not execute transactions.
+- The presented contract rights, Safe addresses, parameters and wiring design are now approved by Mario. These decisions do not execute transactions.
 
 ## Actual funds flow
 
@@ -27,9 +34,9 @@ The project-selected Safe is the intended treasury recipient after finalization 
 | Chain | Arbitrum One, 42161 | Selected |
 | Both round ULIQ tokens / both vesting tokens / Mainnet locker token | 0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd | Existing token; locker pins this value in code |
 | Both round USDC tokens / both custody payment tokens | 0xaf88d065e77c8cC2239327C5EDb3A432268e5831 | Native USDC, 6 decimals; entered in both environment templates |
-| Admin for listing, both rounds, both vesting pools and both custody contracts | 0xf6EB22eC94be977A668967f44F89eB1e056FF70f | Existing Admin Safe proposed for review |
-| Immutable ULIQ inventory source for each round | 0x9C96F9AE59e30786fD325EFD969884FC1f751739 | Existing Treasury Safe proposed for review |
-| USDC treasury recipient for each custody contract | 0x9C96F9AE59e30786fD325EFD969884FC1f751739 | Concrete proposal using the existing Treasury Safe; exact recipient awaits item-3 approval, not inferred from the Safe brand |
+| Admin for listing, both rounds, both vesting pools and both custody contracts | 0xf6EB22eC94be977A668967f44F89eB1e056FF70f | Approved by Mario on 2026-09-07 |
+| Immutable ULIQ inventory source for each round | 0x9C96F9AE59e30786fD325EFD969884FC1f751739 | Approved by Mario on 2026-09-07 |
+| USDC treasury recipient for each custody contract | 0x9C96F9AE59e30786fD325EFD969884FC1f751739 | Exact recipient approved by Mario on 2026-09-07 |
 | Round 1 predecessor | Zero address | Prepared input |
 | Round 2 predecessor | Actual Round 1 deployment | Must be reconciled after deployment |
 | Listing / round / vesting / custody / locker addresses | No final deployment manifest yet | Determined and independently reconciled before funding |
@@ -84,9 +91,9 @@ Initial periods remain exactly 32, 185 and 367 days, including the existing oper
 
 `script/uliq/mainnet/DeployULIQMainnetLocker.s.sol` prepares the isolated deployment. No script was broadcast. The existing backend legacy locking namespace still enforces Sepolia; do not place the new Mainnet locker in it. Mainnet runtime integration and activation are separate remaining work.
 
-## Requested item-3 approval
+## Item-3 approval recorded
 
-Review the two proposed Safe role addresses, exact USDC treasury recipient, economic parameters, UTC sale windows and the existing authority table, including renunciation and treasury rotation. The current item-1 decision and deferral of manual vesting are already recorded and do not need to be reapproved.
+Mario approved the presented Safe role addresses, exact USDC treasury recipient, economic parameters and existing authority table, including renunciation and treasury rotation. Concrete UTC start/end values for both rounds have not yet been supplied. The current item-1 decision and deferral of manual vesting are already recorded and do not need to be reapproved.
 
 Full Mainnet graph deployment/configuration, source verification, Safe execution, API/indexer/UI acceptance and independent external audit remain separate evidence. The original sealed internal audit is preserved unchanged; this Mainnet adapter and native-USDC follow-up are subsequent changes.
 

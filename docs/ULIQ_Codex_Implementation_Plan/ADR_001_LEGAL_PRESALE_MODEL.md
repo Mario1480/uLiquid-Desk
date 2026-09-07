@@ -2,9 +2,13 @@
 
 ## Status
 
-`PROJECT OWNER APPROVAL RECORDED / FINAL CONTRACT INPUT REVIEW PENDING`
+`PROJECT OWNER APPROVAL RECORDED / MISSING EXECUTION VALUES TO BE SUPPLIED`
 
 Owner: Product (Mario); external legal evidence is not asserted by this record.
+
+## Subsequent contract review approval — 2026-09-07
+
+Mario also approved the presented Safe addresses, parameters, admin rights, timing and wiring/deployment configuration. The owner review is closed. The [approval record](../../packages/contracts/ULIQ_MAINNET_CONTRACT_APPROVAL.md) distinguishes that approval from still-missing concrete sale dates and deployed-address/technical execution evidence. No repeated approval is required for the same presented choices.
 
 ## Superseding owner decision — 2026-09-07
 
