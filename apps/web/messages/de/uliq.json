@@ -226,7 +226,7 @@
     "subtitle": "Indexer, Reconciliation, Preisqualität, Reservations und Safe-kompatible Vorbereitung – ohne Server-Signing.",
     "productionEyebrow": "Platform Admin · Production-Vorbereitung",
     "productionTitle": "ULIQ Presale",
-    "productionSubtitle": "Öffentliche Vorschau und auditierter Zeitplan für die beiden Presale-Runden – ohne Onchain-Aktivierung.",
+    "productionSubtitle": "Contract-Konfiguration und auditierter Zeitplan für beide Presale-Runden. Der Verkaufsstart benötigt eine separate Safe-Transaktion.",
     "productionPendingNotice": "Die Contract-Adressen sind noch nicht konfiguriert. Die öffentliche Seite ist ausschließlich als UI-Vorschau sichtbar; Wallet-Bestätigung, API-Reads, Käufe und Mainnet-Aktionen bleiben deaktiviert.",
     "publicPreviewStatus": "Öffentliche UI",
     "contractsStatus": "Contracts",

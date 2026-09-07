@@ -18,7 +18,7 @@
     "paymentTokenContract": "USDC token contract",
     "previewNotice": "The presale is not open yet. This preview shows the approved round parameters. Live contract data, wallet verification and purchases will be available after deployment, configuration and activation.",
     "refresh": "Refresh",
-    "unavailable": "The public presale is not configured in this environment yet."
+    "unavailable": "Live contract data is temporarily unavailable. Please reload the page to try again."
   },
   "tabs": {
     "label": "Presale areas",

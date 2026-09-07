@@ -50,6 +50,13 @@ test("public presale config carries the approved two-round economic parameters",
   assert.equal(config.rounds[1].inventorySourceAddress, addresses.ULIQ_PUBLIC_PRESALE_ROUND_2_INVENTORY_SOURCE_ADDRESS);
 });
 
+test("read-only operation may pause indexing but purchases cannot", () => {
+  assert.equal(getUliqPublicPresaleConfig({ ...base, ULIQ_PUBLIC_PRESALE_INDEXER_ENABLED: "false" }).purchasesEnabled, false);
+  assert.throws(() => getUliqPublicPresaleFlags({
+    ...base, ULIQ_PUBLIC_PRESALE_INDEXER_ENABLED: "false", ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED: "true"
+  }), /indexer_disabled/);
+});
+
 test("purchase activation requires versioned legal text", () => {
   assert.throws(
     () => getUliqPublicPresaleConfig({ ...base, ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED: "true" }),

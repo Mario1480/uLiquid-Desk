@@ -215,7 +215,7 @@ export default function PublicPresaleAdminPreview() {
     <div className="adminPageStack uliqPage">
       <AdminPageHeader eyebrow={t("productionEyebrow")} title={t("productionTitle")} description={t("productionSubtitle")} />
       <div className="adminToolbarRow">
-        <AdminNotice tone="warning">{t("productionPendingNotice")}</AdminNotice>
+        {data && !data.readiness.contractsConfigured ? <AdminNotice tone="warning">{t("productionPendingNotice")}</AdminNotice> : null}
         <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
           <AppIcon name="refresh" /> {t("refresh")}
         </DeskButton>

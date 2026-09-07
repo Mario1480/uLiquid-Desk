@@ -18,7 +18,7 @@
     "tokenContract": "ULIQ-Token-Contract",
     "previewNotice": "Der Presale ist noch nicht geöffnet. Diese Vorschau zeigt die freigegebenen Rundenparameter. Live-Vertragsdaten, Wallet-Bestätigung und Käufe werden nach Deployment, Konfiguration und Aktivierung verfügbar.",
     "refresh": "Aktualisieren",
-    "unavailable": "Der öffentliche Presale ist in dieser Umgebung noch nicht konfiguriert."
+    "unavailable": "Live-Vertragsdaten sind vorübergehend nicht verfügbar. Bitte lade die Seite erneut."
   },
   "tabs": {
     "label": "Presale-Bereiche",

@@ -176,8 +176,9 @@ function PublicPresaleContent({ view, deskAuthenticated }: { view: "presale" | "
       setOverview(overviewResult.value);
       setPreviewOnly(false);
     } else {
-      setOverview(previewOverview);
-      setPreviewOnly(true);
+      setOverview(null);
+      setPreviewOnly(false);
+      setError(null);
     }
     if (sessionResult.status === "fulfilled") {
       setSession(sessionResult.value);

@@ -109,6 +109,9 @@ export function getUliqPublicPresaleFlags(env: NodeJS.ProcessEnv = process.env) 
   const enabledFlag = enabled(env.ULIQ_PUBLIC_PRESALE_ENABLED);
   const purchasesEnabled = enabled(env.ULIQ_PUBLIC_PRESALE_PURCHASES_ENABLED);
   if (purchasesEnabled && !enabledFlag) throw new Error("uliq_public_presale_parent_disabled");
+  if (purchasesEnabled && env.ULIQ_PUBLIC_PRESALE_INDEXER_ENABLED === "false") {
+    throw new Error("uliq_public_presale_indexer_disabled");
+  }
   return { enabled: enabledFlag, purchasesEnabled };
 }
 

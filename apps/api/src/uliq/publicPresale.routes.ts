@@ -136,9 +136,19 @@ export function registerUliqPublicPresaleRoutes(app: express.Express, deps: {
     return true;
   }
 
+  // Cache public display snapshots only; quotes and transaction checks remain fresh.
+  let overviewCache: { value: Awaited<ReturnType<UliqPublicPresaleService["getOverview"]>>; expiresAt: number } | null = null;
+  let overviewRequest: ReturnType<UliqPublicPresaleService["getOverview"]> | null = null;
   app.get("/uliq/public/presale", async (_req, res) => {
     if (!enabled(res)) return;
-    try { return res.json(await deps.service.getOverview()); }
+    try {
+      if (overviewCache && overviewCache.expiresAt > Date.now()) return res.json(overviewCache.value);
+      overviewRequest ??= deps.service.getOverview().then((value) => {
+        overviewCache = { value, expiresAt: Date.now() + 60_000 };
+        return value;
+      }).finally(() => { overviewRequest = null; });
+      return res.json(await overviewRequest);
+    }
     catch (error) { const mapped = mapError(error); return res.status(mapped.status).json({ error: mapped.error }); }
   });
 
