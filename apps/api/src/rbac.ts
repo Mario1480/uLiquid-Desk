@@ -92,8 +92,8 @@ export function resolveDefaultRoleIds(roles: RoleLike[]) {
   };
 }
 
-export async function ensureDefaultRoles(workspaceId: string) {
-  const existing = await prisma.role.findMany({ where: { workspaceId } });
+export async function ensureDefaultRoles(workspaceId: string, client: Pick<typeof prisma, "role"> = prisma) {
+  const existing = await client.role.findMany({ where: { workspaceId } });
   if (existing.length > 0) {
     const existingNames = new Set(existing.map((role) => role.name));
     const missingRoles = DEFAULT_ROLES.filter((role) => !existingNames.has(role.name));
@@ -105,7 +105,7 @@ export async function ensureDefaultRoles(workspaceId: string) {
         .map((role) => {
           const expected = rolesByName.get(role.name);
           if (!expected) return null;
-          return prisma.role.update({
+          return client.role.update({
             where: { id: role.id },
             data: {
               isSystem: expected.isSystem,
@@ -122,7 +122,7 @@ export async function ensureDefaultRoles(workspaceId: string) {
 
     const created = await Promise.all(
       missingRoles.map((role) =>
-        prisma.role.create({
+        client.role.create({
           data: {
             workspaceId,
             name: role.name,
@@ -138,7 +138,7 @@ export async function ensureDefaultRoles(workspaceId: string) {
 
   const created: { id: string; name: string }[] = [];
   for (const role of DEFAULT_ROLES) {
-    const r = await prisma.role.create({
+    const r = await client.role.create({
       data: {
         workspaceId,
         name: role.name,

@@ -1882,6 +1882,9 @@
   gap: 14px;
 }
 
+.betaApplication p { margin: 0; font-size: 14px; line-height: 1.5; }
+.betaApplication textarea { font-family: inherit; }
+
 .authHoneypot {
   position: absolute;
   width: 1px;

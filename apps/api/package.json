@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "test:beta-access": "node ../../node_modules/tsx/dist/cli.mjs --test src/auth/betaAccess.test.ts",
     "pretypecheck": "node ../../node_modules/typescript/bin/tsc -p ../../packages/plugin-sdk/tsconfig.json",
     "dev": "node ../../node_modules/tsx/dist/cli.mjs watch src/bootstrap.ts",
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",

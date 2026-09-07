@@ -17,6 +17,8 @@ import { getPrimarySuperadminEmail, isSuperadminEmail } from "./auth/superadmin.
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerRegistrationSettingsRoutes } from "./auth/registrationSettings.js";
+import { registerBetaAccessRoutes } from "./auth/betaAccess.js";
+import type { Prisma } from "@prisma/client";
 import { consumeRecentReauth, registerReauthRoutes } from "./auth/reauth.js";
 import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "./legalAcknowledgement.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
@@ -4251,8 +4253,8 @@ function resolveEffectiveFmpApiKey(
   }
 }
 
-async function ensureWorkspaceMembership(userId: string, userEmail: string) {
-  const existing = await db.workspaceMember.findFirst({
+async function ensureWorkspaceMembership(userId: string, userEmail: string, client = db) {
+  const existing = await client.workspaceMember.findFirst({
     where: { userId },
     include: {
       role: true
@@ -4268,14 +4270,14 @@ async function ensureWorkspaceMembership(userId: string, userEmail: string) {
   }
 
   const workspaceName = `${userEmail.split("@")[0] || "Workspace"} Workspace`;
-  const workspace = await db.workspace.create({
+  const workspace = await client.workspace.create({
     data: {
       name: workspaceName
     }
   });
-  const { userRoleId, adminRoleId } = await ensureDefaultRoles(workspace.id);
+  const { userRoleId, adminRoleId } = await ensureDefaultRoles(workspace.id, client);
   const defaultRoleId = adminRoleId ?? userRoleId;
-  const member = await db.workspaceMember.create({
+  const member = await client.workspaceMember.create({
     data: {
       workspaceId: workspace.id,
       userId,
@@ -11364,6 +11366,28 @@ registerRegistrationSettingsRoutes(app, {
   requireSuperadmin: requirePlatformSuperadmin,
   recordAdminAuditEvent
 });
+
+const betaAccess = registerBetaAccessRoutes(app, {
+  db, requireSuperadmin: requirePlatformSuperadmin, recordAdminAuditEvent, hashPassword,
+  sendMail: sendSmtpTextEmail,
+  provision: async (userId, email) => {
+    await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${"beta-provision:" + userId}))`;
+      await ensureWorkspaceMembership(userId, email, tx);
+    });
+    await setUserToFreePlan({ userId, syncWorkspaceEntitlements: true });
+    await ensureDefaultPaperTradingAccount(userId);
+  }
+});
+let betaMaintenanceRunning = false;
+const betaMaintenanceTimer = setInterval(() => {
+  if (betaMaintenanceRunning) return;
+  betaMaintenanceRunning = true;
+  void betaAccess.provisionPending().then(() => betaAccess.cleanup())
+    .catch(() => logger.warn("beta_access_maintenance_failed"))
+    .finally(() => { betaMaintenanceRunning = false; });
+}, 60_000);
+betaMaintenanceTimer.unref();
 
 registerAuthRoutes(app, {
   db,

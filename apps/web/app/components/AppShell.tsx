@@ -116,6 +116,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [mobileSidebarMode, sidebarOpen]);
 
+  if (pathnameWithoutLocale === "/register/beta") {
+    return <main className="container appMain">{children}</main>;
+  }
+
   if (hideChrome) {
     return (
       <>
