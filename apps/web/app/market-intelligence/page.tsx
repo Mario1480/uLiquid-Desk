@@ -1,8 +1,10 @@
 "use client";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -226,11 +228,11 @@ export default function MarketIntelligencePage() {
             {payload?.summary.highlights.map((highlight, index) => (
               <article className="marketDriverRow" key={`${highlight.headline}-${index}`}>
                 <div className="marketDriverHeader">
-                  <span className="badge">{highlight.type}</span>
-                  <span className={`badge calendarImpactBadge${highlight.importance[0].toUpperCase()}${highlight.importance.slice(1)}`}>
+                  <DeskBadge className="badge">{highlight.type}</DeskBadge>
+                  <DeskBadge className={`badge calendarImpactBadge${highlight.importance[0].toUpperCase()}${highlight.importance.slice(1)}`}>
                     {highlight.importance}
-                  </span>
-                  {highlight.inference ? <span className="badge">{t("inference")}</span> : <span className="badge">{t("fact")}</span>}
+                  </DeskBadge>
+                  {highlight.inference ? <DeskBadge className="badge">{t("inference")}</DeskBadge> : <DeskBadge className="badge">{t("fact")}</DeskBadge>}
                 </div>
                 <h3>{highlight.headline}</h3>
                 <p>{highlight.explanation}</p>
@@ -238,10 +240,10 @@ export default function MarketIntelligencePage() {
                   {highlight.sourceIds.map((sourceId) => {
                     const source = citations.get(sourceId);
                     return source?.sourceUrl ? (
-                      <a key={sourceId} href={source.sourceUrl} target="_blank" rel="noreferrer" className="btn">
+                      <DeskAnchor key={sourceId} href={source.sourceUrl} target="_blank" rel="noreferrer" className="btn">
                         <AppIcon name="open" />
                         {source.sourceName}
-                      </a>
+                      </DeskAnchor>
                     ) : null;
                   })}
                 </div>
@@ -298,21 +300,21 @@ export default function MarketIntelligencePage() {
                     <strong>{provider.providerId}</strong>
                     <span>{provider.providerType}</span>
                   </div>
-                  <span className={`uiStatusBadge ${stateBadgeClass(provider.state)}`}>{provider.state}</span>
+                  <DeskBadge className={`uiStatusBadge ${stateBadgeClass(provider.state)}`}>{provider.state}</DeskBadge>
                 </div>
               ))}
             </div>
           </section>
 
           <div className="marketIntelligenceActions">
-            <Link href={`${withLocalePath("/predictions", locale)}?create=market-intelligence`} className="btn btnPrimary">
+            <DeskLink href={`${withLocalePath("/predictions", locale)}?create=market-intelligence`} className="btn btnPrimary">
               <AppIcon name="create" />
               {t("createAnalysis")}
-            </Link>
-            <Link href={withLocalePath("/news", locale)} className="btn">
+            </DeskLink>
+            <DeskLink href={withLocalePath("/news", locale)} className="btn">
               <AppIcon name="news" />
               {t("openNews")}
-            </Link>
+            </DeskLink>
           </div>
         </aside>
       </div>
@@ -323,10 +325,10 @@ export default function MarketIntelligencePage() {
             <h2>{t("savedAnalysesTitle")}</h2>
             <p>{t("savedAnalysesDescription")}</p>
           </div>
-          <Link href={`${withLocalePath("/predictions", locale)}?create=market-intelligence`} className="btn">
+          <DeskLink href={`${withLocalePath("/predictions", locale)}?create=market-intelligence`} className="btn">
             <AppIcon name="create" />
             {t("createAnalysis")}
-          </Link>
+          </DeskLink>
         </div>
         {analysesLoading ? <div className="uiEmptyState">{t("savedAnalysesLoading")}</div> : null}
         {!analysesLoading && analyses.length === 0 ? <div className="uiEmptyState">{t("savedAnalysesEmpty")}</div> : null}
@@ -337,9 +339,9 @@ export default function MarketIntelligencePage() {
                 <strong>{analysis.title}</strong>
                 <span>{new Date(analysis.generatedAt).toLocaleString()} · {t(`horizons.${analysis.horizon}`)}</span>
               </div>
-              <span className="badge">{analysis.overallRisk}</span>
-              <span className="badge">{analysis.sentiment}</span>
-              {analysis.degraded ? <span className="uiStatusBadge uiStatusBadge-warning">{t("degraded")}</span> : null}
+              <DeskBadge className="badge">{analysis.overallRisk}</DeskBadge>
+              <DeskBadge className="badge">{analysis.sentiment}</DeskBadge>
+              {analysis.degraded ? <DeskBadge className="uiStatusBadge uiStatusBadge-warning">{t("degraded")}</DeskBadge> : null}
               <AppIcon name="chevronRight" />
             </DeskButton>
           ))}
@@ -366,9 +368,9 @@ export default function MarketIntelligencePage() {
                 {selectedAnalysis.payload.report.summary.highlights.map((highlight, index) => (
                   <article className="marketDriverRow" key={`${highlight.headline}-${index}`}>
                     <div className="marketDriverHeader">
-                      <span className="badge">{highlight.type}</span>
-                      <span className="badge">{highlight.importance}</span>
-                      <span className="badge">{highlight.inference ? t("inference") : t("fact")}</span>
+                      <DeskBadge className="badge">{highlight.type}</DeskBadge>
+                      <DeskBadge className="badge">{highlight.importance}</DeskBadge>
+                      <DeskBadge className="badge">{highlight.inference ? t("inference") : t("fact")}</DeskBadge>
                     </div>
                     <h3>{highlight.headline}</h3>
                     <p>{highlight.explanation}</p>
@@ -376,9 +378,9 @@ export default function MarketIntelligencePage() {
                       {highlight.sourceIds.map((sourceId) => {
                         const source = selectedCitations.get(sourceId);
                         return source?.sourceUrl ? (
-                          <a key={sourceId} href={source.sourceUrl} target="_blank" rel="noreferrer" className="btn">
+                          <DeskAnchor key={sourceId} href={source.sourceUrl} target="_blank" rel="noreferrer" className="btn">
                             <AppIcon name="open" />{source.sourceName}
-                          </a>
+                          </DeskAnchor>
                         ) : null;
                       })}
                     </div>
@@ -424,7 +426,7 @@ export default function MarketIntelligencePage() {
                 {selectedAnalysis.payload.context.providerStates.map((provider) => (
                   <div className="marketProviderRow" key={`${provider.providerType}-${provider.providerId}`}>
                     <div><strong>{provider.providerId}</strong><span>{provider.providerType}</span></div>
-                    <span className={`uiStatusBadge ${stateBadgeClass(provider.state)}`}>{provider.state}</span>
+                    <DeskBadge className={`uiStatusBadge ${stateBadgeClass(provider.state)}`}>{provider.state}</DeskBadge>
                   </div>
                 ))}
               </div>

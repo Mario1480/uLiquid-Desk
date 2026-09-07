@@ -1,3 +1,4 @@
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 type NotificationsFormProps = {
@@ -17,10 +18,9 @@ export function NotificationsForm({ notify, onChange, onSave, canSave, saveLabel
       </div>
       <label className="fieldRow">
         <span style={{ fontSize: 13 }}>Enable funds warning</span>
-        <DeskInput
-          type="checkbox"
+        <DeskSwitch
           checked={Boolean(notify.fundsWarnEnabled)}
-          onChange={(e) => onChange({ ...notify, fundsWarnEnabled: e.target.checked })}
+          onCheckedChange={(checked) => onChange({ ...notify, fundsWarnEnabled: checked })}
         />
       </label>
       <label className="fieldRow">

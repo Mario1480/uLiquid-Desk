@@ -1,7 +1,7 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { AppIcon, type AppIconName } from "../../app/components/AppIcon";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
@@ -28,7 +28,7 @@ export default function QuickActionsWidget({ visibility }: { visibility: AccessS
       </div>
       <div className="dashboardQuickActionsGrid">
         {actions.filter((action) => action.visible).map((action) => (
-          <Link
+          <DeskLink
             key={action.key}
             href={withLocalePath(action.href, locale)}
             className={`btn dashboardQuickAction${action.primary ? " btnPrimary" : ""}`}
@@ -36,7 +36,7 @@ export default function QuickActionsWidget({ visibility }: { visibility: AccessS
             <AppIcon name={action.icon} />
             <span>{t(action.key)}</span>
             <AppIcon name="chevronRight" />
-          </Link>
+          </DeskLink>
         ))}
       </div>
     </div></DeskSurface>

@@ -1,4 +1,5 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -331,11 +332,11 @@ export default function AdminAiPromptGeneratorPage() {
               />
             </label>
             <label className="inlineCheck" style={{ marginTop: 24 }}>
-              <DeskInput type="checkbox" checked={setActive} onChange={(event) => setSetActive(event.target.checked)} />
+              <DeskCheckbox checked={setActive} onCheckedChange={(checked) => setSetActive(checked)} />
               {t("setActive")}
             </label>
             <label className="inlineCheck" style={{ marginTop: 24 }}>
-              <DeskInput type="checkbox" checked={isPublic} onChange={(event) => setIsPublic(event.target.checked)} />
+              <DeskCheckbox checked={isPublic} onCheckedChange={(checked) => setIsPublic(checked)} />
               {t("publicPrompt")}
             </label>
           </div>
@@ -377,10 +378,9 @@ export default function AdminAiPromptGeneratorPage() {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                 {TIMEFRAME_OPTIONS.map((tf) => (
                   <label key={`tf-${tf}`} className="inlineCheck">
-                    <DeskInput
-                      type="checkbox"
+                    <DeskCheckbox
                       checked={timeframes.includes(tf)}
-                      onChange={() => toggleTimeframe(tf)}
+                      onCheckedChange={() => toggleTimeframe(tf)}
                     />
                     {tf}
                   </label>
@@ -494,10 +494,9 @@ export default function AdminAiPromptGeneratorPage() {
                       gap: 8
                     }}
                   >
-                    <DeskInput
-                      type="checkbox"
+                    <DeskCheckbox
                       checked={indicatorKeys.includes(item.key)}
-                      onChange={() => toggleIndicator(item.key)}
+                      onCheckedChange={() => toggleIndicator(item.key)}
                       style={{ marginTop: 2 }}
                     />
                     <span style={{ display: "grid", gap: 2 }}>

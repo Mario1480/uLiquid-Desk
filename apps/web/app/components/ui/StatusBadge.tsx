@@ -1,4 +1,4 @@
-import { GlassBadge } from "@/components/einui/liquid-glass/glass-badge";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 import type { ReactNode } from "react";
 
 type StatusBadgeTone = "neutral" | "info" | "success" | "warning" | "danger" | "accent";
@@ -21,8 +21,8 @@ export default function StatusBadge({
   title
 }: StatusBadgeProps) {
   return (
-    <GlassBadge nativeLayout className={cx("badge uiStatusBadge", `uiStatusBadge-${tone}`, className)} title={title}>
+    <DeskBadge className={cx("badge uiStatusBadge", `uiStatusBadge-${tone}`, className)} title={title}>
       {children}
-    </GlassBadge>
+    </DeskBadge>
   );
 }

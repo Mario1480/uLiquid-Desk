@@ -1,11 +1,13 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskTable } from "@/components/desk/DeskTable";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
@@ -1149,9 +1151,9 @@ export default function AdminIndicatorSettingsPage() {
           <DeskSurface dense><section className="card settingsSection indicatorCatalogSection">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("catalog.title")}</h3>
-              <span className="indicatorCatalogScopeChip">
+              <DeskBadge className="indicatorCatalogScopeChip">
                 {t("catalog.scopeLayers")}: {resolved?.breakdown?.length ?? 0}
-              </span>
+              </DeskBadge>
             </div>
             <div className="indicatorCatalogStatsGrid">
               <div className="indicatorCatalogStatCard">
@@ -1252,9 +1254,9 @@ export default function AdminIndicatorSettingsPage() {
           <DeskSurface dense><section className="card settingsSection indicatorOverrideSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{editingId ? t("override.editTitle") : t("override.createTitle")}</h3>
-              <span className="indicatorOverrideModeChip">
+              <DeskBadge className="indicatorOverrideModeChip">
                 {editingId ? t("override.updateMode") : t("override.newOverride")}
-              </span>
+              </DeskBadge>
             </div>
             <div className="settingsMutedText indicatorOverrideIntro">
               {t("override.intro")}
@@ -1378,14 +1380,14 @@ export default function AdminIndicatorSettingsPage() {
                       <label className="settingsField"><span className="mutedTiny">{t("fields.swingBearColor")}</span><DeskInput className="input" type="text" value={config.indicatorsV2.breakerBlocks.swingBearColor} onChange={(e) => setIndicatorsV2BreakerBlocks("swingBearColor", e.target.value)} /></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.breakerCandleOnlyBody} onChange={(e) => setIndicatorsV2BreakerBlocks("breakerCandleOnlyBody", e.target.checked)} /> {t("fields.breakerCandleOnlyBody")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.breakerCandle2Last} onChange={(e) => setIndicatorsV2BreakerBlocks("breakerCandle2Last", e.target.checked)} /> {t("fields.breakerCandle2Last")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.tillFirstBreak} onChange={(e) => setIndicatorsV2BreakerBlocks("tillFirstBreak", e.target.checked)} /> {t("fields.tillFirstBreak")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.onlyWhenInPDarray} onChange={(e) => setIndicatorsV2BreakerBlocks("onlyWhenInPDarray", e.target.checked)} /> {t("fields.onlyWhenInPDarray")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.showPDarray} onChange={(e) => setIndicatorsV2BreakerBlocks("showPDarray", e.target.checked)} /> {t("fields.showPDarray")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.showBreaks} onChange={(e) => setIndicatorsV2BreakerBlocks("showBreaks", e.target.checked)} /> {t("fields.showBreaks")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.showSPD} onChange={(e) => setIndicatorsV2BreakerBlocks("showSPD", e.target.checked)} /> {t("fields.showSPD")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.breakerBlocks.enableTp} onChange={(e) => setIndicatorsV2BreakerBlocks("enableTp", e.target.checked)} /> {t("fields.enableTp")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.breakerBlocks.breakerCandleOnlyBody} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("breakerCandleOnlyBody", checked)} /> {t("fields.breakerCandleOnlyBody")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.breakerBlocks.breakerCandle2Last} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("breakerCandle2Last", checked)} /> {t("fields.breakerCandle2Last")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.breakerBlocks.tillFirstBreak} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("tillFirstBreak", checked)} /> {t("fields.tillFirstBreak")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.breakerBlocks.onlyWhenInPDarray} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("onlyWhenInPDarray", checked)} /> {t("fields.onlyWhenInPDarray")}</label>
+                      <label className="inlineCheck"><DeskSwitch checked={config.indicatorsV2.breakerBlocks.showPDarray} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("showPDarray", checked)} /> {t("fields.showPDarray")}</label>
+                      <label className="inlineCheck"><DeskSwitch checked={config.indicatorsV2.breakerBlocks.showBreaks} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("showBreaks", checked)} /> {t("fields.showBreaks")}</label>
+                      <label className="inlineCheck"><DeskSwitch checked={config.indicatorsV2.breakerBlocks.showSPD} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("showSPD", checked)} /> {t("fields.showSPD")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.breakerBlocks.enableTp} onCheckedChange={(checked) => setIndicatorsV2BreakerBlocks("enableTp", checked)} /> {t("fields.enableTp")}</label>
                     </div>
                   </div>
                 ) : null}
@@ -1448,25 +1450,25 @@ export default function AdminIndicatorSettingsPage() {
                       <label className="settingsField"><span className="mutedTiny">{t("fields.bosLabelSize")}</span><DeskSelect className="input" value={config.indicatorsV2.superOrderBlockFvgBos.bosLabelSize} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosLabelSize", e.target.value as any)}>{["huge","large","small","tiny","auto","normal"].map((value) => <option key={value} value={value}>{value}</option>)}</DeskSelect></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotOB", e.target.checked)} /> {t("fields.plotOB")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitOB", e.target.checked)} /> {t("fields.filterMitOB")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotFVG", e.target.checked)} /> {t("fields.plotFVG")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotStructureBreakingFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotStructureBreakingFVG", e.target.checked)} /> {t("fields.plotStructureBreakingFVG")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitFVG", e.target.checked)} /> {t("fields.filterMitFVG")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotRJB", e.target.checked)} /> {t("fields.plotRJB")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitRJB", e.target.checked)} /> {t("fields.filterMitRJB")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotPVT} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotPVT", e.target.checked)} /> {t("fields.plotPVT")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotBOS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotBOS", e.target.checked)} /> {t("fields.plotBOS")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBullishBoS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBullishBoS", e.target.checked)} /> {t("fields.useHighLowForBullishBoS")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBearishBoS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBearishBoS", e.target.checked)} /> {t("fields.useHighLowForBearishBoS")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.bosBoxFlag} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxFlag", e.target.checked)} /> {t("fields.bosBoxFlag")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotHVB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotHVB", e.target.checked)} /> {t("fields.plotHVB")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotPPDD} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotPPDD", e.target.checked)} /> {t("fields.plotPPDD")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotOBFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotOBFVG", e.target.checked)} /> {t("fields.plotOBFVG")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelOB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelOB", e.target.checked)} /> {t("fields.plotLabelOB")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelFVG} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelFVG", e.target.checked)} /> {t("fields.plotLabelFVG")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelRJB} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelRJB", e.target.checked)} /> {t("fields.plotLabelRJB")}</label>
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelBOS} onChange={(e) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelBOS", e.target.checked)} /> {t("fields.plotLabelBOS")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotOB} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotOB", checked)} /> {t("fields.plotOB")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitOB} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitOB", checked)} /> {t("fields.filterMitOB")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotFVG} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotFVG", checked)} /> {t("fields.plotFVG")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotStructureBreakingFVG} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotStructureBreakingFVG", checked)} /> {t("fields.plotStructureBreakingFVG")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitFVG} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitFVG", checked)} /> {t("fields.filterMitFVG")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotRJB} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotRJB", checked)} /> {t("fields.plotRJB")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.filterMitRJB} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("filterMitRJB", checked)} /> {t("fields.filterMitRJB")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotPVT} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotPVT", checked)} /> {t("fields.plotPVT")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotBOS} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotBOS", checked)} /> {t("fields.plotBOS")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBullishBoS} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBullishBoS", checked)} /> {t("fields.useHighLowForBullishBoS")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.useHighLowForBearishBoS} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("useHighLowForBearishBoS", checked)} /> {t("fields.useHighLowForBearishBoS")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.bosBoxFlag} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("bosBoxFlag", checked)} /> {t("fields.bosBoxFlag")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotHVB} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotHVB", checked)} /> {t("fields.plotHVB")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotPPDD} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotPPDD", checked)} /> {t("fields.plotPPDD")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotOBFVG} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotOBFVG", checked)} /> {t("fields.plotOBFVG")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelOB} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelOB", checked)} /> {t("fields.plotLabelOB")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelFVG} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelFVG", checked)} /> {t("fields.plotLabelFVG")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelRJB} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelRJB", checked)} /> {t("fields.plotLabelRJB")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.indicatorsV2.superOrderBlockFvgBos.plotLabelBOS} onCheckedChange={(checked) => setIndicatorsV2SuperOrderBlockFvgBos("plotLabelBOS", checked)} /> {t("fields.plotLabelBOS")}</label>
                     </div>
                   </div>
                 ) : null}
@@ -1488,7 +1490,7 @@ export default function AdminIndicatorSettingsPage() {
                       <label className="settingsField"><span className="mutedTiny">{t("fields.rwLen")}</span><DeskInput className="input" type="number" min={1} max={104} value={config.advancedIndicators.rwLen} onChange={(e) => setAdvancedIndicatorsNumber("rwLen", parseNumber(e.target.value))} /></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.advancedIndicators.sessionsUseDST} onChange={(e) => setAdvancedIndicatorsSessionsUseDst(e.target.checked)} /> {t("fields.sessionsUseDst")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.advancedIndicators.sessionsUseDST} onCheckedChange={(checked) => setAdvancedIndicatorsSessionsUseDst(checked)} /> {t("fields.sessionsUseDst")}</label>
                     </div>
                   </div>
                 ) : null}
@@ -1509,7 +1511,7 @@ export default function AdminIndicatorSettingsPage() {
                       <label className="settingsField"><span className="mutedTiny">{t("fields.maxOrderBlocks")}</span><DeskInput className="input" type="number" min={1} max={50} value={config.advancedIndicators.smcMaxOrderBlocks} onChange={(e) => setAdvancedIndicatorsNumber("smcMaxOrderBlocks", parseNumber(e.target.value))} /></label>
                     </div>
                     <div className="indicatorInlineChecks">
-                      <label className="inlineCheck"><DeskInput type="checkbox" checked={config.advancedIndicators.smcFvgAutoThreshold} onChange={(e) => setAdvancedIndicatorsSmcFvgAutoThreshold(e.target.checked)} /> {t("fields.fvgAutoThreshold")}</label>
+                      <label className="inlineCheck"><DeskCheckbox checked={config.advancedIndicators.smcFvgAutoThreshold} onCheckedChange={(checked) => setAdvancedIndicatorsSmcFvgAutoThreshold(checked)} /> {t("fields.fvgAutoThreshold")}</label>
                     </div>
                   </div>
                 ) : null}
@@ -1524,10 +1526,9 @@ export default function AdminIndicatorSettingsPage() {
                   <div className="settingsAccordionBody">
                     <div className="indicatorInlineChecks">
                       <label className="inlineCheck">
-                        <DeskInput
-                          type="checkbox"
+                        <DeskSwitch
                           checked={config.aiGating.enabled}
-                          onChange={(e) => setAiGatingEnabled(e.target.checked)}
+                          onCheckedChange={(checked) => setAiGatingEnabled(checked)}
                         />
                         {t("fields.enableAiQualityGate")}
                       </label>
@@ -1698,7 +1699,7 @@ export default function AdminIndicatorSettingsPage() {
                     </div>
                     <div className="indicatorInlineChecks">
                       <label className="inlineCheck">
-                        <DeskInput type="checkbox" checked={config.liquiditySweeps.extend} onChange={(e) => setLiquiditySweepsExtend(e.target.checked)} />
+                        <DeskCheckbox checked={config.liquiditySweeps.extend} onCheckedChange={(checked) => setLiquiditySweepsExtend(checked)} />
                         {t("fields.extendZones")}
                       </label>
                     </div>

@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { useTranslations } from "next-intl";
@@ -182,7 +183,7 @@ function WalletConnectionWidgetContent({
         >
           <div className="appHeaderMenuTitleRow">
             <div className="appHeaderMenuTitle">{tWallet("walletTitle")}</div>
-            <span className="badge badgeWarn">{tWallet("statusDisconnected")}</span>
+            <DeskBadge className="badge badgeWarn">{tWallet("statusDisconnected")}</DeskBadge>
           </div>
           <div className="appHeaderWalletPanelMeta" role="alert">{connectionError}</div>
         </div>
@@ -197,9 +198,9 @@ function WalletConnectionWidgetContent({
         >
           <div className="appHeaderMenuTitleRow">
             <div className="appHeaderMenuTitle">{tWallet("walletTitle")}</div>
-            <span className={`badge ${hasUnsupportedChain ? "badgeWarn" : "badgeOk"}`}>
+            <DeskBadge className={`badge ${hasUnsupportedChain ? "badgeWarn" : "badgeOk"}`}>
               {hasUnsupportedChain ? tWallet("statusWrongNetwork") : tWallet("statusConnected")}
-            </span>
+            </DeskBadge>
           </div>
           <div className="appHeaderWalletPanelMeta">
             <div className="appHeaderWalletPanelLabel">{tWallet("address")}</div>
@@ -245,7 +246,7 @@ function WalletConnectionWidgetContent({
               >
                 <span className="appHeaderMenuIcon" aria-hidden="true"><AppIcon name="switch" /></span>
                 <span>{isCurrent ? chain.name : tWallet("switchNetwork", { chain: chain.name })}</span>
-                {isCurrent ? <span className="badge badgeOk">{tWallet("statusConnected")}</span> : null}
+                {isCurrent ? <DeskBadge className="badge badgeOk">{tWallet("statusConnected")}</DeskBadge> : null}
               </DeskButton>
             );
           })}

@@ -1,6 +1,6 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { apiGet } from "../../../lib/api";
@@ -249,10 +249,10 @@ export default function AdminSystemPage() {
                   <div className="settingsMutedText">{group.description}</div>
                   <div className="adminInlineActions">
                     {group.links.map((item) => (
-                      <Link key={item.href} href={withLocalePath(item.href, locale)} className="btn">
+                      <DeskLink key={item.href} href={withLocalePath(item.href, locale)} className="btn">
                         <AppIcon name={iconForSystemLink(item.href)} />
                         {item.label}
-                      </Link>
+                      </DeskLink>
                     ))}
                   </div>
                 </div>

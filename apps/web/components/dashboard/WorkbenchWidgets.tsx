@@ -1,4 +1,5 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -251,18 +252,15 @@ export function NotesWidget() {
       {draft.checklist.map((item) => (
         <div className="dashboardWorkbenchRow" key={item.id}>
           <label className="dashboardWorkbenchCheck">
-            <DeskInput
-              type="checkbox"
+            <DeskCheckbox
               checked={item.done}
               disabled={busy}
-              onChange={() =>
-                edit({
+              onCheckedChange={() => edit({
                   ...draft,
                   checklist: draft.checklist.map((row) =>
                     row.id === item.id ? { ...row, done: !row.done } : row
                   )
-                })
-              }
+                })}
             />
             <span>{item.text}</span>
           </label>

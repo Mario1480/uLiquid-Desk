@@ -1,9 +1,10 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useState, type CSSProperties } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
@@ -137,9 +138,9 @@ export default function AdminExchangesPage() {
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="adminPageIntro">{t("subtitle")}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Link className="btn" href={withLocalePath("/admin", locale)}>
+        <DeskLink className="btn" href={withLocalePath("/admin", locale)}>
           {tCommon("backToAdmin")}
-        </Link>
+        </DeskLink>
         <DeskButton className="btn" type="button" onClick={() => void loadAll()} disabled={loading}>
           {loading ? t("loading") : t("refresh")}
         </DeskButton>
@@ -256,14 +257,11 @@ export default function AdminExchangesPage() {
             <div style={{ display: "grid", gap: 6 }}>
               {exchangeOptions.map((option, idx) => (
                 <label key={option.value} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={option.enabled}
-                    onChange={(e) =>
-                      setExchangeOptions((prev) =>
-                        prev.map((item, i) => (i === idx ? { ...item, enabled: e.target.checked } : item))
-                      )
-                    }
+                    onCheckedChange={(checked) => setExchangeOptions((prev) =>
+                        prev.map((item, i) => (i === idx ? { ...item, enabled: checked } : item))
+                      )}
                   />
                   <span>{option.label}</span>
                 </label>

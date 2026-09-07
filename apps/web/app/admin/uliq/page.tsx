@@ -1,4 +1,5 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -1094,7 +1095,7 @@ function UliqAdminPageContent() {
               </label>
             </div>
             <label className="uliqLaunchConfirmation">
-              <DeskInput type="checkbox" checked={poolReady} onChange={(event) => setPoolReady(event.target.checked)} disabled={data.overview.state !== "DEX_PENDING" || dexSubmitting} />
+              <DeskCheckbox checked={poolReady} onCheckedChange={(checked) => setPoolReady(checked)} disabled={data.overview.state !== "DEX_PENDING" || dexSubmitting} />
               <span>{t("externalPoolConfirmation")}</span>
             </label>
             <div className="adminKeyValueList">

@@ -1,4 +1,6 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
@@ -178,7 +180,7 @@ function HubCard({
         <span className="settingsHubIcon">
           <AppIcon name={icon} />
         </span>
-        {badge ? <span className="badge">{badge}</span> : null}
+        {badge ? <DeskBadge className="badge">{badge}</DeskBadge> : null}
       </div>
       <div className="settingsHubCardBody">
         <h3>{title}</h3>
@@ -448,10 +450,10 @@ function SettingsHubContent() {
         actions={(
           <>
             {hasAdminBackendAccess ? (
-              <Link className="btn" href={withLocalePath("/admin", locale)}>
+              <DeskLink className="btn" href={withLocalePath("/admin", locale)}>
                 <AppIcon name="admin" />
                 {t("actions.admin")}
-              </Link>
+              </DeskLink>
             ) : null}
             <DeskButton className="btn" type="button" onClick={() => void loadHub()} disabled={loading}>
               <AppIcon name="refresh" />
@@ -476,18 +478,18 @@ function SettingsHubContent() {
         <DeskSurface><div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${accountTone}`}>
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.account")}</span>
-            <span className={`settingsSummaryBadge settingsSummaryBadge-${accountTone}`}>
+            <DeskBadge className={`settingsSummaryBadge settingsSummaryBadge-${accountTone}`}>
               {isSuperadmin ? t("summary.superadmin") : t("summary.user")}
-            </span>
+            </DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{loading ? tCommon("loading") : me?.email ?? "-"}</strong>
         </div></DeskSurface>
         <DeskSurface><div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${exchangeTone}`}>
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.exchanges")}</span>
-            <span className={`settingsSummaryBadge settingsSummaryBadge-${exchangeTone}`}>
+            <DeskBadge className={`settingsSummaryBadge settingsSummaryBadge-${exchangeTone}`}>
               {exchangeHealthIssues > 0 ? t("badges.actionRequired") : t("badges.ok")}
-            </span>
+            </DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{accounts?.length ?? 0}</strong>
           <small className="settingsSummaryMeta">
@@ -497,9 +499,9 @@ function SettingsHubContent() {
         <DeskSurface><div className={`uiMetricTile settingsSummaryTile settingsSummaryTile-${walletTone}`}>
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.wallet")}</span>
-            <span className={`settingsSummaryBadge settingsSummaryBadge-${walletTone}`}>
+            <DeskBadge className={`settingsSummaryBadge settingsSummaryBadge-${walletTone}`}>
               {linkedWalletAddress ? t("cards.wallet.ready") : t("cards.wallet.setup")}
-            </span>
+            </DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{linkedWalletAddress ? shortenWalletAddress(linkedWalletAddress) : t("summary.notLinked")}</strong>
           <small className="settingsSummaryMeta">{walletStatusText}</small>
@@ -549,18 +551,18 @@ function SettingsHubContent() {
             actionLabel={t("actions.open")}
           >
             <div className="settingsHubInlineActions">
-              <Link className="btn" href={withLocalePath("/terms", locale)}>
+              <DeskLink className="btn" href={withLocalePath("/terms", locale)}>
                 <AppIcon name="detail" />
                 {t("cards.legal.terms")}
-              </Link>
-              <Link className="btn" href={withLocalePath("/privacy", locale)}>
+              </DeskLink>
+              <DeskLink className="btn" href={withLocalePath("/privacy", locale)}>
                 <AppIcon name="shield" />
                 {t("cards.legal.privacy")}
-              </Link>
-              <Link className="btn" href={withLocalePath("/risk-disclosure", locale)}>
+              </DeskLink>
+              <DeskLink className="btn" href={withLocalePath("/risk-disclosure", locale)}>
                 <AppIcon name="risk" />
                 {t("cards.legal.risk")}
-              </Link>
+              </DeskLink>
             </div>
           </HubCard>
         </HubGroup>

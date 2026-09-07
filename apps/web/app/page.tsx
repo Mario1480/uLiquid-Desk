@@ -1,4 +1,7 @@
 "use client";
+import { DeskChoiceGroup, DeskChoiceItem } from "@/components/desk/DeskChoiceGroup";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
 import { DeskButton } from "@/components/desk/DeskButton";
@@ -1111,17 +1114,17 @@ export default function Page() {
               <div className="dashboardPerformanceTitle">{t("performance.title")}</div>
               <div className="dashboardPerformanceSubtitle">{t("performance.subtitle")}</div>
               <div className="dashboardPerformanceSummaryChips">
-                <span className="dashboardPerformanceSummaryChip">
+                <DeskBadge className="dashboardPerformanceSummaryChip">
                   {t("performance.filterLabel")}: {selectedPerformanceLabel}
-                </span>
-                <span className="dashboardPerformanceSummaryChip">
+                </DeskBadge>
+                <DeskBadge className="dashboardPerformanceSummaryChip">
                   {t("totals.includedAccounts", {
                     count:
                       performanceExchangeFilter === "all"
                         ? overview.length
                         : filteredPerformanceAccounts.length
                   })}
-                </span>
+                </DeskBadge>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -1140,26 +1143,24 @@ export default function Page() {
                   ))}
                 </DeskSelect>
               </label>
-              <div className="dashboardPerformanceTabs" role="tablist" aria-label={t("performance.title")}>
+              <DeskChoiceGroup className="dashboardPerformanceTabs" value={performanceRange} onValueChange={(value) => setPerformanceRange(value as PerformanceRange)} aria-label={t("performance.title")}>
                 {PERFORMANCE_RANGES.map((range) => (
-                  <DeskButton
+                  <DeskChoiceItem
                     key={range}
-                    type="button"
-                    role="tab"
-                    aria-selected={performanceRange === range}
+
                     className={`dashboardPerformanceTab ${
                       performanceRange === range ? "dashboardPerformanceTabActive" : ""
                     }`}
-                    onClick={() => setPerformanceRange(range)}
-                  >
+
+                   value={range}>
                     {range === "24h"
                       ? t("performance.range24h")
                       : range === "7d"
                         ? t("performance.range7d")
                         : t("performance.range30d")}
-                  </DeskButton>
+                  </DeskChoiceItem>
                 ))}
-              </div>
+              </DeskChoiceGroup>
             </div>
           </div>
           <div className="dashboardPerformanceBody dashboardWidgetScrollArea">
@@ -1232,9 +1233,9 @@ export default function Page() {
                 <div className="dashboardLossAnalysisTitle">{t("lossAnalysis.title")}</div>
                 <div className="dashboardLossAnalysisSubtitle">{t("lossAnalysis.subtitle")}</div>
                 <div className="dashboardLossScope">
-                  <span className="dashboardLossScopeChip">
+                  <DeskBadge className="dashboardLossScopeChip">
                     {t("performance.filterLabel")}: {selectedPerformanceLabel}
-                  </span>
+                  </DeskBadge>
                 </div>
                 <div className="dashboardLossSummary">
                   <span className="dashboardLossSeverity dashboardLossSeverityCritical">
@@ -1281,13 +1282,13 @@ export default function Page() {
                       </div>
                       <div className="dashboardLossTriggerRow">
                         {item.triggers.map((trigger) => (
-                          <span key={`${item.exchangeAccountId}-${trigger}`} className="dashboardLossTriggerChip">
+                          <DeskBadge key={`${item.exchangeAccountId}-${trigger}`} className="dashboardLossTriggerChip">
                             {trigger === "dailyLoss"
                               ? t("lossAnalysis.triggers.dailyLoss")
                               : trigger === "margin"
                                 ? t("lossAnalysis.triggers.margin")
                                 : t("lossAnalysis.triggers.insufficientData")}
-                          </span>
+                          </DeskBadge>
                         ))}
                       </div>
                       <div className="dashboardLossMeta">
@@ -1350,10 +1351,10 @@ export default function Page() {
               )}
 
               <div className="dashboardLossAnalysisFooter">
-                <Link href={withLocalePath("/settings/risk", locale)} className="btn">
+                <DeskLink href={withLocalePath("/settings/risk", locale)} className="btn">
                   <AppIcon name="risk" />
                   {t("lossAnalysis.openRiskSettings")}
-                </Link>
+                </DeskLink>
               </div>
             </aside>
           </div>
@@ -1367,10 +1368,10 @@ export default function Page() {
         <DeskSurface><div className="card dashboardInsightCard dashboardCalendarProCard dashboardWidgetCardFill">
           <div className="dashboardCalendarProHead">
             <div className="dashboardCalendarProTitle">{t("calendar.title")}</div>
-            <Link href={withLocalePath("/calendar", locale)} className="btn">
+            <DeskLink href={withLocalePath("/calendar", locale)} className="btn">
               <AppIcon name="calendar" />
               {t("calendar.open")}
-            </Link>
+            </DeskLink>
           </div>
           <div className="dashboardWidgetScrollArea">
             {calendarLoadError ? (
@@ -1386,7 +1387,7 @@ export default function Page() {
                 </div>
                 {calendarEvents.slice(0, 5).map((event) => (
                   <div key={event.id} className="dashboardCalendarProRow">
-                    <span className={`badge ${
+                    <DeskBadge className={`badge ${
                       event.impact === "high"
                         ? "calendarImpactBadgeHigh"
                         : event.impact === "medium"
@@ -1394,7 +1395,7 @@ export default function Page() {
                           : "calendarImpactBadgeLow"
                     }`}>
                       {event.impact.toUpperCase()}
-                    </span>
+                    </DeskBadge>
                     <span className="dashboardCalendarProMeta">
                       {new Date(event.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {event.title}
                     </span>
@@ -1414,18 +1415,18 @@ export default function Page() {
           <div className="dashboardNewsProHead">
             <div className="dashboardNewsProTitle">{t("news.intelligenceTitle")}</div>
             {accessVisibility.marketIntelligence ? (
-              <Link href={withLocalePath("/market-intelligence", locale)} className="btn">
+              <DeskLink href={withLocalePath("/market-intelligence", locale)} className="btn">
                 <AppIcon name="performance" />
                 {t("news.openIntelligence")}
-              </Link>
+              </DeskLink>
             ) : null}
           </div>
           <div className="dashboardWidgetScrollArea">
             {accessVisibility.marketIntelligence && marketSummary ? (
               <div className="dashboardMarketSummaryStrip">
-                <span className="badge">{t("news.risk")}: {marketSummary.summary.overallRisk}</span>
-                <span className="badge">{t("news.tone")}: {marketSummary.summary.sentiment}</span>
-                {marketSummary.meta.degraded ? <span className="badge">{t("news.dataIncomplete")}</span> : null}
+                <DeskBadge className="badge">{t("news.risk")}: {marketSummary.summary.overallRisk}</DeskBadge>
+                <DeskBadge className="badge">{t("news.tone")}: {marketSummary.summary.sentiment}</DeskBadge>
+                {marketSummary.meta.degraded ? <DeskBadge className="badge">{t("news.dataIncomplete")}</DeskBadge> : null}
                 {marketSummary.summary.highlights[0] ? (
                   <strong>{marketSummary.summary.highlights[0].headline}</strong>
                 ) : null}
@@ -1448,10 +1449,10 @@ export default function Page() {
                     className="dashboardNewsProRow"
                   >
                     <div className="dashboardNewsProBadges">
-                      <span className={`badge ${item.feed === "crypto" ? "newsBadgeCrypto" : "newsBadgeGeneral"}`}>
+                      <DeskBadge className={`badge ${item.feed === "crypto" ? "newsBadgeCrypto" : "newsBadgeGeneral"}`}>
                         {item.feed.toUpperCase()}
-                      </span>
-                      {item.symbol ? <span className="badge">{item.symbol}</span> : null}
+                      </DeskBadge>
+                      {item.symbol ? <DeskBadge className="badge">{item.symbol}</DeskBadge> : null}
                     </div>
                     <div className="dashboardNewsProContent">
                       <span className="dashboardNewsProTime">
@@ -1504,10 +1505,10 @@ export default function Page() {
               <p style={{ color: "var(--muted)", marginTop: 0 }}>
                 {t("empty.description")}
               </p>
-              <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
+              <DeskLink href={withLocalePath("/settings", locale)} className="btn btnPrimary">
                 <AppIcon name="settings" />
                 {t("empty.cta")}
-              </Link>
+              </DeskLink>
             </div></DeskSurface>
           ) : (
             <div className="exchangeOverviewGrid">
@@ -1533,10 +1534,10 @@ export default function Page() {
               <div className="dashboardBotOverviewTitle">{t("botsOverview.title")}</div>
               <div className="dashboardBotOverviewSubtitle">{t("botsOverview.subtitle")}</div>
             </div>
-            <Link href={withLocalePath("/bots", locale)} className="btn">
+            <DeskLink href={withLocalePath("/bots", locale)} className="btn">
               <AppIcon name="bots" />
               {t("botsOverview.open")}
-            </Link>
+            </DeskLink>
           </div>
 
           <div className="dashboardWidgetScrollArea">
@@ -1576,9 +1577,9 @@ export default function Page() {
                             {item.symbol} · {item.exchangeAccount?.label ?? item.exchange.toUpperCase()}
                           </span>
                         </div>
-                        <span className={botStatusBadgeClass(item.status)}>
+                        <DeskBadge className={botStatusBadgeClass(item.status)}>
                           {formatCompactStatus(item.status)}
-                        </span>
+                        </DeskBadge>
                       </div>
                       <div className="dashboardBotOverviewMetrics">
                         <div className="dashboardBotOverviewMetric">
@@ -1648,10 +1649,10 @@ export default function Page() {
               <div className="dashboardBotOverviewTitle">{t("gridBotsOverview.title")}</div>
               <div className="dashboardBotOverviewSubtitle">{t("gridBotsOverview.subtitle")}</div>
             </div>
-            <Link href={withLocalePath("/bots/grid", locale)} className="btn">
+            <DeskLink href={withLocalePath("/bots/grid", locale)} className="btn">
               <AppIcon name="gridBots" />
               {t("gridBotsOverview.open")}
-            </Link>
+            </DeskLink>
           </div>
 
           <div className="dashboardWidgetScrollArea">
@@ -1691,9 +1692,9 @@ export default function Page() {
                             {item.template?.symbol ?? "—"} · {item.bot?.exchangeAccount?.label ?? item.bot?.exchange ?? "Grid"}
                           </span>
                         </div>
-                        <span className={botStatusBadgeClass(item.state)}>
+                        <DeskBadge className={botStatusBadgeClass(item.state)}>
                           {formatCompactStatus(item.state)}
-                        </span>
+                        </DeskBadge>
                       </div>
                       <div className="dashboardBotOverviewMetrics">
                         <div className="dashboardBotOverviewMetric">
@@ -1810,10 +1811,10 @@ export default function Page() {
               <div className="dashboardAffiliateProfitshareTitle">{t("affiliateProfitshare.title")}</div>
               <div className="dashboardAffiliateProfitshareSubtitle">{t("affiliateProfitshare.subtitle")}</div>
             </div>
-            <Link href={withLocalePath("/settings/affiliate", locale)} className="btn">
+            <DeskLink href={withLocalePath("/settings/affiliate", locale)} className="btn">
               <AppIcon name="money" />
               {t("affiliateProfitshare.open")}
-            </Link>
+            </DeskLink>
           </div>
 
           <div className="dashboardAffiliateProfitshareBody dashboardWidgetScrollArea">

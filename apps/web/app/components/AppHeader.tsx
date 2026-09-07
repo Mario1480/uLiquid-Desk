@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { GlassAvatar, GlassAvatarFallback } from "@/components/einui/liquid-glass/glass-avatar";
 import { DeskButton } from "@/components/desk/DeskButton";
@@ -648,7 +649,7 @@ export default function AppHeader({
               aria-label={tHeader("alertsMenu")}
             >
               <AppIcon name="alerts" />
-              {alertCount > 0 ? <span className="appHeaderBellBadge">{alertCount}</span> : null}
+              {alertCount > 0 ? <DeskBadge className="appHeaderBellBadge">{alertCount}</DeskBadge> : null}
             </DeskButton>
             {openMenu === "alerts" ? (
               <div

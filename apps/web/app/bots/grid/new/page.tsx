@@ -1,10 +1,11 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -596,9 +597,9 @@ function GridBotsCreatePageContent() {
               <div style={{ fontWeight: 700 }}>{tGrid("provisioningStatusTitle")}</div>
               <div className="settingsMutedText">{tGrid("provisioningInstanceLine", { id: createdInstance.id })}</div>
             </div>
-            <span className={`badge ${provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "success" ? "badgeOk" : provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "warning" ? "badgeWarn" : "badge"}`}>
+            <DeskBadge className={`badge ${provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "success" ? "badgeOk" : provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "warning" ? "badgeWarn" : "badge"}`}>
               {provisioningPhaseLabel(createdInstance.provisioningStatus.phase, tGrid)}
-            </span>
+            </DeskBadge>
           </div>
           <div className="settingsMutedText" style={{ marginTop: 10 }}>
             {createdInstance.provisioningStatus.walletSignatureRequired
@@ -715,9 +716,9 @@ function GridBotsCreatePageContent() {
                     <div className="settingsMutedText" style={{ marginBottom: 10 }}>
                       {tGrid("noExecutionAccountsHint", { exchanges: [...allowedGridExchanges].join(", ") })}
                     </div>
-                    <Link href="/settings" className="btn">
+                    <DeskLink href="/settings" className="btn">
                       {tGrid("openExchangeSettings")}
-                    </Link>
+                    </DeskLink>
                   </div></DeskSurface>
                 ) : null}
                 <label>
@@ -780,7 +781,7 @@ function GridBotsCreatePageContent() {
               <DeskSurface dense><div className="card" style={{ padding: 12, borderColor: previewInsufficient ? "#ef4444" : liqRiskActive ? "#f59e0b" : "var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                   <strong>{tGrid("previewTitle")}</strong>
-                  {previewLoading ? <span className="badge badgeWarn">{tGrid("previewUpdating")}</span> : previewInsufficient ? <span className="badge badgeDanger">{tGrid("previewInsufficient")}</span> : preview ? <span className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</span> : <span className="badge">{tGrid("previewWaiting")}</span>}
+                  {previewLoading ? <DeskBadge className="badge badgeWarn">{tGrid("previewUpdating")}</DeskBadge> : previewInsufficient ? <DeskBadge className="badge badgeDanger">{tGrid("previewInsufficient")}</DeskBadge> : preview ? <DeskBadge className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</DeskBadge> : <DeskBadge className="badge">{tGrid("previewWaiting")}</DeskBadge>}
                 </div>
 
                 <div className="settingsMutedText" style={{ marginBottom: 10 }}>{tGrid("previewOnlyHint")}</div>

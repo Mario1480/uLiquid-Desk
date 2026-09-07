@@ -13,7 +13,7 @@ const glassBadgeVariants = cva(
     variants: {
       variant: {
         default: "ein:bg-white/15 ein:border-white/25 ein:text-white",
-        primary: cn("ein:bg-linear-to-r ein:from-cyan-500/30 ein:to-blue-500/30", "ein:border-cyan-400/30 ein:text-cyan-100"),
+        primary: cn("ein:bg-blue-500/20", "ein:border-cyan-400/30 ein:text-cyan-100"),
         success: cn("ein:bg-emerald-500/20 ein:border-emerald-400/30 ein:text-emerald-100"),
         warning: cn("ein:bg-amber-500/20 ein:border-amber-400/30 ein:text-amber-100"),
         destructive: cn("ein:bg-red-500/20 ein:border-red-400/30 ein:text-red-100"),
@@ -34,10 +34,10 @@ const glassBadgeVariants = cva(
 
 export interface GlassBadgeProps
   extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof glassBadgeVariants> { nativeLayout?: boolean }
+    VariantProps<typeof glassBadgeVariants> { nativeLayout?: boolean; ref?: React.Ref<HTMLSpanElement> }
 
 function GlassBadge({ nativeLayout, className, variant, size, ...props }: GlassBadgeProps) {
-  return <span className={cn(nativeLayout ? "ein-native-badge" : glassBadgeVariants({ variant, size }), className)} {...props} />
+  return <span data-ein-badge="true" data-ein-badge-tone={variant || "default"} className={cn(nativeLayout ? "ein-native-badge" : glassBadgeVariants({ variant, size }), className)} {...props} />
 }
 
 export { GlassBadge, glassBadgeVariants }

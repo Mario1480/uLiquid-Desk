@@ -1,11 +1,12 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskTable } from "@/components/desk/DeskTable";
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { apiGet, apiPost, apiPut } from "../../lib/api";
@@ -800,14 +801,14 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 {busyAction === "end" ? tGrid("loading") : tGrid("end")}
               </DeskButton>
             ) : null}
-            <Link href={withLocalePath("/bots/catalog", locale)} className="btn">
+            <DeskLink href={withLocalePath("/bots/catalog", locale)} className="btn">
               <AppIcon name="back" />
               {tGrid("backMarketplace")}
-            </Link>
-            <Link href={withLocalePath("/bots", locale)} className="btn">
+            </DeskLink>
+            <DeskLink href={withLocalePath("/bots", locale)} className="btn">
               <AppIcon name="back" />
               {tGrid("backBots")}
-            </Link>
+            </DeskLink>
           </div>
         </div>
       ) : null}
@@ -824,10 +825,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               </div>
             </div>
             <div className="gridRunningCardBadges">
-              <span className="gridRunningModeBadge">
+              <DeskBadge className="gridRunningModeBadge">
                 {detail.template?.mode ?? "grid"} {Number.isFinite(Number(detail.leverage ?? NaN)) ? `${formatNumber(detail.leverage, 0)}x` : ""}
-              </span>
-              <span className={`badge ${detail.state === "running" ? "badgeOk" : detail.state === "paused" || detail.state === "funding_pending" ? "badgeWarn" : "badge"}`}>{detail.state}</span>
+              </DeskBadge>
+              <DeskBadge className={`badge ${detail.state === "running" ? "badgeOk" : detail.state === "paused" || detail.state === "funding_pending" ? "badgeWarn" : "badge"}`}>{detail.state}</DeskBadge>
             </div>
           </div>
           {detail.state === "archived" ? (
@@ -1038,16 +1039,16 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 Locked at: {formatDateTime(feeConfigSummary?.feeConfigLockedAt ?? null)}.
               </div>
 	              <div className="botsDetailToolbar" style={{ marginTop: 10 }}>
-	                <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
+	                <DeskLink className="btn" href={withLocalePath("/settings/affiliate", locale)}>
 	                  <AppIcon name="money" />
 	                  Open Affiliate Dashboard
-	                </Link>
+	                </DeskLink>
                   <HyperEvmAddressLink address={feeConfigSummary?.affiliateRecipientAddress} label="View Affiliate" />
 	                {isAdminViewer ? (
-	                  <Link className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
+	                  <DeskLink className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
 	                    <AppIcon name="admin" />
 	                    Open Admin Vault Execution
-	                  </Link>
+	                  </DeskLink>
 	                ) : null}
               </div>
             </section>
@@ -1331,7 +1332,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   const distancePct = distancePctFromMark(row.price, currentPositionMark);
                   return (
                     <div key={row.id} className="gridPlacedRow gridPlacedRowBuy">
-                      <span className="gridPlacedBadge gridPlacedBadgeBuy">{index + 1}</span>
+                      <DeskBadge className="gridPlacedBadge gridPlacedBadgeBuy">{index + 1}</DeskBadge>
                       <div className="gridPlacedPriceBlock">
                         <div className="gridPlacedPrice">{formatNumber(row.price, 2)}</div>
                         <div className="gridPlacedQty">{formatNumber(row.qty, 6)}</div>
@@ -1358,7 +1359,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                         <div className="gridPlacedPrice">{formatNumber(row.price, 2)}</div>
                         <div className="gridPlacedQty">{formatNumber(row.qty, 6)}</div>
                       </div>
-                      <span className="gridPlacedBadge gridPlacedBadgeSell">{index + 1}</span>
+                      <DeskBadge className="gridPlacedBadge gridPlacedBadgeSell">{index + 1}</DeskBadge>
                     </div>
                   );
                 })}

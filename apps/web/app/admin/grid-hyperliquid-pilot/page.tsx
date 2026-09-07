@@ -1,7 +1,7 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../../lib/api";
@@ -83,9 +83,9 @@ export default function AdminGridHyperliquidPilotPage() {
       <div className="adminPageIntro">{t("subtitle")}</div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Link className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
+        <DeskLink className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
           {t("backToVaultExecution")}
-        </Link>
+        </DeskLink>
       </div>
 
       {loading ? <div className="settingsMutedText">{tCommon("loading")}</div> : null}

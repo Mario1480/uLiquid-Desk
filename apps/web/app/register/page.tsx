@@ -1,8 +1,10 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskLink } from "@/components/desk/DeskLink";
 
-import { DeskButton } from "@/components/desk/DeskButton";
-import { DeskInput } from "@/components/desk/DeskInput";
-import { DeskSurface } from "@/components/desk/DeskSurface";
+import { GlassButton } from "@/components/einui/liquid-glass/glass-button";
+import { GlassInput } from "@/components/einui/liquid-glass/glass-input";
+import { GlassAuthFrame } from "@/components/einui/auth-frame";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -136,22 +138,20 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="container authPage">
-      <h1 className="authHeading">{t("createAccountTitle")}</h1>
-      <DeskSurface><div className="card authCard">
+    <GlassAuthFrame title={t("createAccountTitle")} icon={<AppIcon name="register" />} notice={step === "verify" || registrationEnabled === true ? <LegalRiskNotice /> : null}>
         {step === "register" && registrationEnabled !== true ? (
           <div className="authForm">
             <p role="status">{registrationUnavailable ? t("errors.registration_unavailable") : registrationEnabled === false ? t("errors.registration_disabled") : t("registrationLoading")}</p>
-            <Link href={withLocalePath("/login", locale)} className="btn">
+            <DeskLink href={withLocalePath("/login", locale)} className="btn">
               <AppIcon name="back" /> {t("backToLogin")}
-            </Link>
+            </DeskLink>
           </div>
         ) : <>
-        <LegalRiskNotice />
         <form onSubmit={submit} className="authForm">
           <div className="authHoneypot" aria-hidden="true">
             <label htmlFor="companyWebsite">Company website</label>
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               id="companyWebsite"
               name="companyWebsite"
               type="text"
@@ -163,7 +163,8 @@ export default function RegisterPage() {
           </div>
           <label className="authLabel">
             {t("email")}
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="email"
               value={email}
@@ -175,7 +176,8 @@ export default function RegisterPage() {
           </label>
           <label className="authLabel">
             Referral Code
-            <DeskInput
+            <GlassInput
+              glowOnFocus={false}
               className="input"
               type="text"
               value={referralCode}
@@ -188,7 +190,8 @@ export default function RegisterPage() {
             <>
               <label className="authLabel">
                 {t("password")}
-                <DeskInput
+                <GlassInput
+              glowOnFocus={false}
                   className="input"
                   type="password"
                   value={password}
@@ -199,11 +202,10 @@ export default function RegisterPage() {
                 />
               </label>
               <div className="authLegalCheckbox">
-                <DeskInput
+                <DeskCheckbox
                   id="legalAcknowledgement"
-                  type="checkbox"
                   checked={legalAcknowledged}
-                  onChange={(event) => setLegalAcknowledged(event.target.checked)}
+                  onCheckedChange={(checked) => setLegalAcknowledged(checked)}
                   required
                 />
                 <label htmlFor="legalAcknowledgement">
@@ -220,7 +222,8 @@ export default function RegisterPage() {
               <div className="authMessage">{t("verificationHint")}</div>
               <label className="authLabel">
                 {t("verificationCode")}
-                <DeskInput
+                <GlassInput
+              glowOnFocus={false}
                   className="input"
                   type="text"
                   value={code}
@@ -233,35 +236,34 @@ export default function RegisterPage() {
             </>
           )}
           <div className="authActions">
-            <DeskButton
+            <GlassButton
               className="btn btnPrimary"
               type="submit"
               disabled={step === "register" ? (!email || password.length < 8 || !legalAcknowledged) : (!email || code.length !== 6)}
             >
               <AppIcon name={step === "register" ? "register" : "check"} />
               {step === "register" ? t("registerButton") : t("verifyEmailButton")}
-            </DeskButton>
+            </GlassButton>
             {step === "verify" ? (
-              <DeskButton className="btn" type="button" disabled={!email} onClick={() => void resendCode()}>
+              <GlassButton className="btn" type="button" disabled={!email} onClick={() => void resendCode()}>
                 <AppIcon name="mail" />
                 {t("resendVerificationCode")}
-              </DeskButton>
+              </GlassButton>
             ) : null}
-            <Link href={withLocalePath("/login", locale)} className="btn">
+            <DeskLink href={withLocalePath("/login", locale)} className="btn">
               <AppIcon name="back" />
               {t("backToLogin")}
-            </Link>
-            <span className="authStatus">{status}</span>
+            </DeskLink>
+            <span className="authStatus" role="status">{status}</span>
           </div>
           {devCode ? (
             <div className="authDevCode">
               {t("devVerificationCode")}: <b>{devCode}</b>
             </div>
           ) : null}
-          {error ? <div className="authError">{error}</div> : null}
+          {error ? <div className="authError" role="alert">{error}</div> : null}
         </form>
         </>}
-      </div></DeskSurface>
-    </div>
+    </GlassAuthFrame>
   );
 }

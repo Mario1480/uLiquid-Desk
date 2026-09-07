@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -569,7 +570,7 @@ export default function CalendarPage() {
                         <span className="calendarProEventTitle" title={event.title}>{event.title}</span>
                       </td>
                       <td>
-                        <span className={`badge ${impactClass(event.impact)}`}>{t(`impact.${event.impact}`)}</span>
+                        <DeskBadge className={`badge ${impactClass(event.impact)}`}>{t(`impact.${event.impact}`)}</DeskBadge>
                       </td>
                       <td>
                         <div className="calendarProCurrencyCell">
@@ -592,7 +593,7 @@ export default function CalendarPage() {
                 <DeskSurface><article key={event.id} className="card calendarProMobileCard">
                   <div className="calendarProMobileHead">
                     <div className="calendarProMobileTitle">{event.title}</div>
-                    <span className={`badge ${impactClass(event.impact)}`}>{t(`impact.${event.impact}`)}</span>
+                    <DeskBadge className={`badge ${impactClass(event.impact)}`}>{t(`impact.${event.impact}`)}</DeskBadge>
                   </div>
                   <div className="calendarProMobileMeta">
                     {fmtDateTimeEu(event.ts, dateLocale)} · {event.country} · {event.currency}

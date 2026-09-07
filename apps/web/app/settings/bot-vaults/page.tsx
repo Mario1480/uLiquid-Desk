@@ -1,8 +1,9 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
@@ -243,10 +244,10 @@ export default function SettingsBotVaultsPage() {
         description={t("description")}
         actions={(
           <>
-            <Link className="btn" href={withLocalePath("/settings", locale)}>
+            <DeskLink className="btn" href={withLocalePath("/settings", locale)}>
               <AppIcon name="back" />
               {tCommon("backToSettings")}
-            </Link>
+            </DeskLink>
             <DeskButton className="btn" type="button" onClick={() => void loadOverview()} disabled={loading}>
               <AppIcon name="refresh" />
               {loading ? tCommon("loading") : tCommon("reload")}
@@ -270,35 +271,35 @@ export default function SettingsBotVaultsPage() {
         <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-info">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.total")}</span>
-            <span className="settingsSummaryBadge settingsSummaryBadge-info">{t("summary.vaults")}</span>
+            <DeskBadge className="settingsSummaryBadge settingsSummaryBadge-info">{t("summary.vaults")}</DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{loading && !counts ? tCommon("loading") : counts?.total ?? 0}</strong>
         </div></DeskSurface>
         <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-info">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.inUse")}</span>
-            <span className="settingsSummaryBadge settingsSummaryBadge-info">{usageLabel("in_use")}</span>
+            <DeskBadge className="settingsSummaryBadge settingsSummaryBadge-info">{usageLabel("in_use")}</DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{counts?.in_use ?? 0}</strong>
         </div></DeskSurface>
         <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-success">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.unused")}</span>
-            <span className="settingsSummaryBadge settingsSummaryBadge-success">{usageLabel("unused")}</span>
+            <DeskBadge className="settingsSummaryBadge settingsSummaryBadge-success">{usageLabel("unused")}</DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{counts?.unused ?? 0}</strong>
         </div></DeskSurface>
         <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-danger">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.errors")}</span>
-            <span className="settingsSummaryBadge settingsSummaryBadge-danger">{usageLabel("error")}</span>
+            <DeskBadge className="settingsSummaryBadge settingsSummaryBadge-danger">{usageLabel("error")}</DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{counts?.error ?? 0}</strong>
         </div></DeskSurface>
         <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-warning">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.capital")}</span>
-            <span className="settingsSummaryBadge settingsSummaryBadge-warning">{t("summary.tracked")}</span>
+            <DeskBadge className="settingsSummaryBadge settingsSummaryBadge-warning">{t("summary.tracked")}</DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{formatUsd(totals?.capitalUsd)}</strong>
           <small className="settingsSummaryMeta">{t("summary.residual", { amount: formatUsd(totals?.residualCapitalUsd) })}</small>
@@ -306,7 +307,7 @@ export default function SettingsBotVaultsPage() {
         <DeskSurface><div className="uiMetricTile settingsSummaryTile settingsSummaryTile-success">
           <div className="settingsSummaryTop">
             <span className="settingsSummaryLabel">{t("summary.manualEmpty")}</span>
-            <span className="settingsSummaryBadge settingsSummaryBadge-success">{t("summary.available")}</span>
+            <DeskBadge className="settingsSummaryBadge settingsSummaryBadge-success">{t("summary.available")}</DeskBadge>
           </div>
           <strong className="settingsSummaryValue">{counts?.manualEmptyAvailable ?? 0}</strong>
           <small className="settingsSummaryMeta">{t("summary.claimable", { amount: formatUsd(totals?.claimableProfitUsd) })}</small>
@@ -354,7 +355,7 @@ export default function SettingsBotVaultsPage() {
                     <span>{item.contractVersion ? `BotVault ${String(item.contractVersion).toUpperCase()}` : item.vaultModel ?? "BotVault"}</span>
                   </div>
                   <div className="settingsBotVaultStatusCell" role="cell">
-                    <span className={`settingsBotVaultBadge settingsBotVaultBadge-${tone}`}>{usageLabel(item.usageState)}</span>
+                    <DeskBadge className={`settingsBotVaultBadge settingsBotVaultBadge-${tone}`}>{usageLabel(item.usageState)}</DeskBadge>
                     <span className="settingsMutedText">{item.executionStatus ?? item.status ?? "-"}</span>
                   </div>
                   <div className="settingsBotVaultMoneyCell" role="cell">

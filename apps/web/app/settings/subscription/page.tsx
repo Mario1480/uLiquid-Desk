@@ -1,4 +1,6 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -265,7 +267,7 @@ export default function SubscriptionPage() {
                         <span className="subscriptionPricingPlan">{t(`license.plans.${plan.plan}`)}</span>
                         <p>{plan.description}</p>
                       </div>
-                      {current ? <span className="badge">{t("pricing.current")}</span> : null}
+                      {current ? <DeskBadge className="badge">{t("pricing.current")}</DeskBadge> : null}
                     </div>
                     <div className="subscriptionPricingPrice">
                       <strong>{centsToCurrency(plan.priceCents)}</strong>
@@ -287,10 +289,10 @@ export default function SubscriptionPage() {
                       </div>
                     ) : null}
                     {canOpenCheckout ? (
-                      <Link href={`${withLocalePath("/settings/subscription/order", locale)}?plan=${encodeURIComponent(plan.plan)}`} className="btn btnPrimary subscriptionPricingAction">
+                      <DeskLink href={`${withLocalePath("/settings/subscription/order", locale)}?plan=${encodeURIComponent(plan.plan)}`} className="btn btnPrimary subscriptionPricingAction">
                         <AppIcon name="billing" />
                         {plan.plan === "premium" ? t("pricing.upgradePremium") : t("pricing.upgradePro")}
-                      </Link>
+                      </DeskLink>
                     ) : current ? (
                       <span className="subscriptionPricingUnavailable">{t("pricing.activePlan")}</span>
                     ) : (
@@ -312,13 +314,13 @@ export default function SubscriptionPage() {
             <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardHead">
                 <div className="subscriptionCardTitle">{t("license.cards.status")}</div>
-                <span className={`subscriptionStatusBadge ${model.status === "active" ? "subscriptionStatusBadgeActive" : model.status === "grace" ? "subscriptionStatusBadgeGrace" : "subscriptionStatusBadgeInactive"}`}>
+                <DeskBadge className={`subscriptionStatusBadge ${model.status === "active" ? "subscriptionStatusBadgeActive" : model.status === "grace" ? "subscriptionStatusBadgeGrace" : "subscriptionStatusBadgeInactive"}`}>
                   {model.status === "active"
                     ? t("license.states.active")
                     : model.status === "grace"
                       ? t("license.states.grace")
                       : t("license.states.inactive")}
-                </span>
+                </DeskBadge>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.plan")}</span>
@@ -401,18 +403,18 @@ export default function SubscriptionPage() {
             <DeskSurface><div className="card subscriptionPortalCard">
               <div className="subscriptionCardTitle">{t("license.cards.features")}</div>
               <div className="subscriptionFeatureWrap">
-                <span className={`subscriptionFeatureBadge ${model.features.proPlan ? "subscriptionFeatureBadgeOn" : ""}`}>
+                <DeskBadge className={`subscriptionFeatureBadge ${model.features.proPlan ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.proPlan")}
-                </span>
-                <span className={`subscriptionFeatureBadge ${model.features.premiumPlan ? "subscriptionFeatureBadgeOn" : ""}`}>
+                </DeskBadge>
+                <DeskBadge className={`subscriptionFeatureBadge ${model.features.premiumPlan ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.premiumPlan")}
-                </span>
-                <span className={`subscriptionFeatureBadge ${model.features.aiBillingEnabled ? "subscriptionFeatureBadgeOn" : ""}`}>
+                </DeskBadge>
+                <DeskBadge className={`subscriptionFeatureBadge ${model.features.aiBillingEnabled ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.aiBilling")}
-                </span>
-                <span className={`subscriptionFeatureBadge ${model.features.addonsAvailable ? "subscriptionFeatureBadgeOn" : ""}`}>
+                </DeskBadge>
+                <DeskBadge className={`subscriptionFeatureBadge ${model.features.addonsAvailable ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.capacityTopup")}
-                </span>
+                </DeskBadge>
               </div>
             </div></DeskSurface>
 
@@ -450,10 +452,10 @@ export default function SubscriptionPage() {
                 <span>{t("license.labels.serverIp")}</span>
                 <span>{model.instance.serverIpAddress ?? "-"}</span>
 	              </div>
-	              <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary subscriptionPortalCardAction">
+	              <DeskLink href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary subscriptionPortalCardAction">
 	                <AppIcon name="billing" />
 	                {t("license.openOrderPage")}
-	              </Link>
+	              </DeskLink>
             </div></DeskSurface>
           </div>
 
@@ -494,10 +496,10 @@ export default function SubscriptionPage() {
                 <div className="subscriptionCardTitle">{t("credits.usageTitle")}</div>
                 <div className="subscriptionPortalMuted">{t("credits.usageDescription")}</div>
               </div>
-              <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn">
+              <DeskLink href={withLocalePath("/settings/subscription/order", locale)} className="btn">
                 <AppIcon name="billing" />
                 {t("credits.buyTopup")}
-              </Link>
+              </DeskLink>
             </div>
             <div className="subscriptionTableScroll">
               <DeskTable className="table subscriptionOrdersTable subscriptionAiUsageTable">
@@ -587,9 +589,9 @@ export default function SubscriptionPage() {
                       <td>{renderOrderPackageCell(order)}</td>
                       <td>{centsToCurrency(order.amountCents, order.currency)}</td>
                       <td>
-                        <span className={`subscriptionStatusPill subscriptionStatusPill${order.status}`}>
+                        <DeskBadge className={`subscriptionStatusPill subscriptionStatusPill${order.status}`}>
                           {t(`orders.statuses.${orderStatusKey(order.status)}`)}
-                        </span>
+                        </DeskBadge>
                       </td>
                       <td>
                         {(order.status === "pending"
@@ -623,10 +625,10 @@ export default function SubscriptionPage() {
               <div className="subscriptionCardTitle">{t("license.upgradeTitle")}</div>
               <div className="subscriptionPortalMuted">{t("license.upgradeDescription")}</div>
 	            </div>
-	            <Link href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary">
+	            <DeskLink href={withLocalePath("/settings/subscription/order", locale)} className="btn btnPrimary">
 	              <AppIcon name="billing" />
 	              {t("license.openOrderPage")}
-	            </Link>
+	            </DeskLink>
           </div></DeskSurface>
         </>
       ) : (

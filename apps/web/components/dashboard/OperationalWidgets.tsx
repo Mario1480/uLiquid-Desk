@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { useEffect, useState } from "react";
@@ -60,11 +61,11 @@ export function BotRadarWidget({
             <strong>{bot.name}</strong>
             <small>{bot.symbol}</small>
           </div>
-          <span
+          <DeskBadge
             className={`uiStatusBadge uiStatusBadge-${bot.state === "error" ? "danger" : ["stale", "margin"].includes(bot.state) ? "warning" : bot.state === "running" ? "success" : "neutral"}`}
           >
             {t(`botRadar.${bot.state}`)}
-          </span>
+          </DeskBadge>
         </Link>
       ))}
       <small>{t("botRadar.scope")}</small>
@@ -144,13 +145,13 @@ export function LiquidationDistanceWidget({
             <strong>
               {row.symbol} · {row.side}
             </strong>
-            <span
+            <DeskBadge
               className={`uiStatusBadge uiStatusBadge-${row.distance === null || degraded ? "neutral" : row.distance <= 5 ? "danger" : row.distance <= 10 ? "warning" : "success"}`}
             >
               {row.distance === null
                 ? t("unknown")
                 : `${row.distance.toFixed(2)}%`}
-            </span>
+            </DeskBadge>
           </div>
           <small>{row.exchangeLabel}</small>
           <div className="dashboardWorkbenchMetrics">

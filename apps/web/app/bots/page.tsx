@@ -1,8 +1,9 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
@@ -186,10 +187,10 @@ function BotsPageContent() {
         title={`${t("title")}${titleSuffix}`}
         description={statusFilter ? t("statusFilter", { status: statusFilter }) : t("allStatuses")}
         actions={
-          <Link href="/bots/new" className="btn btnPrimary">
+          <DeskLink href="/bots/new" className="btn btnPrimary">
             <AppIcon name="create" />
             {t("actions.newBot")}
-          </Link>
+          </DeskLink>
         }
       />
 
@@ -216,10 +217,10 @@ function BotsPageContent() {
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
               {t("emptyHint")}
             </div>
-            <Link href="/bots/new" className="btn btnPrimary">
+            <DeskLink href="/bots/new" className="btn btnPrimary">
               <AppIcon name="create" />
               {t("actions.createBot")}
-            </Link>
+            </DeskLink>
           </div></DeskSurface>
         ) : (
           bots.map((bot) => {
@@ -242,9 +243,9 @@ function BotsPageContent() {
                     {bot.exchangeAccount?.label ?? t("noAccount")} · {bot.exchange} · {bot.symbol}
                   </div>
                 </div>
-                <span className={`badge ${bot.status === "running" ? "badgeOk" : bot.status === "error" ? "badgeDanger" : "badgeWarn"}`}>
+                <DeskBadge className={`badge ${bot.status === "running" ? "badgeOk" : bot.status === "error" ? "badgeDanger" : "badgeWarn"}`}>
                   {bot.status}
-                </span>
+                </DeskBadge>
               </div>
 
               <div className="botMiniMetrics">
@@ -315,10 +316,10 @@ function BotsPageContent() {
               </div>
 
 	              <div className="botCardActions">
-	                <Link href={`/bots/${bot.id}`} className="btn">
+	                <DeskLink href={`/bots/${bot.id}`} className="btn">
 	                  <AppIcon name="open" />
 	                  {t("actions.open")}
-	                </Link>
+	                </DeskLink>
 	                <DeskButton
 	                  className={startStopUi.startClassName}
 	                  onClick={() => void startBot(bot)}

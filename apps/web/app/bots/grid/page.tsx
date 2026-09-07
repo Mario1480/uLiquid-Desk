@@ -1,9 +1,11 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
@@ -348,10 +350,10 @@ function GridBotsDashboardPageContent() {
           <div className="settingsMutedText" style={{ marginBottom: 12 }}>
             {tCommon("licenseGate.body", { feature: "Grid bots" })}
           </div>
-          <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
+          <DeskLink href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
             <AppIcon name="subscription" />
             {tCommon("licenseGate.cta")}
-          </Link>
+          </DeskLink>
         </div></DeskSurface>
       </div>
     );
@@ -419,10 +421,10 @@ function GridBotsDashboardPageContent() {
         title={tGrid("title")}
         description={tGrid("dashboardSubtitle")}
         actions={
-          <Link href={withLocalePath("/bots/catalog", locale)} className="btn btnPrimary">
+          <DeskLink href={withLocalePath("/bots/catalog", locale)} className="btn btnPrimary">
             <AppIcon name="create" />
             {tGrid("newInstance")}
-          </Link>
+          </DeskLink>
         }
       />
 
@@ -443,7 +445,7 @@ function GridBotsDashboardPageContent() {
         density="compact"
         actions={
           <label className="settingsMutedText gridRunningArchiveToggle">
-            <DeskInput type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
+            <DeskSwitch checked={showArchived} onCheckedChange={(checked) => setShowArchived(checked)} />
             <span>{tGrid("showArchived")}</span>
           </label>
         }
@@ -582,17 +584,17 @@ function GridBotsDashboardPageContent() {
                           </div>
                         </div>
                         <div className="gridRunningCardBadges">
-                          <span className="gridRunningModeBadge">{formatModeBadge(instance)}</span>
+                          <DeskBadge className="gridRunningModeBadge">{formatModeBadge(instance)}</DeskBadge>
                           {isHyperVaultDemo ? (
-                            <span className="badge badgeWarn">{tGrid("pilotBadge")}</span>
+                            <DeskBadge className="badge badgeWarn">{tGrid("pilotBadge")}</DeskBadge>
                           ) : null}
                           {instance.botVault?.executionProvider ? (
-                            <span className="badge">{formatVaultExecutionProviderLabel(instance.botVault.executionProvider)}</span>
+                            <DeskBadge className="badge">{formatVaultExecutionProviderLabel(instance.botVault.executionProvider)}</DeskBadge>
                           ) : null}
                           {instance.botVault?.executionStatus ? (
-                            <span className="badge">{instance.botVault.executionStatus}</span>
+                            <DeskBadge className="badge">{instance.botVault.executionStatus}</DeskBadge>
                           ) : null}
-                          <span className={`badge ${instance.state === "running" ? "badgeOk" : instance.state === "paused" || instance.state === "funding_pending" ? "badgeWarn" : "badge"}`}>{instance.state}</span>
+                          <DeskBadge className={`badge ${instance.state === "running" ? "badgeOk" : instance.state === "paused" || instance.state === "funding_pending" ? "badgeWarn" : "badge"}`}>{instance.state}</DeskBadge>
                         </div>
                       </div>
                       <div className="gridRunningHero">

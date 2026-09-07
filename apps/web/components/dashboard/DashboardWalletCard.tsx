@@ -1,8 +1,9 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { GlassSkeleton } from "@/components/einui/liquid-glass/glass-skeleton";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useAccount } from "wagmi";
@@ -93,10 +94,10 @@ function DashboardWalletCardContent() {
         </div>
         <div className="dashboardWalletFooter">
           <div className="dashboardWalletFooterMeta">{t("unavailableFooter")}</div>
-          <Link href={walletHref} className="btn btnPrimary">
+          <DeskLink href={walletHref} className="btn btnPrimary">
             <AppIcon name="wallet" />
             {t("open")}
-          </Link>
+          </DeskLink>
         </div>
       </section></DeskSurface>
     );
@@ -119,10 +120,10 @@ function DashboardWalletCardContent() {
         </div>
         <div className="dashboardWalletFooter">
           <div className="dashboardWalletFooterMeta">{t("unavailableFooter")}</div>
-          <Link href={walletHref} className="btn btnPrimary">
+          <DeskLink href={walletHref} className="btn btnPrimary">
             <AppIcon name="wallet" />
             {t("open")}
-          </Link>
+          </DeskLink>
         </div>
       </section></DeskSurface>
     );
@@ -163,9 +164,9 @@ function DashboardWalletCardContent() {
           <div className="dashboardWalletTitle">{t("title")}</div>
           <div className="dashboardWalletSubtitle">{t("subtitle")}</div>
         </div>
-        <span className={`badge ${networkReady ? "badgeOk" : "badgeWarn"}`}>
+        <DeskBadge className={`badge ${networkReady ? "badgeOk" : "badgeWarn"}`}>
           {networkReady ? t("networkReady") : t("networkMismatch")}
-        </span>
+        </DeskBadge>
       </div>
 
       <div className="dashboardWalletGrid">
@@ -218,10 +219,10 @@ function DashboardWalletCardContent() {
             value: formatUsd(overview.vaultSummary.totalEquityUsd)
           })}
         </div>
-        <Link href={walletHref} className="btn btnPrimary">
+        <DeskLink href={walletHref} className="btn btnPrimary">
           <AppIcon name="wallet" />
           {t("open")}
-        </Link>
+        </DeskLink>
       </div>
     </section></DeskSurface>
   );

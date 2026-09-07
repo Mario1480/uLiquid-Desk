@@ -33,12 +33,16 @@ export interface GlassRadioGroupItemProps extends React.ComponentPropsWithoutRef
 const GlassRadioGroupItem = React.forwardRef<
   React.ElementRef<typeof RadioGroupPrimitive.Item>,
   GlassRadioGroupItemProps
->(({ className, label, id, ...props }, ref) => {
-  const radioId = id || `glass-radio-${props.value}`
+>(({ className, label, id, asChild, children, ...props }, ref) => {
+  const generatedId = React.useId()
+  const radioId = id || generatedId
+
+  if (asChild) return <RadioGroupPrimitive.Item asChild {...props} ref={ref} id={radioId} className={className} data-ein-choice="true">{children}</RadioGroupPrimitive.Item>
 
   return (
-    <div className="ein:flex ein:items-center ein:gap-3">
+    <span className={label ? "ein:inline-flex ein:items-center ein:gap-3" : "ein:contents"}>
       <RadioGroupPrimitive.Item
+        data-ein-control="radio"
         ref={ref}
         id={radioId}
         className={cn(
@@ -72,7 +76,7 @@ const GlassRadioGroupItem = React.forwardRef<
           {label}
         </label>
       )}
-    </div>
+    </span>
   )
 })
 GlassRadioGroupItem.displayName = RadioGroupPrimitive.Item.displayName

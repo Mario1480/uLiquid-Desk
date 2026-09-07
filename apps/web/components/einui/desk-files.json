@@ -7,16 +7,16 @@
     "Native input, textarea, select, table and Slot surface compatibility",
     "Modal focus, command palette semantics and spotlight positioning",
     "CSS-only skeletons and reduced-motion support",
-    "Local pricing fixtures and lazy isolated interactive gallery"
+    "Local pricing fixtures and lazy isolated interactive gallery",
+    "Production auth composition derived from auth templates with caller-owned forms",
+    "Native badge material and semantic tone mapping; native select material",
+    "Central single-tint glass tokens and light/solid variants; shared full/native controls and portal material",
+    "Actual checkbox/switch/radio/select/slider adoption, shared button variants, progress max semantics and expanded form QA"
   ],
   "files": [
     {
-      "path": "IllustrativeControl.tsx",
-      "sha256": "a36c30b98672c24c833277ee1e6f7456e7df91b797d348ce46aa0861b812f2fa"
-    },
-    {
-      "path": "LICENSE",
-      "sha256": "7704ee4a0d901e9b04ed3ab9449d1d4eef09f8a85d1f48797a709864f371d046"
+      "path": "auth-frame.tsx",
+      "sha256": "e2ed610d0ab058a34b41725c14593d8e1ff5f409bbb76b520ed3bbe12e4f3e01"
     },
     {
       "path": "blocks/admin/loading.tsx",
@@ -52,7 +52,7 @@
     },
     {
       "path": "gallery/AdapterContract.tsx",
-      "sha256": "92563bb4035236d97a251ba350ed1f08882f1068bf733bcb1f59d4746581bc1c"
+      "sha256": "f06b8a35927dd0419f120c01af8a9a47d96b56d30b560033b64eb92408475265"
     },
     {
       "path": "gallery/Effects.tsx",
@@ -60,11 +60,11 @@
     },
     {
       "path": "gallery/Gallery.tsx",
-      "sha256": "79ec54652ceff2563ccffe3195d19cfcfcc8106703d50de29c320dcbfc93cf8c"
+      "sha256": "6056a22c413e70ecc6b09af4999ad6e8343ad10e4eeb28209d00838b0fc19f67"
     },
     {
       "path": "gallery/Overlays.tsx",
-      "sha256": "9b621456a0a4cf17c7d809ee12d81fd237cf75bedd780a0db7bb31863cadd5ea"
+      "sha256": "6af905d28a397b4b7f1b933b723870fd0a6bacb243c1d347bc072de4768308a6"
     },
     {
       "path": "gallery/Primitives.tsx",
@@ -77,6 +77,10 @@
     {
       "path": "gallery/Widgets.tsx",
       "sha256": "ed6dd136cee39fd722d180126600294672ef592bd115d4fa8960ccd8f92c3e16"
+    },
+    {
+      "path": "IllustrativeControl.tsx",
+      "sha256": "a36c30b98672c24c833277ee1e6f7456e7df91b797d348ce46aa0861b812f2fa"
     },
     {
       "path": "innovative/glass-command-palette.tsx",
@@ -127,8 +131,12 @@
       "sha256": "f9e7689c6d6484d3f186a1e5750b05306833f9fbd8a52ba654d5a066225d6ed2"
     },
     {
+      "path": "LICENSE",
+      "sha256": "7704ee4a0d901e9b04ed3ab9449d1d4eef09f8a85d1f48797a709864f371d046"
+    },
+    {
       "path": "liquid-glass/glass-alert-dialog.tsx",
-      "sha256": "dd8c12ad0fc0afdd9567f6aed6b37454cc3f00b61c01d69e4ab434e56d20057d"
+      "sha256": "731ee1910d42ef3e9bdcb7771a0928133f1a94cbcf462fc60ecd0021e8bf2c76"
     },
     {
       "path": "liquid-glass/glass-avatar.tsx",
@@ -136,7 +144,7 @@
     },
     {
       "path": "liquid-glass/glass-badge.tsx",
-      "sha256": "d99e70d622904115885a72420de24129bae4da818b5a459c50146de0139979c2"
+      "sha256": "96b08cac8a39bc18997b61bccb77ba4c9848ab4845e1c77945e7725ff6c38eb8"
     },
     {
       "path": "liquid-glass/glass-breadcrumb.tsx",
@@ -144,23 +152,23 @@
     },
     {
       "path": "liquid-glass/glass-button.tsx",
-      "sha256": "5384d4cdb7b95bd7b0a965704e049b1105399d5a5daf4c1fde1d8127904a67e9"
+      "sha256": "f6cfd6c810a6b150847e25a5bdd4e2b200eee259ff014852dd49cec1c8f313fe"
     },
     {
       "path": "liquid-glass/glass-card.tsx",
-      "sha256": "7bbd8cc6b6dda15a6521490ba8b0cb319e0aa765414cea0d8a3d97ffd76967cb"
+      "sha256": "42272e688aef7c390f39908aba98f9fde59f15f8f7e0a9daf1c75fd44f5ca6e4"
     },
     {
       "path": "liquid-glass/glass-checkbox.tsx",
-      "sha256": "40747c0a1c1ef8c68caa687c60de42ef2804aa0fe69f097bdf99ea0e9e25ef05"
+      "sha256": "840714e56f093be43f63c8f770b47cb035c8720c22e217cd7c17cc5d1ea74b78"
     },
     {
       "path": "liquid-glass/glass-dialog.tsx",
-      "sha256": "19acb99104c83a8736eb5ff793966096cb4d7690c65ada8e17c2233a254a0d70"
+      "sha256": "039098c9f846a853002cf1c707c576fe5ecf4b91eccd55f434de9a994203d783"
     },
     {
       "path": "liquid-glass/glass-input.tsx",
-      "sha256": "c3d555b6fb006c96d8d58f6fc5ba10c2b3caafb68a07302ae8cd1fdcdaf07863"
+      "sha256": "c013cd14592e4891d1965328169d04aab5944eadc93f816c8cc930504872f284"
     },
     {
       "path": "liquid-glass/glass-native-select.tsx",
@@ -168,15 +176,15 @@
     },
     {
       "path": "liquid-glass/glass-popover.tsx",
-      "sha256": "2fb08d02a3a8631d91342d25b4d39ca489641039d296a879b431791f1d954e64"
+      "sha256": "ba2ddf87f37c4c7abd1470a025ed30228cca94c4661dfac4638ecdd2bdb2ff95"
     },
     {
       "path": "liquid-glass/glass-progress.tsx",
-      "sha256": "8acc4deb491aa936430f62a45646dee99999a6c798778b0b546dc173eb697739"
+      "sha256": "d6a866947fce889d76c2d8fffbf8f21bef54928de97f9c4ed521aea0b757715d"
     },
     {
       "path": "liquid-glass/glass-radio.tsx",
-      "sha256": "8c3fe56104771a7561f17deb7b71873f32d7c529efc6ec026b10bac77d3caeb6"
+      "sha256": "878a81b274bdb978c01b13c871b0960d816bd6ff75565a5ee008a12af682d1ee"
     },
     {
       "path": "liquid-glass/glass-scroll-area.tsx",
@@ -184,7 +192,7 @@
     },
     {
       "path": "liquid-glass/glass-select.tsx",
-      "sha256": "7986bdd52e5f986d8536d70a3b01f270c1fbadcb0671b43c468d7ac7e27db726"
+      "sha256": "d0a382d0da4c7081ef2de2639c89d0e3907d19a239754dead6b7f586e08826ba"
     },
     {
       "path": "liquid-glass/glass-separator.tsx",
@@ -192,7 +200,7 @@
     },
     {
       "path": "liquid-glass/glass-sheet.tsx",
-      "sha256": "743a69ef2b9ee82b25db656c6e41b7b2caea9d5d90d116c007a1c9d18c970d2b"
+      "sha256": "78f5a7188ecb613262527dacda52b3072acb061e3a8da5b5a7085de2a829a447"
     },
     {
       "path": "liquid-glass/glass-skeleton.tsx",
@@ -200,11 +208,11 @@
     },
     {
       "path": "liquid-glass/glass-slider.tsx",
-      "sha256": "53c4dc22aabdb4d7f09dd6de5e448cdfa44b0392c0c1ca0a919c591139940dd8"
+      "sha256": "63ab3ac2b891bc96459c6a84dffac615f95d0afc3b38d8e26663d6a06b11b52d"
     },
     {
       "path": "liquid-glass/glass-switch.tsx",
-      "sha256": "8ef907dab036614beba0e1a89b524c584a9b08ec78a065c14ff14e4585bddbcd"
+      "sha256": "21ad699f08d2225a67dbe959ac705310ad96e9659cd81c005930643aa904fc6b"
     },
     {
       "path": "liquid-glass/glass-table.tsx",
@@ -216,15 +224,19 @@
     },
     {
       "path": "liquid-glass/glass-textarea.tsx",
-      "sha256": "722e4d84a709b37c76d66b4b4a23837db21119bf83d6b0df87325206123db501"
+      "sha256": "f8fa0fd7a5503d010eca414160da78a2f1f4ee76c1df2a49185ae6fa8b11fd96"
     },
     {
       "path": "liquid-glass/glass-tooltip.tsx",
-      "sha256": "5e13c305d387925f94b48ad3bcc6fdac2465c6a213193412b3584b42d4a62eae"
+      "sha256": "010773da758f09bed6fd93a10bd97301efbe73d2303388bed3a897a40a342764"
     },
     {
       "path": "liquid-glass/index.ts",
       "sha256": "f49e645c419b5c4178de8718535f91d74f02f5c2fd70f88f68f5ae8759ad6216"
+    },
+    {
+      "path": "materials.css",
+      "sha256": "708771413da55657257af8341a4d525205cd2e68df9c4c1f4c6286e67462e79a"
     },
     {
       "path": "portal-theme.tsx",
@@ -240,7 +252,7 @@
     },
     {
       "path": "theme.css",
-      "sha256": "cd93978049bb9806e7d9dcba830aaf25c4f83cc434a570a5054d8cb3d76fd507"
+      "sha256": "b3571500944f6b33721fba7949f8b657cdb3c2e4dd613394429b15f9d80ef093"
     },
     {
       "path": "utils.ts",

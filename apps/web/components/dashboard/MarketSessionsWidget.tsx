@@ -1,4 +1,6 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -105,11 +107,10 @@ export default function MarketSessionsWidget() {
           <div className="dashboardWidgetChoiceGrid">
             {available.map((id) => (
               <label key={id} className="dashboardWidgetChoice">
-                <DeskInput
-                  type="checkbox"
+                <DeskCheckbox
                   checked={draft.includes(id)}
-                  onChange={(event) => setDraft((current) => (
-                    event.target.checked ? [...current, id] : current.filter((item) => item !== id)
+                  onCheckedChange={(checked) => setDraft((current) => (
+                    checked ? [...current, id] : current.filter((item) => item !== id)
                   ))}
                 />
                 <span>{t(`exchanges.${id}`)}</span>
@@ -127,9 +128,9 @@ export default function MarketSessionsWidget() {
           {!loading && sessions.map(({ definition, state }) => (
             <div key={definition.id} className="dashboardMarketSessionRow">
               <div className="dashboardMarketSessionIdentity">
-                <span className={`uiStatusBadge ${state.isOpen ? "uiStatusBadge-success" : "uiStatusBadge-neutral"}`}>
+                <DeskBadge className={`uiStatusBadge ${state.isOpen ? "uiStatusBadge-success" : "uiStatusBadge-neutral"}`}>
                   {state.isOpen ? t("open") : t("closed")}
-                </span>
+                </DeskBadge>
                 <div>
                   <strong>{t(`exchanges.${definition.id}`)}</strong>
                   <span>{state.localTime} · {t(`timeZones.${definition.id}`)}</span>

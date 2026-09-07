@@ -1,4 +1,8 @@
 "use client";
+import { GlassProgress } from "@/components/einui/liquid-glass/glass-progress";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -848,9 +852,9 @@ export default function StrategiesPage() {
                       <h3>{tMain("strategy.builder.describeTitle")}</h3>
                       <p>{tMain("strategy.builder.describeHint")}</p>
                     </div>
-                    <span className="badge">
+                    <DeskBadge className="badge">
                       {strategyChatSending ? tMain("strategy.chat.thinking") : tMain("strategy.chat.status")}
-                    </span>
+                    </DeskBadge>
                   </div>
 
                   <label className="settingsField">
@@ -891,7 +895,7 @@ export default function StrategiesPage() {
                       <strong>{tMain("strategy.chat.title")}</strong>
                       <span>{tMain("strategy.builder.assistantHint")}</span>
                     </div>
-                    {strategyChatMeta ? <span className="badge">{strategyChatMeta.model}</span> : null}
+                    {strategyChatMeta ? <DeskBadge className="badge">{strategyChatMeta.model}</DeskBadge> : null}
                   </div>
 
                   <div className="settingsPromptChatMessages predictionBuilderChatMessages" aria-live="polite">
@@ -958,7 +962,7 @@ export default function StrategiesPage() {
                     <div className="settingsDraftDiff" aria-live="polite">
                       <div className="settingsDraftDiffHeader">
                         <strong>{tMain("strategy.builder.diffTitle")}</strong>
-                        <span className="badge">{strategyDraftProposal.diff.length}</span>
+                        <DeskBadge className="badge">{strategyDraftProposal.diff.length}</DeskBadge>
                       </div>
                       <div className="settingsDraftDiffList">
                         {strategyDraftProposal.diff.slice(0, 5).map((change) => (
@@ -1012,7 +1016,7 @@ export default function StrategiesPage() {
                       <dt>{tMain("strategy.builder.selectedIndicators")}</dt>
                       <dd className="predictionBuilderChipRow">
                         {selectedStrategyIndicators.length > 0
-                          ? selectedStrategyIndicators.map((item) => <span className="predictionBuilderChip" key={item.key}>{item.label}</span>)
+                          ? selectedStrategyIndicators.map((item) => <DeskBadge className="predictionBuilderChip" key={item.key}>{item.label}</DeskBadge>)
                           : <span>{tMain("strategy.builder.noIndicators")}</span>}
                       </dd>
                     </div>
@@ -1064,10 +1068,9 @@ export default function StrategiesPage() {
                         <div className="predictionBuilderChoiceRow">
                           {STRATEGY_TIMEFRAME_OPTIONS.map((timeframe) => (
                             <label className={strategyTimeframes.includes(timeframe) ? "predictionBuilderChoice predictionBuilderChoiceActive" : "predictionBuilderChoice"} key={timeframe}>
-                              <DeskInput
-                                type="checkbox"
+                              <DeskCheckbox
                                 checked={strategyTimeframes.includes(timeframe)}
-                                onChange={() => toggleStrategyTimeframe(timeframe)}
+                                onCheckedChange={() => toggleStrategyTimeframe(timeframe)}
                               />
                               {timeframe}
                             </label>
@@ -1184,7 +1187,7 @@ export default function StrategiesPage() {
                         <h3>{tMain("strategy.builder.indicatorsTitle")}</h3>
                         <p>{tMain("strategy.builder.indicatorsHint")}</p>
                       </div>
-                      <span className="badge">{tMain("strategy.builder.selectedCount", { count: strategyIndicatorKeys.length })}</span>
+                      <DeskBadge className="badge">{tMain("strategy.builder.selectedCount", { count: strategyIndicatorKeys.length })}</DeskBadge>
                     </div>
                     <div className="predictionBuilderIndicatorToolbar">
                       <label className="predictionBuilderIndicatorSearch">
@@ -1214,14 +1217,14 @@ export default function StrategiesPage() {
                           <summary>
                             <span>{group}</span>
                             <span>
-                              <span className="badge">{items.length}</span>
+                              <DeskBadge className="badge">{items.length}</DeskBadge>
                               <AppIcon name="chevronDown" />
                             </span>
                           </summary>
                           <div className="predictionBuilderIndicatorOptions">
                             {items.map((item) => (
                               <label className={strategyIndicatorKeys.includes(item.key) ? "predictionBuilderIndicatorOption predictionBuilderIndicatorOptionActive" : "predictionBuilderIndicatorOption"} key={item.key}>
-                                <DeskInput type="checkbox" checked={strategyIndicatorKeys.includes(item.key)} onChange={() => toggleStrategyIndicator(item.key)} />
+                                <DeskCheckbox checked={strategyIndicatorKeys.includes(item.key)} onCheckedChange={() => toggleStrategyIndicator(item.key)} />
                                 <span>
                                   <strong>{item.label}</strong>
                                   <small>{item.description}</small>
@@ -1258,7 +1261,7 @@ export default function StrategiesPage() {
                       <h3>{tMain("strategy.builder.overviewTitle")}</h3>
                       <p>{strategyName || tMain("strategy.promptNamePlaceholder")}</p>
                     </div>
-                    <span className="badge">v1 · r{strategyDraftRevision}</span>
+                    <DeskBadge className="badge">v1 · r{strategyDraftRevision}</DeskBadge>
                   </div>
                   <div className="predictionBuilderOverviewSummary">
                     <span>{strategyDescription.trim() || tMain("strategy.builder.briefEmpty")}</span>
@@ -1268,7 +1271,7 @@ export default function StrategiesPage() {
                       <span>{tMain("strategy.builder.completeness")}</span>
                       <strong>{tMain("strategy.builder.completenessValue", { complete: strategyCompletionCount, total: strategyCompletionItems.length })}</strong>
                     </div>
-                    <progress value={strategyCompletionCount} max={strategyCompletionItems.length} />
+                    <GlassProgress value={strategyCompletionCount} max={strategyCompletionItems.length} aria-label={tMain("strategy.builder.completeness")} />
                   </div>
                   {strategyCompletionCount < strategyCompletionItems.length ? (
                     <DeskSurface><div className="uiNotice uiNotice-warning predictionBuilderOverviewNotice">
@@ -1378,7 +1381,7 @@ export default function StrategiesPage() {
                       <dt>{tMain("strategy.builder.selectedIndicators")}</dt>
                       <dd className="predictionBuilderChipRow">
                         {selectedStrategyIndicators.length > 0
-                          ? selectedStrategyIndicators.map((item) => <span className="predictionBuilderChip" key={item.key}>{item.label}</span>)
+                          ? selectedStrategyIndicators.map((item) => <DeskBadge className="predictionBuilderChip" key={item.key}>{item.label}</DeskBadge>)
                           : tMain("strategy.builder.noIndicators")}
                       </dd>
                     </div>
@@ -1440,10 +1443,10 @@ export default function StrategiesPage() {
                         <strong>{tMain("strategy.builder.savedTemplateSuccess")}</strong>
                         <span>{strategyLastSavedMeta ? tMain("strategy.resultMeta", { mode: strategyLastSavedMeta.mode, model: strategyLastSavedMeta.model }) : ""}</span>
                       </div>
-                      <Link className="btn" href={withLocalePath("/bots/new?review=1&strategy=prediction_copier", locale)}>
+                      <DeskLink className="btn" href={withLocalePath("/bots/new?review=1&strategy=prediction_copier", locale)}>
                         <AppIcon name="external" />
                         {tMain("strategy.builder.openCopierReview")}
-                      </Link>
+                      </DeskLink>
                     </div>
                   ) : null}
                 </aside>

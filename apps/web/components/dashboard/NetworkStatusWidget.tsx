@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
@@ -90,7 +91,7 @@ export default function NetworkStatusWidget({ accounts }: { accounts: ExchangeAc
                 </span>
               </div>
               <div className="dashboardNetworkStatusMeta">
-                <span className={badgeClass(item.status)}>{t(`status.${item.status}`)}</span>
+                <DeskBadge className={badgeClass(item.status)}>{t(`status.${item.status}`)}</DeskBadge>
                 <small>{item.latencyMs === null ? "—" : `${item.latencyMs} ms`}</small>
               </div>
             </div>
@@ -103,7 +104,7 @@ export default function NetworkStatusWidget({ accounts }: { accounts: ExchangeAc
                 <span>{t("accounts", { count: accounts.length })}</span>
               </div>
               <div className="dashboardNetworkStatusMeta">
-                <span className={badgeClass(connectedExchangeStatus)}>{t(`status.${connectedExchangeStatus}`)}</span>
+                <DeskBadge className={badgeClass(connectedExchangeStatus)}>{t(`status.${connectedExchangeStatus}`)}</DeskBadge>
                 <small>{t("syncedStatus")}</small>
               </div>
             </div>

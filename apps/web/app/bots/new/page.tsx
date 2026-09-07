@@ -1,9 +1,11 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -607,10 +609,10 @@ export default function NewBotPage() {
           <div className="botsSetupEmpty">
             <div className="botsSetupEmptyTitle">{t("noExchangeAccount")}</div>
             <div className="botsSetupEmptyHint">{t("noExchangeAccountHint")}</div>
-            <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
+            <DeskLink href={withLocalePath("/settings", locale)} className="btn btnPrimary">
               <AppIcon name="settings" />
               {t("actions.addExchangeAccount")}
-            </Link>
+            </DeskLink>
           </div>
         ) : (
           <>
@@ -755,7 +757,7 @@ export default function NewBotPage() {
                   </label>
                   <label className="botsNewCheckField" hidden={wizardStep !== "risk"}>
                     <span className="botsNewCheckFieldLabel">{t("fields.enforceReduceOnlyOnClose")}</span>
-                    <DeskInput className="botsNewCheckInput" type="checkbox" checked={commonEnforceReduceOnlyOnClose} onChange={(e) => setCommonEnforceReduceOnlyOnClose(e.target.checked)} />
+                    <DeskCheckbox className="botsNewCheckInput" checked={commonEnforceReduceOnlyOnClose} onCheckedChange={(checked) => setCommonEnforceReduceOnlyOnClose(checked)} />
                   </label>
                 </div>
 
@@ -791,7 +793,7 @@ export default function NewBotPage() {
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stopLossPct")}</span><DeskInput className="input" type="number" min={0} step="0.1" value={dcaStopLossPct} onChange={(e) => setDcaStopLossPct(e.target.value)} /></label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("fields.cancelPendingOnFlip")}</span>
-                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={dcaCancelPendingOnFlip} onChange={(e) => setDcaCancelPendingOnFlip(e.target.checked)} />
+                      <DeskCheckbox className="botsNewCheckInput" checked={dcaCancelPendingOnFlip} onCheckedChange={(checked) => setDcaCancelPendingOnFlip(checked)} />
                     </label>
                   </div>
                 ) : null}
@@ -939,11 +941,11 @@ export default function NewBotPage() {
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.timeStopMin")}</span><DeskInput className="input" type="number" min={0} step="1" value={riskTimeStopMin} onChange={(e) => setRiskTimeStopMin(e.target.value)} /></label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.exitOnSignalFlip")}</span>
-                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={exitOnSignalFlip} onChange={(e) => setExitOnSignalFlip(e.target.checked)} />
+                      <DeskCheckbox className="botsNewCheckInput" checked={exitOnSignalFlip} onCheckedChange={(checked) => setExitOnSignalFlip(checked)} />
                     </label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.exitOnConfidenceDrop")}</span>
-                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={exitOnConfidenceDrop} onChange={(e) => setExitOnConfidenceDrop(e.target.checked)} />
+                      <DeskCheckbox className="botsNewCheckInput" checked={exitOnConfidenceDrop} onCheckedChange={(checked) => setExitOnConfidenceDrop(checked)} />
                     </label>
                   </div>
                 </div></DeskSurface>
@@ -968,26 +970,26 @@ export default function NewBotPage() {
                     </label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.newsRiskBlockEnabled")}</span>
-                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={filtersNewsRiskBlockEnabled} onChange={(e) => setFiltersNewsRiskBlockEnabled(e.target.checked)} />
+                      <DeskSwitch className="botsNewCheckInput" checked={filtersNewsRiskBlockEnabled} onCheckedChange={(checked) => setFiltersNewsRiskBlockEnabled(checked)} />
                     </label>
                     <label className="botsNewCheckField">
                       <span className="botsNewCheckFieldLabel">{t("copier.fields.reduceOnlyOnExit")}</span>
-                      <DeskInput className="botsNewCheckInput" type="checkbox" checked={executionReduceOnlyOnExit} onChange={(e) => setExecutionReduceOnlyOnExit(e.target.checked)} />
+                      <DeskCheckbox className="botsNewCheckInput" checked={executionReduceOnlyOnExit} onCheckedChange={(checked) => setExecutionReduceOnlyOnExit(checked)} />
                     </label>
                   </div>
                   <div className="botsNewSignalRow">
                     <span className="botsNewSignalLabel">{t("copier.fields.allowSignals")}</span>
                     <div className="botsNewSignalOptions">
                       <label className="botsNewSignalOption">
-                        <DeskInput className="botsNewCheckInput" type="checkbox" checked={allowSignalUp} onChange={(e) => setAllowSignalUp(e.target.checked)} />
+                        <DeskCheckbox className="botsNewCheckInput" checked={allowSignalUp} onCheckedChange={(checked) => setAllowSignalUp(checked)} />
                         <span>{t("options.signalUp")}</span>
                       </label>
                       <label className="botsNewSignalOption">
-                        <DeskInput className="botsNewCheckInput" type="checkbox" checked={allowSignalDown} onChange={(e) => setAllowSignalDown(e.target.checked)} />
+                        <DeskCheckbox className="botsNewCheckInput" checked={allowSignalDown} onCheckedChange={(checked) => setAllowSignalDown(checked)} />
                         <span>{t("options.signalDown")}</span>
                       </label>
                       <label className="botsNewSignalOption">
-                        <DeskInput className="botsNewCheckInput" type="checkbox" checked={allowSignalNeutral} onChange={(e) => setAllowSignalNeutral(e.target.checked)} />
+                        <DeskCheckbox className="botsNewCheckInput" checked={allowSignalNeutral} onCheckedChange={(checked) => setAllowSignalNeutral(checked)} />
                         <span>{t("options.signalNeutral")}</span>
                       </label>
                     </div>
@@ -1009,11 +1011,10 @@ export default function NewBotPage() {
                   </div>
                   <label className="botsNewCheckField">
                     <span className="botsNewCheckFieldLabel">{t("copier.confirmReview")}</span>
-                    <DeskInput
+                    <DeskCheckbox
                       className="botsNewCheckInput"
-                      type="checkbox"
                       checked={copierReviewConfirmed}
-                      onChange={(event) => setCopierReviewConfirmed(event.target.checked)}
+                      onCheckedChange={(checked) => setCopierReviewConfirmed(checked)}
                     />
                   </label>
                   <div className="botsSetupInlineHint">{t("copier.activationSeparateHint")}</div>

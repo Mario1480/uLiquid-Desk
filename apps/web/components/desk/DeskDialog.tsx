@@ -10,5 +10,5 @@ export function DeskDialog({children,onClose}: {children:ReactElement;onClose:()
 }
 export function DeskDialogPanel({children,label="Dialog"}: {children:ReactElement;label?:string}) {
  const returnFocus=useContext(FocusReturn);
- return <><Dialog.Title hidden>{label}</Dialog.Title><Dialog.Content asChild aria-describedby={undefined} onInteractOutside={event=>event.preventDefault()} onOpenAutoFocus={()=>{if(returnFocus&&document.activeElement instanceof HTMLElement)returnFocus.current=document.activeElement;}} onCloseAutoFocus={event=>{event.preventDefault();returnFocus?.current?.focus();}}>{children}</Dialog.Content></>;
+ return <><Dialog.Title hidden>{label}</Dialog.Title><Dialog.Content data-ein-overlay="true" asChild aria-describedby={undefined} onInteractOutside={event=>event.preventDefault()} onOpenAutoFocus={()=>{if(returnFocus&&document.activeElement instanceof HTMLElement)returnFocus.current=document.activeElement;}} onCloseAutoFocus={event=>{event.preventDefault();returnFocus?.current?.focus();}}>{children}</Dialog.Content></>;
 }

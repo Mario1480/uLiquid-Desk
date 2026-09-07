@@ -1,4 +1,5 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSurface } from "@/components/desk/DeskSurface";
@@ -206,60 +207,53 @@ export default function AdminVaultSafetyPage() {
             </div>
 
               <label className="adminCheckboxLabel">
-                <DeskInput
-                  type="checkbox"
+                <DeskSwitch
                   checked={haltNewOrders}
-                  onChange={(event) => setHaltNewOrders(event.target.checked)}
+                  onCheckedChange={(checked) => setHaltNewOrders(checked)}
                 />
                 <span>{t("haltNewOrdersLabel")}</span>
               </label>
 
               <div className="adminFilterGrid">
                 <label className="adminCheckboxLabel">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={depositsDisabled}
-                    onChange={(event) => setDepositsDisabled(event.target.checked)}
+                    onCheckedChange={(checked) => setDepositsDisabled(checked)}
                   />
                   <span>Deposits disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={withdrawsDisabled}
-                    onChange={(event) => setWithdrawsDisabled(event.target.checked)}
+                    onCheckedChange={(checked) => setWithdrawsDisabled(checked)}
                   />
                   <span>Withdraws disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={gridStartsDisabled}
-                    onChange={(event) => setGridStartsDisabled(event.target.checked)}
+                    onCheckedChange={(checked) => setGridStartsDisabled(checked)}
                   />
                   <span>Grid starts disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={profitClaimsDisabled}
-                    onChange={(event) => setProfitClaimsDisabled(event.target.checked)}
+                    onCheckedChange={(checked) => setProfitClaimsDisabled(checked)}
                   />
                   <span>Profit claims disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={fundingVaultLaunchesDisabled}
-                    onChange={(event) => setFundingVaultLaunchesDisabled(event.target.checked)}
+                    onCheckedChange={(checked) => setFundingVaultLaunchesDisabled(checked)}
                   />
                   <span>Funding Vault launches disabled</span>
                 </label>
                 <label className="adminCheckboxLabel">
-                  <DeskInput
-                    type="checkbox"
+                  <DeskSwitch
                     checked={fundingVaultWithdrawsDisabled}
-                    onChange={(event) => setFundingVaultWithdrawsDisabled(event.target.checked)}
+                    onCheckedChange={(checked) => setFundingVaultWithdrawsDisabled(checked)}
                   />
                   <span>Funding Vault withdraws disabled</span>
                 </label>

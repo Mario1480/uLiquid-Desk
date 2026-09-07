@@ -1,4 +1,5 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
@@ -385,10 +386,9 @@ export default function AdminAiTracePage() {
 
             <div className="indicatorScopeGrid">
               <label className="inlineCheck">
-                <DeskInput
-                  type="checkbox"
+                <DeskSwitch
                   checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
+                  onCheckedChange={(checked) => setEnabled(checked)}
                 />
                 {t("enableTrace")}
               </label>

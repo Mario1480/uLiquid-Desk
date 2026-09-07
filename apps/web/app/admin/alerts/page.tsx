@@ -1,4 +1,5 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
@@ -109,10 +110,9 @@ export default function AdminAlertsPage() {
           </div>
         </div>
         <label className="adminCheckboxLabel">
-          <DeskInput
-            type="checkbox"
+          <DeskCheckbox
             checked={Boolean(data?.retention?.autoDeleteOlderThan30Days)}
-            onChange={(event) => void updateRetention(event.target.checked)}
+            onCheckedChange={(checked) => void updateRetention(checked)}
             disabled={savingRetention}
           />
           <span>Automatically delete alerts older than 30 days.</span>

@@ -1,4 +1,6 @@
 "use client";
+import { GlassRadioGroup, GlassRadioGroupItem } from "@/components/einui/liquid-glass/glass-radio";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSurface } from "@/components/desk/DeskSurface";
@@ -364,47 +366,39 @@ function AdminVaultExecutionPageContent() {
             </div>
           </div>
 
-          <div className="adminChoiceGrid">
+          <GlassRadioGroup className="adminChoiceGrid" value={mode} onValueChange={(value) => setMode(value as VaultExecutionMode)} name="mode" aria-label={t("sectionTitle")}>
             {(["offchain_shadow", "onchain_simulated", "onchain_live"] as VaultExecutionMode[]).map((entry) => (
               <label
                 key={entry}
                 className={`adminChoiceCard ${mode === entry ? "adminChoiceCardActive" : ""}`.trim()}
               >
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <DeskInput
-                    type="radio"
-                    checked={mode === entry}
-                    onChange={() => setMode(entry)}
-                  />
+                  <GlassRadioGroupItem value={entry}  />
                   <strong>{t(`modes.${entry}.label`)}</strong>
                 </span>
                 <span style={{ color: "var(--muted)", fontSize: 12 }}>{t(`modes.${entry}.hint`)}</span>
               </label>
             ))}
-          </div>
+          </GlassRadioGroup>
 
           <div className="adminDetailSectionDescription" style={{ marginTop: 16, marginBottom: 8 }}>
             {t("providerSourceLabel")}: {settings?.providerSource ?? "env"} · {t("providerLastUpdatedLabel")}: {settings?.providerUpdatedAt ? new Date(settings.providerUpdatedAt).toLocaleString() : t("never")}
           </div>
 
-          <div className="adminChoiceGrid">
+          <GlassRadioGroup className="adminChoiceGrid" value={provider} onValueChange={(value) => setProvider(value as VaultExecutionProvider)} name="provider" aria-label={t("providerSourceLabel")}>
             {(["mock", "hyperliquid_demo", "hyperliquid"] as VaultExecutionProvider[]).map((entry) => (
               <label
                 key={entry}
                 className={`adminChoiceCard ${provider === entry ? "adminChoiceCardActive" : ""}`.trim()}
               >
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <DeskInput
-                    type="radio"
-                    checked={provider === entry}
-                    onChange={() => setProvider(entry)}
-                  />
+                  <GlassRadioGroupItem value={entry}  />
                   <strong>{t(`providers.${entry}.label`)}</strong>
                 </span>
                 <span style={{ color: "var(--muted)", fontSize: 12 }}>{t(`providers.${entry}.hint`)}</span>
               </label>
             ))}
-          </div>
+          </GlassRadioGroup>
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
             <div className="settingsSectionHeader adminDetailSectionHeader" style={{ marginBottom: 8 }}>
@@ -415,7 +409,7 @@ function AdminVaultExecutionPageContent() {
             </div>
             <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("pilot.subtitle")}</div>
             <label className="inlineCheck" style={{ marginBottom: 12 }}>
-              <DeskInput type="checkbox" checked={pilotEnabled} onChange={(event) => setPilotEnabled(event.target.checked)} />
+              <DeskSwitch checked={pilotEnabled} onCheckedChange={(checked) => setPilotEnabled(checked)} />
               <span>{t("pilot.enabledLabel")}</span>
             </label>
             <div className="settingsFormGrid">
@@ -458,7 +452,7 @@ function AdminVaultExecutionPageContent() {
 
           <div className="settingsFormGrid">
             <label className="inlineCheck" style={{ marginTop: 26 }}>
-              <DeskInput type="checkbox" checked={treasuryEnabled} onChange={(event) => setTreasuryEnabled(event.target.checked)} />
+              <DeskSwitch checked={treasuryEnabled} onCheckedChange={(checked) => setTreasuryEnabled(checked)} />
               <span>{t("treasury.enabledLabel")}</span>
             </label>
             <label className="settingsField">

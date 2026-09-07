@@ -1,7 +1,7 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import VaultsIndexClient from "../../components/wallet/VaultsIndexClient";
@@ -43,10 +43,10 @@ export default function VaultsPage() {
           <div className="walletMutedText" style={{ marginBottom: 12 }}>
             {tCommon("licenseGate.body", { feature: "Vaults" })}
 	          </div>
-	          <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
+	          <DeskLink href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
 	            <AppIcon name="subscription" />
 	            {tCommon("licenseGate.cta")}
-	          </Link>
+	          </DeskLink>
         </div></DeskSurface>
       </div>
     );

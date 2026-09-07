@@ -1,4 +1,5 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import Link from "next/link";
@@ -67,10 +68,10 @@ export default function AuthHeader() {
           </ClientErrorBoundary>
 
           {publicPresale ? (
-            <Link className="btn authHeaderDeskLogin" href={withLocalePath("/login", locale)}>
+            <DeskLink className="btn authHeaderDeskLogin" href={withLocalePath("/login", locale)}>
               <AppIcon name="login" />
               {tPresale("deskLogin")}
-            </Link>
+            </DeskLink>
           ) : null}
         </div>
       </div>

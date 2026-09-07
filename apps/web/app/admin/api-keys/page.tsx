@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
@@ -660,7 +661,7 @@ export default function AdminApiKeysPage() {
               {t("lastUpdated")}: {updatedAt ? new Date(updatedAt).toLocaleString() : t("never")}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-              <span
+              <DeskBadge
                 className={`badge ${
                   health?.status === "ok"
                     ? "badgeOk"
@@ -678,7 +679,7 @@ export default function AdminApiKeysPage() {
                     : health?.status === "missing_key" || health?.status === "missing_model"
                       ? t("missingKey")
                       : t("errorStatus")}
-              </span>
+              </DeskBadge>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
                 {t("source")}: {health?.source ?? (envOverride ? "env" : hasAiApiKey ? "db" : "none")}
                 {typeof health?.latencyMs === "number" ? ` · ${health.latencyMs}ms` : ""}
@@ -695,17 +696,17 @@ export default function AdminApiKeysPage() {
             <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.currentProvider")}</span>
               <div>{health?.provider ?? effectiveAiProvider}</div>
-              <span className={`badge ${effectiveAiProviderSource === "env" ? "badgeWarn" : effectiveAiProviderSource === "db" ? "badgeOk" : "badge"}`}>
+              <DeskBadge className={`badge ${effectiveAiProviderSource === "env" ? "badgeWarn" : effectiveAiProviderSource === "db" ? "badgeOk" : "badge"}`}>
                 {effectiveAiProviderSource.toUpperCase()}
-              </span>
+              </DeskBadge>
             </div>
 
             <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("ai.currentBaseUrl")}</span>
               <div style={{ wordBreak: "break-all" }}>{health?.baseUrl ?? effectiveAiBaseUrl}</div>
-              <span className={`badge ${effectiveAiBaseUrlSource === "env" ? "badgeWarn" : effectiveAiBaseUrlSource === "db" ? "badgeOk" : "badge"}`}>
+              <DeskBadge className={`badge ${effectiveAiBaseUrlSource === "env" ? "badgeWarn" : effectiveAiBaseUrlSource === "db" ? "badgeOk" : "badge"}`}>
                 {effectiveAiBaseUrlSource.toUpperCase()}
-              </span>
+              </DeskBadge>
             </div>
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
@@ -771,9 +772,9 @@ export default function AdminApiKeysPage() {
                     <label className="settingsField" key={modelClass}>
                       <span className="settingsFieldLabel adminAiModelRoutingLabel">
                         <span>{t(`ai.modelRouting.classes.${modelClass}.title`)}</span>
-                        <span className={`badge ${openAiModelRoutingSources[modelClass] === "db" ? "badgeOk" : "badge"}`}>
+                        <DeskBadge className={`badge ${openAiModelRoutingSources[modelClass] === "db" ? "badgeOk" : "badge"}`}>
                           {openAiModelRoutingSources[modelClass].toUpperCase()}
-                        </span>
+                        </DeskBadge>
                       </span>
                       <DeskInput
                         className="input"
@@ -847,12 +848,12 @@ export default function AdminApiKeysPage() {
                   {t("ai.saladRuntime.hint")}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                  <span className={`badge ${saladStatusBadgeClass}`}>
+                  <DeskBadge className={`badge ${saladStatusBadgeClass}`}>
                     {t("ai.saladRuntime.statusLabel")}:{" "}
                     {saladActionLoading === "status"
                       ? t("checking")
                       : t(`ai.saladRuntime.states.${saladRuntimeStatus?.state ?? "unknown"}`)}
-                  </span>
+                  </DeskBadge>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>
                     {saladRuntimeStatus?.checkedAt
                       ? `${t("checked")} ${new Date(saladRuntimeStatus.checkedAt).toLocaleString()}`

@@ -1,4 +1,5 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
@@ -154,15 +155,15 @@ export default function ExchangeAccountOverviewCard({
       ) : null}
 
       <footer className="exchangeOverviewActions">
-        <Link
+        <DeskLink
           href={`${withLocalePath("/accounts", locale)}?exchangeAccountId=${encodeURIComponent(overview.exchangeAccountId)}`}
           className="btn btnPrimary"
         >
           {t("assets")}
-        </Link>
-        <Link href={withLocalePath("/settings", locale)} className="btn">
+        </DeskLink>
+        <DeskLink href={withLocalePath("/settings", locale)} className="btn">
           {t("settings")}
-        </Link>
+        </DeskLink>
       </footer>
     </article></DeskSurface>
   );

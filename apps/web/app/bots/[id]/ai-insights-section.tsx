@@ -1,4 +1,5 @@
 "use client";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
@@ -84,7 +85,7 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <h3 style={{ marginTop: 0, marginBottom: 0 }}>AI Insights (Read‑Only)</h3>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <span
+          <DeskBadge
             className="badge"
             style={{
               borderColor: health ? health.color : "#64748b",
@@ -92,15 +93,15 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
             }}
           >
             {health ? `Health ${score} · ${health.label}` : "Health —"}
-          </span>
+          </DeskBadge>
           {data?.aiEnabled ? (
-            <span className="badge" style={{ borderColor: "#22c55e", color: "#22c55e" }}>
+            <DeskBadge className="badge" style={{ borderColor: "#22c55e", color: "#22c55e" }}>
               AI enabled
-            </span>
+            </DeskBadge>
           ) : (
-            <span className="badge" style={{ borderColor: "#9ca3af", color: "#9ca3af" }}>
+            <DeskBadge className="badge" style={{ borderColor: "#9ca3af", color: "#9ca3af" }}>
               AI disabled
-            </span>
+            </DeskBadge>
           )}
           {(["24h", "7d"] as RangeKey[]).map((r) => (
             <DeskButton
@@ -146,16 +147,16 @@ export default function AiInsightsSection({ botId }: { botId: string }) {
           {insights.map((ins, idx) => (
             <DeskSurface dense><div key={`${ins.title}-${idx}`} className="card" style={{ padding: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <span
+                <DeskBadge
                   className="badge"
                   style={{ borderColor: severityColor(ins.severity), color: severityColor(ins.severity) }}
                 >
                   {ins.severity}
-                </span>
+                </DeskBadge>
                 {ins.confidence ? (
-                  <span className="badge" style={{ borderColor: "#64748b", color: "#94a3b8" }}>
+                  <DeskBadge className="badge" style={{ borderColor: "#64748b", color: "#94a3b8" }}>
                     {ins.confidence}
-                  </span>
+                  </DeskBadge>
                 ) : null}
                 <div style={{ fontWeight: 700 }}>{ins.title}</div>
               </div>

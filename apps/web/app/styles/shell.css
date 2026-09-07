@@ -2260,7 +2260,9 @@
 .appHeaderSearchSubmit {
   position: absolute;
   right: 7px;
-  top: 50%;
+  top: 0;
+  bottom: 0;
+  margin-block: auto;
   min-width: 48px;
   height: 28px;
   padding: 0 7px;
@@ -2271,7 +2273,7 @@
   justify-content: center;
   color: rgba(190, 206, 226, 0.74);
   background: rgba(255, 255, 255, 0.035);
-  transform: translateY(-50%);
+  transform: none;
   cursor: pointer;
 }
 

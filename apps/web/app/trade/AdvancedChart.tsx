@@ -1,4 +1,5 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
 
 import { DeskInput } from "@/components/desk/DeskInput";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -1351,10 +1352,9 @@ export function AdvancedChart({
       </div>
       <div className="tradeChartMarkerToggles" style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12 }}>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <DeskInput
-            type="checkbox"
+          <DeskSwitch
             checked={showDecisionOverlay}
-            onChange={(event) => setShowDecisionOverlay(event.target.checked)}
+            onCheckedChange={(checked) => setShowDecisionOverlay(checked)}
           />
           {t("decisionOverlay.show")}
         </label>

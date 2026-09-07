@@ -1,4 +1,6 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -588,7 +590,7 @@ export default function AdminAiPromptsPage() {
                   <DeskInput className="input" value={promptName} onChange={(e) => setPromptName(e.target.value)} placeholder="z. B. RSI Mean Reversion" />
                 </label>
                 <label className="inlineCheck" style={{ marginTop: 26 }}>
-                  <DeskInput type="checkbox" checked={promptIsPublic} onChange={(e) => setPromptIsPublic(e.target.checked)} />
+                  <DeskSwitch checked={promptIsPublic} onCheckedChange={(checked) => setPromptIsPublic(checked)} />
                   {t("publicPrompt")}
                 </label>
               </div>
@@ -619,10 +621,9 @@ export default function AdminAiPromptsPage() {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                     {TIMEFRAME_OPTIONS.map((tf) => (
                       <label key={`tf-${tf}`} className="inlineCheck">
-                        <DeskInput
-                          type="checkbox"
+                        <DeskCheckbox
                           checked={promptTimeframes.includes(tf)}
-                          onChange={() => togglePromptTimeframe(tf)}
+                          onCheckedChange={() => togglePromptTimeframe(tf)}
                         />
                         {tf}
                       </label>
@@ -736,7 +737,7 @@ export default function AdminAiPromptsPage() {
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
                 {availableIndicators.map((item) => (
                   <label key={`prompt-${item.key}`} className="inlineCheck" style={{ border: "1px solid rgba(255, 193, 7, 0.2)", borderRadius: 8, padding: "8px 10px", alignItems: "flex-start", gap: 8 }}>
-                    <DeskInput type="checkbox" checked={promptIndicatorKeys.includes(item.key)} onChange={() => togglePromptIndicator(item.key)} style={{ marginTop: 2 }} />
+                    <DeskCheckbox checked={promptIndicatorKeys.includes(item.key)} onCheckedChange={() => togglePromptIndicator(item.key)} style={{ marginTop: 2 }} />
                     <span style={{ display: "grid", gap: 2 }}>
                       <span style={{ fontSize: 13, fontWeight: 700 }}>{item.label}</span>
                       <span className="settingsMutedText">{item.description}</span>

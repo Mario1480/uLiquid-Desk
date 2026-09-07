@@ -37,12 +37,13 @@ const GlassAlertDialogContent = React.forwardRef<
   <GlassAlertDialogPortal>
     <GlassAlertDialogOverlay />
     <AlertDialogPrimitive.Content
+      data-ein-overlay="true"
       ref={ref}
       className={cn(
         "ein:fixed ein:left-1/2 ein:top-1/2 ein:z-50 ein:w-full ein:max-w-sm ein:-translate-x-1/2 ein:-translate-y-1/2",
         "ein:rounded-2xl ein:border ein:border-white/20 ein:p-6",
-        "ein:bg-white/10 ein:backdrop-blur-2xl",
-        "ein:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
+        "",
+        "",
         "ein:data-[state=open]:animate-in ein:data-[state=closed]:animate-out",
         "ein:data-[state=closed]:fade-out-0 ein:data-[state=open]:fade-in-0",
         " ",

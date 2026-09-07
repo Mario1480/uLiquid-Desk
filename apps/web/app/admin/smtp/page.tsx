@@ -1,4 +1,5 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -158,7 +159,7 @@ export default function AdminSmtpPage() {
               <DeskInput className="input" value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} />
             </label>
             <label className="inlineCheck" style={{ marginTop: 26 }}>
-              <DeskInput type="checkbox" checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />
+              <DeskCheckbox checked={smtpSecure} onCheckedChange={(checked) => setSmtpSecure(checked)} />
               <span>{t("secureConnection")}</span>
             </label>
             <label className="settingsField">

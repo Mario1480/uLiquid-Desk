@@ -38,12 +38,13 @@ const GlassDialogContent = React.forwardRef<
   <GlassDialogPortal>
     <GlassDialogOverlay />
     <DialogPrimitive.Content
+      data-ein-overlay="true"
       ref={ref}
       className={cn(
         "ein:fixed ein:left-1/2 ein:top-1/2 ein:z-50 ein:w-[calc(100%-2rem)] ein:max-w-lg ein:-translate-x-1/2 ein:-translate-y-1/2",
         "ein:rounded-2xl ein:border ein:border-white/20 ein:p-6",
-        "ein:bg-white/10 ein:backdrop-blur-2xl",
-        "ein:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
+        "",
+        "",
         "ein:before:absolute ein:before:inset-0 ein:before:rounded-2xl",
         "ein:before:bg-linear-to-b ein:before:from-white/15 ein:before:to-transparent ein:before:pointer-events-none",
         "ein:data-[state=open]:animate-in ein:data-[state=closed]:animate-out",

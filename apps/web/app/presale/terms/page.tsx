@@ -1,5 +1,5 @@
+import { DeskLink } from "@/components/desk/DeskLink";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { withLocalePath } from "../../../i18n/config";
@@ -27,10 +27,10 @@ export default async function PublicPresaleTermsPage() {
           <h1>{t("terms.title")}</h1>
           <p>{t("terms.description")}</p>
         </div>
-        <Link className="btn" href={withLocalePath("/presale", locale)}>
+        <DeskLink className="btn" href={withLocalePath("/presale", locale)}>
           <AppIcon name="back" />
           {t("tabs.presale")}
-        </Link>
+        </DeskLink>
       </header>
 
       <section className="uiSection publicPresaleLegalPending">
@@ -42,9 +42,9 @@ export default async function PublicPresaleTermsPage() {
       </section>
 
       <nav className="publicPresaleLegalLinks" aria-label={t("terms.eyebrow")}>
-        <Link className="btn" href={withLocalePath("/terms", locale)}>{t("terms.platformTerms")}</Link>
-        <Link className="btn" href={withLocalePath("/privacy", locale)}>{t("terms.privacy")}</Link>
-        <Link className="btn" href={withLocalePath("/risk-disclosure", locale)}>{t("terms.risk")}</Link>
+        <DeskLink className="btn" href={withLocalePath("/terms", locale)}>{t("terms.platformTerms")}</DeskLink>
+        <DeskLink className="btn" href={withLocalePath("/privacy", locale)}>{t("terms.privacy")}</DeskLink>
+        <DeskLink className="btn" href={withLocalePath("/risk-disclosure", locale)}>{t("terms.risk")}</DeskLink>
       </nav>
     </div>
   );

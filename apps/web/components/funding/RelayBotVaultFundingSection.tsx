@@ -1,4 +1,6 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -399,9 +401,9 @@ export default function RelayBotVaultFundingSection({
           <h3 className="walletSectionTitle">{t("title")}</h3>
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
-        <span className={`badge ${isCorrectSourceChain ? "badgeOk" : "badgeWarn"}`}>
+        <DeskBadge className={`badge ${isCorrectSourceChain ? "badgeOk" : "badgeWarn"}`}>
           {isCorrectSourceChain ? t("networkReady") : t("networkMismatch")}
-        </span>
+        </DeskBadge>
       </div>
 
       <div className="fundingRelayRouteStrip" aria-hidden="true">
@@ -470,11 +472,10 @@ export default function RelayBotVaultFundingSection({
       {!isWithdrawal ? (
         <div className={`fundingRelayTopupCard${includeHypeTopup ? " isActive" : ""}`}>
           <label className="fundingRelayTopupToggle">
-            <DeskInput
-              type="checkbox"
+            <DeskCheckbox
               checked={includeHypeTopup}
-              onChange={(event) => {
-                setIncludeHypeTopup(event.target.checked);
+              onCheckedChange={(checked) => {
+                setIncludeHypeTopup(checked);
                 clearQuote();
               }}
               disabled={busy}

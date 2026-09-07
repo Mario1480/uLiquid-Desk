@@ -1,10 +1,13 @@
 "use client";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
+import { DeskBadge } from "@/components/desk/DeskBadge";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { erc20Abi, formatUnits, isAddress, type Address, type Hex } from "viem";
@@ -794,10 +797,10 @@ function SubscriptionOrderPageContent() {
   return (
     <div className="subscriptionPortalWrap">
       <div className="subscriptionPortalTopActions">
-        <Link className="btn" href={withLocalePath("/settings/subscription", locale)}>
+        <DeskLink className="btn" href={withLocalePath("/settings/subscription", locale)}>
           <AppIcon name="back" />
           {t("license.backToLicense")}
-        </Link>
+        </DeskLink>
       </div>
 
       <div className="subscriptionPortalHeader">
@@ -914,7 +917,7 @@ function SubscriptionOrderPageContent() {
                   <div className="subscriptionOrderSummaryItem subscriptionOrderSummaryStrong"><span>{t("order.checkoutTotal")}</span><span>{centsToCurrency(checkoutTotal)}</span></div>
                   {publicUliqEnabled ? (
                     <label className="subscriptionUliqDiscountToggle">
-                      <DeskInput type="checkbox" checked={applyUliqDiscount} onChange={(event) => setApplyUliqDiscount(event.target.checked)} disabled={hasBlockingCheckout} />
+                      <DeskCheckbox checked={applyUliqDiscount} onCheckedChange={(checked) => setApplyUliqDiscount(checked)} disabled={hasBlockingCheckout} />
                       <span><strong>{tUliq("apply")}</strong><small>{tUliq("hint")}</small></span>
                     </label>
                   ) : null}
@@ -943,9 +946,9 @@ function SubscriptionOrderPageContent() {
               <div className="subscriptionCardTitle">{t("order.payment.title")}</div>
               <div className="subscriptionPortalMuted">{t("order.payment.orderId", { id: activeCheckout.merchantOrderId ?? activeCheckout.orderId })}</div>
             </div>
-            <span className={`subscriptionStatusPill subscriptionStatusPill${activeCheckout.status}`}>
+            <DeskBadge className={`subscriptionStatusPill subscriptionStatusPill${activeCheckout.status}`}>
               {t(`orders.statuses.${activeCheckout.status === "review_required" ? "reviewRequired" : activeCheckout.status}`)}
-            </span>
+            </DeskBadge>
           </div>
 
           <div className="subscriptionPaymentSteps" aria-label={t("order.payment.progressLabel")}>
@@ -1059,10 +1062,10 @@ function SubscriptionOrderPageContent() {
               </DeskButton>
             ) : null}
             {payment.txHash && transactionUrl ? (
-              <a className="btn" href={transactionUrl} target="_blank" rel="noreferrer">
+              <DeskAnchor className="btn" href={transactionUrl} target="_blank" rel="noreferrer">
                 <AppIcon name="external" />
                 {t("order.payment.openExplorer")}
-              </a>
+              </DeskAnchor>
             ) : null}
           </div>
 
@@ -1081,7 +1084,7 @@ function SubscriptionOrderPageContent() {
       <div className="subscriptionOrderSimpleHint">{t("order.cartHint")}</div>
       {message ? <div className="subscriptionPortalMessage">
         <span>{message}</span>
-        {requiredLockUntil ? <Link className="btn" href={`${withLocalePath("/uliq/locking", locale)}?requiredUntil=${encodeURIComponent(requiredLockUntil)}`}><AppIcon name="shield" /> {tUliq("manageLock")}</Link> : null}
+        {requiredLockUntil ? <DeskLink className="btn" href={`${withLocalePath("/uliq/locking", locale)}?requiredUntil=${encodeURIComponent(requiredLockUntil)}`}><AppIcon name="shield" /> {tUliq("manageLock")}</DeskLink> : null}
       </div> : null}
     </div>
   );

@@ -1,4 +1,5 @@
 "use client";
+import { DeskChoiceGroup, DeskChoiceItem } from "@/components/desk/DeskChoiceGroup";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskSurface } from "@/components/desk/DeskSurface";
@@ -98,21 +99,19 @@ export default function TopMoversWidget() {
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>
           <div className="dashboardCompactWidgetSubtitle">{t("subtitle")}</div>
         </div>
-        <div className="dashboardTopMoversTabs" role="tablist" aria-label={t("marketType")}>
+        <DeskChoiceGroup className="dashboardTopMoversTabs" value={marketType} onValueChange={(value) => void selectMarket(value as MarketType)} aria-label={t("marketType")}>
           {(["spot", "perp"] as const).map((type) => (
-            <DeskButton
+            <DeskChoiceItem
               key={type}
-              type="button"
-              role="tab"
-              aria-selected={marketType === type}
+
               className={`dashboardPerformanceTab ${marketType === type ? "dashboardPerformanceTabActive" : ""}`}
               disabled={switching}
-              onClick={() => void selectMarket(type)}
-            >
+
+             value={type}>
               {t(type)}
-            </DeskButton>
+            </DeskChoiceItem>
           ))}
-        </div>
+        </DeskChoiceGroup>
       </div>
 
       {loading && !response ? <div className="dashboardCompactWidgetState">{t("loading")}</div> : null}

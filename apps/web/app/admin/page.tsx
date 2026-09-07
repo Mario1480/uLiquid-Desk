@@ -1,4 +1,5 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import Link from "next/link";
@@ -183,10 +184,10 @@ export default function AdminOverviewPage() {
             <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
 	                <h3 className="adminSectionTitle">Latest Critical Alerts</h3>
-	                <Link className="btn" href={withLocalePath("/admin/alerts", locale)}>
+	                <DeskLink className="btn" href={withLocalePath("/admin/alerts", locale)}>
 	                  <AppIcon name="alerts" />
 	                  View all
-	                </Link>
+	                </DeskLink>
               </div>
               {data.latestCriticalAlerts.length > 0 ? (
                 <div className="adminListStack">
@@ -215,10 +216,10 @@ export default function AdminOverviewPage() {
             <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
 	                <h3 className="adminSectionTitle">Recent Audit Events</h3>
-	                <Link className="btn" href={withLocalePath("/admin/audit", locale)}>
+	                <DeskLink className="btn" href={withLocalePath("/admin/audit", locale)}>
 	                  <AppIcon name="audit" />
 	                  View all
-	                </Link>
+	                </DeskLink>
               </div>
               {data.recentAuditEvents.length > 0 ? (
                 <div className="adminListStack">
@@ -244,10 +245,10 @@ export default function AdminOverviewPage() {
             <DeskSurface dense><article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
 	                <h3 className="adminSectionTitle">Bots With Errors</h3>
-	                <Link className="btn" href={withLocalePath("/admin/bots", locale)}>
+	                <DeskLink className="btn" href={withLocalePath("/admin/bots", locale)}>
 	                  <AppIcon name="bots" />
 	                  Open bots
-	                </Link>
+	                </DeskLink>
               </div>
               {data.botsWithErrors.length > 0 ? (
                 <div className="adminListStack">

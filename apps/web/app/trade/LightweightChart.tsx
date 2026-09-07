@@ -1,4 +1,6 @@
 "use client";
+import { DeskSwitch } from "@/components/desk/DeskSwitch";
+import { DeskCheckbox } from "@/components/desk/DeskCheckbox";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
@@ -1644,26 +1646,23 @@ export function LightweightChart({
       </div>
       <div className="tradeChartMarkerToggles" style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12 }}>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <DeskInput
-            type="checkbox"
+          <DeskSwitch
             checked={showDecisionOverlay}
-            onChange={(event) => setShowDecisionOverlay(event.target.checked)}
+            onCheckedChange={(checked) => setShowDecisionOverlay(checked)}
           />
           {t("decisionOverlay.show")}
         </label>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <DeskInput
-            type="checkbox"
+          <DeskSwitch
             checked={showUpMarkers}
-            onChange={(event) => setShowUpMarkers(event.target.checked)}
+            onCheckedChange={(checked) => setShowUpMarkers(checked)}
           />
           {t("markers.showUp")}
         </label>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <DeskInput
-            type="checkbox"
+          <DeskSwitch
             checked={showDownMarkers}
-            onChange={(event) => setShowDownMarkers(event.target.checked)}
+            onCheckedChange={(checked) => setShowDownMarkers(checked)}
           />
           {t("markers.showDown")}
         </label>
@@ -1697,15 +1696,12 @@ export function LightweightChart({
           { key: "superOrderBlockFvgBos", label: t("indicators.superOrderBlockFvgBos") }
         ].map((item) => (
           <label key={item.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <DeskInput
-              type="checkbox"
+            <DeskCheckbox
               checked={indicatorToggles[item.key as keyof IndicatorToggleState]}
-              onChange={(event) =>
-                setIndicatorToggles((prev) => ({
+              onCheckedChange={(checked) => setIndicatorToggles((prev) => ({
                   ...prev,
-                  [item.key]: event.target.checked
-                }))
-              }
+                  [item.key]: checked
+                }))}
             />
             {item.label}
           </label>

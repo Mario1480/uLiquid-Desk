@@ -1,11 +1,12 @@
 "use client";
+import { DeskLink } from "@/components/desk/DeskLink";
+import { DeskBadge } from "@/components/desk/DeskBadge";
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import { DeskSelect } from "@/components/desk/DeskSelect";
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskTable } from "@/components/desk/DeskTable";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -827,14 +828,14 @@ function BotDetailsPageContent() {
             <h2 style={{ margin: 0 }}>{bot.name}</h2>
           </div>
 	          <div className="botsDetailToolbar">
-	            <Link className="btn" href={withLocalePath("/bots", locale)}>
+	            <DeskLink className="btn" href={withLocalePath("/bots", locale)}>
 	              <AppIcon name="back" />
 	              {t("actions.back")}
-	            </Link>
-	            <Link className="btn" href={withLocalePath(`/bots/${id}/settings`, locale)}>
+	            </DeskLink>
+	            <DeskLink className="btn" href={withLocalePath(`/bots/${id}/settings`, locale)}>
 	              <AppIcon name="settings" />
 	              {t("actions.settings")}
-	            </Link>
+	            </DeskLink>
           </div>
         </div>
 
@@ -938,10 +939,10 @@ function BotDetailsPageContent() {
           <InfoRow label="Controller" value={<ExplorerAddressValue address={botVault?.controllerAddress} />} />
         </div>
 	        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-	          <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
+	          <DeskLink className="btn" href={withLocalePath("/settings/affiliate", locale)}>
 	            <AppIcon name="money" />
 	            Open Affiliate Dashboard
-	          </Link>
+	          </DeskLink>
           {botVault?.contractVersion === "v4" ? (
             <div className="botReasonText" style={{ fontSize: 12, alignSelf: "center" }}>
               V4 locks the fee configuration on vault deploy. Changes show up here and in the affiliate dashboard, not as a mutable per-bot setting.
@@ -954,10 +955,10 @@ function BotDetailsPageContent() {
               Live BotVault actions for Grid bots now run through the Grid detail page so the wallet-signature flow, indexer state and execution start stay in sync.
             </div>
 	            <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-	              <Link className="btn" href={withLocalePath(`/bots/grid?instanceId=${encodeURIComponent(bot.botVault.gridInstanceId)}`, locale)}>
+	              <DeskLink className="btn" href={withLocalePath(`/bots/grid?instanceId=${encodeURIComponent(bot.botVault.gridInstanceId)}`, locale)}>
 	                <AppIcon name="gridBots" />
 	                Open Grid Vault Controls
-	              </Link>
+	              </DeskLink>
             </div>
           </>
         ) : (
@@ -1109,7 +1110,7 @@ function BotDetailsPageContent() {
                     <td>{execution.predictionStateId}</td>
                     <td>{execution.action} {execution.side ?? ""}</td>
                     <td>{execution.orderId ?? `${execution.orderType} · ${formatNumber(execution.requestedQty, 6)}`}</td>
-                    <td><span className="badge">{execution.status}</span></td>
+                    <td><DeskBadge className="badge">{execution.status}</DeskBadge></td>
                     <td>{execution.failureReason ?? "-"}</td>
                   </tr>
                 ))}
@@ -1288,7 +1289,7 @@ function BotDetailsPageContent() {
             {overview.recentEvents.map((event) => (
               <article key={event.id} className="botEventItem">
                 <div className="botEventHead">
-                  <span className="badge">{event.type}</span>
+                  <DeskBadge className="badge">{event.type}</DeskBadge>
                   <span className="botEventTime">{formatDateTime(event.createdAt)}</span>
                 </div>
                 <div className="botEventMessage">{event.message ?? "-"}</div>

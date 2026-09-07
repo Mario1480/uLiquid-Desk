@@ -1,5 +1,6 @@
 "use client";
 
+import { DeskSurface } from "@/components/desk/DeskSurface";
 import { DeskButton } from "@/components/desk/DeskButton";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -48,7 +49,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
       </DeskButton>
 
       <aside className={`adminSidebarPanel ${sidebarOpen ? "adminSidebarPanelOpen" : ""}`}>
-        <div className="adminSidebarPanelInner">
+        <DeskSurface><div className="adminSidebarPanelInner">
           <div className="adminSidebarBrand">
             <div className="adminSidebarEyebrow">uLiquid Desk</div>
             <div className="adminSidebarTitle">Platform Admin</div>
@@ -71,7 +72,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
               </Link>
             ))}
           </nav>
-        </div>
+        </div></DeskSurface>
       </aside>
 
       <div className="adminShellContent">{children}</div>

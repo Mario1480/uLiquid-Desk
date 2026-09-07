@@ -1,4 +1,5 @@
 "use client";
+import { DeskAnchor } from "@/components/desk/DeskAnchor";
 
 import { DeskSurface } from "@/components/desk/DeskSurface";
 import { useTranslations } from "next-intl";
@@ -41,10 +42,10 @@ export default function HelpPage() {
         <h3 className="authHeading">{t("quickLinks")}</h3>
         <div className="helpQuickLinks">
           {sections.map((s) => (
-            <a key={s.id} className="btn" href={`#${s.id}`}>
+            <DeskAnchor key={s.id} className="btn" href={`#${s.id}`}>
               <AppIcon name="detail" />
               {s.title}
-            </a>
+            </DeskAnchor>
           ))}
         </div>
       </section></DeskSurface>
@@ -53,10 +54,10 @@ export default function HelpPage() {
         <h3 className="authHeading">{t("docs.title")}</h3>
         <div className="helpContactCopy">{t("docs.body")}</div>
         <div>
-          <a className="btn btnPrimary" href={DOCS_URL} target="_blank" rel="noreferrer">
+          <DeskAnchor className="btn btnPrimary" href={DOCS_URL} target="_blank" rel="noreferrer">
             <AppIcon name="external" />
             {t("docs.cta")}
-          </a>
+          </DeskAnchor>
         </div>
       </section></DeskSurface>
 
@@ -79,10 +80,10 @@ export default function HelpPage() {
         <h3 className="authHeading">{t("contactTitle")}</h3>
         <div className="helpContactCopy">{t("contactBody")}</div>
         <div>
-          <a className="btn btnPrimary" href="mailto:support@uliquid.vip">
+          <DeskAnchor className="btn btnPrimary" href="mailto:support@uliquid.vip">
             <AppIcon name="mail" />
             support@uliquid.vip
-          </a>
+          </DeskAnchor>
         </div>
       </section></DeskSurface>
     </div>
