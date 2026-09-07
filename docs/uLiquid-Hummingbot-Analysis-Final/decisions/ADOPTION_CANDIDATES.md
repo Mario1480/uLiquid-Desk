@@ -5,10 +5,10 @@ Existing deterministic Routines; existing typed Agent Skill catalog; existing Fu
 
 Production-deployed at release head `837d7d12`. Mario confirmed verification and formal Phase 1 completion on 2026-09-05. Separate connector certification is unchanged.
 
-## Phase 2 — Provider-Neutral Platform and Existing AI — `IN PROGRESS`
+## Phase 2 — Provider-Neutral Platform and Existing AI — `COMPLETE`
 Shared Market Data; canonical market/data schemas; deterministic analytics; Feature Registry and snapshots; Market Analyst upgrade; Position Copilot upgrade.
 
-The [active Phase 2 plan](../implementation/PHASE_2_IMPLEMENTATION_PLAN.md) records shared datasets, run pinning, persisted values, feature-aware AI context, standalone perpetual Copilot and sidebar as implemented locally; historical scope, spot enrichment and acceptance remain open.
+The [active Phase 2 plan](../implementation/PHASE_2_IMPLEMENTATION_PLAN.md). Phase 2 is complete by Mario’s full-test confirmation and owner acceptance on 2026-09-07. Shared data, versioned features, existing AI upgrades, bounded provider histories and persisted evidence are accepted. Earlier test records remain historical evidence, not new benchmark measurements.
 
 ## Phase 3 — Read-Only Product Features — `NOT STARTED`
 Arbitrage Scanner; XEMM Scanner; opportunity history and alerts; no automated execution.

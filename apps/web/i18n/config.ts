@@ -45,10 +45,16 @@ export function extractLocaleFromPathname(pathname: string): {
 
 export function withLocalePath(pathname: string, locale: AppLocale): string {
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
+  const targetLocale = isEnglishOnlyPath(pathnameWithoutLocale) ? "en" : locale;
   if (pathnameWithoutLocale === "/") {
-    return `/${locale}`;
+    return `/${targetLocale}`;
   }
-  return `/${locale}${pathnameWithoutLocale}`;
+  return `/${targetLocale}${pathnameWithoutLocale}`;
+}
+
+export function isEnglishOnlyPath(pathname: string): boolean {
+  const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname.split(/[?#]/, 1)[0]);
+  return pathnameWithoutLocale === "/presale" || pathnameWithoutLocale.startsWith("/presale/");
 }
 
 export function detectLocaleFromAcceptLanguage(header: string | null | undefined): AppLocale | null {

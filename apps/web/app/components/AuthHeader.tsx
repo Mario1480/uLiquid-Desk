@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import type { AppLocale } from "../../i18n/config";
-import { extractLocaleFromPathname, withLocalePath } from "../../i18n/config";
+import { isEnglishOnlyPath, withLocalePath, extractLocaleFromPathname } from "../../i18n/config";
 import { AppIcon } from "./AppIcon";
 import ClientErrorBoundary from "./ClientErrorBoundary";
 
@@ -34,7 +34,7 @@ export default function AuthHeader() {
   const tPresale = useTranslations("presale.header");
   const search = searchParams.toString();
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
-  const publicPresale = pathnameWithoutLocale === "/presale" || pathnameWithoutLocale.startsWith("/presale/");
+  const publicPresale = isEnglishOnlyPath(pathnameWithoutLocale);
 
   return (
     <header className="authHeader">
@@ -44,7 +44,7 @@ export default function AuthHeader() {
         </Link>
 
         <div className="authHeaderToolbar">
-          <nav className="authHeaderLocaleSwitch" aria-label={tHeader("languageMenu")}>
+          {!publicPresale && <nav className="authHeaderLocaleSwitch" aria-label={tHeader("languageMenu")}>
             {LANGUAGE_OPTIONS.map((option) => {
               const href = buildLocalizedPath(pathname, search, option.locale);
               const active = option.locale === locale;
@@ -61,7 +61,7 @@ export default function AuthHeader() {
                 </Link>
               );
             })}
-          </nav>
+          </nav>}
 
           <ClientErrorBoundary fallback={<DeskButton className="appHeaderWalletTrigger" type="button" disabled>Wallet unavailable</DeskButton>}>
             <WalletConnectionWidget />

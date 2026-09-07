@@ -52,6 +52,7 @@ The minimum applies to each accepted purchase. The maximum is cumulative per wal
 - Each round freezes an immutable inventory-source address in its constructor. Both rounds may use the same source, but each stores and verifies it independently.
 - Price, cap, allocation, buyer limits, release share, cliff, duration, and predecessor are immutable deployment parameters.
 - `saleStart` and `saleEnd` are configurable by the owner only while the round is `DRAFT`; `markReady()` freezes them.
+- Readiness requires an unexpired sale window. After `saleEnd`, a never-activated `READY` round may be ended permissionlessly through `endSale()`. This preserves the normal owner-controlled unsold return and listing-readiness transitions, so missed activation cannot permanently block the other round. Before expiry, a `READY` round cannot end; no sale window is reopened and no pending-purchase control is bypassed. This local correction was authorized and verified on 2026-09-07; see [R-01 remediation evidence](../archive/tasks/2026-09-07-uliq-ready-expiry-fix.md).
 - Round 2 cannot activate until Round 1 reports an ended-or-later lifecycle state.
 - No round may access the other round's token inventory or payment accounting.
 

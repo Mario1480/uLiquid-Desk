@@ -225,6 +225,7 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
     function markReady() external onlyOwner {
         _requireState(SaleState.DRAFT);
         if (saleEnd == 0) revert SaleWindowNotConfigured();
+        if (block.timestamp >= saleEnd) revert SaleWindowClosed();
         if (!inventoryFunded) revert InventoryNotFunded();
         if (vesting.presale() != address(this)) revert InvalidConfiguration();
         uint256 inventory = uliq.balanceOf(address(this));
@@ -256,13 +257,17 @@ contract ULIQPresaleRound is Ownable2Step, ReentrancyGuard, IULIQPresaleRoundLif
         _setState(SaleState.ACTIVE);
     }
 
-    /// @notice Ends at the configured time, or earlier only after economic exhaustion is final.
+    /// @notice Ends ready, active, or paused rounds at expiry, or active/paused rounds after final economic exhaustion.
+    /// @dev A READY round has never accepted purchases and must still be able to end if activation is missed.
     function endSale() external {
-        if (state != SaleState.ACTIVE && state != SaleState.PAUSED) {
+        if (state != SaleState.READY && state != SaleState.ACTIVE && state != SaleState.PAUSED) {
             revert InvalidState(SaleState.ACTIVE, state);
         }
         if (block.timestamp < saleEnd) {
-            if (_remainingGlobalUsdcCapacity() >= minPurchaseUsdcRaw || pendingPurchaseCount != 0) {
+            if (
+                state == SaleState.READY || _remainingGlobalUsdcCapacity() >= minPurchaseUsdcRaw
+                    || pendingPurchaseCount != 0
+            ) {
                 revert SaleWindowClosed();
             }
         }

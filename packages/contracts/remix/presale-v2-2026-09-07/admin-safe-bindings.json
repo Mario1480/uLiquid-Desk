@@ -1,0 +1,114 @@
+{
+  "version": "1.0",
+  "chainId": "42161",
+  "createdAt": 1788798057311,
+  "meta": {
+    "name": "ULIQ Presale V2 - bind deployed contracts",
+    "description": "Five contract bindings only. No funding, sale dates, activation, or ownership changes. Execute from the approved Admin Safe.",
+    "createdFromSafeAddress": "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+    "createdFromOwnerAddress": ""
+  },
+  "transactions": [
+    {
+      "to": "0x1010161234c12c7b57a36083213e03eeaac69027",
+      "value": "0",
+      "data": "0xe8b346f000000000000000000000000094ac004efbdfc5ede8fc9c2d45e36727f82124000000000000000000000000008be7baa1ab28764bf8646e869b3ef29089efe021",
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "roundOne_",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "roundTwo_",
+            "type": "address"
+          }
+        ],
+        "name": "configureRounds",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "roundOne_": "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400",
+        "roundTwo_": "0x8be7baa1ab28764bf8646e869b3ef29089efe021"
+      }
+    },
+    {
+      "to": "0xd77b3af71bf8b9d27fc27873e60a3d2e5336c001",
+      "value": "0",
+      "data": "0xd5fcc7b600000000000000000000000094ac004efbdfc5ede8fc9c2d45e36727f8212400",
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "presale_",
+            "type": "address"
+          }
+        ],
+        "name": "setPresale",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "presale_": "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400"
+      }
+    },
+    {
+      "to": "0x9cb0af882f2568427495e323fad44d0d0eed419b",
+      "value": "0",
+      "data": "0xd5fcc7b600000000000000000000000094ac004efbdfc5ede8fc9c2d45e36727f8212400",
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "presale_",
+            "type": "address"
+          }
+        ],
+        "name": "setPresale",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "presale_": "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400"
+      }
+    },
+    {
+      "to": "0xdeeb1ad0ba102b9af9f07304daa593fbab267bd0",
+      "value": "0",
+      "data": "0xd5fcc7b60000000000000000000000008be7baa1ab28764bf8646e869b3ef29089efe021",
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "presale_",
+            "type": "address"
+          }
+        ],
+        "name": "setPresale",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "presale_": "0x8be7baa1ab28764bf8646e869b3ef29089efe021"
+      }
+    },
+    {
+      "to": "0x5f7687f410aa5ebbdd1bdeef3171b8075c6ede0e",
+      "value": "0",
+      "data": "0xd5fcc7b60000000000000000000000008be7baa1ab28764bf8646e869b3ef29089efe021",
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "presale_",
+            "type": "address"
+          }
+        ],
+        "name": "setPresale",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "presale_": "0x8be7baa1ab28764bf8646e869b3ef29089efe021"
+      }
+    }
+  ]
+}

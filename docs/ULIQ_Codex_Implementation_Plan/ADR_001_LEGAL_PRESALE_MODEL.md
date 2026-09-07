@@ -2,11 +2,25 @@
 
 ## Status
 
-`BLOCKED / LEGAL REVIEW REQUIRED`
+`PROJECT OWNER APPROVAL RECORDED / MISSING EXECUTION VALUES TO BE SUPPLIED`
 
-Owner: Legal/Product
+Owner: Product (Mario); external legal evidence is not asserted by this record.
 
-Gate: `NO-GO` für Production-Solidity-Contracts, Mainnet-Deployment, Presale und DEX-Launch.
+## Subsequent contract review approval — 2026-09-07
+
+Mario also approved the presented Safe addresses, parameters, admin rights, timing and wiring/deployment configuration. The owner review is closed. The [approval record](../../packages/contracts/ULIQ_MAINNET_CONTRACT_APPROVAL.md) distinguishes that approval from still-missing concrete sale dates and deployed-address/technical execution evidence. No repeated approval is required for the same presented choices.
+
+## Superseding owner decision — 2026-09-07
+
+Mario explicitly approved the previously raised listing/cancellation/safeguarding items: listing is committed to; exceptional cancellation/refund cases will be handled manually; treasury custody uses Safe. No additional automatic full-sale cancellation or never-listing refund implementation is requested. Team/manual vesting is not currently required. The prior project approval blocker below is superseded by that instruction; do not ask for the same decision again.
+
+This is an owner-supplied release decision, not evidence of an external legal opinion. The current contract holds pending USDC in per-round custody and releases it to the selected treasury Safe only at finalization. Manual payments cannot revoke finalized vesting allocations. These boundaries and the proposed exact Safe addresses are presented in the [contract input and authority review](../../packages/contracts/ULIQ_MAINNET_CONTRACT_APPROVAL.md).
+
+Mario separately requested review of the actual contract powers and inputs before approving those details. That review, final deployment preparation and security validation remain outstanding; no transaction, deployment or live activation was executed or inferred.
+
+## Historical decision record
+
+The sections below preserve the earlier rationale and review questions. Their prior unresolved project-approval wording is superseded by the dated owner decision above; it is not a new request for approval.
 
 ## Technical candidate prepared on 2026-09-01
 

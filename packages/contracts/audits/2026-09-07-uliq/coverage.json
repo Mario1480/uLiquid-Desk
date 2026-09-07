@@ -1,0 +1,131 @@
+{
+  "completeness": "partial",
+  "deferred": [],
+  "documentType": "codex-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [
+    {
+      "pattern": "packages/contracts/src/*.sol",
+      "reason": "Non-ULIQ vault/funding/HyperCore and mock source outside requested ULIQ scope."
+    },
+    {
+      "pattern": "packages/contracts/src/interfaces/*",
+      "reason": "Non-ULIQ vault interfaces outside scope."
+    },
+    {
+      "pattern": "packages/contracts/src/uliq/legacy-testnet/{ULIQPresale.sol,ULIQPresaleVesting.sol,ULIQTestnetEscrow.sol,ULIQMockUSDC.sol}",
+      "reason": "Old single-round testnet stack is not the current V2 audit; only legacy ULIQLocker source included. Existing legacy tests ran for compatibility."
+    },
+    {
+      "pattern": "packages/contracts/{lib,node_modules,out,cache,broadcast}/**",
+      "reason": "No comprehensive dependency/generated/broadcast audit; inspected relevant OpenZeppelin implementations only as supporting evidence. No deployment or secret inspection."
+    },
+    {
+      "pattern": "apps/**",
+      "reason": "Selected ULIQ config read for address routing only; no API/indexer/UI/runner security audit."
+    },
+    {
+      "pattern": "packages/contracts/src/{BotVault*,FundingVault*,Grid*,Futures*}",
+      "reason": "Non-ULIQ code outside user's requested smart-contract scope."
+    }
+  ],
+  "includePaths": [
+    "packages/contracts"
+  ],
+  "inventoryStrategy": "scoped_path",
+  "mode": "scoped_path",
+  "openQuestions": [
+    {
+      "question": "R-01 is fixed and regression-tested in the local working tree. Freeze and independently audit the corrected release revision, then perform separately authorized deployment and reconciliation."
+    },
+    {
+      "question": "Freeze cancellation/never-listing refunds for pending and finalized purchases and the USDC safeguarding model with Legal."
+    },
+    {
+      "question": "Select and audit Mainnet locker; no separate Team/manual/bucket vesting implementation was found."
+    },
+    {
+      "question": "Freeze final graph addresses, Safe owners/thresholds and USDC treasury, exact UTC windows and calendar conversion, and reciprocal graph preflight."
+    },
+    {
+      "question": "Extend stateful invariants beyond buy/withdraw and lock/extend to multi-actor finalization, both rounds, claims, unsold release and unlock with real custody."
+    },
+    {
+      "question": "Verify native USDC implementation/issuer restriction behavior and deployed graph; current local fork uses mock USDC and does not establish Safe signer control."
+    },
+    {
+      "question": "Run dedicated static analysis and obtain an independent external audit of the frozen, corrected release revision."
+    }
+  ],
+  "scanId": "91fc3376-3351-4570-82c9-9c9a997bf067",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "no_issue_found",
+      "id": "uliq-settlement-and-claims",
+      "label": "Buyer/custody settlement and beneficiary-bound claims",
+      "notes": "Independent baseline and focused investigator both found no ordinary-buyer asset theft, duplicate settlement or early-claim path for the configured nominal-transfer ULIQ token. Presale:336-424; custody:96-132,186-194; vesting:84-139. Parent added and ran deterministic real-custody rollback, blocked-recipient, deadline and repeated-claim tests: 7/7 passed including one operational-defect reproduction. Follow-up: expanded regression suite 13/13 passed; actual Round 1 and Round 2 payout paths pass after READY-expiry recovery.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "uliq-locker",
+      "label": "Legacy ULIQ locker",
+      "notes": "ULIQLocker.sol:52-94 checks owner, maturity, one withdrawal, increasing extension. ULIQToken.sol:12-23 uses nominal ERC20 transfers; fee-token insolvency is not applicable to intended ULIQ. This legacy implementation has no Mainnet deployment decision.",
+      "receiptRefs": []
+    },
+    {
+      "candidate": {
+        "attacker": "No unprivileged attacker forcing the owner to miss activation was demonstrated.",
+        "counterevidence": "Timely activation avoids defect; DRAFT permits schedule repair; ACTIVE/PAUSED can end after expiry. This is a confirmed operational lifecycle defect, not privilege escalation.",
+        "cwe": "CWE-841",
+        "evidence": "activateSale requires block.timestamp < saleEnd, endSale accepts only ACTIVE/PAUSED, configureSaleWindow is DRAFT-only, releaseUnsold requires ended state. Round 2 expiry after Round 1 finalization prevents both-round listing readiness.",
+        "locations": [
+          {
+            "endLine": 269,
+            "path": "packages/contracts/src/uliq/presale-v2/ULIQPresaleRound.sol",
+            "startLine": 235
+          }
+        ],
+        "remediation": "Define and implement expired READY-to-ENDED transition for zero-purchase rounds; preserve immutable-source return and both-round listing guards; test prior finalized round claims. Implemented locally in the authorized follow-up; see remediation evidence and corrected-source SHA-256 in scan scope.",
+        "severity": "medium",
+        "title": "Expired READY round cannot end, trapping inventory and the shared listing",
+        "validation": "Reproduced in ULIQAuditRegressionTest.testAuditReproducesExpiredReadyRoundBlockingEarlierVesting with real ULIQPaymentCustody. READY Round 2 cannot activate/end/reschedule/release; 100 million ULIQ stays in it and finalized Round 1 vesting remains zero-claimable while USDC is already at treasury."
+      },
+      "candidateId": "uliq-ready-expiry-deadlock",
+      "disposition": "rejected",
+      "id": "uliq-ready-expiry",
+      "label": "R-01: expired READY round blocks inventory return and shared vesting",
+      "notes": "Original revision: Confirmed operational defect, MEDIUM severity and Mainnet blocker; not rejected as a code defect. Rejected only as an adversarial/privilege-gain finding because no unprivileged actor forcing the owner to miss activation was established. Source ULIQPresaleRound.sol:197-205,225-243,260-269,295-309; listing:32-54; vesting:121-123. Real-custody reproduction passes, asserting 100,000,000 ULIQ stranded in READY Round 2 and 250,000 finalized Round 1 ULIQ unclaimable after 500 USDC reached treasury. Correct by safely ending expired zero-purchase READY rounds; validate actual earlier-round claim and exact inventory return. Tracked as R-01 in packages/contracts/ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md. Follow-up status 2026-09-07: fixed locally, not deployed. Existing endSale accepts READY only at or after saleEnd; markReady rejects expired windows. Early-end, pending settlement, both-round listing and immutable inventory-source guards remain. The former reproduction was replaced by successful beneficiary-payout recovery tests, with successor activation, exact one-time inventory return, deadline fuzzing and unchanged ABI/storage verified. Expanded regression suite: 7 passed/6 failed before fix, 13 passed afterward.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "uliq-cap-and-inventory",
+      "label": "Caps, quotes, withdrawal capacity restoration and inventory source",
+      "notes": "PresaleRound.sol:159-220,295-333,360-400 enforces economics, exact one-time source funding, cap/wallet limits and single immutable-source unsold return. Unit/fuzz/invariant tests pass. Rounding cannot increase principal; donations remain separate. Source does not mint.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "uliq-graph-trust",
+      "label": "One-time graph binding and privileged availability",
+      "notes": "No outsider graph substitution demonstrated. Listing.sol:32-41 and Vesting.sol:75-81 rely on trusted owner wiring, with narrower validation than Custody.sol:85-93. Round.sol:225-232 does not validate custody back-reference. Round/listing/vesting inherit Ownable.renounceOwnership; custody:168-170 forbids it. Wrong wiring, renunciation or never scheduling listing can block funds; explicit pre-value requirements remain, not new attacker capabilities.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "uliq-cancellation-and-dependencies",
+      "label": "Cancellation, USDC issuer availability and direct-call access",
+      "notes": "Round.sol:382-424 permits refund only while pending and within deadline; finalization releases proceeds before listing; Vesting.sol:99-139 supplies no timeout/cancellation exit. ADR-001 cancellation/safeguarding requirements remain unresolved. Buyer refund rejection did not block treasury finalization in deterministic test. Treasury/custody issuer restrictions and USDC pause are external availability assumptions, not buyer callbacks. buy has no backend attestation/terms gate; current accepted model requires Legal approval.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "uliq-deployment-and-test-limits",
+      "label": "Deployment separation, token identity and test scope",
+      "notes": "ULIQ scripts reject Mainnet; public-presale and legacy runtime address namespaces are distinct. .env.prod.example public token reference updated after source review. New local fork uses actual deployed ULIQ at block 502625136, mock USDC and Safe impersonation; 1 test passed. Full ULIQ suite 88 passed, 2 optional fork tests skipped. No Mainnet graph/locker deployment, Team/manual pool source, live indexer/browser acceptance, static scanner or external audit established. Follow-up corrected working tree: ULIQ suite 94 passed/0 failed/3 optional fork tests skipped, and 2 explicit actual-token local fork scenarios passed at the same block. Contract build, formatting and ABI/storage comparison passed. Earlier counts above describe the original audit only.",
+      "receiptRefs": []
+    }
+  ]
+}
