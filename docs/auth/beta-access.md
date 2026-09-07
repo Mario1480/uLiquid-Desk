@@ -1,6 +1,6 @@
 # Beta access applications and invitations
 
-Status: implemented locally; production migration, deployment, privacy approval and intake activation are separate open gates. This feature does not authorize live email delivery, account creation in production or changes to existing registration settings.
+Status: code and additive migration deployed on 2026-09-07; Turnstile configuration, privacy approval and intake activation remain open. See [production release evidence](../archive/tasks/2026-09-07-presale-beta-production-release.md). Public registration and beta intake remain closed. Live email delivery and full production invitation redemption have not been tested.
 
 ## Flow and material ownership
 
