@@ -42,6 +42,8 @@ This page links existing technical and operational repository documents. It comp
 - [Onchain Deploy Security Checklist](../onchain-deploy-security-checklist.md)
 - [ULIQ Token Deployment Audit and Open Release Gates](../../packages/contracts/ULIQ_TOKEN_DEPLOYMENT_AUDIT.md)
 - [ULIQ Token Audit Evidence — 2026-09-05](../archive/tasks/2026-09-05-uliq-token-deployment-audit.md)
+- [ULIQ Presale, Vesting and Locking Review and Open Actions](../../packages/contracts/ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md)
+- [ULIQ Mainnet Contract Inputs and Authority Review](../../packages/contracts/ULIQ_MAINNET_CONTRACT_APPROVAL.md)
 
 ## AI and Predictions
 

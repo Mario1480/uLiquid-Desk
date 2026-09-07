@@ -1,0 +1,59 @@
+{
+  "complete": false,
+  "scanId": "91fc3376-3351-4570-82c9-9c9a997bf067",
+  "findings": [],
+  "coverage": {
+    "completeness": "partial",
+    "surfaces": [
+      {
+        "id": "uliq-settlement-and-claims",
+        "label": "Buyer/custody settlement and beneficiary-bound claims",
+        "disposition": "no_issue_found",
+        "receiptRefs": [],
+        "notes": "Independent baseline and focused investigator both found no ordinary-buyer asset theft, duplicate settlement or early-claim path for the configured nominal-transfer ULIQ token. Presale:336-424; custody:96-132,186-194; vesting:84-139. Parent added and ran deterministic real-custody rollback, blocked-recipient, deadline and repeated-claim tests: 7/7 passed including one operational-defect reproduction."
+      },
+      {
+        "id": "uliq-locker",
+        "label": "Legacy ULIQ locker",
+        "disposition": "no_issue_found",
+        "receiptRefs": [],
+        "notes": "ULIQLocker.sol:52-94 checks owner, maturity, one withdrawal, increasing extension. ULIQToken.sol:12-23 uses nominal ERC20 transfers; fee-token insolvency is not applicable to intended ULIQ. This legacy implementation has no Mainnet deployment decision."
+      }
+    ],
+    "explicitExclusions": [
+      {
+        "pattern": "packages/contracts/src/{BotVault*,FundingVault*,Grid*,Futures*}",
+        "reason": "Non-ULIQ code outside user's requested smart-contract scope."
+      }
+    ],
+    "deferred": [
+      {
+        "id": "uliq-ready-expiry-deadlock",
+        "candidateId": "uliq-ready-expiry-deadlock",
+        "reason": "Independent baseline candidate awaiting parent reproduction and severity validation; operational trigger may have no unprivileged attacker.",
+        "candidate": {
+          "title": "Expired READY round cannot end, trapping inventory and the shared listing",
+          "locations": [
+            {
+              "path": "packages/contracts/src/uliq/presale-v2/ULIQPresaleRound.sol",
+              "startLine": 235,
+              "endLine": 269
+            }
+          ],
+          "evidence": "activateSale requires block.timestamp < saleEnd, endSale accepts only ACTIVE/PAUSED, configureSaleWindow is DRAFT-only, releaseUnsold requires ended state. Round 2 expiry after Round 1 finalization prevents both-round listing readiness.",
+          "counterevidence": "Timely activation avoids defect; DRAFT permits schedule repair; ACTIVE/PAUSED can end after expiry. This is a confirmed operational lifecycle defect, not privilege escalation.",
+          "severity": "medium",
+          "cwe": "CWE-841",
+          "validation": "Reproduced in ULIQAuditRegressionTest.testAuditReproducesExpiredReadyRoundBlockingEarlierVesting with real ULIQPaymentCustody. READY Round 2 cannot activate/end/reschedule/release; 100 million ULIQ stays in it and finalized Round 1 vesting remains zero-claimable while USDC is already at treasury.",
+          "attacker": "No unprivileged attacker forcing the owner to miss activation was demonstrated.",
+          "remediation": "Define and implement expired READY-to-ENDED transition for zero-purchase rounds; preserve immutable-source return and both-round listing guards; test prior finalized round claims."
+        }
+      }
+    ],
+    "openQuestions": [
+      {
+        "question": "Final report will distinguish exploitable findings, lifecycle defects, trust assumptions, and open Mainnet scope."
+      }
+    ]
+  }
+}

@@ -20,7 +20,8 @@ ADR-009 adds an isolated review package under `src/uliq/presale-v2/` without cha
 - `ULIQPresaleRound.sol`: one generic non-upgradeable implementation for both accepted rounds.
 - `ULIQPresaleRoundVesting.sol`: one isolated listing-based release pool per round.
 - `ULIQGlobalListing.sol`: one shared, one-time listing timestamp gated by both rounds.
-- `ULIQPaymentCustody.sol`: one purchase-bound USDC custody candidate per round; use remains blocked by Legal approval and an independent audit.
+- `ULIQPaymentCustody.sol`: one purchase-bound USDC custody per round; owner policy approval is recorded in ADR-001, with final input review and independent audit still pending.
+- `src/uliq/mainnet/ULIQMainnetLocker.sol`: Mainnet adapter reusing the reviewed locker logic, pinned to Arbitrum One and the existing ULIQ token. Prepared deployment script: `script/uliq/mainnet/DeployULIQMainnetLocker.s.sol`.
 - `ULIQPresaleRounds.t.sol`: exact parameter, lifecycle, inventory-source, unsold-return, buyer-limit, listing, and vesting tests.
 - `ULIQPresaleRounds.invariant.t.sol`: cap, wallet-limit, inventory, pending-allocation, and custody invariants.
 
@@ -30,11 +31,13 @@ Each round stores an immutable inventory source. That source must approve the ro
 
 The package still includes no Mainnet deployment script. The proposed onchain custody model, ADR-001 legal/access/cancellation decisions, exact calendar interpretation, inventory-source Safe addresses, external audit, deployment reconciliation, and operational evidence remain explicit blockers. The code and passing tests must not be described as audited or Mainnet-ready.
 
+The [2026-09-07 internal presale, vesting and locking review](./ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md) records the expired-READY lifecycle defect and its tested local correction: expired unstarted rounds can terminate through `endSale()`, and stale windows cannot be marked ready. Existing Arbitrum One ULIQ is `0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd`; use this existing token in future Mainnet round/vesting constructor inputs. The legacy runtime and deployment scripts remain Sepolia-specific. Reproducible checks are in `ULIQAuditRegression.t.sol` and `ULIQDeployedToken.fork.t.sol` under `test/uliq/presale-v2/`.
+
 The exact external-review handoff, exclusions, trust assumptions, and open blockers are documented in [`ULIQ_PRESALE_V2_AUDIT_SCOPE.md`](./ULIQ_PRESALE_V2_AUDIT_SCOPE.md). The current read-only Arbitrum One address evidence and candidate constructor-role mapping are tracked separately in [`ULIQ_PRESALE_V2_MAINNET_ROLES.md`](./ULIQ_PRESALE_V2_MAINNET_ROLES.md); that record is not deployment authorization.
 
 The shared token's [2026-09-05 deployment audit](./ULIQ_TOKEN_DEPLOYMENT_AUDIT.md) records an agent review, dedicated unit/fuzz/invariant tests, compiler/advisory dispositions, and a local candidate-Safe fork smoke. It is not an independent audit or Mainnet approval. Tests are under `test/uliq/shared/` and included in `test:uliq`; the optional fork test skips on the default local chain.
 
-Run only the new review suite with `npm -w @mm/contracts run test:uliq:presale-v2`, only the previous MVP suite with `npm -w @mm/contracts run test:uliq:legacy-testnet`, or both with `npm -w @mm/contracts run test:uliq`. Deployment and configuration are intentionally separate stages so addresses and ownership can be reconciled before inventory funding. No Mainnet script is provided for ULIQ while ADR-001 is blocked.
+Run only the new review suite with `npm -w @mm/contracts run test:uliq:presale-v2`, only the previous MVP suite with `npm -w @mm/contracts run test:uliq:legacy-testnet`, or both with `npm -w @mm/contracts run test:uliq`. Deployment and configuration are intentionally separate stages so addresses and ownership can be reconciled before inventory funding. An isolated Mainnet locker script is now prepared, but has not been broadcast. The full Presale V2 Mainnet deployment/configuration manifest remains pending. See the [contract input and authority review](./ULIQ_MAINNET_CONTRACT_APPROVAL.md).
 
 ### Arbitrum Sepolia deployment preflight
 

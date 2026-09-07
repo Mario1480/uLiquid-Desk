@@ -1,0 +1,39 @@
+{
+  "complete": false,
+  "scanId": "91fc3376-3351-4570-82c9-9c9a997bf067",
+  "findings": [],
+  "coverage": {
+    "completeness": "partial",
+    "surfaces": [],
+    "explicitExclusions": [
+      {
+        "pattern": "packages/contracts/src/{BotVault*,FundingVault*,Grid*,Futures*}",
+        "reason": "Non-ULIQ code outside user's requested smart-contract scope."
+      }
+    ],
+    "deferred": [
+      {
+        "id": "uliq-ready-expiry-deadlock",
+        "candidateId": "uliq-ready-expiry-deadlock",
+        "reason": "Independent baseline candidate awaiting parent reproduction and severity validation; operational trigger may have no unprivileged attacker.",
+        "candidate": {
+          "title": "Expired READY round cannot end, trapping inventory and the shared listing",
+          "locations": [
+            {
+              "path": "packages/contracts/src/uliq/presale-v2/ULIQPresaleRound.sol",
+              "startLine": 235,
+              "endLine": 269
+            }
+          ],
+          "evidence": "activateSale requires block.timestamp < saleEnd, endSale accepts only ACTIVE/PAUSED, configureSaleWindow is DRAFT-only, releaseUnsold requires ended state. Round 2 expiry after Round 1 finalization prevents both-round listing readiness.",
+          "counterevidence": "Requires missed owner activation; dates can be corrected in DRAFT before markReady."
+        }
+      }
+    ],
+    "openQuestions": [
+      {
+        "question": "Final report will distinguish exploitable findings, lifecycle defects, trust assumptions, and open Mainnet scope."
+      }
+    ]
+  }
+}

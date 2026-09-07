@@ -1,8 +1,22 @@
 # ULIQ Presale V2 Mainnet Role Matrix
 
-Status: planning and read-only address evidence only; not audited, not deployment-ready, and not authorization to fund, sign, broadcast, deploy, configure, or activate contracts.
+Status: owner policy approval recorded on 2026-09-07; exact roles and contract powers prepared for Mario's review. Historical Safe observations below are unchanged; no deployment or live activation performed.
+
+Current review: [ULIQ Mainnet contract inputs and authority](./ULIQ_MAINNET_CONTRACT_APPROVAL.md). Mario selected Safe-based treasury custody and manual exceptional handling. Proposed USDC treasury: existing Treasury Safe `0x9C96F9AE59e30786fD325EFD969884FC1f751739`, subject to the requested item-3 address approval. Pending USDC is held in each custody contract and reaches this recipient only on finalization. Native Arbitrum USDC is `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` for both rounds and both custodies.
 
 This document records Arbitrum One role addresses for the ULIQ Presale V2 deployment graph. The initial ULIQ mint recipient is confirmed by Mario as recorded below; other candidate mappings remain proposals. Every address, owner set, threshold, balance, nonce, implementation, module, guard, constructor input, and transaction must be reverified against the finalized deployment revision immediately before any separately authorized action.
+
+## Existing token reference — 2026-09-07
+
+ULIQ is already deployed on Arbitrum One (`42161`) at `0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd`. Its creation transaction is `0xf5aa71e7973adf3f5f35ba4f8689f94dc7d0f853f65e80cb2a42dcc671671c7a`. Read-only verification at finalized block `502625136` returned symbol `ULIQ`, 18 decimals, supply `1000000000000000000000000000` raw and that same balance at the Treasury Safe. This refresh does not reverify Safe signers, roles or the proposed USDC treasury recipient.
+
+| Future contract input | Existing token value |
+| --- | --- |
+| Both `ULIQPresaleRound.uliq_` inputs | `0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd` |
+| Both `ULIQPresaleRoundVesting.token_` inputs | `0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd` |
+| Future Mainnet locking `token_` input | Pinned by `ULIQMainnetLocker`; local adapter implemented, deployment and runtime integration pending |
+
+The initial-mint decision below is historical context, not an instruction to deploy or mint another token. See the [current internal review and open actions](./ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md) and the [recorded source verification](../../docs/archive/tasks/2026-09-05-uliq-arbiscan-source-verification.md).
 
 ## Confirmed initial mint recipient — 2026-09-05
 
@@ -27,9 +41,9 @@ This is a point-in-time observation, not a monitoring result or a future-state g
 | Role | Address | Intended use / decision status | Snapshot evidence | Required before use |
 | --- | --- | --- | --- | --- |
 | Deployment EOA | `0x89473caAb2d0d5aC4B0fcCd45B0348E65307810E` | Gas-only deployment signer; no durable ownership or token allocation | No contract code, nonce `1`, successful inbound/outbound control test | Freeze the exact deployment script and revision, complete the dry-run, estimate gas, fund only the approved gas budget, and obtain explicit deployment authorization |
-| Treasury / inventory-source Safe | `0x9C96F9AE59e30786fD325EFD969884FC1f751739` | Confirmed initial `ULIQToken` mint recipient; still a candidate immutable inventory source for both rounds | Deployed SafeL2, two owners, threshold `2`, no modules or guard, successful two-signature transfer test | Resolve downstream allocation/distribution architecture, independently reverify all Safe state, complete audit and Legal gates, and approve the exact funding/reconciliation sequence |
+| Treasury / inventory-source Safe | `0x9C96F9AE59e30786fD325EFD969884FC1f751739` | Confirmed initial `ULIQToken` mint recipient; still a candidate immutable inventory source for both rounds | Deployed SafeL2, two owners, threshold `2`, no modules or guard, successful two-signature transfer test | Resolve downstream allocation/distribution architecture, independently reverify all Safe state, complete remaining technical release checks, and approve the exact funding/reconciliation sequence |
 | Admin / governance Safe | `0xf6EB22eC94be977A668967f44F89eB1e056FF70f` | Candidate owner for listing, rounds, vesting, and custody contracts | Deployed SafeL2, two owners, threshold `2`, no modules or guard, nonce `0` | Complete a two-signature execution test, independently reverify all Safe state, freeze the role map, and approve each configuration action separately |
-| Production USDC custody treasury | Unresolved | Recipient or safeguarding destination used by the final production custody model | No address accepted | Legal approval, final custody design, independent audit, and exact constructor/reconciliation review |
+| Production USDC custody treasury | Proposed: `0x9C96F9AE59e30786fD325EFD969884FC1f751739` | Safe selected by owner; exact recipient is part of item-3 review | Historical Treasury Safe snapshot only | Approve exact address, reverify Safe, audit and reconcile constructor/settlement |
 
 The deployment EOA is not an owner of either Safe. The Treasury/inventory and Admin/governance Safes currently use the same two owners:
 
@@ -47,8 +61,8 @@ The initial token recipient below is confirmed; the remaining mappings are candi
 | `ULIQToken.allocationController` | `0x9C96F9AE59e30786fD325EFD969884FC1f751739` | Initial recipient confirmed by Mario on 2026-09-05. The full initial supply is minted once. Final downstream bucket destinations and controls remain open before deployment. |
 | `ULIQGlobalListing.admin` | Admin / governance Safe | Controls one-time round binding and listing scheduling. |
 | `ULIQPresaleRoundVesting.admin` for both instances | Admin / governance Safe | Controls one-time Presale binding. |
-| `ULIQPaymentCustody.admin` for both instances | Admin / governance Safe | Production use remains blocked by the Legal and safeguarding decision. |
-| `ULIQPaymentCustody.treasury_` for both instances | Unresolved | Must not be inferred from the ULIQ Treasury Safe without explicit Legal, custody, and audit approval. |
+| `ULIQPaymentCustody.admin` for both instances | Admin / governance Safe | Owner policy approval recorded; exact authority/address review pending. |
+| `ULIQPaymentCustody.treasury_` for both instances | Proposed Treasury Safe above | Exact address awaits item-3 approval; Safe brand selection alone does not establish the recipient. |
 | `ULIQPresaleRound.inventorySource_` for both instances | Treasury / inventory-source Safe | The same Safe may fund both isolated rounds, but each immutable input and funding action must be verified independently. |
 | `ULIQPresaleRound.admin` for both instances | Admin / governance Safe | Controls draft configuration and lifecycle operations defined by the reviewed contract. |
 
@@ -84,7 +98,7 @@ Transaction success proves only the recorded action. It does not prove future si
 
 - Freeze a tagged or committed source revision, Solidity `0.8.30`, optimizer settings, IR pipeline, EVM target, and exact dependency lockfile.
 - Complete the independent audit and resolve all accepted findings.
-- Resolve ADR-001 Legal, access-control, withdrawal, cancellation, refund, and USDC safeguarding decisions.
+- Preserve the dated ADR-001 owner approval and complete the separately requested exact input/authority review.
 - Freeze canonical Arbitrum One USDC, sale timestamps, duration conversions, Safe addresses, owner sets, thresholds, and the ownership sequence.
 - Produce a chain-guarded Mainnet deployment script and a separately staged configuration plan.
 - Rehearse the complete graph on a local Arbitrum fork or Arbitrum Sepolia, including wrong-network, repeat-run, partial-failure, and reconciliation cases.
@@ -96,12 +110,12 @@ Transaction success proves only the recorded action. It does not prove future si
 
 ## Explicit exclusions
 
-This record does not authorize or evidence:
+This record does not authorize new actions or establish readiness for the following. The token-only read-only evidence above is separate from these approvals:
 
-- ULIQ token deployment or minting on Arbitrum One;
+- another ULIQ token deployment or minting on Arbitrum One;
 - Presale, vesting, listing, custody, locking, allocation, or distribution contract deployment;
 - Safe ownership, module, guard, or threshold changes;
 - ULIQ or USDC funding, approvals, transfers, custody settlement, or inventory funding;
 - `configureRounds()`, `setPresale()`, `fundInventory()`, `markReady()`, sale activation, listing scheduling, or DEX operations;
 - environment, database, API, indexer, web, production, migration, or feature-flag changes;
-- Legal approval, independent audit completion, or Mainnet readiness.
+- external legal opinion, independent audit completion, or Mainnet readiness.

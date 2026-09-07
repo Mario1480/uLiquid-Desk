@@ -4,19 +4,28 @@ Status: developer-review package; not audited, not Mainnet-ready, and not author
 
 This document defines the source set to hand to external reviewers for the current two-round ULIQ presale. Reviewers should receive a pinned commit or tag together with the compiler configuration and dependency lockfile. A working-tree snapshot is not a reproducible audit target.
 
-Candidate Arbitrum One role addresses and read-only verification evidence are recorded in [`ULIQ_PRESALE_V2_MAINNET_ROLES.md`](./ULIQ_PRESALE_V2_MAINNET_ROLES.md). Those candidates do not close any audit, Legal, custody, deployment, funding, configuration, readiness, or activation gate.
+Candidate Arbitrum One role addresses and read-only verification evidence are recorded in [`ULIQ_PRESALE_V2_MAINNET_ROLES.md`](./ULIQ_PRESALE_V2_MAINNET_ROLES.md). The dated owner decision in ADR-001 closes the previously raised policy approval items; exact contract inputs, independent audit and deployment preparation remain separate. See [Mario's contract review](./ULIQ_MAINNET_CONTRACT_APPROVAL.md).
 
 The [2026-09-05 token deployment audit](./ULIQ_TOKEN_DEPLOYMENT_AUDIT.md) adds token-only agent-review evidence and tests under `test/uliq/shared/`. It does not replace this package's independent audit or cover the other deployable contracts below.
+
+The [2026-09-07 presale, vesting and locking review](./ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md) records the original expired-READY lifecycle deadlock, its subsequent local correction, additional real-custody tests, and local fork integration with the existing Mainnet ULIQ token. The correction is not deployed. A subsequent local Mainnet locker adapter is included below; its deployment/runtime integration and the remaining technical release gates stay open. This internal review does not replace the external audit.
+
+## Existing Mainnet ULIQ token
+
+Use the existing Arbitrum One (`42161`) ULIQ token, `0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd`, as the `uliq_` input of both rounds and `token_` input of both vesting pools. The same token is the intended input for a future separately approved Mainnet locker. Do not deploy a replacement token as part of the presale graph. The token address was rechecked read-only at finalized block `502625136`; creation and source-verification evidence remain in the [2026-09-05 record](../../docs/archive/tasks/2026-09-05-uliq-arbiscan-source-verification.md).
+
+`ULIQ_PUBLIC_PRESALE_TOKEN_ADDRESS` in both environment examples now identifies that token. The separate `ULIQ_TOKEN_ADDRESS` belongs to the Sepolia-only legacy runtime and must retain its own network-specific value. Recording this address does not configure already-deployed immutable contracts or enable purchases.
 
 ## In-scope deployable contracts
 
 | File | Planned instances | Purpose |
 | --- | ---: | --- |
-| `src/uliq/shared/ULIQToken.sol` | 1 | Fixed-supply ERC-20 with burn and permit support. Include it if this bytecode will be the Mainnet ULIQ token. |
+| `src/uliq/shared/ULIQToken.sol` | 1 existing | Fixed-supply ERC-20 with burn and permit support. Review the existing Mainnet token and its compatibility; no replacement mint is part of this graph. |
 | `src/uliq/presale-v2/ULIQGlobalListing.sol` | 1 | Stores the one-time listing timestamp shared by both rounds. |
 | `src/uliq/presale-v2/ULIQPresaleRound.sol` | 2 | Generic non-upgradeable sale state machine, deployed once for each round. |
 | `src/uliq/presale-v2/ULIQPresaleRoundVesting.sol` | 2 | Separate funded vesting pool for each round. |
-| `src/uliq/presale-v2/ULIQPaymentCustody.sol` | 2 | Non-upgradeable, purchase-bound USDC custody candidate, deployed once per round. Legal approval is still required. |
+| `src/uliq/presale-v2/ULIQPaymentCustody.sol` | 2 | Purchase-bound USDC custody; pending funds stay here, finalized funds go to the selected Safe treasury. Owner policy approval recorded. |
+| `src/uliq/mainnet/ULIQMainnetLocker.sol` | 1 planned | Pins chain 42161 and the existing ULIQ token. Include inherited `src/uliq/legacy-testnet/ULIQLocker.sol` in the production dependency scope. |
 
 ## In-scope interfaces
 
@@ -35,7 +44,7 @@ The payment-custody interface and `ULIQPaymentCustody` candidate are both in sco
 - OpenZeppelin Contracts: exact `5.4.0`
 - Upgradeability: none
 - ULIQ supply: 1,000,000,000 tokens, minted once to the constructor-supplied allocation controller
-- Payment token assumption: an ERC-20 with 6 decimals; the intended canonical Mainnet token address must be frozen separately
+- Payment token: native Arbitrum USDC, `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`, 6 decimals. Entered in both environment examples and both rounds/custodies' prepared inputs.
 
 | Parameter | Round 1 | Round 2 |
 | --- | ---: | ---: |
@@ -48,11 +57,11 @@ The payment-custody interface and `ULIQPaymentCustody` candidate are both in sco
 | Cliff | 90 days | none |
 | Linear vesting after cliff | 548 days | 274 days |
 
-Round start and end timestamps are owner-configurable only while a round is in `DRAFT` and become frozen at `markReady()`. `saleWindowVersion` provides compare-and-set protection so an old Safe proposal cannot overwrite a newer executed window. The production withdrawal period is a constructor parameter and must be frozen to exactly 1,209,600 seconds only after Legal confirms the calendar-day and subscription-period interpretation.
+Round start and end timestamps are owner-configurable only while a round is in `DRAFT` and become frozen at `markReady()`, which rejects an already-expired window. If activation is missed, an expired `READY` round can be ended through permissionless `endSale()` without reopening its dates or bypassing pending-purchase/listing controls. `saleWindowVersion` provides compare-and-set protection so an old Safe proposal cannot overwrite a newer executed window. The prepared withdrawal period is 1,209,600 seconds, recorded for Mario's final parameter review. The generic constructor accepts a positive duration; it does not hard-code 14 days.
 
 ## Deployment graph and trust boundaries
 
-1. Deploy the token and the shared listing controller.
+1. Reverify the existing Mainnet ULIQ token above and use it throughout the graph; deploy the shared listing controller only under separate authorization.
 2. Deploy one vesting contract per round, both pointing to the shared listing controller.
 3. Deploy one separately scoped production custody instance per round. A shared custody deployment would require explicit round-aware purchase-ID namespacing and a separate design review.
 4. Deploy Round 1 without a predecessor and Round 2 with Round 1 as its predecessor.
@@ -76,6 +85,7 @@ The listing contract records a timestamp; it does not create DEX liquidity, veri
 - No buyer can claim ULIQ before the shared listing timestamp.
 - Both rounds must be listing-ready with no pending purchases before the listing timestamp can be scheduled.
 - Round 2 cannot activate before Round 1 reaches an ended state.
+- A never-activated `READY` round can end at or after expiry; its inventory can return once to its source, and missed activation cannot permanently prevent successor activation or shared vesting. No `READY` round can end before expiry.
 - Each vesting pool remains independently funded and follows only its configured release schedule.
 - Reentrancy or a failing token/custody transfer cannot leave partial purchase, refund, finalization, or claim state.
 - Deployment wiring cannot substitute malicious round, vesting, listing, token, predecessor, or custody addresses.
@@ -95,19 +105,17 @@ The following previous Arbitrum Sepolia MVP contracts are isolated under `src/ul
 
 - `ULIQPresale.sol`
 - `ULIQPresaleVesting.sol`
-- `ULIQLocker.sol`
 - `ULIQTestnetEscrow.sol`
 - `ULIQMockUSDC.sol`
 
 Their tests are under `test/uliq/legacy-testnet/`, and their deployment/configuration scripts are under `script/uliq/legacy-testnet/`. The scripts allow only local chain `31337` and Arbitrum Sepolia `421614`; they are not Mainnet scripts.
 
-`ULIQLocker.sol` is excluded because it belongs to the older testnet MVP. A Mainnet locking contract has not yet been selected or implemented and requires a separate scope decision and audit.
+Exception: `ULIQLocker.sol` is now in scope as the inherited logic of `ULIQMainnetLocker`. The separate Mainnet deployment script is `script/uliq/mainnet/DeployULIQMainnetLocker.s.sol`; legacy testnet deployment scripts remain unchanged.
 
 ## Open blockers before an audit freeze or Mainnet deployment
 
-- Obtain written Legal approval for the proposed onchain custody/safeguarding model. If rejected, freeze and audit must stop pending a replacement design.
-- Freeze the withdrawal period, exact calendar interpretation, sale timestamps, canonical USDC address, Safe addresses, thresholds, and ownership-transfer sequence.
-- Resolve ADR-001 decisions for legal access, safeguarding, cancellation, and refunds.
+- Record the superseding ADR-001 owner approval; do not reopen the accepted listing/manual-exception/Safe policy as an unanswered question.
+- Complete Mario's requested review of withdrawal duration, sale timestamps, exact Safe recipients, thresholds, ownership-transfer sequence and existing contract powers. Native USDC has been selected.
 - Freeze and independently verify each immutable inventory-source Safe, its owner set and threshold, then reconcile approval, funding, return receipts, events, balances, and finalized state through the admin workflow.
 - Decide whether eligibility/KYC/allowlisting is enforced off-chain or on-chain; the current contracts contain no buyer allowlist.
 - Define and review the DEX liquidity/listing procedure; the current listing controller is time-based only.
