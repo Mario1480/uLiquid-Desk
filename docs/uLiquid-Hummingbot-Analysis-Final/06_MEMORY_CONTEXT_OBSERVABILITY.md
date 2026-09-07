@@ -11,7 +11,7 @@
 - `IMPLEMENTED`: Decision Log presentation in the existing right-side Activity panel with recent-run selection and mobile behavior.
 - `NOT STARTED`: durable agent memory, replay/evaluation platform, learning promotion and a new observability persistence model.
 - `COMPLETE`: Mario confirmed Phase 1 verification and formal acceptance on 2026-09-05.
-- `IN PROGRESS`: Phase 2 has local run pinning, persisted feature values/references and Decision Log snapshot manifests. Their sidebar presentation and authenticated acceptance remain open in the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+- `COMPLETE`: Phase 2 shared datasets, run pinning, Feature Registry, persisted evidence and existing AI consumers are accepted by Mario on 2026-09-07. See the [Phase 2 closeout](implementation/PHASE_2_IMPLEMENTATION_PLAN.md). No durable raw-series collector or Hummingbot dependency is introduced.
 
 ## Executive Summary
 

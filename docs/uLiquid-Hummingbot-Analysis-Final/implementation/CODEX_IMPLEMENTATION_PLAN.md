@@ -16,12 +16,12 @@ Extend and test the existing foundations:
 
 Use existing uLiquid providers and data paths. Do not introduce Hummingbot or migrate existing adapters in this phase.
 
-## Phase 2 — Shared Data and Existing AI Upgrade — `IN PROGRESS`
+## Phase 2 — Shared Data and Existing AI Upgrade — `COMPLETE`
 Build a provider-neutral Shared Market Data foundation and a versioned Feature Registry with snapshot/provenance support. Upgrade the existing Market Analyst and Position Copilot to consume the Phase 1 Skills, shared features and Decision Logs. Keep Market Analyst read-only and Position Copilot recommendation-only.
 
 Shared Market Data is uLiquid-owned and must proceed regardless of the later Hummingbot POC result. It may initially use the existing native providers.
 
-The active [Phase 2 implementation plan](PHASE_2_IMPLEMENTATION_PLAN.md) records local shared datasets, run pinning, Feature Registry, persisted values, feature-aware AI context, standalone perpetual Copilot and sidebar integration. Historical scope and acceptance remain open.
+The active [Phase 2 implementation plan](PHASE_2_IMPLEMENTATION_PLAN.md). Phase 2 is complete by Mario’s full-test confirmation and owner acceptance on 2026-09-07. Shared data, versioned features, existing AI upgrades, bounded provider histories and persisted evidence are accepted. Earlier test records remain historical evidence, not new benchmark measurements.
 
 ## Phase 3 — New Product Features — `NOT STARTED`
 Implement deterministic Arbitrage and XEMM Scanners with fees, slippage, depth, inventory readiness and opportunity scoring. Scanner-only: no automated cross-market execution.
@@ -100,7 +100,7 @@ As of the September 4 release, authenticated browser E2E and live-provider accep
 
 ## Recommended next step
 
-Continue the remaining 2C/2E acceptance and 2D historical design in the [Phase 2 implementation plan](PHASE_2_IMPLEMENTATION_PLAN.md). Snapshot AI/UI consumers are integrated locally; standalone spot enrichment, model/credit comparisons, the web typecheck blocker and authenticated acceptance remain explicit follow-ups.
+Phase 2 is complete by owner acceptance on 2026-09-07. The next step is a separate Phase 3 implementation plan: Arbitrage Scanner first, then XEMM Scanner. Both remain scanner-only and not started; this documentation update does not authorize implementation or execution.
 
 The Bitget Hummingbot POC remains a separate workstream. Its comparison run requires a stable, measurable native Bitget baseline and is not started by the Phase 2 implementation.
 

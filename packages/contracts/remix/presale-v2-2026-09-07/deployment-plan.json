@@ -1,0 +1,196 @@
+{
+  "status": "LOCAL_FORK_REHEARSAL_ONLY_NOT_DEPLOYED",
+  "chainId": 42161,
+  "forkBlock": 502723179,
+  "sourceRevision": "a3dfbd7648887ae027a628988d256644a3bb4097",
+  "deployer": "0x89473caAb2d0d5aC4B0fcCd45B0348E65307810E",
+  "admin": "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+  "treasury": "0x9C96F9AE59e30786fD325EFD969884FC1f751739",
+  "sourceSha256": "8dc954f6035760a91776dc0f0fef8e0ecddad98bef396770d527ac3dfeb3df41",
+  "compiler": {
+    "version": "0.8.30+commit.73712a01",
+    "optimizer": true,
+    "runs": 200,
+    "viaIR": true,
+    "evmVersion": "paris"
+  },
+  "deployments": [
+    {
+      "label": "listing",
+      "contract": "ULIQGlobalListing",
+      "constructorSignature": "constructor(address)",
+      "constructorArguments": [
+        "0xf6EB22eC94be977A668967f44F89eB1e056FF70f"
+      ],
+      "encodedConstructorArguments": "0x000000000000000000000000f6eb22ec94be977a668967f44f89eb1e056ff70f",
+      "predictedAddress": "0x1010161234c12c7b57a36083213e03eeaac69027",
+      "deployerNonce": 2,
+      "localForkGasUsed": 431783,
+      "creationDataSha256": "fb9850f18dfb0557e4d85ce280a2e1605009c6f0e1dbaa93d8bc5313b1c6609f"
+    },
+    {
+      "label": "vesting1",
+      "contract": "ULIQPresaleRoundVesting",
+      "constructorSignature": "constructor(address,address,address,uint16,uint64,uint64)",
+      "constructorArguments": [
+        "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "0x1010161234c12c7b57a36083213e03eeaac69027",
+        "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+        "500",
+        "7776000",
+        "47347200"
+      ],
+      "encodedConstructorArguments": "0x000000000000000000000000f2fa252134c84fcf260c73665baf3f8ccbe03eed0000000000000000000000001010161234c12c7b57a36083213e03eeaac69027000000000000000000000000f6eb22ec94be977a668967f44f89eb1e056ff70f00000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000000000000000000000000000000000000076a7000000000000000000000000000000000000000000000000000000000002d27600",
+      "predictedAddress": "0xd77b3af71bf8b9d27fc27873e60a3d2e5336c001",
+      "deployerNonce": 3,
+      "localForkGasUsed": 1004636,
+      "creationDataSha256": "9b21399c4eb87e4c1bb06e3cc23bb734d2daf3fbce91df1223ac7266dec46d07"
+    },
+    {
+      "label": "custody1",
+      "contract": "ULIQPaymentCustody",
+      "constructorSignature": "constructor(address,address,address)",
+      "constructorArguments": [
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+        "0x9C96F9AE59e30786fD325EFD969884FC1f751739"
+      ],
+      "encodedConstructorArguments": "0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000f6eb22ec94be977a668967f44f89eb1e056ff70f0000000000000000000000009c96f9ae59e30786fd325efd969884fc1f751739",
+      "predictedAddress": "0x9cb0af882f2568427495e323fad44d0d0eed419b",
+      "deployerNonce": 4,
+      "localForkGasUsed": 1024775,
+      "creationDataSha256": "79c09a0cb0a9800821746f4d9e5b8d0d61b79e74200fbdb620655b8188dfee6d"
+    },
+    {
+      "label": "round1",
+      "contract": "ULIQPresaleRound",
+      "constructorSignature": "constructor(uint8,address,address,address,address,address,address,address,address,uint256,uint256,uint256,uint256,uint256,uint64)",
+      "constructorArguments": [
+        "1",
+        "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "0x9cb0af882f2568427495e323fad44d0d0eed419b",
+        "0xd77b3af71bf8b9d27fc27873e60a3d2e5336c001",
+        "0x1010161234c12c7b57a36083213e03eeaac69027",
+        "0x0000000000000000000000000000000000000000",
+        "0x9C96F9AE59e30786fD325EFD969884FC1f751739",
+        "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+        "100000000000",
+        "50000000000000000000000000",
+        "2000",
+        "500000000",
+        "10000000000",
+        "1209600"
+      ],
+      "encodedConstructorArguments": "0x0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000f2fa252134c84fcf260c73665baf3f8ccbe03eed000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e58310000000000000000000000009cb0af882f2568427495e323fad44d0d0eed419b000000000000000000000000d77b3af71bf8b9d27fc27873e60a3d2e5336c0010000000000000000000000001010161234c12c7b57a36083213e03eeaac6902700000000000000000000000000000000000000000000000000000000000000000000000000000000000000009c96f9ae59e30786fd325efd969884fc1f751739000000000000000000000000f6eb22ec94be977a668967f44f89eb1e056ff70f000000000000000000000000000000000000000000000000000000174876e800000000000000000000000000000000000000000000295be96e6406697200000000000000000000000000000000000000000000000000000000000000000007d0000000000000000000000000000000000000000000000000000000001dcd650000000000000000000000000000000000000000000000000000000002540be4000000000000000000000000000000000000000000000000000000000000127500",
+      "predictedAddress": "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400",
+      "deployerNonce": 5,
+      "localForkGasUsed": 2629288,
+      "creationDataSha256": "743b418ff04f9f760bb6dbcb94ea0ce14a89be1c3b92a94394d5728146165221"
+    },
+    {
+      "label": "vesting2",
+      "contract": "ULIQPresaleRoundVesting",
+      "constructorSignature": "constructor(address,address,address,uint16,uint64,uint64)",
+      "constructorArguments": [
+        "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "0x1010161234c12c7b57a36083213e03eeaac69027",
+        "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+        "2500",
+        "0",
+        "23673600"
+      ],
+      "encodedConstructorArguments": "0x000000000000000000000000f2fa252134c84fcf260c73665baf3f8ccbe03eed0000000000000000000000001010161234c12c7b57a36083213e03eeaac69027000000000000000000000000f6eb22ec94be977a668967f44f89eb1e056ff70f00000000000000000000000000000000000000000000000000000000000009c400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001693b00",
+      "predictedAddress": "0xdeeb1ad0ba102b9af9f07304daa593fbab267bd0",
+      "deployerNonce": 6,
+      "localForkGasUsed": 1004612,
+      "creationDataSha256": "c4c079435a39edfa91c8a76a616a392ddfa13fa83b646e378b3d44b3b9c39197"
+    },
+    {
+      "label": "custody2",
+      "contract": "ULIQPaymentCustody",
+      "constructorSignature": "constructor(address,address,address)",
+      "constructorArguments": [
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+        "0x9C96F9AE59e30786fD325EFD969884FC1f751739"
+      ],
+      "encodedConstructorArguments": "0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000f6eb22ec94be977a668967f44f89eb1e056ff70f0000000000000000000000009c96f9ae59e30786fd325efd969884fc1f751739",
+      "predictedAddress": "0x5f7687f410aa5ebbdd1bdeef3171b8075c6ede0e",
+      "deployerNonce": 7,
+      "localForkGasUsed": 1024775,
+      "creationDataSha256": "79c09a0cb0a9800821746f4d9e5b8d0d61b79e74200fbdb620655b8188dfee6d"
+    },
+    {
+      "label": "round2",
+      "contract": "ULIQPresaleRound",
+      "constructorSignature": "constructor(uint8,address,address,address,address,address,address,address,address,uint256,uint256,uint256,uint256,uint256,uint64)",
+      "constructorArguments": [
+        "2",
+        "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "0x5f7687f410aa5ebbdd1bdeef3171b8075c6ede0e",
+        "0xdeeb1ad0ba102b9af9f07304daa593fbab267bd0",
+        "0x1010161234c12c7b57a36083213e03eeaac69027",
+        "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400",
+        "0x9C96F9AE59e30786fD325EFD969884FC1f751739",
+        "0xf6EB22eC94be977A668967f44F89eB1e056FF70f",
+        "350000000000",
+        "100000000000000000000000000",
+        "3500",
+        "100000000",
+        "5000000000",
+        "1209600"
+      ],
+      "encodedConstructorArguments": "0x0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000f2fa252134c84fcf260c73665baf3f8ccbe03eed000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e58310000000000000000000000005f7687f410aa5ebbdd1bdeef3171b8075c6ede0e000000000000000000000000deeb1ad0ba102b9af9f07304daa593fbab267bd00000000000000000000000001010161234c12c7b57a36083213e03eeaac6902700000000000000000000000094ac004efbdfc5ede8fc9c2d45e36727f82124000000000000000000000000009c96f9ae59e30786fd325efd969884fc1f751739000000000000000000000000f6eb22ec94be977a668967f44f89eb1e056ff70f000000000000000000000000000000000000000000000000000000517da02c0000000000000000000000000000000000000000000052b7d2dcc80cd2e40000000000000000000000000000000000000000000000000000000000000000000dac0000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000000000000000000000000000000000012a05f2000000000000000000000000000000000000000000000000000000000000127500",
+      "predictedAddress": "0x8be7baa1ab28764bf8646e869b3ef29089efe021",
+      "deployerNonce": 8,
+      "localForkGasUsed": 2629504,
+      "creationDataSha256": "857f19b41060e8d65d84df7fb88a3ed147942f4e1a2cb1ed7f5bb371e45b5879"
+    }
+  ],
+  "bindings": [
+    {
+      "to": "0x1010161234c12c7b57a36083213e03eeaac69027",
+      "signature": "configureRounds(address,address)",
+      "arguments": [
+        "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400",
+        "0x8be7baa1ab28764bf8646e869b3ef29089efe021"
+      ],
+      "data": "0xe8b346f000000000000000000000000094ac004efbdfc5ede8fc9c2d45e36727f82124000000000000000000000000008be7baa1ab28764bf8646e869b3ef29089efe021"
+    },
+    {
+      "to": "0xd77b3af71bf8b9d27fc27873e60a3d2e5336c001",
+      "signature": "setPresale(address)",
+      "arguments": [
+        "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400"
+      ],
+      "data": "0xd5fcc7b600000000000000000000000094ac004efbdfc5ede8fc9c2d45e36727f8212400"
+    },
+    {
+      "to": "0x9cb0af882f2568427495e323fad44d0d0eed419b",
+      "signature": "setPresale(address)",
+      "arguments": [
+        "0x94ac004efbdfc5ede8fc9c2d45e36727f8212400"
+      ],
+      "data": "0xd5fcc7b600000000000000000000000094ac004efbdfc5ede8fc9c2d45e36727f8212400"
+    },
+    {
+      "to": "0xdeeb1ad0ba102b9af9f07304daa593fbab267bd0",
+      "signature": "setPresale(address)",
+      "arguments": [
+        "0x8be7baa1ab28764bf8646e869b3ef29089efe021"
+      ],
+      "data": "0xd5fcc7b60000000000000000000000008be7baa1ab28764bf8646e869b3ef29089efe021"
+    },
+    {
+      "to": "0x5f7687f410aa5ebbdd1bdeef3171b8075c6ede0e",
+      "signature": "setPresale(address)",
+      "arguments": [
+        "0x8be7baa1ab28764bf8646e869b3ef29089efe021"
+      ],
+      "data": "0xd5fcc7b60000000000000000000000008be7baa1ab28764bf8646e869b3ef29089efe021"
+    }
+  ],
+  "warning": "Predictions require unchanged deployer nonce and exact deployment order. Never use as evidence of production deployment."
+}

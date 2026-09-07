@@ -9,7 +9,7 @@
 
 - `IMPLEMENTED`: deterministic current-snapshot Funding, open-interest and order-book analytics with provider/source provenance, timestamps, age, fallback codes and honest quality states.
 - `IMPLEMENTED`: native normalization coverage for the Phase 1 Binance, Bitget, Hyperliquid, MEXC, BingX-unsupported and linked-Paper contracts.
-- `IN PROGRESS`: shared derivatives/candles/ticker/orderbook snapshots, Feature Registry, run pinning, persisted values, feature-aware AI context, standalone perpetual Copilot and sidebar are implemented locally. Historical/spot scope and acceptance are tracked in the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+- `COMPLETE`: Phase 2 shared datasets, run pinning, Feature Registry, persisted evidence and existing AI consumers are accepted by Mario on 2026-09-07. See the [Phase 2 closeout](implementation/PHASE_2_IMPLEMENTATION_PLAN.md). No durable raw-series collector or Hummingbot dependency is introduced.
 - `NOT STARTED`: distributed subscriptions, historical Funding/OI series, raw-input recalculation/replay and Hummingbot market-data provider.
 - `COMPLETE`: Mario confirmed Phase 1 verification and formal acceptance on 2026-09-05. Connector certification and a measurable native-vs-Hummingbot comparison remain separate gates.
 

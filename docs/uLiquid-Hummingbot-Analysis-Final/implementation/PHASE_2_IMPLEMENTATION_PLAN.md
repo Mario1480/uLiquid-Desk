@@ -1,6 +1,6 @@
 # Phase 2 — Shared Data and Existing AI Upgrade
 
-Status: `IN PROGRESS` — snapshot consumers, positive-position acceptance, Binance historical UTC/reload acceptance and standalone cache identity/invalidation passed. History is deployed with the UTC correction `31a9da352`. Genuine stale observations and the controlled before/after benchmark remain open. See the current acceptance update below; older dated entries retain their historical status.
+Status: `COMPLETE` — Mario confirmed full testing and acceptance on 2026-09-07. Remaining Phase 2 acceptance gates are closed by owner decision; no additional independently observed stale test or measured before/after benchmark is asserted.
 Started: 2026-09-05.
 
 ## Entry decision
@@ -43,7 +43,7 @@ The implementation remains in-process, not a Redis/distributed cache, websocket 
 - [x] Keep legacy feature arrays empty. Drop invalid persisted values, source/dataset mismatches and unsupported versions with `stored_feature_evidence_invalid`. Failed runs retain successful evidence without a recommendation.
 - [x] Retain in-process sharing for now; distributed ownership remains conditional on measured concurrency/duplication across API workers.
 
-### 2C — Existing AI consumers — `DEPLOYED` for snapshot context; acceptance partial
+### 2C — Existing AI consumers — `COMPLETE`
 
 1. **Market Analyst:** consume shared candles, indicators, ticker, derivatives and orderbook features. Make source differences, stale data and insufficient context visible in the existing structured response. Compare request counts, latency and credit usage against the current path with fixed fixtures and prompts.
 2. **Position Copilot:** attach public market features to account-owned position snapshots after permission checks. Preserve deterministic risk fallback, liquidation-distance semantics, deduplication, cooldowns and read-only guarantees. Cover both the Agent Chat profile and the standalone `apps/api/src/position-copilot/service.ts` path; they are distinct consumers.
@@ -60,10 +60,10 @@ Do not reprice AI models, change tool budgets, replace profiles, or activate sch
 - [x] Live positive-position acceptance passed for the standalone and Agent Chat Copilot on 2026-09-06 after release; see the [post-release browser evidence](../../archive/tasks/2026-09-06-post-release-copilot-browser-acceptance.md). Complete recommendations, available BingX orderbook, conservative liquidation-zero handling and persisted Agent Chat provenance were observed.
 - [x] The deployed mobile Decision Log correction passed authenticated English/German 390×844 acceptance after unlock. A new Spot Agent Chat run and genuine BingX-to-Hyperliquid `auto` Funding fallback completed with exact reloaded feature evidence; see the [closeout evidence](../../archive/tasks/2026-09-06-phase2-spot-closeout-slice.md).
 - [x] Standalone cached-evidence identity and natural snapshot-change invalidation passed in authenticated Firefox on 2026-09-06; see the current acceptance update below.
-- [ ] Fixed-prompt before/after quality/latency/credit comparisons and genuine stale observations remain open. Passing synthetic checks does not close these gates.
+- [x] Fixed-prompt comparison and genuine stale-observation acceptance closed by Mario’s full-test confirmation on 2026-09-07. No additional raw results or benchmark measurements were supplied; closure is owner acceptance, not a new agent-run test report.
 - [x] The follow-up preserves the specific unsupported-capability reason through `withPublicVenue`, adds translated unavailable-capability copy and retains failed-tool skill/schema provenance. Required routines are not presented as executed routines when a tool fails. Code `3dc0e2401` is production-deployed; runtime smokes and authenticated BingX wording/version/reload acceptance passed.
 
-### 2D — Historical feature scope — `IN PROGRESS`; provider-history mode selected
+### 2D — Historical feature scope — `COMPLETE`; provider-history mode retained
 
 Mario selected existing exchange histories without a new database on 2026-09-06. The [historical storage decision](PHASE_2_HISTORY_DECISION.md) records that choice, verified initial coverage, calculation safeguards and capacity boundaries. No collector or migration is authorized.
 
@@ -76,7 +76,7 @@ Historical changes, percentiles and Z-scores now use the separate bounded provid
 
 This item is not silently moved to a later roadmap phase. Phase 2 closeout must either complete the approved historical subset or explicitly record Mario's decision to defer it.
 
-### 2E — Acceptance and release — `PARTIAL`; API/web snapshot slice deployed
+### 2E — Acceptance and release — `COMPLETE` by owner acceptance
 
 - Run Futures Core/Exchange, Agent Chat, Position Copilot, API/web typechecks, web i18n and relevant UI tests without forced exits.
 - Test single-flight/TTL/eviction, simultaneous failures, bounded hung requests, mutation isolation and cross-user/run/account/market separation.
@@ -85,6 +85,12 @@ This item is not silently moved to a later roadmap phase. Phase 2 closeout must 
 - Test durable snapshot evidence, legacy logs, failed runs and conversation reloads.
 - Perform authenticated Market Analyst and Position Copilot browser acceptance for fresh/stale/degraded/fallback/unsupported states and mobile rendering.
 - Measure shared reads versus current baseline, then document a separately authorized release and rollback. Do not mark Phase 2 deployed from local tests.
+
+## Formal closeout — 2026-09-07
+
+Mario confirmed that he fully tested the remaining scope and that everything works. Phase 2 is complete by owner acceptance, including the remaining stale-observation and controlled-comparison gates. No additional independent test or benchmark figures are claimed. See the [dated owner acceptance](../../archive/tasks/2026-09-07-phase2-owner-acceptance.md).
+
+The implementation contract and dated checkpoints below remain at this stable reference path for traceability. Earlier open checkboxes and local-only statuses in dated evidence are historical, not current blockers. Supported-provider boundaries, read-only permissions and separate certification gates are unchanged. Phase 3 is not started; its next step is a scanner-only plan, Arbitrage before XEMM.
 
 ## Code ownership and integration map
 
@@ -132,7 +138,7 @@ This item is not silently moved to a later roadmap phase. Phase 2 closeout must 
 - Futures Core: 16/16 passed. Final API typecheck, web UI tests, i18n and `git diff --check` passed; full web typecheck reproduced the dashboard error above.
 - No exchange signing/runtime policy, Prisma migration, Hummingbot, execution dependency, model pricing or production release is introduced.
 
-## Next implementation slice
+## Historical next-slice recommendation — superseded by the 2026-09-07 closeout
 
 Complete the remaining 2C/2E gates: decide standalone spot enrichment scope, compare fixed-prompt AI behavior/latency/credits, and finish target-environment positive-position and stale/fallback acceptance. The controlled fixtures below do not replace those live gates. Do not create production positions or corrupt production data to manufacture fixtures. Prepare the 2D historical coverage/storage design before any migration or backfill.
 
