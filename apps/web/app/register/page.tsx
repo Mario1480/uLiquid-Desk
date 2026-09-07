@@ -5,6 +5,7 @@ import { DeskLink } from "@/components/desk/DeskLink";
 import { GlassButton } from "@/components/einui/liquid-glass/glass-button";
 import { GlassInput } from "@/components/einui/liquid-glass/glass-input";
 import { GlassAuthFrame } from "@/components/einui/auth-frame";
+import BetaApplication from "@/components/beta/BetaApplication";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -138,10 +139,11 @@ export default function RegisterPage() {
   }
 
   return (
-    <GlassAuthFrame title={t("createAccountTitle")} icon={<AppIcon name="register" />} notice={step === "verify" || registrationEnabled === true ? <LegalRiskNotice /> : null}>
+    <GlassAuthFrame title={t(registrationEnabled === false && step === "register" ? "beta.title" : "createAccountTitle")} icon={<AppIcon name="register" />} notice={step === "verify" || registrationEnabled === true ? <LegalRiskNotice /> : null}>
         {step === "register" && registrationEnabled !== true ? (
           <div className="authForm">
             <p role="status">{registrationUnavailable ? t("errors.registration_unavailable") : registrationEnabled === false ? t("errors.registration_disabled") : t("registrationLoading")}</p>
+            {registrationEnabled === false && !registrationUnavailable ? <BetaApplication /> : null}
             <DeskLink href={withLocalePath("/login", locale)} className="btn">
               <AppIcon name="back" /> {t("backToLogin")}
             </DeskLink>

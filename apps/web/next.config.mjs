@@ -12,6 +12,14 @@ const nextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../.."),
   async headers() {
     return [
+      ...["/register/beta", "/:locale(en|de)/register/beta"].map(source => ({
+        source,
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" }
+        ]
+      })),
       {
         source: "/static/charting_library/:path*",
         headers: [

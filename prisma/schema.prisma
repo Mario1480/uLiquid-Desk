@@ -861,6 +861,45 @@ model User {
   uliqTierConfigsCreated               UliqTierConfig[]                      @relation("UliqTierConfigCreatedBy")
 }
 
+model BetaAccessRequest {
+  id String @id @default(cuid())
+  email String @unique
+  motivation String
+  locale String @default("en")
+  status String @default("UNVERIFIED")
+  verifiedAt DateTime?
+  reviewedBy String?
+  reviewedAt DateTime?
+  completedAt DateTime?
+  userId String? @unique
+  provisionedAt DateTime?
+  provisioningLeaseUntil DateTime?
+  mailStatus String @default("NONE")
+  mailAttemptId String?
+  mailAttemptAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tokens BetaAccessToken[]
+
+  @@index([status, createdAt])
+  @@map("beta_access_requests")
+}
+
+model BetaAccessToken {
+  id String @id @default(cuid())
+  requestId String
+  purpose String
+  tokenHash String @unique
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  request BetaAccessRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, purpose])
+  @@index([expiresAt])
+  @@map("beta_access_tokens")
+}
+
 model UserLegalAcknowledgement {
   id         String   @id @default(cuid())
   userId     String   @map("user_id")

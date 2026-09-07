@@ -78,6 +78,7 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 
 ## Engineering and Operations
 
+- [Beta access applications, invitations and activation gates](auth/beta-access.md)
 - [Ein UI integration and acceptance](ui/einui-integration.md)
 - [Ein UI route migration inventory](ui/einui-route-inventory.md)
 - [Ein UI validation, screenshots and release gates](ui/einui-validation.md)

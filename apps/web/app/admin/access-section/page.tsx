@@ -10,6 +10,7 @@ import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { AppIcon, type AppIconName } from "../../components/AppIcon";
 import AdminPageHeader from "../_components/AdminPageHeader";
 import RegistrationSettings from "./RegistrationSettings";
+import BetaAccessSettings from "./BetaAccessSettings";
 import {
   DEFAULT_ACCESS_SECTION_MAINTENANCE,
   DEFAULT_ACCESS_SECTION_VISIBILITY,
@@ -115,6 +116,7 @@ export default function AdminAccessSectionPage() {
     <div className="adminPageStack">
       <AdminPageHeader eyebrow="System" title={t("title")} description={t("subtitle")} />
       {canManageRegistration ? <RegistrationSettings /> : null}
+      {canManageRegistration ? <BetaAccessSettings /> : null}
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
