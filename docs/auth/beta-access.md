@@ -1,6 +1,6 @@
 # Beta access applications and invitations
 
-Status: code and additive migration deployed on 2026-09-07; Turnstile configuration, privacy approval and intake activation remain open. See [production release evidence](../archive/tasks/2026-09-07-presale-beta-production-release.md). Public registration and beta intake remain closed. Live email delivery and full production invitation redemption have not been tested.
+Status: deployed on 2026-09-07. Turnstile is configured; the operator-approved privacy supplement is published and beta intake is enabled while public registration remains disabled. See [privacy publication and activation evidence](../archive/tasks/2026-09-07-beta-privacy-activation.md) and [initial release evidence](../archive/tasks/2026-09-07-presale-beta-production-release.md). Full live email delivery and invitation redemption remain untested.
 
 ## Flow and material ownership
 
@@ -57,7 +57,7 @@ Prepare the public privacy addendum using these implemented facts:
 - Deletion: unverified requests after seven days; rejected/revoked after 30 days; pending/deferred after 90 days; completed applications after 30 days. Old invitations are removed after 90 days unless a currently valid invitation still exists. Expired token rows are removed after seven days. The minute-level cleanup cadence can add up to one scheduling interval during normal operation.
 - Account legal acknowledgements remain separate; deleting an application does not delete the account or its acceptance record. Audit events keep action/actor/request ID without motivation, email, password or tokens.
 
-Do not set `BETA_ACCESS_PRIVACY_APPROVED=true` until the approved public privacy text has been published. Existing public policy text is intentionally not silently rewritten or claimed legally sufficient by this implementation.
+Do not set `BETA_ACCESS_PRIVACY_APPROVED=true` until the approved public privacy text has been published. This sequence was completed on 2026-09-07 under Mario's explicit operator approval. Publication is not independent legal certification of the entire policy; prior acknowledgement records were not rewritten.
 
 ## Verification and release
 

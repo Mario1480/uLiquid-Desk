@@ -19,4 +19,10 @@ Rollback: turn beta intake off in the same settings UI; reset the privacy flag i
 
 ## Verification
 
-Pending publication/runtime verification. Real SMTP delivery, full invitation redemption and external challenge completion are not implied by a successful page/configuration smoke.
+- Web typecheck, i18n integrity and all 14 Ein UI contract tests passed. Local production build passed with an explicitly configured public API URL; the first attempt correctly failed closed when this required local environment value was absent.
+- Publication commit: `ffb66d617`, pushed to `origin/main`. The previous production web image was tagged `uliquid-desk-web:before-beta-privacy-20260907` before building the replacement.
+- Production Docker web build passed. Published only web, then recreated only API to load the privacy flag. No migration was pending among 115 migrations. Brief startup 502 responses cleared; API health recovered.
+- Published HTML and Chrome showed version `2026-09-07`, beta retention and Turnstile sections. Desktop and 390 px privacy rendering had no horizontal overflow or framework overlay. The only observed Chrome error came from a wallet extension (`Cannot redefine property: ethereum`).
+- Enabled the authenticated superadmin toggle through the regular audited API. Public endpoints confirmed beta `enabled: true` and public registration `enabled: false`.
+- The unauthenticated in-app browser displayed the German application form, privacy link and real Turnstile widget with automatic success; its error log was empty. No CAPTCHA was manually solved and no application or email submitted. Full SMTP delivery/server-side submission and invitation redemption remain untested in this live smoke.
+- Final container IDs: web `654c2b07cfd8`, API `4dad08ec01f7`, both healthy. Runner, PostgreSQL, Redis, Python strategy and proxy IDs were unchanged. Environment backups remain root-only outside Git.
