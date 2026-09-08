@@ -2530,6 +2530,13 @@
   overflow: visible;
 }
 
+.tradeDeskContextSection:focus-within { z-index: 20; }
+.tradeProtectionInput { display: grid; gap: 6px; min-width: 130px; }
+.tradeProtectionInput label { display: grid; gap: 3px; font-size: 12px; }
+.tradeCloseBackdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #0008; }
+.tradeClosePanel { width: min(440px, 100%); box-sizing: border-box; padding: 20px; border-radius: 16px; display: grid; gap: 14px; }
+.tradeCloseActions { display: flex; flex-wrap: wrap; gap: 8px; }
+
 .tradeDeskNotice {
   padding: 12px;
 }

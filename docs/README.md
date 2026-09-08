@@ -95,6 +95,8 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 
 Completed dated work records and historical implementation evidence live under [`archive/tasks`](archive/tasks/README.md). Archived evidence is retained for traceability and is not a statement of current runtime, deployment, or go-live status.
 
+- [Trading and dashboard UI fixes, 2026-09-08](archive/tasks/2026-09-08-trading-ui-fixes.md)
+
 Implementation plans remain in their feature area while any rollout, migration, deployment, legal, security, or production gate is open. They move to the archive only after the plan's completion status has been verified and its active conclusions have been transferred to the relevant reference or status document.
 
 ## Documentation maintenance policy

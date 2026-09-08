@@ -11,7 +11,7 @@ const GlassSwitch = React.forwardRef<
   <SwitchPrimitive.Root
     data-ein-control="switch"
     className={cn(
-      "ein:peer ein:inline-flex ein:h-6 ein:w-11 ein:shrink-0 ein:cursor-pointer ein:items-center ein:rounded-full",
+      "ein:peer ein:inline-flex ein:h-6 ein:w-11 ein:shrink-0 ein:cursor-pointer ein:items-center ein:justify-start ein:p-0 ein:box-border ein:rounded-full",
       "ein:border ein:border-white/20 ein:transition-all ein:duration-300",
       "ein:bg-white/10 ein:backdrop-blur-xl",
       "ein:focus-visible:outline-none ein:focus-visible:ring-2 ein:focus-visible:ring-white/50",

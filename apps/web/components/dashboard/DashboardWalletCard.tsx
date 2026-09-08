@@ -30,7 +30,7 @@ type FundingVaultOverview = {
 
 function DashboardWalletSkeleton() {
   return (
-    <DeskSurface dense><div className="card dashboardInsightCard dashboardWalletCard" aria-hidden="true">
+    <DeskSurface><div className="card dashboardInsightCard dashboardWalletCard" aria-hidden="true">
       <div className="dashboardWalletHead">
         <div className="dashboardWalletIntro">
           <GlassSkeleton className="skeletonLine skeletonLineLg" />
@@ -83,7 +83,7 @@ function DashboardWalletCardContent() {
 
   if (!isConnected) {
     return (
-      <DeskSurface dense><section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
+      <DeskSurface><section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
         <div className="dashboardWalletIntro">
           <div className="dashboardWalletTitle">{t("title")}</div>
           <div className="dashboardWalletSubtitle">{t("subtitle")}</div>
@@ -109,7 +109,7 @@ function DashboardWalletCardContent() {
 
   if (overviewQuery.isError || !overviewQuery.data) {
     return (
-      <DeskSurface dense><section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
+      <DeskSurface><section className="card dashboardInsightCard dashboardWalletCard dashboardWalletStateCard">
         <div className="dashboardWalletIntro">
           <div className="dashboardWalletTitle">{t("title")}</div>
           <div className="dashboardWalletSubtitle">{t("subtitle")}</div>
@@ -158,7 +158,7 @@ function DashboardWalletCardContent() {
   });
 
   return (
-    <DeskSurface dense><section className="card dashboardInsightCard dashboardWalletCard">
+    <DeskSurface><section className="card dashboardInsightCard dashboardWalletCard">
       <div className="dashboardWalletHead">
         <div className="dashboardWalletIntro">
           <div className="dashboardWalletTitle">{t("title")}</div>

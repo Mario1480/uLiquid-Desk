@@ -1164,6 +1164,18 @@
     }
   },
   "trade": {
+    "positionTools": {
+      "roe": "ROE % (margin)",
+      "estimatedPnl": "Estimated PnL",
+      "beforeFees": "Before fees and funding. Negative ROE for losses.",
+      "closeTitle": "Close position",
+      "percentage": "Position share (%)",
+      "quantity": "Quantity",
+      "closeEstimate": "Market execution. Estimated PnL before fees, funding and slippage.",
+      "closing": "Closing…",
+      "confirmClose": "Close {percentage}%",
+      "cancel": "Cancel"
+    },
     "title": "Trading Desk",
     "subtitle": "TradingView + order controls.",
     "loadingPage": "Loading trade page...",

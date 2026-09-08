@@ -212,7 +212,7 @@
     },
     {
       "path": "liquid-glass/glass-switch.tsx",
-      "sha256": "21ad699f08d2225a67dbe959ac705310ad96e9659cd81c005930643aa904fc6b"
+      "sha256": "e104ec61ee42a033d6f9452831f9c8bae1b69caf2e97678ed80d30f65f10a1c8"
     },
     {
       "path": "liquid-glass/glass-table.tsx",
@@ -252,7 +252,7 @@
     },
     {
       "path": "theme.css",
-      "sha256": "b3571500944f6b33721fba7949f8b657cdb3c2e4dd613394429b15f9d80ef093"
+      "sha256": "145e9b3374aee51284a9590d23caa610f44fa4138ff2851f6a8c049ad9200ce3"
     },
     {
       "path": "utils.ts",

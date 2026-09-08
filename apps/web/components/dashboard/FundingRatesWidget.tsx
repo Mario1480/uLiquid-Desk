@@ -87,7 +87,7 @@ export default function FundingRatesWidget() {
   }
 
   return (
-    <DeskSurface dense><div className="card dashboardInsightCard dashboardFundingRatesCard dashboardWidgetCardFill">
+    <DeskSurface><div className="card dashboardInsightCard dashboardFundingRatesCard dashboardWidgetCardFill">
       <div className="dashboardCompactWidgetHead">
         <div>
           <div className="dashboardCompactWidgetTitle">{t("title")}</div>

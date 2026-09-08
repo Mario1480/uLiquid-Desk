@@ -1164,6 +1164,18 @@
     }
   },
   "trade": {
+    "positionTools": {
+      "roe": "ROE % (Margin)",
+      "estimatedPnl": "Geschätzter Gewinn/Verlust",
+      "beforeFees": "Vor Gebühren und Funding. Negativer ROE für Verluste.",
+      "closeTitle": "Position schließen",
+      "percentage": "Positionsanteil (%)",
+      "quantity": "Menge",
+      "closeEstimate": "Marktausführung. Geschätzter Gewinn/Verlust vor Gebühren, Funding und Slippage.",
+      "closing": "Wird geschlossen…",
+      "confirmClose": "{percentage}% schließen",
+      "cancel": "Abbrechen"
+    },
     "title": "Trading Desk",
     "subtitle": "Chart + Order-Controll.",
     "loadingPage": "Trade-Seite wird geladen...",

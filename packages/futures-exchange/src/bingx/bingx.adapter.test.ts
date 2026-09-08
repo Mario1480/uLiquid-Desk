@@ -265,6 +265,33 @@ test("BingX placeOrder uses Swap V2 clientOrderID and TP/SL quantities", async (
   await adapter.close();
 });
 
+test("BingX partial closes preserve quantity and target the existing hedge side", async () => {
+  for (const hedge of [true, false]) {
+    const adapter = new BingxFuturesAdapter({ apiKey: "key", apiSecret: "secret", writeEnabled: true });
+    (adapter.contractCache as any).getByCanonical = async () => ({
+      canonicalSymbol: "BTCUSDT", exchangeSymbol: "BTC-USDT", minVol: 0.0001,
+      maxVol: null, tickSize: 0.1, stepSize: 0.0001, minLeverage: 1,
+      maxLeverage: 125, apiAllowed: true, minNotional: null
+    });
+    (adapter.accountApi as any).getPositionMode = async () => ({ dualSidePosition: hedge });
+    const placed: Record<string, unknown>[] = [];
+    (adapter.tradeApi as any).placeOrder = async (payload: Record<string, unknown>) => {
+      placed.push(payload);
+      return { orderId: "local-order", clientOrderID: payload.clientOrderID };
+    };
+    for (const side of ["sell", "buy"] as const) {
+      await adapter.placeOrder({ symbol: "BTCUSDT", type: "market", side, qty: 0.01234, reduceOnly: true });
+      const payload = placed.at(-1)!;
+      assert.equal(payload.quantity, 0.0123);
+      assert.equal(payload.positionSide, hedge ? side === "sell" ? "LONG" : "SHORT" : "BOTH");
+      assert.equal(payload.reduceOnly, hedge ? undefined : "true");
+      assert.equal(payload.takeProfit, undefined);
+      assert.equal(payload.stopLoss, undefined);
+    }
+    await adapter.close();
+  }
+});
+
 test("BingX placeOrder falls back to clientOrderID when ack omits venue order id", async () => {
   const adapter = new BingxFuturesAdapter({
     apiKey: "key",
