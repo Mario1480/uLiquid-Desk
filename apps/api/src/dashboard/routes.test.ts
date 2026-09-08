@@ -785,7 +785,11 @@ test("dashboard overview prefers recent account usage over stale bot sync for co
   assert.equal(res.body?.accounts?.[0]?.lastSyncAt, recentTs.toISOString());
 });
 
-function registerOpenPositionsTestRoute(accounts: any[], failingAccountIds = new Set<string>()) {
+function registerOpenPositionsTestRoute(
+  accounts: any[],
+  failingAccountIds = new Set<string>(),
+  hangingAccountIds = new Set<string>()
+) {
   const app = createFakeApp();
   registerDashboardRoutes(app as any, {
     db: {
@@ -818,6 +822,9 @@ function registerOpenPositionsTestRoute(accounts: any[], failingAccountIds = new
       async close() {}
     }),
     listPositions: async (adapter: any) => {
+      if (hangingAccountIds.has(String(adapter.accountId))) {
+        return new Promise<any[]>(() => undefined);
+      }
       if (failingAccountIds.has(String(adapter.accountId))) {
         throw new Error(`venue_down:${adapter.accountId}`);
       }
@@ -841,7 +848,8 @@ function registerOpenPositionsTestRoute(accounts: any[], failingAccountIds = new
     toFiniteNumber: (value: unknown) => {
       const num = Number(value);
       return Number.isFinite(num) ? num : null;
-    }
+    },
+    dashboardOpenPositionsReadTimeoutMs: 10
   } as any);
   return app;
 }
@@ -896,4 +904,25 @@ test("dashboard open positions fails closed when all venue reads fail", async ()
   assert.equal(res.body?.degraded, true);
   assert.equal(res.body?.retryable, true);
   assert.deepEqual(res.body?.failedExchangeAccountIds, ["acct_fail"]);
+});
+
+test("dashboard open positions bounds a hanging venue read and returns healthy accounts", async () => {
+  const app = registerOpenPositionsTestRoute(
+    [
+      { id: "acct_ok", exchange: "bingx", label: "BingX" },
+      { id: "acct_hang", exchange: "hyperliquid", label: "Backup" }
+    ],
+    new Set(),
+    new Set(["acct_hang"])
+  );
+  const handler = getFinalHandler(app, "/dashboard/open-positions");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body?.meta?.degraded, true);
+  assert.equal(res.body?.meta?.partialErrors, 1);
+  assert.deepEqual(res.body?.meta?.failedExchangeAccountIds, ["acct_hang"]);
 });

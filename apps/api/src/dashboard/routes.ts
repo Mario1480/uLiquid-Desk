@@ -50,6 +50,26 @@ const dashboardRiskAnalysisQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(10)
 });
 
+const DEFAULT_OPEN_POSITIONS_READ_TIMEOUT_MS = 10_000;
+
+function resolveOpenPositionsReadTimeoutMs(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_OPEN_POSITIONS_READ_TIMEOUT_MS;
+  return Math.min(50_000, Math.max(250, Math.trunc(parsed)));
+}
+
+function withOpenPositionsReadTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      const error = new Error("dashboard_position_read_timeout");
+      (error as Error & { code?: string }).code = "dashboard_position_read_timeout";
+      reject(error);
+    }, timeoutMs);
+
+    operation.then(resolve, reject).finally(() => clearTimeout(timeout));
+  });
+}
+
 function toDateOrNull(value: unknown): Date | null {
   return value instanceof Date ? value : null;
 }
@@ -127,6 +147,7 @@ export type RegisterDashboardRoutesDeps = {
     trimCountLastHour: number;
     trimAlertThresholdPerHour: number;
   };
+  dashboardOpenPositionsReadTimeoutMs?: number;
 };
 
 export function registerDashboardRoutes(app: express.Express, deps: RegisterDashboardRoutesDeps) {
@@ -1032,9 +1053,12 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       accounts.map((account: any) => String(account.id))
     );
     let fulfilledRelevantReadCount = 0;
+    const readTimeoutMs = resolveOpenPositionsReadTimeoutMs(
+      deps.dashboardOpenPositionsReadTimeoutMs ?? process.env.DASHBOARD_OPEN_POSITIONS_READ_TIMEOUT_MS
+    );
 
     const results = await Promise.allSettled(
-      accounts.map(async (account: any) => {
+      accounts.map((account: any) => withOpenPositionsReadTimeout((async () => {
         const exchangeAccountId = String(account.id);
         const exchange = String(account.exchange ?? "");
         const exchangeLabel = String(account.label ?? "").trim() || exchange.toUpperCase();
@@ -1100,7 +1124,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
         } finally {
           await adapter.close();
         }
-      })
+      })(), readTimeoutMs))
     );
 
     for (let index = 0; index < results.length; index += 1) {
