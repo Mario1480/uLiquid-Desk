@@ -55,6 +55,11 @@ test("missing Hummingbot evidence stays not assessed", () => {
   assert.equal(summarizeProbe(result.hummingbot).samples, 0);
 });
 
+test("unknown request instrumentation stays unknown", () => {
+  assert.equal(summarizeProbe({ ...native, requestAttempts: null }).requestAttempts, null);
+  assert.equal(summarizeProbe({ ...native, requestAttempts: undefined }).requestAttempts, null);
+});
+
 test("malformed, failed or mismatched probe identities cannot produce affirmative evidence", () => {
   const invalid = comparePublicProbes(native, {
     schemaVersion: "1.0.0",

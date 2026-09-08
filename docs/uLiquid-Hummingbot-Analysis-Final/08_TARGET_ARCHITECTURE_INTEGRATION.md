@@ -433,11 +433,11 @@ See the [Phase 2 implementation plan](implementation/PHASE_2_IMPLEMENTATION_PLAN
 ### Phase 3 — New Product Features — `NOT STARTED`
 Add scanner-only Arbitrage and XEMM experiences. They calculate realistic opportunities and risks but do not perform automated execution.
 
-### Phase 4 — Parallel Infrastructure Validation — `NOT STARTED`
-After Phase 1, define the Exchange Gateway by extending the existing adapter/capability foundations and run the isolated Bitget Hummingbot POC against the native Bitget path. Validate data, trading, recovery, latency, resource usage, tenant isolation and multi-account behavior. This may run in parallel with Phases 2–3.
+### Phase 4 — Parallel Infrastructure Validation — `COMPLETE — PARTIAL`
+The isolated Bitget Hummingbot POC closed on 2026-09-08. Public ticker, orderbook, current funding, mark price, trading rules, process restart and WebSocket reconnect are observed behind additive uLiquid-owned contracts. Private execution, recovery and multi-account scaling remain unassessed.
 
-### Decision Gate — `GATED`
-Evaluate the POC against the certification criteria. Hummingbot adoption beyond the POC requires an explicit decision based on functional, recovery, security, performance and economic evidence.
+### Decision Gate — `CLOSED — PARTIAL`
+The bounded public slice passed, but the full functional, recovery, security, performance and economic criteria did not. Hummingbot adoption beyond the POC remains gated.
 
 ### Phase 5 — If the POC Is Successful — `GATED`
 Introduce the production Hummingbot CEX Provider behind the existing uLiquid contracts. Add TWAP, DCA and further exchanges only after separate connector/market/executor certification.
@@ -454,9 +454,9 @@ Phase 1: Existing foundations consolidated [COMPLETE]
         │          ↓
         │   Phase 3: Arbitrage / XEMM Scanners [NOT STARTED]
         │
-        └─→ Phase 4: Exchange Gateway / Bitget Hummingbot POC [NOT STARTED]
+        └─→ Phase 4: Exchange Gateway / Bitget Hummingbot POC [COMPLETE — PARTIAL]
                    ↓
-              DECISION GATE [GATED]
+              DECISION GATE [CLOSED — PARTIAL]
                    ↓ PASS
         Phase 5: HB CEX Provider / TWAP / DCA / Exchanges [GATED]
 

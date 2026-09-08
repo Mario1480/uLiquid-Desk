@@ -115,6 +115,7 @@ Coverage:
 - grid termination / best-effort history-close parity regressions
 - shared `executionVenue` / `marketDataVenue` metadata regressions between Prediction Copier and Grid
 - fail-closed provider capabilities, timestamp/order-book normalization, bounded reads, identity, tenant binding and diagnostic redaction
+- pinned Hummingbot public-POC integrity, credential rejection and unknown-metric preservation
 
 ## 6. What is still outside this core matrix
 

@@ -26,15 +26,15 @@ The active [Phase 2 implementation plan](PHASE_2_IMPLEMENTATION_PLAN.md). Phase 
 ## Phase 3 — New Product Features — `NOT STARTED`
 Implement deterministic Arbitrage and XEMM Scanners with fees, slippage, depth, inventory readiness and opportunity scoring. Scanner-only: no automated cross-market execution.
 
-## Phase 4 — Parallel Infrastructure Validation — `NOT STARTED`
+## Phase 4 — Parallel Infrastructure Validation — `COMPLETE — PARTIAL`
 After the Phase 1 contract review, define and test the provider-neutral Exchange Gateway by extending the existing futures adapter and capability foundations. Add provider health, canonical execution identities and idempotency boundaries. Create an isolated `hummingbot-provider-poc` for Bitget so native and Hummingbot paths can be compared without changing product-facing APIs.
 
 Build a certification harness for authentication, data, orders, fills, reconnects, restarts, rate limits, idempotency, reconciliation, tenant isolation, latency and resource usage.
 
 This workstream may run in parallel with Phases 2–3. It must not force Hummingbot-specific DTOs or lifecycle assumptions into the Shared Market Data, Agent or Scanner contracts.
 
-## Decision Gate — `GATED`
-Classify the Bitget POC as `PASS`, `PARTIAL` or `FAIL` from recorded evidence. Do not continue to production Hummingbot adoption merely because the happy path can place an order.
+## Decision Gate — `CLOSED — PARTIAL`
+The 2026-09-08 evidence accepts the bounded public-data, restart and public WebSocket reconnect slice. Private execution, recovery and multi-account scaling remain unassessed, so Phase 5 remains gated.
 
 ## Phase 5 — If the POC Is Successful — `GATED`
 Add the production Hummingbot CEX Provider to the existing Shared Market Data and Exchange Gateway contracts. POC and certify TWAP and DCA independently, then certify additional exchanges one connector/market/executor combination at a time.

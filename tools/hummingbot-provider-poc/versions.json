@@ -3,7 +3,22 @@
     "tag": "v2.16.0",
     "commit": "8f1906145ba7840c9935cb2151d669e6af21564f",
     "license": "Apache-2.0",
-    "connector": "bitget_perpetual"
+    "connector": "bitget_perpetual",
+    "dockerImage": "docker.io/hummingbot/hummingbot@sha256:e222f070d42814013fb5ea7fe537926f790b259512950369da1e15a69dcbd38f",
+    "dockerPlatformDigests": {
+      "linux/amd64": "sha256:b73f05fef8c9a60a55596d19c743c318409b1bc32538165bfd0ac1d46a13e51b",
+      "linux/arm64": "sha256:945c034735d204b3c19d44ad5d7d3f7dbe20e187a3a0bfad84822030d5474dd3"
+    },
+    "connectorSourceSha256": {
+      "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bitget_perpetual_api_order_book_data_source.py": "f723fe64efd384a63bb203859408a7eae58d673c23ece4cb4afbe037f8bc141f",
+      "bitget_perpetual_api_user_stream_data_source.py": "a0231958cd65d98c7dc646d6102f6680168e999066c55797ab77f40976f1fcbb",
+      "bitget_perpetual_auth.py": "e1a593e53b7bf706c9ff64f6d4085aa2378d76d345bb547ed7a6e6c95284156e",
+      "bitget_perpetual_constants.py": "c62269a93d997d6b92db86f0c6c9aed69d547694de69186008b4bf0c639192f8",
+      "bitget_perpetual_derivative.py": "c465ae1f04187a1e5406636ad595a9118d4f633b707b1f9ae184f8fc5da9c228",
+      "bitget_perpetual_utils.py": "3897710bbbe229b85462f9c80cf7b4a03c8512b69865db6e1290c55be67af483",
+      "bitget_perpetual_web_utils.py": "a4bb6348b3b514a5b1f53c6b33f9fded5b59c381d8fa11751135b06e32786c3d"
+    }
   },
   "bitget": {
     "apiVersion": "v2",

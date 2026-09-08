@@ -46,14 +46,14 @@ The [Phase 2 implementation plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md)
 - Arbitrage Scanner
 - XEMM Scanner
 
-### Phase 4 — Parallel Infrastructure Validation — `NOT STARTED`
+### Phase 4 — Parallel Infrastructure Validation — `COMPLETE — PARTIAL`
 - define the Exchange Gateway contract by extending the existing adapter/capability foundations
 - run the isolated Bitget Hummingbot POC
 
-Phase 4 may begin after Phase 1 and run in parallel with Phases 2–3. It validates the Hummingbot dependency early without blocking provider-independent product improvements.
+Phase 4 closed on 2026-09-08 with a `PARTIAL` result. The public Bitget perpetual provider, process restart and WebSocket reconnect were observed; private execution, recovery and multi-account scaling remain unassessed.
 
-### Decision Gate — `GATED`
-Proceed with Hummingbot-backed production infrastructure only if the Bitget POC meets the defined functional, recovery, isolation, performance and economic acceptance criteria.
+### Decision Gate — `CLOSED — PARTIAL`
+The result does not meet the full functional, recovery, isolation, performance and economic criteria. Production Hummingbot adoption remains gated.
 
 ### Phase 5 — If the POC Is Successful — `GATED`
 - Hummingbot CEX Provider

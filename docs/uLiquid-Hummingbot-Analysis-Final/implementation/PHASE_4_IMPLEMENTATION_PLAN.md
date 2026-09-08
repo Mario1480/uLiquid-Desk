@@ -1,6 +1,6 @@
 # Phase 4 — Exchange Gateway and isolated Bitget POC
 
-Status: `IN PROGRESS — PUBLIC READ-ONLY SLICE`, 2026-09-08.
+Status: `COMPLETE — DECISION PARTIAL`, 2026-09-08.
 
 Mario authorized starting Phase 4 before Phase 3 and directed the work to start from current `main`. Phase 1 and Phase 2 are complete by owner acceptance (Phase 2: 2026-09-07); Phase 3 remains not started. Owner acceptance does not establish new test, deployment or connector-certification evidence.
 
@@ -66,11 +66,11 @@ Produce run instructions and a comparison report separating implemented, determi
 
 [POC_PLAN.md](POC_PLAN.md) remains authoritative for private authentication, orders/fills, balances/positions, leverage/margin, cancellation, close/reduce, submission recovery and multi-account scaling. Sandbox/demo or real private tests require explicit environment, accounts, allowed operations and limits. No credential provisioning is implied.
 
-Full POC acceptance still requires zero duplicate/lost orders, zero unexplained position drift, execution recovery, tenant isolation and measured scaling/economics. Phase 5, production adoption, TWAP/DCA and additional exchanges remain gated. No push, deployment, migration, provider switch, new production endpoint, monitoring activation or capital action is authorized.
+Full POC acceptance still requires zero duplicate/lost orders, zero unexplained position drift, execution recovery, tenant isolation and measured scaling/economics. Phase 5, production adoption, TWAP/DCA and additional exchanges remain gated. This decision does not authorize deployment, migration, provider switching, a new production endpoint, monitoring activation or capital action.
 
-## Current checkpoint
+## Final checkpoint
 
-Repository preflight and baseline alignment are complete. The additive provider contracts, disabled public POC harness, Bitget funding/open-interest reads, deterministic boundaries and native baseline are implemented locally.
+Repository preflight and baseline alignment are complete. The additive provider contracts, disabled public POC harness, Bitget funding/open-interest reads, deterministic boundaries, native baseline and pinned Hummingbot Docker runtime are implemented locally.
 
 Verified on 2026-09-08:
 
@@ -79,9 +79,10 @@ Verified on 2026-09-08:
 - Futures Exchange passed 49/49 core, 59/59 CEX and 77/77 Hyperliquid tests without forced exit; the package build and typecheck passed.
 - API typecheck passed after regenerating Prisma Client and rebuilding the required shared packages; no migration was run.
 - Python probe compilation and POC JSON validation passed.
-- Final hardened POC tests passed 5/5 (three comparison-integrity cases plus disabled-by-default and credential-rejection process checks).
-- The bounded native Bitget run observed 3/3 public BTCUSDT samples, 18 request attempts, p50 307 ms and p95 404 ms. See the [public comparison report](PHASE_4_PUBLIC_COMPARISON_REPORT.md).
-- The Hummingbot runtime attempt is blocked because no pinned Python environment is configured and the local Docker daemon is unavailable. No paired result exists; both public comparison and full POC remain `not_assessed`.
-- A scoped Codex Security review found no remaining reportable finding after hardening capability validation, tenant and execution identities, diagnostic redaction, subprocess environment isolation, source-checkout validation and comparison input validation. Runtime dependency attestation, OS-level sandboxing and end-to-end execution controls remain deferred gates.
+- Final hardened POC tests passed 6/6 (four comparison-integrity cases plus disabled-by-default and credential-rejection process checks).
+- The final bounded native Bitget run observed 3/3 public BTCUSDT samples, 18 request attempts, p50 298 ms and p95 632 ms. See the [public comparison report](PHASE_4_PUBLIC_COMPARISON_REPORT.md).
+- The immutable Hummingbot Docker runtime completed 3/3 fresh-process samples. The harness verified the exact image digest and all connector source hashes against the pinned checkout.
+- A controlled public WebSocket disconnect reconnected and delivered a subsequent order-book message in 2,713 ms. Three fresh container starts completed successfully with 3,825–6,807 ms wall time, 2.683 aggregate CPU seconds and at most 147,398,656 bytes RSS.
+- A scoped Codex Security review found no remaining reportable finding after hardening capability validation, tenant and execution identities, diagnostic redaction, subprocess environment isolation, source-checkout validation and comparison input validation. The closeout adds immutable runtime and connector-source attestation plus read-only filesystem, CPU/RAM/PID, capability and privilege limits. Network egress restriction and end-to-end execution controls remain deferred gates.
 
-API/runner/product routes, credential loading and execution behavior remain unchanged. Final repository verification remains part of the local handoff gate.
+API/runner/product routes, credential loading and execution behavior remain unchanged. The Decision Gate is `PARTIAL`: the bounded public capabilities are accepted for continued evaluation, while private/execution/recovery/scaling capabilities remain `NOT ASSESSED`. Only `PASS` can unlock Phase 5, so production Hummingbot adoption remains gated. See the [dated decision record](../../archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md).

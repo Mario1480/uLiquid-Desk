@@ -1,4 +1,5 @@
 function finite(value) {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }

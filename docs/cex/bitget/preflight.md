@@ -6,7 +6,7 @@ Status: draft (needs validation against live responses)
 
 The isolated Hummingbot comparison uses `USDT-FUTURES` V2 public endpoints only. Official Bitget documentation and pinned Hummingbot `v2.16.0` source confirm contracts, ticker, merged depth, current funding, open interest and symbol-price endpoints. The native harness observed BTCUSDT ticker, depth, candles, funding, open interest and contract rules without credentials. Private auth and every write checklist item below remain untested and approval-gated.
 
-The Hummingbot `bitget_perpetual` probe exposes ticker, orderbook, funding/mark price and trading rules for this slice. Candles and open interest fail closed at that provider boundary. See the [Phase 4 report](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_PUBLIC_COMPARISON_REPORT.md).
+The pinned Hummingbot `bitget_perpetual` runtime completed 3/3 public observations, three fresh-process starts and a controlled WebSocket reconnect. It exposes ticker, orderbook, funding/mark price and trading rules for this slice. Candles and open interest fail closed at that provider boundary. Phase 4 closed `PARTIAL`; the private checklist below remains unassessed. See the [Phase 4 report](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_PUBLIC_COMPARISON_REPORT.md).
 
 ## Docs / References
 - API docs: https://www.bitget.com/api-doc/common/intro

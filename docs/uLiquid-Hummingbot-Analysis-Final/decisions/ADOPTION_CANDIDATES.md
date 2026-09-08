@@ -13,11 +13,11 @@ The [active Phase 2 plan](../implementation/PHASE_2_IMPLEMENTATION_PLAN.md). Pha
 ## Phase 3 — Read-Only Product Features — `NOT STARTED`
 Arbitrage Scanner; XEMM Scanner; opportunity history and alerts; no automated execution.
 
-## Parallel Phase 4 — Hummingbot Infrastructure Validation — `NOT STARTED`
-Exchange Gateway contract; ExecutionIntent/idempotency; provider health; Credential Service/KMS boundary; Bitget Hummingbot POC; certification harness.
+## Parallel Phase 4 — Hummingbot Infrastructure Validation — `COMPLETE — PARTIAL`
+Additive Exchange Gateway contracts, ExecutionIntent/idempotency, provider health and synthetic credential/tenant boundaries are implemented. The Bitget Hummingbot POC observed bounded public data, restart and reconnect behavior; private execution/recovery/scaling remain unassessed.
 
-## Decision Gate — `GATED`
-`PASS`, `PARTIAL` or `FAIL` based on functional, recovery, isolation, performance and economic evidence.
+## Decision Gate — `CLOSED — PARTIAL`
+The 2026-09-08 result does not unlock Phase 5. A later `PASS` reassessment requires private demo execution, recovery, isolation and scaling evidence.
 
 ## Phase 5 — Only After POC PASS — `GATED`
 Production Hummingbot CEX Provider; separately certified TWAP and DCA integrations; additional connector/market/executor combinations.

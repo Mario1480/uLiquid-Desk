@@ -1,8 +1,19 @@
 # Hummingbot Provider POC Plan
 
-**Implementation status:** `NOT STARTED`
+**Implementation status:** `COMPLETE — DECISION PARTIAL`, 2026-09-08
 
-The POC has not been executed and the Decision Gate remains `GATED`. Start the comparison only after the Phase 1 target-environment closeout and a stable native Bitget baseline.
+The bounded public POC and deterministic boundary suite are complete. Ticker, orderbook, current funding, mark price, trading rules, fresh-process restart and public WebSocket reconnect are observed. Private account/execution/recovery and empirical multi-account stages remain `NOT ASSESSED` because no demo credentials, account scope, allowed operations or numerical limits were available. The Decision Gate is closed as `PARTIAL`; Phase 5 remains gated.
+
+See the [decision record](../../archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md) and [public comparison report](PHASE_4_PUBLIC_COMPARISON_REPORT.md).
+
+| Stage | Closeout |
+|---|---|
+| 1 — Contracts | `COMPLETE` for additive local contracts |
+| 2 — Happy Path | `PARTIAL`: public market data observed; every private/account/order capability `NOT ASSESSED` |
+| 3 — Failure/Recovery | `PARTIAL`: deterministic failures, fresh-process restart and public WebSocket reconnect observed; execution recovery `NOT ASSESSED` |
+| 4 — Performance | `PARTIAL`: bounded cold-process public latency/CPU/RAM recorded; private submit/cancel/fill and steady-state scaling `NOT ASSESSED` |
+| 5 — Multi-Account | `NOT ASSESSED` |
+| 6 — Security | `PARTIAL`: synthetic tenant/identity/redaction and isolated public container boundaries verified; private credential lifecycle and shard isolation `NOT ASSESSED` |
 
 ## Roadmap Placement
 This POC is the parallel Phase 4 infrastructure-validation track. It begins only after the Phase 1 contract review and may run alongside the provider-neutral Shared Market Data, existing-AI upgrade and Scanner work. Its result gates production Hummingbot adoption in Phase 5; it does not gate the uLiquid-owned Shared Market Data platform.
