@@ -33,4 +33,16 @@ Local Next.js with an isolated read-only mock API and Playwright-intercepted syn
 - Calendar: rendered low/medium/high badges have distinct green/yellow/red text and backgrounds.
 - Dashboard: Wallet, Funding Rates, Watchlist and Market Sessions all resolve to `rgba(255, 255, 255, 0.1)` with `blur(20px)`.
 
-Fixture limitations: live chart/user WebSockets were unavailable; unrelated dashboard services used explicit unavailable responses. This verifies the affected UI and mocked request construction, not live fills, exchange reconciliation or production runtime. No deployment, commit or push was performed.
+Fixture limitations: live chart/user WebSockets were unavailable; unrelated dashboard services used explicit unavailable responses. This verifies the affected UI and mocked request construction, not live fills or exchange reconciliation.
+
+## Production release
+
+- Release commit: `860fc8182e5feb34391d21200ddf72b58754347f` on `main`.
+- Production repository fast-forwarded from `034dea5b76dd7ba0e0d0de930a5573626bc4f789`.
+- Built the production web image successfully, including Next.js compilation, TypeScript and 98 generated pages.
+- Recreated only the web service with `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-deps web`.
+- Web container changed from `654c2b07cfd8` to `239cb5bd8f67` and became healthy. API `4dad08ec01f7`, runner `a0fe664b7932`, PostgreSQL `769e97fe8bb0`, Redis `0c817ad8da83`, Python strategy service `ba00e93e1afc`, and proxy `06cb505da85f` were unchanged and healthy.
+- Rollback image retained as `uliquid-desk-web:rollback-20260908T071940Z-654c2b07cfd8`.
+- Public API health returned HTTP 200 with `{"ok":true}`; login returned HTTP 200; unauthenticated Trading Desk and Calendar requests correctly returned HTTP 307 to `/en/login`.
+- Beta access configuration remained available after the web-only release: HTTP 200, intake enabled, and a non-empty public Turnstile site key. No secret value was read or recorded.
+- No live position, order, account, beta application, wallet, billing, database migration, or onchain mutation was performed as part of deployment validation.
