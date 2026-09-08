@@ -112,6 +112,98 @@ test("Pro Market Intelligence summary retains billing attribution", async () => 
   });
 });
 
+test("provider diagnostics require explicit backend admin access", async () => {
+  const app = register({
+    capabilities: { "product.market_intelligence": true },
+    hasAdminBackendAccess: async () => false
+  });
+  const res = createRes();
+
+  await app.handler("/market-intelligence/providers")({}, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.message, "admin_backend_access_required");
+});
+
+test("backend admins can read provider diagnostics", async () => {
+  const app = register({
+    capabilities: { "product.market_intelligence": true },
+    hasAdminBackendAccess: async () => true,
+    service: {
+      getProviderStates: async () => [{ providerId: "official", state: "healthy" }]
+    }
+  });
+  const res = createRes();
+
+  await app.handler("/market-intelligence/providers")({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.items?.[0]?.providerId, "official");
+});
+
+test("regular users do not receive provider diagnostics through context or saved analyses", async () => {
+  const analysis = {
+    id: "analysis_1",
+    payload: {
+      report: { summary: { title: "Market" } },
+      context: {
+        dataAgeSeconds: 15,
+        providerStates: [{ providerId: "official", state: "healthy" }]
+      }
+    }
+  };
+  const app = register({
+    capabilities: { "product.market_intelligence": true },
+    hasAdminBackendAccess: async () => false,
+    service: {
+      getMarketContext: async () => ({
+        facts: [],
+        providerStates: [{ providerId: "official", state: "healthy" }]
+      }),
+      createAnalysis: async () => ({ analysis, existing: false }),
+      listAnalyses: async () => ({ items: [analysis], nextCursor: null }),
+      getAnalysis: async () => analysis
+    }
+  });
+  const contextRes = createRes();
+  const createResValue = createRes();
+  const listRes = createRes();
+  const detailRes = createRes();
+
+  await app.handler("/market-intelligence/context")({ query: {} }, contextRes);
+  await app.postHandler("/market-intelligence/analyses")({
+    body: {
+      requestId: "e6ee622c-2d23-407f-a7dc-9f3bb29c7bc2",
+      horizon: "24h",
+      responseLanguage: "en"
+    }
+  }, createResValue);
+  await app.handler("/market-intelligence/analyses")({ query: {} }, listRes);
+  await app.handler("/market-intelligence/analyses/:id")({ params: { id: "analysis_1" } }, detailRes);
+
+  assert.deepEqual(contextRes.body.providerStates, []);
+  assert.deepEqual(createResValue.body.analysis.payload.context.providerStates, []);
+  assert.deepEqual(listRes.body.items[0].payload.context.providerStates, []);
+  assert.deepEqual(detailRes.body.analysis.payload.context.providerStates, []);
+  assert.equal(analysis.payload.context.providerStates.length, 1);
+});
+
+test("backend admins retain provider diagnostics in market context", async () => {
+  const providerStates = [{ providerId: "official", state: "healthy" }];
+  const app = register({
+    capabilities: {},
+    hasAdminBackendAccess: async () => true,
+    service: {
+      getMarketContext: async () => ({ facts: [], providerStates })
+    }
+  });
+  const res = createRes();
+
+  await app.handler("/market-intelligence/context")({ query: {} }, res);
+
+  assert.deepEqual(res.body.providerStates, providerStates);
+});
+
 test("general news detail remains outside the full Market Intelligence plan gate", async () => {
   let capabilityResolved = false;
   const app = createFakeApp();

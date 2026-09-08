@@ -4275,8 +4275,8 @@ async function ensureWorkspaceMembership(userId: string, userEmail: string, clie
       name: workspaceName
     }
   });
-  const { userRoleId, adminRoleId } = await ensureDefaultRoles(workspace.id, client);
-  const defaultRoleId = adminRoleId ?? userRoleId;
+  const { ownerRoleId, adminRoleId, userRoleId } = await ensureDefaultRoles(workspace.id, client);
+  const defaultRoleId = ownerRoleId ?? adminRoleId ?? userRoleId;
   const member = await client.workspaceMember.create({
     data: {
       workspaceId: workspace.id,
@@ -4472,15 +4472,16 @@ async function ensureAdminUserSeed() {
   }
 
   const membership = await ensureWorkspaceMembership(user.id, user.email);
-  const { adminRoleId } = await ensureDefaultRoles(membership.workspaceId);
-  if (membership.roleId !== adminRoleId) {
+  const { ownerRoleId, adminRoleId } = await ensureDefaultRoles(membership.workspaceId);
+  const superadminWorkspaceRoleId = ownerRoleId ?? adminRoleId;
+  if (superadminWorkspaceRoleId && membership.roleId !== superadminWorkspaceRoleId) {
     await db.workspaceMember.updateMany({
       where: {
         userId: user.id,
         workspaceId: membership.workspaceId
       },
       data: {
-        roleId: adminRoleId
+        roleId: superadminWorkspaceRoleId
       }
     });
   }

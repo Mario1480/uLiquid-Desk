@@ -140,11 +140,50 @@ test("GET /admin/users applies filters and pagination in Prisma queries", async 
     assert.deepEqual(countArgs.where, findManyArgs.where);
     assert.match(JSON.stringify(findManyArgs.where), /admin@example\.com/);
     assert.equal(res.body.pagination.total, 42);
-    assert.equal(res.body.items[0].role, "Superadmin");
+    assert.equal(res.body.items[0].role, "None");
+    assert.equal(res.body.items[0].workspaceRole, "None");
+    assert.equal(res.body.items[0].platformAccess, "Superadmin");
   } finally {
     if (previousAdminEmail === undefined) delete process.env.ADMIN_EMAIL;
     else process.env.ADMIN_EMAIL = previousAdminEmail;
   }
+});
+
+test("GET /admin/users does not present workspace admins as platform admins", async () => {
+  const app = createFakeApp();
+  registerPlatformAdminRoutes(app as any, createDeps({
+    db: {
+      user: {
+        async count() {
+          return 1;
+        },
+        async findMany() {
+          return [{
+            id: "user_1",
+            email: "user@example.com",
+            createdAt: new Date("2026-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+            sessions: [],
+            workspaces: [{ role: { name: "Admin" } }],
+            subscription: null,
+            adminPlanOverride: null,
+            legalAcknowledgements: [],
+            _count: { workspaces: 1, bots: 0, sessions: 0 }
+          }];
+        }
+      }
+    },
+    getAdminBackendAccessUserIdSet: async () => new Set<string>()
+  } as any));
+
+  const handler = getFinalHandler(app, "/admin/users");
+  const res = createMockRes();
+  await handler({ query: {} }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.items[0].platformAccess, "User");
+  assert.equal(res.body.items[0].workspaceRole, "Admin");
+  assert.equal(res.body.items[0].hasAdminBackendAccess, false);
 });
 
 test("GET /admin/workspaces counts and loads bot summaries only for the current page", async () => {

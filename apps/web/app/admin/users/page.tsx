@@ -24,6 +24,8 @@ type UsersResponse = {
     name: string;
     status: string;
     role: string;
+    workspaceRole: string;
+    platformAccess: string;
     workspaceCount: number;
     botCount: number;
     licenseStatus: string;
@@ -65,6 +67,11 @@ function normalizeUsersResponse(input: any): UsersResponse {
       name: String(item?.name ?? item?.email ?? "Unknown"),
       status: String(item?.status ?? "unknown"),
       role: String(item?.role ?? "Unknown"),
+      workspaceRole: String(item?.workspaceRole ?? item?.role ?? "None"),
+      platformAccess: String(
+        item?.platformAccess
+        ?? (item?.isSuperadmin ? "Superadmin" : item?.hasAdminBackendAccess ? "Backend admin" : "User")
+      ),
       workspaceCount: Number(item?.workspaceCount ?? item?.workspaceMemberships ?? 0),
       botCount: Number(item?.botCount ?? item?.bots ?? 0),
       licenseStatus: String(item?.licenseStatus ?? "unknown"),
@@ -251,7 +258,7 @@ export default function AdminUsersPage() {
             </DeskSelect>
           </label>
           <label className="settingsField">
-            <span className="settingsFieldLabel">Role</span>
+            <span className="settingsFieldLabel">Workspace role</span>
             <DeskSelect className="input" value={role} onChange={(event) => { setPage(1); setRole(event.target.value); }}>
               <option value="">All</option>
               {data?.filterOptions.role?.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -274,7 +281,7 @@ export default function AdminUsersPage() {
       {data && data.items.length > 0 ? (
         <>
           <AdminTable
-            columns={["Email", "Name", "Status", "Role", "Legal", "Workspaces", "Bots", "Plan", "Last Login", "Last Active", "Created", "Actions"]}
+            columns={["Email", "Name", "Status", "Platform access", "Workspace role", "Legal", "Workspaces", "Bots", "Plan", "Last Login", "Last Active", "Created", "Actions"]}
           >
             {data.items.map((user) => (
               <tr
@@ -291,7 +298,8 @@ export default function AdminUsersPage() {
                 </td>
                 <td>{user.name}</td>
                 <td><AdminStatusBadge value={user.status} /></td>
-                <td>{user.role}</td>
+                <td><AdminStatusBadge value={user.platformAccess} /></td>
+                <td>{user.workspaceRole}</td>
                 <td>
                   <AdminStatusBadge value={user.legalAcknowledgement?.acceptedAt ? "accepted" : "missing"} />
                   {user.legalAcknowledgement?.version ? (

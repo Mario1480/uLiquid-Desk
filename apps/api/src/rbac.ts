@@ -33,6 +33,11 @@ export function buildPermissions(keys: readonly PermissionKey[]) {
 
 export const DEFAULT_ROLES = [
   {
+    name: "Owner",
+    isSystem: true,
+    permissions: buildPermissions(PERMISSION_KEYS)
+  },
+  {
     name: "User",
     isSystem: true,
     permissions: buildPermissions(["bots.view", "presets.view", "presets.create"])
@@ -85,8 +90,10 @@ type RoleLike = {
 
 export function resolveDefaultRoleIds(roles: RoleLike[]) {
   const admin = roles.find((role) => role.name === "Admin") ?? roles[0] ?? null;
+  const owner = roles.find((role) => role.name === "Owner") ?? admin;
   const user = roles.find((role) => role.name === "User") ?? admin;
   return {
+    ownerRoleId: owner?.id ?? null,
     adminRoleId: admin?.id ?? null,
     userRoleId: user?.id ?? null
   };

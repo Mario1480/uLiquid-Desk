@@ -14,7 +14,7 @@ const sortDirSchema = z.enum(["asc", "desc"]).catch("desc");
 const USER_ACTIVE_WINDOW_MS = 1000 * 60 * 60 * 24 * 30;
 const RUNNER_ONLINE_WINDOW_MS = 1000 * 60 * 5;
 const LICENSE_EXPIRING_SOON_MS = 1000 * 60 * 60 * 24 * 14;
-const ADMIN_ROLE_FILTER_OPTIONS = ["Admin", "User", "Operator 1", "Operator 2", "Viewer"] as const;
+const ADMIN_ROLE_FILTER_OPTIONS = ["Owner", "Admin", "User", "Operator 1", "Operator 2", "Viewer"] as const;
 
 const pagingSchema = z.object({
   page: z.coerce.number().int().min(1).catch(1),
@@ -209,10 +209,8 @@ function toUserStatus(lastActiveAt: string | null, lastLoginAt: string | null): 
 }
 
 function normalizeRoleSummary(input: {
-  isSuperadmin: boolean;
   memberships: Array<{ role?: { name?: string | null } | null }>;
 }): string {
-  if (input.isSuperadmin) return "Superadmin";
   const names = [...new Set(
     (input.memberships ?? [])
       .map((membership) => String(membership?.role?.name ?? "").trim())
@@ -221,6 +219,15 @@ function normalizeRoleSummary(input: {
   if (names.length === 0) return "None";
   if (names.length === 1) return names[0];
   return "Mixed";
+}
+
+function normalizePlatformAccess(input: {
+  isSuperadmin: boolean;
+  hasAdminBackendAccess: boolean;
+}): "Superadmin" | "Backend admin" | "User" {
+  if (input.isSuperadmin) return "Superadmin";
+  if (input.hasAdminBackendAccess) return "Backend admin";
+  return "User";
 }
 
 function deriveLicenseStatus(input: {
@@ -878,10 +885,11 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       const lastLoginAt = isoOrNull(lastSession?.createdAt);
       const lastActiveAt = isoOrNull(lastSession?.lastActiveAt);
       const isSuperadmin = deps.isSuperadminEmail(row.email);
-      const primaryRole = normalizeRoleSummary({
-        isSuperadmin,
+      const workspaceRole = normalizeRoleSummary({
         memberships: Array.isArray(row.workspaces) ? row.workspaces : []
       });
+      const hasAdminBackendAccess = isSuperadmin || adminAccessIds.has(row.id);
+      const platformAccess = normalizePlatformAccess({ isSuperadmin, hasAdminBackendAccess });
       const derivedLicenseStatus = deriveLicenseStatus({
         effectivePlan: row.subscription?.effectivePlan ?? null,
         status: row.subscription?.status ?? null,
@@ -909,7 +917,9 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         email: row.email,
         name: nameFromEmail(row.email),
         status: toUserStatus(lastActiveAt, lastLoginAt),
-        role: primaryRole,
+        role: workspaceRole,
+        workspaceRole,
+        platformAccess,
         workspaceCount: row._count?.workspaces ?? 0,
         botCount: row._count?.bots ?? 0,
         licenseStatus: derivedLicenseStatus,
@@ -946,7 +956,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
             }
           : null,
         isSuperadmin,
-        hasAdminBackendAccess: isSuperadmin || adminAccessIds.has(row.id)
+        hasAdminBackendAccess
       };
     });
 
@@ -955,7 +965,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       pagination: pagination(page, pageSize, total),
       filterOptions: {
         status: ["active", "idle", "never_logged_in"],
-        role: ["Superadmin", "Admin", "User", "Operator 1", "Operator 2", "Viewer", "Mixed"],
+        role: ["Owner", "Admin", "User", "Operator 1", "Operator 2", "Viewer", "Mixed"],
         licenseStatus: ["active", "expiring_soon", "expired", "inactive", "verification_failed"]
       }
     });

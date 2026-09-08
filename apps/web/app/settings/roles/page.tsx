@@ -96,7 +96,8 @@ export default function RolesPage() {
       setMembers(membersRes);
       const sortedRoles = sortRoles(rolesRes);
       setRoles(sortedRoles);
-      if (!inviteRoleId && sortedRoles.length) setInviteRoleId(sortedRoles[0].id);
+      const firstAssignableRole = sortedRoles.find((role) => role.name !== "Owner");
+      if (!inviteRoleId && firstAssignableRole) setInviteRoleId(firstAssignableRole.id);
     } catch (e) {
       setError(errMsg(e));
     }
@@ -111,10 +112,12 @@ export default function RolesPage() {
 
   function sortRoles(list: any[]) {
     const order = new Map([
-      ["Admin", 0],
-      ["Operator 1", 1],
-      ["Operator 2", 2],
-      ["Viewer", 3]
+      ["Owner", 0],
+      ["Admin", 1],
+      ["Operator 1", 2],
+      ["Operator 2", 3],
+      ["Viewer", 4],
+      ["User", 5]
     ]);
     return [...list].sort((a, b) => {
       const aRank = order.has(a.name) ? order.get(a.name) : 99;
@@ -309,7 +312,7 @@ export default function RolesPage() {
               value={inviteRoleId}
               onChange={(e) => setInviteRoleId(e.target.value)}
             >
-              {roles.map((r) => (
+              {roles.filter((role) => role.name !== "Owner").map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
@@ -369,7 +372,7 @@ export default function RolesPage() {
                 <label key={p.key} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
                   <DeskCheckbox
                     checked={Boolean(role.permissions?.[p.key])}
-                    disabled={!canManage}
+                    disabled={!canManage || role.name === "Owner"}
                     onCheckedChange={(checked) => togglePerm(role.id, p.key, checked)}
                   />
                   {t(`permissions.${p.labelKey}`)}

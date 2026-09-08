@@ -27,9 +27,11 @@ export async function seedAdmin() {
   const workspace = await prisma.workspace.create({
     data: { name: workspaceName }
   });
-  const { adminRoleId } = await ensureDefaultRoles(workspace.id);
+  const { ownerRoleId, adminRoleId } = await ensureDefaultRoles(workspace.id);
+  const workspaceRoleId = ownerRoleId ?? adminRoleId;
+  if (!workspaceRoleId) throw new Error("Default workspace owner role is unavailable");
   await prisma.workspaceMember.create({
-    data: { workspaceId: workspace.id, userId: user.id, roleId: adminRoleId }
+    data: { workspaceId: workspace.id, userId: user.id, roleId: workspaceRoleId }
   });
 
   await prisma.bot.updateMany({

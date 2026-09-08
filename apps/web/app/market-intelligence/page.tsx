@@ -98,15 +98,18 @@ export default function MarketIntelligencePage() {
   const [analyses, setAnalyses] = useState<SavedMarketIntelligenceAnalysis[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(true);
   const [selectedAnalysis, setSelectedAnalysis] = useState<SavedMarketIntelligenceAnalysis | null>(null);
+  const [isAdminViewer, setIsAdminViewer] = useState(false);
+  const [viewerAccessLoaded, setViewerAccessLoaded] = useState(false);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const [summary, providerResponse] = await Promise.all([
-        apiGet<MarketSummaryResponse>(`/market-intelligence/summary?horizon=${horizon}`),
-        apiGet<{ items?: ProviderState[] }>("/market-intelligence/providers")
-      ]);
+      const summaryRequest = apiGet<MarketSummaryResponse>(`/market-intelligence/summary?horizon=${horizon}`);
+      const providerRequest = isAdminViewer
+        ? apiGet<{ items?: ProviderState[] }>("/market-intelligence/providers")
+        : Promise.resolve({ items: [] as ProviderState[] });
+      const [summary, providerResponse] = await Promise.all([summaryRequest, providerRequest]);
       setPayload(summary);
       setProviders(Array.isArray(providerResponse.items) ? providerResponse.items : []);
     } catch (nextError) {
@@ -131,9 +134,26 @@ export default function MarketIntelligencePage() {
   }
 
   useEffect(() => {
-    void load();
+    if (viewerAccessLoaded) void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [horizon]);
+  }, [horizon, viewerAccessLoaded, isAdminViewer]);
+
+  useEffect(() => {
+    let active = true;
+    void apiGet<{ isSuperadmin?: boolean; hasAdminBackendAccess?: boolean }>("/auth/me")
+      .then((me) => {
+        if (active) setIsAdminViewer(Boolean(me?.isSuperadmin || me?.hasAdminBackendAccess));
+      })
+      .catch(() => {
+        if (active) setIsAdminViewer(false);
+      })
+      .finally(() => {
+        if (active) setViewerAccessLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     void loadAnalyses();
@@ -169,7 +189,7 @@ export default function MarketIntelligencePage() {
         title={t("title")}
         description={t("subtitle")}
         actions={(
-          <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading}>
+          <DeskButton type="button" className="btn" onClick={() => void load()} disabled={loading || !viewerAccessLoaded}>
             <AppIcon name="refresh" />
             {t("refresh")}
           </DeskButton>
@@ -202,10 +222,10 @@ export default function MarketIntelligencePage() {
           <span>{t("tone")}</span>
           <strong>{payload?.summary.sentiment ?? (loading ? "…" : "neutral")}</strong>
         </div></DeskSurface>
-        <DeskSurface><div className="uiMetricTile">
+        {isAdminViewer ? <DeskSurface><div className="uiMetricTile">
           <span>{t("providers")}</span>
           <strong>{healthyProviders}/{providers.length}</strong>
-        </div></DeskSurface>
+        </div></DeskSurface> : null}
         <DeskSurface><div className="uiMetricTile">
           <span>{t("updated")}</span>
           <strong>{payload ? new Date(payload.summary.generatedAt).toLocaleTimeString() : "–"}</strong>
@@ -291,7 +311,7 @@ export default function MarketIntelligencePage() {
             </section>
           ) : null}
 
-          <section className="uiSection">
+          {isAdminViewer ? <section className="uiSection">
             <div className="uiSectionHeader"><h2>{t("providerTitle")}</h2></div>
             <div className="marketProviderList">
               {providers.map((provider) => (
@@ -304,7 +324,7 @@ export default function MarketIntelligencePage() {
                 </div>
               ))}
             </div>
-          </section>
+          </section> : null}
 
           <div className="marketIntelligenceActions">
             <DeskLink href={`${withLocalePath("/predictions", locale)}?create=market-intelligence`} className="btn btnPrimary">
@@ -420,7 +440,7 @@ export default function MarketIntelligencePage() {
                 </ul>
               </section>
             ) : null}
-            <section className="uiSection">
+            {isAdminViewer ? <section className="uiSection">
               <div className="uiSectionHeader"><h2>{t("providerTitle")}</h2></div>
               <div className="marketProviderList">
                 {selectedAnalysis.payload.context.providerStates.map((provider) => (
@@ -433,7 +453,7 @@ export default function MarketIntelligencePage() {
               <p className="predictionIndicatorMeta">
                 {t("model")}: {selectedAnalysis.payload.report.meta.model} · {t("generated")}: {new Date(selectedAnalysis.generatedAt).toLocaleString()}
               </p>
-            </section>
+            </section> : null}
           </div>
         </PredictionDetailDrawer>
       ) : null}

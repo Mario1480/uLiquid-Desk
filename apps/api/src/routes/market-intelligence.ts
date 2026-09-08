@@ -54,7 +54,7 @@ export function registerMarketIntelligenceRoutes(
 
   async function requireMarketIntelligenceOrRespond(res: express.Response): Promise<boolean> {
     const user = getUserFromLocals(res);
-    if (deps.hasAdminBackendAccess && (await deps.hasAdminBackendAccess(user))) return true;
+    if (await canViewProviderDiagnostics(user)) return true;
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     if (deps.isCapabilityAllowed(capabilityContext.capabilities, "product.market_intelligence")) {
       return true;
@@ -67,12 +67,36 @@ export function registerMarketIntelligenceRoutes(
     return false;
   }
 
+  async function canViewProviderDiagnostics(user: { id: string; email: string }): Promise<boolean> {
+    return Boolean(deps.hasAdminBackendAccess && (await deps.hasAdminBackendAccess(user)));
+  }
+
+  function redactAnalysisProviderDiagnostics<T>(analysis: T): T {
+    if (!analysis || typeof analysis !== "object") return analysis;
+    const record = analysis as Record<string, any>;
+    if (!record.payload || typeof record.payload !== "object") return analysis;
+    if (!record.payload.context || typeof record.payload.context !== "object") return analysis;
+    return {
+      ...record,
+      payload: {
+        ...record.payload,
+        context: {
+          ...record.payload.context,
+          providerStates: []
+        }
+      }
+    } as T;
+  }
+
   app.get("/market-intelligence/context", requireAuth, async (req, res) => {
     if (!(await requireMarketIntelligenceOrRespond(res))) return;
     const parsed = contextQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
     try {
-      return res.json(await service.getMarketContext(parsed.data));
+      const user = getUserFromLocals(res);
+      const context = await service.getMarketContext(parsed.data);
+      if (await canViewProviderDiagnostics(user)) return res.json(context);
+      return res.json({ ...context, providerStates: [] });
     } catch (error) {
       return res.status(503).json({ error: "market_intelligence_context_unavailable", reason: String(error) });
     }
@@ -95,6 +119,10 @@ export function registerMarketIntelligenceRoutes(
 
   app.get("/market-intelligence/providers", requireAuth, async (_req, res) => {
     if (!(await requireMarketIntelligenceOrRespond(res))) return;
+    const user = getUserFromLocals(res);
+    if (!(await canViewProviderDiagnostics(user))) {
+      return res.status(403).json({ error: "forbidden", message: "admin_backend_access_required" });
+    }
     return res.json({
       items: await service.getProviderStates(),
       generatedAt: new Date().toISOString()
@@ -108,7 +136,10 @@ export function registerMarketIntelligenceRoutes(
     const user = getUserFromLocals(res);
     try {
       const result = await service.createAnalysis({ userId: user.id, ...parsed.data });
-      return res.status(result.existing ? 200 : 201).json(result);
+      const response = await canViewProviderDiagnostics(user)
+        ? result
+        : { ...result, analysis: redactAnalysisProviderDiagnostics(result.analysis) };
+      return res.status(result.existing ? 200 : 201).json(response);
     } catch (error) {
       if (error instanceof MarketIntelligenceInsufficientDataError) {
         return res.status(503).json({ error: "market_intelligence_insufficient_data" });
@@ -123,7 +154,12 @@ export function registerMarketIntelligenceRoutes(
     if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
     const user = getUserFromLocals(res);
     try {
-      return res.json(await service.listAnalyses({ userId: user.id, ...parsed.data }));
+      const result = await service.listAnalyses({ userId: user.id, ...parsed.data });
+      if (await canViewProviderDiagnostics(user)) return res.json(result);
+      return res.json({
+        ...result,
+        items: result.items.map((analysis) => redactAnalysisProviderDiagnostics(analysis))
+      });
     } catch (error) {
       return res.status(503).json({ error: "market_intelligence_analyses_unavailable", reason: String(error) });
     }
@@ -137,7 +173,8 @@ export function registerMarketIntelligenceRoutes(
     try {
       const analysis = await service.getAnalysis({ userId: user.id, analysisId });
       if (!analysis) return res.status(404).json({ error: "market_intelligence_analysis_not_found" });
-      return res.json({ analysis });
+      if (await canViewProviderDiagnostics(user)) return res.json({ analysis });
+      return res.json({ analysis: redactAnalysisProviderDiagnostics(analysis) });
     } catch (error) {
       return res.status(503).json({ error: "market_intelligence_analysis_unavailable", reason: String(error) });
     }
