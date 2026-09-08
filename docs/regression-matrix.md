@@ -30,7 +30,9 @@ Coverage:
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/factory/create-futures-adapter.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/cross-exchange.contract.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/retry-policy.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/provider-contracts.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bitget/bitget-error.mapper.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bitget/bitget.market.api.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/mexc/mexc-error.mapper.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/binance/binance-error.mapper.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bingx/bingx.signing.test.ts`
@@ -112,6 +114,7 @@ Coverage:
 - shared Paper runtime / linked market-data support regressions on the runner side
 - grid termination / best-effort history-close parity regressions
 - shared `executionVenue` / `marketDataVenue` metadata regressions between Prediction Copier and Grid
+- fail-closed provider capabilities, timestamp/order-book normalization, bounded reads, identity, tenant binding and diagnostic redaction
 
 ## 6. What is still outside this core matrix
 

@@ -32,8 +32,11 @@ It is intentionally operational rather than marketing-oriented: the goal is to s
 | Paper | `paper:linked-market-data` | linked | linked | linked | `not_assessed` | Support and provenance resolve through the linked live market-data venue |
 | Binance | `uliquid-native:binance` | native | native | native | `not_assessed` | Funding cadence is not inferred when the endpoint does not provide it |
 | BingX | `uliquid-native:bingx` | unsupported | unsupported | native | `not_assessed` | Funding/OI remain fail-closed until a verified native contract exists |
+| Bitget via isolated Hummingbot POC | `hummingbot-poc:bitget-perpetual` | native | unsupported | unsupported | `not_assessed` | Public POC only; ticker/orderbook/funding/mark/rules are exposed, execution and production wiring are disabled |
 
 `not_assessed` is deliberate. Unit and fixture tests are engineering evidence, not production certification.
+
+The Phase 4 public slice adds a provider-neutral contract and an isolated, disabled Hummingbot harness. It does not add Hummingbot to API/runner dependencies or change venue resolution. The native Bitget baseline was observed; the Hummingbot runtime remained unavailable, so no paired comparison or certification exists. See the [Phase 4 report](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_PUBLIC_COMPARISON_REPORT.md).
 
 Phase 2 local implementation (2026-09-05) adds bounded public derivatives/candle/ticker/orderbook sharing, run pinning and persisted feature evidence above existing clients. Funding/OI capability checks precede cache/pinned reads; unsupported explicit venues fail closed. Binance's public depth request now maps arbitrary bounded coverage to supported upstream tiers and trims results. No matrix support, signing or certification changes. See the [Phase 2 plan](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
 

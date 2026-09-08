@@ -21,6 +21,8 @@ This page links existing technical and operational repository documents. It comp
 
 ## Trading, Bots, and Grid
 
+- [Hummingbot Phase 4 Exchange Gateway and Bitget POC](../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_IMPLEMENTATION_PLAN.md)
+- [Hummingbot Phase 4 Public Comparison Report](../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_PUBLIC_COMPARISON_REPORT.md)
 - [Manual Trading Desk](../manual-trading-desk.md)
 - [Grid Capital and Safety](../grid-capital-and-safety.md)
 - [Grid Runtime Recovery](../grid-runtime-recovery.md)

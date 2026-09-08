@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0.0",
+  "providerId": "hummingbot-poc:bitget-perpetual",
+  "providerKind": "hummingbot_poc",
+  "venue": "bitget",
+  "marketTypes": ["perpetual"],
+  "marketData": {
+    "ticker": "native",
+    "orderbook": "native",
+    "trades": "unsupported",
+    "candles": "unsupported",
+    "fundingRate": "native",
+    "openInterest": "unsupported",
+    "markPrice": "native",
+    "orderbookAnalytics": "unsupported",
+    "fundingHistory": "unsupported",
+    "openInterestHistory": "unsupported"
+  },
+  "execution": {
+    "supported": false,
+    "enabledByDefault": false,
+    "orderTypes": [],
+    "positionModes": [],
+    "marginModes": [],
+    "reduceOnly": false
+  },
+  "liveCertificationStatus": "not_assessed"
+}

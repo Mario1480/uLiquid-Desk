@@ -9,6 +9,8 @@ Final consolidated architecture and integration package, September 2026.
 
 ## Implementation status — 2026-09-07
 
+Current Phase 4 preflight (2026-09-08): Mario authorized starting before Phase 3 from current `main`. See the [Phase 4 plan](implementation/PHASE_4_IMPLEMENTATION_PLAN.md). No full POC result or Phase 5 authorization exists.
+
 | Roadmap item | Status | Evidence / next gate |
 |---|---|---|
 | Phase 1 — Consolidate Quick Wins | `COMPLETE` | Production release `837d7d12`; Mario confirmed formal completion and verification on 2026-09-05 |

@@ -2,6 +2,10 @@
 
 Preflight: `docs/cex/bitget/preflight.md`
 
+## Phase 4 isolated Hummingbot POC
+
+The POC lives under `tools/hummingbot-provider-poc` and is outside production workspaces/runtime wiring. It pins Hummingbot `v2.16.0` at commit `8f1906145ba7840c9935cb2151d669e6af21564f`, rejects Bitget credential variables, and requires `ULIQ_HB_POC_ENABLED=true` for bounded public reads. Do not use this harness for private or execution tests. The full order/fill/recovery plan remains separately approval-gated.
+
 ## 1) Goals
 - Implement Bitget spot adapter.
 - Preserve clientOrderId.

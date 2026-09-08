@@ -9,7 +9,7 @@ export type FuturesConnectorKind =
 
 export type FuturesPositionMode = "one-way" | "hedge";
 
-export type FuturesProviderKind = "uliquid_native" | "paper_linked" | "unknown";
+export type FuturesProviderKind = "uliquid_native" | "paper_linked" | "hummingbot_poc" | "unknown";
 export type MarketDataCapabilitySupport = "native" | "linked" | "unsupported";
 export type ProviderLiveCertificationStatus = "not_assessed" | "partial" | "passed" | "failed";
 

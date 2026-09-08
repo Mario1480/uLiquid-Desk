@@ -50,6 +50,20 @@ export class BitgetMarketApi {
     });
   }
 
+  getFundingRate(symbol: string, productType: BitgetProductType = BITGET_DEFAULT_PRODUCT_TYPE): Promise<unknown> {
+    return this.rest.requestPublic("GET", "/api/v2/mix/market/current-fund-rate", {
+      symbol,
+      productType
+    });
+  }
+
+  getOpenInterest(symbol: string, productType: BitgetProductType = BITGET_DEFAULT_PRODUCT_TYPE): Promise<unknown> {
+    return this.rest.requestPublic("GET", "/api/v2/mix/market/open-interest", {
+      symbol,
+      productType
+    });
+  }
+
   getTrades(symbol: string, limit = 100, productType: BitgetProductType = BITGET_DEFAULT_PRODUCT_TYPE): Promise<unknown> {
     return this.rest.requestPublic("GET", "/api/v2/mix/market/fills", {
       symbol,

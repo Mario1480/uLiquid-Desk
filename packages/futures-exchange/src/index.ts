@@ -7,6 +7,7 @@ export * from "./core/position-metrics.js";
 export * from "./core/order-reference.js";
 export * from "./core/exchange-error.types.js";
 export * from "./core/retry-policy.js";
+export * from "./core/provider-contracts.js";
 export * from "./factory/create-futures-adapter.js";
 export * from "./bitget/bitget.adapter.js";
 export * from "./bitget/bitget-error.mapper.js";
