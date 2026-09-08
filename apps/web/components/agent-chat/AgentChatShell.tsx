@@ -70,6 +70,7 @@ export default function AgentChatShell() {
   const [decisionLogs, setDecisionLogs] = useState<AgentDecisionLog[]>([]);
   const [decisionLogsLoading, setDecisionLogsLoading] = useState(false);
   const [decisionLogsError, setDecisionLogsError] = useState(false);
+  const [isAdminViewer, setIsAdminViewer] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
   const conversationRequest = useRef(0);
   const visibleConversationId = useRef<string | null>(null);
@@ -131,15 +132,17 @@ export default function AgentChatShell() {
     async function load() {
       setLoading(true);
       try {
-        const [profileData, history, credits] = await Promise.all([
+        const [profileData, history, credits, me] = await Promise.all([
           apiGet<AgentProfilesResponse>("/api/agent-chat/profiles"),
           apiGet<{ items: AgentConversation[] }>("/api/agent-chat/conversations"),
-          apiGet<AiCreditSummary>("/api/billing/ai-credits").catch(() => null)
+          apiGet<AiCreditSummary>("/api/billing/ai-credits").catch(() => null),
+          apiGet<{ isSuperadmin?: boolean; hasAdminBackendAccess?: boolean }>("/auth/me").catch(() => null)
         ]);
         if (!mounted) return;
         setProfilesPayload(profileData);
         setConversations(history.items);
         setCreditSummary(credits);
+        setIsAdminViewer(Boolean(me?.isSuperadmin || me?.hasAdminBackendAccess));
         let prefill: Partial<AgentContextDraft> | null = null;
         try {
           const raw = window.sessionStorage.getItem(AGENT_CHAT_POSITION_PREFILL_KEY);
@@ -278,7 +281,7 @@ export default function AgentChatShell() {
           </div>
           <AgentComposer value={composer} loading={sending} disabled={sendDisabled} disabledReason={sendDisabledReason} onChange={setComposer} onSend={() => void sendMessage()} onShowActivity={() => setActivityOpen(true)} />
         </section>
-        <div className={activityOpen ? "agentChatActivityMobileOpen" : ""}><AgentActivityPanel logs={decisionLogs} loading={sending || decisionLogsLoading} error={decisionLogsError} onClose={() => setActivityOpen(false)} /></div>
+        <div className={activityOpen ? "agentChatActivityMobileOpen" : ""}><AgentActivityPanel logs={decisionLogs} loading={sending || decisionLogsLoading} error={decisionLogsError} showDataQuality={isAdminViewer} onClose={() => setActivityOpen(false)} /></div>
       </div>
       <SkillPermissionDrawer open={skillsOpen} profile={activeProfile} skills={skills} accounts={accounts} onClose={() => setSkillsOpen(false)} />
     </main>

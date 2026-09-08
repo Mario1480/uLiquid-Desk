@@ -1,6 +1,6 @@
 "use client";
-import { ProtectionPriceInput } from "../../components/trade/ProtectionPriceInput";
 import { PositionCloseDialog } from "../../components/trade/PositionCloseDialog";
+import { PositionProtectionDialog } from "../../components/trade/PositionProtectionDialog";
 import { partialCloseOrder } from "../../components/trade/positionMath";
 import { DeskChoiceGroup, DeskChoiceItem } from "@/components/desk/DeskChoiceGroup";
 import { GlassSlider } from "@/components/einui/liquid-glass/glass-slider";
@@ -745,7 +745,7 @@ function TradePageContent() {
   const [chartEngine, setChartEngine] = useState<ChartEngine>("advanced");
   const [selectedPositionKey, setSelectedPositionKey] = useState<string | null>(null);
   const [closeTarget, setCloseTarget] = useState<{ position: PositionItem; accountId: string; market: "spot" | "perp" } | null>(null);
-  const [positionEditDrafts, setPositionEditDrafts] = useState<Record<string, { tp: string; sl: string }>>({});
+  const [protectionTarget, setProtectionTarget] = useState<{ position: PositionItem; rowKey: string } | null>(null);
   const [orderEditDrafts, setOrderEditDrafts] = useState<Record<string, { price: string; qty: string; tp: string; sl: string }>>({});
   const [positionSavingKey, setPositionSavingKey] = useState<string | null>(null);
   const [orderSavingId, setOrderSavingId] = useState<string | null>(null);
@@ -1881,7 +1881,7 @@ function TradePageContent() {
 
   useEffect(() => {
     setSelectedPositionKey(null);
-    setPositionEditDrafts({});
+    setProtectionTarget(null);
     setOrderEditDrafts({});
     setActionSuccess(null);
     setSpotOrderSide("buy");
@@ -2161,16 +2161,14 @@ function TradePageContent() {
     }
   }
 
-  async function savePositionTpSl(position: PositionItem, rowKey: string) {
+  async function savePositionTpSl(position: PositionItem, rowKey: string, tpDraft: string, slDraft: string) {
     if (!selectedAccountId) return;
     if (isSpotMode) {
       setActionError(t("messages.tpSlNotSupportedForSpot"));
       return;
     }
-    const draft = positionEditDrafts[rowKey];
-    if (!draft) return;
-    const parsedTp = parseOptionalPositivePrice(draft.tp);
-    const parsedSl = parseOptionalPositivePrice(draft.sl);
+    const parsedTp = parseOptionalPositivePrice(tpDraft);
+    const parsedSl = parseOptionalPositivePrice(slDraft);
     if (!parsedTp.ok) {
       setActionError(t("messages.takeProfitGtZero"));
       return;
@@ -2194,11 +2192,7 @@ function TradePageContent() {
       });
       markOpenOrdersStale();
       await reloadLiveTables(selectedAccountId, selectedSymbol);
-      setPositionEditDrafts((prev) => {
-        const next = { ...prev };
-        delete next[rowKey];
-        return next;
-      });
+      setProtectionTarget(null);
     } catch (e) {
       setActionError(errMsg(e));
     } finally {
@@ -2329,6 +2323,16 @@ function TradePageContent() {
   return (
     <div className="tradeDeskWrap">
       {closeTarget && <PositionCloseDialog position={closeTarget.position} accountLabel={selectedAccount ? `${selectedAccount.exchange.toUpperCase()} - ${selectedAccount.label}` : closeTarget.accountId} error={actionError} pending={Boolean(closePendingKey)} onClose={() => setCloseTarget(null)} onConfirm={percentage => void closePosition(closeTarget.position, percentage)} />}
+      {protectionTarget && <PositionProtectionDialog
+        position={protectionTarget.position}
+        accountLabel={selectedAccount ? `${selectedAccount.exchange.toUpperCase()} - ${selectedAccount.label}` : selectedAccountId}
+        initialTakeProfit={protectionTarget.position.takeProfitPrice !== null && Number.isFinite(protectionTarget.position.takeProfitPrice) ? String(protectionTarget.position.takeProfitPrice) : ""}
+        initialStopLoss={protectionTarget.position.stopLossPrice !== null && Number.isFinite(protectionTarget.position.stopLossPrice) ? String(protectionTarget.position.stopLossPrice) : ""}
+        error={actionError}
+        pending={positionSavingKey === protectionTarget.rowKey}
+        onClose={() => { setProtectionTarget(null); setActionError(null); }}
+        onConfirm={(takeProfit, stopLoss) => void savePositionTpSl(protectionTarget.position, protectionTarget.rowKey, takeProfit, stopLoss)}
+      />}
       <PageHeader title={t("title")} description={t("subtitle")} />
 
       {displayedError ? (
@@ -3192,22 +3196,10 @@ function TradePageContent() {
                             <td style={{ padding: "8px 6px" }}>{position.liquidationPrice === 0 ? t("positions.noLiquidationPrice") : fmt(position.liquidationPrice, 4)}</td>
                             <td style={{ padding: "8px 6px", color: position.liquidationDistancePct !== null && position.liquidationDistancePct <= 0 ? "#f87171" : "inherit" }}>{fmtPct(position.liquidationDistancePct, 2)}</td>
                             <td style={{ padding: "8px 6px" }}>
-                              {isSpotMode ? (
-                                "-"
-                              ) : positionEditDrafts[rowKey] ? (
-                                <ProtectionPriceInput position={position} label={t("positions.columns.stopLoss")} value={positionEditDrafts[rowKey]?.sl ?? ""} onChange={value => setPositionEditDrafts(prev => ({ ...prev, [rowKey]: { ...(prev[rowKey] ?? { tp: "", sl: "" }), sl: value } }))} />
-                              ) : (
-                                fmt(position.stopLossPrice, 4)
-                              )}
+                              {isSpotMode ? "-" : fmt(position.stopLossPrice, 4)}
                             </td>
                             <td style={{ padding: "8px 6px" }}>
-                              {isSpotMode ? (
-                                "-"
-                              ) : positionEditDrafts[rowKey] ? (
-                                <ProtectionPriceInput position={position} label={t("positions.columns.takeProfit")} value={positionEditDrafts[rowKey]?.tp ?? ""} onChange={value => setPositionEditDrafts(prev => ({ ...prev, [rowKey]: { ...(prev[rowKey] ?? { tp: "", sl: "" }), tp: value } }))} />
-                              ) : (
-                                fmt(position.takeProfitPrice, 4)
-                              )}
+                              {isSpotMode ? "-" : fmt(position.takeProfitPrice, 4)}
                             </td>
                             <td style={{ padding: "8px 6px", color: (position.unrealizedPnl ?? 0) >= 0 ? "#34d399" : "#f87171" }}>
                               {fmt(position.unrealizedPnl, 2)}
@@ -3226,53 +3218,14 @@ function TradePageContent() {
                                     {closePendingKey === `${marketType}:${position.symbol || selectedSymbol}:${position.side}` ? t("actions.closing") : t("actions.close")}
                                   </DeskButton>
                                 </div>
-                              ) : positionEditDrafts[rowKey] ? (
-                                <div className="tradeRowActions">
-                                  <DeskButton
-                                    className="btn"
-                                    disabled={positionSavingKey === rowKey}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void savePositionTpSl(position, rowKey);
-                                    }}
-                                  >
-                                    {t("actions.save")}
-                                  </DeskButton>
-                                  <DeskButton
-                                    className="btn"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setPositionEditDrafts((prev) => {
-                                        const next = { ...prev };
-                                        delete next[rowKey];
-                                        return next;
-                                      });
-                                    }}
-                                  >
-                                    {t("actions.cancel")}
-                                  </DeskButton>
-                                </div>
                               ) : (
                                 <div className="tradeRowActions">
                                   <DeskButton
                                     className="btn"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setPositionEditDrafts((prev) => ({
-                                        ...prev,
-                                        [rowKey]: {
-                                          tp:
-                                            position.takeProfitPrice !== null &&
-                                            Number.isFinite(position.takeProfitPrice)
-                                              ? String(position.takeProfitPrice)
-                                              : "",
-                                          sl:
-                                            position.stopLossPrice !== null &&
-                                            Number.isFinite(position.stopLossPrice)
-                                              ? String(position.stopLossPrice)
-                                              : ""
-                                        }
-                                      }));
+                                      setActionError(null);
+                                      setProtectionTarget({ position, rowKey });
                                     }}
                                   >
                                     {t("actions.edit")}
@@ -3306,7 +3259,6 @@ function TradePageContent() {
                 <div className="tradeMobileList">
                   {positions.map((position, index) => {
                     const rowKey = getPositionRowKey(position, index);
-                    const draft = positionEditDrafts[rowKey];
                     const isSelected = selectedPositionKey === rowKey;
                     const sideToneClass =
                       position.side === "long" ? "tradeMobileCardSideLong" : "tradeMobileCardSideShort";
@@ -3355,74 +3307,26 @@ function TradePageContent() {
                           </div>
                           <div className="tradeMobileRow">
                             <span>{t("positions.columns.stopLoss")}</span>
-                            {draft ? (
-                              <ProtectionPriceInput position={position} label={t("positions.columns.stopLoss")} value={positionEditDrafts[rowKey]?.sl ?? ""} onChange={value => setPositionEditDrafts(prev => ({ ...prev, [rowKey]: { ...(prev[rowKey] ?? { tp: "", sl: "" }), sl: value } }))} />
-                            ) : (
-                              <strong>{fmt(position.stopLossPrice, 4)}</strong>
-                            )}
+                            <strong>{fmt(position.stopLossPrice, 4)}</strong>
                           </div>
                           <div className="tradeMobileRow">
                             <span>{t("positions.columns.takeProfit")}</span>
-                            {draft ? (
-                              <ProtectionPriceInput position={position} label={t("positions.columns.takeProfit")} value={positionEditDrafts[rowKey]?.tp ?? ""} onChange={value => setPositionEditDrafts(prev => ({ ...prev, [rowKey]: { ...(prev[rowKey] ?? { tp: "", sl: "" }), tp: value } }))} />
-                            ) : (
-                              <strong>{fmt(position.takeProfitPrice, 4)}</strong>
-                            )}
+                            <strong>{fmt(position.takeProfitPrice, 4)}</strong>
                           </div>
                         </div>
                         <div className="tradeMobileActions" onClick={(event) => event.stopPropagation()}>
-                          {draft ? (
-                            <>
-                              {!isSpotMode ? (
-                                <>
-                                  <DeskButton
-                                    className="btn"
-                                    disabled={positionSavingKey === rowKey}
-                                    onClick={() => void savePositionTpSl(position, rowKey)}
-                                  >
-                                    {t("actions.save")}
-                                  </DeskButton>
-                                  <DeskButton
-                                    className="btn"
-                                    onClick={() =>
-                                      setPositionEditDrafts((prev) => {
-                                        const next = { ...prev };
-                                        delete next[rowKey];
-                                        return next;
-                                      })
-                                    }
-                                  >
-                                    {t("actions.cancel")}
-                                  </DeskButton>
-                                </>
-                              ) : null}
-                            </>
-                          ) : (
-                            <>
-                              {!isSpotMode ? (
-                                <DeskButton
-                                  className="btn"
-                                  onClick={() =>
-                                    setPositionEditDrafts((prev) => ({
-                                      ...prev,
-                                      [rowKey]: {
-                                        tp:
-                                          position.takeProfitPrice !== null &&
-                                          Number.isFinite(position.takeProfitPrice)
-                                            ? String(position.takeProfitPrice)
-                                            : "",
-                                        sl:
-                                          position.stopLossPrice !== null &&
-                                          Number.isFinite(position.stopLossPrice)
-                                            ? String(position.stopLossPrice)
-                                            : ""
-                                      }
-                                    }))
-                                  }
-                                >
-                                  {t("actions.edit")}
-                                </DeskButton>
-                              ) : null}
+                          <>
+                            {!isSpotMode ? (
+                              <DeskButton
+                                className="btn"
+                                onClick={() => {
+                                  setActionError(null);
+                                  setProtectionTarget({ position, rowKey });
+                                }}
+                              >
+                                {t("actions.edit")}
+                              </DeskButton>
+                            ) : null}
                               <DeskButton
                                 className="btn"
                                 disabled={tradingDataBlocked || closePendingKey !== null}
@@ -3430,8 +3334,7 @@ function TradePageContent() {
                               >
                                 {closePendingKey === `${marketType}:${position.symbol || selectedSymbol}:${position.side}` ? t("actions.closing") : t("actions.close")}
                               </DeskButton>
-                            </>
-                          )}
+                          </>
                         </div>
                       </article>
                     );

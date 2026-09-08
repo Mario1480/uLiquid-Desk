@@ -42,9 +42,9 @@ const messages = {
   }
 };
 
-function render(logs: AgentDecisionLog[], loading: boolean, error = false) {
+function render(logs: AgentDecisionLog[], loading: boolean, error = false, showDataQuality = false) {
   return renderToStaticMarkup(createElement(NextIntlClientProvider,
-    { locale: "en", timeZone: "UTC", messages, onError: error => { throw error; }, children: createElement(AgentActivityPanel, { logs, loading, error }) }));
+    { locale: "en", timeZone: "UTC", messages, onError: error => { throw error; }, children: createElement(AgentActivityPanel, { logs, loading, error, showDataQuality }) }));
 }
 
 test("decision log panel exposes loading and empty states", () => {
@@ -72,14 +72,18 @@ test("decision log panel renders failed unsupported-provider runs without a fabr
   };
   const html = render([failed], false);
   assert.match(html, /No trading action permitted/);
-  assert.match(html, /No recommendation is available/);
-  assert.match(html, /Unavailable/);
   assert.match(html, /agent_chat_venue_unsupported/);
-  assert.match(html, /not supported for this venue or market type/);
+  assert.doesNotMatch(html, /No recommendation is available/);
+  assert.doesNotMatch(html, /Data quality/);
   assert.doesNotMatch(html, /Buy|Sell|Long|Short/);
+
+  const adminHtml = render([failed], false, false, true);
+  assert.match(adminHtml, /Data quality/);
+  assert.match(adminHtml, /Unavailable/);
+  assert.match(adminHtml, /not supported for this venue or market type/);
 });
 
-test("decision log panel renders validated recommendation metric blocks", () => {
+test("decision log panel omits the repeated recommendation and keeps stored evidence", () => {
   const completed: AgentDecisionLog = {
     runId: "run-completed",
     state: "completed",
@@ -97,8 +101,8 @@ test("decision log panel renders validated recommendation metric blocks", () => 
     legacyAssociation: false
   };
   const html = render([completed], false);
-  assert.match(html, /Funding/);
-  assert.match(html, /1\.0 bps/);
+  assert.doesNotMatch(html, /Observe funding/);
+  assert.doesNotMatch(html, /1\.0 bps/);
   completed.snapshotManifest = [{ id: "mds_original", schemaVersion: "1.0.0", freshnessPolicyVersion: "1.0.0",
     market: { providerId: "uliquid-native:binance", sourceVenue: "binance", marketType: "perp", symbol: "BTCUSDT" },
     dataset: "derivatives", interval: null, limit: null, observedAt: null, fetchedAt: completed.createdAt, ageMs: null,
