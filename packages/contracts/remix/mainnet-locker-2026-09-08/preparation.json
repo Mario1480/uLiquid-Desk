@@ -1,0 +1,13 @@
+{
+  "compiler": "0.8.30+commit.73712a01",
+  "optimizerRuns": 200,
+  "viaIR": true,
+  "evmVersion": "paris",
+  "sourceSha256": "7d24b9d6ab667fd60745817ebd426b12616c570af7534822d5480c4fc2c31df2",
+  "abiMatchesRepository": true,
+  "runtimeExcludingMetadataMatchesRepository": true,
+  "constructorArguments": [],
+  "chainId": 42161,
+  "token": "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+  "status": "PREPARED_NOT_DEPLOYED"
+}

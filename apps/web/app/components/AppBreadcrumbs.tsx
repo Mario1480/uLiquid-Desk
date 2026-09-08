@@ -102,7 +102,7 @@ export default function AppBreadcrumbs() {
       accounts: { label: tNav("accounts"), icon: "accounts" as BreadcrumbIconKey },
       wallet: { label: tNav("wallet"), icon: "wallet" as BreadcrumbIconKey },
       funding: { label: tNav("funding"), icon: "funding" as BreadcrumbIconKey },
-      uliq: { label: tNav("uliq"), icon: "money" as BreadcrumbIconKey },
+      uliq: { label: tNav(process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true" && pathnameWithoutLocale === "/uliq/locking" ? "uliqMainnetLocking" : "uliq"), icon: "money" as BreadcrumbIconKey },
       vaults: { label: tNav("vaults"), icon: "vault" as BreadcrumbIconKey },
       settings: { label: tNav("settings"), icon: "settings" as BreadcrumbIconKey },
       help: { label: tNav("help"), icon: "help" as BreadcrumbIconKey },
@@ -232,7 +232,7 @@ export default function AppBreadcrumbs() {
       },
       {
         test: /^\/uliq(?:\/.*)?$/,
-        items: [{ label: root.uliq.label, path: "/uliq", icon: root.uliq.icon }]
+        items: [{ label: root.uliq.label, path: process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true" && pathnameWithoutLocale === "/uliq/locking" ? "/uliq/locking" : "/uliq", icon: root.uliq.icon }]
       },
       {
         test: /^\/wallet\/history$/,

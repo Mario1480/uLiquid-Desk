@@ -1,4 +1,6 @@
 import { logger } from "../logger.js";
+import { UliqMainnetLockingIndexer } from "../uliq/mainnetLocking.indexer.js";
+import { getUliqMainnetLockingFlags } from "../uliq/mainnetLocking.config.js";
 import { getUliqAutoFinalizerSettings, UliqAutoFinalizerService } from "../uliq/autoFinalizer.service.js";
 import { expireUliqBenefitReservations } from "../uliq/benefitReservation.service.js";
 import { getUliqFeatureFlags, getUliqRuntimeConfig } from "../uliq/config.js";
@@ -176,6 +178,7 @@ function createDrainingPollingJob(params: {
 }
 
 export function createUliqJobs(db: any) {
+  let mainnetLockingIndexer: UliqMainnetLockingIndexer | null = null;
   let indexer: UliqIndexerService | null = null;
   let purchaseTracking: UliqPurchaseTrackingService | null = null;
   let reconciliation: UliqReconciliationService | null = null;
@@ -193,6 +196,15 @@ export function createUliqJobs(db: any) {
     ??= new UliqPublicPresaleAutoFinalizerService(db);
   const publicAutoFinalizerSettings = getUliqPublicPresaleAutoFinalizerSettings();
   return {
+    mainnetLockingIndexer: createPollingJob({
+      name: "uliq_mainnet_locking_indexer",
+      enabled: () => getUliqMainnetLockingFlags().indexerEnabled,
+      pollMs: intervalMs("ULIQ_MAINNET_LOCKING_INDEXER_INTERVAL_SECONDS", 15),
+      run: async () => {
+        try { return await (mainnetLockingIndexer ??= new UliqMainnetLockingIndexer(db)).runOnce(); }
+        catch { throw new Error("uliq_mainnet_locking_indexer_failed"); }
+      }
+    }),
     indexer: createPollingJob({
       name: "uliq_indexer",
       enabled: () => safeEnabled("enabled"),

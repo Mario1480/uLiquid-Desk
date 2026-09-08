@@ -347,11 +347,11 @@ export default function AppSidebar({
       });
     }
 
-    if (visibility.uliq && process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true") {
+    if (visibility.uliq && (process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true" || process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true")) {
       capitalItems.push({
         key: "uliq",
-        label: tNav("uliq"),
-        href: hrefFor("/uliq"),
+        label: tNav(process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true" ? "uliqMainnetLocking" : "uliq"),
+        href: hrefFor(process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true" ? "/uliq/locking" : "/uliq"),
         icon: "money",
         active: pathnameWithoutLocale.startsWith("/uliq")
       });

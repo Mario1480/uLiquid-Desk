@@ -1,0 +1,112 @@
+{
+  "observedAt": "2026-09-08T15:41:20.652Z",
+  "contract": "ULIQMainnetLocker",
+  "chainId": 42161,
+  "address": "0x1ADDA264ee63Ca0Be4400277c9dfA9896a897BC9",
+  "deploymentTransactionHash": "0xf7092a13358a930c20ad74def4b74ea7e6ac13b8f945ad3a4a918c905300de00",
+  "deploymentBlock": 503067324,
+  "deploymentBlockHash": "0xe0582ebaf43d6b82181e91b6133fa2ac465b94974e0542acd5ab1ec21ede0233",
+  "deployer": "0x89473caAb2d0d5aC4B0fcCd45B0348E65307810E",
+  "runtimeCodeHash": "0xecb33880f0a1c4e15b2a806dee87461e01a4ef6b2d67869ee3f79cd52e5f2047",
+  "sourceVerification": {
+    "sourcify": "verified_success_in_remix",
+    "blockscout": "verified_success_in_remix",
+    "etherscan": "skipped_no_api_key"
+  },
+  "runtimeActivation": "not_performed",
+  "finality": "pending",
+  "observations": [
+    {
+      "rpc": "https://arb1.arbitrum.io/rpc",
+      "chainId": 42161,
+      "receipt": {
+        "blockHash": "0xe0582ebaf43d6b82181e91b6133fa2ac465b94974e0542acd5ab1ec21ede0233",
+        "blockNumber": "0x1dfc32bc",
+        "contractAddress": "0x1adda264ee63ca0be4400277c9dfa9896a897bc9",
+        "cumulativeGasUsed": "0x112d9d",
+        "effectiveGasPrice": "0x1334810",
+        "from": "0x89473caab2d0d5ac4b0fccd45b0348e65307810e",
+        "gasUsed": "0x9014e",
+        "gasUsedForL1": "0x17f4",
+        "l1BlockNumber": "0x18bb716",
+        "logs": [],
+        "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "status": "0x1",
+        "timeboosted": false,
+        "to": null,
+        "transactionHash": "0xf7092a13358a930c20ad74def4b74ea7e6ac13b8f945ad3a4a918c905300de00",
+        "transactionIndex": "0x5",
+        "type": "0x2"
+      },
+      "transaction": {
+        "hash": "0xf7092a13358a930c20ad74def4b74ea7e6ac13b8f945ad3a4a918c905300de00",
+        "from": "0x89473caab2d0d5ac4b0fccd45b0348e65307810e",
+        "to": null,
+        "nonce": 9,
+        "value": "0x0"
+      },
+      "runtimeCodeHash": "0xecb33880f0a1c4e15b2a806dee87461e01a4ef6b2d67869ee3f79cd52e5f2047",
+      "creationBytecodeExactMatch": true,
+      "runtimeExactMatch": true,
+      "finalizedBlock": 503063924,
+      "safeBlock": 503065206,
+      "state": {
+        "token": "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "ULIQ_TOKEN": "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "CHAIN_ID": "42161",
+        "ONE_MONTH": "2764800",
+        "SIX_MONTHS": "15984000",
+        "TWELVE_MONTHS": "31708800",
+        "totalLocked": "0",
+        "token_decimals": "18",
+        "token_balanceOf": "0"
+      }
+    },
+    {
+      "rpc": "https://arbitrum-one.public.blastapi.io",
+      "chainId": 42161,
+      "receipt": {
+        "blockHash": "0xe0582ebaf43d6b82181e91b6133fa2ac465b94974e0542acd5ab1ec21ede0233",
+        "blockNumber": "0x1dfc32bc",
+        "contractAddress": "0x1adda264ee63ca0be4400277c9dfa9896a897bc9",
+        "cumulativeGasUsed": "0x112d9d",
+        "effectiveGasPrice": "0x1334810",
+        "from": "0x89473caab2d0d5ac4b0fccd45b0348e65307810e",
+        "gasUsed": "0x9014e",
+        "gasUsedForL1": "0x17f4",
+        "l1BlockNumber": "0x18bb716",
+        "logs": [],
+        "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "status": "0x1",
+        "timeboosted": false,
+        "to": null,
+        "transactionHash": "0xf7092a13358a930c20ad74def4b74ea7e6ac13b8f945ad3a4a918c905300de00",
+        "transactionIndex": "0x5",
+        "type": "0x2"
+      },
+      "transaction": {
+        "hash": "0xf7092a13358a930c20ad74def4b74ea7e6ac13b8f945ad3a4a918c905300de00",
+        "from": "0x89473caab2d0d5ac4b0fccd45b0348e65307810e",
+        "to": null,
+        "nonce": 9,
+        "value": "0x0"
+      },
+      "runtimeCodeHash": "0xecb33880f0a1c4e15b2a806dee87461e01a4ef6b2d67869ee3f79cd52e5f2047",
+      "creationBytecodeExactMatch": true,
+      "runtimeExactMatch": true,
+      "finalizedBlock": 503063924,
+      "safeBlock": 503065206,
+      "state": {
+        "token": "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "ULIQ_TOKEN": "0xF2Fa252134c84Fcf260c73665BAf3f8cCBe03EEd",
+        "CHAIN_ID": "42161",
+        "ONE_MONTH": "2764800",
+        "SIX_MONTHS": "15984000",
+        "TWELVE_MONTHS": "31708800",
+        "totalLocked": "0",
+        "token_decimals": "18",
+        "token_balanceOf": "0"
+      }
+    }
+  ]
+}

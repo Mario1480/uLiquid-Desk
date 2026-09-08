@@ -279,8 +279,9 @@ export default function AppHeader({
     if (visibility.accounts) {
       items.push({ key: "accounts", label: tNav("accounts"), href: withLocalePath("/accounts", locale) });
     }
-    if (visibility.uliq && process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true") {
-      items.push({ key: "uliq", label: tNav("uliq"), href: withLocalePath("/uliq", locale) });
+    if (visibility.uliq && (process.env.NEXT_PUBLIC_ULIQ_ENABLED === "true" || process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true")) {
+      const mainnetLocking = process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true";
+      items.push({ key: "uliq", label: tNav(mainnetLocking ? "uliqMainnetLocking" : "uliq"), href: withLocalePath(mainnetLocking ? "/uliq/locking" : "/uliq", locale) });
     }
     if (visibility.walletFunding) {
       items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });

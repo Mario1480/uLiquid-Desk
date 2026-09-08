@@ -1,0 +1,13 @@
+.page { gap: 20px; min-width: 0; }
+.section { display: grid; gap: 16px; padding: 20px; min-width: 0; }
+.positions { display: grid; gap: 16px; min-width: 0; }
+.metrics { display: flex; flex-wrap: wrap; gap: 16px 40px; margin: 0; }
+.metrics div { min-width: 0; }
+.metrics dd { margin: 4px 0 0; overflow-wrap: anywhere; font-weight: 600; }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.controls label { display: grid; gap: 6px; min-width: 0; }
+@media (max-width: 600px) {
+  .controls { align-items: stretch; flex-direction: column; }
+  .controls > * { width: 100%; }
+  .section { padding: 16px; }
+}

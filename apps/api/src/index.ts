@@ -414,6 +414,8 @@ import { getMarketIntelligenceService } from "./services/marketIntelligence/serv
 import { registerGridVaultRouteGroup } from "./routes/gridVaultRouteGroup.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
 import { registerUliqRoutes } from "./uliq/routes.js";
+import { registerUliqMainnetLockingRoutes } from "./uliq/mainnetLocking.routes.js";
+import { UliqMainnetLockingService } from "./uliq/mainnetLocking.service.js";
 import { registerUliqPublicPresaleRoutes } from "./uliq/publicPresale.routes.js";
 import { registerUliqAdminRoutes } from "./uliq/admin.routes.js";
 import { UliqPresaleService } from "./uliq/presale.service.js";
@@ -12264,6 +12266,7 @@ registerUliqRoutes(app, {
   activityService: uliqActivityService,
   publicPresaleService: uliqPublicPresaleService
 });
+registerUliqMainnetLockingRoutes(app, createLazyUliqService(() => new UliqMainnetLockingService(db)));
 registerUliqPublicPresaleRoutes(app, {
   service: uliqPublicPresaleService,
   sessionService: uliqPublicPresaleSessionService,
@@ -13620,6 +13623,7 @@ const apiLifecycle = createApiLifecycle({
     { name: "system-health-telegram", start: () => systemHealthTelegramJob.start(), stop: () => systemHealthTelegramJob.stop() },
     { name: "platform-alert-cleanup", start: () => platformAlertCleanupJob.start(), stop: () => platformAlertCleanupJob.stop() },
     { name: "uliq-indexer", start: () => uliqJobs.indexer.start(), stop: () => uliqJobs.indexer.stop() },
+    { name: "uliq-mainnet-locking-indexer", start: () => uliqJobs.mainnetLockingIndexer.start(), stop: () => uliqJobs.mainnetLockingIndexer.stop() },
     { name: "uliq-purchase-tracking", start: () => uliqJobs.purchaseTracking.start(), stop: () => uliqJobs.purchaseTracking.stop() },
     { name: "uliq-public-presale-tracking", start: () => uliqJobs.publicPresaleTracking.start(), stop: () => uliqJobs.publicPresaleTracking.stop() },
     { name: "uliq-public-presale-indexer", start: () => uliqJobs.publicPresaleIndexer.start(), stop: () => uliqJobs.publicPresaleIndexer.stop() },

@@ -79,6 +79,8 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 ## Engineering and Operations
 
 - [Beta access applications, invitations and activation gates](auth/beta-access.md)
+- [ULIQ Mainnet locking rollout](../packages/contracts/ULIQ_MAINNET_LOCKING_ROLLOUT.md)
+- [ULIQ Mainnet locker deployment evidence](archive/tasks/2026-09-08-uliq-mainnet-locker-deployment.md)
 - [Ein UI integration and acceptance](ui/einui-integration.md)
 - [Ein UI route migration inventory](ui/einui-route-inventory.md)
 - [Ein UI validation, screenshots and release gates](ui/einui-validation.md)

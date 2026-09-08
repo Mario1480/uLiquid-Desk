@@ -32,6 +32,7 @@ export const web3Env = {
   walletConnectProjectId: parseOptionalString(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID),
   enableArbitrum: parseBoolean(process.env.NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM, DEFAULT_ENABLE_ARBITRUM),
   uliqTestnetEnabled: parseBoolean(process.env.NEXT_PUBLIC_ULIQ_ENABLED, false),
+  mainnetLockingEnabled: process.env.NEXT_PUBLIC_ULIQ_MAINNET_LOCKING_ENABLED === "true",
   publicPresaleEnabled: parseBoolean(process.env.NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_ENABLED, false),
   publicPresaleChainId: parseNumber(process.env.NEXT_PUBLIC_ULIQ_PUBLIC_PRESALE_CHAIN_ID, 42161)
 };

@@ -54,7 +54,7 @@ const publicPresaleUsesArbitrumSepolia = web3Env.publicPresaleEnabled && web3Env
 
 export const supportedChains: Chain[] = [
   hyperEvmChain,
-  ...(web3Env.enableArbitrum || publicPresaleUsesArbitrum ? [arbitrum] : []),
+  ...(web3Env.enableArbitrum || publicPresaleUsesArbitrum || web3Env.mainnetLockingEnabled ? [arbitrum] : []),
   ...(web3Env.uliqTestnetEnabled || publicPresaleUsesArbitrumSepolia ? [uliqArbitrumSepoliaChain] : [])
 ];
 
