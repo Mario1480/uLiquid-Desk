@@ -11,6 +11,7 @@ import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import AdminConfirmDialog from "../../admin/_components/AdminConfirmDialog";
 import { AppIcon } from "../../components/AppIcon";
+import { TurnstileChallenge, useTurnstileConfig } from "../../../components/auth/TurnstileChallenge";
 
 type SettingsSession = {
   id: string;
@@ -24,6 +25,7 @@ type SettingsSession = {
 export default function UsersPage() {
   const t = useTranslations("settings.users");
   const tCommon = useTranslations("settings.common");
+  const tAuth = useTranslations("auth");
   const locale = useLocale() as AppLocale;
   const [error, setError] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -38,6 +40,10 @@ export default function UsersPage() {
   const [resetStatus, setResetStatus] = useState("");
   const [resetError, setResetError] = useState("");
   const [resetDevCode, setResetDevCode] = useState<string | null>(null);
+  const [resetTurnstileToken, setResetTurnstileToken] = useState("");
+  const [resetTurnstileKey, setResetTurnstileKey] = useState(0);
+  const [resetRequestPending, setResetRequestPending] = useState(false);
+  const { config: resetTurnstileConfig, failed: resetTurnstileFailed } = useTurnstileConfig();
   const [securityLoading, setSecurityLoading] = useState(true);
   const [securitySaving, setSecuritySaving] = useState(false);
   const [securityMsg, setSecurityMsg] = useState<string | null>(null);
@@ -185,13 +191,15 @@ export default function UsersPage() {
   }
 
   async function requestResetCode() {
+    if (resetRequestPending) return;
+    setResetRequestPending(true);
     setResetStatus(t("messages.sendingCode"));
     setResetError("");
     setResetDevCode(null);
     try {
       const payload = await apiPost<{ devCode?: string; expiresInMinutes?: number }>(
         "/auth/password-reset/request",
-        { email: resetEmail }
+        { email: resetEmail, turnstileToken: resetTurnstileToken }
       );
       setResetStatus(
         t("messages.resetCodeSent", {
@@ -202,6 +210,10 @@ export default function UsersPage() {
     } catch (e) {
       setResetStatus("");
       setResetError(errMsg(e));
+    } finally {
+      setResetRequestPending(false);
+      setResetTurnstileToken("");
+      setResetTurnstileKey(value => value + 1);
     }
   }
 
@@ -414,8 +426,23 @@ export default function UsersPage() {
               placeholder={t("reset.emailPlaceholder")}
             />
           </label>
+	          <div className="authBotCheck">
+	            <p>{tAuth("turnstile.resetPrompt")}</p>
+	            {resetTurnstileConfig?.enabled ? (
+	              <TurnstileChallenge
+	                siteKey={resetTurnstileConfig.siteKey}
+	                action="password_reset"
+	                locale={locale}
+	                resetKey={resetTurnstileKey}
+	                onTokenChange={setResetTurnstileToken}
+	                onError={() => setResetError(tAuth("errors.turnstile_unavailable"))}
+	              />
+	            ) : (
+	              <p role="alert">{resetTurnstileFailed || resetTurnstileConfig?.enabled === false ? tAuth("errors.turnstile_unavailable") : tAuth("turnstile.loading")}</p>
+	            )}
+	          </div>
 	          <div>
-	            <DeskButton className="btn" onClick={() => void requestResetCode()} disabled={!resetEmail}>
+	            <DeskButton className="btn" onClick={() => void requestResetCode()} disabled={resetRequestPending || !resetEmail || !resetTurnstileToken}>
 	              <AppIcon name="mail" />
 	              {t("reset.sendCode")}
 	            </DeskButton>

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SESSION_COOKIE, SIWE_NONCE_COOKIE } from "./cookies.js";
 import { buildOtpFailureUpdate, isRegistrationHoneypotTriggered, registerAuthRoutes } from "./routes.js";
+import { resetLoginFailureMemoryForTests } from "./loginProtection.js";
+import { TurnstileError } from "./turnstileSecurity.js";
 
 test("registration honeypot only triggers for non-empty text", () => {
   assert.equal(isRegistrationHoneypotTriggered(undefined), false);
@@ -68,6 +70,73 @@ test("buildOtpFailureUpdate locks OTP after the configured failed attempt thresh
     attemptCount: { increment: 1 },
     lockedUntil: expiresAt
   });
+});
+
+test("registration, verification resend and reset email require their exact Turnstile actions", async () => {
+  const postRoutes = new Map<string, Array<(...args: any[]) => any>>();
+  const actions: string[] = [];
+  const app = {
+    post(path: string, ...handlers: Array<(...args: any[]) => any>) { postRoutes.set(path, handlers); },
+    get() { return undefined; }
+  };
+  const schema = (data: Record<string, unknown>) => ({ safeParse: () => ({ success: true, data }) });
+  registerAuthRoutes(app as any, {
+    db: { globalSetting: { findUnique: async () => null } },
+    registerSchema: schema({ email: "user@example.com", password: "password123", companyWebsite: "", turnstileToken: "token" }),
+    registerResendSchema: schema({ email: "user@example.com", turnstileToken: "token" }),
+    passwordResetRequestSchema: schema({ email: "user@example.com", turnstileToken: "token" }),
+    verifyTurnstile: async (_token: string, action: string) => {
+      actions.push(action);
+      throw new TurnstileError("turnstile_invalid", 400);
+    }
+  } as any);
+
+  const response = () => ({
+    locals: {},
+    statusCode: 200,
+    status(code: number) { this.statusCode = code; return this; },
+    json(payload: unknown) { (this as any).body = payload; return this; }
+  });
+  for (const path of ["/auth/register", "/auth/register/resend", "/auth/password-reset/request"]) {
+    const handler = postRoutes.get(path)?.at(-1);
+    assert.ok(handler);
+    await handler({ body: {}, ip: "127.0.0.1", headers: {} } as any, response() as any);
+  }
+  assert.deepEqual(actions, ["signup", "signup_resend", "password_reset"]);
+});
+
+test("email login adds a Turnstile step-up after repeated failures", async () => {
+  resetLoginFailureMemoryForTests();
+  const postRoutes = new Map<string, Array<(...args: any[]) => any>>();
+  const actions: string[] = [];
+  const app = {
+    post(path: string, ...handlers: Array<(...args: any[]) => any>) { postRoutes.set(path, handlers); },
+    get() { return undefined; }
+  };
+  registerAuthRoutes(app as any, {
+    db: { user: { findUnique: async () => null } },
+    loginSchema: { safeParse: (body: any) => ({ success: true, data: body }) },
+    verifyTurnstile: async (_token: string, action: string) => { actions.push(action); }
+  } as any);
+  const handler = postRoutes.get("/auth/login")?.at(-1);
+  assert.ok(handler);
+  const invoke = async (turnstileToken?: string) => {
+    const res: any = {
+      locals: {}, statusCode: 200,
+      status(code: number) { this.statusCode = code; return this; },
+      json(payload: unknown) { this.body = payload; return this; }
+    };
+    await handler({ body: { email: "user@example.com", password: "wrong", turnstileToken }, ip: "127.0.0.2", headers: {} } as any, res);
+    return res;
+  };
+
+  assert.equal((await invoke()).statusCode, 401);
+  assert.equal((await invoke()).body.turnstileRequired, true);
+  const challenged = await invoke();
+  assert.equal(challenged.statusCode, 403);
+  assert.equal(challenged.body.error, "turnstile_required");
+  assert.equal((await invoke("token")).statusCode, 401);
+  assert.deepEqual(actions, ["login"]);
 });
 
 test("logout revokes outstanding reauth sessions", async () => {

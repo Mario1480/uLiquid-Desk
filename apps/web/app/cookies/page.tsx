@@ -34,7 +34,7 @@ type CookiePageCopy = {
 const COPY: Record<AppLocale, CookiePageCopy> = {
   de: {
     title: "Cookie- und Speicherinformationen",
-    meta: "Stand: 7. September 2026. Version 2026-09-07.",
+    meta: "Stand: 8. September 2026. Version 2026-09-08.",
     introTitle: "1. Necessary-only Ansatz",
     intro:
       "uLiquid Desk verwendet derzeit nur Cookies und Browser-Speicher, die für Anmeldung, Sicherheit, ausdrücklich gewählte Einstellungen oder die Wiederaufnahme angeforderter Produktabläufe erforderlich sind.",
@@ -105,7 +105,7 @@ const COPY: Record<AppLocale, CookiePageCopy> = {
       "Das Blockieren notwendiger Session- oder Sicherheits-Cookies kann Anmeldung, Wallet-Verknüpfung und geschützte Aktionen verhindern."
     ],
     externalTitle: "5. Externe Dienste",
-    turnstile: "Bei geöffneten Beta-Anträgen laden das Antragsformular und der erneute Bestätigungsversand Cloudflare Turnstile zur Missbrauchsabwehr. Dabei werden technische Browser- und Netzwerkdaten an Cloudflare übertragen. Pre-Clearance ist für dieses Widget deaktiviert. Auf Bestätigungs- und Einladungseinlöseseiten wird Turnstile nicht geladen. Weitere Angaben enthält die Datenschutzerklärung.",
+    turnstile: "Beta-Anträge, Registrierung, erneuter Bestätigungsversand und Reset-Code-Anfragen laden Cloudflare Turnstile zur Missbrauchsabwehr. Beim E-Mail-/Passwort-Login wird Turnstile erst nach wiederholten Fehlversuchen geladen. Dabei werden technische Browser- und Netzwerkdaten an Cloudflare übertragen. Pre-Clearance ist deaktiviert. Bei Code-Eingaben, Einladungseinlösung und Wallet-Login wird Turnstile nicht geladen. Weitere Angaben enthält die Datenschutzerklärung.",
     external:
       "Wenn ein Nutzer eine Wallet, Börse, Blockchain oder einen Zahlungsdienst öffnet oder verbindet, kann dieser externe Anbieter eigene Cookies oder Speichertechnologien nach seinen eigenen Datenschutzbestimmungen verwenden.",
     relatedTitle: "6. Weitere Informationen",
@@ -115,7 +115,7 @@ const COPY: Record<AppLocale, CookiePageCopy> = {
   },
   en: {
     title: "Cookie and Storage Information",
-    meta: "Last updated: September 7, 2026. Version 2026-09-07.",
+    meta: "Last updated: September 8, 2026. Version 2026-09-08.",
     introTitle: "1. Necessary-only approach",
     intro:
       "uLiquid Desk currently uses only cookies and browser storage required for authentication, security, explicitly selected preferences, or resuming product flows requested by the user.",
@@ -186,7 +186,7 @@ const COPY: Record<AppLocale, CookiePageCopy> = {
       "Blocking required session or security cookies may prevent sign-in, wallet linking, and protected actions."
     ],
     externalTitle: "5. External services",
-    turnstile: "When beta applications are open, application and confirmation-resend forms load Cloudflare Turnstile for abuse prevention. Technical browser and network data is transmitted to Cloudflare. Pre-clearance is disabled for this widget. Turnstile is not loaded on confirmation or invitation-redemption pages. Further details are provided in the Privacy Policy.",
+    turnstile: "Beta applications, registration, confirmation resends and reset-code requests load Cloudflare Turnstile for abuse prevention. Email/password sign-in loads Turnstile only after repeated failed attempts. Technical browser and network data is transmitted to Cloudflare. Pre-clearance is disabled. Turnstile is not loaded for code entry, invitation redemption or wallet sign-in. Further details are provided in the Privacy Policy.",
     external:
       "When a user opens or connects a wallet, exchange, blockchain, or payment service, that external provider may use its own cookies or storage technologies under its own privacy terms.",
     relatedTitle: "6. Further information",

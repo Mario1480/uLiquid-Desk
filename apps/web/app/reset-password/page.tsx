@@ -10,9 +10,14 @@ import { useState } from "react";
 import { ApiError, apiPost } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { AppIcon } from "../components/AppIcon";
+import { TurnstileChallenge, useTurnstileConfig } from "../../components/auth/TurnstileChallenge";
 
-function errMsg(e: unknown): string {
-  if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
+function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
+  if (e instanceof ApiError) {
+    const code = String(e.payload?.error ?? "").trim();
+    if (code && t.has(`errors.${code}`)) return t(`errors.${code}`);
+    return `${e.message} (HTTP ${e.status})`;
+  }
   if (e && typeof e === "object" && "message" in e) return String((e as any).message);
   return String(e);
 }
@@ -28,15 +33,22 @@ export default function ResetPasswordPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [devCode, setDevCode] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [requestPending, setRequestPending] = useState(false);
+  const [confirmPending, setConfirmPending] = useState(false);
+  const { config: turnstileConfig, failed: turnstileConfigFailed } = useTurnstileConfig();
 
   async function requestResetCode() {
+    if (requestPending) return;
+    setRequestPending(true);
     setStatus(t("sendingCode"));
     setError("");
     setDevCode(null);
     try {
       const payload = await apiPost<{ devCode?: string; expiresInMinutes?: number }>(
         "/auth/password-reset/request",
-        { email }
+        { email, turnstileToken }
       );
       const validWindow = payload?.expiresInMinutes
         ? ` (${t("validMinutes", { minutes: payload.expiresInMinutes })})`
@@ -45,16 +57,23 @@ export default function ResetPasswordPage() {
       if (payload?.devCode) setDevCode(payload.devCode);
     } catch (e) {
       setStatus("");
-      setError(errMsg(e));
+      setError(errMsg(e, t));
+    } finally {
+      setRequestPending(false);
+      setTurnstileToken("");
+      setTurnstileResetKey(value => value + 1);
     }
   }
 
   async function confirmResetPassword() {
+    if (confirmPending) return;
+    setConfirmPending(true);
     setStatus(t("updatingPassword"));
     setError("");
     if (newPassword !== confirmPassword) {
       setStatus("");
       setError(t("passwordMismatch"));
+      setConfirmPending(false);
       return;
     }
     try {
@@ -72,7 +91,9 @@ export default function ResetPasswordPage() {
       }, 1000);
     } catch (e) {
       setStatus("");
-      setError(errMsg(e));
+      setError(errMsg(e, t));
+    } finally {
+      setConfirmPending(false);
     }
   }
 
@@ -91,8 +112,23 @@ export default function ResetPasswordPage() {
               required
             />
           </label>
+          <div className="authBotCheck">
+            <p>{t("turnstile.resetPrompt")}</p>
+            {turnstileConfig?.enabled ? (
+              <TurnstileChallenge
+                siteKey={turnstileConfig.siteKey}
+                action="password_reset"
+                locale={locale}
+                resetKey={turnstileResetKey}
+                onTokenChange={setTurnstileToken}
+                onError={() => setError(t("errors.turnstile_unavailable"))}
+              />
+            ) : (
+              <p role="alert">{turnstileConfigFailed || turnstileConfig?.enabled === false ? t("errors.turnstile_unavailable") : t("turnstile.loading")}</p>
+            )}
+          </div>
           <div className="authActions">
-            <GlassButton className="btn" type="button" disabled={!email} onClick={() => void requestResetCode()}>
+            <GlassButton className="btn" type="button" disabled={requestPending || !email || !turnstileToken} onClick={() => void requestResetCode()}>
               <AppIcon name="mail" />
               {t("requestResetCode")}
             </GlassButton>
@@ -137,7 +173,7 @@ export default function ResetPasswordPage() {
             <GlassButton
               className="btn btnPrimary"
               type="button"
-              disabled={!email || code.length !== 6 || newPassword.length < 8}
+              disabled={confirmPending || !email || code.length !== 6 || newPassword.length < 8}
               onClick={() => void confirmResetPassword()}
             >
               <AppIcon name="key" />

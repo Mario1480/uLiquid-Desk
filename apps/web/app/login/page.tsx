@@ -17,6 +17,7 @@ import { signMessage } from "wagmi/actions";
 import { AppIcon } from "../components/AppIcon";
 import LegalRiskNotice from "../components/LegalRiskNotice";
 import Web3Providers from "../components/Web3Providers";
+import { TurnstileChallenge, useTurnstileConfig } from "../../components/auth/TurnstileChallenge";
 
 function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
   if (e instanceof ApiError) {
@@ -49,6 +50,11 @@ function LoginPageContent() {
   const [siweStatus, setSiweStatus] = useState("");
   const [siweError, setSiweError] = useState("");
   const [siwePending, setSiwePending] = useState(false);
+  const [loginPending, setLoginPending] = useState(false);
+  const [turnstileRequired, setTurnstileRequired] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const { config: turnstileConfig, failed: turnstileConfigFailed } = useTurnstileConfig(turnstileRequired);
   const verifyEmailHref = useMemo(() => {
     const base = withLocalePath("/register", locale);
     const nextEmail = email.trim();
@@ -57,16 +63,26 @@ function LoginPageContent() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (loginPending) return;
+    setLoginPending(true);
     setStatus(t("signingIn"));
     setError("");
     setErrorCode("");
     try {
-      await apiPost("/auth/login", { email, password });
+      await apiPost("/auth/login", { email, password, turnstileToken: turnstileToken || undefined });
       redirectAfterAuth(locale);
     } catch (e) {
       setStatus("");
+      const challengeRequired = e instanceof ApiError && e.payload?.turnstileRequired === true;
+      if (challengeRequired) setTurnstileRequired(true);
+      if (turnstileRequired || challengeRequired) {
+        setTurnstileToken("");
+        setTurnstileResetKey(value => value + 1);
+      }
       setErrorCode(e instanceof ApiError ? String(e.payload?.error ?? "").trim() : "");
       setError(errMsg(e, t));
+    } finally {
+      setLoginPending(false);
     }
   }
 
@@ -144,8 +160,25 @@ function LoginPageContent() {
               required
             />
           </label>
+          {turnstileRequired ? (
+            <div className="authBotCheck">
+              <p>{t("turnstile.loginPrompt")}</p>
+              {turnstileConfig?.enabled ? (
+                <TurnstileChallenge
+                  siteKey={turnstileConfig.siteKey}
+                  action="login"
+                  locale={locale}
+                  resetKey={turnstileResetKey}
+                  onTokenChange={setTurnstileToken}
+                  onError={() => setError(t("errors.turnstile_unavailable"))}
+                />
+              ) : (
+                <p role="alert">{turnstileConfigFailed || turnstileConfig?.enabled === false ? t("errors.turnstile_unavailable") : t("turnstile.loading")}</p>
+              )}
+            </div>
+          ) : null}
           <div className="authActions">
-            <GlassButton className="btn btnPrimary" type="submit" disabled={!email || !password}>
+            <GlassButton className="btn btnPrimary" type="submit" disabled={loginPending || !email || !password || (turnstileRequired && !turnstileToken)}>
               <AppIcon name="login" />
               {t("signInButton")}
             </GlassButton>

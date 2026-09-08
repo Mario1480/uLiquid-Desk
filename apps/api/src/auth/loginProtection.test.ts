@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   clearLoginFailures,
+  isLoginTurnstileRequired,
   isLoginLocked,
   recordLoginFailure,
   resetLoginFailureMemoryForTests
@@ -32,4 +33,14 @@ test("login failure tracking locks after repeated failures and can be cleared", 
 
   clearLoginFailures(req);
   assert.equal(isLoginLocked(req).locked, false);
+});
+
+test("login requires a Turnstile step-up before the lock threshold", () => {
+  resetLoginFailureMemoryForTests();
+  const req = createReq();
+  assert.equal(isLoginTurnstileRequired(req), false);
+  recordLoginFailure(req);
+  assert.equal(isLoginTurnstileRequired(req), false);
+  recordLoginFailure(req);
+  assert.equal(isLoginTurnstileRequired(req), true);
 });

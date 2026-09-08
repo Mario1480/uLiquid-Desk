@@ -12,6 +12,10 @@ const failures = new Map<string, FailureState>();
 const MAX_FAILURES = Math.max(1, Number(process.env.AUTH_LOGIN_FAILURE_MAX ?? "5"));
 const WINDOW_MS = Math.max(60_000, Number(process.env.AUTH_LOGIN_FAILURE_WINDOW_MS ?? String(15 * 60_000)));
 const LOCK_MS = Math.max(60_000, Number(process.env.AUTH_LOGIN_FAILURE_LOCK_MS ?? String(15 * 60_000)));
+export const LOGIN_TURNSTILE_FAILURE_THRESHOLD = Math.max(
+  1,
+  Math.min(MAX_FAILURES - 1 || 1, Number(process.env.AUTH_LOGIN_TURNSTILE_THRESHOLD ?? "2"))
+);
 
 function nowMs(): number {
   return Date.now();
@@ -59,6 +63,10 @@ export function isLoginLocked(req: Request): { locked: boolean; retryAfterSec: n
     locked: true,
     retryAfterSec: Math.max(1, Math.ceil((state.lockedUntil - nowMs()) / 1000))
   };
+}
+
+export function isLoginTurnstileRequired(req: Request): boolean {
+  return (getLoginFailureState(req)?.count ?? 0) >= LOGIN_TURNSTILE_FAILURE_THRESHOLD;
 }
 
 export function recordLoginFailure(req: Request): FailureState {

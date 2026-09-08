@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Redis } from "ioredis";
+import { turnstileConfig, verifyTurnstile, TurnstileError } from "./turnstileSecurity.js";
 
 export const betaHash = (value: string) => createHash("sha256").update(value).digest("hex");
 export class BetaAccessError extends Error {
@@ -13,29 +14,25 @@ export function betaConfig(env = process.env) {
     const url = new URL(origin);
     validOrigin = url.origin === origin && (url.protocol === "https:" || (env.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname)));
   } catch { /* An invalid origin keeps public intake closed. */ }
-  const hostnames = (env.TURNSTILE_ALLOWED_HOSTNAMES ?? "").split(",").map(v => v.trim()).filter(Boolean);
+  const turnstile = turnstileConfig(env);
   return {
-    origin, hostnames, siteKey: env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "",
-    secret: env.TURNSTILE_SECRET_KEY ?? "",
-    ready: validOrigin && hostnames.length > 0 && Boolean(env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY)
-      && !(env.NODE_ENV === "production" && /^[123]x0{10}/.test(env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ""))
-      && env.BETA_ACCESS_PRIVACY_APPROVED === "true"
+    origin,
+    hostnames: turnstile.hostnames,
+    siteKey: turnstile.siteKey,
+    secret: turnstile.secret,
+    ready: validOrigin && turnstile.ready && env.BETA_ACCESS_PRIVACY_APPROVED === "true"
   };
 }
 
 export async function verifyBetaTurnstile(token: string, action: string, config = betaConfig(), fetcher = fetch) {
   if (!config.ready) throw new BetaAccessError("beta_unavailable", 503);
   try {
-    const response = await fetcher("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret: config.secret, response: token }), signal: AbortSignal.timeout(5000)
-    });
-    const result = await response.json() as { success?: boolean; hostname?: string; action?: string };
-    if (!response.ok || result.success !== true || result.action !== action || !config.hostnames.includes(result.hostname ?? "")) {
-      throw new BetaAccessError("beta_bot_check_failed");
-    }
+    await verifyTurnstile(token, action, undefined, config, fetcher);
   } catch (error) {
     if (error instanceof BetaAccessError) throw error;
+    if (error instanceof TurnstileError) {
+      throw new BetaAccessError(error.code === "turnstile_invalid" ? "beta_bot_check_failed" : "beta_unavailable", error.status);
+    }
     throw new BetaAccessError("beta_unavailable", 503);
   }
 }

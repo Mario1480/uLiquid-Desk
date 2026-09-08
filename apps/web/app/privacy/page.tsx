@@ -10,7 +10,7 @@ export default async function PrivacyPage() {
     <main className="legalPage">
       <header className="legalPageHeader">
         <h1>uLiquid Privacy Policy</h1>
-        <div className="legalPageMeta">Last updated: September 7, 2026. Version 2026-09-07.</div>
+        <div className="legalPageMeta">Last updated: September 8, 2026. Version 2026-09-08.</div>
       </header>
 
       <DeskSurface><section className="card legalPageSection">
@@ -131,7 +131,8 @@ export default async function PrivacyPage() {
       <DeskSurface><section className="card legalPageSection" id="turnstile">
         <h2>9. Cloudflare Turnstile and abuse prevention</h2>
         <p>
-          We use Cloudflare Turnstile, provided by Cloudflare, Inc., on beta application and confirmation-resend forms.
+          We use Cloudflare Turnstile, provided by Cloudflare, Inc., on beta application, registration,
+          confirmation-resend, password-reset-request, and risk-triggered email/password sign-in forms.
           Loading the widget connects your browser to Cloudflare. Cloudflare processes technical signals such as
           IP address, TLS fingerprint, user-agent information and the site origin to distinguish visitors from bots.
           We validate the resulting token server-side before accepting a submission. Our legitimate interest is
@@ -146,7 +147,8 @@ export default async function PrivacyPage() {
           Our application retention periods do not determine Cloudflare&apos;s retention periods.
         </p>
         <p>
-          Turnstile is not loaded on verification or invitation-redemption pages. Pre-clearance is disabled for
+          Turnstile is not loaded for verification-code entry, invitation redemption, or wallet sign-in. On
+          email/password sign-in it is loaded only after repeated failed attempts. Pre-clearance is disabled for
           this widget. We also use a honeypot and temporary rate-limit counters keyed by hashed IP addresses or
           email addresses; these counters expire within 24 hours. These measures do not subscribe you to marketing.
         </p>

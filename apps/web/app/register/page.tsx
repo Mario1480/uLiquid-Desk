@@ -6,6 +6,7 @@ import { GlassButton } from "@/components/einui/liquid-glass/glass-button";
 import { GlassInput } from "@/components/einui/liquid-glass/glass-input";
 import { GlassAuthFrame } from "@/components/einui/auth-frame";
 import BetaApplication from "@/components/beta/BetaApplication";
+import { TurnstileChallenge, useTurnstileConfig } from "@/components/auth/TurnstileChallenge";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -52,6 +53,11 @@ export default function RegisterPage() {
   const [companyWebsite, setCompanyWebsite] = useState("");
   const [registrationEnabled, setRegistrationEnabled] = useState<boolean | null>(null);
   const [registrationUnavailable, setRegistrationUnavailable] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const needsAuthTurnstile = registrationEnabled === true || step === "verify";
+  const { config: turnstileConfig, failed: turnstileConfigFailed } = useTurnstileConfig(needsAuthTurnstile);
 
   useEffect(() => {
     let active = true;
@@ -74,6 +80,7 @@ export default function RegisterPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setError("");
     if (step === "register") {
       if (registrationEnabled !== true) return;
@@ -82,6 +89,7 @@ export default function RegisterPage() {
         return;
       }
       setStatus(t("creatingAccount"));
+      setBusy(true);
       setDevCode(null);
       try {
         const payload = await apiPost<RegisterResponse>("/auth/register", {
@@ -89,6 +97,7 @@ export default function RegisterPage() {
           password,
           referralCode: referralCode.trim() || undefined,
           companyWebsite,
+          turnstileToken,
           legalAcknowledgementAccepted: legalAcknowledged,
           legalAcknowledgementVersion: LEGAL_ACKNOWLEDGEMENT_VERSION
         });
@@ -104,11 +113,16 @@ export default function RegisterPage() {
       } catch (e) {
         setStatus("");
         setError(errMsg(e, t));
+        setTurnstileToken("");
+        setTurnstileResetKey(value => value + 1);
+      } finally {
+        setBusy(false);
       }
       return;
     }
 
     setStatus(t("verifyingEmail"));
+    setBusy(true);
     try {
       await apiPost("/auth/register/verify", { email, code });
       setStatus(t("emailVerified"));
@@ -118,15 +132,19 @@ export default function RegisterPage() {
     } catch (e) {
       setStatus("");
       setError(errMsg(e, t));
+    } finally {
+      setBusy(false);
     }
   }
 
   async function resendCode() {
+    if (busy) return;
+    setBusy(true);
     setStatus(t("sendingCode"));
     setError("");
     setDevCode(null);
     try {
-      const payload = await apiPost<RegisterResponse>("/auth/register/resend", { email });
+      const payload = await apiPost<RegisterResponse>("/auth/register/resend", { email, turnstileToken });
       const validWindow = payload?.expiresInMinutes
         ? ` (${t("validMinutes", { minutes: payload.expiresInMinutes })})`
         : "";
@@ -135,6 +153,10 @@ export default function RegisterPage() {
     } catch (e) {
       setStatus("");
       setError(errMsg(e, t));
+    } finally {
+      setBusy(false);
+      setTurnstileToken("");
+      setTurnstileResetKey(value => value + 1);
     }
   }
 
@@ -237,17 +259,34 @@ export default function RegisterPage() {
               </label>
             </>
           )}
+          {step === "register" || step === "verify" ? (
+            <div className="authBotCheck">
+              <p>{t(step === "register" ? "turnstile.signupPrompt" : "turnstile.resendPrompt")}</p>
+              {turnstileConfig?.enabled ? (
+                <TurnstileChallenge
+                  siteKey={turnstileConfig.siteKey}
+                  action={step === "register" ? "signup" : "signup_resend"}
+                  locale={locale}
+                  resetKey={turnstileResetKey}
+                  onTokenChange={setTurnstileToken}
+                  onError={() => setError(t("errors.turnstile_unavailable"))}
+                />
+              ) : (
+                <p role="alert">{turnstileConfigFailed || turnstileConfig?.enabled === false ? t("errors.turnstile_unavailable") : t("turnstile.loading")}</p>
+              )}
+            </div>
+          ) : null}
           <div className="authActions">
             <GlassButton
               className="btn btnPrimary"
               type="submit"
-              disabled={step === "register" ? (!email || password.length < 8 || !legalAcknowledged) : (!email || code.length !== 6)}
+              disabled={busy || (step === "register" ? (!email || password.length < 8 || !legalAcknowledged || !turnstileToken) : (!email || code.length !== 6))}
             >
               <AppIcon name={step === "register" ? "register" : "check"} />
               {step === "register" ? t("registerButton") : t("verifyEmailButton")}
             </GlassButton>
             {step === "verify" ? (
-              <GlassButton className="btn" type="button" disabled={!email} onClick={() => void resendCode()}>
+              <GlassButton className="btn" type="button" disabled={busy || !email || !turnstileToken} onClick={() => void resendCode()}>
                 <AppIcon name="mail" />
                 {t("resendVerificationCode")}
               </GlassButton>

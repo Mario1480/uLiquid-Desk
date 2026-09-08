@@ -921,7 +921,8 @@ const registerSchema = z.object({
   companyWebsite: z.string().max(500).optional().default(""),
   referralCode: z.string().trim().min(4).max(64).optional(),
   legalAcknowledgementAccepted: z.boolean().optional(),
-  legalAcknowledgementVersion: z.string().trim().max(64).optional().default(LEGAL_ACKNOWLEDGEMENT_VERSION)
+  legalAcknowledgementVersion: z.string().trim().max(64).optional().default(LEGAL_ACKNOWLEDGEMENT_VERSION),
+  turnstileToken: z.string().trim().max(2048).optional()
 });
 
 const registerVerifySchema = z.object({
@@ -930,12 +931,14 @@ const registerVerifySchema = z.object({
 });
 
 const registerResendSchema = z.object({
-  email: z.string().trim().email()
+  email: z.string().trim().email(),
+  turnstileToken: z.string().trim().max(2048).optional()
 });
 
 const loginSchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  turnstileToken: z.string().trim().max(2048).optional()
 });
 
 const predictionCopierTimeframeSchema = z.enum(["5m", "15m", "1h", "4h"]);
@@ -1389,7 +1392,8 @@ const changePasswordSchema = z.object({
 });
 
 const passwordResetRequestSchema = z.object({
-  email: z.string().trim().email()
+  email: z.string().trim().email(),
+  turnstileToken: z.string().trim().max(2048).optional()
 });
 
 const passwordResetConfirmSchema = z.object({

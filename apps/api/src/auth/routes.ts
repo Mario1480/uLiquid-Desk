@@ -9,9 +9,12 @@ import { clearSiweNonceCookie } from "./siwe.service.js";
 import { assignAffiliateReferral, resolveAffiliateUserIdByCode } from "../affiliate/program.js";
 import {
   clearLoginFailures,
+  LOGIN_TURNSTILE_FAILURE_THRESHOLD,
   isLoginLocked,
+  isLoginTurnstileRequired,
   recordLoginFailure
 } from "./loginProtection.js";
+import { turnstileConfig, TurnstileError, verifyTurnstile } from "./turnstileSecurity.js";
 import {
   LEGAL_ACKNOWLEDGEMENT_TEXT_HASH,
   LEGAL_ACKNOWLEDGEMENT_VERSION,
@@ -66,9 +69,29 @@ export type RegisterAuthRoutesDeps = {
   EMAIL_VERIFICATION_OTP_TTL_MIN: number;
   sendReauthOtpEmail(input: { to: string; code: string; expiresAt: Date }): Promise<{ ok: boolean; error?: string }>;
   sendEmailVerificationOtpEmail(input: { to: string; code: string; expiresAt: Date }): Promise<{ ok: boolean; error?: string }>;
+  verifyTurnstile?: typeof verifyTurnstile;
 };
 
 export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoutesDeps) {
+  const verifyBot = deps.verifyTurnstile ?? verifyTurnstile;
+
+  async function requireTurnstile(req: express.Request, res: express.Response, token: string | undefined, action: string) {
+    try {
+      await verifyBot(token ?? "", action, req);
+      return true;
+    } catch (error) {
+      const status = error instanceof TurnstileError ? error.status : 503;
+      const code = error instanceof TurnstileError ? error.code : "turnstile_unavailable";
+      res.status(status).json({ error: code });
+      return false;
+    }
+  }
+
+  app.get("/auth/turnstile", (_req, res) => {
+    const config = turnstileConfig();
+    return res.json({ enabled: config.ready, siteKey: config.ready ? config.siteKey : "" });
+  });
+
   function hashSessionToken(token: string): string {
     return crypto.createHash("sha256").update(token).digest("hex");
   }
@@ -233,6 +256,7 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
         expiresInMinutes: deps.EMAIL_VERIFICATION_OTP_TTL_MIN
       });
     }
+    if (!(await requireTurnstile(req, res, parsed.data.turnstileToken, "signup"))) return;
     const legalAcknowledgementError = validateLegalAcknowledgementInput(parsed.data);
     if (legalAcknowledgementError) {
       return res.status(400).json({ error: legalAcknowledgementError });
@@ -307,6 +331,7 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
+    if (!(await requireTurnstile(req, res, parsed.data.turnstileToken, "signup_resend"))) return;
 
     const email = parsed.data.email.toLowerCase();
     const user = await deps.db.user.findUnique({
@@ -392,13 +417,23 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
       });
     }
 
+    const turnstileRequired = isLoginTurnstileRequired(req);
+    if (turnstileRequired && !parsed.data.turnstileToken) {
+      return res.status(403).json({ error: "turnstile_required", turnstileRequired: true });
+    }
+    if (turnstileRequired && !(await requireTurnstile(req, res, parsed.data.turnstileToken, "login"))) return;
+
     const user = await deps.db.user.findUnique({
       where: { email },
       select: { id: true, email: true, walletAddress: true, passwordHash: true, emailVerifiedAt: true }
     });
     if (!user?.passwordHash) {
-      recordLoginFailure(req);
-      return res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password." });
+      const state = recordLoginFailure(req);
+      return res.status(401).json({
+        error: "invalid_credentials",
+        message: "Invalid email or password.",
+        turnstileRequired: state.count >= LOGIN_TURNSTILE_FAILURE_THRESHOLD
+      });
     }
 
     const pendingEmailVerification = !user.emailVerifiedAt
@@ -418,7 +453,11 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
         requestId: getRequestId(res),
         correlationId: getCorrelationId(res)
       });
-      return res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password." });
+      return res.status(401).json({
+        error: "invalid_credentials",
+        message: "Invalid email or password.",
+        turnstileRequired: state.count >= LOGIN_TURNSTILE_FAILURE_THRESHOLD
+      });
     }
 
     clearLoginFailures(req);
@@ -477,7 +516,6 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
-
     const row = await deps.db.user.findUnique({ where: { id: user.id }, select: { id: true, passwordHash: true } });
     if (!row?.passwordHash) return res.status(400).json({ error: "password_not_set" });
 
@@ -494,6 +532,7 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
+    if (!(await requireTurnstile(req, res, parsed.data.turnstileToken, "password_reset"))) return;
 
     const email = parsed.data.email.toLowerCase();
     const user = await deps.db.user.findUnique({ where: { email }, select: { id: true, email: true } });

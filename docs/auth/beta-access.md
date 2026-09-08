@@ -38,8 +38,16 @@ BETA_ACCESS_WEB_ORIGIN=https://desk.uliquid.vip
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=<public site key>
 TURNSTILE_SECRET_KEY=<backend-only secret>
 TURNSTILE_ALLOWED_HOSTNAMES=desk.uliquid.vip
+AUTH_LOGIN_TURNSTILE_THRESHOLD=2
 BETA_ACCESS_PRIVACY_APPROVED=false
 ```
+
+The same Turnstile widget is shared by normal registration, registration-email resend, public password-reset requests,
+and risk-triggered email/password login. These flows validate exact actions (`signup`, `signup_resend`,
+`password_reset`, and `login`) and the allowed hostname on the API. Login requests are challenged only after the
+configured number of failed attempts. Wallet sign-in, verification-code entry, and invitation redemption do not load
+Turnstile. `BETA_ACCESS_PRIVACY_APPROVED` gates beta intake only; incomplete Turnstile configuration blocks every
+protected authentication action.
 
 The public site key is returned by the API, so it does not need a new web build argument. Reuse configured SMTP and `API_RATE_LIMIT_REDIS_URL`/`REDIS_URL`. Do not place secrets in web environment variables, logs or commits. The existing production Compose API loads `.env.prod`; no deployment wrapper changes are required.
 
