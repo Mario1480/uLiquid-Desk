@@ -1,6 +1,6 @@
 # ULIQ Mainnet locking rollout
 
-Date: 2026-09-08. Status: steps 1 and 2 implemented locally; Mainnet locker deployed, source verified and finalized preflight passed. Deployment identity is stored in production configuration with activation disabled. Runtime RPC configuration, application release and live acceptance remain pending.
+Date: 2026-09-08. Status: Mainnet locker deployed, source verified and finalized preflight passed. API and web integration are deployed with production identity/RPC configuration and all activation flags disabled. The primary RPC's 10-block log limit must be resolved before indexer activation and live acceptance. See [application rollout evidence](../../docs/archive/tasks/2026-09-08-uliq-mainnet-locking-app-rollout.md).
 
 Validation: 16 API/configuration/RPC tests, four Mainnet locker contract tests, API typecheck and a broadcast-free Mainnet fork deployment simulation passed. See [step-1 evidence](../../docs/archive/tasks/2026-09-08-uliq-mainnet-locking-preflight.md).
 
@@ -62,6 +62,8 @@ Deployment succeeded on 2026-09-08: `0x1ADDA264ee63Ca0Be4400277c9dfA9896a897BC9`
 5. Verify the source/runtime bytecode independently and record dated evidence. Populate the isolated Mainnet runtime configuration only with these reconciled values.
 
 ## Step 4 — runtime release and acceptance
+
+API and web were released at `e7fafe73f` and are healthy. The compiled preflight passed inside the running API. All activation flags remain false. The configured primary RPC permits only 10-block log ranges, while the indexer requests up to 2000; provider selection or bounded range adaptation is still required before indexing. See the dated rollout evidence linked above.
 
 Deploy the reviewed application integration, verify read-only API/indexer/browser state and then enable locking under the agreed activation scope. A small owner-approved live lock/extension/mature-withdrawal smoke is separate transaction evidence; local tests cannot prove live withdrawal before the minimum term has elapsed. Turning off deposits must preserve a route to read and withdraw existing positions. Contract locking itself has no pause switch.
 
