@@ -199,7 +199,7 @@ export function createUliqJobs(db: any) {
     mainnetLockingIndexer: createPollingJob({
       name: "uliq_mainnet_locking_indexer",
       enabled: () => getUliqMainnetLockingFlags().indexerEnabled,
-      pollMs: intervalMs("ULIQ_MAINNET_LOCKING_INDEXER_INTERVAL_SECONDS", 15),
+      pollMs: intervalMs("ULIQ_MAINNET_LOCKING_INDEXER_INTERVAL_SECONDS", 60),
       run: async () => {
         try { return await (mainnetLockingIndexer ??= new UliqMainnetLockingIndexer(db)).runOnce(); }
         catch { throw new Error("uliq_mainnet_locking_indexer_failed"); }

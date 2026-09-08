@@ -1,13 +1,28 @@
 import { randomUUID } from "node:crypto";
-import { decodeEventLog, type Hex, type Log } from "viem";
+import { decodeEventLog, type Address, type Hex, type Log, type PublicClient } from "viem";
 import { uliqLockerAbi } from "./abi.js";
 import { getUliqMainnetLockingConfig, mainnetLockingCursorId, type UliqMainnetLockingConfig } from "./mainnetLocking.config.js";
 import { createMainnetLockingReadiness } from "./mainnetLocking.runtime.js";
 import { createUliqRpcPair, getConsistentBlockAt, getConsistentFinalizedBlock, type UliqRpcPair } from "./rpc.js";
 
 type FinalLog = Log & { blockNumber: bigint; blockHash: Hex; transactionHash: Hex; logIndex: number };
-const SPAN = 2000n;
+const SPAN = 500n;
+const LOG_CHUNK = 10n;
 const date = (seconds: bigint) => new Date(Number(seconds) * 1000);
+
+// Keep provider requests within free-tier limits without reducing catch-up to ten blocks per poll.
+export async function readMainnetLockingLogs(client: PublicClient, address: Address, fromBlock: bigint, toBlock: bigint): Promise<Log[]> {
+  const logs: Log[] = [];
+  for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK) {
+    const end = start + LOG_CHUNK - 1n < toBlock ? start + LOG_CHUNK - 1n : toBlock;
+    const chunk = await client.getLogs({ address, fromBlock: start, toBlock: end });
+    if (chunk.some(log => log.blockNumber == null || log.blockNumber < start || log.blockNumber > end)) {
+      throw new Error("uliq_mainnet_locking_rpc_invalid_log");
+    }
+    logs.push(...chunk);
+  }
+  return logs;
+}
 
 export class UliqMainnetLockingIndexer {
   private readonly ready: () => Promise<void>;
@@ -49,7 +64,7 @@ export class UliqMainnetLockingIndexer {
       const fromBlock = last + 1n;
       if (fromBlock > head.number) return { processedEvents: 0, processedBlocks: 0 };
       const toBlock = fromBlock + SPAN - 1n < head.number ? fromBlock + SPAN - 1n : head.number;
-      const reads = await Promise.all([this.rpc.primary, this.rpc.secondary].map(client => client.getLogs({ address: this.config.lockerAddress, fromBlock, toBlock })));
+      const reads = await Promise.all([this.rpc.primary, this.rpc.secondary].map(client => readMainnetLockingLogs(client, this.config.lockerAddress, fromBlock, toBlock)));
       const identity = (log: Log) => JSON.stringify([log.blockNumber?.toString(), log.blockHash?.toLowerCase(), log.transactionHash?.toLowerCase(), log.logIndex, log.address.toLowerCase(), log.data.toLowerCase(), log.topics.map(t => t.toLowerCase())]);
       if (JSON.stringify(reads[0].map(identity).sort()) !== JSON.stringify(reads[1].map(identity).sort())) throw new Error("uliq_mainnet_locking_rpc_log_mismatch");
       const logs = reads[0] as FinalLog[];

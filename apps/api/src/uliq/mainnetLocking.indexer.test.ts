@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { uliqLockerAbi } from "./abi.js";
-import { UliqMainnetLockingIndexer } from "./mainnetLocking.indexer.js";
+import { readMainnetLockingLogs, UliqMainnetLockingIndexer } from "./mainnetLocking.indexer.js";
 
 const locker = "0x2222222222222222222222222222222222222222";
 const wallet = "0x1111111111111111111111111111111111111111";
@@ -15,7 +15,7 @@ function log(kind: "TokensLocked" | "LockExtended" | "TokensUnlocked", block: bi
     topics: encodeEventTopics({ abi: uliqLockerAbi, eventName: kind, args: { lockId: 1n, owner: wallet } }) };
 }
 
-function fixture(options: { logs?: any[]; secondaryLogs?: any[]; casLost?: boolean; busy?: boolean; reorg?: boolean; rpcFailure?: boolean } = {}) {
+function fixture(options: { logs?: any[]; secondaryLogs?: any[]; casLost?: boolean; busy?: boolean; reorg?: boolean; rpcFailure?: boolean; failFrom?: bigint; head?: bigint } = {}) {
   let state: any = { cursor: { lastProcessedBlock: options.reorg ? 110n : 99n, lastProcessedBlockHash: options.reorg ? hash(999n) : null }, events: [], positions: [] };
   const scopes: any[] = [];
   let ranges = 0;
@@ -61,11 +61,11 @@ function fixture(options: { logs?: any[]; secondaryLogs?: any[]; casLost?: boole
     }
   };
   const clients = [0,1].map(source => ({
-    getBlock: async ({ blockNumber }: any) => ({ number: blockNumber ?? 110n, hash: hash(blockNumber ?? 110n), timestamp: 1000n }),
+    getBlock: async ({ blockNumber }: any) => ({ number: blockNumber ?? options.head ?? 110n, hash: hash(blockNumber ?? options.head ?? 110n), timestamp: 1000n }),
     getLogs: async ({ address, fromBlock, toBlock }: any) => {
-      ranges++; assert.equal(address, locker); assert.equal(fromBlock, 100n); assert.equal(toBlock, 110n);
-      if (options.rpcFailure) throw new Error("https://rpc.invalid/private-provider-key");
-      return source ? options.secondaryLogs ?? options.logs ?? [] : options.logs ?? [];
+      ranges++; assert.equal(address, locker); assert.ok(toBlock - fromBlock + 1n <= 10n);
+      if (options.rpcFailure || (source === 1 && fromBlock === options.failFrom)) throw new Error("https://rpc.invalid/private-provider-key");
+      return (source ? options.secondaryLogs ?? options.logs ?? [] : options.logs ?? []).filter(log => log.blockNumber >= fromBlock && log.blockNumber <= toBlock);
     }
   }));
   const service = new UliqMainnetLockingIndexer(db, { chainId: 42161, lockerAddress: locker, startBlock: 100n } as any,
@@ -82,7 +82,7 @@ test("locker indexer projects lock, extension and withdrawal atomically and does
   assert.equal(f.state().cursor.lastProcessedBlock, 110n);
   assert.equal(f.state().cursor.leaseOwner, null);
   await f.service.runOnce();
-  assert.equal(f.ranges(), 2); assert.equal(f.state().events.length, 3); assert.equal(f.state().positions[0].extensionCount, 1);
+  assert.equal(f.ranges(), 4); assert.equal(f.state().events.length, 3); assert.equal(f.state().positions[0].extensionCount, 1);
 });
 
 test("empty finalized ranges advance and independent workers respect the lease", async () => {
@@ -113,4 +113,39 @@ test("finalized checkpoint change resets only this chain and locker for a bounde
   assert.equal(f.state().cursor.lastProcessedBlock, 99n);
   assert.deepEqual(f.scopes, [{ chainId: 42161, contractAddress: locker }, { chainId: 42161, contractAddress: locker }]);
   await f.service.runOnce(); assert.equal(f.state().cursor.lastProcessedBlock, 110n);
+});
+
+test("ten-block chunks cover boundaries and the short tail without gaps or overlaps", async () => {
+  const ranges: bigint[][] = [];
+  const events = [log("TokensLocked", 109n), log("LockExtended", 110n), log("TokensUnlocked", 120n)];
+  const client = { getLogs: async ({ fromBlock, toBlock }: any) => {
+    ranges.push([fromBlock, toBlock]);
+    return events.filter(event => event.blockNumber >= fromBlock && event.blockNumber <= toBlock);
+  } } as any;
+  assert.deepEqual(await readMainnetLockingLogs(client, locker, 100n, 120n), events);
+  assert.deepEqual(ranges, [[100n,109n], [110n,119n], [120n,120n]]);
+  await assert.rejects(readMainnetLockingLogs({ getLogs: async () => [events[1]] } as any, locker, 100n, 109n), /invalid_log/);
+});
+
+test("later chunk failures do not commit earlier events and retry covers the complete range", async () => {
+  const options = { logs: [log("TokensLocked", 100n), log("LockExtended", 110n)], failFrom: 110n as bigint | undefined };
+  const f = fixture(options);
+  await assert.rejects(f.service.runOnce());
+  assert.equal(f.state().cursor.lastProcessedBlock, 99n);
+  assert.equal(f.state().events.length, 0);
+  options.failFrom = undefined;
+  await f.service.runOnce();
+  assert.equal(f.state().cursor.lastProcessedBlock, 110n);
+  assert.equal(f.state().events.length, 2);
+});
+
+test("catch-up processes 500 blocks per poll and continues from the persisted boundary", async () => {
+  const f = fixture({ head: 1120n });
+  assert.equal((await f.service.runOnce()).processedBlocks, 500);
+  assert.equal(f.state().cursor.lastProcessedBlock, 599n);
+  assert.equal((await f.service.runOnce()).processedBlocks, 500);
+  assert.equal(f.state().cursor.lastProcessedBlock, 1099n);
+  assert.equal((await f.service.runOnce()).processedBlocks, 21);
+  assert.equal(f.state().cursor.lastProcessedBlock, 1120n);
+  assert.equal(f.ranges(), 206);
 });
