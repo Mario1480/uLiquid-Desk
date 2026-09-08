@@ -83,6 +83,7 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 - [ULIQ Mainnet locker deployment evidence](archive/tasks/2026-09-08-uliq-mainnet-locker-deployment.md)
 - [ULIQ Mainnet locking application rollout](archive/tasks/2026-09-08-uliq-mainnet-locking-app-rollout.md)
 - [ULIQ locking RPC query adaptation](archive/tasks/2026-09-08-uliq-locking-rpc-chunks.md)
+- [ULIQ locking frontend activation](archive/tasks/2026-09-08-uliq-locking-frontend-activation.md)
 - [Ein UI integration and acceptance](ui/einui-integration.md)
 - [Ein UI route migration inventory](ui/einui-route-inventory.md)
 - [Ein UI validation, screenshots and release gates](ui/einui-validation.md)
