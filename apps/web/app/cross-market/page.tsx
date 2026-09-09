@@ -101,8 +101,14 @@ export default function CrossMarketPage() {
   const candidates = payload?.opportunities.filter((item) => item.status === "candidate").length ?? 0;
   const bestNet = payload?.opportunities[0]?.netEdgeBps ?? null;
 
+  function invalidateResult() {
+    setPayload(null);
+    setError(null);
+  }
+
   function toggleVenue(venue: Venue, checked: boolean) {
     setVenues((current) => checked ? [...new Set([...current, venue])] : current.filter((item) => item !== venue));
+    invalidateResult();
   }
 
   async function scan() {
@@ -140,8 +146,7 @@ export default function CrossMarketPage() {
 
   function setScannerKind(next: ScannerKind) {
     setKind(next);
-    setPayload(null);
-    setError(null);
+    invalidateResult();
   }
 
   return (
@@ -173,12 +178,12 @@ export default function CrossMarketPage() {
           <div><h2>{t("controls.title")}</h2><p>{t("controls.description")}</p></div>
         </div>
         <div className="crossMarketControlGrid">
-          <label><span>{t("controls.symbol")}</span><DeskSelect className="input" value={symbol} onChange={(event) => setSymbol(event.target.value)}>
+          <label><span>{t("controls.symbol")}</span><DeskSelect className="input" value={symbol} onChange={(event) => { setSymbol(event.target.value); invalidateResult(); }}>
             <option value="BTCUSDT">BTC/USDT</option><option value="ETHUSDT">ETH/USDT</option><option value="SOLUSDT">SOL/USDT</option>
           </DeskSelect></label>
-          <label><span>{t("controls.notional")}</span><DeskInput className="input" type="number" min={25} max={1_000_000} step={25} value={notional} onChange={(event) => setNotional(event.target.value)} /></label>
-          <label><span>{t("controls.minEdge")}</span><DeskInput className="input" type="number" min={0} max={1000} step={1} value={minEdge} onChange={(event) => setMinEdge(event.target.value)} /></label>
-          <label><span>{t("controls.safetyBuffer")}</span><DeskInput className="input" type="number" min={0} max={200} step={1} value={safetyBuffer} onChange={(event) => setSafetyBuffer(event.target.value)} /></label>
+          <label><span>{t("controls.notional")}</span><DeskInput className="input" type="number" min={25} max={1_000_000} step={25} value={notional} onChange={(event) => { setNotional(event.target.value); invalidateResult(); }} /></label>
+          <label><span>{t("controls.minEdge")}</span><DeskInput className="input" type="number" min={0} max={1000} step={1} value={minEdge} onChange={(event) => { setMinEdge(event.target.value); invalidateResult(); }} /></label>
+          <label><span>{t("controls.safetyBuffer")}</span><DeskInput className="input" type="number" min={0} max={200} step={1} value={safetyBuffer} onChange={(event) => { setSafetyBuffer(event.target.value); invalidateResult(); }} /></label>
         </div>
         <fieldset className="crossMarketVenueFieldset">
           <legend>{t("controls.venues")}</legend>
@@ -191,7 +196,7 @@ export default function CrossMarketPage() {
         </fieldset>
         <div className="crossMarketInventoryHeader"><strong>{t("controls.inventory")}</strong><span>{t("controls.inventoryHint")}</span></div>
         <div className="crossMarketInventoryGrid">
-          {venues.map((venue) => <label key={venue}><span>{venueLabel(venue)}</span><DeskInput className="input" inputMode="decimal" min={0} placeholder="—" value={inventory[venue] ?? ""} onChange={(event) => setInventory((current) => ({ ...current, [venue]: event.target.value }))} /></label>)}
+          {venues.map((venue) => <label key={venue}><span>{venueLabel(venue)}</span><DeskInput className="input" inputMode="decimal" min={0} placeholder="—" value={inventory[venue] ?? ""} onChange={(event) => { setInventory((current) => ({ ...current, [venue]: event.target.value })); invalidateResult(); }} /></label>)}
         </div>
         <DeskButton type="button" className="btn btnPrimary crossMarketScanButton" disabled={loading} onClick={() => void scan()}>
           <AppIcon name="search" />{loading ? t("controls.scanning") : t("controls.scan")}
