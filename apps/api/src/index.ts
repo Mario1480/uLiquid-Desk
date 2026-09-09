@@ -353,6 +353,7 @@ import {
   deriveRegimeTags,
   expectedBarsForWindow,
   fallbackFeatureThresholds,
+  historicalCandleRequestStartMs,
   minimumBarsForTimeframe,
   percentileRankFromBands,
   readFeatureThresholds,
@@ -7464,6 +7465,7 @@ const featureThresholdCalibrationBuckets = new Map<PredictionTimeframe, string>(
 
 async function fetchHistoricalCandles(
   adapter: PerpExecutionAdapter,
+  exchange: string,
   symbol: string,
   timeframe: PredictionTimeframe,
   windowFromMs: number,
@@ -7477,11 +7479,16 @@ async function fetchHistoricalCandles(
   let rounds = 0;
 
   while (cursorEnd > windowFromMs && byTs.size < maxBars && rounds < 80) {
+    const requestStart = historicalCandleRequestStartMs({
+      exchange,
+      windowFromMs,
+      cursorEndMs: cursorEnd
+    });
     const raw = await adapter.marketApi.getCandles({
       symbol,
       productType: adapter.productType,
       granularity: timeframeToBitgetGranularity(timeframe),
-      startTime: windowFromMs,
+      startTime: requestStart,
       endTime: cursorEnd,
       limit: 200
     });
@@ -7547,6 +7554,7 @@ async function calibrateFeatureThresholdForSymbol(params: {
   const exchangeSymbol = await params.adapter.toExchangeSymbol(params.symbol);
   const candles = await fetchHistoricalCandles(
     params.adapter,
+    params.exchange,
     exchangeSymbol,
     params.timeframe,
     windowFromMs,

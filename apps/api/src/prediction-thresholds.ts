@@ -69,6 +69,8 @@ const WINDOW_MS_BY_TIMEFRAME: Record<ThresholdTimeframe, number> = {
   "1d": 5 * 365 * 24 * 60 * 60 * 1000
 };
 
+const BITGET_MAX_CANDLE_REQUEST_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
 const MIN_BARS_BY_TIMEFRAME: Record<ThresholdTimeframe, number> = {
   "5m": 2000,
   "15m": 1500,
@@ -107,6 +109,18 @@ function toFiniteNumbers(values: number[]): number[] {
 
 export function calibrationWindowMsForTimeframe(timeframe: ThresholdTimeframe): number {
   return WINDOW_MS_BY_TIMEFRAME[timeframe];
+}
+
+export function historicalCandleRequestStartMs(params: {
+  exchange: string;
+  windowFromMs: number;
+  cursorEndMs: number;
+}): number {
+  if (params.exchange.trim().toLowerCase() !== "bitget") return params.windowFromMs;
+  return Math.max(
+    params.windowFromMs,
+    params.cursorEndMs - BITGET_MAX_CANDLE_REQUEST_WINDOW_MS
+  );
 }
 
 export function minimumBarsForTimeframe(timeframe: ThresholdTimeframe): number {
@@ -429,4 +443,3 @@ export function applyConfidencePenalty(input: {
   }
   return Math.max(0, Math.min(1, next));
 }
-

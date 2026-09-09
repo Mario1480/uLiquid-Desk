@@ -5,9 +5,40 @@ import {
   buildFeatureThresholds,
   deriveRegimeTags,
   fallbackFeatureThresholds,
+  historicalCandleRequestStartMs,
   percentileRankFromBands,
   quantile
 } from "./prediction-thresholds.js";
+
+test("Bitget candle calibration bounds each paginated request to 90 days", () => {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const cursorEndMs = 200 * dayMs;
+
+  assert.equal(
+    historicalCandleRequestStartMs({
+      exchange: "bitget",
+      windowFromMs: 0,
+      cursorEndMs
+    }),
+    110 * dayMs
+  );
+  assert.equal(
+    historicalCandleRequestStartMs({
+      exchange: "BITGET",
+      windowFromMs: 150 * dayMs,
+      cursorEndMs
+    }),
+    150 * dayMs
+  );
+  assert.equal(
+    historicalCandleRequestStartMs({
+      exchange: "hyperliquid",
+      windowFromMs: 0,
+      cursorEndMs
+    }),
+    0
+  );
+});
 
 test("quantile computes median for known array", () => {
   const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -70,4 +101,3 @@ test("confidence penalty lowers confidence in extreme regime", () => {
   });
   assert.equal(penalized < 0.8, true);
 });
-
