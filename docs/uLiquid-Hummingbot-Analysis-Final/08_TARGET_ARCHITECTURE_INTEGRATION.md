@@ -430,8 +430,8 @@ Build the provider-neutral Shared Market Data foundation and a versioned Feature
 
 See the [Phase 2 implementation plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md). Phase 2 is complete by Mario’s full-test confirmation and owner acceptance on 2026-09-07. Shared data, versioned features, existing AI upgrades, bounded provider histories and persisted evidence are accepted. Earlier test records remain historical evidence, not new benchmark measurements.
 
-### Phase 3 — New Product Features — `CODE COMPLETE — RELEASE AND OWNER ACCEPTANCE PENDING`
-The [Phase 3 implementation](implementation/PHASE_3_IMPLEMENTATION_PLAN.md) adds scanner-only Arbitrage and XEMM experiences over shared normalized public order books. They calculate size-aware fees, slippage, depth, freshness, conservative inventory readiness and opportunity scores without performing automated execution.
+### Phase 3 — New Product Features — `COMPLETE`
+The [Phase 3 implementation](implementation/PHASE_3_IMPLEMENTATION_PLAN.md) adds scanner-only Arbitrage and XEMM experiences over shared normalized public order books. Production deployment and authenticated desktop/mobile acceptance completed on 2026-09-09. The scanners calculate size-aware fees, slippage, depth, freshness, conservative inventory readiness and opportunity scores without performing automated execution.
 
 ### Phase 4 — Parallel Infrastructure Validation — `COMPLETE — PARTIAL`
 The isolated Bitget Hummingbot POC closed on 2026-09-08. Public ticker, orderbook, current funding, mark price, trading rules, process restart and WebSocket reconnect are observed behind additive uLiquid-owned contracts. Private execution, recovery and multi-account scaling remain unassessed.
@@ -452,7 +452,7 @@ Phase 1: Existing foundations consolidated [COMPLETE]
         │
         ├─→ Phase 2: Shared Market Data / Feature Registry / AI upgrades [COMPLETE]
         │          ↓
-        │   Phase 3: Arbitrage / XEMM Scanners [CODE COMPLETE; ACCEPTANCE PENDING]
+        │   Phase 3: Arbitrage / XEMM Scanners [COMPLETE]
         │
         └─→ Phase 4: Exchange Gateway / Bitget Hummingbot POC [COMPLETE — PARTIAL]
                    ↓

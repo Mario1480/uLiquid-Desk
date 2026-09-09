@@ -10,8 +10,8 @@ Shared Market Data; canonical market/data schemas; deterministic analytics; Feat
 
 The [active Phase 2 plan](../implementation/PHASE_2_IMPLEMENTATION_PLAN.md). Phase 2 is complete by Mario’s full-test confirmation and owner acceptance on 2026-09-07. Shared data, versioned features, existing AI upgrades, bounded provider histories and persisted evidence are accepted. Earlier test records remain historical evidence, not new benchmark measurements.
 
-## Phase 3 — Read-Only Product Features — `NOT STARTED`
-Arbitrage Scanner; XEMM Scanner; opportunity history and alerts; no automated execution.
+## Phase 3 — Read-Only Product Features — `COMPLETE`
+The scanner-only Arbitrage and XEMM experiences were deployed and accepted on production on 2026-09-09. Opportunity history, alerts and automated execution were not part of the accepted scope and remain unimplemented.
 
 ## Parallel Phase 4 — Hummingbot Infrastructure Validation — `COMPLETE — PARTIAL`
 Additive Exchange Gateway contracts, ExecutionIntent/idempotency, provider health and synthetic credential/tenant boundaries are implemented. The Bitget Hummingbot POC observed bounded public data, restart and reconnect behavior; private execution/recovery/scaling remain unassessed.

@@ -11,7 +11,7 @@
 | Feature Registry and snapshots | ADOPT | Phase 2 | `COMPLETE`; owner acceptance 2026-09-07; existing read-only scope retained |
 | Market Analyst | UPGRADE existing | Phase 2 | `COMPLETE`; owner acceptance 2026-09-07; existing read-only scope retained |
 | Position Copilot | UPGRADE existing; retain read/recommend boundary | Phase 2 | `COMPLETE`; owner acceptance 2026-09-07; existing read-only scope retained |
-| Arbitrage/XEMM Scanner | ADAPT; scanner-only first | Phase 3 | `NOT STARTED` |
+| Arbitrage/XEMM Scanner | ADAPT; scanner-only first | Phase 3 | `COMPLETE`; production acceptance 2026-09-09 |
 | Exchange Gateway | ADOPT by extending existing adapter foundations | Parallel Phase 4 | Additive contracts `IMPLEMENTED`; no production router |
 | Credential/KMS boundary | ADOPT | Parallel Phase 4 | Synthetic binding/redaction `IMPLEMENTED`; private flow `NOT ASSESSED` |
 | Hummingbot Bitget integration | ISOLATED POC | Parallel Phase 4 | `COMPLETE — PARTIAL`; public reads/restart/reconnect observed, execution unassessed |

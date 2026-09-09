@@ -23,8 +23,8 @@ Shared Market Data is uLiquid-owned and must proceed regardless of the later Hum
 
 The active [Phase 2 implementation plan](PHASE_2_IMPLEMENTATION_PLAN.md). Phase 2 is complete by Mario’s full-test confirmation and owner acceptance on 2026-09-07. Shared data, versioned features, existing AI upgrades, bounded provider histories and persisted evidence are accepted. Earlier test records remain historical evidence, not new benchmark measurements.
 
-## Phase 3 — New Product Features — `CODE COMPLETE — RELEASE AND OWNER ACCEPTANCE PENDING`
-The [Phase 3 implementation plan](PHASE_3_IMPLEMENTATION_PLAN.md) records the deterministic Arbitrage and XEMM Scanners with size-aware fees, slippage, depth, inventory readiness, freshness evidence and opportunity scoring. The implementation remains scanner-only: no automated cross-market execution, private balance read, credential use or persistence path was added.
+## Phase 3 — New Product Features — `COMPLETE`
+The [Phase 3 implementation plan](PHASE_3_IMPLEMENTATION_PLAN.md) records the deterministic Arbitrage and XEMM Scanners with size-aware fees, slippage, depth, inventory readiness, freshness evidence and opportunity scoring. Production deployment and authenticated desktop/mobile acceptance completed on 2026-09-09 under Mario's delegated acceptance request. The implementation remains scanner-only: no automated cross-market execution, private balance read, credential use or persistence path was added.
 
 ## Phase 4 — Parallel Infrastructure Validation — `COMPLETE — PARTIAL`
 After the Phase 1 contract review, define and test the provider-neutral Exchange Gateway by extending the existing futures adapter and capability foundations. Add provider health, canonical execution identities and idempotency boundaries. Create an isolated `hummingbot-provider-poc` for Bitget so native and Hummingbot paths can be compared without changing product-facing APIs.
@@ -100,7 +100,7 @@ As of the September 4 release, authenticated browser E2E and live-provider accep
 
 ## Recommended next step
 
-Phase 3 code is complete and documented in the [Phase 3 implementation plan](PHASE_3_IMPLEMENTATION_PLAN.md). The next gates are separately authorized deployment, authenticated target-environment acceptance and Mario's owner acceptance. Phase 5 remains gated by the Phase 4 `PARTIAL` Decision Gate.
+Phase 3 is complete and documented in the [Phase 3 implementation plan](PHASE_3_IMPLEMENTATION_PLAN.md) and [production acceptance record](../../archive/tasks/2026-09-09-phase3-production-acceptance.md). The next roadmap work is a separately authorized Phase 4 `PASS` reassessment; Phase 5 remains gated by the current Phase 4 `PARTIAL` Decision Gate.
 
 The Bitget Hummingbot POC remains a separate workstream. Its comparison run requires a stable, measurable native Bitget baseline and is not started by the Phase 2 implementation.
 

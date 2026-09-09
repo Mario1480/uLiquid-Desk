@@ -42,9 +42,11 @@ The Phase 1 code, focused suites and production builds were deployed at release 
 
 The [Phase 2 implementation plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md). Phase 2 is complete by Mario’s full-test confirmation and owner acceptance on 2026-09-07. Shared data, versioned features, existing AI upgrades, bounded provider histories and persisted evidence are accepted. Earlier test records remain historical evidence, not new benchmark measurements.
 
-### Phase 3 — New Product Features — `NOT STARTED`
-- Arbitrage Scanner
-- XEMM Scanner
+### Phase 3 — New Product Features — `COMPLETE`
+- authenticated, scanner-only Arbitrage experience
+- authenticated, scanner-only XEMM experience
+
+Phase 3 was deployed and accepted on production on 2026-09-09. Authenticated desktop and mobile scans verified fresh multi-provider data, size-aware costs, blocked/below-threshold states and the read-only boundary. The partial-provider path remains deterministically verified because every selected production provider was healthy during acceptance.
 
 ### Phase 4 — Parallel Infrastructure Validation — `COMPLETE — PARTIAL`
 - define the Exchange Gateway contract by extending the existing adapter/capability foundations

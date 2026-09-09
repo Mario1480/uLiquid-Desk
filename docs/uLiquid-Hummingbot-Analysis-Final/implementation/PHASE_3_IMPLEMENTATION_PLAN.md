@@ -1,6 +1,6 @@
 # Phase 3 — Cross-Market Scanner Implementation
 
-Status: **CODE COMPLETE — RELEASE AND OWNER ACCEPTANCE PENDING**
+Status: **COMPLETE**
 Date: 2026-09-09
 
 ## Objective
@@ -62,8 +62,13 @@ Automated Arbitrage remains Phase 6C and requires proven dual-leg idempotency, c
 - Public BTCUSDT read smoke through the implemented runtime code path succeeded for Binance, Bitget and Hyperliquid without credentials. It produced 6 directed Arbitrage and 12 XEMM evaluations. The best live observations were below the configured five-basis-point net threshold after default costs; the scanner reported `below_threshold` rather than presenting a headline spread as profit.
 - The actual Desk page rendered at 1440×1000 and 390×844 using the Ein UI shell. Navigation, controls, read-only disclosure and responsive one-column layout rendered without horizontal overflow. The temporary local route exposure used to inspect the unauthenticated visual state was removed after the check.
 
-## Release gates beyond code publication
+## Production release and acceptance — 2026-09-09
 
-- Deploy API and web only with separate production authorization.
-- Run an authenticated target-environment scan and verify the API response, both result tabs and provider failure state in the browser.
-- Record Mario's owner acceptance before changing the consolidated Phase 3 status to `COMPLETE`.
+- The API and web release was deployed to production from application commit `ca4f912e461527f4d44422c8fec8afe8c702e66a`.
+- Authenticated Arbitrage and XEMM scans passed against production with fresh normalized books and size-aware fee, depth, buffer and net-PnL evidence.
+- All five configured providers were available during the broad production scan. The partial-provider response remains covered by the deterministic service test; production was not disrupted to manufacture an outage.
+- English desktop and 390×844 mobile browser acceptance passed without horizontal overflow.
+- A stale-result defect found during acceptance was corrected and deployed in `d400baf16b7acc8d401caa78fde35dfbcfc4bbe8`.
+- Mario requested the production acceptance on 2026-09-09. Phase 3 is complete under that delegated acceptance; no execution or connector-certification gate changed.
+
+See the [dated production acceptance record](../../archive/tasks/2026-09-09-phase3-production-acceptance.md).

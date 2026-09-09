@@ -16,7 +16,7 @@ Phase 4 closed on 2026-09-08 with a `PARTIAL` Decision Gate result. See the [Pha
 | Phase 1 — Consolidate Quick Wins | `COMPLETE` | Production release `837d7d12`; Mario confirmed formal completion and verification on 2026-09-05 |
 | Phase 1 target-environment acceptance | `ACCEPTED` | Closed by Mario's confirmation; this is not a new connector certification report |
 | Phase 2 — Shared Data and Existing AI Upgrade | `COMPLETE` | Mario confirmed full testing and acceptance on 2026-09-07. See the [Phase 2 closeout](implementation/PHASE_2_IMPLEMENTATION_PLAN.md); no new independent benchmark or connector certification is implied |
-| Phase 3 — Arbitrage/XEMM Scanners | `CODE COMPLETE — ACCEPTANCE PENDING` | See the [Phase 3 implementation plan](implementation/PHASE_3_IMPLEMENTATION_PLAN.md); release, deployment and authenticated target-environment acceptance remain separate gates |
+| Phase 3 — Arbitrage/XEMM Scanners | `COMPLETE` | Production deployment and authenticated desktop/mobile acceptance completed on 2026-09-09. See the [Phase 3 implementation plan](implementation/PHASE_3_IMPLEMENTATION_PLAN.md) and [acceptance record](../archive/tasks/2026-09-09-phase3-production-acceptance.md) |
 | Phase 4 — Exchange Gateway / Bitget Hummingbot POC | `COMPLETE — PARTIAL` | Public reads, restart and reconnect observed; private execution/recovery/scaling unassessed |
 | Decision Gate | `CLOSED — PARTIAL` | Does not unlock Phase 5 |
 | Phase 5 — Hummingbot production adoption | `GATED` | Requires an explicit POC `PASS` decision |
