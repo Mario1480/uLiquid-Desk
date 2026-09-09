@@ -89,6 +89,7 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 - [Ein UI validation, screenshots and release gates](ui/einui-validation.md)
 - [Phase 2 — Shared Data and Existing AI Upgrade — COMPLETE](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) — owner acceptance, 2026-09-07
 - [Phase 2 owner acceptance record](archive/tasks/2026-09-07-phase2-owner-acceptance.md)
+- [Phase 3 — Cross-Market Arbitrage and XEMM Scanners — CODE COMPLETE](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_3_IMPLEMENTATION_PLAN.md) — release and owner acceptance pending
 - [Phase 4 — Exchange Gateway and isolated Bitget POC — COMPLETE/PARTIAL](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_IMPLEMENTATION_PLAN.md) — Decision Gate closed 2026-09-08; Phase 5 remains gated
 - [Phase 4 Hummingbot Bitget decision record](archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md)
 - [Go-live master plan](go-live-master-plan.md)

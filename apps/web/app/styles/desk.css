@@ -2075,6 +2075,264 @@
   }
 }
 
+/* Cross-Market Opportunities */
+.crossMarketPage {
+  display: grid;
+  gap: 16px;
+}
+
+.crossMarketReadOnlyNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crossMarketTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.crossMarketControls {
+  display: grid;
+  gap: 16px;
+}
+
+.crossMarketControlGrid,
+.crossMarketInventoryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.crossMarketControlGrid label,
+.crossMarketInventoryGrid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crossMarketVenueFieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.crossMarketVenueFieldset legend,
+.crossMarketInventoryHeader strong {
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.crossMarketVenueChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.crossMarketVenueChoice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  color: var(--text);
+  background: var(--ui-surface-control);
+  font-size: 13px;
+}
+
+.crossMarketInventoryHeader {
+  display: grid;
+  gap: 3px;
+}
+
+.crossMarketInventoryHeader span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crossMarketScanButton {
+  justify-self: start;
+}
+
+.crossMarketMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.crossMarketMetrics .uiMetricTile span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crossMarketMetrics .uiMetricTile strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.crossMarketMainGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.crossMarketAside {
+  display: grid;
+  gap: 16px;
+}
+
+.crossMarketOpportunityList {
+  display: grid;
+}
+
+.crossMarketOpportunityRow {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--ui-border);
+}
+
+.crossMarketOpportunityRow:first-child {
+  border-top: 0;
+}
+
+.crossMarketOpportunityRoute {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.crossMarketOpportunityRoute > div {
+  display: grid;
+  gap: 3px;
+}
+
+.crossMarketOpportunityRoute > div:last-child {
+  text-align: right;
+}
+
+.crossMarketOpportunityRoute span,
+.crossMarketOpportunityRoute small,
+.crossMarketCostLine,
+.crossMarketSourceRow span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crossMarketOpportunityRoute strong {
+  font-size: 15px;
+}
+
+.crossMarketOpportunityBadges,
+.crossMarketCostLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.crossMarketOpportunityMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.crossMarketOpportunityMetrics > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.crossMarketOpportunityMetrics strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.crossMarketDefinitionList {
+  display: grid;
+  margin: 0;
+}
+
+.crossMarketDefinitionList > div,
+.crossMarketSourceRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--ui-border);
+}
+
+.crossMarketDefinitionList > div:first-child,
+.crossMarketSourceRow:first-child {
+  border-top: 0;
+}
+
+.crossMarketDefinitionList dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crossMarketDefinitionList dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.crossMarketSourceList,
+.crossMarketSourceRow > div {
+  display: grid;
+}
+
+.crossMarketSourceRow > div {
+  gap: 3px;
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .crossMarketControlGrid,
+  .crossMarketInventoryGrid,
+  .crossMarketMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .crossMarketMainGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .crossMarketControlGrid,
+  .crossMarketInventoryGrid,
+  .crossMarketMetrics,
+  .crossMarketOpportunityMetrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .crossMarketTabs .btn,
+  .crossMarketScanButton {
+    width: 100%;
+  }
+}
+
 @container (max-width: 760px) {
   .dashboardTopMoversGrid {
     grid-template-columns: minmax(0, 1fr);

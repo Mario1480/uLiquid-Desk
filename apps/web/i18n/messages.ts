@@ -14,6 +14,7 @@ import enAccounts from "../messages/en/accounts.json";
 import enAgentChat from "../messages/en/agentChat.json";
 import enUliq from "../messages/en/uliq.json";
 import enPresale from "../messages/en/presale.json";
+import enCrossMarket from "../messages/en/crossMarket.json";
 import deCommon from "../messages/de/common.json";
 import deNav from "../messages/de/nav.json";
 import deAuth from "../messages/de/auth.json";
@@ -30,6 +31,7 @@ import deAccounts from "../messages/de/accounts.json";
 import deAgentChat from "../messages/de/agentChat.json";
 import deUliq from "../messages/de/uliq.json";
 import dePresale from "../messages/de/presale.json";
+import deCrossMarket from "../messages/de/crossMarket.json";
 import type { AppLocale } from "./config";
 
 export type I18nMessages = {
@@ -49,6 +51,7 @@ export type I18nMessages = {
   agentChat: typeof enAgentChat;
   uliq: typeof enUliq;
   presale: typeof enPresale;
+  crossMarket: typeof enCrossMarket;
 };
 
 const messagesByLocale: Record<AppLocale, I18nMessages> = {
@@ -68,7 +71,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     accounts: enAccounts,
     agentChat: enAgentChat,
     uliq: enUliq,
-    presale: enPresale
+    presale: enPresale,
+    crossMarket: enCrossMarket
   },
   de: {
     common: deCommon,
@@ -86,7 +90,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     accounts: deAccounts,
     agentChat: deAgentChat,
     uliq: deUliq,
-    presale: dePresale
+    presale: dePresale,
+    crossMarket: deCrossMarket
   }
 };
 

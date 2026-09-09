@@ -1,0 +1,80 @@
+{
+  "title": "Cross-Market Opportunities",
+  "subtitle": "Size-aware Arbitrage and XEMM scans from normalized public order books.",
+  "scannerOnly": "Scanner only: results are estimates and cannot place or prepare orders.",
+  "tabs": {
+    "arbitrage": "Arbitrage",
+    "xemm": "XEMM"
+  },
+  "controls": {
+    "title": "Scan setup",
+    "description": "Choose a perpetual market, target size and at least two venues.",
+    "symbol": "Market",
+    "notional": "Target notional (USDT)",
+    "minEdge": "Minimum net edge (bps)",
+    "safetyBuffer": "Safety buffer (bps)",
+    "venues": "Venues",
+    "inventory": "Available collateral by venue (USDT, optional)",
+    "inventoryHint": "Empty values remain unknown. Readiness uses a conservative 1x collateral check on both venues.",
+    "scan": "Run scan",
+    "scanning": "Scanning..."
+  },
+  "assumptions": {
+    "title": "Calculation assumptions",
+    "makerFee": "Default maker fee",
+    "takerFee": "Default taker fee",
+    "bookDepth": "Book levels",
+    "freshness": "Maximum age",
+    "skew": "Maximum venue skew",
+    "milliseconds": "{value} ms"
+  },
+  "summary": {
+    "candidates": "Candidates",
+    "bestNet": "Best net edge",
+    "venues": "Sources available",
+    "updated": "Updated"
+  },
+  "results": {
+    "title": "Ranked opportunities",
+    "description": "Candidates pass the configured edge, depth, freshness and supplied inventory checks.",
+    "empty": "No comparable opportunity could be calculated from the available books.",
+    "waiting": "Run a scan to compare venues.",
+    "buy": "Buy",
+    "sell": "Sell",
+    "maker": "Maker",
+    "taker": "Taker hedge",
+    "makerSide": "Maker {side}",
+    "grossEdge": "Gross edge",
+    "netEdge": "Expected net",
+    "fees": "Fees",
+    "slippage": "Slippage",
+    "buffer": "Safety buffer",
+    "netUsd": "Expected net PnL",
+    "size": "Executable size",
+    "depth": "Depth coverage",
+    "inventory": "Inventory",
+    "score": "Score"
+  },
+  "status": {
+    "candidate": "Candidate",
+    "below_threshold": "Below threshold",
+    "blocked": "Blocked",
+    "ready": "Ready",
+    "insufficient": "Insufficient",
+    "unknown": "Unknown"
+  },
+  "sources": {
+    "title": "Market-data evidence",
+    "description": "Every result records provider, snapshot, observation time and quality.",
+    "fresh": "Fresh",
+    "degraded": "Degraded",
+    "stale": "Stale",
+    "unavailable": "Unavailable",
+    "observed": "Observed {value}",
+    "timestampMissing": "Provider timestamp missing"
+  },
+  "errors": {
+    "load": "The scan could not obtain two comparable order books.",
+    "venues": "Select at least two venues."
+  }
+}

@@ -308,6 +308,14 @@ export default function AppSidebar({
 
     if (visibility.marketIntelligence) {
       deskItems.push({
+        key: "cross-market",
+        label: tNav("crossMarket"),
+        href: hrefFor("/cross-market"),
+        icon: "exchange",
+        active: pathnameWithoutLocale.startsWith("/cross-market")
+      });
+
+      deskItems.push({
         key: "market-intelligence",
         label: tNav("marketIntelligence"),
         href: hrefFor("/market-intelligence"),

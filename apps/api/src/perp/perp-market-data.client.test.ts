@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizePerpDerivativesSnapshot } from "./perp-derivatives-normalization.js";
-import { createPerpMarketDataClient } from "./perp-market-data.client.js";
+import { createPerpMarketDataClient, normalizeAdapterPerpDepthPayload } from "./perp-market-data.client.js";
 
 test("Binance depth maps requested coverage to valid provider sizes and trims normalized levels", async (t) => {
   let expectedLimit = 50;
@@ -40,6 +40,21 @@ test("normalizes Hyperliquid asset contexts and marks request-time timestamps de
   assert.equal(snapshot.openInterest, 3);
   assert.equal(snapshot.sourceTimestampProvided, false);
   assert.ok(snapshot.warnings.includes("provider_timestamp_missing"));
+});
+
+test("normalizes Hyperliquid l2Book object levels for shared order-book consumers", () => {
+  const result = normalizeAdapterPerpDepthPayload({
+    coin: "BTC",
+    time: 1_700_000_000_000,
+    levels: [
+      [{ px: "50000", sz: "0.4", n: 2 }, { px: "49999", sz: "0.8", n: 3 }],
+      [{ px: "50001", sz: "0.5", n: 1 }, { px: "50002", sz: "0.6", n: 2 }]
+    ]
+  }, "hyperliquid", 1);
+
+  assert.deepEqual(result.bids, [[50000, 0.4]]);
+  assert.deepEqual(result.asks, [[50001, 0.5]]);
+  assert.equal(result.ts, 1_700_000_000_000);
 });
 
 test("keeps MEXC OI and BingX derivatives unsupported", () => {

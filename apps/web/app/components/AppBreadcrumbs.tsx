@@ -68,6 +68,7 @@ function iconForSegment(segment: string): BreadcrumbIconKey {
   if (normalized === "agent-chat") return "ai";
   if (normalized === "calendar") return "calendar";
   if (normalized === "news") return "news";
+  if (normalized === "cross-market") return "exchange";
   if (normalized === "accounts") return "accounts";
   if (normalized === "funding") return "funding";
   if (normalized === "uliq") return "money";
@@ -99,6 +100,7 @@ export default function AppBreadcrumbs() {
       predictionBuilder: { label: tNav("predictionBuilder"), icon: "strategies" as BreadcrumbIconKey },
       calendar: { label: tNav("calendar"), icon: "calendar" as BreadcrumbIconKey },
       news: { label: tNav("news"), icon: "news" as BreadcrumbIconKey },
+      crossMarket: { label: tNav("crossMarket"), icon: "exchange" as BreadcrumbIconKey },
       accounts: { label: tNav("accounts"), icon: "accounts" as BreadcrumbIconKey },
       wallet: { label: tNav("wallet"), icon: "wallet" as BreadcrumbIconKey },
       funding: { label: tNav("funding"), icon: "funding" as BreadcrumbIconKey },
@@ -221,6 +223,10 @@ export default function AppBreadcrumbs() {
       {
         test: /^\/news$/,
         items: [{ label: root.news.label, path: "/news", icon: root.news.icon }]
+      },
+      {
+        test: /^\/cross-market$/,
+        items: [{ label: root.crossMarket.label, path: "/cross-market", icon: root.crossMarket.icon }]
       },
       {
         test: /^\/accounts$/,

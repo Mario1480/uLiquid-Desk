@@ -1,0 +1,80 @@
+{
+  "title": "Cross-Market Opportunities",
+  "subtitle": "Größenabhängige Arbitrage- und XEMM-Scans aus normalisierten öffentlichen Orderbüchern.",
+  "scannerOnly": "Nur Scanner: Ergebnisse sind Schätzungen und können keine Orders platzieren oder vorbereiten.",
+  "tabs": {
+    "arbitrage": "Arbitrage",
+    "xemm": "XEMM"
+  },
+  "controls": {
+    "title": "Scan-Einstellungen",
+    "description": "Wähle einen Perpetual-Markt, die Zielgröße und mindestens zwei Venues.",
+    "symbol": "Markt",
+    "notional": "Zielvolumen (USDT)",
+    "minEdge": "Mindest-Nettoedge (bps)",
+    "safetyBuffer": "Sicherheitsbuffer (bps)",
+    "venues": "Venues",
+    "inventory": "Verfügbares Collateral je Venue (USDT, optional)",
+    "inventoryHint": "Leere Werte bleiben unbekannt. Die Bereitschaft nutzt eine konservative 1x-Collateral-Prüfung auf beiden Venues.",
+    "scan": "Scan starten",
+    "scanning": "Scan läuft..."
+  },
+  "assumptions": {
+    "title": "Berechnungsannahmen",
+    "makerFee": "Standard-Maker-Gebühr",
+    "takerFee": "Standard-Taker-Gebühr",
+    "bookDepth": "Orderbuch-Level",
+    "freshness": "Maximales Alter",
+    "skew": "Maximaler Venue-Zeitversatz",
+    "milliseconds": "{value} ms"
+  },
+  "summary": {
+    "candidates": "Kandidaten",
+    "bestNet": "Beste Nettoedge",
+    "venues": "Verfügbare Quellen",
+    "updated": "Aktualisiert"
+  },
+  "results": {
+    "title": "Bewertete Opportunities",
+    "description": "Kandidaten erfüllen Edge-, Depth-, Freshness- und angegebene Inventarprüfungen.",
+    "empty": "Aus den verfügbaren Orderbüchern konnte keine vergleichbare Opportunity berechnet werden.",
+    "waiting": "Starte einen Scan, um Venues zu vergleichen.",
+    "buy": "Kaufen",
+    "sell": "Verkaufen",
+    "maker": "Maker",
+    "taker": "Taker-Hedge",
+    "makerSide": "Maker {side}",
+    "grossEdge": "Bruttoedge",
+    "netEdge": "Erwartet netto",
+    "fees": "Gebühren",
+    "slippage": "Slippage",
+    "buffer": "Sicherheitsbuffer",
+    "netUsd": "Erwarteter Netto-PnL",
+    "size": "Ausführbare Größe",
+    "depth": "Depth-Abdeckung",
+    "inventory": "Inventar",
+    "score": "Score"
+  },
+  "status": {
+    "candidate": "Kandidat",
+    "below_threshold": "Unter Mindestwert",
+    "blocked": "Blockiert",
+    "ready": "Bereit",
+    "insufficient": "Nicht ausreichend",
+    "unknown": "Unbekannt"
+  },
+  "sources": {
+    "title": "Market-Data-Evidenz",
+    "description": "Jedes Ergebnis enthält Provider, Snapshot, Beobachtungszeit und Qualität.",
+    "fresh": "Frisch",
+    "degraded": "Eingeschränkt",
+    "stale": "Veraltet",
+    "unavailable": "Nicht verfügbar",
+    "observed": "Beobachtet {value}",
+    "timestampMissing": "Provider-Zeitstempel fehlt"
+  },
+  "errors": {
+    "load": "Der Scan konnte keine zwei vergleichbaren Orderbücher laden.",
+    "venues": "Wähle mindestens zwei Venues aus."
+  }
+}

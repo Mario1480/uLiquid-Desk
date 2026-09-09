@@ -170,13 +170,25 @@ function parseOrderBookLevels(value: unknown): Array<[number, number]> {
   if (!Array.isArray(value)) return [];
   return value
     .map((level) => {
-      if (!Array.isArray(level)) return null;
-      const price = toNumber(level[0]);
-      const qty = toNumber(level[1]);
+      const record = toRecord(level);
+      const price = Array.isArray(level) ? toNumber(level[0]) : pickNumber(record, ["px", "price", "p"]);
+      const qty = Array.isArray(level) ? toNumber(level[1]) : pickNumber(record, ["sz", "size", "qty", "q"]);
       if (price === null || qty === null) return null;
       return [price, qty] as [number, number];
     })
     .filter((level): level is [number, number] => level !== null);
+}
+
+export function normalizeAdapterPerpDepthPayload(raw: unknown, venue: "bitget" | "hyperliquid" | "mexc", limit: number) {
+  const row = toRecord(raw) ?? {};
+  const hyperliquidLevels = venue === "hyperliquid" && Array.isArray(row.levels) ? row.levels : [];
+  const boundedLimit = Math.max(1, Math.trunc(limit));
+  return {
+    bids: parseOrderBookLevels(row.bids ?? hyperliquidLevels[0]).slice(0, boundedLimit),
+    asks: parseOrderBookLevels(row.asks ?? hyperliquidLevels[1]).slice(0, boundedLimit),
+    ts: pickNumber(row, ["ts", "timestamp", "time", "t", "uTime"]),
+    raw
+  };
 }
 
 function isBingxApiStateEnabled(value: unknown): boolean {
@@ -280,25 +292,7 @@ class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
   async getDepth(symbol: string, limit = 50) {
     const exchangeSymbol = await this.adapter.toExchangeSymbol(symbol);
     const raw = await this.adapter.marketApi.getDepth(exchangeSymbol, limit, this.adapter.productType as any);
-    const row = toRecord(raw) ?? {};
-    const parseLevels = (value: unknown): Array<[number, number]> => {
-      if (!Array.isArray(value)) return [];
-      return value
-        .map((level) => {
-          if (!Array.isArray(level)) return null;
-          const price = toNumber(level[0]);
-          const qty = toNumber(level[1]);
-          if (price === null || qty === null) return null;
-          return [price, qty] as [number, number];
-        })
-        .filter((level): level is [number, number] => level !== null);
-    };
-    return {
-      bids: parseLevels(row.bids),
-      asks: parseLevels(row.asks),
-      ts: pickNumber(row, ["ts", "timestamp", "time", "t", "uTime"]),
-      raw
-    };
+    return normalizeAdapterPerpDepthPayload(raw, this.venue, limit);
   }
 
   async getTrades(symbol: string, limit = 60) {
