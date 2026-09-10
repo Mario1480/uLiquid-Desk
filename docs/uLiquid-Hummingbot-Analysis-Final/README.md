@@ -7,9 +7,9 @@ Final consolidated architecture and integration package, September 2026.
 3. `implementation/POC_PLAN.md`
 4. `implementation/CODEX_IMPLEMENTATION_PLAN.md`
 
-## Implementation status — 2026-09-09
+## Implementation status — 2026-09-10
 
-Phase 4 closed on 2026-09-08 with a `PARTIAL` Decision Gate result. See the [Phase 4 plan](implementation/PHASE_4_IMPLEMENTATION_PLAN.md) and [decision record](../archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md). Phase 5 remains gated.
+Phase 4 closed on 2026-09-08 with a `PARTIAL` Decision Gate result. Mario deferred the remaining private Bitget demo certification on 2026-09-10; the connected live account is excluded from Hummingbot execution testing. See the [Phase 4 plan](implementation/PHASE_4_IMPLEMENTATION_PLAN.md), [decision record](../archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md) and [deferral record](../archive/tasks/2026-09-10-phase4-private-certification-deferred.md). Phase 5 preparation may proceed, while implementation remains gated.
 
 | Roadmap item | Status | Evidence / next gate |
 |---|---|---|
@@ -19,7 +19,7 @@ Phase 4 closed on 2026-09-08 with a `PARTIAL` Decision Gate result. See the [Pha
 | Phase 3 — Arbitrage/XEMM Scanners | `COMPLETE` | Production deployment and authenticated desktop/mobile acceptance completed on 2026-09-09. See the [Phase 3 implementation plan](implementation/PHASE_3_IMPLEMENTATION_PLAN.md) and [acceptance record](../archive/tasks/2026-09-09-phase3-production-acceptance.md) |
 | Phase 4 — Exchange Gateway / Bitget Hummingbot POC | `COMPLETE — PARTIAL` | Public reads, restart and reconnect observed; private execution/recovery/scaling unassessed |
 | Decision Gate | `CLOSED — PARTIAL` | Does not unlock Phase 5 |
-| Phase 5 — Hummingbot production adoption | `GATED` | Requires an explicit POC `PASS` decision |
+| Phase 5 — Hummingbot production adoption | `PREPARATION COMPLETE — IMPLEMENTATION GATED` | [Architecture and certification preparation](implementation/PHASE_5_PREPARATION_PLAN.md) is documented; implementation requires an explicit POC `PASS` decision |
 | Phase 6 — Advanced automation | `GATED` | Requires its independent safety and product gates |
 
 `IMPLEMENTED` records shipped code, tests and runtime deployment. It does not imply Hummingbot adoption, live exchange certification or execution authority.

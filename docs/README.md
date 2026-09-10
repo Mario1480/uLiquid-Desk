@@ -93,6 +93,8 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 - [Phase 3 production acceptance record](archive/tasks/2026-09-09-phase3-production-acceptance.md)
 - [Phase 4 — Exchange Gateway and isolated Bitget POC — COMPLETE/PARTIAL](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_IMPLEMENTATION_PLAN.md) — Decision Gate closed 2026-09-08; Phase 5 remains gated
 - [Phase 4 Hummingbot Bitget decision record](archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md)
+- [Phase 4 private Bitget certification deferral](archive/tasks/2026-09-10-phase4-private-certification-deferred.md) — demo certification deferred; live account excluded from Hummingbot execution tests
+- [Phase 5 preparation plan](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_5_PREPARATION_PLAN.md) — architecture and certification preparation complete; implementation remains gated
 - [Go-live master plan](go-live-master-plan.md)
 - [Go-live readiness follow-ups](go-live-readiness-followups.md)
 - [Release evidence matrix](release-evidence-matrix.md)

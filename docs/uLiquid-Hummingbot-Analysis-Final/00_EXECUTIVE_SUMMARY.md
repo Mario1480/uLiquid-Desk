@@ -54,13 +54,17 @@ Phase 3 was deployed and accepted on production on 2026-09-09. Authenticated des
 
 Phase 4 closed on 2026-09-08 with a `PARTIAL` result. The public Bitget perpetual provider, process restart and WebSocket reconnect were observed; private execution, recovery and multi-account scaling remain unassessed.
 
+Mario deferred the private Bitget demo certification on 2026-09-10 until a separate Demo API Key and bounded test window are available. The connected live account is excluded from Hummingbot execution testing.
+
 ### Decision Gate — `CLOSED — PARTIAL`
 The result does not meet the full functional, recovery, isolation, performance and economic criteria. Production Hummingbot adoption remains gated.
 
-### Phase 5 — If the POC Is Successful — `GATED`
+### Phase 5 — If the POC Is Successful — `PREPARATION COMPLETE — IMPLEMENTATION GATED`
 - Hummingbot CEX Provider
 - separately certified TWAP and DCA integrations
 - additional certified exchanges
+
+Architecture, interface, isolation, observability, rollback and certification preparation is complete under the [Phase 5 preparation plan](implementation/PHASE_5_PREPARATION_PLAN.md). Runtime integration and production adoption still require an explicit Phase 4 `PASS`.
 
 ### Phase 6 — Advanced — `GATED`
 - Phase 6A: Bot Architect drafts and simulation only

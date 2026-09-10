@@ -2,7 +2,9 @@
 
 Status: `COMPLETE — DECISION PARTIAL`, 2026-09-08.
 
-Mario authorized starting Phase 4 before Phase 3 and directed the work to start from current `main`. Phase 1 and Phase 2 are complete by owner acceptance (Phase 2: 2026-09-07); Phase 3 remains not started. Owner acceptance does not establish new test, deployment or connector-certification evidence.
+Owner follow-up, 2026-09-10: the remaining private certification is deferred until a separate Bitget Demo API Key and bounded test window are available. The currently connected account is live and is not authorized for Hummingbot order, recovery or disruption tests. Phase 5 preparation may proceed, while Phase 5 implementation and production adoption remain gated. See the [deferral record](../../archive/tasks/2026-09-10-phase4-private-certification-deferred.md).
+
+Mario authorized starting Phase 4 before Phase 3 and directed the work to start from current `main`. At that checkpoint, Phase 1 and Phase 2 were complete by owner acceptance and Phase 3 had not started. Phase 3 was subsequently completed and accepted on 2026-09-09. Owner acceptance does not establish new test, deployment or connector-certification evidence.
 
 ## Baseline evidence and dependencies
 

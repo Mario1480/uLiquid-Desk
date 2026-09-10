@@ -4,6 +4,8 @@
 
 The bounded public POC and deterministic boundary suite are complete. Ticker, orderbook, current funding, mark price, trading rules, fresh-process restart and public WebSocket reconnect are observed. Private account/execution/recovery and empirical multi-account stages remain `NOT ASSESSED` because no demo credentials, account scope, allowed operations or numerical limits were available. The Decision Gate is closed as `PARTIAL`; Phase 5 remains gated.
 
+On 2026-09-10, Mario deferred the private certification until he can create and use a separate Bitget Demo API Key. The connected Bitget account is live and remains excluded from Hummingbot order, recovery and disruption testing. See the [deferral record](../../archive/tasks/2026-09-10-phase4-private-certification-deferred.md).
+
 See the [decision record](../../archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md) and [public comparison report](PHASE_4_PUBLIC_COMPARISON_REPORT.md).
 
 | Stage | Closeout |

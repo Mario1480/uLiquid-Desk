@@ -436,11 +436,15 @@ The [Phase 3 implementation](implementation/PHASE_3_IMPLEMENTATION_PLAN.md) adds
 ### Phase 4 — Parallel Infrastructure Validation — `COMPLETE — PARTIAL`
 The isolated Bitget Hummingbot POC closed on 2026-09-08. Public ticker, orderbook, current funding, mark price, trading rules, process restart and WebSocket reconnect are observed behind additive uLiquid-owned contracts. Private execution, recovery and multi-account scaling remain unassessed.
 
+Mario deferred the private Bitget demo certification on 2026-09-10 until a separate Demo API Key and bounded test window are available. The connected live account is excluded from Hummingbot execution testing.
+
 ### Decision Gate — `CLOSED — PARTIAL`
 The bounded public slice passed, but the full functional, recovery, security, performance and economic criteria did not. Hummingbot adoption beyond the POC remains gated.
 
-### Phase 5 — If the POC Is Successful — `GATED`
+### Phase 5 — If the POC Is Successful — `PREPARATION COMPLETE — IMPLEMENTATION GATED`
 Introduce the production Hummingbot CEX Provider behind the existing uLiquid contracts. Add TWAP, DCA and further exchanges only after separate connector/market/executor certification.
+
+The [Phase 5 preparation plan](implementation/PHASE_5_PREPARATION_PLAN.md) records the completed architecture and certification preparation. Runtime integration, credentials, orders, migrations, deployment and provider switching remain gated until Phase 4 records `PASS`.
 
 ### Phase 6 — Advanced — `GATED`
 Split advanced work into independent gates: 6A Bot Architect drafts/simulation, 6B explicitly approved deployment, 6C automated Arbitrage after proven dual-leg reconciliation, 6D XEMM after an independent Hedge Watchdog and emergency recovery, and 6E policy-constrained autonomous Agents after the complete permission, risk, audit, replay, evaluation and kill-switch stack is proven.
@@ -458,7 +462,7 @@ Phase 1: Existing foundations consolidated [COMPLETE]
                    ↓
               DECISION GATE [CLOSED — PARTIAL]
                    ↓ PASS
-        Phase 5: HB CEX Provider / TWAP / DCA / Exchanges [GATED]
+        Phase 5: HB CEX Provider / TWAP / DCA / Exchanges [PREP COMPLETE; IMPLEMENTATION GATED]
 
 Phases 2–5 provide the foundations for separately gated Phase 6A–6E work.
 ```

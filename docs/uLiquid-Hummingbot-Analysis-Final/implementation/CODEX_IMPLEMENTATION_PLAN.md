@@ -34,10 +34,12 @@ Build a certification harness for authentication, data, orders, fills, reconnect
 This workstream may run in parallel with Phases 2–3. It must not force Hummingbot-specific DTOs or lifecycle assumptions into the Shared Market Data, Agent or Scanner contracts.
 
 ## Decision Gate — `CLOSED — PARTIAL`
-The 2026-09-08 evidence accepts the bounded public-data, restart and public WebSocket reconnect slice. Private execution, recovery and multi-account scaling remain unassessed, so Phase 5 remains gated.
+The 2026-09-08 evidence accepts the bounded public-data, restart and public WebSocket reconnect slice. Private execution, recovery and multi-account scaling remain unassessed. Mario deferred this certification on 2026-09-10 until a separate Bitget Demo API Key and bounded test window are available; the connected live account is excluded from Hummingbot execution testing. Phase 5 remains gated.
 
-## Phase 5 — If the POC Is Successful — `GATED`
+## Phase 5 — If the POC Is Successful — `PREPARATION COMPLETE — IMPLEMENTATION GATED`
 Add the production Hummingbot CEX Provider to the existing Shared Market Data and Exchange Gateway contracts. POC and certify TWAP and DCA independently, then certify additional exchanges one connector/market/executor combination at a time.
+
+The [Phase 5 preparation plan](PHASE_5_PREPARATION_PLAN.md) records the completed architecture, interface, isolation, observability, rollback and certification design. It does not permit runtime integration, credentials, orders, migrations, deployment or provider switching.
 
 ## Phase 6 — Advanced — `GATED`
 ### Phase 6A — Bot Architect Drafts
@@ -100,7 +102,7 @@ As of the September 4 release, authenticated browser E2E and live-provider accep
 
 ## Recommended next step
 
-Phase 3 is complete and documented in the [Phase 3 implementation plan](PHASE_3_IMPLEMENTATION_PLAN.md) and [production acceptance record](../../archive/tasks/2026-09-09-phase3-production-acceptance.md). The next roadmap work is a separately authorized Phase 4 `PASS` reassessment; Phase 5 remains gated by the current Phase 4 `PARTIAL` Decision Gate.
+Phase 3 is complete and documented in the [Phase 3 implementation plan](PHASE_3_IMPLEMENTATION_PLAN.md) and [production acceptance record](../../archive/tasks/2026-09-09-phase3-production-acceptance.md). The Phase 4 `PASS` reassessment is deferred until Bitget demo access is available. The next executable roadmap work is the non-runtime [Phase 5 preparation track](PHASE_5_PREPARATION_PLAN.md); implementation remains gated by the current Phase 4 `PARTIAL` Decision Gate.
 
 The Bitget Hummingbot POC remains a separate workstream. Its comparison run requires a stable, measurable native Bitget baseline and is not started by the Phase 2 implementation.
 

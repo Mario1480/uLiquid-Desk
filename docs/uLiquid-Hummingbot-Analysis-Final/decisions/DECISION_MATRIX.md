@@ -15,10 +15,10 @@
 | Exchange Gateway | ADOPT by extending existing adapter foundations | Parallel Phase 4 | Additive contracts `IMPLEMENTED`; no production router |
 | Credential/KMS boundary | ADOPT | Parallel Phase 4 | Synthetic binding/redaction `IMPLEMENTED`; private flow `NOT ASSESSED` |
 | Hummingbot Bitget integration | ISOLATED POC | Parallel Phase 4 | `COMPLETE — PARTIAL`; public reads/restart/reconnect observed, execution unassessed |
-| Hummingbot CEX connectors | INTEGRATE only after POC PASS | Phase 5 | `GATED` |
-| Hummingbot Market Data | INTEGRATE via provider after POC PASS | Phase 5 | `GATED` |
-| TWAP/DCA | POC and certify separately after POC PASS | Phase 5 | `GATED` |
-| Additional exchanges | CERTIFY per connector/market/executor | Phase 5 | `GATED` |
+| Hummingbot CEX connectors | INTEGRATE only after POC PASS | Phase 5 | `PREPARATION COMPLETE — IMPLEMENTATION GATED` |
+| Hummingbot Market Data | INTEGRATE via provider after POC PASS | Phase 5 | `PREPARATION COMPLETE — IMPLEMENTATION GATED` |
+| TWAP/DCA | POC and certify separately after POC PASS | Phase 5 | `PREPARATION COMPLETE — IMPLEMENTATION GATED` |
+| Additional exchanges | CERTIFY per connector/market/executor | Phase 5 | `PREPARATION COMPLETE — IMPLEMENTATION GATED` |
 | Order/Position Executor | POC after provider certification | Phase 5 or later | `GATED` |
 | CEX Grid | POC after provider certification | Phase 5 or later | `GATED` |
 | Paper Provider | RETAIN/EXTEND | Phase 2 and Phase 6 prerequisites | Existing provider retained; planned extensions `NOT STARTED` |
