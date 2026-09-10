@@ -67,6 +67,30 @@ test("presale schedule save normalizes timestamps and increments its backend ver
   assert.equal(second.rounds[1].saleEnd, "2027-02-20T17:00:00.000Z");
 });
 
+test("presale schedule saves one round without requiring or clearing the other round", async () => {
+  const db = memoryDatabase();
+  const first = await saveUliqPresaleRoundSchedule({
+    db,
+    rounds: [{ id: "round-1", saleStart: "2026-09-19T12:00:00.000Z", saleEnd: "2026-12-31T12:00:00.000Z" }],
+    reason: "Configure Round 1",
+    actorUserId: "admin-1"
+  });
+  const second = await saveUliqPresaleRoundSchedule({
+    db,
+    rounds: [{ id: "round-2", saleStart: "2026-12-01T12:00:00.000Z", saleEnd: "2027-02-01T12:00:00.000Z" }],
+    reason: "Configure Round 2 after Round 1 ended early",
+    actorUserId: "admin-1"
+  });
+
+  assert.equal(first.status, "PARTIALLY_CONFIGURED");
+  assert.equal(first.rounds[0].saleStart, "2026-09-19T12:00:00.000Z");
+  assert.equal(first.rounds[1].saleStart, null);
+  assert.equal(second.status, "DRAFT_CONFIGURED");
+  assert.equal(second.version, 2);
+  assert.equal(second.rounds[0].saleEnd, "2026-12-31T12:00:00.000Z");
+  assert.equal(second.rounds[1].saleStart, "2026-12-01T12:00:00.000Z");
+});
+
 test("presale schedule reports malformed stored data without using it", async () => {
   const schedule = await getUliqPresaleRoundSchedule(memoryDatabase({
     version: 3,

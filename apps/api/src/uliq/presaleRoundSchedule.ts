@@ -60,14 +60,21 @@ function parseStoredSchedule(value: unknown): StoredSchedule | null {
   const record = asRecord(value);
   const version = Number(record.version);
   const rounds = Array.isArray(record.rounds) ? record.rounds : [];
-  if (!Number.isSafeInteger(version) || version < 1 || rounds.length !== 2) return null;
+  if (!Number.isSafeInteger(version) || version < 1 || rounds.length < 1 || rounds.length > 2) return null;
 
-  const parsedRounds = ULIQ_PRESALE_ROUND_PARAMETERS.map((parameters, index) => {
-    const round = asRecord(rounds[index]);
+  const seen = new Set<UliqPresaleRoundId>();
+  const parsedRounds = rounds.map((value) => {
+    const round = asRecord(value);
+    const parameters = ULIQ_PRESALE_ROUND_PARAMETERS.find((entry) => entry.id === round.id);
+    if (!parameters || seen.has(parameters.id)) return null;
     const saleStart = normalizedIso(round.saleStart);
     const saleEnd = normalizedIso(round.saleEnd);
-    if (round.id !== parameters.id || !saleStart || !saleEnd || saleStart >= saleEnd) return null;
+    if (!saleStart || !saleEnd || saleStart >= saleEnd) return null;
+    seen.add(parameters.id);
     return { id: parameters.id, saleStart, saleEnd };
+  }).sort((left, right) => {
+    if (!left || !right) return 0;
+    return left.id === "round-1" ? -1 : right.id === "round-1" ? 1 : 0;
   });
   if (parsedRounds.some((round) => round === null)) return null;
 
@@ -87,7 +94,13 @@ function response(
   const scheduleById = new Map(stored?.rounds.map((round) => [round.id, round]) ?? []);
   return {
     version: stored?.version ?? 0,
-    status: invalidStoredValue ? "INVALID" : stored ? "DRAFT_CONFIGURED" : "NOT_CONFIGURED",
+    status: invalidStoredValue
+      ? "INVALID"
+      : stored?.rounds.length === ULIQ_PRESALE_ROUND_PARAMETERS.length
+        ? "DRAFT_CONFIGURED"
+        : stored
+          ? "PARTIALLY_CONFIGURED"
+          : "NOT_CONFIGURED",
     onchainStatus: "NOT_BOUND",
     updatedAt: updatedAt ? new Date(updatedAt).toISOString() : null,
     rounds: ULIQ_PRESALE_ROUND_PARAMETERS.map((parameters) => ({
@@ -120,13 +133,22 @@ export async function saveUliqPresaleRoundSchedule(params: {
     select: { value: true }
   });
   const currentSchedule = parseStoredSchedule(current?.value);
-  const value: StoredSchedule = {
-    version: (currentSchedule?.version ?? 0) + 1,
-    rounds: params.rounds.map((round) => ({
+  const mergedRounds = new Map<UliqPresaleRoundId, UliqPresaleRoundScheduleInput>(
+    currentSchedule?.rounds.map((round) => [round.id, round]) ?? []
+  );
+  for (const round of params.rounds) {
+    mergedRounds.set(round.id, {
       id: round.id,
       saleStart: new Date(round.saleStart).toISOString(),
       saleEnd: new Date(round.saleEnd).toISOString()
-    })),
+    });
+  }
+  const value: StoredSchedule = {
+    version: (currentSchedule?.version ?? 0) + 1,
+    rounds: ULIQ_PRESALE_ROUND_PARAMETERS.flatMap((parameters) => {
+      const round = mergedRounds.get(parameters.id);
+      return round ? [round] : [];
+    }),
     reason: params.reason,
     updatedByUserId: params.actorUserId
   };

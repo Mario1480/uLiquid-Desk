@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  isUliqPresaleRoundScheduleValid,
   isUliqPresaleScheduleValid,
   presaleScheduleIsoToLocalValue,
   presaleScheduleLocalValueToIso
@@ -32,9 +33,20 @@ test("presale schedule rejects a past end and invalid local input", () => {
   assert.throws(() => presaleScheduleLocalValueToIso("not-a-date"), /invalid_presale_schedule/);
 });
 
-test("presale schedule rejects a Round 2 window that overlaps Round 1", () => {
+test("an individual round can be validated before the other round is scheduled", () => {
+  assert.equal(isUliqPresaleRoundScheduleValid(
+    { id: "round-1", saleStart: "2027-01-10T09:00", saleEnd: "2027-01-20T18:00" },
+    new Date("2027-01-01T00:00:00.000Z").getTime()
+  ), true);
+  assert.equal(isUliqPresaleRoundScheduleValid(
+    { id: "round-2", saleStart: "", saleEnd: "" },
+    new Date("2027-01-01T00:00:00.000Z").getTime()
+  ), false);
+});
+
+test("schedule validation allows overlapping windows because Round 2 activation checks its predecessor onchain", () => {
   assert.equal(isUliqPresaleScheduleValid([
     { id: "round-1", saleStart: "2027-01-10T09:00", saleEnd: "2027-01-20T18:00" },
     { id: "round-2", saleStart: "2027-01-20T17:59", saleEnd: "2027-02-20T18:00" }
-  ], new Date("2027-01-01T00:00:00.000Z").getTime()), false);
+  ], new Date("2027-01-01T00:00:00.000Z").getTime()), true);
 });

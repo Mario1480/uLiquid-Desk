@@ -21,6 +21,29 @@ const scheduleRecordSchema = z.object({
   actionId: z.string().trim().min(1).max(191),
   transactionHash: z.string().trim().regex(/^0x[0-9a-fA-F]{64}$/)
 });
+const presaleRoundScheduleEntrySchema = z.object({
+  saleStart: z.string().datetime({ offset: true }),
+  saleEnd: z.string().datetime({ offset: true })
+}).superRefine((value, ctx) => {
+  const start = new Date(value.saleStart).getTime();
+  const end = new Date(value.saleEnd).getTime();
+  if (start >= end) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["saleEnd"], message: "Sale end must be later than sale start" });
+  }
+  if (end <= Date.now()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["saleEnd"], message: "Sale end must be in the future" });
+  }
+});
+const presaleSingleRoundScheduleSchema = z.object({
+  reason: z.string().trim().min(8).max(500),
+  saleStart: z.string().datetime({ offset: true }),
+  saleEnd: z.string().datetime({ offset: true })
+}).superRefine((value, ctx) => {
+  const result = presaleRoundScheduleEntrySchema.safeParse(value);
+  if (!result.success) {
+    for (const issue of result.error.issues) ctx.addIssue(issue);
+  }
+});
 type PresaleRoundSchedulePayload = {
   reason: string;
   rounds: [
@@ -61,15 +84,6 @@ const presaleRoundScheduleSchema: z.ZodType<PresaleRoundSchedulePayload> = z.obj
       });
     }
   });
-  const firstEnd = new Date(value.rounds[0].saleEnd).getTime();
-  const secondStart = new Date(value.rounds[1].saleStart).getTime();
-  if (secondStart < firstEnd) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["rounds", 1, "saleStart"],
-      message: "Round 2 must not start before Round 1 ends"
-    });
-  }
 });
 const tierBenefitConfigSchema = z.object({
   reason: z.string().trim().min(8).max(500),
@@ -279,6 +293,55 @@ export function registerUliqAdminRoutes(app: express.Express, deps: {
       readiness: publicPresaleReadiness()
     });
   });
+
+  app.put(
+    "/admin/uliq/presale-rounds/:roundId/schedule",
+    requireAuth,
+    requireSuperadmin,
+    deps.consumeRecentReauth,
+    async (req, res) => {
+      if (!scheduleAdminEnabled(res)) return;
+      const roundId = presaleRoundIdSchema.safeParse(req.params.roundId);
+      const parsed = presaleSingleRoundScheduleSchema.safeParse(req.body ?? {});
+      if (!roundId.success || !parsed.success) {
+        return res.status(400).json({
+          error: "invalid_payload",
+          details: parsed.success ? undefined : parsed.error.flatten()
+        });
+      }
+      try {
+        const actor = getUserFromLocals(res);
+        const result = await deps.db.$transaction(async (tx: any) => {
+          const oldValue = await getUliqPresaleRoundSchedule(tx);
+          const newValue = await saveUliqPresaleRoundSchedule({
+            db: tx,
+            rounds: [{ id: roundId.data, saleStart: parsed.data.saleStart, saleEnd: parsed.data.saleEnd }],
+            reason: parsed.data.reason,
+            actorUserId: actor.id
+          });
+          await deps.recordAdminAuditEvent({
+            tx,
+            actorUserId: actor.id,
+            action: "uliq_presale_round_schedule_version_created",
+            targetType: "uliq_presale_schedule",
+            targetId: `${roundId.data}:${newValue.version}`,
+            metadata: {
+              roundId: roundId.data,
+              reason: parsed.data.reason,
+              oldValue,
+              newValue
+            },
+            ip: typeof req.ip === "string" ? req.ip.slice(0, 191) : null
+          });
+          return newValue;
+        });
+        return res.json(result);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return res.status(500).json({ error: reason });
+      }
+    }
+  );
 
   app.put(
     "/admin/uliq/presale-rounds/schedule",
