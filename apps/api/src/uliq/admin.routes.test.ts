@@ -305,6 +305,64 @@ test("ULIQ presale round schedule changes require reauth and create an audited b
   }
 });
 
+test("ULIQ presale rounds can be scheduled independently with an audited partial draft", async () => {
+  const previousEnabled = process.env.ULIQ_ENABLED;
+  const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;
+  process.env.ULIQ_ENABLED = "true";
+  process.env.ULIQ_ADMIN_ENABLED = "true";
+  try {
+    let stored: { value: unknown; updatedAt: Date } | null = null;
+    const tx = {
+      globalSetting: {
+        findUnique: async () => stored,
+        upsert: async ({ create, update }: any) => {
+          stored = {
+            value: stored ? update.value : create.value,
+            updatedAt: new Date("2026-09-10T17:00:00.000Z")
+          };
+          return stored;
+        }
+      }
+    };
+    const audits: Array<Record<string, unknown>> = [];
+    const app = fakeApp();
+    registerUliqAdminRoutes(app as any, {
+      db: { $transaction: async (callback: (client: any) => Promise<any>) => callback(tx) },
+      presaleService: {} as any,
+      treasuryService: {} as any,
+      requireSuperadmin: async () => true,
+      consumeRecentReauth: async (_req: any, _res: any, next: () => void) => { await next(); },
+      recordAdminAuditEvent: async (input) => { audits.push(input as Record<string, unknown>); }
+    });
+
+    const handlers = app.putRoutes.get("/admin/uliq/presale-rounds/:roundId/schedule");
+    assert.ok(handlers);
+    const response = mockResponse();
+    await run(handlers!.slice(1), {
+      params: { roundId: "round-1" },
+      body: {
+        reason: "Configure approved Round 1 window",
+        saleStart: "2026-09-19T12:00:00.000Z",
+        saleEnd: "2026-12-31T12:00:00.000Z"
+      },
+      ip: "127.0.0.1"
+    }, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.status, "PARTIALLY_CONFIGURED");
+    assert.equal(response.body.rounds[0].saleStart, "2026-09-19T12:00:00.000Z");
+    assert.equal(response.body.rounds[1].saleStart, null);
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].action, "uliq_presale_round_schedule_version_created");
+    assert.equal((audits[0].metadata as Record<string, unknown>).roundId, "round-1");
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ULIQ_ENABLED;
+    else process.env.ULIQ_ENABLED = previousEnabled;
+    if (previousAdmin === undefined) delete process.env.ULIQ_ADMIN_ENABLED;
+    else process.env.ULIQ_ADMIN_ENABLED = previousAdmin;
+  }
+});
+
 test("ULIQ presale round schedule rejects an end before its start", async () => {
   const previousEnabled = process.env.ULIQ_ENABLED;
   const previousAdmin = process.env.ULIQ_ADMIN_ENABLED;

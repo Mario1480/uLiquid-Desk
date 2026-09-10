@@ -2,12 +2,12 @@
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { formatUnits } from "viem";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import {
-  isUliqPresaleScheduleValid,
+  isUliqPresaleRoundScheduleValid,
   presaleScheduleIsoToLocalValue,
   presaleScheduleLocalValueToIso,
   type UliqPresaleScheduleDraft
@@ -24,7 +24,7 @@ type PublicPresaleAdminPayload = {
   mode: "CONFIGURATION_PENDING";
   presaleSchedule: {
     version: number;
-    status: "NOT_CONFIGURED" | "DRAFT_CONFIGURED" | "INVALID";
+    status: "NOT_CONFIGURED" | "PARTIALLY_CONFIGURED" | "DRAFT_CONFIGURED" | "INVALID";
     onchainStatus: string;
     updatedAt: string | null;
     rounds: Array<{
@@ -92,7 +92,7 @@ export default function PublicPresaleAdminPreview() {
   const locale = useLocale();
   const [data, setData] = useState<PublicPresaleAdminPayload | null>(null);
   const [drafts, setDrafts] = useState<UliqPresaleScheduleDraft[]>([]);
-  const [reason, setReason] = useState("");
+  const [reasons, setReasons] = useState<Record<"round-1" | "round-2", string>>({ "round-1": "", "round-2": "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -104,8 +104,6 @@ export default function PublicPresaleAdminPreview() {
   const [inventoryActionId, setInventoryActionId] = useState<string | null>(null);
   const [inventoryActionRoundId, setInventoryActionRoundId] = useState<"round-1" | "round-2" | null>(null);
   const [inventoryExecutionHash, setInventoryExecutionHash] = useState("");
-  const scheduleValid = useMemo(() => isUliqPresaleScheduleValid(drafts), [drafts]);
-
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -127,18 +125,22 @@ export default function PublicPresaleAdminPreview() {
   useEffect(() => { void load(); }, [load]);
 
   async function saveSchedule() {
-    if (!scheduleValid) throw new Error(t("presaleScheduleInvalid"));
-    const presaleSchedule = await apiPut<PublicPresaleAdminPayload["presaleSchedule"]>("/admin/uliq/presale-rounds/schedule", {
+    const draft = drafts.find((round) => round.id === selectedRoundId);
+    const reason = reasons[selectedRoundId];
+    if (!isUliqPresaleRoundScheduleValid(draft)) throw new Error(t("presaleScheduleInvalid"));
+    const presaleSchedule = await apiPut<PublicPresaleAdminPayload["presaleSchedule"]>(`/admin/uliq/presale-rounds/${selectedRoundId}/schedule`, {
       reason,
-      rounds: drafts.map((round) => ({
-        id: round.id,
-        saleStart: presaleScheduleLocalValueToIso(round.saleStart),
-        saleEnd: presaleScheduleLocalValueToIso(round.saleEnd)
-      }))
+      saleStart: presaleScheduleLocalValueToIso(draft!.saleStart),
+      saleEnd: presaleScheduleLocalValueToIso(draft!.saleEnd)
     });
     setData((current) => current ? { ...current, presaleSchedule } : current);
-    setReason("");
-    setNotice(t("presaleScheduleSaved", { version: presaleSchedule.version }));
+    setDrafts(presaleSchedule.rounds.map((round) => ({
+      id: round.id,
+      saleStart: presaleScheduleIsoToLocalValue(round.saleStart),
+      saleEnd: presaleScheduleIsoToLocalValue(round.saleEnd)
+    })));
+    setReasons((current) => ({ ...current, [selectedRoundId]: "" }));
+    setNotice(t("presaleScheduleSavedRound", { round: selectedRoundId === "round-1" ? 1 : 2, version: presaleSchedule.version }));
   }
 
   async function prepareSchedule() {
@@ -290,6 +292,25 @@ export default function PublicPresaleAdminPreview() {
                     {draft.saleStart && draft.saleEnd && new Date(draft.saleStart).getTime() >= new Date(draft.saleEnd).getTime()
                       ? <AdminNotice tone="danger">{t("presaleRoundEndAfterStart")}</AdminNotice>
                       : null}
+                    <label className="adminFormField">
+                      <span className="adminFormFieldLabel">{t("presaleScheduleReason")}</span>
+                      <DeskInput
+                        className="input"
+                        value={reasons[round.id]}
+                        maxLength={500}
+                        placeholder={t("presaleScheduleReasonPlaceholder")}
+                        onChange={(event) => setReasons((current) => ({ ...current, [round.id]: event.target.value }))}
+                      />
+                      <span className="adminFormFieldHint">{t("presaleScheduleReasonProgress", { count: reasons[round.id].trim().length })}</span>
+                    </label>
+                    <DeskButton
+                      type="button"
+                      className="btn btnPrimary"
+                      onClick={() => requestReauth("schedule-save", round.id)}
+                      disabled={!isUliqPresaleRoundScheduleValid(draft) || reasons[round.id].trim().length < 8}
+                    >
+                      <AppIcon name="save" /> {t("presaleScheduleSaveRound", { round: round.number })}
+                    </DeskButton>
                     {round.onchain ? (
                       <div className="adminKeyValueList">
                         <div className="adminKeyValueRow"><span>{t("ownerWallet")}</span><strong className="uliqMono">{round.onchain.owner}</strong></div>
@@ -307,7 +328,7 @@ export default function PublicPresaleAdminPreview() {
                         </DeskButton>
                       ) : null}
                       {round.onchain && ["DRAFT_ONLY", "DRIFTED", "PREPARED"].includes(round.onchain.bindingStatus) ? (
-                        <DeskButton type="button" className="btn" onClick={() => requestReauth("schedule-prepare", round.id)} disabled={!data.presaleSchedule.version}>
+                        <DeskButton type="button" className="btn" onClick={() => requestReauth("schedule-prepare", round.id)} disabled={!data.presaleSchedule.version || !draft.saleStart || !draft.saleEnd}>
                           <AppIcon name="shield" /> {t("presaleSchedulePrepareSafe")}
                         </DeskButton>
                       ) : null}
@@ -337,25 +358,6 @@ export default function PublicPresaleAdminPreview() {
                 );
               })}
             </div>
-            <label className="adminFormField">
-              <span className="adminFormFieldLabel">{t("presaleScheduleReason")}</span>
-              <DeskInput
-                className="input"
-                value={reason}
-                maxLength={500}
-                placeholder={t("presaleScheduleReasonPlaceholder")}
-                onChange={(event) => setReason(event.target.value)}
-              />
-              <span className="adminFormFieldHint">{t("presaleScheduleReasonProgress", { count: reason.trim().length })}</span>
-            </label>
-            <DeskButton
-              type="button"
-              className="btn btnPrimary"
-              onClick={() => requestReauth("schedule-save")}
-              disabled={!scheduleValid || reason.trim().length < 8}
-            >
-              <AppIcon name="save" /> {t("presaleScheduleSave")}
-            </DeskButton>
           </AdminDetailSection>
           <AdminDetailSection title={t("payload")} description={preparationLabel ?? undefined}>
             {preparation ? (
