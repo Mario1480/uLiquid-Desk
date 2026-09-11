@@ -1,5 +1,6 @@
 import React from "react";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DeskButton } from "../../components/desk/DeskButton";
@@ -73,6 +74,11 @@ test("Desk select renders an Ein combobox while retaining empty values and nativ
  assert.match(html,/class="ein-form-bridge"/);assert.match(html,/role="combobox"/);assert.match(html,/data-ein-control="true"/);
  assert.match(html,/name="side"/);assert.match(html,/<option value="" selected=""/);assert.match(html,/<optgroup label="Sides"/);
  assert.equal((html.match(/name="side"/g)||[]).length,1);
+});
+
+test("ported select content stays above modal overlays despite Radix inline stacking",()=>{
+ const css=readFileSync(new URL("../../components/einui/theme.css",import.meta.url),"utf8");
+ assert.ok(css.includes('[data-radix-popper-content-wrapper]) { z-index: 1450 !important; }'));
 });
 
 test("Ein checkbox and switch expose real roles, unique ids and disabled state",async()=>{

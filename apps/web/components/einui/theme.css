@@ -121,7 +121,7 @@
 .ein-command-option[aria-selected="true"] { background: #1b385d; }
 .ein-command-option small { display: block; color: #b9c9de; }
 .ein-gallery-preview :is(input, textarea, select, [role="checkbox"], [role="radio"], [role="switch"], [role="combobox"]) { border-color: #8197b3; }
-[data-ein-portal] :is([role="tooltip"], [data-radix-popper-content-wrapper]) { z-index: 1450; }
+[data-ein-portal] :is([role="tooltip"], [data-radix-popper-content-wrapper]) { z-index: 1450 !important; }
 [data-ein-button].btnPrimary { background: var(--ein-action) !important; color: #fff !important; }
 [data-ein-button].btnStart { background: #187448 !important; color: #fff !important; }
 [data-ein-button].btnPause { background: #986000 !important; color: #fff !important; }
