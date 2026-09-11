@@ -661,6 +661,7 @@
         "reviewRequired": "Die Zahlung benötigt eine manuelle Prüfung. Es wird keine zweite Aktivierung oder automatische Rückzahlung ausgelöst.",
         "confirmed": "Die Zahlung wurde onchain bestätigt und das Abo aktualisiert.",
         "confirmations": "{count} von {required} Bestätigungen",
+        "networkFinalityPending": "Vor der Aktivierung wird noch auf die Arbitrum-Netzwerkfinalität gewartet.",
         "stages": {
           "ready": "Bereit",
           "awaiting_signature": "Signatur",

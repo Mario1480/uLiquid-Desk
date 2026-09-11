@@ -1217,6 +1217,7 @@
       "confirmations": "Bestätigungen",
       "revision": "Konfigurationsrevision",
       "lastBlock": "Letzter RPC-Block",
+      "finalizedBlock": "Finalisierter RPC-Block",
       "lastChecked": "Zuletzt geprüft",
       "save": "Treasury-Adresse speichern",
       "saved": "Payment-Konfiguration gespeichert.",

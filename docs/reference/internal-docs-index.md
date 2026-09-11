@@ -30,6 +30,7 @@ This page is the internal starting point for admins, operators, and developers. 
 - [Archived Market Intelligence provider migration](../archive/plans/market-intelligence-providers/00-README-MASTER-PLAN.md)
 - [OpenAI router and AI credits](../plans/active/openai-router-ai-credits/README.md)
 - [Arbitrum-USDC billing rollout](../plans/active/billing-arbitrum-usdc-rollout.md)
+- [Billing payment review and refund runbook](../runbooks/billing-payment-review-refund.md)
 - [Backlog register](../plans/backlog/README.md)
 
 ## Architecture and technical design

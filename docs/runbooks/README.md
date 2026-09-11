@@ -21,6 +21,7 @@ Runbooks must preserve safety boundaries and require fresh environment checks. A
 - [`grid-runtime-recovery.md`](grid-runtime-recovery.md)
 - [`hyperliquid-spot-smoke-test.md`](hyperliquid-spot-smoke-test.md)
 - [`paper-trading-smoke-test.md`](paper-trading-smoke-test.md)
+- [`billing-payment-review-refund.md`](billing-payment-review-refund.md)
 
 ## AI operations
 

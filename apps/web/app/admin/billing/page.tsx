@@ -72,6 +72,7 @@ type BillingPaymentConfigResponse = {
   rpc: {
     ready: boolean;
     lastBlockNumber: string | number | null;
+    finalizedBlockNumber: string | number | null;
     lastCheckedAt: string | null;
     error: string | null;
   };
@@ -484,6 +485,7 @@ export default function AdminBillingPage() {
             <div className="miniMetric"><span>{t("paymentConfig.confirmations")}</span><b>{paymentConfig?.confirmationsRequired ?? 12}</b></div>
             <div className="miniMetric"><span>{t("paymentConfig.revision")}</span><b>{paymentConfig?.revision ?? "-"}</b></div>
             <div className="miniMetric"><span>{t("paymentConfig.lastBlock")}</span><b>{paymentConfig?.rpc?.lastBlockNumber ?? "-"}</b></div>
+            <div className="miniMetric"><span>{t("paymentConfig.finalizedBlock")}</span><b>{paymentConfig?.rpc?.finalizedBlockNumber ?? "-"}</b></div>
             <div className="miniMetric"><span>{t("paymentConfig.lastChecked")}</span><b>{paymentConfig?.rpc?.lastCheckedAt ? new Date(paymentConfig.rpc.lastCheckedAt).toLocaleString(locale) : "-"}</b></div>
           </div>
           {paymentConfig?.rpc?.error ? <AdminNotice tone="warning">{paymentConfig.rpc.error}</AdminNotice> : null}

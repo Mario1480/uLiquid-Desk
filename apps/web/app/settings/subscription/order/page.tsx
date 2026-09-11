@@ -1076,6 +1076,11 @@ function SubscriptionOrderPageContent() {
                 count: payment.confirmations ?? 0,
                 required: payment.confirmationsRequired ?? payment.requiredConfirmations ?? 12
               })}</span>
+              {paymentStage === "confirming"
+                && (payment.confirmations ?? 0) >= (payment.confirmationsRequired ?? payment.requiredConfirmations ?? 12)
+                && !payment.verifiedAt
+                ? <span>{t("order.payment.networkFinalityPending")}</span>
+                : null}
             </div>
           ) : null}
         </section></DeskSurface>

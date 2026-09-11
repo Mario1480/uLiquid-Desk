@@ -661,6 +661,7 @@
         "reviewRequired": "This payment needs manual review. No second activation or automatic refund will be triggered.",
         "confirmed": "The payment is confirmed onchain and the subscription has been updated.",
         "confirmations": "{count} of {required} confirmations",
+        "networkFinalityPending": "Waiting for Arbitrum network finality before activating the purchase.",
         "stages": {
           "ready": "Ready",
           "awaiting_signature": "Signature",

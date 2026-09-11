@@ -2,232 +2,156 @@
 icon: landmark
 ---
 
-# Arbitrum-USDC-Billing: Architektur und Rollout
+# Arbitrum USDC Billing Rollout
 
-## Status und Geltungsbereich
+## Purpose and status
 
-Diese Dokumentation beschreibt die Ablösung des aktiven CCPayment-Flows durch direkte USDC-Zahlungen auf Arbitrum One.
+This plan governs the controlled replacement of the retired CCPayment checkout with direct native USDC payments on Arbitrum One.
 
-Stand dieser Implementierung:
+Current production status on 2026-09-11:
 
-- Der Code und die Datenbankmigration sind lokal vorbereitet.
-- Billing bleibt bis zum kontrollierten Cutover deaktiviert.
-- Es wurde kein Deployment und keine Migration gegen eine laufende Umgebung ausgeführt.
-- Es wurde keine Mainnet-Transaktion gesendet und keine Treasury-Adresse in Produktion geändert.
-- Ein Sepolia-Smoke und ein Low-Value-Mainnet-Canary dürfen nur nach separater, ausdrücklicher Freigabe erfolgen.
+- The billing schema migrations, API, web checkout, reconciliation jobs, subscription lifecycle, package administration, Treasury configuration, and dedicated Billing RPC are deployed.
+- The production Treasury configuration is revision `1` and the RPC reports Arbitrum One chain ID `42161`, the expected native USDC contract, six decimals, and working `safe` and `finalized` block tags.
+- Two historical CCPayment orders are `PAID`; there are no open CCPayment orders.
+- No Arbitrum USDC order, transaction, or subscription term has been created yet.
+- Subscription checkout was found enabled without canary evidence and was paused through the protected admin control on 2026-09-11 at approximately 18:41 Europe/Berlin. AI Credit usage billing remains enabled.
+- Network-finality hardening is implemented locally and must be deployed while checkout remains paused.
+- One low-value Mainnet canary, final reconciliation, activation approval, and the post-activation observation are still required before this plan can be archived.
 
-## Feste Produktionsparameter
+Code, deployment, browser behavior, wallet signature, transaction inclusion, network finality, Treasury receipt, database reconciliation, entitlement activation, and owner acceptance are separate evidence layers.
 
-Der Produktionspfad akzeptiert ausschließlich:
+## Fixed production parameters
 
-| Parameter | Wert |
+| Parameter | Required value |
 | --- | --- |
-| Netzwerk | Arbitrum One |
-| Chain-ID | `42161` |
-| Token | natives Circle-USDC |
-| USDC-Vertrag | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` |
-| Decimals | `6` |
-| Bestätigungen | `12` |
-| Order-Gültigkeit | `24 Stunden` |
-| Karenzzeit | `3 Tage` |
+| Network | Arbitrum One |
+| Chain ID | `42161` |
+| Token | Native Circle USDC |
+| USDC contract | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` |
+| Token decimals | `6` |
+| Minimum L2 confirmations | `12` |
+| Irreversibility gate | Receipt block at or below the RPC `finalized` head, with matching canonical block hash |
+| Order lifetime | `24 hours` |
+| Subscription grace period | `3 days` |
 
-Es gibt keinen eigenen Payment-Contract und keine Token-Freigabe. Die verbundene Wallet führt direkt `USDC.transfer(treasury, amountRaw)` aus. Gas bezahlt der User in ETH.
+There is no custom payment contract and no approval flow. The connected user wallet calls `USDC.transfer(treasury, amountRaw)` directly and pays gas in ETH.
 
-## Architektur
+## Payment flow
 
-1. `POST /settings/subscription/checkout` legt eine Order mit einem unveränderlichen Snapshot von Sender-Wallet, Treasury, Treasury-Revision, Chain, Token und Rohbetrag an.
-2. Der Browser prüft Wallet, Netzwerk sowie USDC- und ETH-Bestand und sendet den direkten ERC-20-Transfer.
-3. `POST /settings/subscription/orders/:id/submit` übermittelt ausschließlich den Tx-Hash. Diese Meldung aktiviert keine Rechte.
-4. Das Backend liest Transaktion, Receipt, Logs und aktuelle Blockhöhe über einen serverseitigen RPC.
-5. Unterhalb von 12 Bestätigungen bleibt die Order `CONFIRMING`. Erst die vollständige serverseitige Prüfung kann sie als bezahlt abschließen.
-6. Aus der bezahlten Order entsteht genau ein `SubscriptionTerm`. Der Lifecycle-Job aktiviert fällige Terms, führt die Karenzzeit und synchronisiert anschließend Abonnement-, Workspace- und Lizenzrechte.
-7. Ein Hintergrund-Scanner sucht außerdem USDC-Transfers an Treasury-Snapshots offener Orders. So kann eine Zahlung wiedergefunden werden, wenn der Browser nach dem Senden geschlossen wurde.
+1. `POST /settings/subscription/checkout` creates an order with immutable snapshots of the linked sender wallet, Treasury, Treasury revision, chain, token, amount, package lines, and checkout block boundary.
+2. The browser verifies the wallet, chain, USDC balance, and ETH gas balance before requesting the direct ERC-20 transfer.
+3. `POST /settings/subscription/orders/:id/submit` records only the transaction hash. Submission never grants entitlements.
+4. The API independently reads the transaction, receipt, logs, latest L2 head, `finalized` head, and canonical receipt block from the server Billing RPC.
+5. A valid payment remains `CONFIRMING` until it has at least 12 L2 confirmations and its receipt block is network-finalized. A canonical block-hash mismatch is routed to `REVIEW_REQUIRED`.
+6. A confirmed order creates exactly one `SubscriptionTerm`. The lifecycle service activates due terms and synchronizes subscription, workspace, license, capacity, and AI Credit state.
+7. The background discovery scanner searches only finalized USDC logs for open Treasury snapshots. It can recover a payment if the browser closes after sending.
 
-Der Reconciler läuft regulär alle 30 Sekunden. Der Subscription-Lifecycle und die Erinnerungen laufen stündlich. Überlappende Läufe werden unterdrückt; Cursor, eindeutige Schlüssel und Wiederholungszustände sichern Idempotenz.
+The payment reconciler runs every 30 seconds. Subscription lifecycle and reminders run hourly. Cursor overlap, compare-and-swap transitions, unique keys, and idempotency keys prevent replay and duplicate activation.
 
-## Sicherheitsinvarianten
+## Security invariants
 
-Eine Zahlung gilt nur dann als bestätigt, wenn alle folgenden Bedingungen erfüllt sind:
+A payment may finalize only when all of the following are true:
 
-- Der serverseitige RPC meldet Chain-ID `42161`.
-- Die Transaktion ist erfolgreich und nicht reverted.
-- `transaction.from` entspricht der beim Checkout verknüpften Wallet.
-- `transaction.to` ist der feste native USDC-Vertrag.
-- Die Transaktion überträgt keinen nativen ETH-Wert.
-- Das Receipt enthält genau ein passendes USDC-`Transfer`-Event von der erwarteten Wallet an den Treasury-Snapshot.
-- Der Rohbetrag stimmt exakt mit `priceCents × 10.000` überein; es wird kein Floating Point verwendet.
-- Der Tx-Hash wurde noch keiner anderen Order zugeordnet.
-- Mindestens 12 Bestätigungen liegen vor.
+- The server RPC reports chain ID `42161`.
+- The transaction succeeded and was not reverted.
+- `transaction.from` matches the wallet linked at checkout.
+- `transaction.to` is the fixed native USDC contract.
+- The transaction carries no native ETH value.
+- The receipt contains exactly one matching USDC `Transfer` event from the expected sender to the Treasury snapshot.
+- The raw amount equals `priceCents × 10,000`; no floating-point arithmetic is used.
+- The transaction hash belongs to no other order.
+- The receipt block is not earlier than the checkout scan boundary.
+- At least 12 L2 confirmations exist.
+- The receipt block is at or below the RPC `finalized` head.
+- The canonical block at the receipt height has the same hash as the stored receipt.
 
-Weitere Schutzregeln:
+Additional boundaries:
 
-- Der Client ist nie die Autorität für Zahlungs- oder Entitlement-Status.
-- Pro User kann es nur eine offene zahlbare Arbitrum-USDC-Order geben. Ein identischer Warenkorb wird fortgesetzt; ein anderer erfordert Abbruch oder Ablauf der bestehenden Order.
-- Treasury-Adresse und Konfigurationsrevision werden pro Order gespeichert. Eine spätere Rotation verändert bestehende Orders nicht.
-- RPC-Ausfälle und vorübergehend fehlende Receipts bleiben retryfähig und lösen keine falsche Aktivierung aus.
-- Ein dauerhaft nicht auffindbarer, übermittelter Tx-Hash wird erst nach begrenzten Prüfversuchen und nach Order-Ablauf zur manuellen Prüfung eskaliert.
-- Revert, falsche Chain, Wallet, Token, Treasury, Unter- oder Überzahlung, mehrdeutige Transfers und Tx-Replay führen zu `REVIEW_REQUIRED`.
-- `REVIEW_REQUIRED` wird nicht automatisch erstattet, korrigiert oder ein zweites Mal aktiviert. Ein Operator muss zuerst Onchain-Receipt, Order-Snapshot und Audit-Trail abgleichen.
+- The client is never authoritative for payment or entitlement state.
+- Each user may have only one open payable Arbitrum USDC order.
+- Treasury address and revision are immutable per order; rotation affects new orders only.
+- RPC or finality-tag failures remain retryable and never activate a purchase.
+- Wrong chain, wallet, token, Treasury, amount, native value, replay, ambiguous transfer, reverted receipt, or canonical block mismatch routes the order to `REVIEW_REQUIRED`.
+- `REVIEW_REQUIRED` never triggers automatic activation or refund.
+- A verified receipt is persisted before the idempotent business finalization so a process restart can resume safely.
 
-Die vorgegebenen 12 Bestätigungen beziehen sich auf Arbitrum-L2-Blöcke. Sie sind keine separate Prüfung der Sequencer-Batch-Inklusion oder Ethereum-L1-Finalität. Das ist für Version 1 eine bewusst begrenzte Soft-Finality-Annahme: Bis eine strengere Finalitätsregel ausdrücklich beschlossen und implementiert wurde, bleiben Mainnet-Canary und Hochlauf auf freigegebene Low-Value-Zahlungen begrenzt. Eine bereits als `PAID` aktivierte Order wird nicht nachträglich automatisch zurückgerollt.
+## Readiness and configuration
 
-## Serverkonfiguration und Readiness
-
-Die API verwendet einen dedizierten serverseitigen RPC:
+The API uses a dedicated server-side RPC:
 
 ```dotenv
 BILLING_ARBITRUM_RPC_URL=https://<trusted-arbitrum-one-rpc>
 ```
 
-Wenn `BILLING_ARBITRUM_RPC_URL` nicht gesetzt ist, wird auf `ARBITRUM_RPC_URL` zurückgegriffen; ein explizit leerer Wert hält Billing dagegen absichtlich auf „nicht bereit“. Die Produktionsumgebung muss einen vertrauenswürdigen, rate-limit-tauglichen RPC explizit als `BILLING_ARBITRUM_RPC_URL` setzen. Der öffentliche Browser-RPC ist keine Zahlungsautorität.
+Production must explicitly configure this value. The public browser RPC is not a payment authority.
 
-Vor der Aktivierung muss die Admin-Billing-Seite Folgendes als bereit anzeigen:
+The admin Billing page must show all of the following before activation:
 
-- Treasury-Adresse vorhanden,
-- Chain-ID `42161`,
-- korrekter USDC-Vertrag und 6 Decimals,
-- erfolgreiche RPC-Abfrage auf Arbitrum One,
-- aktuelle letzte Blockhöhe und Prüfzeit,
-- keine offene RPC-Fehlermeldung.
+- a valid Treasury address and revision;
+- chain ID `42161`;
+- the exact native USDC contract and six decimals;
+- a current latest RPC block;
+- a current finalized RPC block not ahead of latest;
+- a successful check timestamp and no RPC error.
 
-Die globale Billing-Aktivierung bleibt bis zum Abschluss aller Rollout-Gates ausgeschaltet. Eine vorhandene Treasury-Adresse allein ist keine Freigabe.
+Changing the Treasury requires Platform Superadmin access, exact duplicate address entry, recent re-authentication, and an `AdminAuditEvent`. Enabling checkout requires Platform Superadmin access, explicit cutover confirmation, and recent re-authentication. Disabling checkout remains the immediate safety control and does not stop reconciliation of obligations that already exist.
 
-Das Setzen von `billingEnabled=true` ist selbst ein geschützter Cutover-Schritt: Die API verlangt Platform-Superadmin-Rechte und konsumiert eine frische Reauth-Sitzung; die Admin-UI zeigt davor eine ausdrückliche Cutover-/Canary-Bestätigung. `billingEnabled=false` bleibt als sofortiger Not-Aus für Superadmins ohne Reauth verfügbar.
+## Subscription and notification behavior
 
-## Treasury-Verwaltung
+- Paid periods are stored as immutable `SubscriptionTerm` rows with start, end, grace end, and entitlement snapshots.
+- Early renewals append to the existing paid chain. A renewal during grace starts at the prior contractual end; a purchase after grace starts at payment confirmation.
+- A Pro-to-Premium in-term upgrade charges the full package price difference and preserves the existing term window and credit-cycle markers.
+- Add-ons become effective at their target term and do not leak into an unrelated future term.
+- Monthly AI Credit grants use unique cycle keys and never grant early solely because a renewal was purchased.
+- After the three-day grace period, the subscription falls back to Free and entitlement synchronization is retried until successful.
+- End-of-term notifications are deduplicated by term, milestone, and channel, with bounded retry and verified-email fallback where available.
 
-Eine Treasury-Änderung ist eine kapitalrelevante Aktion und darf ausschließlich über den geschützten Admin-Flow erfolgen:
+## Monitoring and manual review
 
-1. Als Platform-Superadmin anmelden.
-2. Eine frische Re-Authentifizierung per Passwort oder OTP an die verifizierte E-Mail durchführen.
-3. Die neue Adresse in beide Felder exakt identisch eingeben. Groß-/Kleinschreibung oder eine nur semantisch gleiche Eingabe reicht für die Bestätigung nicht aus.
-4. Änderung speichern und anschließend die Readiness erneut prüfen.
-5. Den erzeugten `AdminAuditEvent` auf Actor, alte/neue Adresse, Revision, Chain, Token und IP kontrollieren.
+During the canary and initial rollout, observe:
 
-Die Reauth-Sitzung ist kurzlebig und wird beim Treasury-Write atomar verbraucht. Secrets, Private Keys oder Seed-Phrases gehören weder in diesen Flow noch in Logs, Datenbankfelder oder Support-Tickets.
+- open `PENDING` and `CONFIRMING` orders and their age;
+- L2 confirmations and delay to the finalized head;
+- `REVIEW_REQUIRED` grouped by `paymentStatusRaw` and `lastError`;
+- transaction-hash collisions and ambiguous discovery candidates;
+- RPC errors, retries, backoff, and scan-cursor progress;
+- `PAID` to exactly one `SubscriptionTerm` and one entitlement activation;
+- due `SCHEDULED`, `ACTIVE`, `GRACE`, and `EXPIRED` terms;
+- notification retry and failure rows.
 
-## Abo-Lifecycle
+Relevant structured logs include `billing_onchain_reconcile_cycle`, `billing_onchain_discovery_cycle_failed`, `billing_onchain_submitted_reconcile_cycle_failed`, `billing_subscription_lifecycle_cycle`, and `subscription_reminder_cycle`.
 
-- Bezahlte Laufzeiten werden als `SubscriptionTerm` mit Start, Ende, Karenzende und Entitlement-Snapshot gespeichert.
-- Eine Verlängerung vor Vertragsende oder während der Karenz beginnt exakt am bisherigen Vertragsende.
-- Weitere Verlängerungen werden an das Ende des letzten geplanten Terms angehängt.
-- Ein Pro-zu-Premium-Upgrade innerhalb eines aktiven Terms ist eine Ausnahme: Nach bestätigter Zahlung der vollständigen Paketpreisdifferenz wird derselbe Term sofort auf Premium umgestellt. Start, Ende, Karenzende, bestehende Kapazitätsgrants, AI-Balance, Ledger und Grant-Zyklusmarker bleiben unverändert.
-- Die Upgrade-Berechnung benötigt unveränderlichen Preis- und Laufzeitnachweis des aktiven Pro-Terms. Pro- und Premium-Paket müssen dieselbe Laufzeit haben; bei fehlender Evidenz oder bereits geplanter Folgeperiode schlägt der Checkout geschlossen fehl und verlangt manuelle Prüfung.
-- Nach Ablauf der Karenz beginnt ein Neukauf zum bestätigten Zahlungszeitpunkt.
-- Zukünftige Limits, Add-ons und AI-Inklusivtokens werden erst am Termstart wirksam.
-- Rechte und Add-ons des alten Terms gelten in seiner dreitägigen Karenz weiter, enden aber beim Start eines Folgeterms.
-- AI-Gutschriften werden je Monatszyklus über eindeutige Ledger-Schlüssel vergeben. Eine frühe Verlängerung erzeugt keine vorzeitige Gutschrift.
-- `proValidUntil` bleibt ein kompatibler Cache für das Ende aller lückenlos geplanten bezahlten Laufzeiten.
-- Nach drei Tagen Karenz erfolgt der atomare Wechsel auf Free mit anschließender Entitlement-Synchronisierung.
+Use [Billing payment review and refund](../../runbooks/billing-payment-review-refund.md) for any exception. A screenshot or user-supplied hash is never enough to activate or refund an order.
 
-Die Migration übernimmt nur aktuell aktive Legacy-Pro-Abos als Bestandsterm bis zum vorhandenen `proValidUntil`. Sie rekonstruiert keine historischen Laufzeiten. Nur billinggebundene Legacy-Kapazitätsgrants mit Order-Bezug, deren bisheriges `validUntil` exakt dem Vertragsende entspricht, werden an den Bestandsterm gebunden und bis zu dessen Karenzende fortgeführt; unabhängig verwaltete Grants bleiben unverändert.
+## Controlled completion sequence
 
-## Benachrichtigungen
+- [x] Stop new CCPayment checkouts and remove the active CCPayment runtime.
+- [x] Reconcile the historical CCPayment population: two paid, zero open.
+- [x] Deploy the billing migrations and application.
+- [x] Configure a dedicated production Billing RPC and verify Arbitrum One.
+- [x] Configure the Treasury through the protected flow.
+- [x] Pause checkout before the finality hardening deployment.
+- [ ] Deploy the network-finality hardening while checkout remains paused.
+- [ ] Confirm deployed readiness includes a healthy finalized block head.
+- [ ] Run one low-value Mainnet canary from the known operator account and wallet after a fresh human transaction approval.
+- [ ] Reconcile transaction receipt, 12 confirmations, finalized head, canonical block hash, Treasury receipt, exactly one paid order, exactly one term, correct term window, entitlements, and audit evidence.
+- [ ] Re-enable checkout through the protected admin flow after explicit owner acceptance.
+- [ ] Observe the first production window and confirm no stale pending, review, duplicate term, RPC, lifecycle, or notification failure.
+- [ ] Record dated production evidence and archive this plan.
 
-User können `E-Mail`, `Telegram` oder `Beide` auswählen. Ohne gespeicherte Auswahl gilt:
+An isolated Sepolia transaction is not a production prerequisite because the production implementation is intentionally fixed to Arbitrum One and native Mainnet USDC. Contract, amount, replay, reorg, RPC-failure, and lifecycle behavior are covered by deterministic tests; the production-path confidence gate is the low-value Mainnet canary above.
 
-- Telegram, wenn eine Telegram-Verbindung vorhanden ist;
-- andernfalls eine verifizierte E-Mail-Adresse.
+## Stop criteria
 
-Erinnerungen werden dedupliziert je Term, Meilenstein und Kanal versendet:
+Keep or return checkout to disabled when any of the following occurs:
 
-- 7 Tage vor Vertragsende,
-- 3 Tage vor Vertragsende,
-- 1 Tag vor Vertragsende,
-- beim Eintritt in die Karenz,
-- nach dem Downgrade auf Free.
+- chain, token, decimals, Treasury, latest head, or finalized head is invalid;
+- an RPC does not reliably serve Arbitrum One `finalized` blocks;
+- a payment activates zero or multiple terms;
+- transaction replay or discovery assignment is not unique;
+- underpayment or overpayment escapes `REVIEW_REQUIRED`;
+- Treasury rotation or activation lacks the expected protected operation;
+- grace downgrade, capacity, license, workspace, or AI Credit synchronization diverges;
+- a canonical block hash changes at or below the reported finalized head.
 
-Bei temporären Zustellfehlern erfolgt ein begrenzter Retry mit Backoff. Fällt der gewählte Telegram-Kanal weg, wird auf eine verifizierte E-Mail zurückgegriffen. Texte verwenden die gespeicherte UI-Sprache Deutsch oder Englisch. Eine bereits geplante Anschlusslaufzeit unterdrückt überflüssige Ablaufwarnungen für den auslaufenden Term.
-
-Verliert ein gespeicherter Kanal seine Verfügbarkeit und existiert kein Fallback, wird trotzdem ein kanalbezogener `RETRY`-/`FAILED`-Zustellnachweis erzeugt. Damit verschwinden weder Telegram-Disconnects noch der Verlust einer E-Mail-Verifikation still aus dem Monitoring.
-
-## Monitoring und manuelle Prüfung
-
-Während Canary und Hochlauf sind mindestens folgende Signale zu beobachten:
-
-- Anzahl offener `PENDING`- und `CONFIRMING`-Orders sowie deren Alter,
-- Bestätigungsfortschritt und Differenz zur aktuellen Arbitrum-Blockhöhe,
-- Orders in `REVIEW_REQUIRED`, gruppiert nach `lastError` beziehungsweise `paymentStatusRaw`,
-- Tx-Hash-Kollisionen und mehrdeutige Discovery-Kandidaten,
-- RPC-Fehler, Retry-Anzahl, Backoff und letzter erfolgreicher Scan-Cursor je Treasury-Snapshot,
-- Abgleich `PAID` ↔ genau ein `SubscriptionTerm` ↔ genau eine Entitlement-Aktivierung,
-- fällige `SCHEDULED`, `ACTIVE`, `GRACE` und `EXPIRED` Terms,
-- offene oder endgültig fehlgeschlagene Benachrichtigungszustellungen.
-
-Relevante strukturierte Logs:
-
-- `billing_onchain_reconcile_cycle`
-- `billing_onchain_discovery_cycle_failed`
-- `billing_onchain_submitted_reconcile_cycle_failed`
-- `billing_subscription_lifecycle_cycle`
-- `billing_subscription_lifecycle_cycle_failed`
-- `subscription_reminder_cycle`
-- `subscription_reminder_cycle_failed`
-
-Bei `REVIEW_REQUIRED` niemals allein anhand eines Screenshots oder eines vom User genannten Tx-Hashs freischalten. Immer Arbiscan/RPC-Receipt, Tokenadresse, Sender, Treasury-Snapshot, Betrag, Bestätigungen und bestehende Tx-Hash-Zuordnungen gemeinsam prüfen. Es gibt in Version 1 keine automatische Rückzahlung.
-
-Für Canary-Betrieb verantwortet der diensthabende Platform-Superadmin die Review-Queue. Die offene Queue wird mindestens vor und nach jedem Canary sowie während des Hochlaufs regelmäßig read-only abgefragt:
-
-```sql
-SELECT
-  o."id",
-  o."merchant_order_id",
-  o."user_id",
-  o."amount_cents",
-  o."payment_status_raw",
-  o."created_at",
-  p."tx_hash",
-  p."expected_sender_address",
-  p."treasury_address",
-  p."expected_amount_raw",
-  p."block_number",
-  p."confirmations",
-  p."last_error",
-  p."last_checked_at"
-FROM "billing_orders" AS o
-LEFT JOIN "billing_onchain_payments" AS p ON p."order_id" = o."id"
-WHERE o."provider" = 'ARBITRUM_USDC'
-  AND o."status" = 'REVIEW_REQUIRED'
-ORDER BY o."updated_at" ASC;
-```
-
-Receipt, Order-Snapshot, Treasury-Revision, Entscheidung und Freigabe werden unter `docs/archive/tasks/YYYY-MM-DD-*.md` als Evidence festgehalten. Die Order bleibt in Version 1 absichtlich `REVIEW_REQUIRED`: Es gibt keinen Admin-Endpunkt, der sie automatisch erneut aktiviert oder als bezahlt umschreibt. Refund oder eine manuelle Entitlement-Korrektur sind separate kapitalrelevante Aktionen und benötigen eine ausdrückliche Freigabe sowie einen eigenen Audit-Nachweis. Vor einem breiten Public-Go-live ist ein expliziter, idempotenter Resolve-/Refund-Workflow ein eigenes Release-Gate.
-
-## Legacy-CCPayment
-
-CCPayment ist aus aktivem Checkout, Webhook-Runtime, Admin-Konfiguration, Health-Checks, Env-Konfiguration und Nutzeroberfläche entfernt. Der Enum-Wert `CCPAYMENT` bleibt nur erhalten, damit bestehende Orders und Auditdaten unverändert lesbar bleiben.
-
-Historische Orders und gespeicherte Provider-/Webhook-Daten dürfen weder gelöscht noch nachträglich umgeschrieben werden. Der neue Reconciler verarbeitet ausschließlich `ARBITRUM_USDC`-Orders.
-
-Wichtig: Bereits bezahlte oder möglicherweise bezahlte CCPayment-Orders müssen vor dem Deployment des Runtime-Cutovers abschließend über den alten Pfad abgeglichen werden. Nach Entfernung der aktiven Integration gibt es keinen automatischen CCPayment-Reconcile mehr.
-
-## Zwingende Cutover-Reihenfolge
-
-Die Reihenfolge darf nicht verkürzt oder vertauscht werden:
-
-1. **Neue CCPayment-Checkouts stoppen.** Zeitpunkt dokumentieren und alle noch offenen Legacy-Orders exportieren.
-2. **Legacy-Abgleich abschließen.** Bereits bezahlte CCPayment-Orders final reconciliieren. Unklare, abgelaufene, zurückgezahlte oder potenziell bezahlte Fälle einzeln erfassen und manuell klassifizieren. Erst danach den alten Runtime-Pfad entfernen.
-3. **Backup und Evidence sichern.** Datenbank-Snapshot, Orderlisten, Abgleichsergebnis und verantwortliche Freigabe dokumentieren.
-4. **Migration und Anwendung deaktiviert ausrollen.** Prisma-Migration, API und Web deployen, Billing aber noch nicht aktivieren. Migrationsergebnis und Legacy-Term-Backfill prüfen.
-5. **Server-RPC konfigurieren.** `BILLING_ARBITRUM_RPC_URL` setzen, API neu starten und Chain-ID, letzte Blockhöhe sowie Fehlerstatus kontrollieren.
-6. **Treasury geschützt setzen.** Superadmin-Reauth durchführen, Adresse doppelt bestätigen, Audit-Event prüfen und Readiness dokumentieren.
-7. **Arbitrum-Sepolia-Smoke nur nach ausdrücklicher Freigabe.** Der Produktionspfad ist absichtlich auf Arbitrum One und natives Mainnet-USDC fest verdrahtet; ein Sepolia-Smoke muss deshalb in einer isolierten Preproduction-Konfiguration beziehungsweise einem separaten Test-Build stattfinden. Das Setzen eines Sepolia-RPCs in Produktion ist unzulässig und wird als falsche Chain abgelehnt.
-8. **Low-Value-Mainnet-Canary nur nach zweiter ausdrücklicher Freigabe.** Mit einem bekannten Testaccount und einer bekannten Wallet exakt eine kleine Bestellung senden. Tx-Hash, 12 Bestätigungen, Treasury-Eingang, genau einen Term, korrekten Termstart, Entitlements und Auditdaten nachvollziehen.
-9. **Billing aktivieren.** Erst wenn Readiness, Legacy-Abgleich, Sepolia-Smoke, Mainnet-Canary und Operator-Freigabe vollständig dokumentiert sind.
-10. **Hochlauf überwachen.** Confirmations-, RPC-, Discovery-, Review-, Lifecycle- und Notification-Signale eng beobachten; Volumen nur stufenweise erhöhen.
-
-## Stop-Kriterien
-
-Aktivierung oder Hochlauf sofort anhalten bei:
-
-- falscher Chain, Token- oder Treasury-Konfiguration,
-- ungeklärter CCPayment-Historie,
-- RPC ohne stabile Arbitrum-One-Blockprüfung,
-- einer Zahlung mit doppelter oder fehlender Term-Aktivierung,
-- Tx-Replay oder nicht eindeutiger Zuordnung,
-- unerwarteter Unter-/Überzahlung außerhalb von `REVIEW_REQUIRED`,
-- nicht nachvollziehbarer Treasury-Rotation oder fehlendem Audit-Event,
-- fehlerhaftem Grace-/Free-Downgrade oder mehrfacher AI-Gutschrift.
-- unerwarteter Reorganisation nach einer bereits aktivierten 12-L2-Block-Zahlung.
-
-Bis zur Ursachenklärung Billing nicht freigeben und keine manuellen Finanzkorrekturen ohne Onchain- und Datenbank-Reconciliation durchführen.
+Do not perform a manual entitlement correction or refund until the onchain and database evidence has been reconciled and the capital-moving action has fresh explicit approval.

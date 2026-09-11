@@ -12,6 +12,7 @@ import {
   formatArbitrumUsdcAmount,
   getArbitrumTransactionExplorerUrl,
   getBillingArbitrumRpcUrl,
+  getBillingFinalizedBlockNumber,
   normalizeBillingAddress,
   normalizeBillingTreasuryAddress,
   normalizeBillingTxHash,
@@ -755,6 +756,7 @@ export async function getArbitrumUsdcPaymentReadiness(params?: {
   rpc: {
     ready: boolean;
     lastBlockNumber: string | null;
+    finalizedBlockNumber: string | null;
     lastCheckedAt: string | null;
     error: string | null;
   };
@@ -762,6 +764,7 @@ export async function getArbitrumUsdcPaymentReadiness(params?: {
   const config = await getArbitrumUsdcPaymentConfiguration();
   const checkedAt = new Date();
   let lastBlockNumber: bigint | null = null;
+  let finalizedBlockNumber: bigint | null = null;
   let tokenHasCode = false;
   let tokenDecimals: number | null = null;
   let error: string | null = null;
@@ -769,6 +772,7 @@ export async function getArbitrumUsdcPaymentReadiness(params?: {
     const client = params?.client ?? createBillingOnchainClient();
     const inspected = await inspectArbitrumUsdcRpc(client);
     lastBlockNumber = inspected.blockNumber;
+    finalizedBlockNumber = inspected.finalizedBlockNumber;
     tokenHasCode = inspected.tokenHasCode;
     tokenDecimals = inspected.tokenDecimals;
   } catch (caught) {
@@ -800,10 +804,12 @@ export async function getArbitrumUsdcPaymentReadiness(params?: {
       ready:
         config.configured
         && lastBlockNumber !== null
+        && finalizedBlockNumber !== null
         && tokenHasCode
         && tokenDecimals === ARBITRUM_USDC_DECIMALS
         && !error,
       lastBlockNumber: lastBlockNumber?.toString() ?? null,
+      finalizedBlockNumber: finalizedBlockNumber?.toString() ?? null,
       lastCheckedAt: checkedAt.toISOString(),
       error
     }
@@ -812,11 +818,17 @@ export async function getArbitrumUsdcPaymentReadiness(params?: {
 
 export async function inspectArbitrumUsdcRpc(
   client: BillingOnchainClient
-): Promise<{ blockNumber: bigint; tokenHasCode: boolean; tokenDecimals: number }> {
+): Promise<{
+  blockNumber: bigint;
+  finalizedBlockNumber: bigint;
+  tokenHasCode: boolean;
+  tokenDecimals: number;
+}> {
   const chainId = await client.getChainId();
   if (chainId !== ARBITRUM_ONE_CHAIN_ID) throw new Error("billing_rpc_wrong_chain");
-  const [blockNumber, bytecode, rawDecimals] = await Promise.all([
+  const [blockNumber, finalizedBlockNumber, bytecode, rawDecimals] = await Promise.all([
     client.getBlockNumber(),
+    getBillingFinalizedBlockNumber(client),
     client.getBytecode({ address: ARBITRUM_USDC_ADDRESS.toLowerCase() as `0x${string}` }),
     client.readContract({
       address: ARBITRUM_USDC_ADDRESS,
@@ -830,7 +842,10 @@ export async function inspectArbitrumUsdcRpc(
   if (tokenDecimals !== ARBITRUM_USDC_DECIMALS) {
     throw new Error("billing_usdc_decimals_mismatch");
   }
-  return { blockNumber, tokenHasCode, tokenDecimals };
+  if (finalizedBlockNumber > blockNumber) {
+    throw new Error("billing_rpc_finalized_block_ahead");
+  }
+  return { blockNumber, finalizedBlockNumber, tokenHasCode, tokenDecimals };
 }
 
 export async function requireLiveArbitrumBillingBlock(
@@ -3471,14 +3486,11 @@ export function assignBillingDiscoveryTransactionHashes(params: {
 }
 
 export function getBillingDiscoveryScanRange(params: {
-  latestBlock: bigint;
+  finalizedBlock: bigint;
   hintedStart: bigint;
   cursorLastScannedBlock?: bigint | null;
 }): { safeHead: bigint; fromBlock: bigint; toBlock: bigint } | null {
-  const confirmationLag = BigInt(Math.max(0, BILLING_PAYMENT_CONFIRMATIONS - 1));
-  const safeHead = params.latestBlock > confirmationLag
-    ? params.latestBlock - confirmationLag
-    : 0n;
+  const safeHead = params.finalizedBlock;
   if (params.hintedStart > safeHead) return null;
   if (
     params.cursorLastScannedBlock !== null
@@ -3627,12 +3639,12 @@ export async function persistBillingDiscoveryCandidate(params: {
 }
 
 export async function captureBillingDiscoveryScopeAfterHead<T>(params: {
-  getLatestBlock: () => Promise<bigint>;
+  getFinalizedBlock: () => Promise<bigint>;
   loadScopedPayments: () => Promise<T[]>;
-}): Promise<{ latestBlock: bigint; scopedPayments: T[] }> {
-  const latestBlock = await params.getLatestBlock();
+}): Promise<{ finalizedBlock: bigint; scopedPayments: T[] }> {
+  const finalizedBlock = await params.getFinalizedBlock();
   const scopedPayments = await params.loadScopedPayments();
-  return { latestBlock, scopedPayments };
+  return { finalizedBlock, scopedPayments };
 }
 
 export async function assertBillingDiscoveryScopeStableBeforeCursor(params: {
@@ -3742,24 +3754,24 @@ export async function discoverMissingBillingTransactions(params?: {
     let hintedStart = 0n;
     try {
       const captured = await captureBillingDiscoveryScopeAfterHead({
-        getLatestBlock: () => client.getBlockNumber(),
+        getFinalizedBlock: () => getBillingFinalizedBlockNumber(client),
         loadScopedPayments
       });
-      const latestBlock = captured.latestBlock;
+      const finalizedBlock = captured.finalizedBlock;
       scopedPayments = captured.scopedPayments;
       if (scopedPayments.length === 0) continue;
       const scanHints = scopedPayments
         .map((payment) => payment.scanFromBlock)
         .filter((value): value is bigint => typeof value === "bigint");
       if (scanHints.length === 0) {
-        hintedStart = latestBlock > BILLING_DISCOVERY_LOOKBACK_BLOCKS
-          ? latestBlock - BILLING_DISCOVERY_LOOKBACK_BLOCKS
+        hintedStart = finalizedBlock > BILLING_DISCOVERY_LOOKBACK_BLOCKS
+          ? finalizedBlock - BILLING_DISCOVERY_LOOKBACK_BLOCKS
           : 0n;
       } else {
         hintedStart = scanHints.reduce((min, value) => value < min ? value : min);
       }
       const range = getBillingDiscoveryScanRange({
-        latestBlock,
+        finalizedBlock,
         hintedStart,
         cursorLastScannedBlock: cursor ? toBigInt(cursor.lastScannedBlock) : null
       });

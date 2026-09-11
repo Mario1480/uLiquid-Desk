@@ -24,6 +24,13 @@ export const ERC20_DECIMALS_FUNCTION = parseAbiItem(
 export type BillingOnchainClient = {
   getChainId(): Promise<number>;
   getBlockNumber(): Promise<bigint>;
+  getBlock(params: {
+    blockTag?: "latest" | "safe" | "finalized";
+    blockNumber?: bigint;
+  }): Promise<{
+    number: bigint;
+    hash: string;
+  }>;
   getBytecode(params: { address: Hex }): Promise<Hex | undefined>;
   readContract(params: Record<string, unknown>): Promise<unknown>;
   getTransaction(params: { hash: Hex }): Promise<{
@@ -67,7 +74,8 @@ export type BillingPaymentVerification =
         | "unexpected_native_value"
         | "transfer_not_found"
         | "amount_mismatch"
-        | "ambiguous_transfers";
+        | "ambiguous_transfers"
+        | "block_hash_mismatch";
       confirmations: number;
       blockNumber: bigint | null;
       blockHash: string | null;
@@ -95,6 +103,25 @@ function isTransactionNotFoundError(error: unknown): boolean {
     || message.includes("not found")
     || message.includes("could not be found")
   );
+}
+
+function normalizeBlockHash(value: unknown): string | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return /^0x[0-9a-f]{64}$/.test(raw) ? raw : null;
+}
+
+export async function getBillingFinalizedBlockNumber(
+  client: BillingOnchainClient
+): Promise<bigint> {
+  const block = await client.getBlock({ blockTag: "finalized" });
+  if (
+    typeof block?.number !== "bigint"
+    || block.number < 0n
+    || !normalizeBlockHash(block.hash)
+  ) {
+    throw new Error("billing_rpc_finalized_block_invalid");
+  }
+  return block.number;
 }
 
 export function normalizeBillingAddress(value: unknown, errorCode = "invalid_wallet_address"): string {
@@ -185,18 +212,31 @@ export async function verifyArbitrumUsdcTransaction(params: {
   let transaction: Awaited<ReturnType<BillingOnchainClient["getTransaction"]>>;
   let receipt: Awaited<ReturnType<BillingOnchainClient["getTransactionReceipt"]>>;
   let latestBlock: bigint;
+  let finalizedBlock: bigint;
   try {
-    [chainId, transaction, receipt, latestBlock] = await Promise.all([
+    [chainId, latestBlock, finalizedBlock] = await Promise.all([
       params.client.getChainId(),
-      params.client.getTransaction({ hash }),
-      params.client.getTransactionReceipt({ hash }),
-      params.client.getBlockNumber()
+      params.client.getBlockNumber(),
+      getBillingFinalizedBlockNumber(params.client)
     ]);
   } catch (error) {
-    const reason = isTransactionNotFoundError(error)
-      ? "transaction_or_receipt_not_available"
-      : `rpc_unavailable:${String((error as any)?.message ?? error).slice(0, 180)}`;
-    return { kind: "retry", reason };
+    return {
+      kind: "retry",
+      reason: `rpc_unavailable:${String((error as any)?.message ?? error).slice(0, 180)}`
+    };
+  }
+  try {
+    [transaction, receipt] = await Promise.all([
+      params.client.getTransaction({ hash }),
+      params.client.getTransactionReceipt({ hash })
+    ]);
+  } catch (error) {
+    return {
+      kind: "retry",
+      reason: isTransactionNotFoundError(error)
+        ? "transaction_or_receipt_not_available"
+        : `rpc_unavailable:${String((error as any)?.message ?? error).slice(0, 180)}`
+    };
   }
 
   const blockNumber = receipt.blockNumber ?? null;
@@ -248,8 +288,34 @@ export async function verifyArbitrumUsdcTransaction(params: {
   if (recipientTransfers.length > 1) return review("ambiguous_transfers");
   if (recipientTransfers[0]!.value !== params.expectedAmountRaw) return review("amount_mismatch");
 
+  if (confirmations < confirmationsRequired || finalizedBlock < receipt.blockNumber) {
+    return {
+      kind: "confirming",
+      confirmations,
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash
+    };
+  }
+
+  try {
+    const canonicalBlock = await params.client.getBlock({ blockNumber: receipt.blockNumber });
+    if (
+      canonicalBlock.number !== receipt.blockNumber
+      ||
+      !normalizeBlockHash(canonicalBlock.hash)
+      || normalizeBlockHash(canonicalBlock.hash) !== normalizeBlockHash(receipt.blockHash)
+    ) {
+      return review("block_hash_mismatch");
+    }
+  } catch (error) {
+    return {
+      kind: "retry",
+      reason: `rpc_unavailable:${String((error as any)?.message ?? error).slice(0, 180)}`
+    };
+  }
+
   return {
-    kind: confirmations >= confirmationsRequired ? "confirmed" : "confirming",
+    kind: "confirmed",
     confirmations,
     blockNumber: receipt.blockNumber,
     blockHash: receipt.blockHash

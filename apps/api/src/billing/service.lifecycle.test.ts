@@ -605,10 +605,17 @@ test("AI credits fail atomically before signed 64-bit balance overflow", async (
   assert.equal(ledgerWrites, 0);
 });
 
-test("checkout requires a live Arbitrum chain and safe scan-start block", async () => {
+test("checkout requires a live Arbitrum chain, finalized head and safe scan-start block", async () => {
   const client = {
     async getChainId() { return 42_161; },
     async getBlockNumber() { return 123_456n; },
+    async getBlock({ blockTag, blockNumber }: any) {
+      assert.equal(blockTag ?? null, blockNumber === undefined ? "finalized" : null);
+      return {
+        number: blockNumber ?? 123_000n,
+        hash: `0x${"ab".repeat(32)}`
+      };
+    },
     async getBytecode() { return "0x6000"; },
     async readContract() { return 6; }
   } as any;
@@ -628,6 +635,13 @@ test("checkout requires a live Arbitrum chain and safe scan-start block", async 
   await assert.rejects(
     inspectArbitrumUsdcRpc({ ...client, readContract: async () => 18 }),
     /billing_usdc_decimals_mismatch/
+  );
+  await assert.rejects(
+    inspectArbitrumUsdcRpc({
+      ...client,
+      getBlock: async () => ({ number: 123_457n, hash: `0x${"ab".repeat(32)}` })
+    }),
+    /billing_rpc_finalized_block_ahead/
   );
 });
 
@@ -683,18 +697,18 @@ test("failed entitlement sync remains dirty and the next lifecycle attempt clear
   assert.ok(state.syncedAt instanceof Date);
 });
 
-test("discovery scans only the 12-confirmation safe head and overlaps prior blocks", () => {
+test("discovery scans only the finalized head and overlaps prior blocks", () => {
   assert.deepEqual(getBillingDiscoveryScanRange({
-    latestBlock: 111n,
+    finalizedBlock: 100n,
     hintedStart: 50n
   }), { safeHead: 100n, fromBlock: 50n, toBlock: 100n });
   assert.deepEqual(getBillingDiscoveryScanRange({
-    latestBlock: 111n,
+    finalizedBlock: 100n,
     hintedStart: 50n,
     cursorLastScannedBlock: 90n
   }), { safeHead: 100n, fromBlock: 59n, toBlock: 100n });
   assert.equal(getBillingDiscoveryScanRange({
-    latestBlock: 111n,
+    finalizedBlock: 100n,
     hintedStart: 50n,
     cursorLastScannedBlock: 100n
   }), null);
@@ -1411,16 +1425,16 @@ test("active paid packages require a positive price and a meaningful add-on valu
   }));
 });
 
-test("discovery fixes the safe head before its final scope snapshot and guards cursor advancement", async () => {
+test("discovery fixes the finalized head before its final scope snapshot and guards cursor advancement", async () => {
   const calls: string[] = [];
   const payments = [{ id: "payment_old", scanFromBlock: 50n }];
   const captured = await captureBillingDiscoveryScopeAfterHead({
-    getLatestBlock: async () => {
+    getFinalizedBlock: async () => {
       calls.push("head");
-      // A checkout created immediately after this fixed head uses a later RPC
-      // head + 1, so it cannot have a transfer inside the old safe range.
+      // A checkout created after this fixed finalized head uses a later latest
+      // head + 1, so it cannot have a transfer inside this finalized range.
       payments.push({ id: "payment_new", scanFromBlock: 112n });
-      return 111n;
+      return 100n;
     },
     loadScopedPayments: async () => {
       calls.push("payments");
@@ -1430,7 +1444,7 @@ test("discovery fixes the safe head before its final scope snapshot and guards c
   assert.deepEqual(calls, ["head", "payments"]);
   assert.deepEqual(captured.scopedPayments.map((payment) => payment.id), ["payment_old", "payment_new"]);
   const range = getBillingDiscoveryScanRange({
-    latestBlock: captured.latestBlock,
+    finalizedBlock: captured.finalizedBlock,
     hintedStart: 50n
   });
   assert.equal(range?.safeHead, 100n);

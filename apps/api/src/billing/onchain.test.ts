@@ -20,6 +20,7 @@ const SENDER = "0x1111111111111111111111111111111111111111";
 const RECIPIENT = "0x2222222222222222222222222222222222222222";
 const OTHER = "0x3333333333333333333333333333333333333333";
 const HASH = `0x${"ab".repeat(32)}`;
+const BLOCK_HASH = `0x${"cd".repeat(32)}`;
 const AMOUNT = 29_000_000n;
 
 function transferLog(params?: {
@@ -50,6 +51,12 @@ function client(overrides: Partial<BillingOnchainClient> = {}): BillingOnchainCl
     async getBlockNumber() {
       return 111n;
     },
+    async getBlock(params) {
+      return {
+        number: params.blockNumber ?? 100n,
+        hash: BLOCK_HASH
+      };
+    },
     async getBytecode() {
       return "0x6000";
     },
@@ -63,7 +70,7 @@ function client(overrides: Partial<BillingOnchainClient> = {}): BillingOnchainCl
       return {
         status: "success",
         blockNumber: 100n,
-        blockHash: `0x${"cd".repeat(32)}`,
+        blockHash: BLOCK_HASH,
         logs: [transferLog()]
       };
     },
@@ -86,7 +93,7 @@ async function verify(overrides: Partial<Parameters<typeof verifyArbitrumUsdcTra
   });
 }
 
-test("confirms a direct native-USDC transfer after exactly 12 confirmations", async () => {
+test("confirms a direct native-USDC transfer after 12 confirmations and network finality", async () => {
   const result = await verify();
   assert.equal(result.kind, "confirmed");
   assert.equal("confirmations" in result ? result.confirmations : null, BILLING_PAYMENT_CONFIRMATIONS);
@@ -99,6 +106,50 @@ test("keeps a valid transfer confirming below the 12-confirmation boundary", asy
   });
   assert.equal(result.kind, "confirming");
   assert.equal("confirmations" in result ? result.confirmations : null, 11);
+});
+
+test("keeps a 12-confirmation transfer pending until its block is finalized", async () => {
+  const result = await verify({
+    client: client({
+      async getBlock(params) {
+        return {
+          number: params.blockNumber ?? 99n,
+          hash: BLOCK_HASH
+        };
+      }
+    })
+  });
+  assert.equal(result.kind, "confirming");
+  assert.equal("confirmations" in result ? result.confirmations : null, 12);
+});
+
+test("routes a finalized receipt whose canonical block hash changed to review", async () => {
+  const result = await verify({
+    client: client({
+      async getBlock(params) {
+        return {
+          number: params.blockNumber ?? 100n,
+          hash: params.blockNumber === undefined ? BLOCK_HASH : `0x${"ef".repeat(32)}`
+        };
+      }
+    })
+  });
+  assert.deepEqual(
+    result.kind === "review_required" && result.reason,
+    "block_hash_mismatch"
+  );
+});
+
+test("retries when finalized-head data is unavailable", async () => {
+  const result = await verify({
+    client: client({
+      async getBlock() {
+        throw new Error("finalized tag unavailable");
+      }
+    })
+  });
+  assert.equal(result.kind, "retry");
+  assert.match(result.kind === "retry" ? result.reason : "", /^rpc_unavailable:/);
 });
 
 test("binds a submitted transaction to the checkout block window", async () => {
