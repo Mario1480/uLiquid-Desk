@@ -595,7 +595,7 @@
       "until": "Until",
       "nextEvent": "Next {impact} event",
       "at": "at",
-      "noUpcoming": "No upcoming events in selected range."
+      "noUpcoming": "No upcoming event at {impact} impact in the risk horizon."
     },
     "loadError": "Load error",
     "preferencesSaveError": "Calendar preferences could not be saved",

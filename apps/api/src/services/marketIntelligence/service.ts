@@ -9,7 +9,7 @@ import type { NewsCategory, NewsItem, NewsProvider } from "./contracts/news.js";
 import type { AggregatedResponseMeta, ProviderState } from "./contracts/provider.js";
 import { groundedMarketSummarySchema, type GroundedMarketSummary } from "./contracts/summary.js";
 import { ProviderCircuitBreaker, StaleWhileRevalidateCache } from "./cache.js";
-import { normalizedNewsDedupKey } from "./normalization/index.js";
+import { newsPublicationDateIssue, normalizedNewsDedupKey } from "./normalization/index.js";
 import { createMarketProviderRegistries } from "./registry/index.js";
 import { RssNewsProvider } from "./providers/rss/RssNewsProvider.js";
 import {
@@ -541,6 +541,11 @@ export class MarketIntelligenceService {
     const fromMs = input.from ? new Date(input.from).getTime() : Number.NEGATIVE_INFINITY;
     const toMs = input.to ? new Date(input.to).getTime() : Number.POSITIVE_INFINITY;
     const filtered = rows
+      .filter((item) => !newsPublicationDateIssue({
+        sourceUrl: item.sourceUrl,
+        publishedAt: item.publishedAt,
+        fetchedAt: item.fetchedAt
+      }))
       .filter((item) => !query || `${item.title} ${item.summary ?? ""} ${item.sourceName}`.toLowerCase().includes(query))
       .filter((item) => symbols.size === 0 || item.symbols.some((symbol) => symbols.has(symbol)))
       .filter((item) => categories.size === 0 || item.categories.some((category) => categories.has(category)))

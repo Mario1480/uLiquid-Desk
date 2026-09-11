@@ -525,7 +525,9 @@ export default function CalendarPage() {
               {t("summary.nextEvent", { impact: nextSummary.impactMin })}: {nextSummary.nextEvent.title} {t("summary.at")} {fmtDateTimeEu(nextSummary.nextEvent.ts, dateLocale)}
             </div>
           ) : (
-            <div className="calendarProStatusText">{t("summary.noUpcoming")}</div>
+            <div className="calendarProStatusText">
+              {t("summary.noUpcoming", { impact: t(`impact.${nextSummary.impactMin}`) })}
+            </div>
           )}
         </div></DeskSurface>
       ) : null}

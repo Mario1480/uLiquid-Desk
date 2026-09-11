@@ -595,7 +595,7 @@
       "until": "Bis",
       "nextEvent": "Nächstes {impact}-Event",
       "at": "um",
-      "noUpcoming": "Keine kommenden Events im gewählten Zeitraum."
+      "noUpcoming": "Kein kommendes Event der Auswirkungsstufe \u201e{impact}\u201c im Risikozeitraum."
     },
     "loadError": "Ladefehler",
     "preferencesSaveError": "Kalender-Einstellungen konnten nicht gespeichert werden",

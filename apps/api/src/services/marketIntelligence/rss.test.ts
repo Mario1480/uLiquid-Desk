@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { normalizedNewsDedupKey } from "./normalization/index.js";
+import { newsPublicationDateIssue, normalizedNewsDedupKey } from "./normalization/index.js";
 import { RssNewsProvider } from "./providers/rss/RssNewsProvider.js";
 import { parseRssOrAtom } from "./providers/rss/parser.js";
 import type { RssSourceConfig } from "./providers/rss/sourceRegistry.js";
@@ -98,6 +98,25 @@ test("dedup keys collapse tracking variants in the same time bucket", () => {
     normalizedNewsDedupKey({ ...base, canonicalUrl: "https://example.org/update" }),
     normalizedNewsDedupKey({ ...base, canonicalUrl: "https://example.org/update" })
   );
+});
+
+test("publication date validation rejects future and misdated SEC archive entries", () => {
+  const fetchedAt = "2026-09-11T14:00:00.000Z";
+  assert.equal(newsPublicationDateIssue({
+    sourceUrl: "https://www.sec.gov/newsroom/press-releases/99-110-year-2000",
+    publishedAt: "2026-09-07T12:00:00.000Z",
+    fetchedAt
+  }), "source_year_mismatch");
+  assert.equal(newsPublicationDateIssue({
+    sourceUrl: "https://www.sec.gov/newsroom/press-releases/2026-86-current-release",
+    publishedAt: "2026-09-10T17:45:22.000Z",
+    fetchedAt
+  }), null);
+  assert.equal(newsPublicationDateIssue({
+    sourceUrl: "https://example.org/future-news",
+    publishedAt: "2026-09-13T14:00:00.000Z",
+    fetchedAt
+  }), "future_date");
 });
 
 test("RSS provider tolerates one source failure and reports degraded mode", async () => {
