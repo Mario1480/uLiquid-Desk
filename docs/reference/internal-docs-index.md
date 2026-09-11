@@ -26,7 +26,7 @@ This page is the internal starting point for admins, operators, and developers. 
 - [ULIQ program](../plans/active/uliq/00_MASTER_PLAN.md)
 - [Hummingbot integration roadmap](../plans/active/hummingbot-integration/README.md)
 - [AI Agent Chat program](../plans/active/ai-agent-chat/README.md)
-- [Limited Beta program](../plans/active/limited-beta/README.md)
+- [Archived Limited Beta proposal](../archive/plans/limited-beta/README.md)
 - [Archived Market Intelligence provider migration](../archive/plans/market-intelligence-providers/00-README-MASTER-PLAN.md)
 - [OpenAI router and AI credits](../plans/active/openai-router-ai-credits/README.md)
 - [Arbitrum-USDC billing rollout](../plans/active/billing-arbitrum-usdc-rollout.md)

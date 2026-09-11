@@ -16,7 +16,7 @@ capital or onchain evidence remain separate from repository implementation.
 | Program | Current classification | Closeout state |
 | --- | --- | --- |
 | AI Agent Chat | Implemented and production-evidenced | Formal closeout gates open |
-| Limited Beta | Implemented feature slices plus deployed intake | Scope decision and release acceptance open |
+| Limited Beta | Separate launch mode superseded by existing backend controls | Complete and archived by owner decision |
 | OpenAI Router and AI Credits | Implemented with paid production-run evidence | Billing and operations closeout open |
 | Execution Foundation | Shared foundation landed | Re-baselined follow-up list open |
 | Market Intelligence providers | Provider-neutral production path deployed; paid legacy provider removed | Complete; routine delivery observation remains operational |
@@ -46,8 +46,8 @@ Closeout gates:
 - record one current read-only acceptance summary covering supported public and
   private reads, ownership denial, degraded/stale behavior, persistence,
   German/English, mobile, costs, error rate, monitoring, and rollback;
-- decide whether General Availability or continued Limited Beta is the terminal
-  state for read-only V1;
+- record the feature-specific release state for read-only V1 under the existing
+  capability controls;
 - keep streaming, broader private spot reads, custom-profile expansion, and
   trade drafts out of the V1 closeout unless separately approved.
 
@@ -57,34 +57,21 @@ archived. Future trade-draft work becomes a separate active plan.
 
 ## Limited Beta
 
-Current state: `SCOPE DECISION REQUIRED`.
+Current state: `COMPLETE / SUPERSEDED AND ARCHIVED`.
 
-Predictions, Prediction Builder, Prediction Copier, Position Copilot, and AI
-safety slices are implemented. Separately, the beta application and invitation
-system was deployed and intake enabled on 2026-09-07. Its live email delivery
-and invitation redemption still lack production evidence.
+Mario decided on 2026-09-11 that a separate product-wide Limited Beta launch
+mode is no longer required. Existing backend capability gates and targeted
+administrative controls already provide the intended function-level enable and
+disable boundary. The proposed `PUBLIC_LAUNCH_MODE=limited_beta` registry,
+global Grid/Vault/job shutdown, separate release matrix, and remaining packet
+workstreams are therefore explicitly out of scope rather than open work.
 
-The packet's proposed central `PUBLIC_LAUNCH_MODE=limited_beta` registry and its
-global Grid/Vault/job shutdown are not established by the current source under
-the planned configuration names. Existing capability gates are not equivalent
-to accepting that product-wide operating mode.
-
-Closeout gates:
-
-- decide whether the packet's restricted launch mode is still the desired
-  product state or whether the deployed invite-only access model supersedes it;
-- if retained, implement and verify central server, job, navigation, and deep-link
-  enforcement for the declared enabled and disabled feature matrix;
-- complete or explicitly remove the architecture-refactoring workstream from the
-  release boundary;
-- execute the quality, observability, backup/restore, rollback, legal-copy, and
-  Prediction Copier safety matrix;
-- perform a controlled real SMTP and invitation-redemption smoke;
-- publish an evidence-backed `Go`, `Conditional Go`, or `No-Go` decision.
-
-Close condition: one beta definition is authoritative, its gates are technically
-enforced, and the final release report accounts for every checklist item with
-evidence, accepted risk, or an explicit out-of-scope decision.
+Predictions, Prediction Builder, Prediction Copier, Position Copilot, and their
+feature-specific safety boundaries remain governed by their current capability,
+permission, audit, and operational controls. The beta application and invitation
+flow may still be maintained as an access channel, but its SMTP or redemption
+evidence does not reopen this superseded architecture packet. See the
+[owner-decision record](../archive/tasks/2026-09-11-limited-beta-closeout.md).
 
 ## OpenAI Router and AI Credits
 

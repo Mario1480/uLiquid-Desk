@@ -29,7 +29,7 @@ Der Trading Desk enthält einen read-only Position Copilot für Spot- und Perpet
 - `apps/web/app/styles/desk.css`
 - `apps/web/messages/de/system.json`
 - `apps/web/messages/en/system.json`
-- `docs/plans/active/limited-beta/README.md`
+- `docs/archive/plans/limited-beta/README.md`
 
 ## Automatisierte Prüfungen
 

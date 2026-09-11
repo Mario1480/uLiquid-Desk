@@ -2,7 +2,14 @@
 
 Status date: 2026-09-11
 
-Current classification: `SCOPE DECISION REQUIRED`.
+Current classification: `ARCHIVED / SUPERSEDED BY EXISTING BACKEND CONTROLS`.
+
+Owner decision on 2026-09-11: a separate product-wide Limited Beta launch mode
+is not required. Existing backend capability gates and targeted administrative
+controls are the authoritative way to enable or restrict functions. The
+unchecked workstreams below remain historical proposals and are not current
+implementation requirements. See the
+[closeout record](../../tasks/2026-09-11-limited-beta-closeout.md).
 
 The feature slices marked complete below have landed. The separately designed
 beta application and invitation flow was deployed and intake enabled on
@@ -10,12 +17,10 @@ beta application and invitation flow was deployed and intake enabled on
 That invite-only access flow does not by itself implement this packet's proposed
 product-wide `PUBLIC_LAUNCH_MODE=limited_beta` mode.
 
-The planned central launch-mode configuration was not found as an accepted
-current implementation under the packet's configuration names. Before further
-implementation, decide whether the restricted launch mode is still required or
-whether invite-only access plus existing capability gates supersedes it. The
-authoritative remaining gates are tracked in the
-[active program closeout register](../../../status/active-program-closeout.md).
+The planned central launch-mode configuration was not adopted. Existing
+capability gates supersede it, so no further implementation, rollout, or beta
+acceptance is required for this packet. Current product-release decisions and
+feature-specific safety gates remain independent.
 
 This plan defines a deliberately limited beta for AI-assisted prediction and position workflows. It separates implemented feature work from release authorization: completed implementation items do not by themselves approve a beta launch.
 
@@ -39,8 +44,8 @@ This plan defines a deliberately limited beta for AI-assisted prediction and pos
 - [ ] `08-quality-testing-observability.md` — full quality, test, and observability gate.
 - [ ] `09-beta-release-checklist.md` — final release decision and evidence.
 
-The unchecked workstreams keep this plan active, but they must be re-scoped
-after the launch-mode decision instead of being executed mechanically.
+The unchecked workstreams are retained only as historical context. They do not
+keep this archived packet active and must not be executed mechanically.
 
 ## Definition of done
 

@@ -10,7 +10,6 @@ newer release record or closeout entry supersedes them.
 - [`uliq/`](uliq/00_MASTER_PLAN.md) — legal, audit, presale, Mainnet, and activation gates remain separate from completed implementation slices.
 - [`hummingbot-integration/`](hummingbot-integration/README.md) — Phase 5 implementation remains gated by the Phase 4 `PARTIAL` decision.
 - [`ai-agent-chat/`](ai-agent-chat/README.md) — the read-only release is implemented and production-evidenced; retention, allowlist administration, and formal closeout remain open.
-- [`limited-beta/`](limited-beta/README.md) — implemented feature slices and the deployed beta-intake flow do not yet establish the packet's separate `limited_beta` launch mode; a scope decision and release acceptance remain open.
 - [`openai-router-ai-credits/`](openai-router-ai-credits/README.md) — implementation and paid production-run evidence exist; current pricing, billing reconciliation, monitoring, and formal acceptance remain open.
 - [`billing-arbitrum-usdc-rollout.md`](billing-arbitrum-usdc-rollout.md) — controlled cutover and capital-flow evidence remain open.
 - [`execution-foundation-gap-list.md`](execution-foundation-gap-list.md) — the gap list has been re-baselined against the shared pipeline; remaining cancel, legacy runner, vault, and parity work stays active.
