@@ -167,7 +167,6 @@ export default function SymbolSearchSelect({
             aria-activedescendant={showMenu && activeOption ? `${listboxId}-${activeIndex}` : undefined}
             onFocus={(event) => {
               cancelClose();
-              setOpen(true);
               event.currentTarget.select();
             }}
             onBlur={closeSoon}
