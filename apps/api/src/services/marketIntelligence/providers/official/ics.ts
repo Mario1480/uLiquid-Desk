@@ -8,6 +8,12 @@ export type IcsEvent = {
   timeConfidence: "exact" | "date_only";
 };
 
+function normalizeIcsTimezone(timezone: string): string {
+  const normalized = timezone.trim().replace(/^"|"$/g, "");
+  if (normalized.toLowerCase() === "us-eastern") return "America/New_York";
+  return normalized;
+}
+
 function parseIcsDate(value: string, timezone?: string): { iso: string; confidence: "exact" | "date_only" } | null {
   const raw = value.trim();
   const compactDate = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
@@ -33,7 +39,7 @@ function parseIcsDate(value: string, timezone?: string): { iso: string; confiden
       confidence: "exact"
     };
   }
-  return { iso: zonedLocalTimeToUtc(components, timezone).toISOString(), confidence: "exact" };
+  return { iso: zonedLocalTimeToUtc(components, normalizeIcsTimezone(timezone)).toISOString(), confidence: "exact" };
 }
 
 export function zonedLocalTimeToUtc(
@@ -50,7 +56,7 @@ export function zonedLocalTimeToUtc(
   );
   let guess = desired;
   const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
+    timeZone: normalizeIcsTimezone(timezone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

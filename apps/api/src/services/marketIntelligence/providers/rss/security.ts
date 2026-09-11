@@ -73,6 +73,29 @@ export function validateFeedUrl(value: string, allowedHosts: string[]): URL {
 
 type DnsLookupAll = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
 
+function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new Error("rss_request_timeout"));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      cleanup();
+      reject(new Error("rss_request_timeout"));
+    };
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
+}
+
 async function defaultDnsLookupAll(hostname: string): Promise<Array<{ address: string; family: number }>> {
   return dns.lookup(hostname, { all: true, verbatim: true });
 }
@@ -87,12 +110,13 @@ function isTransientDnsError(error: unknown): boolean {
 export async function assertPublicDns(
   hostname: string,
   lookupAll: DnsLookupAll = defaultDnsLookupAll,
-  retryDelayMs = DEFAULT_DNS_RETRY_DELAY_MS
+  retryDelayMs = DEFAULT_DNS_RETRY_DELAY_MS,
+  signal?: AbortSignal
 ): Promise<void> {
   let addresses: Array<{ address: string; family: number }> = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      addresses = await lookupAll(hostname);
+      addresses = await withAbort(lookupAll(hostname), signal);
       break;
     } catch (error) {
       if (attempt === 1 || !isTransientDnsError(error)) throw error;
@@ -152,7 +176,7 @@ export async function fetchBoundedFeed(params: {
     const redirectLimit = params.redirectLimit ?? DEFAULT_REDIRECT_LIMIT;
     for (let redirect = 0; redirect <= redirectLimit; redirect += 1) {
       if (!params.skipDnsValidation) {
-        await assertPublicDns(current.hostname, params.dnsLookupAll, params.dnsRetryDelayMs);
+        await assertPublicDns(current.hostname, params.dnsLookupAll, params.dnsRetryDelayMs, controller.signal);
       }
       const response = await fetchImpl(current, {
         method: "GET",

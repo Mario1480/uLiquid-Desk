@@ -24,6 +24,10 @@ test("official calendar fixture normalizes timezone and date-only precision", ()
     zonedLocalTimeToUtc({ year: 2026, month: 1, day: 14, hour: 8, minute: 30 }, "America/New_York").toISOString(),
     "2026-01-14T13:30:00.000Z"
   );
+  assert.equal(
+    zonedLocalTimeToUtc({ year: 2026, month: 1, day: 14, hour: 8, minute: 30 }, "US-Eastern").toISOString(),
+    "2026-01-14T13:30:00.000Z"
+  );
 });
 
 test("schedule and official release merge preserves provenance and revisions", () => {
