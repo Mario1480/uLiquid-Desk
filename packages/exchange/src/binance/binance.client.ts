@@ -42,15 +42,16 @@ function normalizeAssetCode(value: unknown): string | null {
   return normalized || null;
 }
 
-function readBinanceSymbolIdentity(row: any): {
+function readBinanceSymbolIdentity(row: unknown): {
   symbol: string;
   exchangeSymbol: string;
   baseAsset: string | null;
   quoteAsset: string | null;
 } | null {
-  const exchangeSymbol = normalizeAssetCode(row?.symbol);
-  const baseAsset = normalizeAssetCode(row?.baseAsset);
-  const quoteAsset = normalizeAssetCode(row?.quoteAsset);
+  const record = row && typeof row === "object" ? row as Record<string, unknown> : {};
+  const exchangeSymbol = normalizeAssetCode(record.symbol);
+  const baseAsset = normalizeAssetCode(record.baseAsset);
+  const quoteAsset = normalizeAssetCode(record.quoteAsset);
 
   if (baseAsset && quoteAsset) {
     return {
