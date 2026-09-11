@@ -38,7 +38,7 @@ function parseSymbols(raw: string | undefined): string[] {
 function isProviderError(reason: string): boolean {
   const normalized = reason.toLowerCase();
   return (
-    normalized.includes("fmp_api_key_missing") ||
+    normalized.includes("market_intelligence_disabled") ||
     normalized.includes("http_") ||
     normalized.includes("fetch") ||
     normalized.includes("aborted") ||

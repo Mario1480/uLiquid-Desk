@@ -1,8 +1,6 @@
 import crypto from "node:crypto";
 import { logger } from "../../logger.js";
-import { decryptSecret } from "../../secret-crypto.js";
 import { evaluateNewsBlackout } from "./blackout.js";
-import { fetchFmpEconomicEvents } from "./providers/fmp.js";
 import { symbolToMacroCurrency } from "./symbolCurrency.js";
 import { getMarketIntelligenceService } from "../marketIntelligence/service.js";
 import type {
@@ -53,31 +51,6 @@ function hasCalendarModels(db: AnyDb): boolean {
       db.economicEvent &&
       typeof db.economicEvent.findMany === "function"
   );
-}
-
-function parseStoredFmpApiKeyEnc(value: unknown): string | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const raw = (value as Record<string, unknown>).fmpApiKeyEnc;
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-async function resolveEffectiveFmpApiKey(db: AnyDb): Promise<string | null> {
-  const envApiKey = String(process.env.FMP_API_KEY ?? "").trim();
-  if (envApiKey) return envApiKey;
-  try {
-    const row = await db.globalSetting?.findUnique?.({
-      where: { key: "admin.apiKeys" },
-      select: { value: true }
-    });
-    const keyEnc = parseStoredFmpApiKeyEnc(row?.value);
-    if (!keyEnc) return null;
-    const decrypted = decryptSecret(keyEnc).trim();
-    return decrypted.length > 0 ? decrypted : null;
-  } catch {
-    return null;
-  }
 }
 
 function impactWeight(value: EconomicImpact): number {
@@ -192,10 +165,6 @@ function parseCurrencies(config: EconomicCalendarConfigSnapshot): string[] {
     .split(",")
     .map((item) => item.trim().toUpperCase())
     .filter(Boolean);
-}
-
-function dayEventCacheKey(dateKey: string): string {
-  return `econ:events:${dateKey}`;
 }
 
 function nextCacheKey(currency: string, impact: EconomicImpact): string {
@@ -713,176 +682,28 @@ export async function refreshEconomicCalendarData(params: {
   currencies: string[];
 }> {
   const now = params.now ?? new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const to = plusDays(from, 90);
   const marketIntelligenceEnabled = !["0", "false", "off", "no"].includes(
     String(process.env.MARKET_INTELLIGENCE_ENABLED ?? "true").trim().toLowerCase()
   );
-  if (marketIntelligenceEnabled) {
-    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const to = plusDays(from, 90);
-    const result = await getMarketIntelligenceService(params.db).refreshEconomicEvents({ from, to });
+  if (!marketIntelligenceEnabled) {
+    logger.warn("economic_calendar_refresh_skipped", { reason: "market_intelligence_disabled" });
     return {
-      fetchedCount: result.fetchedCount,
-      upsertedCount: result.storedCount,
+      fetchedCount: 0,
+      upsertedCount: 0,
       windowFrom: parseDateKey(from),
       windowTo: parseDateKey(to),
       currencies: DEFAULT_CURRENCIES.split(",")
     };
   }
-  if (!hasCalendarModels(params.db)) {
-    logger.warn("economic_calendar_schema_not_ready", {
-      reason: "prisma_client_missing_models_or_migration_not_applied"
-    });
-    return {
-      fetchedCount: 0,
-      upsertedCount: 0,
-      windowFrom: parseDateKey(now),
-      windowTo: parseDateKey(plusDays(now, 3)),
-      currencies: DEFAULT_CURRENCIES.split(",")
-    };
-  }
-  const config = await getEconomicCalendarConfig(params.db);
-  const currencies = parseCurrencies(config);
-  const windowFromDate = toDateFromDateKey(parseDateKey(now));
-  const windowToDate = plusDays(windowFromDate, 3);
-  const windowFrom = parseDateKey(windowFromDate);
-  const windowTo = parseDateKey(windowToDate);
 
-  if (!ECON_NEWS_RISK_ENABLED || !config.enabled) {
-    return {
-      fetchedCount: 0,
-      upsertedCount: 0,
-      windowFrom,
-      windowTo,
-      currencies
-    };
-  }
-
-  const apiKey = await resolveEffectiveFmpApiKey(params.db);
-  if (!apiKey) {
-    logger.info("economic_calendar_refresh_skipped_no_api_key", {
-      window_from: windowFrom,
-      window_to: windowTo
-    });
-    return {
-      fetchedCount: 0,
-      upsertedCount: 0,
-      windowFrom,
-      windowTo,
-      currencies
-    };
-  }
-
-  let fetched: EconomicEventNormalized[] = [];
-  try {
-    fetched = await fetchFmpEconomicEvents({
-      apiKey,
-      baseUrl: process.env.FMP_BASE_URL,
-      from: windowFrom,
-      to: windowTo,
-      currencies
-    });
-  } catch (error) {
-    const reason = String(error ?? "");
-    if (reason.includes("http_402") || reason.includes("http_403")) {
-      logger.warn("economic_calendar_refresh_disabled_provider_access", {
-        reason,
-        window_from: windowFrom,
-        window_to: windowTo
-      });
-      return {
-        fetchedCount: 0,
-        upsertedCount: 0,
-        windowFrom,
-        windowTo,
-        currencies
-      };
-    }
-    throw error;
-  }
-
-  let upsertedCount = 0;
-  for (const event of fetched) {
-    await params.db.economicEvent.upsert({
-      where: {
-        source_sourceId: {
-          source: event.source,
-          sourceId: event.sourceId
-        }
-      },
-      create: {
-        sourceId: event.sourceId,
-        ts: event.ts,
-        country: event.country,
-        currency: event.currency,
-        title: event.title,
-        impact: event.impact,
-        forecast: event.forecast,
-        previous: event.previous,
-        actual: event.actual,
-        source: event.source
-      },
-      update: {
-        ts: event.ts,
-        country: event.country,
-        currency: event.currency,
-        title: event.title,
-        impact: event.impact,
-        forecast: event.forecast,
-        previous: event.previous,
-        actual: event.actual
-      }
-    });
-    upsertedCount += 1;
-  }
-
-  const groupedByDay = new Map<string, EconomicEventView[]>();
-  for (const event of fetched) {
-    const key = parseDateKey(event.ts);
-    const current = groupedByDay.get(key) ?? [];
-    current.push(toEventView({
-      sourceId: event.sourceId,
-      ts: event.ts,
-      country: event.country,
-      currency: event.currency,
-      title: event.title,
-      impact: event.impact,
-      forecast: event.forecast,
-      previous: event.previous,
-      actual: event.actual,
-      source: event.source
-    }));
-    groupedByDay.set(key, current);
-  }
-
-  for (const [dateKey, events] of groupedByDay.entries()) {
-    await redisSetJson(dayEventCacheKey(dateKey), events, REDIS_EVENTS_TTL_SEC);
-  }
-
-  for (const currency of currencies) {
-    const summary = await getEconomicCalendarNextSummary({
-      db: params.db,
-      currency,
-      impact: config.impactMin,
-      now
-    });
-    await redisSetJson(nextCacheKey(currency, config.impactMin), summary, REDIS_NEXT_TTL_SEC);
-  }
-
-  await redisSetJson("econ:last_refresh_ts", { ts: now.toISOString() }, REDIS_EVENTS_TTL_SEC);
-
-  logger.info("economic_calendar_refresh_done", {
-    fetched_count: fetched.length,
-    upserted_count: upsertedCount,
-    currencies: currencies.join(","),
-    from: windowFrom,
-    to: windowTo
-  });
-
+  const result = await getMarketIntelligenceService(params.db).refreshEconomicEvents({ from, to });
   return {
-    fetchedCount: fetched.length,
-    upsertedCount,
-    windowFrom,
-    windowTo,
-    currencies
+    fetchedCount: result.fetchedCount,
+    upsertedCount: result.storedCount,
+    windowFrom: parseDateKey(from),
+    windowTo: parseDateKey(to),
+    currencies: DEFAULT_CURRENCIES.split(",")
   };
 }

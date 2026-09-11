@@ -5,3 +5,4 @@ This directory contains completed or superseded plans that are no longer authori
 Archived plans are retained for historical context. Use current status, architecture, runbook, and reference documents before making a new decision.
 
 - [`aniq-template-restyling-plan.md`](aniq-template-restyling-plan.md) is superseded by the repository's current Ein UI design direction and integration records under `docs/ui`.
+- [`market-intelligence-providers/`](market-intelligence-providers/00-README-MASTER-PLAN.md) was completed on 2026-09-11 after the provider-neutral production rollout and full removal of the retired paid-provider runtime, configuration, administration, and health-check paths.

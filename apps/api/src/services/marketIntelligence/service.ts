@@ -138,7 +138,7 @@ export class MarketIntelligenceService {
   private providerStates = new Map<string, ProviderState>();
 
   constructor(private readonly db: any) {
-    this.registries = createMarketProviderRegistries(db);
+    this.registries = createMarketProviderRegistries();
     for (const missing of this.registries.configuredNews.missing) {
       this.recordMissingProvider(missing, "news");
     }
@@ -234,15 +234,7 @@ export class MarketIntelligenceService {
         return { provider, result: null, error: String(error) };
       }
     };
-    const primaryProviders = this.registries.fmpFallbackEnabled
-      ? providers.filter((provider) => provider.id !== "legacy_fmp")
-      : providers;
-    const results = await Promise.all(primaryProviders.map(fetchProvider));
-    if (this.registries.fmpFallbackEnabled) {
-      const primaryHasData = results.some((entry) => (entry.result?.data.length ?? 0) > 0);
-      const fallback = providers.find((provider) => provider.id === "legacy_fmp");
-      if (!primaryHasData && fallback) results.push(await fetchProvider(fallback));
-    }
+    const results = await Promise.all(providers.map(fetchProvider));
     const warnings: string[] = [];
     const byKey = new Map<string, NewsItem>();
     let degraded = false;
@@ -382,15 +374,7 @@ export class MarketIntelligenceService {
         return { provider, result: null, error: String(error) };
       }
     };
-    const primaryProviders = this.registries.fmpFallbackEnabled
-      ? providers.filter((provider) => provider.id !== "legacy_fmp")
-      : providers;
-    const results = await Promise.all(primaryProviders.map(fetchProvider));
-    if (this.registries.fmpFallbackEnabled) {
-      const primaryHasData = results.some((entry) => (entry.result?.data.length ?? 0) > 0);
-      const fallback = providers.find((provider) => provider.id === "legacy_fmp");
-      if (!primaryHasData && fallback) results.push(await fetchProvider(fallback));
-    }
+    const results = await Promise.all(providers.map(fetchProvider));
     const warnings: string[] = [];
     const byId = new Map<string, EconomicEvent>();
     let degraded = false;

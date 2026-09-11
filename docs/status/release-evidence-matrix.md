@@ -62,7 +62,7 @@ Use this file as the per-release Go/No-Go evidence checklist. Keep completed cop
 | Python strategy tokens meet production quality |  |  |  |
 | Web/API CORS origins reviewed |  |  |  |
 | Webhook secrets/signatures configured |  |  |  |
-| Market-data source terms and flags | Active RSS sources `approved`; `FMP_LEGACY_ENABLED=false` after rollout gate |  |  |
+| Market-data source terms and provider configuration | Active RSS sources `approved`; official schedules enabled; retired paid-provider integration removed on 2026-09-11 | [`2026-09-11-fmp-removal.md`](../archive/tasks/2026-09-11-fmp-removal.md) | Complete |
 
 ## Onchain
 

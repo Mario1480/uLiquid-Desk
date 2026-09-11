@@ -124,8 +124,6 @@ function createAiHealthDeps(overrides: {
     }),
     resolveOllamaProfileAiApiKey: () => ({ apiKey: null, source: "none", decryptError: false }),
     resolveAiProfileApiKey: () => ({ apiKey: "vllm-key", source: "db", decryptError: false }),
-    resolveEffectiveFmpApiKey: () => ({ apiKey: null, source: "none", decryptError: false }),
-    fetchFmpEconomicEvents: async () => [],
     getSaladRuntimeStatus: async () => ({ ok: true }),
     resolveSaladRuntimeConfig: () => ({
       isConfigured: true,

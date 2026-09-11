@@ -1,6 +1,6 @@
 # Market Intelligence production rollout — 2026-09-11
 
-Status: `DEPLOYED / SEVEN-DAY OBSERVATION AND TELEGRAM DELIVERY OPEN`.
+Status: `DEPLOYED / SUPERSEDED BY COMPLETE LEGACY-PROVIDER REMOVAL`.
 
 ## Authorization and boundary
 
@@ -152,3 +152,12 @@ Unauthenticated boundary smokes returned the expected results:
 
 The existing `salad_http_401` system-health incident is unrelated to Market
 Intelligence and remains outside this rollout.
+
+## Superseding owner decision
+
+Mario confirmed later on 2026-09-11 that the retired paid provider has no
+subscription and has not been used for a long time. He authorized complete
+removal instead of retaining an unsupported rollback path for a seven-day
+observation. The implementation and production evidence are recorded in
+[`2026-09-11-fmp-removal.md`](2026-09-11-fmp-removal.md). This decision does not
+alter the earlier rollout observations or delete historical provider rows.

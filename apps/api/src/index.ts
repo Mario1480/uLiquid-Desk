@@ -526,7 +526,6 @@ import {
   evaluateNewsRiskForSymbol,
   getEconomicCalendarConfig
 } from "./services/economicCalendar/index.js";
-import { fetchFmpEconomicEvents } from "./services/economicCalendar/providers/fmp.js";
 import {
   TELEGRAM_CHAT_ID_IN_USE_ERROR,
   findTelegramChatIdConflict as findTelegramChatIdConflictFromDeps,
@@ -568,8 +567,6 @@ const externalHealthService = createExternalHealthService({
   resolveEffectiveAiApiKey,
   resolveOllamaProfileAiApiKey,
   resolveAiProfileApiKey,
-  resolveEffectiveFmpApiKey,
-  fetchFmpEconomicEvents,
   getSaladRuntimeStatus,
   resolveSaladRuntimeConfig
 });
@@ -1449,59 +1446,6 @@ const adminSmtpSchema = z.object({
 const adminSmtpTestSchema = z.object({
   to: z.string().trim().email()
 });
-
-const openAiModelSchema = z.enum(OPENAI_ADMIN_MODEL_OPTIONS);
-const aiProviderSchema = z.enum(["openai", "ollama", "vllm", "disabled"]);
-
-const adminApiKeysSchema = z.object({
-  aiProvider: aiProviderSchema.optional(),
-  aiBaseUrl: z.string().trim().min(8).max(500).optional(),
-  clearAiBaseUrl: z.boolean().default(false),
-  aiApiKey: z.string().trim().min(1).max(500).optional(),
-  clearAiApiKey: z.boolean().default(false),
-  aiModel: z.string().trim().min(1).max(120).optional(),
-  clearAiModel: z.boolean().default(false),
-  openaiApiKey: z.string().trim().min(10).max(500).optional(),
-  clearOpenaiApiKey: z.boolean().default(false),
-  fmpApiKey: z.string().trim().min(10).max(500).optional(),
-  clearFmpApiKey: z.boolean().default(false),
-  openaiModel: openAiModelSchema.optional(),
-  clearOpenaiModel: z.boolean().default(false),
-  saladApiBaseUrl: z.string().trim().min(8).max(500).optional(),
-  clearSaladApiBaseUrl: z.boolean().default(false),
-  saladOrganization: z.string().trim().min(1).max(191).optional(),
-  clearSaladOrganization: z.boolean().default(false),
-  saladProject: z.string().trim().min(1).max(191).optional(),
-  clearSaladProject: z.boolean().default(false),
-  saladContainer: z.string().trim().min(1).max(191).optional(),
-  clearSaladContainer: z.boolean().default(false)
-}).refine(
-  (value) =>
-    value.clearOpenaiApiKey ||
-    Boolean(value.openaiApiKey) ||
-    value.clearFmpApiKey ||
-    Boolean(value.fmpApiKey) ||
-    value.clearOpenaiModel ||
-    Boolean(value.openaiModel) ||
-    value.clearAiApiKey ||
-    Boolean(value.aiApiKey) ||
-    value.clearAiModel ||
-    Boolean(value.aiModel) ||
-    value.clearAiBaseUrl ||
-    Boolean(value.aiBaseUrl) ||
-    value.clearSaladApiBaseUrl ||
-    Boolean(value.saladApiBaseUrl) ||
-    value.clearSaladOrganization ||
-    Boolean(value.saladOrganization) ||
-    value.clearSaladProject ||
-    Boolean(value.saladProject) ||
-    value.clearSaladContainer ||
-    Boolean(value.saladContainer) ||
-    Boolean(value.aiProvider),
-  {
-    message: "Provide AI/FMP fields or set a clear flag."
-  }
-);
 
 const adminPredictionRefreshSchema = z.object({
   triggerDebounceSec: z.number().int().min(0).max(3600),
@@ -3676,7 +3620,6 @@ type StoredAiProviderProfiles = {
 type StoredApiKeysSettings = {
   aiApiKeyEnc: string | null;
   openaiApiKeyEnc: string | null;
-  fmpApiKeyEnc: string | null;
   aiProvider: AiProvider | null;
   aiBaseUrl: string | null;
   aiModel: string | null;
@@ -3861,10 +3804,6 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
     typeof record.openaiApiKeyEnc === "string" && record.openaiApiKeyEnc.trim()
       ? record.openaiApiKeyEnc.trim()
       : null;
-  const fmpApiKeyEnc =
-    typeof record.fmpApiKeyEnc === "string" && record.fmpApiKeyEnc.trim()
-      ? record.fmpApiKeyEnc.trim()
-      : null;
   const aiProviderRaw = typeof record.aiProvider === "string" ? record.aiProvider.trim().toLowerCase() : "";
   const aiProvider =
     aiProviderRaw === "disabled" || aiProviderRaw === "off" || aiProviderRaw === "none"
@@ -3947,7 +3886,6 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
   return {
     aiApiKeyEnc: resolvedAiApiKeyEnc,
     openaiApiKeyEnc: openaiProfile.aiApiKeyEnc ?? openaiApiKeyEnc ?? aiApiKeyEnc,
-    fmpApiKeyEnc,
     aiProvider: aiProvider ?? null,
     aiBaseUrl: resolvedAiBaseUrl,
     aiModel: resolvedAiModel,
@@ -4047,14 +3985,11 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
   const aiKeyEnc = selectedProfile.aiApiKeyEnc ?? value.aiApiKeyEnc ?? value.openaiApiKeyEnc;
   const aiApiKeyMasked = maskEncrypted(aiKeyEnc);
   const openAiApiKeyMasked = maskEncrypted(openaiProfile.aiApiKeyEnc ?? value.openaiApiKeyEnc);
-  const fmpApiKeyMasked = maskEncrypted(value.fmpApiKeyEnc);
   return {
     aiApiKeyMasked,
     hasAiApiKey: Boolean(aiKeyEnc),
     openaiApiKeyMasked: openAiApiKeyMasked,
     hasOpenAiApiKey: Boolean(openaiProfile.aiApiKeyEnc ?? value.openaiApiKeyEnc),
-    fmpApiKeyMasked,
-    hasFmpApiKey: Boolean(value.fmpApiKeyEnc),
     aiProvider: value.aiProvider,
     aiBaseUrl: selectedProfile.aiBaseUrl ?? value.aiBaseUrl,
     aiModel: selectedProfile.aiModel ?? value.aiModel,
@@ -4236,29 +4171,6 @@ function resolveOllamaProfileAiApiKey(
   settings: StoredApiKeysSettings
 ): { apiKey: string | null; source: ApiKeySource; decryptError: boolean } {
   return resolveAiProfileApiKey(settings, "ollama");
-}
-
-function resolveEffectiveFmpApiKey(
-  settings: StoredApiKeysSettings
-): { apiKey: string | null; source: ApiKeySource; decryptError: boolean } {
-  const envApiKey = process.env.FMP_API_KEY?.trim() ?? "";
-  if (envApiKey) {
-    return { apiKey: envApiKey, source: "env", decryptError: false };
-  }
-
-  if (!settings.fmpApiKeyEnc) {
-    return { apiKey: null, source: "none", decryptError: false };
-  }
-
-  try {
-    const decrypted = decryptSecret(settings.fmpApiKeyEnc).trim();
-    if (!decrypted) {
-      return { apiKey: null, source: "none", decryptError: false };
-    }
-    return { apiKey: decrypted, source: "db", decryptError: false };
-  } catch {
-    return { apiKey: null, source: "db", decryptError: true };
-  }
 }
 
 async function ensureWorkspaceMembership(userId: string, userEmail: string, client = db) {
@@ -12724,13 +12636,11 @@ registerAdminApiKeyRoutes(app, {
   resolveEffectiveAiApiKey,
   resolveOllamaProfileAiApiKey,
   resolveAiProfileApiKey,
-  resolveEffectiveFmpApiKey,
   normalizeProviderForProfile,
   emptySaladRuntimeSettings,
   encryptSecret,
   invalidateAiApiKeyCache,
   invalidateAiModelCache,
-  fetchFmpEconomicEvents,
   getSaladRuntimeStatus,
   resolveSaladRuntimeConfig,
   startSaladContainer,

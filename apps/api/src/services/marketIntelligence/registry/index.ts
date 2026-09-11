@@ -1,7 +1,5 @@
 import type { EconomicCalendarProvider } from "../contracts/economicCalendar.js";
 import type { NewsProvider } from "../contracts/news.js";
-import { LegacyFmpEconomicCalendarProvider } from "../providers/legacyFmp/LegacyFmpEconomicCalendarProvider.js";
-import { LegacyFmpNewsProvider } from "../providers/legacyFmp/LegacyFmpNewsProvider.js";
 import { OfficialEconomicCalendarProvider } from "../providers/official/OfficialEconomicCalendarProvider.js";
 import { RssNewsProvider } from "../providers/rss/RssNewsProvider.js";
 
@@ -52,9 +50,7 @@ export class ProviderRegistry<T extends { readonly id: string }> {
   }
 }
 
-export function createMarketProviderRegistries(db: any) {
-  const fmpEnabled = envFlag(process.env.FMP_LEGACY_ENABLED, false);
-  const fmpFallbackEnabled = fmpEnabled && envFlag(process.env.FMP_LEGACY_FALLBACK_ENABLED, false);
+export function createMarketProviderRegistries() {
   const newsIds = parseProviderIds(process.env.NEWS_PROVIDERS, ["rss"]);
   const calendarIds = parseProviderIds(process.env.ECONOMIC_CALENDAR_PROVIDERS, ["official"]);
   if (!envFlag(process.env.RSS_NEWS_ENABLED, true)) {
@@ -65,28 +61,16 @@ export function createMarketProviderRegistries(db: any) {
     const index = calendarIds.indexOf("official");
     if (index >= 0) calendarIds.splice(index, 1);
   }
-  if (!fmpEnabled) {
-    for (const ids of [newsIds, calendarIds]) {
-      const index = ids.indexOf("legacy_fmp");
-      if (index >= 0) ids.splice(index, 1);
-    }
-  } else if (fmpFallbackEnabled) {
-    if (!newsIds.includes("legacy_fmp")) newsIds.push("legacy_fmp");
-    if (!calendarIds.includes("legacy_fmp")) calendarIds.push("legacy_fmp");
-  }
   const newsRegistry = new ProviderRegistry<NewsProvider>([
-    new RssNewsProvider(),
-    new LegacyFmpNewsProvider(db)
+    new RssNewsProvider()
   ]);
   const economicRegistry = new ProviderRegistry<EconomicCalendarProvider>([
-    new OfficialEconomicCalendarProvider(),
-    new LegacyFmpEconomicCalendarProvider(db)
+    new OfficialEconomicCalendarProvider()
   ]);
   return {
     news: newsRegistry,
     economic: economicRegistry,
     configuredNews: newsRegistry.resolve(newsIds),
-    configuredEconomic: economicRegistry.resolve(calendarIds),
-    fmpFallbackEnabled
+    configuredEconomic: economicRegistry.resolve(calendarIds)
   };
 }

@@ -22,8 +22,6 @@ const adminApiKeysSchema = z.object({
   clearAiModel: z.boolean().default(false),
   openaiApiKey: z.string().trim().min(10).max(500).optional(),
   clearOpenaiApiKey: z.boolean().default(false),
-  fmpApiKey: z.string().trim().min(10).max(500).optional(),
-  clearFmpApiKey: z.boolean().default(false),
   openaiModel: openAiModelSchema.optional(),
   clearOpenaiModel: z.boolean().default(false),
   openaiModelRouting: aiModelRoutingSchema.optional(),
@@ -40,8 +38,6 @@ const adminApiKeysSchema = z.object({
   (value) =>
     value.clearOpenaiApiKey ||
     Boolean(value.openaiApiKey) ||
-    value.clearFmpApiKey ||
-    Boolean(value.fmpApiKey) ||
     value.clearOpenaiModel ||
     Boolean(value.openaiModel) ||
     value.clearOpenaiModelRouting ||
@@ -62,7 +58,7 @@ const adminApiKeysSchema = z.object({
     Boolean(value.saladContainer) ||
     Boolean(value.aiProvider),
   {
-    message: "Provide AI/FMP fields or set a clear flag."
+    message: "Provide AI fields or set a clear flag."
   }
 );
 
@@ -92,7 +88,6 @@ export type RegisterAdminApiKeyRoutesDeps = {
   requireSuperadmin(res: express.Response): Promise<boolean>;
   externalHealthService: {
     checkAi(): Promise<any>;
-    checkFmp(): Promise<any>;
     checkSaladRuntime(): Promise<any>;
   };
   GLOBAL_SETTING_API_KEYS_KEY: string;
@@ -107,13 +102,11 @@ export type RegisterAdminApiKeyRoutesDeps = {
   resolveEffectiveAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveOllamaProfileAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveAiProfileApiKey(settings: any, provider?: string | null): { apiKey: string | null; source: string; decryptError: boolean };
-  resolveEffectiveFmpApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   normalizeProviderForProfile(provider: unknown): "openai" | "ollama" | "vllm";
   emptySaladRuntimeSettings(): any;
   encryptSecret(value: string): string;
   invalidateAiApiKeyCache(): void;
   invalidateAiModelCache(): void;
-  fetchFmpEconomicEvents(params: { apiKey: string; baseUrl?: string; from: string; to: string; signal: AbortSignal }): Promise<any>;
   getSaladRuntimeStatus(config: any, apiKey: string): Promise<any>;
   resolveSaladRuntimeConfig(settings: any): { isConfigured: boolean; missingFields: string[]; config: any };
   startSaladContainer(config: any, apiKey: string): Promise<any>;
@@ -132,7 +125,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     });
     const settings = deps.parseStoredApiKeysSettings(row?.value);
     const envConfigured = Boolean(process.env.AI_API_KEY?.trim());
-    const fmpEnvConfigured = Boolean(process.env.FMP_API_KEY?.trim());
     const effectiveProvider = deps.resolveEffectiveAiProvider(settings);
     const effectiveBaseUrl = deps.resolveEffectiveAiBaseUrl(settings);
     const effectiveModel = deps.resolveEffectiveAiModel(settings);
@@ -142,7 +134,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       ...deps.toPublicApiKeysSettings(settings),
       updatedAt: row?.updatedAt ?? null,
       envOverride: envConfigured,
-      envOverrideFmp: fmpEnvConfigured,
       effectiveAiProvider: effectiveProvider.provider,
       effectiveAiProviderSource: effectiveProvider.source,
       effectiveAiBaseUrl: effectiveBaseUrl.baseUrl,
@@ -223,11 +214,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     return res.status(statusCode).json({ ...result, source: resolvedKey.source, target: resolvedConfig.config, actionAccepted: actionResult.ok });
   });
 
-  app.get("/admin/settings/api-keys/fmp-status", requireAuth, async (_req, res) => {
-    if (!(await deps.requireSuperadmin(res))) return;
-    return res.json(await deps.externalHealthService.checkFmp());
-  });
-
   app.put("/admin/settings/api-keys", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const parsed = adminApiKeysSchema.safeParse(req.body ?? {});
@@ -286,7 +272,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     const nextValue = {
       aiProvider: nextProvider,
       aiApiKeyEnc: nextProfiles[activeProviderForTopLevel].aiApiKeyEnc ?? null,
-      fmpApiKeyEnc: parsed.data.clearFmpApiKey ? null : (parsed.data.fmpApiKey ? deps.encryptSecret(parsed.data.fmpApiKey) : existing.fmpApiKeyEnc ?? null),
       openaiModel: parsed.data.clearOpenaiModel ? null : (parsed.data.openaiModel?.trim() || nextProfiles.openai.aiModel || null),
       aiBaseUrl: nextProfiles[activeProviderForTopLevel].aiBaseUrl ?? null,
       aiModel: nextProfiles[activeProviderForTopLevel].aiModel ?? null,
@@ -306,7 +291,6 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       ...deps.toPublicApiKeysSettings(settings),
       updatedAt: updated.updatedAt,
       envOverride: Boolean(process.env.AI_API_KEY?.trim()),
-      envOverrideFmp: Boolean(process.env.FMP_API_KEY?.trim()),
       effectiveAiProvider: effectiveProvider.provider,
       effectiveAiProviderSource: effectiveProvider.source,
       effectiveAiBaseUrl: effectiveBaseUrl.baseUrl,

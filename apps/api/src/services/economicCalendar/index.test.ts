@@ -51,7 +51,7 @@ test("applyNewsRiskToFeatureSnapshot sets newsRisk + tag", () => {
         forecast: null,
         previous: null,
         actual: null,
-        source: "fmp"
+        source: "official"
       },
       activeWindow: {
         from: "2026-02-12T12:00:00.000Z",
@@ -67,7 +67,7 @@ test("applyNewsRiskToFeatureSnapshot sets newsRisk + tag", () => {
           forecast: null,
           previous: null,
           actual: null,
-          source: "fmp"
+          source: "official"
         }
       }
     }
@@ -102,7 +102,7 @@ test("applyNewsRiskToFeatureSnapshot exposes degraded calendar state without add
       nextEvent: null,
       activeWindow: null,
       degraded: true,
-      degradedReason: "fmp_api_key_missing"
+      degradedReason: "provider_unavailable"
     }
   );
 
@@ -110,7 +110,7 @@ test("applyNewsRiskToFeatureSnapshot exposes degraded calendar state without add
   assert.equal(next.newsRiskDegraded, true);
   assert.deepEqual(next.tags, ["trend_up"]);
   assert.equal((next.newsBlackout as any)?.degraded, true);
-  assert.equal((next.newsBlackout as any)?.degradedReason, "fmp_api_key_missing");
+  assert.equal((next.newsBlackout as any)?.degradedReason, "provider_unavailable");
 });
 
 test("evaluateNewsRiskForSymbol conservatively marks missing provider-neutral schema as degraded", async () => {

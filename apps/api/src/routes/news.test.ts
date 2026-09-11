@@ -26,7 +26,7 @@ test("news query rejects invalid fromTs/toTs", () => {
   assert.equal(invalidTo.success, false);
 });
 
-test("existing news service returns provider-neutral rows without an FMP key", async () => {
+test("existing news service returns provider-neutral rows without a vendor key", async () => {
   const previousEnabled = process.env.MARKET_INTELLIGENCE_ENABLED;
   process.env.MARKET_INTELLIGENCE_ENABLED = "true";
   try {

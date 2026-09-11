@@ -3,7 +3,7 @@ import type { ProviderState } from "../services/marketIntelligence/contracts/pro
 
 type ExternalHealthState = "healthy" | "unhealthy" | "skipped";
 
-export type ExternalHealthCheckId = "ai" | "saladRuntime" | "marketIntelligence" | "fmp";
+export type ExternalHealthCheckId = "ai" | "saladRuntime" | "marketIntelligence";
 
 export type ExternalHealthCheckResult = {
   id: ExternalHealthCheckId;
@@ -27,17 +27,6 @@ export type AiHealthCheckResponse = {
   model: string;
   provider: string;
   baseUrl: string;
-  httpStatus?: number;
-};
-
-export type FmpHealthCheckResponse = {
-  ok: boolean;
-  status: "ok" | "missing_key" | "error";
-  state: ExternalHealthState;
-  source: string;
-  checkedAt: string;
-  latencyMs?: number;
-  message: string;
   httpStatus?: number;
 };
 
@@ -68,7 +57,6 @@ export type ExternalHealthSnapshot = {
     message: string;
     details: Record<string, unknown>;
   };
-  fmp: FmpHealthCheckResponse;
 };
 
 export type ExternalHealthServiceDeps = {
@@ -81,14 +69,6 @@ export type ExternalHealthServiceDeps = {
   resolveEffectiveAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveOllamaProfileAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveAiProfileApiKey(settings: any, provider?: string | null): { apiKey: string | null; source: string; decryptError: boolean };
-  resolveEffectiveFmpApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
-  fetchFmpEconomicEvents(params: {
-    apiKey: string;
-    baseUrl?: string;
-    from: string;
-    to: string;
-    signal: AbortSignal;
-  }): Promise<any>;
   getSaladRuntimeStatus(config: any, apiKey: string): Promise<any>;
   resolveSaladRuntimeConfig(settings: any): {
     isConfigured: boolean;
@@ -416,89 +396,6 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
     }
   }
 
-  async function checkFmp(): Promise<FmpHealthCheckResponse> {
-    if (["0", "false", "off", "no"].includes(String(process.env.FMP_LEGACY_ENABLED ?? "").trim().toLowerCase())) {
-      return {
-        ok: false,
-        status: "missing_key",
-        state: "skipped",
-        source: "disabled",
-        checkedAt: new Date().toISOString(),
-        message: "Legacy FMP provider is disabled."
-      };
-    }
-    const settings = await loadApiKeySettings(deps);
-    const resolved = deps.resolveEffectiveFmpApiKey(settings);
-    const checkedAt = new Date().toISOString();
-    if (resolved.decryptError) {
-      return {
-        ok: false,
-        status: "error",
-        state: "skipped",
-        source: resolved.source,
-        checkedAt,
-        message: "Stored FMP key could not be decrypted."
-      };
-    }
-    if (!resolved.apiKey) {
-      return {
-        ok: false,
-        status: "missing_key",
-        state: "skipped",
-        source: resolved.source,
-        checkedAt,
-        message: "No FMP API key configured."
-      };
-    }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
-    const startedAt = Date.now();
-    try {
-      await deps.fetchFmpEconomicEvents({
-        apiKey: resolved.apiKey,
-        baseUrl: process.env.FMP_BASE_URL,
-        from: "2026-01-01",
-        to: "2026-01-02",
-        signal: controller.signal
-      });
-      return {
-        ok: true,
-        status: "ok",
-        state: "healthy",
-        source: resolved.source,
-        checkedAt,
-        latencyMs: Date.now() - startedAt,
-        message: "FMP connection is healthy."
-      };
-    } catch (error) {
-      const isAbort = error instanceof Error && error.name === "AbortError";
-      const raw = String(error ?? "").trim();
-      const normalizedReason = raw.startsWith("Error: ") ? raw.slice(7) : raw;
-      let message = isAbort ? "Connection timed out." : normalizedReason;
-      let httpStatus: number | undefined;
-      const httpMatch = normalizedReason.match(/^http_(\d{3})$/i);
-      if (httpMatch) {
-        httpStatus = Number(httpMatch[1]);
-        if (httpStatus === 401) message = "FMP authentication failed (401). Verify API key.";
-        else if (httpStatus === 402) message = "FMP returned 402 (payment/plan required). Check your FMP subscription tier for Economic Calendar endpoints.";
-        else if (httpStatus === 403) message = "FMP request forbidden (403). Check key permissions/IP restrictions.";
-        else message = `fmp_http_${httpStatus}`;
-      }
-      return {
-        ok: false,
-        status: "error",
-        state: "unhealthy",
-        source: resolved.source,
-        checkedAt,
-        latencyMs: Date.now() - startedAt,
-        ...(httpStatus ? { httpStatus } : {}),
-        message
-      };
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
   async function checkSaladRuntime(): Promise<SaladRuntimeHealthCheckResponse> {
     const settings = await loadApiKeySettings(deps);
     const resolvedConfig = deps.resolveSaladRuntimeConfig(settings);
@@ -580,18 +477,16 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
   }
 
   async function checkAll(): Promise<ExternalHealthSnapshot> {
-    const [ai, saladRuntime, marketIntelligence, fmp] = await Promise.all([
+    const [ai, saladRuntime, marketIntelligence] = await Promise.all([
       checkAi(),
       checkSaladRuntime(),
-      checkMarketIntelligence(),
-      checkFmp()
+      checkMarketIntelligence()
     ]);
-    return { ai, saladRuntime, marketIntelligence, fmp };
+    return { ai, saladRuntime, marketIntelligence };
   }
 
   return {
     checkAi,
-    checkFmp,
     checkMarketIntelligence,
     checkSaladRuntime,
     checkAll

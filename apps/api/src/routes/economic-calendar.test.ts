@@ -67,7 +67,7 @@ function createEconomicEvent(index: number) {
     forecast: null,
     previous: null,
     actual: null,
-    source: "fmp"
+    source: "official"
   };
 }
 

@@ -13,7 +13,7 @@ function event(ts: string, overrides: Record<string, unknown> = {}) {
     forecast: null,
     previous: null,
     actual: null,
-    source: "fmp" as const
+    source: "official" as const
   };
 }
 

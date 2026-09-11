@@ -1,13 +1,13 @@
 # Market Intelligence: Provider Architecture and Operations
 
-Last updated: 2026-08-13
+Last updated: 2026-09-11
 
 ## Purpose
 
-uLiquid Desk news and economic-calendar reads no longer require Financial
-Modeling Prep (FMP). The primary production configuration uses reviewed public
-RSS/Atom feeds for news and official schedules for economic events. FMP remains
-an optional, disabled legacy adapter for rollback during the measured rollout.
+uLiquid Desk news and economic-calendar reads use reviewed public RSS/Atom
+feeds for news and official schedules for economic events. The retired paid
+legacy provider is no longer part of the runtime, administration, health
+monitoring, or configuration surface.
 
 This subsystem is read-only. It can enrich dashboards, Telegram calendar
 digests and prediction context, but it has no order, wallet, vault or execution
@@ -76,7 +76,7 @@ Additional sources require a terms review before being added to
 
 ## Configuration
 
-Recommended FMP-independent configuration:
+Production configuration:
 
 ```env
 MARKET_INTELLIGENCE_ENABLED=true
@@ -85,8 +85,6 @@ ECONOMIC_CALENDAR_PROVIDERS=official
 RSS_NEWS_ENABLED=true
 OFFICIAL_ECONOMIC_CALENDAR_ENABLED=true
 AI_MARKET_SUMMARY_ENABLED=false
-FMP_LEGACY_ENABLED=false
-FMP_LEGACY_FALLBACK_ENABLED=false
 ```
 
 Operational tuning:
@@ -172,8 +170,8 @@ Prediction context, Admin Providers and a forced single-source failure.
 ## Health, alerts and incident handling
 
 The generic external-health snapshot and Telegram health monitor use
-`marketIntelligence`, not FMP, as the active dependency. Inspect provider state,
-last success, latency, item count, circuit state, stale age and license status in
+`marketIntelligence` as the active dependency. Inspect provider state, last
+success, latency, item count, circuit state, stale age and license status in
 Admin Providers.
 
 If one RSS source fails, the response is degraded and remaining sources stay
@@ -183,16 +181,15 @@ invented. If BLS blocks or temporarily rejects the live ICS request, the
 provider reports degraded status and uses its reviewed 2026 release dates; the
 stable period-based IDs reconcile with the live ICS path when it recovers.
 
-Rollback options:
+Recovery options:
 
 1. Disable a faulty source in Admin Providers.
 2. Change `NEWS_PROVIDERS` or `ECONOMIC_CALENDAR_PROVIDERS` to another registered
    provider and restart the API.
-3. During the rollout window only, enable `FMP_LEGACY_ENABLED=true` and
-   `FMP_LEGACY_FALLBACK_ENABLED=true`. FMP is queried only when the primary
-   provider returns no data.
-4. Keep the database migration in place; it is compatible with both paths.
-
-Remove the legacy adapter, FMP admin key section and FMP health probe only after
-at least seven stable days in the FMP-off phase and confirmation that no consumer
-still depends on it.
+3. Disable `MARKET_INTELLIGENCE_ENABLED` if the provider subsystem itself must
+   be isolated; consumers then receive an explicit unavailable/degraded state.
+4. Revert the affected application release when source-level isolation is not
+   sufficient. Do not restore a paid legacy-provider dependency.
+5. Keep the database migration and historical provider rows in place. They are
+   compatible with the current provider-neutral read model and remain audit
+   evidence, not an active fallback.

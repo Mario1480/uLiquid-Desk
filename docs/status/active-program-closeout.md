@@ -19,7 +19,7 @@ capital or onchain evidence remain separate from repository implementation.
 | Limited Beta | Implemented feature slices plus deployed intake | Scope decision and release acceptance open |
 | OpenAI Router and AI Credits | Implemented with paid production-run evidence | Billing and operations closeout open |
 | Execution Foundation | Shared foundation landed | Re-baselined follow-up list open |
-| Market Intelligence providers | Production hardening and authenticated acceptance complete | Telegram delivery and seven-day observation open |
+| Market Intelligence providers | Provider-neutral production path deployed; paid legacy provider removed | Complete; routine delivery observation remains operational |
 | Type Safety strictness | Current budget gate restored | Incremental strictness program open |
 
 ULIQ, Hummingbot, and Arbitrum USDC Billing remain active but are intentionally
@@ -140,19 +140,17 @@ required paths use the shared result vocabulary, and parity tests pass.
 
 ## Market Intelligence Providers
 
-Current state: `DEPLOYED / SEVEN-DAY OBSERVATION AND TELEGRAM DELIVERY OPEN`.
+Current state: `COMPLETE / LEGACY PROVIDER REMOVED`.
 
-Local verification on 2026-09-11 passed Prisma Client generation, all 58
-targeted Market Intelligence tests, API and Web typechecks, and the Web i18n
-integrity check after removing eight tracked, unreferenced ` 2.ts` copies of
-older source and test files. The recommended FMP-independent flags are present
-in `.env.example`, and primary sources have reviewed terms status in the
-operations guide. A public production probe returned `200` for `/health` and
-the expected `401` authorization boundary for News, Economic Calendar, Context,
-and Summary without a session.
+Local verification on 2026-09-11 passed Prisma Client generation, targeted
+Market Intelligence tests, API and Web typechecks, and the Web i18n integrity
+check. Primary sources have reviewed terms status in the operations guide. A
+public production probe returned `200` for `/health` and the expected `401`
+authorization boundary for News, Economic Calendar, Context, and Summary
+without a session.
 
 The authorized production pass backed up and restore-tested the database,
-verified the provider migration and FMP-off flags, and deployed API hardening in
+verified the provider migration and provider-neutral configuration, and deployed API hardening in
 commit `01162eb0b`. Post-deploy probes returned all eight RSS sources and both
 official calendar sources healthy without warnings. See the
 [production rollout evidence](../archive/tasks/2026-09-11-market-intelligence-production-rollout.md).
@@ -164,19 +162,19 @@ status and filtered implausibly dated news items. Production builds and service
 health checks passed. A transient first-cycle SEC and Eurostat degradation
 cleared on one controlled provider retry, which restored 8/8 RSS sources and
 both official calendar sources. Telegram Daily Calendar is configured and
-enabled, but a real delivery has not yet been observed.
+enabled, but a real delivery has not yet been observed. Mario confirmed on
+2026-09-11 that the retired paid provider has had no subscription and has not
+been used for a long time. The seven-day fallback observation was therefore
+superseded by the owner decision to remove the unused integration completely.
+Runtime adapters, fallback branches, admin key handling, the dedicated health
+probe, environment settings, and obsolete tests were removed. Historical
+database rows and applied migrations remain readable as audit evidence and
+cannot reactivate the provider.
 
-Remaining gates:
-
-- exercise or observe one real Telegram Daily Calendar delivery;
-- continue capturing coverage, latency, stale/degraded behavior, alert delivery,
-  and source terms status as release evidence;
-- observe at least seven stable FMP-off days;
-- only then remove the legacy FMP adapter, key administration, health probe, tests,
-  translations, and documentation.
-
-Close condition: Telegram delivery and the seven-day observation pass, then
-legacy FMP cleanup is deployed and verified.
+Routine operations follow-up: observe a scheduled Telegram Daily Calendar
+delivery and continue normal source coverage, latency, stale/degraded, alert,
+and source-terms monitoring. These checks do not reopen the completed provider
+migration or authorize any trading, wallet, contract, or onchain action.
 
 ## Type Safety Strictness
 

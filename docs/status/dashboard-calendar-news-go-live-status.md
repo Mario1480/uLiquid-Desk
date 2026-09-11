@@ -11,13 +11,13 @@ Der Teilbereich ist fuer den Go-live deutlich gehaertet. Die sechs Review-Findin
 - Partielle Open-Positions-Fehler werden als `meta.degraded=true` sichtbar.
 - News-Risk liefert bei fehlendem/defektem Calendar-Provider degraded-Metadaten und blockiert bei aktivem `newsRiskMode=block` plus globalem Enforcement fail-closed.
 - Economic-Calendar-Queries sind auf 31 Tage und maximal 1000 Events begrenzt.
-- FMP-News-URLs werden vor Persistenz/Response auf sichere `http`/`https`-URLs ohne Credentials reduziert.
+- Provider-News-URLs werden vor Persistenz/Response auf sichere `http`/`https`-URLs ohne Credentials reduziert.
 - Calendar-Preference-Speicherfehler werden in der UI sichtbar.
 
 Ergaenzende Betreiber-Verifikation am 2026-05-06:
 
 - Dashboard Open Positions wurden gesund und degraded produktionsnah getestet.
-- Calendar-Smoke mit echtem FMP-Key ist erledigt.
+- Der historische Calendar-Smoke mit dem damaligen bezahlten Provider ist erledigt; der aktuelle Kalender nutzt ausschließlich offizielle Quellen.
 - News-Risk Blocking-Smoke ist erledigt.
 - Monitoring fuer Read-only Flaechen ist aktiv.
 
@@ -55,7 +55,7 @@ Live-/Betriebs-Smokes am 2026-05-06:
 | Smoke | Ergebnis |
 | --- | --- |
 | Dashboard Open Positions gesund/degraded | DONE |
-| Calendar mit echtem FMP-Key | DONE |
+| Historischer Calendar-Smoke mit damaligem Provider-Key | DONE |
 | News-Risk Blocking | DONE |
 | Read-only Monitoring | DONE |
 
@@ -67,13 +67,13 @@ Die urspruenglichen sechs Findings wurden erneut gegen die finale Diff geprueft:
 - Finding 2: Open-Positions-Widget kann bei komplettem Venue-Ausfall keine leere Live-Exposure-Liste mehr als gesund anzeigen.
 - Finding 3: News-Risk faellt bei fehlendem Key oder Calendar-Read-Problem nicht mehr still offen, wenn Blocking aktiv ist.
 - Finding 4: Calendar-Queries sind nicht mehr unbounded.
-- Finding 5: Unsichere FMP-News-URLs werden vor dem Web-Rendering entfernt.
+- Finding 5: Unsichere Provider-News-URLs werden vor dem Web-Rendering entfernt.
 - Finding 6: Calendar-Preference-Save-Fehler werden nicht mehr still ignoriert.
 
 ## Noch offen vor Go-live
 
 - RBAC-Smoke mit Rollen: Nutzer ohne Trading/Bot/Exchange-Permission darf Dashboard-Daten nicht lesen; Nutzer mit passender Permission darf.
-- Laufend beobachten: `dashboard_positions_degraded`, `calendar_read_failed`, `fmp_api_key_missing` und News-Provider-Partial-Failures im aktivierten Monitoring.
+- Laufend beobachten: `dashboard_positions_degraded`, `calendar_read_failed`, Market-Intelligence-Degradierungen und News-Provider-Partial-Failures im aktivierten Monitoring.
 
 ## Spaeter sinnvoll
 

@@ -68,7 +68,7 @@ Phase-2-Nachtrag 2026-05-06:
 | --- | --- | --- | --- | --- |
 | Dashboard Open Positions gesund/degraded testen. | Dashboard | `DONE` | `src/dashboard/routes.test.ts`; Live-Smoke | Betreiber-verifiziert am 2026-05-06. Gesunde Venue-Reads und degraded/failed Reads wurden produktionsnah getestet; Fail-closed-Semantik bleibt testgedeckt. |
 | Dashboard RBAC-Smoke. | Dashboard | `OPEN` | Live-Probe 2026-05-05: `/dashboard/open-positions`, `/dashboard/overview`, `/economic-calendar`, `/news`, `/api/predictions` ohne Cookie | Alle getesteten Read-only-Routen liefern ohne Session `401 unauthorized`. Positiv-/Negativtest mit Rollenrechten bleibt als eigener RBAC-Rollenmatrix-Smoke offen. |
-| Calendar-Smoke mit echtem FMP-Key. | Dashboard | `DONE` | `src/routes/economic-calendar.test.ts`; DB-/Config-/Live-Smoke | Betreiber-verifiziert am 2026-05-06 mit echtem FMP-Key. Date-Range, Limits, `truncated` und `/economic-calendar/next` bleiben testgedeckt. |
+| Historischer Calendar-Smoke mit damaligem Provider-Key. | Dashboard | `DONE` | `src/routes/economic-calendar.test.ts`; DB-/Config-/Live-Smoke | Betreiber-verifiziert am 2026-05-06. Der bezahlte Provider wurde am 2026-09-11 entfernt; Date-Range, Limits, `truncated` und `/economic-calendar/next` bleiben providerneutral testgedeckt. |
 | News-Risk Blocking-Smoke. | Dashboard | `DONE` | `src/services/economicCalendar/index.test.ts`; `src/predictions/routes-generate.test.ts`; Live-Smoke | Betreiber-verifiziert am 2026-05-06. News-Risk-Blocking und degraded Calendar-State wurden produktionsnah geprueft. |
 | AI Provider-Konfig-Smoke. | AI | `DONE` | `src/ai/provider.config.test.ts`; DB-/Proxy-/Provider-Smoke | Betreiber-verifiziert am 2026-05-06. AI Provider-Konfiguration ist produktionsnah geprueft; Outbound-Sicherheitschecks bleiben testgedeckt. |
 | AI Refresh-Degraded-Smoke in API und UI. | AI | `DONE` | `src/predictions/refreshHealth.test.ts`; `src/predictions/refreshService.test.ts`; `apps/web/src/predictions/refreshUi.test.ts`; API/UI-Smoke | Betreiber-verifiziert am 2026-05-06. Degraded Refresh wird in API und UI sichtbar und bleibt testgedeckt. |
@@ -81,7 +81,7 @@ Phase-3-Laufnotizen 2026-05-05:
 - Fix umgesetzt: `apps/api/src/ai/provider.config.test.ts` neutralisiert AI-private-Base-URL-Env-Flags temporaer, damit Security-Tests auf dem VPS deterministisch bleiben.
 
 Phase-3-Nachtrag 2026-05-06:
-- Betreiber-verifiziert und als erledigt markiert: Dashboard Open Positions gesund/degraded, Calendar-Smoke mit echtem FMP-Key, News-Risk Blocking-Smoke, AI Provider-Konfig-Smoke, AI Refresh-Degraded-Smoke in API und UI, AI Evaluator-Stichprobe gegen Candle-Daten und Monitoring fuer Read-only Flaechen.
+- Betreiber-verifiziert und als erledigt markiert: Dashboard Open Positions gesund/degraded, historischer Calendar-Provider-Smoke, News-Risk Blocking-Smoke, AI Provider-Konfig-Smoke, AI Refresh-Degraded-Smoke in API und UI, AI Evaluator-Stichprobe gegen Candle-Daten und Monitoring fuer Read-only Flaechen. Der damalige bezahlte Kalenderprovider wurde am 2026-09-11 vollständig entfernt.
 - Dashboard-RBAC-Rollenmatrix bleibt separat unter Phase 2 nachzuhalten, sofern nicht mit eigenen Rollen-Smoke-Protokollen abgeschlossen.
 
 ## Phase 4: Trading Desk Canary

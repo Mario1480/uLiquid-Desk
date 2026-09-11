@@ -8,11 +8,11 @@ import { generateGroundedMarketSummary } from "./summary.js";
 import { ProviderRegistry, envFlag, parseProviderIds } from "./registry/index.js";
 
 test("provider registry preserves configured priority and reports missing providers", () => {
-  const registry = new ProviderRegistry([{ id: "rss" }, { id: "legacy_fmp" }]);
-  const resolved = registry.resolve(["rss", "missing", "legacy_fmp"]);
-  assert.deepEqual(resolved.providers.map((provider) => provider.id), ["rss", "legacy_fmp"]);
+  const registry = new ProviderRegistry([{ id: "rss" }, { id: "official" }]);
+  const resolved = registry.resolve(["rss", "missing", "official"]);
+  assert.deepEqual(resolved.providers.map((provider) => provider.id), ["rss", "official"]);
   assert.deepEqual(resolved.missing, ["missing"]);
-  assert.deepEqual(parseProviderIds("rss,rss,legacy_fmp", []), ["rss", "legacy_fmp"]);
+  assert.deepEqual(parseProviderIds("rss,rss,official", []), ["rss", "official"]);
   assert.equal(envFlag("off", true), false);
 });
 

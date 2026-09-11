@@ -49,7 +49,6 @@ type ExternalHealthSnapshotLike = {
   ai: ExternalHealthCheckLike;
   saladRuntime: ExternalHealthCheckLike;
   marketIntelligence?: ExternalHealthCheckLike;
-  fmp?: ExternalHealthCheckLike;
 };
 
 export type CreateSystemHealthTelegramJobDeps = {
@@ -120,49 +119,6 @@ function asMetadataRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
-}
-
-export async function resolveRetiredSystemHealthAlerts(
-  db: any,
-  marketIntelligence: ExternalHealthCheckLike | undefined
-): Promise<number> {
-  if (!marketIntelligence) return 0;
-
-  const retiredAlerts = await db.platformAlert.findMany({
-    where: {
-      source: "system",
-      type: "system_health",
-      title: buildAlertTitle("fmp"),
-      status: { in: ["open", "acknowledged"] }
-    },
-    select: { id: true, message: true, metadata: true }
-  });
-
-  for (const alert of retiredAlerts) {
-    const incidentMessage = String(alert.message ?? "").trim() || "Incident details unavailable.";
-    await db.platformAlert.update({
-      where: { id: alert.id },
-      data: {
-        status: "resolved",
-        resolvedAt: new Date(),
-        message: `Recovered: legacy FMP monitoring was replaced by Market Intelligence health. Current status: ${marketIntelligence.message} Previous incident: ${incidentMessage}`,
-        metadata: {
-          checkId: "fmp",
-          state: "skipped",
-          incident: {
-            ...asMetadataRecord(alert.metadata),
-            message: incidentMessage
-          },
-          recovery: {
-            ...buildHealthObservationMetadata("marketIntelligence", marketIntelligence),
-            reason: "replaced_by_market_intelligence"
-          }
-        }
-      }
-    });
-  }
-
-  return retiredAlerts.length;
 }
 
 function buildTelegramMessage(params: {
@@ -236,11 +192,7 @@ export function createSystemHealthTelegramJob(
       const nextObservedState: Record<string, ExternalHealthCheckLike> = {
         ai: snapshot.ai,
         saladRuntime: snapshot.saladRuntime,
-        ...(snapshot.marketIntelligence
-          ? { marketIntelligence: snapshot.marketIntelligence }
-          : snapshot.fmp
-            ? { fmp: snapshot.fmp }
-            : {})
+        ...(snapshot.marketIntelligence ? { marketIntelligence: snapshot.marketIntelligence } : {})
       };
       const nextState: SystemHealthStateStore = {};
 
@@ -249,7 +201,7 @@ export function createSystemHealthTelegramJob(
       let skippedCount = 0;
       let transitionCount = 0;
       let alertSentCount = 0;
-      let resolvedCount = await resolveRetiredSystemHealthAlerts(db, snapshot.marketIntelligence);
+      let resolvedCount = 0;
 
       for (const [checkId, observedResult] of Object.entries(nextObservedState) as Array<[keyof SystemHealthStateStore, ExternalHealthCheckLike]>) {
         const previousEntry = previous[checkId];

@@ -22,7 +22,7 @@ test("filterEconomicEventsByLocalDate keeps only events in target local date", (
       forecast: null,
       previous: null,
       actual: null,
-      source: "fmp"
+      source: "official"
     },
     {
       id: "2",
@@ -35,7 +35,7 @@ test("filterEconomicEventsByLocalDate keeps only events in target local date", (
       forecast: null,
       previous: null,
       actual: null,
-      source: "fmp"
+      source: "official"
     },
     {
       id: "3",
@@ -48,7 +48,7 @@ test("filterEconomicEventsByLocalDate keeps only events in target local date", (
       forecast: null,
       previous: null,
       actual: null,
-      source: "fmp"
+      source: "official"
     }
   ];
 
