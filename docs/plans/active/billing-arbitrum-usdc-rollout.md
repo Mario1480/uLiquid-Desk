@@ -15,7 +15,8 @@ Current production status on 2026-09-11:
 - Two historical CCPayment orders are `PAID`; there are no open CCPayment orders.
 - No Arbitrum USDC order, transaction, or subscription term has been created yet.
 - Subscription checkout was found enabled without canary evidence and was paused through the protected admin control on 2026-09-11 at approximately 18:41 Europe/Berlin. AI Credit usage billing remains enabled.
-- Network-finality hardening is implemented locally and must be deployed while checkout remains paused.
+- Network-finality hardening was deployed from commit `14a4f167a` while checkout was paused. Production API and web health, the finalized RPC head, token code, token decimals, empty reconciliation queues, and the rendered admin readiness view were verified.
+- The first canary attempt was safely rejected before order creation because the signed-in admin account's linked wallet is also the configured Treasury. A separate funded sender account and wallet are required.
 - One low-value Mainnet canary, final reconciliation, activation approval, and the post-activation observation are still required before this plan can be archived.
 
 Code, deployment, browser behavior, wallet signature, transaction inclusion, network finality, Treasury receipt, database reconciliation, entitlement activation, and owner acceptance are separate evidence layers.
@@ -131,8 +132,8 @@ Use [Billing payment review and refund](../../runbooks/billing-payment-review-re
 - [x] Configure a dedicated production Billing RPC and verify Arbitrum One.
 - [x] Configure the Treasury through the protected flow.
 - [x] Pause checkout before the finality hardening deployment.
-- [ ] Deploy the network-finality hardening while checkout remains paused.
-- [ ] Confirm deployed readiness includes a healthy finalized block head.
+- [x] Deploy the network-finality hardening while checkout remains paused.
+- [x] Confirm deployed readiness includes a healthy finalized block head.
 - [ ] Run one low-value Mainnet canary from the known operator account and wallet after a fresh human transaction approval.
 - [ ] Reconcile transaction receipt, 12 confirmations, finalized head, canonical block hash, Treasury receipt, exactly one paid order, exactly one term, correct term window, entitlements, and audit evidence.
 - [ ] Re-enable checkout through the protected admin flow after explicit owner acceptance.
