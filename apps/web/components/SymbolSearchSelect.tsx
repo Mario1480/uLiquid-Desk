@@ -2,6 +2,11 @@
 
 import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
+import {
+  GlassPopover,
+  GlassPopoverAnchor,
+  GlassPopoverContent
+} from "@/components/einui/liquid-glass/glass-popover";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export type SymbolSearchOption = {
@@ -52,6 +57,7 @@ export default function SymbolSearchSelect({
 }: SymbolSearchSelectProps) {
   const inputId = useId();
   const listboxId = `${inputId}-listbox`;
+  const inputRef = useRef<HTMLInputElement>(null);
   const closeTimer = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -139,55 +145,81 @@ export default function SymbolSearchSelect({
   const activeOption = visibleOptions[activeIndex] ?? null;
 
   return (
-    <div className={wrapperClassName} onMouseDown={cancelClose}>
-      <DeskInput
-        className="input symbolSearchSelectInput"
-        value={query}
-        disabled={disabled}
-        required={required}
-        placeholder={loading ? loadingLabel : (searchPlaceholder ?? placeholder)}
-        role="combobox"
-        aria-autocomplete="list"
-        aria-expanded={showMenu}
-        aria-controls={listboxId}
-        aria-activedescendant={showMenu && activeOption ? `${listboxId}-${activeIndex}` : undefined}
-        onFocus={(event) => {
-          cancelClose();
-          setOpen(true);
-          event.currentTarget.select();
-        }}
-        onBlur={closeSoon}
-        onChange={(event) => {
-          setQuery(event.target.value.toUpperCase());
-          setOpen(true);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            setOpen(true);
-            moveActive(1);
-            return;
-          }
-          if (event.key === "ArrowUp") {
-            event.preventDefault();
-            setOpen(true);
-            moveActive(-1);
-            return;
-          }
-          if (event.key === "Enter" && showMenu && activeOption) {
-            event.preventDefault();
-            selectOption(activeOption);
-            return;
-          }
-          if (event.key === "Escape") {
-            setOpen(false);
-            setQuery(selectedLabel);
-          }
-        }}
-      />
-      <span className="symbolSearchSelectChevron" aria-hidden="true" />
+    <GlassPopover
+      open={showMenu}
+      onOpenChange={(next) => {
+        cancelClose();
+        setOpen(next);
+        if (!next) setQuery(selectedLabel);
+      }}
+    >
+      <div className={wrapperClassName} onMouseDown={cancelClose}>
+        <GlassPopoverAnchor asChild>
+          <DeskInput
+            ref={inputRef}
+            className="input symbolSearchSelectInput"
+            value={query}
+            disabled={disabled}
+            required={required}
+            placeholder={loading ? loadingLabel : (searchPlaceholder ?? placeholder)}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={showMenu}
+            aria-controls={listboxId}
+            aria-activedescendant={showMenu && activeOption ? `${listboxId}-${activeIndex}` : undefined}
+            onPointerDown={() => {
+              cancelClose();
+              if (open && document.activeElement === inputRef.current) setOpen(false);
+            }}
+            onFocus={(event) => {
+              cancelClose();
+              setOpen(true);
+              event.currentTarget.select();
+            }}
+            onBlur={closeSoon}
+            onChange={(event) => {
+              setQuery(event.target.value.toUpperCase());
+              setOpen(true);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setOpen(true);
+                moveActive(1);
+                return;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setOpen(true);
+                moveActive(-1);
+                return;
+              }
+              if (event.key === "Enter" && showMenu && activeOption) {
+                event.preventDefault();
+                selectOption(activeOption);
+                return;
+              }
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setOpen(false);
+                setQuery(selectedLabel);
+              }
+            }}
+          />
+        </GlassPopoverAnchor>
+        <span className="symbolSearchSelectChevron" aria-hidden="true" />
+      </div>
       {showMenu ? (
-        <div id={listboxId} className="symbolSearchSelectMenu" role="listbox">
+        <GlassPopoverContent
+          id={listboxId}
+          className="symbolSearchSelectMenu"
+          role="listbox"
+          align="start"
+          sideOffset={6}
+          style={{ width: "var(--radix-popover-trigger-width)" }}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+        >
           {loading ? (
             <div className="symbolSearchSelectState">{loadingLabel}</div>
           ) : filteredOptions.length === 0 ? (
@@ -218,8 +250,8 @@ export default function SymbolSearchSelect({
               );
             })
           )}
-        </div>
+        </GlassPopoverContent>
       ) : null}
-    </div>
+    </GlassPopover>
   );
 }

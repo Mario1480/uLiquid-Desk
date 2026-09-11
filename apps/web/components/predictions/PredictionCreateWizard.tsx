@@ -38,9 +38,6 @@ export default function PredictionCreateWizard(props: PredictionCreateWizardProp
     <DeskDialog onClose={props.onClose} dismissible={false}><div
       className="predictionWizardBackdrop"
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
-      }}
     >
       <DeskDialogPanel><section
         className="predictionWizard"

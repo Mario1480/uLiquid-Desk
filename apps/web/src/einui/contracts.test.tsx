@@ -81,6 +81,12 @@ test("ported select content stays above modal overlays despite Radix inline stac
  assert.ok(css.includes('[data-radix-popper-content-wrapper]) { z-index: 1450 !important; }'));
 });
 
+test("symbol search uses a portalled popover instead of a clipped in-flow menu",()=>{
+ const source=readFileSync(new URL("../../components/SymbolSearchSelect.tsx",import.meta.url),"utf8");
+ assert.match(source,/<GlassPopoverContent/);
+ assert.doesNotMatch(source,/<div id=\{listboxId\} className="symbolSearchSelectMenu"/);
+});
+
 test("Ein checkbox and switch expose real roles, unique ids and disabled state",async()=>{
  const {DeskCheckbox}=await import("../../components/desk/DeskCheckbox");
  const {DeskSwitch}=await import("../../components/desk/DeskSwitch");

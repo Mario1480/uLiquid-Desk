@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { getBotStartStopUi } from "./controls";
 
@@ -41,3 +42,8 @@ test("busy stop state updates label and disables both actions", () => {
   assert.equal(ui.stopLabel, "Stopping...");
 });
 
+test("bot wizard hides every inactive step even when its section uses grid layout", () => {
+  const css = readFileSync(new URL("../../app/styles/bots-wallet.css", import.meta.url), "utf8");
+  assert.ok(css.includes(".botsNewWizardForm [hidden]"));
+  assert.match(css, /\.botsNewWizardForm \[hidden\]\s*\{\s*display:\s*none\s*!important;/);
+});
