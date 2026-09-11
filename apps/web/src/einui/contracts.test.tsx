@@ -83,6 +83,7 @@ test("ported select content stays above modal overlays despite Radix inline stac
 
 test("symbol search uses a portalled popover instead of a clipped in-flow menu",()=>{
  const source=readFileSync(new URL("../../components/SymbolSearchSelect.tsx",import.meta.url),"utf8");
+ assert.match(source,/<GlassPopoverTrigger asChild>/);
  assert.match(source,/<GlassPopoverContent/);
  assert.doesNotMatch(source,/<div id=\{listboxId\} className="symbolSearchSelectMenu"/);
 });

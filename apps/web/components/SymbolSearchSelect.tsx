@@ -4,8 +4,8 @@ import { DeskButton } from "@/components/desk/DeskButton";
 import { DeskInput } from "@/components/desk/DeskInput";
 import {
   GlassPopover,
-  GlassPopoverAnchor,
-  GlassPopoverContent
+  GlassPopoverContent,
+  GlassPopoverTrigger
 } from "@/components/einui/liquid-glass/glass-popover";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -57,7 +57,6 @@ export default function SymbolSearchSelect({
 }: SymbolSearchSelectProps) {
   const inputId = useId();
   const listboxId = `${inputId}-listbox`;
-  const inputRef = useRef<HTMLInputElement>(null);
   const closeTimer = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -154,9 +153,8 @@ export default function SymbolSearchSelect({
       }}
     >
       <div className={wrapperClassName} onMouseDown={cancelClose}>
-        <GlassPopoverAnchor asChild>
+        <GlassPopoverTrigger asChild>
           <DeskInput
-            ref={inputRef}
             className="input symbolSearchSelectInput"
             value={query}
             disabled={disabled}
@@ -167,10 +165,6 @@ export default function SymbolSearchSelect({
             aria-expanded={showMenu}
             aria-controls={listboxId}
             aria-activedescendant={showMenu && activeOption ? `${listboxId}-${activeIndex}` : undefined}
-            onPointerDown={() => {
-              cancelClose();
-              if (open && document.activeElement === inputRef.current) setOpen(false);
-            }}
             onFocus={(event) => {
               cancelClose();
               setOpen(true);
@@ -206,7 +200,7 @@ export default function SymbolSearchSelect({
               }
             }}
           />
-        </GlassPopoverAnchor>
+        </GlassPopoverTrigger>
         <span className="symbolSearchSelectChevron" aria-hidden="true" />
       </div>
       {showMenu ? (
