@@ -19,7 +19,7 @@ capital or onchain evidence remain separate from repository implementation.
 | Limited Beta | Implemented feature slices plus deployed intake | Scope decision and release acceptance open |
 | OpenAI Router and AI Credits | Implemented with paid production-run evidence | Billing and operations closeout open |
 | Execution Foundation | Shared foundation landed | Re-baselined follow-up list open |
-| Market Intelligence providers | Production hardening deployed | Authenticated acceptance and seven-day observation open |
+| Market Intelligence providers | Production hardening and authenticated acceptance complete | Telegram delivery and seven-day observation open |
 | Type Safety strictness | Current budget gate restored | Incremental strictness program open |
 
 ULIQ, Hummingbot, and Arbitrum USDC Billing remain active but are intentionally
@@ -140,7 +140,7 @@ required paths use the shared result vocabulary, and parity tests pass.
 
 ## Market Intelligence Providers
 
-Current state: `DEPLOYED / OBSERVATION AND AUTHENTICATED ACCEPTANCE OPEN`.
+Current state: `DEPLOYED / SEVEN-DAY OBSERVATION AND TELEGRAM DELIVERY OPEN`.
 
 Local verification on 2026-09-11 passed Prisma Client generation, all 58
 targeted Market Intelligence tests, API and Web typechecks, and the Web i18n
@@ -157,17 +157,25 @@ commit `01162eb0b`. Post-deploy probes returned all eight RSS sources and both
 official calendar sources healthy without warnings. See the
 [production rollout evidence](../archive/tasks/2026-09-11-market-intelligence-production-rollout.md).
 
+Authenticated Chrome checks passed for Dashboard, News, Economic Calendar,
+Market Intelligence, Admin Providers, Predictions, and Prediction Builder.
+Follow-up commits `94a85054f` and `61833487b` clarified the calendar risk-horizon
+status and filtered implausibly dated news items. Production builds and service
+health checks passed. A transient first-cycle SEC and Eurostat degradation
+cleared on one controlled provider retry, which restored 8/8 RSS sources and
+both official calendar sources. Telegram Daily Calendar is configured and
+enabled, but a real delivery has not yet been observed.
+
 Remaining gates:
 
-- run production smokes for Dashboard News, News, Economic Calendar, Market
-  Intelligence, Admin Providers, Telegram Daily Calendar, and Prediction Context;
-- capture coverage, latency, stale/degraded behavior, alert delivery, and source
-  terms status as release evidence;
+- exercise or observe one real Telegram Daily Calendar delivery;
+- continue capturing coverage, latency, stale/degraded behavior, alert delivery,
+  and source terms status as release evidence;
 - observe at least seven stable FMP-off days;
 - only then remove the legacy FMP adapter, key administration, health probe, tests,
   translations, and documentation.
 
-Close condition: authenticated smokes and the seven-day observation pass, then
+Close condition: Telegram delivery and the seven-day observation pass, then
 legacy FMP cleanup is deployed and verified.
 
 ## Type Safety Strictness

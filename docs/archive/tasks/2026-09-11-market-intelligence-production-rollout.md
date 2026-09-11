@@ -1,6 +1,6 @@
 # Market Intelligence production rollout — 2026-09-11
 
-Status: `DEPLOYED / OBSERVATION AND AUTHENTICATED ACCEPTANCE OPEN`.
+Status: `DEPLOYED / SEVEN-DAY OBSERVATION AND TELEGRAM DELIVERY OPEN`.
 
 ## Authorization and boundary
 
@@ -97,6 +97,42 @@ warnings. The following central health cycle reported 10 providers or sources,
 zero unavailable, and zero degraded. This is a stable rollout baseline, not a
 seven-day stability result.
 
+## Authenticated browser acceptance and follow-up hardening
+
+Authenticated production checks in Chrome passed for the Dashboard Market
+Intelligence widget, News, Economic Calendar, Market Intelligence, Admin
+Providers, Predictions Dashboard, and AI Prediction Builder. The Market
+Intelligence page reported 10/10 healthy sources. Admin Providers showed all
+ten approved sources healthy, with the latest refresh totals of 183 news items
+and 102 calendar events. Predictions reported the scheduled data sources as
+operational, and the builder remained explicitly analysis-only; no AI request,
+template save, order, bot, or wallet action was triggered.
+
+The calendar browser check exposed a presentation mismatch: the blackout
+summary correctly had no future high-impact event, while its empty-state text
+incorrectly claimed that the selected range had no events even though four
+earlier events were listed. Commit `94a85054f` changed the copy to describe the
+high-impact risk horizon. The Web i18n check, Web typecheck, production Next.js
+build, service health checks, and a live authenticated browser recheck passed.
+
+The News content review also found three historical SEC archive items whose
+feed dates had been interpreted as 2026, including a 1999 Year 2000 release and
+two 1997 releases. Commit `61833487b` rejects future publication dates and SEC
+press-release year mismatches during ingestion and filters already stored
+invalid rows from reads without deleting historical raw data. Nine focused RSS
+tests and the API typecheck passed before deployment. The API production build
+passed and the public health endpoint returned `200` after restart. The first
+post-restart provider cycle was transiently degraded: both SEC feeds failed to
+connect and Eurostat used the curated fallback. One controlled retry through
+Admin Providers at `2026-09-11 16:32:57` restored 8/8 RSS sources with 183
+items and both official calendar sources with 102 events. The final News page
+showed no partial-coverage warning, and the invalid SEC archive items were no
+longer visible.
+
+Telegram Daily Calendar configuration is enabled in Admin Providers, but the
+page showed no completed delivery and a last-cycle count of `0/0`. No Telegram
+message was sent during this pass.
+
 Unauthenticated boundary smokes returned the expected results:
 
 - `/health`: `200`;
@@ -107,9 +143,7 @@ Unauthenticated boundary smokes returned the expected results:
 
 ## Remaining gates
 
-- Complete authenticated browser smokes for Dashboard News, News, Economic
-  Calendar, Market Intelligence, Admin Providers, and Prediction Context.
-- Exercise or observe the Telegram Daily Calendar delivery path.
+- Exercise or observe one real Telegram Daily Calendar delivery path.
 - Record at least seven stable FMP-off days, including source coverage,
   refresh completion, degraded/stale behavior, and alert transitions.
 - After that observation passes, remove the legacy FMP adapter, key
