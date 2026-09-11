@@ -19,7 +19,9 @@ This file is the canonical repository guide for Codex and other engineering agen
 ## Documentation policy
 
 - English is the only language for new or materially updated repository documentation.
-- Keep active documents close to the feature they govern. Move completed implementation plans and historical task evidence to `docs/archive` only after verifying their status.
+- Keep active programs under `docs/plans/active` and queued proposals under `docs/plans/backlog`; use feature subdirectories to keep each program together.
+- Keep current readiness in `docs/status`, durable design in `docs/architecture`, operational procedures in `docs/runbooks`, validation material in `docs/quality`, and stable technical material in `docs/reference`.
+- Move completed implementation plans and historical task evidence to the matching `docs/archive` section only after verifying their status.
 - Do not archive a document merely because some checklist items are complete. Plans with open rollout, migration, deployment, legal, security, or production gates remain active.
 - Update inbound links and documentation indexes whenever a file moves.
 - Do not silently rewrite historical facts. Archived evidence may retain exact commands, identifiers, output, and quoted UI text.
@@ -128,15 +130,15 @@ Wallet/funding, FundingVault, BotVault, grid bots, manual trading, exchange acco
 
 For go-live, BotVault, funding, trading, contract, ULIQ, or production questions, inspect:
 
-- `docs/go-live-master-plan.md`
-- `docs/go-live-readiness-followups.md`
-- `docs/botvault-go-live-followups.md`
-- `docs/wallet-funding-go-live-status.md`
-- `docs/gridbot-go-live-status.md`
-- `docs/trading-desk-go-live-status.md`
-- `docs/contract-readiness-checklist.md`
-- `docs/botvault-e2e-integration-test-matrix.md`
-- `docs/release-evidence-matrix.md`
+- `docs/status/go-live-master-plan.md`
+- `docs/status/go-live-readiness-followups.md`
+- `docs/status/botvault-go-live-followups.md`
+- `docs/status/wallet-funding-go-live-status.md`
+- `docs/status/gridbot-go-live-status.md`
+- `docs/status/trading-desk-go-live-status.md`
+- `docs/status/contract-readiness-checklist.md`
+- `docs/quality/botvault-e2e-integration-test-matrix.md`
+- `docs/status/release-evidence-matrix.md`
 - current evidence under `docs/archive/tasks`
 
 Record live smokes, canaries, and operator observations as dated evidence under `docs/archive/tasks`, then summarize current conclusions in the applicable status document.
@@ -210,7 +212,7 @@ Production entry points:
 - Deploy: `scripts/deploy_prod.sh`
 - Environment sync: `scripts/sync_env_files.sh`
 - Contract deploy helper: `scripts/deploy_contracts_vps.sh`
-- Operations docs: `docs/PRODUCTION_DEPLOY.md`, `docs/contracts-vps-deploy.md`, `docs/ops`
+- Operations docs: `docs/runbooks/PRODUCTION_DEPLOY.md`, `docs/runbooks/contracts-vps-deploy.md`, `docs/ops`
 - Web: `https://desk.uliquid.vip`
 - API: `https://api.desk.uliquid.vip`
 

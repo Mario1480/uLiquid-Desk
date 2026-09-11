@@ -10,4 +10,9 @@ Archive rules:
 - Preserve historical commands, identifiers, results, and evidence without silently rewriting facts.
 - Update all inbound links when a document moves.
 
-See [`tasks/README.md`](tasks/README.md) for dated task evidence.
+Archive sections:
+
+- [`tasks/`](tasks/README.md) — dated task, deployment, acceptance, and incident evidence.
+- [`plans/`](plans/README.md) — completed or superseded implementation plans.
+- [`reports/`](reports/README.md) — completed point-in-time analyses and cleanup reports.
+- [`packages/`](packages/README.md) — historical ZIP snapshots retained for provenance.

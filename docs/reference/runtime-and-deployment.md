@@ -28,9 +28,9 @@ Default targets:
 
 Production uses web, API, runner, PostgreSQL, Redis, and Caddy. Details are available in:
 
-- [Production Deploy](../PRODUCTION_DEPLOY.md)
-- [Configuration](../configuration.md)
-- [Caddy Migration](../CADDY_MIGRATION.md)
+- [Production Deploy](../runbooks/PRODUCTION_DEPLOY.md)
+- [Configuration](../runbooks/configuration.md)
+- [Caddy Migration](../runbooks/CADDY_MIGRATION.md)
 
 ## Health Checks
 

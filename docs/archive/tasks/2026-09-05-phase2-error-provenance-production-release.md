@@ -68,7 +68,7 @@ Rollback was not executed. Under a rollback decision, retag the retained images 
 
 The bounded BingX wording/version/reload gate is closed by the follow-up below. Do not reinterpret old generic-error records as newly produced corrected runs.
 
-Positive-position target-environment Copilot acceptance, genuine stale/fallback scenarios, fixed-prompt quality/latency/credit comparisons and the outstanding historical/spot design decisions remain in the [active Phase 2 plan](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md). No positions or corrupted production data should be created solely to manufacture acceptance fixtures.
+Positive-position target-environment Copilot acceptance, genuine stale/fallback scenarios, fixed-prompt quality/latency/credit comparisons and the outstanding historical/spot design decisions remain in the [active Phase 2 plan](../../plans/active/hummingbot-integration/implementation/PHASE_2_IMPLEMENTATION_PLAN.md). No positions or corrupted production data should be created solely to manufacture acceptance fixtures.
 
 ## Authenticated Chrome follow-up after unlock — 2026-09-05
 

@@ -6,7 +6,7 @@ Stand: 2026-08-02
 
 Die drei Limited-Beta-AI-Scopes besitzen getrennte, serverseitig durchgesetzte Registries und gemeinsame Prompt-, Output- und Logging-Grenzen. Der Prediction Copier bleibt eine getrennte deterministische Runner-Runtime ohne AI-Tool-Loop.
 
-Die vollständige Matrix steht in `docs/ai-safety-tool-matrix.md`.
+Die vollständige Matrix steht in `docs/quality/ai-safety-tool-matrix.md`.
 
 ## Wesentliche Änderungen
 

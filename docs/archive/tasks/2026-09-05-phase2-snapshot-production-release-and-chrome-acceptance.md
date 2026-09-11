@@ -1,6 +1,6 @@
 # Phase 2 snapshot release and authenticated Chrome acceptance — 2026-09-05
 
-Status: the authorized API/web snapshot slice is deployed; browser acceptance is partial. Phase 2 is not complete. This dated record is evidence, not an open implementation plan; follow-ups remain in the [active Phase 2 plan](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+Status: the authorized API/web snapshot slice is deployed; browser acceptance is partial. Phase 2 is not complete. This dated record is evidence, not an open implementation plan; follow-ups remain in the [active Phase 2 plan](../../plans/active/hummingbot-integration/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
 
 ## Authority and release identity
 

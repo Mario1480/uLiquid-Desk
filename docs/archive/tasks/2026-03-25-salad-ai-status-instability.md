@@ -66,7 +66,7 @@ Das spricht fuer:
 
 1. `SALAD_OPENAI_UPSTREAM_HOST` ist veraltet oder falsch gesetzt.
    - Im Repo ist dokumentiert, dass ein veralteter Host typischerweise zu `503` fuehrt.
-   - Referenz: [README.md](/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/README.md), [docs/PRODUCTION_DEPLOY.md](/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/docs/PRODUCTION_DEPLOY.md)
+   - Referenz: [README.md](/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/README.md), [docs/runbooks/PRODUCTION_DEPLOY.md](/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/docs/runbooks/PRODUCTION_DEPLOY.md)
 
 2. Provider-/Proxy-Auth oder Upstream-Authorisierung ist instabil oder falsch.
    - Der Trace deutet auf einen HTTP-Fehler direkt auf `ollama_chat_completions_http_*` hin.

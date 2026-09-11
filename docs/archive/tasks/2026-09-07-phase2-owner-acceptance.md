@@ -12,7 +12,7 @@ Mario confirmed that he had fully tested the remaining scope and that everything
 - Bounded existing exchange histories without a new database, collector or persistent raw series.
 - The documented UTC-window correction and live cache identity/invalidation checks.
 
-Implementation, deployment and agent-observed tests remain separately recorded in the [Phase 2 record](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) and [provider-history release evidence](2026-09-06-phase2-provider-history-release.md). Earlier incomplete statuses describe their dated checkpoints and are superseded for current phase status by this acceptance.
+Implementation, deployment and agent-observed tests remain separately recorded in the [Phase 2 record](../../plans/active/hummingbot-integration/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) and [provider-history release evidence](2026-09-06-phase2-provider-history-release.md). Earlier incomplete statuses describe their dated checkpoints and are superseded for current phase status by this acceptance.
 
 ## Boundaries and next step
 

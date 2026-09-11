@@ -43,7 +43,7 @@ Total: **289 AI Credits**. Both account headers showed zero reserved credits aft
 - Resolve the remaining Phase 2 historical analytics and standalone spot-enrichment scope explicitly.
 - No comprehensive UI, accessibility, performance, provider-certification or trading acceptance is claimed.
 
-Related: [release evidence](2026-09-06-einui-copilot-production-release.md), [Phase 2 plan](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+Related: [release evidence](2026-09-06-einui-copilot-production-release.md), [Phase 2 plan](../../plans/active/hummingbot-integration/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
 
 ## Local mobile correction — subsequent authorized fix
 

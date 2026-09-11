@@ -420,7 +420,7 @@ Der Backfill muss einen Dry-run, Vorher-/Nachher-Aggregate, idempotente Wiederho
 - Free Grid/Prediction Copier ohne Pro-Upsell und mit funktionierendem Flow.
 - Exchange-Account-Usage und Free-Limit anzeigen.
 - Admin Billing und i18n um Premium/Account-Count ergänzen.
-- `docs/license-gating-matrix.md` erst jetzt auf tatsächlich ausgeliefertes Verhalten aktualisieren.
+- `docs/reference/license-gating-matrix.md` erst jetzt auf tatsächlich ausgeliefertes Verhalten aktualisieren.
 - Agent-Chat-, Billing-/AI-Credit- und Nutzer-Dokumentation aktualisieren.
 
 ### Gate B – Staging Migration und Evidence

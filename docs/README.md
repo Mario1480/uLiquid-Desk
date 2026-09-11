@@ -87,24 +87,30 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 - [Ein UI integration and acceptance](ui/einui-integration.md)
 - [Ein UI route migration inventory](ui/einui-route-inventory.md)
 - [Ein UI validation, screenshots and release gates](ui/einui-validation.md)
-- [Phase 2 — Shared Data and Existing AI Upgrade — COMPLETE](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) — owner acceptance, 2026-09-07
+- [Phase 2 — Shared Data and Existing AI Upgrade — COMPLETE](plans/active/hummingbot-integration/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) — owner acceptance, 2026-09-07
 - [Phase 2 owner acceptance record](archive/tasks/2026-09-07-phase2-owner-acceptance.md)
-- [Phase 3 — Cross-Market Arbitrage and XEMM Scanners — COMPLETE](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_3_IMPLEMENTATION_PLAN.md) — production acceptance completed 2026-09-09
+- [Phase 3 — Cross-Market Arbitrage and XEMM Scanners — COMPLETE](plans/active/hummingbot-integration/implementation/PHASE_3_IMPLEMENTATION_PLAN.md) — production acceptance completed 2026-09-09
 - [Phase 3 production acceptance record](archive/tasks/2026-09-09-phase3-production-acceptance.md)
-- [Phase 4 — Exchange Gateway and isolated Bitget POC — COMPLETE/PARTIAL](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_IMPLEMENTATION_PLAN.md) — Decision Gate closed 2026-09-08; Phase 5 remains gated
+- [Phase 4 — Exchange Gateway and isolated Bitget POC — COMPLETE/PARTIAL](plans/active/hummingbot-integration/implementation/PHASE_4_IMPLEMENTATION_PLAN.md) — Decision Gate closed 2026-09-08; Phase 5 remains gated
 - [Phase 4 Hummingbot Bitget decision record](archive/tasks/2026-09-08-phase4-hummingbot-bitget-decision.md)
 - [Phase 4 private Bitget certification deferral](archive/tasks/2026-09-10-phase4-private-certification-deferred.md) — demo certification deferred; live account excluded from Hummingbot execution tests
-- [Phase 5 preparation plan](uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_5_PREPARATION_PLAN.md) — architecture and certification preparation complete; implementation remains gated
-- [Go-live master plan](go-live-master-plan.md)
-- [Go-live readiness follow-ups](go-live-readiness-followups.md)
-- [Release evidence matrix](release-evidence-matrix.md)
+- [Phase 5 preparation plan](plans/active/hummingbot-integration/implementation/PHASE_5_PREPARATION_PLAN.md) — architecture and certification preparation complete; implementation remains gated
+- [Active and backlog plans](plans/README.md)
+- [Active program closeout register](status/active-program-closeout.md)
+- [Current status and readiness](status/README.md)
+- [Architecture and technical design](architecture/README.md)
+- [Runbooks and operations](runbooks/README.md)
+- [Quality, security, and acceptance](quality/README.md)
+- [Go-live master plan](status/go-live-master-plan.md)
+- [Go-live readiness follow-ups](status/go-live-readiness-followups.md)
+- [Release evidence matrix](status/release-evidence-matrix.md)
 - [Go-live and smoke tests](ops/go-live-and-smoke-tests.md)
 - [Runtime and deployment reference](reference/runtime-and-deployment.md)
 - [Internal documentation index](reference/internal-docs-index.md)
 
 ## Archive
 
-Completed dated work records and historical implementation evidence live under [`archive/tasks`](archive/tasks/README.md). Archived evidence is retained for traceability and is not a statement of current runtime, deployment, or go-live status.
+Completed dated work records, superseded plans, point-in-time reports, and historical package snapshots live under [`archive`](archive/README.md). Archived evidence is retained for traceability and is not a statement of current runtime, deployment, or go-live status.
 
 - [Trading and dashboard UI fixes, 2026-09-08](archive/tasks/2026-09-08-trading-ui-fixes.md)
 
@@ -114,7 +120,7 @@ Implementation plans remain in their feature area while any rollout, migration, 
 
 - Write repository documentation and READMEs in English.
 - Keep active operational truth in the relevant status, runbook, ADR, or reference document.
-- Use `docs/archive/tasks/YYYY-MM-DD-*.md` for completed task evidence.
+- Use `docs/archive/tasks/YYYY-MM-DD-*.md` for completed task evidence and the dedicated archive subdirectories for plans, reports, and package snapshots.
 - Update inbound links and this index whenever documentation moves.
 - Preserve exact commands, identifiers, output, and quoted UI text in historical evidence.
 - Treat code/test, deployment/runtime, browser, transaction/finality, indexer, and reconciliation evidence as separate layers.

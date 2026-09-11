@@ -11,7 +11,7 @@ Mario hat bestätigt, dass keine alten BotVault-V3-Vaults mehr offen sind und de
 - Reguläre Factory-/Treasury-Auflösung berücksichtigt BotVault V3 nicht mehr.
 - Die Onchain-Reconciliation schließt Legacy-Vaults jetzt in allen Umgebungen standardmäßig aus; eine explizite Recovery-Option bleibt für historische Diagnose erhalten.
 - Der veraltete V3-Exit-Gas-Test wurde aus der Capital-Flow-Regression entfernt und durch bestehende V4-Close-/Exit-Gas-Abdeckung ersetzt.
-- Historische interne Namen wie `botVaultV3.service.ts` bleiben vorerst bestehen, weil sie laut `docs/botvault-runtime-naming.md` den heutigen V4-Produktpfad implementieren. Ihre Entfernung ist ein separater Rename-/Datenmodell-Refactor und darf nicht mit dem Entfernen echter V3-Vertragszweige verwechselt werden.
+- Historische interne Namen wie `botVaultV3.service.ts` bleiben vorerst bestehen, weil sie laut `docs/architecture/botvault-runtime-naming.md` den heutigen V4-Produktpfad implementieren. Ihre Entfernung ist ein separater Rename-/Datenmodell-Refactor und darf nicht mit dem Entfernen echter V3-Vertragszweige verwechselt werden.
 
 ## Reproduzierte Fehler und Korrekturen
 

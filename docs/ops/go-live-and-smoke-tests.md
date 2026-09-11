@@ -65,9 +65,9 @@ For uLiquid Desk, go-live should not be a big-bang release. Use a controlled can
 
 ## Related Internal Documents
 
-- [Go-live Readiness Follow-ups](../go-live-readiness-followups.md)
-- [Trading Desk Go-live Status](../trading-desk-go-live-status.md)
-- [Wallet & Funding Go-live Status](../wallet-funding-go-live-status.md)
-- [GridBot Go-live Status](../gridbot-go-live-status.md)
-- [BotVault Go-live Follow-ups](../botvault-go-live-followups.md)
-- [Smoke Test](../SMOKE_TEST.md)
+- [Go-live Readiness Follow-ups](../status/go-live-readiness-followups.md)
+- [Trading Desk Go-live Status](../status/trading-desk-go-live-status.md)
+- [Wallet & Funding Go-live Status](../status/wallet-funding-go-live-status.md)
+- [GridBot Go-live Status](../status/gridbot-go-live-status.md)
+- [BotVault Go-live Follow-ups](../status/botvault-go-live-followups.md)
+- [Smoke Test](../runbooks/SMOKE_TEST.md)

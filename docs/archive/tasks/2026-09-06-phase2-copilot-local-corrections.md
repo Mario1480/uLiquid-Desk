@@ -44,6 +44,6 @@ The first new server-rendered component test exposed a missing React binding und
 - Obtain publication authorization, isolate these corrections from parallel UI changes and deploy the selected release.
 - Repeat the previously failing real Agent Chat Copilot request and confirm a final answer, honest missing coverage, persisted feature provenance, latency and settled credits within unchanged limits.
 - Repeat a standalone BingX analysis and inspect the now-supported book evidence, independent quality labels, findings and cached/reloaded provenance.
-- Keep genuine stale/automatic-fallback acceptance, fixed-prompt quality/cost comparison, exact standalone cache evidence and historical/spot scope decisions open in the [Phase 2 plan](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+- Keep genuine stale/automatic-fallback acceptance, fixed-prompt quality/cost comparison, exact standalone cache evidence and historical/spot scope decisions open in the [Phase 2 plan](../../plans/active/hummingbot-integration/implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
 
 Phase 2 is not complete. Local regression success is not a claim that the production failures have already been repaired.

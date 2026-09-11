@@ -126,11 +126,11 @@ Production operations are separate from normal development work. Code approval d
 
 Start with:
 
-- [`docs/go-live-master-plan.md`](docs/go-live-master-plan.md)
-- [`docs/go-live-readiness-followups.md`](docs/go-live-readiness-followups.md)
-- [`docs/release-evidence-matrix.md`](docs/release-evidence-matrix.md)
+- [`docs/status/go-live-master-plan.md`](docs/status/go-live-master-plan.md)
+- [`docs/status/go-live-readiness-followups.md`](docs/status/go-live-readiness-followups.md)
+- [`docs/status/release-evidence-matrix.md`](docs/status/release-evidence-matrix.md)
 - [`docs/ops/go-live-and-smoke-tests.md`](docs/ops/go-live-and-smoke-tests.md)
-- [`docs/contract-readiness-checklist.md`](docs/contract-readiness-checklist.md)
+- [`docs/status/contract-readiness-checklist.md`](docs/status/contract-readiness-checklist.md)
 
 Production entry points:
 
@@ -147,7 +147,7 @@ Canonical services:
 
 ## Documentation
 
-The documentation index and maintenance policy live in [`docs/README.md`](docs/README.md). Repository documentation and READMEs are written in English. Historical implementation evidence is kept under `docs/archive`; active plans and operational status documents remain in their feature locations.
+The documentation index and maintenance policy live in [`docs/README.md`](docs/README.md). Repository documentation and READMEs are written in English. Active work is organized under `docs/plans`, current readiness under `docs/status`, durable technical material under `docs/architecture`, `docs/runbooks`, `docs/quality`, and `docs/reference`, and historical evidence under `docs/archive`.
 
 See [`AGENTS.md`](AGENTS.md) for repository-specific agent rules. Release and gate history is maintained separately in [`AGENDA.md`](AGENDA.md).
 

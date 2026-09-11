@@ -58,9 +58,9 @@ This agenda tracks the review findings against the live repository. It is intent
 - [x] Start reducing the `any` budgets instead of only preventing regressions.
   First ratchet completed: `api-vaults` budget lowered from 325 to 323; `futures-exchange` lowered from 34 to 32 after replacing Bitget product-type `any` casts with a typed resolver.
 - [x] Plan staged strictness upgrades for API and Web.
-  Plan recorded in `docs/type-safety-strictness-plan.md`; API `noImplicitAny` and Web `strict` remain staged tracks rather than a risky whole-app flag flip.
+  Plan recorded in `docs/plans/active/type-safety-strictness-plan.md`; API `noImplicitAny` and Web `strict` remain staged tracks rather than a risky whole-app flag flip.
 - [x] Document Prisma engine handling for restricted/offline deployment environments.
-  Policy recorded in `docs/prisma-engine-cache-and-offline-builds.md`; release evidence matrix now requires cache/offline handling notes.
+  Policy recorded in `docs/reference/prisma-engine-cache-and-offline-builds.md`; release evidence matrix now requires cache/offline handling notes.
 
 ## P2 Refactor Tracks
 
@@ -75,7 +75,7 @@ This agenda tracks the review findings against the live repository. It is intent
 
 ## Production Evidence Still Needed
 
-- [ ] Fill a release-specific copy of `docs/release-evidence-matrix.md` for the next tag/deploy.
+- [ ] Fill a release-specific copy of `docs/status/release-evidence-matrix.md` for the next tag/deploy.
 - [ ] Record Docker production build evidence for API/Web/Runner images.
 - [ ] Record staging migration evidence, including backup and restore confidence.
 - [ ] Record canary limits and rollback rehearsal evidence before broader capital movement.

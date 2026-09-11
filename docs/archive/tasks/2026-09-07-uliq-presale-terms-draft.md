@@ -15,4 +15,4 @@ The page now contains eleven sections covering seller identity, network/token id
 
 No contract, API, terms-acceptance version/hash, purchase gate, production environment, deployment, commit or push was changed by this task. Prior ULIQ approval-document worktree changes were preserved. Seller placeholders and final purchase-terms version/hash still require completion before using this as final purchase terms.
 
-Review copy: [English draft](../../ULIQ_Codex_Implementation_Plan/ULIQ_PRESALE_TERMS_DRAFT.md). The rendered DE/EN message files remain the source of page copy.
+Review copy: [English draft](../../plans/active/uliq/ULIQ_PRESALE_TERMS_DRAFT.md). The rendered DE/EN message files remain the source of page copy.

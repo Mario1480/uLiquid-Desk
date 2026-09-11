@@ -1,76 +1,97 @@
 ---
-description: Orientation for existing technical and operational documents in the repository.
+description: Orientation for technical and operational documents in the repository.
 icon: folder-tree
 ---
 
 # Internal Documentation Index
 
-This page links existing technical and operational repository documents. It complements the user knowledge base and is mainly intended for admins, operators, and developers.
+This page is the internal starting point for admins, operators, and developers. Public user guidance remains in the GitBook sections listed by [`../SUMMARY.md`](../SUMMARY.md).
 
-## Go-live and Readiness
+## Current status and readiness
 
-- [Go-live Master Plan](../go-live-master-plan.md)
-- [Go-live Readiness Follow-ups](../go-live-readiness-followups.md)
-- [Trading Desk Go-live Status](../trading-desk-go-live-status.md)
-- [Admin Go-live Status](../admin-go-live-status.md)
-- [AI Predictions Go-live Status](../ai-predictions-go-live-status.md)
-- [GridBot Go-live Status](../gridbot-go-live-status.md)
-- [Normal Bots Go-live Status](../normal-bots-go-live-status.md)
-- [Wallet & Funding Go-live Status](../wallet-funding-go-live-status.md)
-- [Dashboard, Calendar & News Go-live Status](../dashboard-calendar-news-go-live-status.md)
+- [Status directory and evidence rules](../status/README.md)
+- [Go-live Master Plan](../status/go-live-master-plan.md)
+- [Go-live Readiness Follow-ups](../status/go-live-readiness-followups.md)
+- [Release Evidence Matrix](../status/release-evidence-matrix.md)
+- [Contract Readiness Checklist](../status/contract-readiness-checklist.md)
+- [BotVault Go-live Follow-ups](../status/botvault-go-live-followups.md)
+- [Trading Desk Go-live Status](../status/trading-desk-go-live-status.md)
+- [GridBot Go-live Status](../status/gridbot-go-live-status.md)
+- [Wallet and Funding Go-live Status](../status/wallet-funding-go-live-status.md)
 
-## Trading, Bots, and Grid
+## Active plans and backlog
 
-- [Hummingbot Phase 4 Exchange Gateway and Bitget POC](../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_IMPLEMENTATION_PLAN.md)
-- [Hummingbot Phase 4 Public Comparison Report](../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_4_PUBLIC_COMPARISON_REPORT.md)
-- [Manual Trading Desk](../manual-trading-desk.md)
-- [Grid Capital and Safety](../grid-capital-and-safety.md)
-- [Grid Runtime Recovery](../grid-runtime-recovery.md)
-- [Grid Mode Analysis](../grid-mode-analysis.md)
-- [Exchange Capability Matrix](../exchange-capability-matrix.md)
-- [Runner Reconciliation Standards](../runner-reconciliation-standards.md)
-- [Composite Strategy Execution](../composite-strategy-execution.md)
-- [Local Strategy Registry](../local-strategy-registry.md)
+- [Plan classification and archive policy](../plans/README.md)
+- [Active plan register](../plans/active/README.md)
+- [ULIQ program](../plans/active/uliq/00_MASTER_PLAN.md)
+- [Hummingbot integration roadmap](../plans/active/hummingbot-integration/README.md)
+- [AI Agent Chat program](../plans/active/ai-agent-chat/README.md)
+- [Limited Beta program](../plans/active/limited-beta/README.md)
+- [Market Intelligence provider migration](../plans/active/market-intelligence-providers/00-README-MASTER-PLAN.md)
+- [OpenAI router and AI credits](../plans/active/openai-router-ai-credits/README.md)
+- [Arbitrum-USDC billing rollout](../plans/active/billing-arbitrum-usdc-rollout.md)
+- [Backlog register](../plans/backlog/README.md)
 
-## Vaults and Onchain
+## Architecture and technical design
 
-- [Vault Architecture](../vault-architecture.md)
-- [Vault Lifecycle](../vault-lifecycle.md)
-- [Vault MVP Rollout](../vault-mvp-rollout.md)
-- [BotVault V4 Rollout](../botvault-v4-rollout.md)
-- [BotVault V4 Status Model](../botvault-v4-status-model.md)
-- [BotVault Capital State Machine](../botvault-capital-state-machine.md)
-- [FundingVault BotVault Launch Live Monitoring](../archive/tasks/2026-05-25-funding-vault-live-start.md)
-- [Onchain Deploy Security Checklist](../onchain-deploy-security-checklist.md)
+- [Architecture directory](../architecture/README.md)
+- [Manual Trading Desk](../architecture/manual-trading-desk.md)
+- [Grid Capital and Safety](../architecture/grid-capital-and-safety.md)
+- [Runner Reconciliation Standards](../architecture/runner-reconciliation-standards.md)
+- [Composite Strategy Execution](../architecture/composite-strategy-execution.md)
+- [Vault Architecture](../architecture/vault-architecture.md)
+- [Vault Lifecycle](../architecture/vault-lifecycle.md)
+- [BotVault V4 Status Model](../architecture/botvault-v4-status-model.md)
+- [BotVault Capital State Machine](../architecture/botvault-capital-state-machine.md)
+
+## Runbooks and operations
+
+- [Runbook directory and safety rules](../runbooks/README.md)
+- [Production Deploy](../runbooks/PRODUCTION_DEPLOY.md)
+- [Smoke Test](../runbooks/SMOKE_TEST.md)
+- [Configuration](../runbooks/configuration.md)
+- [Logging](../runbooks/LOGGING.md)
+- [Caddy Migration](../runbooks/CADDY_MIGRATION.md)
+- [Execution Recovery](../runbooks/execution-recovery.md)
+- [Grid Runtime Recovery](../runbooks/grid-runtime-recovery.md)
+- [BotVault V4 Rollout](../runbooks/botvault-v4-rollout.md)
+- [Vault MVP Rollout](../runbooks/vault-mvp-rollout.md)
+- [Contracts VPS Deploy](../runbooks/contracts-vps-deploy.md)
+
+## Quality, security, and acceptance
+
+- [Quality directory and evidence rules](../quality/README.md)
+- [Regression Matrix](../quality/regression-matrix.md)
+- [Consolidation Release Checklist](../quality/consolidation-release-checklist.md)
+- [BotVault E2E and Integration Test Matrix](../quality/botvault-e2e-integration-test-matrix.md)
+- [Onchain Deploy Security Checklist](../quality/onchain-deploy-security-checklist.md)
+- [AI Evaluation Framework](../quality/ai-evaluation-framework.md)
+- [AI Safety and Tool Matrix](../quality/ai-safety-tool-matrix.md)
+
+## Reference and product boundaries
+
+- [Reference directory](README.md)
+- [Runtime and Deployment](runtime-and-deployment.md)
+- [Exchange Capability Matrix](exchange-capability-matrix.md)
+- [License Gating Matrix](license-gating-matrix.md)
+- [Local Strategy Registry](local-strategy-registry.md)
+- [Market Intelligence Operations](market-intelligence-operations.md)
+- [Prediction Evaluator](prediction-evaluator.md)
+- [Prediction Refresh Scheduler](prediction-refresh-scheduler.md)
+- [UI Internationalization](i18n.md)
+
+## ULIQ and onchain references
+
+- [ULIQ Presale Terms Draft](../plans/active/uliq/ULIQ_PRESALE_TERMS_DRAFT.md)
 - [ULIQ Token Deployment Audit and Open Release Gates](../../packages/contracts/ULIQ_TOKEN_DEPLOYMENT_AUDIT.md)
-- [ULIQ Token Audit Evidence — 2026-09-05](../archive/tasks/2026-09-05-uliq-token-deployment-audit.md)
-- [ULIQ Presale, Vesting and Locking Review and Open Actions](../../packages/contracts/ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md)
-- [ULIQ Presale Terms Draft](../ULIQ_Codex_Implementation_Plan/ULIQ_PRESALE_TERMS_DRAFT.md)
+- [ULIQ Presale, Vesting and Locking Review](../../packages/contracts/ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md)
 - [ULIQ Mainnet Contract Inputs and Authority Review](../../packages/contracts/ULIQ_MAINNET_CONTRACT_APPROVAL.md)
+- [ULIQ Mainnet Locking Rollout](../../packages/contracts/ULIQ_MAINNET_LOCKING_ROLLOUT.md)
 
-## AI and Predictions
+## Archive
 
-- [Shared Data and Existing AI Upgrade — Phase 2](../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md)
-- [AI Evaluation Framework](../ai-evaluation-framework.md)
-- [AI Prompt](../ai-prompt.md)
-- [API Prediction Detail](../api-prediction-detail.md)
-- [Prediction Evaluator](../prediction-evaluator.md)
-- [Prediction Refresh Scheduler](../prediction-refresh-scheduler.md)
-
-## Operations and Deployment
-
-- [Production Deploy](../PRODUCTION_DEPLOY.md)
-- [Smoke Test](../SMOKE_TEST.md)
-- [Configuration](../configuration.md)
-- [Logging](../LOGGING.md)
-- [Caddy Migration](../CADDY_MIGRATION.md)
-- [Regression Matrix](../regression-matrix.md)
-
-## Product and UX
-
-- [Frontend Information Architecture](../frontend-information-architecture.md)
-- [Demo Flows](../demo-flows.md)
-- [Login](../login.md)
-- [License Gating Matrix](../license-gating-matrix.md)
-- [Affiliate Profitshare Plan](../affiliate-profitshare-plan.md)
-- [Bug Reports](../bug-reports.md)
+- [Archive policy and sections](../archive/README.md)
+- [Dated task evidence](../archive/tasks/README.md)
+- [Archived plans](../archive/plans/README.md)
+- [Archived reports](../archive/reports/README.md)
+- [Historical package snapshots](../archive/packages/README.md)

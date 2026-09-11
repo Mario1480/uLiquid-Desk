@@ -47,7 +47,7 @@ API `/health` returned `{"ok":true}`; English and German login routes returned H
 
 The intended flow is production Agent Chat → explicit historical Funding/OI request → persisted evidence → full reload → desktop/mobile evidence inspection. Computer Use reported that the Mac was locked and could not be automatically unlocked. Mario was asked to unlock it while implementation and release work continued. No new browser screenshot, interaction, console-health or reload evidence is claimed.
 
-The active [Phase 2 plan](../../uLiquid-Hummingbot-Analysis-Final/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) retains authenticated historical acceptance, the exact live standalone cache comparison, naturally stale evidence and the controlled before/after benchmark as open gates. No orders, transfers, account/provider settings or deliberate service disruptions are required or authorized by these acceptance steps.
+The active [Phase 2 plan](../../plans/active/hummingbot-integration/implementation/PHASE_2_IMPLEMENTATION_PLAN.md) retains authenticated historical acceptance, the exact live standalone cache comparison, naturally stale evidence and the controlled before/after benchmark as open gates. No orders, transfers, account/provider settings or deliberate service disruptions are required or authorized by these acceptance steps.
 
 ## Subsequent authenticated Chrome acceptance — 18:05 UTC
 
