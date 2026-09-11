@@ -6,13 +6,16 @@
 **Area:** Agent Skills, Skill Packaging, Routines, Tool Boundaries, Versioning, Permissions, Skill Library
 **Date:** 2026-09-03
 
-### Implementation status — 2026-09-05
+### Implementation status — updated 2026-09-09
 
 - `IMPLEMENTED`: the existing `AGENT_SKILLS` catalog remains the production authority and now carries status, allowed profiles, concrete output schemas and required routine IDs.
 - `IMPLEMENTED`: validated tool results, routine/skill provenance and enriched Funding/OI/Orderbook skills.
 - `NOT STARTED`: dynamic skill packages, a second skill runtime, Hummingbot skill installation and execution-capable skills.
 - `COMPLETE`: Mario confirmed Phase 1 verification and formal acceptance on 2026-09-05.
-- `IN PROGRESS`: Phase 2 candles, indicators, ticker, orderbook and Funding/OI skills consume shared/pinned snapshots locally. Feature values feed the AI context and persisted-value sidebar; standalone perpetual Copilot is integrated. Historical/spot scope and acceptance remain in the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+- `COMPLETE`: Phase 2 candles, indicators, ticker, orderbook and Funding/OI skills consume shared/pinned snapshots. Feature values feed the AI context and persisted-value sidebar; standalone perpetual Copilot is integrated. Mario confirmed the defined Phase 2 scope, including bounded provider histories, on 2026-09-07. This does not certify Hummingbot or add execution authority; see the [Phase 2 plan](implementation/PHASE_2_IMPLEMENTATION_PLAN.md).
+- `ROADMAP MAPPING`: the authoritative consolidated placement and coverage rule are recorded in the
+  [Area 4 and Area 5 coverage register](implementation/CODEX_IMPLEMENTATION_PLAN.md#area-4-and-area-5-coverage-register).
+  The Phase A–G and P1–P3 labels below are area-specific maturity/priority labels, not additional roadmap phases.
 
 ---
 
@@ -1900,7 +1903,7 @@ They expose infrastructure management concepts that should remain internal.
 
 # 52. Recommended Implementation Phases
 
-These are area-specific Skill stages. In the consolidated roadmap, the existing typed catalog and analytical Skills are consolidated in Phases 1–2, Cross-Market Skills support Phase 3 scanners, Bot Architect Skills map to Phase 6A, and custom user Skills remain a later separately approved scope.
+These are area-specific Skill stages. In the consolidated roadmap, the existing typed catalog and analytical Skills are consolidated in Phases 1–2, Cross-Market Skills support Phase 3 scanners, Bot Architect Skills map to Phase 6A, and custom user Skills remain a later separately approved scope. Hyperliquid/Vault Skills, monitoring Skills, lifecycle/discovery work, dynamic user Skills and explicitly rejected Hummingbot/unsafe capabilities are all retained in the [Area 4 and Area 5 coverage register](implementation/CODEX_IMPLEMENTATION_PLAN.md#area-4-and-area-5-coverage-register).
 
 ## Phase A – Skill Foundation
 

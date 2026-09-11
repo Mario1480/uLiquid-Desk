@@ -57,6 +57,52 @@ Proceed only after an independent Hedge Watchdog, maximum-unhedged-duration poli
 ### Phase 6E — Autonomous Agents
 Policy-constrained autonomous Agents come last and require the complete permission, risk, audit, replay, evaluation and kill-switch stack.
 
+## Area 4 and Area 5 coverage register
+
+This register is the authoritative roadmap mapping for
+[`04_AGENTS_CONDOR_ARCHITECTURE.md`](../04_AGENTS_CONDOR_ARCHITECTURE.md) and
+[`05_SKILLS_SYSTEM.md`](../05_SKILLS_SYSTEM.md). Their local Phase A–G and P1–P3 labels are
+area-specific maturity or priority labels, not additional consolidated roadmap phases.
+
+An item appearing in either analysis must be represented below as completed, assigned to a
+consolidated phase, separately gated, optional, or rejected. Being described in an analysis does
+not by itself authorize implementation, production execution or Hummingbot adoption.
+
+| Area 4/5 capability | Consolidated placement | Current disposition |
+|---|---|---|
+| Deterministic Routine Registry, typed Skill catalog, output validation, profile compatibility, permission checks, invocation provenance and Decision Logs | Phase 1 | `COMPLETE` within the accepted Phase 1 scope; extend the existing implementation rather than create a parallel registry/runtime |
+| Market Analyst and Position Copilot read-only analytical Skills using Shared Market Data, feature snapshots and bounded histories | Phase 2 | `COMPLETE` within the accepted Phase 2 scope; additional skill breadth remains separately planned below |
+| Skill Standard controls: schemas, deterministic routines, freshness/provenance/confidence, explainability, least-context retrieval, security tests, versioning and audit | Phases 1–2 foundation; mandatory for every later phase | Accepted Phase 1–2 controls are `COMPLETE` within their recorded scope; every new Skill must satisfy all applicable controls before its phase can close |
+| Cross-market `arbitrage-scan`, `xemm-analysis`, funding/basis analysis and exchange-capability enrichment | Phase 3 | `COMPLETE` within the accepted scanner/read-only scope; no automated execution, private balance read or credential authority was added |
+| Additional read-only analytical breadth: volatility regime, support/resistance, deeper SMC, trade plans, correlation, bot review and strategy comparison | Phase 3 or the consuming Phase 6A product scope | `NOT STARTED`; prioritize through a phase implementation plan rather than treating the analysis priority labels as approval |
+| Hummingbot development skills used for isolated comparison work, provider health and deterministic monitoring evidence | Phase 4 | POC/internal tooling only; never expose Hummingbot administration to Desk product Agents |
+| Hummingbot-backed market/exchange Skills | Phase 5 | `GATED` by a documented Bitget POC `PASS` and subsequent connector/market certification; product Skills continue to call uLiquid contracts, not Hummingbot scripts directly |
+| Versioned structured Agent Definitions, autonomy levels 0–2, Agent Orchestrator, scoped Context Builder, structured outputs and first-party Skill discovery/lifecycle/version pinning/progressive loading/context budgets/caching | Phase 6A prerequisite | `GATED`; extend the accepted Phase 1–2 foundation before Bot Architect release and do not introduce a second production Skill runtime |
+| Durable Agent sessions/journals and decision snapshots; approved user preferences scoped by tenant/user/agent; model independence/routing, token/cost and AI-credit telemetry, replay and evaluation | Phase 6A prerequisite | `GATED`; live market, position and portfolio truth must always be reloaded from tools and must never come from memory |
+| Role separation and product UX for Market Analyst, Position Copilot, Prediction Builder and Bot Architect; typed handling of untrusted external context | Phase 6A prerequisite | `GATED`; avoid premature specialist proliferation and enforce prompt-injection defenses outside the model |
+| Bot Architect, deterministic `BotSpec`, grid/DCA/TWAP design, strategy validation, backtest/simulation and infrastructure-enforced paper/dry-run mode | Phase 6A | `GATED`; drafts and simulations cannot deploy or trade live |
+| Read-only Hyperliquid/Vault Skills (`hyperliquid-market-analysis`, `vault-analysis`, `vault-bot-readiness`) | Phase 6A prerequisite | `GATED`; remain uLiquid-native and require fresh contract, account and reconciliation state |
+| Monitoring Skills (`bot-health`, `exchange-health`, portfolio summaries) | Phase 4 foundation; Phase 6A–6B prerequisite | `GATED` by the relevant provider/runtime evidence; deterministic monitoring triggers explanation rather than granting execution |
+| Level-3 approved Agent actions, scoped capability context, fresh-state validation, risk policy, execution ownership/capital reservation and Execution Intent through the Exchange Gateway | Phase 6B | `GATED`; every monetary action requires explicit user approval and reconciliation |
+| Automated Arbitrage skills/execution and capital ownership attribution | Phase 6C | `GATED` by proven dual-leg idempotency, reservation, reconciliation and recovery |
+| XEMM builder/execution and hedge monitoring | Phase 6D | `GATED` by an independent Hedge Watchdog, maximum-unhedged-duration policy and emergency recovery |
+| Level-4 policy-constrained autonomy, event-driven/tick loops, per-Agent P&L, shared-account ownership, durable learning and multi-Agent delegation/review | Phase 6E | `GATED`; multi-Agent operation is last, optional and must remain subordinate to deterministic policy and kill switches |
+| Statistical arbitrage, multi-strategy capital allocation and autonomous position management | Separate Phase 6E strategy gates | `NOT APPROVED`; each strategy needs its own risk, evaluation, capital, reconciliation and recovery evidence |
+| Declarative user-created Skills | Separate post-foundation product gate | `NOT APPROVED`; consider only after the first-party system is proven, with sandboxing and no permission escalation |
+| Third-party Skill marketplace or independently distributed Skill repository | Separate future product/legal/security gate | `NOT APPROVED`; no committed roadmap phase |
+| Condor runtime | Optional isolated lab POC only | No production dependency and no committed phase; uLiquid owns Agent, tenant, permission and execution authority |
+| Hummingbot deploy/developer/core administration skills and LP Agent | Internal-only or out of scope | Never expose to Desk users; LP work requires a separate product decision |
+| Skill-defined permissions, embedded secrets, arbitrary user shell/Python, direct raw exchange/provider calls, direct Hummingbot admin access, unpinned automatic updates and loading every Skill into every prompt | Never | `REJECTED` architecture |
+
+### Coverage acceptance rule
+
+Before any phase is marked complete, its implementation plan must reference the applicable rows
+above and record each one as delivered, explicitly deferred to its named later gate, or rejected.
+Phase 6A must not be considered complete merely because Bot Architect can produce a schema: its
+assigned Agent Platform, Skill Platform, memory/session, evaluation, paper-mode,
+Hyperliquid/Vault and monitoring prerequisites must also have explicit evidence or an owner-approved
+scope decision. Phase 6E must not inherit execution authority from Phase 6B implicitly.
+
 ## Required engineering rules
 - No raw HB DTOs outside provider module.
 - No raw exchange credentials outside Credential Service.

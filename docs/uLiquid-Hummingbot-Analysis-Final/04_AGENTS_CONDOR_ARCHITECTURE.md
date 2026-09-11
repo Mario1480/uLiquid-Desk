@@ -6,12 +6,15 @@
 **Area:** Condor, Trading Agents, Agent Roles, Tool/Skill Use, Permissions, Autonomy, Multi-Agent, Observability
 **Date:** 2026-09-03
 
-### Implementation status — 2026-09-04
+### Implementation status — updated 2026-09-09
 
 - `IMPLEMENTED`: deterministic Routine Registry, routine version provenance, typed read-only Agent Skill contracts and user-facing Decision Logs for the existing Market Analyst and Position Copilot.
 - `IMPLEMENTED`: explicit no-execution permission boundary for these profiles.
 - `NOT STARTED`: Bot Architect, autonomous or multi-agent trading, durable agent learning and Condor runtime integration.
 - `GATED`: every execution-capable or autonomous agent concept described later in this analysis.
+- `ROADMAP MAPPING`: the authoritative consolidated placement and coverage rule are recorded in the
+  [Area 4 and Area 5 coverage register](implementation/CODEX_IMPLEMENTATION_PLAN.md#area-4-and-area-5-coverage-register).
+  The Phase A–E labels below are area-specific maturity stages, not additional roadmap phases.
 
 ---
 
@@ -1859,7 +1862,7 @@ Do not make it core Desk runtime.
 
 # 53. Recommended Product Phases
 
-These are area-specific maturity stages. In the consolidated roadmap, existing Agent foundations are consolidated in Phases 1–2, Bot Architect maps to Phases 6A–6B, approved Agent actions require the Phase 6B execution gate, and autonomous behavior remains Phase 6E.
+These are area-specific maturity stages. In the consolidated roadmap, existing Agent foundations are consolidated in Phases 1–2, Bot Architect maps to Phases 6A–6B, approved Agent actions require the Phase 6B execution gate, and autonomous behavior remains Phase 6E. Durable sessions, scoped preferences/memory, Agent definitions, context/model routing, evaluation, per-Agent attribution and multi-Agent work are explicitly retained in the [Area 4 and Area 5 coverage register](implementation/CODEX_IMPLEMENTATION_PLAN.md#area-4-and-area-5-coverage-register), rather than being implicitly treated as part of an unspecified future phase.
 
 ## Phase A – Agent Foundation
 

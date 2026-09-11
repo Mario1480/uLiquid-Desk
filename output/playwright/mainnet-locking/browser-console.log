@@ -1,0 +1,262 @@
+[     943ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3310/en/login:0
+[     959ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[    1051ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[    1122ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/system/settings:0
+[    1161ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[    1269ms] [LOG] [Fast Refresh] done in 209ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[    1325ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/system/settings:0
+[    1928ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/system/settings:0
+[   32704ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[   34117ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3310/en/login:0
+[   34151ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[   34270ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  155254ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  159286ms] [LOG] [Fast Refresh] done in 4133ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  159389ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  159400ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  203973ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  205494ms] [ERROR] IntlError: MISSING_MESSAGE: Could not resolve `nav.uliqMainnetLocking` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3595:23)
+    at translateBaseFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3625:28)
+    at translateFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3653:24)
+    at AppSidebar.useMemo[navigationGroups] (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppSidebar.tsx+%255Bapp-client%255D+%2528ecmascript%2529:292:28)
+    at updateMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:5413:21)
+    at Object.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15465:24)
+    at exports.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:1742:36)
+    at AppSidebar (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppSidebar.tsx+%255Bapp-client%255D+%2528ecmascript%2529:182:203)
+    at Object.react_stack_bottom_frame (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15037:24)
+    at renderWithHooks (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4620:24)
+    at updateFunctionComponent (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6081:21)
+    at beginWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6691:24)
+    at runWithFiberInDEV (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at performUnitOfWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9555:97)
+    at workLoopSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9449:40)
+    at renderRootSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9433:13)
+    at performWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:186)
+    at performSyncWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10263:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10179:316)
+    at flushSyncWork$1 (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9230:86)
+    at Object.scheduleRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:299:13)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:391:33
+    at Set.forEach (<anonymous>)
+    at Object.performReactRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:384:38)
+    at applyUpdate (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:878:31)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:886:13 @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3330
+[  205497ms] [ERROR] IntlError: MISSING_MESSAGE: Could not resolve `nav.uliqMainnetLocking` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3595:23)
+    at translateBaseFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3625:28)
+    at translateFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3653:24)
+    at AppSidebar.useMemo[navigationGroups] (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppSidebar.tsx+%255Bapp-client%255D+%2528ecmascript%2529:292:28)
+    at updateMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:5417:17)
+    at Object.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15465:24)
+    at exports.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:1742:36)
+    at AppSidebar (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppSidebar.tsx+%255Bapp-client%255D+%2528ecmascript%2529:182:203)
+    at Object.react_stack_bottom_frame (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15037:24)
+    at renderWithHooks (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4620:24)
+    at updateFunctionComponent (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6081:21)
+    at beginWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6691:24)
+    at runWithFiberInDEV (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at performUnitOfWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9555:97)
+    at workLoopSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9449:40)
+    at renderRootSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9433:13)
+    at performWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:186)
+    at performSyncWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10263:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10179:316)
+    at flushSyncWork$1 (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9230:86)
+    at Object.scheduleRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:299:13)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:391:33
+    at Set.forEach (<anonymous>)
+    at Object.performReactRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:384:38)
+    at applyUpdate (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:878:31)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:886:13 @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3330
+[  205498ms] [ERROR] IntlError: MISSING_MESSAGE: Could not resolve `nav.uliqMainnetLocking` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3595:23)
+    at translateBaseFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3625:28)
+    at translateFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3653:24)
+    at AppSidebar.useMemo[navigationGroups] (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppSidebar.tsx+%255Bapp-client%255D+%2528ecmascript%2529:292:28)
+    at updateMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:5413:21)
+    at Object.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15591:24)
+    at exports.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:1742:36)
+    at AppSidebar (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppSidebar.tsx+%255Bapp-client%255D+%2528ecmascript%2529:182:203)
+    at Object.react_stack_bottom_frame (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15037:24)
+    at renderWithHooksAgain (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4675:24)
+    at renderWithHooks (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4626:28)
+    at updateFunctionComponent (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6081:21)
+    at beginWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6691:24)
+    at runWithFiberInDEV (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at performUnitOfWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9555:97)
+    at workLoopSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9449:40)
+    at renderRootSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9433:13)
+    at performWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:186)
+    at performSyncWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10263:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10179:316)
+    at flushSyncWork$1 (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9230:86)
+    at Object.scheduleRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:299:13)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:391:33
+    at Set.forEach (<anonymous>)
+    at Object.performReactRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:384:38)
+    at applyUpdate (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:878:31)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:886:13 @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3330
+[  205503ms] [ERROR] IntlError: MISSING_MESSAGE: Could not resolve `nav.uliqMainnetLocking` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3595:23)
+    at translateBaseFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3625:28)
+    at translateFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3653:24)
+    at AppHeader.useMemo[searchItems] (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppHeader.tsx+%255Bapp-client%255D+%2528ecmascript%2529:314:28)
+    at updateMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:5413:21)
+    at Object.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15465:24)
+    at exports.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:1742:36)
+    at AppHeader (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppHeader.tsx+%255Bapp-client%255D+%2528ecmascript%2529:228:198)
+    at Object.react_stack_bottom_frame (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15037:24)
+    at renderWithHooks (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4620:24)
+    at updateFunctionComponent (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6081:21)
+    at beginWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6691:24)
+    at runWithFiberInDEV (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at performUnitOfWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9555:97)
+    at workLoopSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9449:40)
+    at renderRootSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9433:13)
+    at performWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:186)
+    at performSyncWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10263:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10179:316)
+    at flushSyncWork$1 (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9230:86)
+    at Object.scheduleRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:299:13)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:391:33
+    at Set.forEach (<anonymous>)
+    at Object.performReactRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:384:38)
+    at applyUpdate (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:878:31)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:886:13 @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3330
+[  205504ms] [ERROR] IntlError: MISSING_MESSAGE: Could not resolve `nav.uliqMainnetLocking` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3595:23)
+    at translateBaseFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3625:28)
+    at translateFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3653:24)
+    at AppHeader.useMemo[searchItems] (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppHeader.tsx+%255Bapp-client%255D+%2528ecmascript%2529:314:28)
+    at updateMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:5417:17)
+    at Object.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15465:24)
+    at exports.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:1742:36)
+    at AppHeader (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppHeader.tsx+%255Bapp-client%255D+%2528ecmascript%2529:228:198)
+    at Object.react_stack_bottom_frame (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15037:24)
+    at renderWithHooks (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4620:24)
+    at updateFunctionComponent (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6081:21)
+    at beginWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6691:24)
+    at runWithFiberInDEV (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at performUnitOfWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9555:97)
+    at workLoopSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9449:40)
+    at renderRootSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9433:13)
+    at performWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:186)
+    at performSyncWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10263:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10179:316)
+    at flushSyncWork$1 (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9230:86)
+    at Object.scheduleRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:299:13)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:391:33
+    at Set.forEach (<anonymous>)
+    at Object.performReactRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:384:38)
+    at applyUpdate (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:878:31)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:886:13 @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3330
+[  205509ms] [ERROR] IntlError: MISSING_MESSAGE: Could not resolve `nav.uliqMainnetLocking` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3595:23)
+    at translateBaseFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3625:28)
+    at translateFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3653:24)
+    at AppBreadcrumbs.useMemo[items] (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppBreadcrumbs.tsx+%255Bapp-client%255D+%2528ecmascript%2529:134:28)
+    at updateMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:5413:21)
+    at Object.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15465:24)
+    at exports.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:1742:36)
+    at AppBreadcrumbs (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppBreadcrumbs.tsx+%255Bapp-client%255D+%2528ecmascript%2529:81:192)
+    at Object.react_stack_bottom_frame (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15037:24)
+    at renderWithHooks (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4620:24)
+    at updateFunctionComponent (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6081:21)
+    at beginWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6691:24)
+    at runWithFiberInDEV (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at performUnitOfWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9555:97)
+    at workLoopSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9449:40)
+    at renderRootSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9433:13)
+    at performWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:186)
+    at performSyncWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10263:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10179:316)
+    at flushSyncWork$1 (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9230:86)
+    at Object.scheduleRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:299:13)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:391:33
+    at Set.forEach (<anonymous>)
+    at Object.performReactRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:384:38)
+    at applyUpdate (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:878:31)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:886:13 @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3330
+[  205509ms] [ERROR] IntlError: MISSING_MESSAGE: Could not resolve `nav.uliqMainnetLocking` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3595:23)
+    at translateBaseFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3625:28)
+    at translateFn (http://localhost:3310/_next/static/chunks/node_modules_0eaueh9._.js:3653:24)
+    at AppBreadcrumbs.useMemo[items] (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppBreadcrumbs.tsx+%255Bapp-client%255D+%2528ecmascript%2529:134:28)
+    at updateMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:5417:17)
+    at Object.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15465:24)
+    at exports.useMemo (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:1742:36)
+    at AppBreadcrumbs (http://localhost:3310/_next/static/chunks/apps_web_1r9wuk-._.js?id=%255Bproject%255D%252Fapps%252Fweb%252Fapp%252Fcomponents%252FAppBreadcrumbs.tsx+%255Bapp-client%255D+%2528ecmascript%2529:81:192)
+    at Object.react_stack_bottom_frame (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:15037:24)
+    at renderWithHooks (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:4620:24)
+    at updateFunctionComponent (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6081:21)
+    at beginWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6691:24)
+    at runWithFiberInDEV (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at performUnitOfWork (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9555:97)
+    at workLoopSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9449:40)
+    at renderRootSync (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9433:13)
+    at performWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:186)
+    at performSyncWorkOnRoot (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10263:9)
+    at flushSyncWorkAcrossRoots_impl (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10179:316)
+    at flushSyncWork$1 (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9230:86)
+    at Object.scheduleRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:299:13)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:391:33
+    at Set.forEach (<anonymous>)
+    at Object.performReactRefresh (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:384:38)
+    at applyUpdate (http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:878:31)
+    at http://localhost:3310/_next/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:886:13 @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3330
+[  205519ms] [LOG] [Fast Refresh] done in 1617ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  205634ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  205675ms] [LOG] [Fast Refresh] done in 141ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  261831ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  262021ms] [LOG] [Fast Refresh] done in 135ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  301866ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  301877ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  334343ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  334827ms] [LOG] [Fast Refresh] done in 554ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  335915ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  335927ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  362626ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  362633ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  389816ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  389843ms] [LOG] [Fast Refresh] done in 23ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  390623ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  390629ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  390731ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  390933ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  391537ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  405707ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  405912ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  406518ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  420709ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  420914ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  421521ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  435706ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  435911ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  436516ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  450717ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  450922ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  451528ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  465709ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  465913ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  466521ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  480704ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  480908ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  481515ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  495706ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  495916ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  496520ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  510720ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  510924ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  511530ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  525706ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  525913ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  526519ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:4311/uliq/mainnet-locking:0
+[  530355ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  530376ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  530857ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  530865ms] [LOG] [HMR] connected @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  610875ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  611263ms] [LOG] [Fast Refresh] done in 309ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  611398ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489
+[  611424ms] [LOG] [Fast Refresh] done in 128ms @ http://localhost:3310/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489

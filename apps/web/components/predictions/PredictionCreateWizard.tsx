@@ -35,7 +35,13 @@ export default function PredictionCreateWizard(props: PredictionCreateWizardProp
   const isLast = stepIndex === props.steps.length - 1;
 
   return (
-    <DeskDialog onClose={props.onClose}><div className="predictionWizardBackdrop" role="presentation" onMouseDown={props.onClose}>
+    <DeskDialog onClose={props.onClose} dismissible={false}><div
+      className="predictionWizardBackdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
       <DeskDialogPanel><section
         className="predictionWizard"
         role="dialog"

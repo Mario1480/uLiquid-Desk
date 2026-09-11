@@ -73,6 +73,12 @@ Architecture, interface, isolation, observability, rollback and certification pr
 - Phase 6D: XEMM after an independent Hedge Watchdog and emergency recovery are proven
 - Phase 6E: policy-constrained autonomous Agents after the complete permission, risk, audit, replay, evaluation and kill-switch stack is proven
 
+The detailed Agent, Condor and Skill prerequisites, later product gates, optional lab work and
+rejected capabilities are tracked in the authoritative
+[Area 4 and Area 5 coverage register](implementation/CODEX_IMPLEMENTATION_PLAN.md#area-4-and-area-5-coverage-register).
+Phase 6A includes the assigned Agent/Skill Platform prerequisites; it is not complete merely when a
+BotSpec schema exists.
+
 Shared Market Data is a uLiquid platform capability and proceeds regardless of the Hummingbot POC result. Phase 4 does not authorize Phase 5 automatically; the Decision Gate requires an explicit evidence-based adoption decision.
 
 ## Hard rules

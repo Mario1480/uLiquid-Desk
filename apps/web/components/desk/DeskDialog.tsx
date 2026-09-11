@@ -4,9 +4,9 @@ import { Dialog } from "radix-ui";
 import { GlassDialog, GlassDialogPortal, GlassDialogOverlay } from "../einui/liquid-glass/glass-dialog";
 const FocusReturn = createContext<{current: HTMLElement | null} | null>(null);
 /** Existing backdrops and content keep their classes and close handlers; Radix owns focus and scroll lock. */
-export function DeskDialog({children,onClose}: {children:ReactElement;onClose:()=>void}) {
+export function DeskDialog({children,onClose,dismissible=true}: {children:ReactElement;onClose:()=>void;dismissible?:boolean}) {
  const returnFocus=useRef<HTMLElement | null>(null);
- return <GlassDialog open onOpenChange={next=>{if(!next)onClose();}}><FocusReturn.Provider value={returnFocus}><GlassDialogPortal><GlassDialogOverlay asChild>{children}</GlassDialogOverlay></GlassDialogPortal></FocusReturn.Provider></GlassDialog>;
+ return <GlassDialog open onOpenChange={next=>{if(!next&&dismissible)onClose();}}><FocusReturn.Provider value={returnFocus}><GlassDialogPortal><GlassDialogOverlay asChild>{children}</GlassDialogOverlay></GlassDialogPortal></FocusReturn.Provider></GlassDialog>;
 }
 export function DeskDialogPanel({children,label="Dialog"}: {children:ReactElement;label?:string}) {
  const returnFocus=useContext(FocusReturn);

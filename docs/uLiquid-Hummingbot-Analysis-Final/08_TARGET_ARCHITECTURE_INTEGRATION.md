@@ -449,6 +449,10 @@ The [Phase 5 preparation plan](implementation/PHASE_5_PREPARATION_PLAN.md) recor
 ### Phase 6 — Advanced — `GATED`
 Split advanced work into independent gates: 6A Bot Architect drafts/simulation, 6B explicitly approved deployment, 6C automated Arbitrage after proven dual-leg reconciliation, 6D XEMM after an independent Hedge Watchdog and emergency recovery, and 6E policy-constrained autonomous Agents after the complete permission, risk, audit, replay, evaluation and kill-switch stack is proven.
 
+The [Area 4 and Area 5 coverage register](implementation/CODEX_IMPLEMENTATION_PLAN.md#area-4-and-area-5-coverage-register)
+is the authoritative mapping for every Agent/Condor and Skill-system recommendation, including
+Phase 6A prerequisites, later separate gates, optional lab work and rejected capabilities.
+
 ## 25. Dependency Order
 
 ```text

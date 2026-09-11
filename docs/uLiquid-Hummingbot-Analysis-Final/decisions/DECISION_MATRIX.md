@@ -1,5 +1,9 @@
 # Decision Matrix
 
+This matrix summarizes major decisions. The exhaustive placement of the Agent/Condor and Skill
+analyses is maintained in the
+[Area 4 and Area 5 coverage register](../implementation/CODEX_IMPLEMENTATION_PLAN.md#area-4-and-area-5-coverage-register).
+
 | Component | Decision | Roadmap placement | Implementation status |
 |---|---|---|---|
 | Existing Futures Capability Registry | EXTEND; do not duplicate | Phase 1 | `IMPLEMENTED` |
@@ -31,5 +35,13 @@
 | Autonomous Agents | LATER | Phase 6E | `GATED` |
 | Condor runtime | REFERENCE/LAB | No production dependency | No production dependency introduced |
 | Condor architecture | ADOPT principles | Phases 1–2 | Phase 1 `COMPLETE`; Phase 2 `COMPLETE` |
+| Structured Agent Definitions, Orchestrator, Context Builder and autonomy levels 0–2 | ADAPT/EXTEND | Phase 6A prerequisite | `GATED`; extend existing Agent foundations |
+| Scoped Agent sessions, approved preference memory, replay, model routing, cost and evaluation | ADAPT/OWN | Phase 6A prerequisite | `GATED`; live truth never comes from memory |
+| Hyperliquid/Vault analytical Skills | RETAIN uLIQUID-NATIVE | Phase 6A prerequisite | `GATED`; read-only and fresh-state constrained |
+| Bot/exchange/portfolio monitoring Skills | ADAPT deterministic heartbeat concept | Phase 4 foundation; Phase 6A–6B prerequisite | `GATED` by provider/runtime evidence |
+| Declarative custom user Skills | LATER, sandboxed | Separate post-foundation product gate | `NOT APPROVED` |
+| Third-party Skill marketplace/repository | DEFER | Separate product/legal/security gate | `NOT APPROVED` |
+| Hummingbot administration/developer Skills | INTERNAL ONLY | Phase 4 POC tooling where applicable | Never exposed to Desk users |
+| Skill-defined permissions, secrets, arbitrary scripts or direct provider/admin access | REJECT | Never | Rejection boundary required |
 | Hummingbot tenant/auth authority | REJECT | Never | Rejection boundary enforced |
 | HB-only credential authority | REJECT | Never | Rejection boundary enforced |
