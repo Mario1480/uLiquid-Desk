@@ -5,6 +5,7 @@ import {
   canonicalizeUrl,
   classifyNews,
   detectSymbols,
+  newsPublicationDateIssue,
   normalizedNewsDedupKey,
   stableHash
 } from "../../normalization/index.js";
@@ -76,7 +77,7 @@ export class RssNewsProvider implements NewsProvider {
           signal: input.signal
         });
         const parsed = parseRssOrAtom(response.body, perSourceLimit);
-        const items = parsed.map((item): NewsItem => {
+        const parsedItems = parsed.map((item): NewsItem => {
           const canonicalUrl = canonicalizeUrl(item.url) ?? item.url;
           const combinedText = `${item.title} ${item.summary ?? ""}`;
           const dedupKey = normalizedNewsDedupKey({
@@ -101,16 +102,24 @@ export class RssNewsProvider implements NewsProvider {
             contentHash: stableHash(`${item.title.toLowerCase()}|${item.summary ?? ""}|${canonicalUrl}`)
           };
         });
+        const items = parsedItems.filter((item) => !newsPublicationDateIssue({
+          sourceUrl: item.sourceUrl,
+          publishedAt: item.publishedAt,
+          fetchedAt: item.fetchedAt
+        }));
+        const rejectedCount = parsedItems.length - items.length;
         this.sourceHealth.set(source.id, {
           providerId: source.id,
           state: "healthy",
           checkedAt: fetchedAt,
           lastSuccessAt: fetchedAt,
           latencyMs: Date.now() - sourceStartedAt,
-          message: `${items.length} feed items parsed.`,
+          message: rejectedCount > 0
+            ? `${items.length}/${parsedItems.length} feed items accepted after date validation.`
+            : `${items.length} feed items parsed.`,
           itemCount: items.length
         });
-        return { source, items };
+        return { source, items, rejectedCount };
       } catch (error) {
         this.sourceHealth.set(source.id, {
           providerId: source.id,
@@ -139,6 +148,14 @@ export class RssNewsProvider implements NewsProvider {
         continue;
       }
       successCount += 1;
+      if (result.value.rejectedCount > 0) {
+        warnings.push({
+          code: "rss_items_rejected",
+          message: `${result.value.rejectedCount} feed item(s) failed publication-date validation.`,
+          retryable: false,
+          sourceId: source.id
+        });
+      }
       for (const item of result.value.items) {
         const key = normalizedNewsDedupKey({
           canonicalUrl: item.canonicalUrl,

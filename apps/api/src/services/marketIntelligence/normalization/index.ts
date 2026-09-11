@@ -71,6 +71,42 @@ export function canonicalizeUrl(value: unknown): string | null {
   return url.toString().slice(0, 2048);
 }
 
+function secPressReleaseYear(value: string): number | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.hostname !== "www.sec.gov" && url.hostname !== "sec.gov") return null;
+  const match = url.pathname.match(/^\/newsroom\/press-releases\/(\d{2}|\d{4})-\d+(?:-|$)/i);
+  if (!match) return null;
+  const rawYear = Number(match[1]);
+  if (!Number.isInteger(rawYear)) return null;
+  if (match[1].length === 4) return rawYear;
+  return rawYear >= 90 ? 1900 + rawYear : 2000 + rawYear;
+}
+
+export function newsPublicationDateIssue(input: {
+  sourceUrl: string;
+  publishedAt: string;
+  fetchedAt: string;
+}): "invalid_date" | "future_date" | "source_year_mismatch" | null {
+  const publishedAt = new Date(input.publishedAt);
+  const fetchedAt = new Date(input.fetchedAt);
+  if (!Number.isFinite(publishedAt.getTime()) || !Number.isFinite(fetchedAt.getTime())) {
+    return "invalid_date";
+  }
+  if (publishedAt.getTime() > fetchedAt.getTime() + 24 * 60 * 60 * 1000) {
+    return "future_date";
+  }
+  const embeddedYear = secPressReleaseYear(input.sourceUrl);
+  if (embeddedYear !== null && embeddedYear !== publishedAt.getUTCFullYear()) {
+    return "source_year_mismatch";
+  }
+  return null;
+}
+
 export function detectSymbols(text: string): string[] {
   const normalized = ` ${sanitizeText(text, 5000).toLowerCase()} `;
   return SYMBOL_ALIASES
