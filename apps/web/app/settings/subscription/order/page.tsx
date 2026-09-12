@@ -40,7 +40,8 @@ import {
   executeBillingWriteIfFresh,
   isBillingPaymentReceiptAcknowledged,
   isBillingPaymentExpired,
-  selectResumableBillingCheckout
+  selectResumableBillingCheckout,
+  shouldAutomaticallyReconcileBillingPayment
 } from "../../../../src/billing/onchainCheckout";
 
 type CartItemPayload = {
@@ -437,12 +438,22 @@ function SubscriptionOrderPageContent() {
   useEffect(() => {
     if (!activeCheckout) return;
     if (!["submitted", "received"].includes(paymentStage)) return;
-    const timer = window.setInterval(() => {
-      void fetchOrderStatus(activeCheckout.orderId, activeCheckout).catch(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+    const poll = async () => {
+      try {
+        await trackPaymentProgress(activeCheckout);
+      } catch {
         // A temporary polling failure must not replace the submitted transaction state.
-      });
-    }, 5_000);
-    return () => window.clearInterval(timer);
+      } finally {
+        if (!cancelled) timer = window.setTimeout(() => void poll(), 3_000);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [activeCheckout?.orderId, paymentStage]);
 
   const canSelectAddons = (payload?.plan !== undefined && payload.plan !== "free") || Boolean(selectedPlanId);
@@ -720,16 +731,56 @@ function SubscriptionOrderPageContent() {
       };
       setActiveCheckout(submittedCheckout);
       setPaymentStage("submitted");
+      setMessage(t("order.payment.tracking"));
       await submitTransactionHash(txHash);
       await reconcileOrder(false);
     } catch (error) {
       setPaymentStage(submittedHash || payment.txHash ? "submitted" : "error");
-      setMessage(submittedHash || error instanceof ApiError
-        ? t("order.errors.submitFailed")
-        : error instanceof Error
+      setMessage(submittedHash
+        ? t("order.payment.tracking")
+        : error instanceof ApiError || error instanceof Error
           ? error.message
           : t("order.errors.transactionFailed"));
     }
+  }
+
+  async function trackPaymentProgress(checkout: ActiveCheckout): Promise<BillingOrderStatus | null> {
+    const txHash = checkout.payment.txHash ?? readPendingBillingTxHash(checkout.orderId);
+    let status = await fetchOrderStatus(checkout.orderId, checkout);
+    if (status === "pending" && txHash) {
+      try {
+        const response = await apiPost<OrderStatusResponse>(
+          `/settings/subscription/orders/${encodeURIComponent(checkout.orderId)}/submit`,
+          { txHash }
+        );
+        status = applyOrderStatus(response, {
+          ...checkout,
+          payment: { ...checkout.payment, txHash }
+        });
+      } catch {
+        // The submit endpoint may have stored the hash before a temporary RPC
+        // failure. Re-read the authoritative order and continue tracking it.
+        status = await fetchOrderStatus(checkout.orderId, {
+          ...checkout,
+          payment: { ...checkout.payment, txHash }
+        });
+      }
+    }
+    if (shouldAutomaticallyReconcileBillingPayment({
+      status: status ?? "",
+      hasTransactionHash: Boolean(txHash)
+    })) {
+      try {
+        const response = await apiPost<OrderStatusResponse>(
+          `/settings/subscription/orders/${encodeURIComponent(checkout.orderId)}/reconcile`
+        );
+        status = applyOrderStatus(response, checkout);
+      } catch {
+        // Receipt propagation and RPC availability are transient. The next
+        // poll retries the same idempotent hash without another wallet send.
+      }
+    }
+    return (await fetchOrderStatus(checkout.orderId, checkout)) ?? status;
   }
 
   async function reconcileOrder(showSuccess = true) {
@@ -748,30 +799,12 @@ function SubscriptionOrderPageContent() {
         }
         return;
       }
-      const response = await apiPost<OrderStatusResponse>(
-        `/settings/subscription/orders/${encodeURIComponent(activeCheckout.orderId)}/reconcile`
-      );
-      applyOrderStatus(response, activeCheckout);
-      await fetchOrderStatus(activeCheckout.orderId, activeCheckout);
+      await trackPaymentProgress(activeCheckout);
       if (showSuccess) setMessage(t("order.statusUpdated"));
     } catch (error) {
       if (showSuccess) {
         setMessage(error instanceof ApiError ? error.message : String(error));
       }
-    } finally {
-      setStatusLoading(false);
-    }
-  }
-
-  async function retrySubmitTransaction() {
-    if (!payment?.txHash || !/^0x[0-9a-fA-F]{64}$/.test(payment.txHash)) return;
-    setStatusLoading(true);
-    setMessage(null);
-    try {
-      await submitTransactionHash(payment.txHash as Hex);
-      await reconcileOrder(false);
-    } catch (error) {
-      setMessage(error instanceof ApiError ? error.message : String(error));
     } finally {
       setStatusLoading(false);
     }
@@ -1064,12 +1097,6 @@ function SubscriptionOrderPageContent() {
               >
                 <AppIcon name={primaryPaymentAction.icon} />
                 {paymentStage === "awaiting_signature" ? t("order.payment.awaitingSignature") : primaryPaymentAction.label}
-              </DeskButton>
-            ) : null}
-            {payment.txHash && activeCheckout.status === "pending" ? (
-              <DeskButton type="button" className="btn" onClick={() => void retrySubmitTransaction()} disabled={statusLoading}>
-                <AppIcon name="send" />
-                {t("order.payment.submitAgain")}
               </DeskButton>
             ) : null}
             <DeskButton type="button" className="btn" onClick={() => void reconcileOrder()} disabled={statusLoading}>

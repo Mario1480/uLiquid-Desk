@@ -5,6 +5,7 @@ import {
   isBillingPaymentReceiptAcknowledged,
   isBillingPaymentExpired,
   selectResumableBillingCheckout,
+  shouldAutomaticallyReconcileBillingPayment,
   shouldResumeBillingCheckout
 } from "./onchainCheckout.js";
 
@@ -24,6 +25,25 @@ test("validated receipts are acknowledged before final settlement", () => {
   assert.equal(isBillingPaymentReceiptAcknowledged({
     orderStatus: "review_required",
     paymentStatusRaw: "payment_received"
+  }), false);
+});
+
+test("submitted hashes are reconciled automatically until the order is paid", () => {
+  assert.equal(shouldAutomaticallyReconcileBillingPayment({
+    status: "pending",
+    hasTransactionHash: true
+  }), true);
+  assert.equal(shouldAutomaticallyReconcileBillingPayment({
+    status: "confirming",
+    hasTransactionHash: true
+  }), true);
+  assert.equal(shouldAutomaticallyReconcileBillingPayment({
+    status: "paid",
+    hasTransactionHash: true
+  }), false);
+  assert.equal(shouldAutomaticallyReconcileBillingPayment({
+    status: "pending",
+    hasTransactionHash: false
   }), false);
 });
 

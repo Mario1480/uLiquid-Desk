@@ -649,7 +649,7 @@
         "awaitingSignature": "Wallet-Signatur bestätigen...",
         "checkStatus": "Status prüfen",
         "checkingStatus": "Status wird geprüft...",
-        "submitAgain": "Transaktion erneut zuordnen",
+        "tracking": "Transaktion gesendet. Der Status wird automatisch verfolgt und die Leistung nach Bestätigung aktiviert. Nicht erneut senden.",
         "cancelOrder": "Offene Zahlung abbrechen",
         "cancelled": "Die offene Zahlung wurde abgebrochen. Du kannst jetzt einen neuen Checkout erstellen.",
         "openExplorer": "Im Explorer öffnen",
@@ -698,8 +698,7 @@
         "switchNetworkFailed": "Der Wechsel zu Arbitrum ist fehlgeschlagen.",
         "insufficientUsdc": "Das USDC-Guthaben der verbundenen Wallet reicht nicht aus.",
         "insufficientGas": "Das ETH-Guthaben reicht voraussichtlich nicht für Gas.",
-        "transactionFailed": "Die USDC-Transaktion konnte nicht gesendet werden.",
-        "submitFailed": "Die Transaktion wurde gesendet, konnte aber noch nicht der Bestellung zugeordnet werden. Ordne sie erneut zu oder prüfe den Status."
+        "transactionFailed": "Die USDC-Transaktion konnte nicht gesendet werden."
       }
     },
     "orders": {

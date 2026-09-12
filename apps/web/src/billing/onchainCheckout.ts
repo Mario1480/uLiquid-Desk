@@ -19,6 +19,13 @@ export function isBillingPaymentReceiptAcknowledged(params: {
     || status.startsWith("finalizing:onchain_confirmed");
 }
 
+export function shouldAutomaticallyReconcileBillingPayment(params: {
+  status: string;
+  hasTransactionHash: boolean;
+}): boolean {
+  return params.hasTransactionHash && ["pending", "confirming"].includes(params.status);
+}
+
 export async function executeBillingWriteIfFresh<T>(params: {
   expiresAt: string | null | undefined;
   now?: () => number;

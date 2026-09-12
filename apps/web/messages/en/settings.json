@@ -649,7 +649,7 @@
         "awaitingSignature": "Confirm in wallet...",
         "checkStatus": "Check status",
         "checkingStatus": "Checking status...",
-        "submitAgain": "Submit transaction again",
+        "tracking": "Transaction sent. Its status is tracked automatically and the product activates after confirmation. Do not send again.",
         "cancelOrder": "Cancel open payment",
         "cancelled": "The open payment was cancelled. You can create a new checkout now.",
         "openExplorer": "Open in explorer",
@@ -698,8 +698,7 @@
         "switchNetworkFailed": "Switching to Arbitrum failed.",
         "insufficientUsdc": "The connected wallet does not have enough USDC.",
         "insufficientGas": "The ETH balance is likely insufficient for gas.",
-        "transactionFailed": "The USDC transaction could not be sent.",
-        "submitFailed": "The transaction was sent but could not yet be linked to the order. Submit it again or check the status."
+        "transactionFailed": "The USDC transaction could not be sent."
       }
     },
     "orders": {
