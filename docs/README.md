@@ -79,6 +79,7 @@ This documentation is prepared for GitBook Git Sync. GitBook uses `docs/README.m
 ## Engineering and Operations
 
 - [Admin payments overview implementation and acceptance](plans/active/billing/admin-payments-overview.md)
+- [Admin payments production deployment evidence](archive/tasks/2026-09-12-admin-payments-production-deploy.md)
 - [Beta access applications, invitations and activation gates](auth/beta-access.md)
 - [ULIQ Mainnet locking rollout](../packages/contracts/ULIQ_MAINNET_LOCKING_ROLLOUT.md)
 - [ULIQ Mainnet locker deployment evidence](archive/tasks/2026-09-08-uliq-mainnet-locker-deployment.md)

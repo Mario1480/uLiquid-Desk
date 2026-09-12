@@ -1,5 +1,11 @@
 # Admin Go-Live Status
 
+## Payment overview release — 2026-09-12
+
+The read-only platform-superadmin payment overview is deployed at `/admin/licenses/payments` from application commit `7db64eea`. Production builds, all seven service health checks, protected HTTP responses, source hashes and bounded read-only database queries passed. No schema migration or capital action was performed. Authenticated production browser acceptance and large-volume query benchmarking remain open. See [deployment evidence](../archive/tasks/2026-09-12-admin-payments-production-deploy.md) and the [active acceptance plan](../plans/active/billing/admin-payments-overview.md).
+
+## Earlier admin readiness baseline
+
 Stand: 2026-05-06
 
 ## Kurzstatus

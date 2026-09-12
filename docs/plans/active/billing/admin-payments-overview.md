@@ -1,11 +1,13 @@
 # Admin payments overview
 
 Date: 2026-09-12
-Status: Implemented and locally validated; authenticated environment acceptance and release remain open.
+Status: Deployed to production with runtime, source-hash and read-only database verification. Authenticated production browser acceptance remains open.
 
 Release authorization (2026-09-12): Mario explicitly requested committing and pushing this change to main, followed by a production redeploy. Production deployment and read-only smoke checks are now authorized. Payment, wallet, refund and entitlement mutation actions remain outside this release.
 
 Local results and file inventory: [Implementation evidence](../../../archive/tasks/2026-09-12-admin-payments-overview.md).
+
+Release results: [Production deployment evidence](../../../archive/tasks/2026-09-12-admin-payments-production-deploy.md). Application commit: `7db64eea4c17d4050fb73d8a6f8091dc64aca8ff`.
 
 ## Decisions
 

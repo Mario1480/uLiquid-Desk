@@ -21,7 +21,7 @@ If a feature is missing, check license, role, and section access first.
 
 ### Central payment history
 
-The payment overview is implemented under **Admin > Licenses > Payments** (`/admin/licenses/payments`). Environment rollout and authenticated acceptance remain open; see the [implementation and acceptance plan](../plans/active/billing/admin-payments-overview.md).
+The payment overview is available under **Admin > Licenses > Payments** (`/admin/licenses/payments`). It was deployed on 2026-09-12 with successful runtime and read-only database checks. Authenticated browser acceptance remains open; see the [production evidence](../archive/tasks/2026-09-12-admin-payments-production-deploy.md) and [acceptance plan](../plans/active/billing/admin-payments-overview.md).
 
 Platform superadmins can search checkout orders by user ID/email, merchant order ID, internal order ID, or transaction hash. Provider, order status, and inclusive UTC date filters narrow the results. The newest orders appear first, with 25 rows per page. Select a merchant order ID to load its details independently of the list.
 
