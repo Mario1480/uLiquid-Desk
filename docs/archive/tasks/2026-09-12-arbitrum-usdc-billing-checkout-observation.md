@@ -66,6 +66,21 @@ Deployment verification:
 
 The order therefore produced the one expected artifact for an AI Credit top-up and reached final settlement without duplication or manual repair.
 
-## Remaining acceptance boundary
+## Final owner acceptance
 
-The completed payment proves the production API, onchain reconciliation, receipt-time activation, entitlement, and finality path. Because the UI correction was deployed after this payment had completed, the transient automatic-tracking message and live transition have not yet been visually observed under the new build. That final UI observation should occur during the next genuine purchase; it does not justify creating another production payment solely for testing.
+Mario subsequently completed another genuine 10 USDC AI Credit purchase in Firefox with the automatic tracking build and confirmed that the payment flow completed correctly. The resulting evidence was:
+
+- Order ID: `cmty9j22y00qpmj1yc3qhtn9s`
+- Merchant order ID: `ULIQUID_1d284a64-8c04-41b0-b07a-9ddbe9d82a99`
+- Transaction: `0xc2bb845e84090e5cea36d47a397e1331485d52176f2c127a843bd154c992f2a9`
+- Amount: `1000` cents / 10 USDC
+- Order status: `PAID`
+- Payment status: `onchain_confirmed`
+- Paid at: `2026-09-12T10:49:28.279Z`
+- Verified at: `2026-09-12T11:04:03.901Z`
+- Payment `lastError`: `null`
+- AI Credit ledger entries for the order: exactly `1`
+- Capacity grants for the order: `0`
+- Subscription terms for the order: `0`
+
+The automatic status tracking, receipt-time activation, final settlement, and exact entitlement outcome are therefore production-observed and owner-accepted. A follow-up UI-only release in commits `c98f7a6d` and `a57484c7` removed duplicate success feedback and compacted the desktop and mobile checkout layout without changing billing behavior.

@@ -1,6 +1,6 @@
 # Active Program Closeout Register
 
-Status date: 2026-09-11
+Status date: 2026-09-12
 
 Local closeout evidence:
 [`../archive/tasks/2026-09-11-active-program-closeout-local.md`](../archive/tasks/2026-09-11-active-program-closeout-local.md).
@@ -17,12 +17,13 @@ capital or onchain evidence remain separate from repository implementation.
 | --- | --- | --- |
 | AI Agent Chat | Implemented and production-evidenced | Formal closeout gates open |
 | Limited Beta | Separate launch mode superseded by existing backend controls | Complete and archived by owner decision |
+| Arbitrum USDC Billing | Protected native-USDC checkout released and production-accepted | Complete and archived after owner acceptance |
 | OpenAI Router and AI Credits | Implemented with paid production-run evidence | Billing and operations closeout open |
 | Execution Foundation | Shared foundation landed | Re-baselined follow-up list open |
 | Market Intelligence providers | Provider-neutral production path deployed; paid legacy provider removed | Complete; routine delivery observation remains operational |
 | Type Safety strictness | Current budget gate restored | Incremental strictness program open |
 
-ULIQ, Hummingbot, and Arbitrum USDC Billing remain active but are intentionally
+ULIQ and Hummingbot remain active but are intentionally
 outside this closeout pass. No decision, deployment, activation, wallet action,
 or onchain action is authorized by this register.
 
@@ -72,6 +73,29 @@ permission, audit, and operational controls. The beta application and invitation
 flow may still be maintained as an access channel, but its SMTP or redemption
 evidence does not reopen this superseded architecture packet. See the
 [owner-decision record](../archive/tasks/2026-09-11-limited-beta-closeout.md).
+
+## Arbitrum USDC Billing
+
+Current state: `COMPLETE / RELEASED / PRODUCTION-ACCEPTED`.
+
+Mario re-enabled the protected native-USDC checkout on 2026-09-12 and completed
+two genuine 10 USDC AI Credit purchases after the original capacity-add-on
+canary. Both post-activation orders became `PAID`, created exactly one expected
+AI Credit ledger entry each, reached `onchain_confirmed`, and retained no payment
+error. The second purchase exercised the automatic same-hash tracking flow and
+received explicit owner acceptance.
+
+The checkout activates reversible service access after the API validates the
+exact successful Treasury receipt in the current canonical block. Parent-chain
+finality, canonical block verification, and reconciliation continue in the
+background. The browser never authorizes payment or entitlement state and never
+reissues a wallet transfer while tracking an existing transaction hash.
+
+Routine operations continue to monitor pending and review queues, Billing RPC
+health, finality delay, exact entitlement cardinality, lifecycle processing, and
+notification failures. These operational checks do not reopen the completed
+rollout. See the [archived rollout](../archive/plans/arbitrum-usdc-billing-rollout.md)
+and the [production observation](../archive/tasks/2026-09-12-arbitrum-usdc-billing-checkout-observation.md).
 
 ## OpenAI Router and AI Credits
 
