@@ -3,7 +3,7 @@ import test from "node:test";
 import type { Express, Request, RequestHandler, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import { Redis } from "ioredis";
-import { createBetaAccessService, registerBetaAccessRoutes, type BetaAccessDeps } from "./betaAccess.js";
+import { createBetaAccessService, getBetaAccessNotificationRecipients, registerBetaAccessRoutes, type BetaAccessDeps } from "./betaAccess.js";
 import { betaConfig, betaHash, verifyBetaTurnstile, BETA_LIMIT_SCRIPT, BetaAccessError } from "./betaAccessSecurity.js";
 import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "../legalAcknowledgement.js";
 
@@ -17,15 +17,21 @@ test("Turnstile fails closed on configuration, provider, host, action and replay
   await verifyBetaTurnstile("test", "beta_apply", config, async () => new globalThis.Response(JSON.stringify({ success: true, hostname: "example.test", action: "beta_apply" })));
 });
 
+test("beta access notification recipients are opt-in, normalized, and validated", () => {
+  assert.deepEqual(getBetaAccessNotificationRecipients({}), []);
+  assert.deepEqual(getBetaAccessNotificationRecipients({ BETA_ACCESS_NOTIFICATION_EMAILS: " Support@uLiquid.vip,ops@uliquid.vip,support@uliquid.vip " }), ["support@uliquid.vip", "ops@uliquid.vip"]);
+  assert.throws(() => getBetaAccessNotificationRecipients({ BETA_ACCESS_NOTIFICATION_EMAILS: "not-an-email" }));
+});
+
 const databaseUrl = process.env.BETA_TEST_DATABASE_URL;
 test("beta flow: real PostgreSQL atomicity, administration, delivery and retention", { skip: !databaseUrl }, async t => {
   const url = new URL(databaseUrl!);
   assert.ok(["127.0.0.1", "localhost"].includes(url.hostname) && url.pathname === "/beta_test", "Only the isolated local beta_test database is allowed");
   Object.assign(process.env, { BETA_ACCESS_WEB_ORIGIN: "https://example.test", TURNSTILE_ALLOWED_HOSTNAMES: "example.test", NEXT_PUBLIC_TURNSTILE_SITE_KEY: "test-site", TURNSTILE_SECRET_KEY: "test-secret", BETA_ACCESS_PRIVACY_APPROVED: "true" });
   const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-  const mails: string[] = []; let mailFails = false; let provisioningFails = false; let provisionCalls = 0; let botCalls = 0;
+  const mails: string[] = []; const adminMails: string[] = []; let mailFails = false; let provisioningFails = false; let provisionCalls = 0; let botCalls = 0;
   const audit: string[] = [];
-  const deps: BetaAccessDeps = { db, requireSuperadmin: async () => true, recordAdminAuditEvent: async input => { audit.push(input.action); }, hashPassword: async () => "test-hash", provision: async () => { provisionCalls++; if (provisioningFails) throw Error("provision"); }, sendMail: async input => { mails.push(input.text); return { ok: !mailFails }; }, limit: async () => {}, verifyBot: async () => { botCalls++; } };
+  const deps: BetaAccessDeps = { db, requireSuperadmin: async () => true, recordAdminAuditEvent: async input => { audit.push(input.action); }, hashPassword: async () => "test-hash", provision: async () => { provisionCalls++; if (provisioningFails) throw Error("provision"); }, sendMail: async input => { (input.to === "support@uliquid.vip" ? adminMails : mails).push(input.text); return { ok: !mailFails }; }, adminNotificationRecipients: ["support@uliquid.vip"], limit: async () => {}, verifyBot: async () => { botCalls++; } };
   const service = createBetaAccessService(deps);
   const request = (body: unknown) => ({ body, ip: "127.0.0.1", get: () => "test" }) as unknown as Request;
   const body = (email: string) => ({ email, motivation: "Test the dashboard", locale: "en", companyWebsite: "", turnstileToken: "test" });
@@ -68,6 +74,8 @@ test("beta flow: real PostgreSQL atomicity, administration, delivery and retenti
       await assert.rejects(service.validToken(fresh, "INVITE"), /beta_invalid_token/);
       const persisted = await db.betaAccessToken.findFirstOrThrow(); assert.equal(persisted.tokenHash, betaHash(fresh)); assert.notEqual(persisted.tokenHash, fresh);
       await service.confirm(fresh); await assert.rejects(service.confirm(fresh), /beta_invalid_token/);
+      assert.match(adminMails.at(-1) ?? "", /new beta application has been verified/i);
+      assert.match(adminMails.at(-1) ?? "", /one@beta-test\.invalid/);
     });
     await t.test("Redis outage and exhausted delivery quotas do not insert applications", async () => {
       const count = await db.betaAccessRequest.count(); const deliveries = mails.length;

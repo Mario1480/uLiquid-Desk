@@ -27,9 +27,20 @@ export type BetaAccessDeps = {
   hashPassword(password: string): Promise<string>;
   provision(userId: string, email: string): Promise<void>;
   sendMail(input: Mail): Promise<{ ok: boolean }>;
+  adminNotificationRecipients?: string[];
   limit?: BetaLimit;
   verifyBot?: (token: string, action: string) => Promise<void>;
 };
+
+export function getBetaAccessNotificationRecipients(env: Record<string, string | undefined> = process.env): string[] {
+  return Array.from(new Set(
+    String(env.BETA_ACCESS_NOTIFICATION_EMAILS ?? "")
+      .split(",")
+      .map(value => value.trim().toLowerCase())
+      .filter(Boolean)
+      .map(value => z.string().email().max(254).parse(value))
+  ));
+}
 
 export async function readBetaAccessEnabled(db: PrismaClient) {
   const row = await db.globalSetting.findUnique({ where: { key: SETTING } });
@@ -105,12 +116,23 @@ export function createBetaAccessService(deps: BetaAccessDeps) {
   }
   async function confirm(raw: string) {
     const token = await validToken(raw, "VERIFY");
+    const confirmedAt = new Date();
     await db.$transaction(async tx => {
-      const changed = await tx.betaAccessRequest.updateMany({ where: { id: token.requestId, status: "UNVERIFIED" }, data: { status: "PENDING", verifiedAt: new Date() } });
+      const changed = await tx.betaAccessRequest.updateMany({ where: { id: token.requestId, status: "UNVERIFIED" }, data: { status: "PENDING", verifiedAt: confirmedAt } });
       if (changed.count !== 1) throw new BetaAccessError("beta_invalid_token");
       const used = await tx.betaAccessToken.updateMany({ where: { id: token.id, purpose: "VERIFY", consumedAt: null, expiresAt: { gt: new Date() } }, data: { consumedAt: new Date() } });
       if (used.count !== 1) throw new BetaAccessError("beta_invalid_token");
     });
+    const recipients = deps.adminNotificationRecipients ?? [];
+    if (recipients.length > 0) {
+      const result = await Promise.allSettled(recipients.map(to => deps.sendMail({
+        to,
+        subject: "New verified uLiquid beta application",
+        text: `A new beta application has been verified.\n\nEmail: ${token.request.email}\nVerified at: ${confirmedAt.toISOString()}\n\nReview it in uLiquid Desk:\n${betaConfig().origin}/admin/system/access-section`
+      })));
+      const failed = result.filter(entry => entry.status === "rejected" || (entry.status === "fulfilled" && !entry.value.ok)).length;
+      if (failed > 0) logger.warn("beta_access_admin_notification_failed", { failedRecipientCount: failed });
+    }
   }
   async function complete(req: Request) {
     const input = completionSchema.parse(req.body);
