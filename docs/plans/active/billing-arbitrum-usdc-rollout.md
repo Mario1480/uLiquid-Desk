@@ -16,10 +16,11 @@ Current production status on 2026-09-12:
 - One 5 USDC Arbitrum One capacity-add-on canary was paid from the separate sender account and independently verified through network finality, canonical block equality, and the exact Treasury `Transfer` event.
 - The canary exposed an advisory-lock result decoding defect and an effective-plan mismatch between checkout and finalization for active admin plan overrides. Both code defects are fixed and deployed in `c7ec5f2bf` and `027ad5c2`; the reviewed order was subsequently resolved through the normal idempotent finalizer after fresh owner approval.
 - Receipt acknowledgement and reversible service activation are separated from final settlement as of `ec074035`: after the API proves the successful exact Treasury transfer in the current canonical block, it immediately activates the product and shows "Activated" while parent-chain finality continues automatically in the background.
-- Subscription checkout remains paused pending separate owner acceptance of reactivation. AI Credit usage billing remains enabled.
+- Mario re-enabled subscription checkout through the protected admin flow and completed the first post-activation purchase: a 10 USDC AI Credit top-up. The order became `PAID`, created exactly one AI Credit ledger entry, and subsequently reached `onchain_confirmed` with no payment error.
+- The first post-activation purchase exposed misleading client fallback copy after the wallet send and a reliance on manual status refresh. Commit `0efaffef` removes the resend instruction and button, preserves the submitted state, and automatically retries only the same idempotent transaction-hash association and reconciliation every three seconds.
 - Network-finality hardening was deployed from commit `14a4f167a` while checkout was paused. Production API and web health, the finalized RPC head, token code, token decimals, empty reconciliation queues, and the rendered admin readiness view were verified.
 - The first canary attempt was safely rejected before order creation because the signed-in admin account's linked wallet is also the configured Treasury. The second attempt used the separate sender account successfully.
-- The first open gate is explicit checkout reactivation approval, followed by the post-activation observation window, before this plan can be archived.
+- The remaining gate is one authenticated observation of the deployed automatic tracking state during a future genuine payment. No additional production transaction should be created solely for this UI check.
 
 Code, deployment, browser behavior, wallet signature, transaction inclusion, network finality, Treasury receipt, database reconciliation, entitlement activation, and owner acceptance are separate evidence layers.
 
@@ -143,9 +144,11 @@ Use [Billing payment review and refund](../../runbooks/billing-payment-review-re
 - [x] Run one low-value Mainnet canary from the known operator account and wallet after a fresh human transaction approval.
 - [x] Reconcile transaction receipt, 12 confirmations, finalized head, canonical block hash, and Treasury receipt.
 - [x] Resolve the reviewed capacity-add-on canary after fresh owner approval, then verify exactly one paid order, exactly one capacity grant, zero terms, zero AI Credit ledger entries, effective AI prediction capacity `11`, and audit evidence.
-- [ ] Re-enable checkout through the protected admin flow after explicit owner acceptance.
-- [ ] Observe the first production window and confirm no stale pending, review, duplicate term, RPC, lifecycle, or notification failure.
-- [ ] Record dated production evidence and archive this plan.
+- [x] Re-enable checkout through the protected admin flow after explicit owner acceptance.
+- [x] Observe the first post-activation payment through receipt-time activation and final settlement; confirm one expected AI Credit ledger entry, no duplicate entitlement, no stale pending or review state, and no RPC payment error.
+- [x] Remove the misleading resend instruction and deploy automatic same-hash status tracking.
+- [ ] Observe the automatic tracking message and status transition during the next genuine submitted payment, without creating a synthetic payment solely for acceptance.
+- [ ] Archive this plan after that final authenticated UI observation.
 
 An isolated Sepolia transaction is not a production prerequisite because the production implementation is intentionally fixed to Arbitrum One and native Mainnet USDC. Contract, amount, replay, reorg, RPC-failure, and lifecycle behavior are covered by deterministic tests; the production-path confidence gate is the low-value Mainnet canary above.
 
