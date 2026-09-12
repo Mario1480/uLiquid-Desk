@@ -8,7 +8,7 @@
     "dev": "node ../../node_modules/tsx/dist/cli.mjs watch src/bootstrap.ts",
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
-    "test:billing": "node ../../node_modules/tsx/dist/cli.mjs --test src/billing/onchain.test.ts src/billing/service.lifecycle.test.ts src/billing/stage4Reconciliation.test.ts src/billing/notifications.test.ts src/billing/routes.test.ts src/billing/adminPlanOverride.test.ts src/jobs/billingOnchainJob.test.ts",
+    "test:billing": "node ../../node_modules/tsx/dist/cli.mjs --test src/billing/onchain.test.ts src/billing/service.lifecycle.test.ts src/billing/stage4Reconciliation.test.ts src/billing/notifications.test.ts src/billing/routes.test.ts src/billing/adminOrders.test.ts src/billing/adminPlanOverride.test.ts src/jobs/billingOnchainJob.test.ts",
     "test:uliq": "node ../../node_modules/tsx/dist/cli.mjs --test --test-force-exit src/uliq/*.test.ts",
     "uliq:backfill-event-timestamps": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/backfill-uliq-event-timestamps.ts",
     "uliq:mainnet-locking:preflight": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/preflight-uliq-mainnet-locking.ts",

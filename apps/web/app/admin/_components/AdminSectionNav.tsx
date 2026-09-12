@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { extractLocaleFromPathname, withLocalePath, type AppLocale } from "../../../i18n/config";
 import { AppIcon } from "../../components/AppIcon";
 import type { AdminSectionNavItem } from "./admin-sections";
@@ -24,6 +24,7 @@ export default function AdminSectionNav({
 }) {
   const pathname = usePathname();
   const locale = useLocale() as AppLocale;
+  const t = useTranslations("admin.payments");
   const currentPath = extractLocaleFromPathname(pathname).pathnameWithoutLocale;
 
   return (
@@ -35,7 +36,7 @@ export default function AdminSectionNav({
           className={`adminSectionNavLink ${isActivePath(currentPath, item.href) ? "adminSectionNavLinkActive" : ""}`}
         >
           {item.icon ? <AppIcon name={item.icon} /> : null}
-          {item.label}
+          {item.labelKey ? t(item.labelKey) : item.label}
         </Link>
       ))}
     </nav>

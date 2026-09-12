@@ -11,6 +11,7 @@ import { createResolvedEntitlementContext } from "../capabilities/entitlementCon
 import { resolveAiRuntimeFeatureGates } from "../ai/featureFlags.js";
 import { UliqBenefitGateError } from "../uliq/benefitReservation.service.js";
 import { buildPublicBillingCatalog } from "./publicCatalog.js";
+import { registerAdminOrderRoutes } from "./adminOrders.js";
 
 const subscriptionCheckoutSchema = z.union([
   z.object({
@@ -519,6 +520,7 @@ function mapBillingRouteError(error: unknown): { status: number; body: Record<st
 }
 
 export function registerBillingRoutes(app: express.Express, deps: RegisterBillingRoutesDeps) {
+  registerAdminOrderRoutes(app, deps);
   const requirePlatformSuperadminMiddleware = async (
     _req: express.Request,
     res: express.Response,

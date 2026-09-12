@@ -4,10 +4,11 @@ type AdminTableProps = {
   columns: string[];
   children: React.ReactNode;
   loading?: boolean;
+  loadingLabel?: string;
   emptyMessage?: string;
 };
 
-export default function AdminTable({ columns, children, loading = false, emptyMessage }: AdminTableProps) {
+export default function AdminTable({ columns, children, loading = false, loadingLabel = "Loading...", emptyMessage }: AdminTableProps) {
   return (
     <DeskSurface dense><div className="settingsSection adminTableWrap">
       <div className="adminTableScroller">
@@ -22,7 +23,7 @@ export default function AdminTable({ columns, children, loading = false, emptyMe
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={columns.length}>Loading...</td>
+                <td colSpan={columns.length}>{loadingLabel}</td>
               </tr>
             ) : emptyMessage ? (
               <tr>

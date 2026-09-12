@@ -3226,6 +3226,18 @@ a.settingsHubCard:focus-visible {
 .adminTableScroller {
   overflow-x: auto;
 }
+.adminPaymentsPage, .adminPaymentsDetails { min-width: 0; }
+.adminPaymentsPage .adminTable { min-width: 1100px; }
+.adminPaymentsIdentifier { overflow-wrap: anywhere; min-width: 130px; max-width: 240px; }
+.adminPaymentsOrderButton { white-space: normal; text-align: left; min-width: 180px; max-width: 220px; overflow-wrap: anywhere; }
+.adminPaymentsOrderButton svg { flex-shrink: 0; }
+.adminPaymentsPage .adminTable th, .adminPaymentsPage .adminTable td { word-break: normal; }
+.adminPaymentsActions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+.adminPaymentsFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.adminPaymentsFields > div { min-width: 0; }
+.adminPaymentsFields dt { color: var(--color-text-muted); font-size: 12px; }
+.adminPaymentsFields dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.adminPaymentsItems { padding-left: 20px; display: grid; gap: 12px; overflow-wrap: anywhere; }
 .adminTable {
   width: 100%;
   border-collapse: collapse;

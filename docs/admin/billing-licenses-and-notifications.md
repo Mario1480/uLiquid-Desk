@@ -19,6 +19,16 @@ Depending on your role, the admin and settings areas may show:
 
 If a feature is missing, check license, role, and section access first.
 
+### Central payment history
+
+The payment overview is implemented under **Admin > Licenses > Payments** (`/admin/licenses/payments`). Environment rollout and authenticated acceptance remain open; see the [implementation and acceptance plan](../plans/active/billing/admin-payments-overview.md).
+
+Platform superadmins can search checkout orders by user ID/email, merchant order ID, internal order ID, or transaction hash. Provider, order status, and inclusive UTC date filters narrow the results. The newest orders appear first, with 25 rows per page. Select a merchant order ID to load its details independently of the list.
+
+Details include quantities, historical package names where available, amounts/currencies, recorded payment verification, transaction explorer links, subscription terms, capacity grants, credit entries, and current subscription-wide entitlement synchronization. Historical package names may fall back to the current catalog when no item snapshot exists; these fallbacks are labeled.
+
+Order status, network verification and entitlement evidence are separate. A transaction hash, a paid status, or an existing ledger entry alone does not prove complete fulfillment or current entitlement availability. Old orders and immediate plan upgrades may lack a directly linked term. The view reads persisted database state and does not trigger payment verification, retries, activation, refunds, or wallet actions. For a payment anomaly, follow the [payment review and refund runbook](../runbooks/billing-payment-review-refund.md).
+
 ## Affiliate and Profitshare
 
 Affiliate data and payout wallets are managed in dedicated areas. Before payouts, check:

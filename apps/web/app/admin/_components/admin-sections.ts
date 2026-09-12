@@ -3,6 +3,7 @@ import type { AppIconName } from "../../components/AppIcon";
 export type AdminSectionNavItem = {
   href: string;
   label: string;
+  labelKey?: "title";
   icon?: AppIconName;
 };
 
@@ -18,5 +19,6 @@ export const SYSTEM_SECTION_NAV: AdminSectionNavItem[] = [
 
 export const LICENSES_SECTION_NAV: AdminSectionNavItem[] = [
   { href: "/admin/licenses", label: "Inventory", icon: "list" },
-  { href: "/admin/licenses/packages", label: "Packages", icon: "billing" }
+  { href: "/admin/licenses/packages", label: "Packages", icon: "billing" },
+  { href: "/admin/licenses/payments", label: "Payments", labelKey: "title", icon: "money" }
 ];
