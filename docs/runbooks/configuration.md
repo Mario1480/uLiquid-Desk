@@ -135,6 +135,7 @@ Required:
 Optional:
 
 - `PY_TA_BACKEND`
+- `BETA_ACCESS_NOTIFICATION_EMAILS` (comma-separated internal recipients for verified beta applications)
 
 Accepted `PY_TA_BACKEND` values:
 

@@ -17,7 +17,7 @@ import { getPrimarySuperadminEmail, isSuperadminEmail } from "./auth/superadmin.
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerRegistrationSettingsRoutes } from "./auth/registrationSettings.js";
-import { registerBetaAccessRoutes } from "./auth/betaAccess.js";
+import { getBetaAccessNotificationRecipients, registerBetaAccessRoutes } from "./auth/betaAccess.js";
 import type { Prisma } from "@prisma/client";
 import { consumeRecentReauth, registerReauthRoutes } from "./auth/reauth.js";
 import { LEGAL_ACKNOWLEDGEMENT_VERSION } from "./legalAcknowledgement.js";
@@ -2215,6 +2215,7 @@ const EMAIL_VERIFICATION_OTP_TTL_MIN = Math.max(
   5,
   Number(process.env.EMAIL_VERIFICATION_OTP_TTL_MIN ?? "30")
 );
+const BETA_ACCESS_NOTIFICATION_RECIPIENTS = getBetaAccessNotificationRecipients();
 
 function getMexcExchangeLabel(): string {
   const spotEnabled = MANUAL_TRADING_SPOT_ENABLED && MEXC_SPOT_ENABLED;
@@ -11298,6 +11299,7 @@ registerRegistrationSettingsRoutes(app, {
 const betaAccess = registerBetaAccessRoutes(app, {
   db, requireSuperadmin: requirePlatformSuperadmin, recordAdminAuditEvent, hashPassword,
   sendMail: sendSmtpTextEmail,
+  adminNotificationRecipients: BETA_ACCESS_NOTIFICATION_RECIPIENTS,
   provision: async (userId, email) => {
     await db.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${"beta-provision:" + userId}))`;

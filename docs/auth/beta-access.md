@@ -22,6 +22,7 @@ Workspace creation reuses the existing role/membership helper with an explicit t
 - `GET /admin/beta-access?page=0`: 30 verified requests per page, total, configuration readiness and intake switch.
 - `PUT /admin/beta-access/settings`: `{ enabled: boolean }`.
 - `POST /admin/beta-access/:id/action`: approve/resend/defer/reject/revoke/delete. Status transitions and settings changes are audited atomically. SMTP delivery status is separate from application status.
+- When `BETA_ACCESS_NOTIFICATION_EMAILS` is configured, each recipient receives a best-effort internal email after an applicant verifies their email address. The notification contains the applicant email, UTC verification time and the Admin review link, but not the motivation. A delivery failure never blocks confirmation or changes the application status.
 
 New tables: `beta_access_requests` and `beta_access_tokens`; migration `20260907060000_beta_access`. Tokens have separate purposes, secure random 256-bit values and SHA-256 hashes only at rest. They are transmitted in email URL fragments, read into transient client state and removed from the address bar. Token lookup/consumption uses POST bodies, never query parameters. Link pages have no wallet header, Turnstile, analytics or other third-party widgets, and use no-store/noindex/no-referrer headers. Do not add request-body logging to these endpoints or third-party widgets to the redemption page.
 
@@ -40,6 +41,7 @@ TURNSTILE_SECRET_KEY=<backend-only secret>
 TURNSTILE_ALLOWED_HOSTNAMES=desk.uliquid.vip
 AUTH_LOGIN_TURNSTILE_THRESHOLD=2
 BETA_ACCESS_PRIVACY_APPROVED=false
+BETA_ACCESS_NOTIFICATION_EMAILS=support@uliquid.vip
 ```
 
 The same Turnstile widget is shared by normal registration, registration-email resend, public password-reset requests,
