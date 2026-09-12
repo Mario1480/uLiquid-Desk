@@ -2,7 +2,7 @@
 
 Date: 2026-09-12  
 Environment: production  
-Application commits: `c7ec5f2bfd0a7cf3ee936c91ce0292a73e280be6`, `027ad5c230277f6e8a44e19e059d03e1b93109b5`, `d38042b6730f386a649aee721186922fac7eaac8`
+Application commits: `c7ec5f2bfd0a7cf3ee936c91ce0292a73e280be6`, `027ad5c230277f6e8a44e19e059d03e1b93109b5`, `d38042b6730f386a649aee721186922fac7eaac8`, `ec07403551165c7e54de5ae5d054e4fbfe37d392`
 
 ## Scope and decision state
 
@@ -45,22 +45,23 @@ The payment itself satisfies the current automated chain, sender, token, Treasur
 
 ## Application findings
 
-The canary exposed two finalization defects after the payment had become network-finalized and one confirmation-UX issue:
+The canary exposed two finalization defects after the payment had become network-finalized and led to two confirmation-UX policy changes:
 
 1. The subscription advisory lock selected the PostgreSQL `void` return value directly. Prisma could not deserialize it. Commit `c7ec5f2bf` casts the lock result to text, matching the established quota-admission pattern.
 2. Checkout eligibility used the resolved effective plan, including an active admin override, while add-on finalization inspected only the commercial subscription row. The canary account has commercial `FREE` plus an active `PREMIUM` override through `2027-08-29T23:59:59.999Z`. Commit `027ad5c2` makes finalization use the same higher valid override and bounds the capacity grant to that override expiry.
 3. The checkout previously exposed the internal network-finality wait as a user-visible confirmation wait. Commit `d38042b6` introduces the `payment_received` acknowledgement after the API validates the exact successful Treasury receipt. The UI then shows "Payment confirmed" immediately and continues finality polling in the background, while the order remains `CONFIRMING` and no entitlement is granted before final settlement.
+4. Owner acceptance subsequently required the purchased service to become active with the receipt acknowledgement. Commit `ec074035` validates the receipt against the current canonical block, performs the existing idempotent entitlement finalization immediately, and keeps `PAID` plus `payment_received` orders in the background finality queue. Finality records `onchain_confirmed`; a later canonical contradiction routes the activated order to manual review without duplicate activation or automatic refund.
 
-Verification after all three fixes:
+Verification after all four fixes:
 
-- API Billing tests: `127` passed, `0` failed.
+- API Billing tests: `129` passed, `0` failed.
 - Web Billing tests: `9` passed, `0` failed.
 - API typecheck: passed.
 - Web typecheck and i18n validation: passed.
 - Production API and web image builds: passed.
 - Production API and web health: healthy.
 - No further Prisma advisory-lock deserialization error occurred after `c7ec5f2bf`.
-- The production API and web run `d38042b6730f386a649aee721186922fac7eaac8`.
+- The production API and web run `ec07403551165c7e54de5ae5d054e4fbfe37d392`.
 - Authenticated visual acceptance of the new receipt state remains unobserved because the available Chrome automation channel could not load its request-header policy. No synthetic production order or payment was created for UI testing; the next valid receipt remains the visual observation point.
 
 ## Current database and entitlement state

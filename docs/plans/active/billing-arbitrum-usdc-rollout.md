@@ -15,7 +15,7 @@ Current production status on 2026-09-12:
 - Two historical CCPayment orders are `PAID`; there are no open CCPayment orders.
 - One 5 USDC Arbitrum One capacity-add-on canary was paid from the separate sender account and independently verified through network finality, canonical block equality, and the exact Treasury `Transfer` event.
 - The canary is `REVIEW_REQUIRED`: it exposed an advisory-lock result decoding defect and an effective-plan mismatch between checkout and finalization for active admin plan overrides. Both code defects are fixed and deployed in `c7ec5f2bf` and `027ad5c2`.
-- User-visible receipt acknowledgement is separated from final settlement as of `d38042b6`: after the API proves the successful exact Treasury transfer, the UI immediately shows "Payment confirmed" while finality and entitlement activation continue automatically in the background.
+- Receipt acknowledgement and reversible service activation are separated from final settlement as of `ec074035`: after the API proves the successful exact Treasury transfer in the current canonical block, it immediately activates the product and shows "Activated" while parent-chain finality continues automatically in the background.
 - Subscription checkout is paused while the reviewed forward repair awaits fresh owner approval. AI Credit usage billing remains enabled.
 - Network-finality hardening was deployed from commit `14a4f167a` while checkout was paused. Production API and web health, the finalized RPC head, token code, token decimals, empty reconciliation queues, and the rendered admin readiness view were verified.
 - The first canary attempt was safely rejected before order creation because the signed-in admin account's linked wallet is also the configured Treasury. The second attempt used the separate sender account successfully.
@@ -45,9 +45,9 @@ There is no custom payment contract and no approval flow. The connected user wal
 2. The browser verifies the wallet, chain, USDC balance, and ETH gas balance before requesting the direct ERC-20 transfer.
 3. `POST /settings/subscription/orders/:id/submit` records only the transaction hash. Submission never grants entitlements.
 4. The API independently reads the transaction, receipt, logs, latest L2 head, `finalized` head, and canonical receipt block from the server Billing RPC.
-5. After the API proves a successful receipt with the exact sender, token, Treasury, native value, and amount, it persists `paymentStatusRaw=payment_received`. The browser immediately shows "Payment confirmed", requires no further user action, and continues polling.
-6. The internal order remains `CONFIRMING` until it has at least 12 L2 confirmations and its receipt block is network-finalized. A canonical block-hash mismatch is routed to `REVIEW_REQUIRED`; receipt acknowledgement alone never grants value.
-7. A finalized plan order creates exactly one `SubscriptionTerm`; an add-on-only order creates the corresponding idempotent capacity grant or AI Credit ledger entry. The lifecycle service synchronizes subscription, workspace, license, capacity, and AI Credit state.
+5. After the API proves a successful receipt with the exact sender, token, Treasury, native value, amount, and current canonical block hash, it persists `paymentStatusRaw=payment_received`. In the same idempotent business finalization, the order becomes `PAID`, the plan or add-on is activated, and the browser shows "Activated" without further user action.
+6. A provisionally paid `payment_received` order remains in the background reconciliation queue. The API continues checking at least 12 L2 confirmations, the RPC `finalized` head, and the canonical receipt block hash.
+7. Final settlement changes `paymentStatusRaw` to `onchain_confirmed` and records `verifiedAt`. A later canonical contradiction routes the already activated order to `REVIEW_REQUIRED` for explicit operator handling; it never creates a duplicate entitlement or automatic refund.
 8. The background discovery scanner searches only finalized USDC logs for open Treasury snapshots. It can recover a payment if the browser closes after sending.
 
 The payment reconciler runs every 30 seconds. Subscription lifecycle and reminders run hourly. Cursor overlap, compare-and-swap transitions, unique keys, and idempotency keys prevent replay and duplicate activation.
@@ -75,11 +75,12 @@ Additional boundaries:
 - Each user may have only one open payable Arbitrum USDC order.
 - Treasury address and revision are immutable per order; rotation affects new orders only.
 - RPC or finality-tag failures remain retryable and never activate a purchase.
-- User-visible receipt acknowledgement and irreversible business settlement are separate states. `payment_received` confirms an observed exact Treasury receipt but does not mark the order `PAID` or grant an entitlement.
-- A temporary RPC or finality retry after a validated receipt preserves the user-visible acknowledgement while background verification continues.
+- User-visible activation and irreversible network settlement are separate states. `payment_received` confirms an observed exact Treasury receipt in the current canonical block, marks the order `PAID`, and grants the reversible service entitlement before parent-chain finality.
+- A temporary RPC or finality retry after activation preserves the service entitlement and keeps the payment in background verification.
+- Early activation is an explicit product-risk decision for reversible uLiquid service access. Irreversible fund release or external crediting remains forbidden before the `finalized` gate.
 - Wrong chain, wallet, token, Treasury, amount, native value, replay, ambiguous transfer, reverted receipt, or canonical block mismatch routes the order to `REVIEW_REQUIRED`.
 - `REVIEW_REQUIRED` never triggers automatic activation or refund.
-- A verified receipt is persisted before the idempotent business finalization so a process restart can resume safely.
+- Validated receipt evidence is persisted before idempotent business activation, and finality evidence is persisted separately so a process restart can resume safely.
 
 ## Readiness and configuration
 
