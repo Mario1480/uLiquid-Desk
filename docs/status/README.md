@@ -4,7 +4,8 @@ This directory contains the current go-live, readiness, evidence, and capability
 
 Start with:
 
-- [`active-program-closeout.md`](active-program-closeout.md)
+- [`active-program-closeout.md`](active-program-closeout.md) — completed 1–7 closeout sequence, intentionally deferred programs, and scoped follow-up tracks
+- [`uliq-release-status.md`](uliq-release-status.md) — current ULIQ Mainnet gate register and remaining release path
 - [`go-live-master-plan.md`](go-live-master-plan.md)
 - [`go-live-readiness-followups.md`](go-live-readiness-followups.md)
 - [`release-evidence-matrix.md`](release-evidence-matrix.md)

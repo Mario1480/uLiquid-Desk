@@ -1,0 +1,74 @@
+{
+  "kind": "synthetic local probes; no network, database, LLM or orders",
+  "results": [
+    {
+      "probe": "mobile permission mapping",
+      "route": "/mobile/trading/orders",
+      "noPermissionRequired": true
+    },
+    {
+      "probe": "mobile permission mapping",
+      "route": "/mobile/trading/orders/example/cancel",
+      "noPermissionRequired": true
+    },
+    {
+      "probe": "mobile permission mapping",
+      "route": "/mobile/trading/positions/close",
+      "noPermissionRequired": true
+    },
+    {
+      "probe": "mobile permission mapping",
+      "route": "/mobile/trading/positions/protection",
+      "noPermissionRequired": true
+    },
+    {
+      "probe": "case-sensitive permission mapping",
+      "route": "/API/ORDERS",
+      "noPermissionRequired": true
+    },
+    {
+      "probe": "case-sensitive permission mapping",
+      "route": "/EXCHANGE-ACCOUNTS",
+      "noPermissionRequired": true
+    },
+    {
+      "probe": "Express route matching",
+      "uppercasePathMatchesOrderRoute": true
+    },
+    {
+      "probe": "order type alias mismatch",
+      "marketExecutionAuthorizedByLimitPermission": true
+    },
+    {
+      "probe": "admin queue handler after authentication",
+      "adminChecks": 0,
+      "status": 200
+    },
+    {
+      "probe": "runner credential rotation",
+      "sameAdapterAfterCredentialReplacement": true
+    },
+    {
+      "probe": "manual service global halt",
+      "mockAdapterCalledDespiteGlobalHalt": true
+    },
+    {
+      "probe": "credential encryption",
+      "randomizedCiphertext": true,
+      "roundTrip": true,
+      "tamperRejected": true
+    },
+    {
+      "probe": "manual error response",
+      "syntheticSecretSurvives": true
+    },
+    {
+      "probe": "AI structured output redaction",
+      "knownSecretFieldRedacted": true
+    },
+    {
+      "probe": "AI input source",
+      "rawUserMessageAtModelBoundary": true
+    }
+  ]
+}

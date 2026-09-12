@@ -4,6 +4,8 @@ Status date: 2026-09-12
 
 Local closeout evidence:
 [`../archive/tasks/2026-09-11-active-program-closeout-local.md`](../archive/tasks/2026-09-11-active-program-closeout-local.md).
+The final documentation classification is recorded in
+[`../archive/tasks/2026-09-12-program-documentation-cleanup.md`](../archive/tasks/2026-09-12-program-documentation-cleanup.md).
 
 This register reconciles active planning packets with current code, tests,
 deployment records, browser evidence, and explicit owner decisions. Historical
@@ -11,7 +13,29 @@ checklists remain useful specifications, but their unchecked boxes do not
 override newer evidence. Production configuration, runtime observation, and
 capital or onchain evidence remain separate from repository implementation.
 
-## Closeout status
+## Ordered closeout pass
+
+The documentation cleanup and closeout sequence agreed with Mario has the
+following final classification. A completed reconciliation item means that its
+status and remaining follow-ups are now explicit; it does not silently close
+follow-up work discovered during that reconciliation.
+
+| # | Work item | Result |
+| --- | --- | --- |
+| 1 | Reconcile AI Agent Chat, OpenAI Credits, Execution Foundation, and Limited Beta | Complete; remaining scoped follow-ups are listed below |
+| 2 | Complete Market Intelligence deployment and retire the unused paid provider | Complete and archived |
+| 3 | Restore the failing Type Safety `exchange` budget gate | Complete; `exchange` is back at `72/72` |
+| 4 | Decide Hummingbot demo certification versus formal deferral | Intentionally open |
+| 5 | Define and accept Limited Beta | Complete; separate launch mode superseded by existing controls |
+| 6 | Roll out Arbitrum USDC Billing under controlled canaries | Complete, production-accepted, and archived |
+| 7 | Complete ULIQ legal, audit, and Mainnet gates | Active: legal and major Mainnet preparation are complete; independent audit, Round 2 timing, activation evidence, and DEX/listing remain |
+
+The only intentionally deferred items from this seven-step sequence are
+Hummingbot and ULIQ. AI Agent Chat, OpenAI Router and AI Credits, Execution
+Foundation, and Type Safety retain narrower follow-up tracks and therefore stay
+under `docs/plans/active`.
+
+## Program follow-up status
 
 | Program | Current classification | Closeout state |
 | --- | --- | --- |

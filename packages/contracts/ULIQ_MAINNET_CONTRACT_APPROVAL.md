@@ -1,6 +1,11 @@
 # ULIQ Mainnet contract inputs and authority review
 
-Date: 2026-09-07. Status: owner approval of items 1–3 recorded; exact sale timestamps still need to be supplied. No deployment or live activation performed.
+Date: 2026-09-07. Status updated 2026-09-12: Safe and authority setup are
+owner-confirmed complete. Round 1 is deployed, bound, funded, and has a backend
+schedule; Round 2 still needs exact sale timestamps and remains unfunded in the
+current public snapshot. See the current
+[ULIQ release status](../../docs/status/uliq-release-status.md). Historical
+pre-deployment statements below are retained as dated evidence.
 
 
 ## Owner approval of items 1–3 — 2026-09-07
@@ -58,7 +63,7 @@ These are the prepared ADR-009/API inputs. The generic presale and vesting const
 | Initial claim at shared listing | 5% | 25% |
 | Cliff after listing | 90 days | None |
 | Linear release of remainder | 548 days after cliff | 274 days after listing |
-| Sale start / end | Exact UTC timestamps pending | Exact UTC timestamps pending |
+| Sale start / end | Backend draft: `2026-09-19T12:00:00Z` / `2026-12-31T12:00:00Z`; onchain state remains `DRAFT` | Exact UTC timestamps pending |
 
 No soft cap. Withdrawal releases used wallet/cap capacity. Amounts round down; the final fully vested claim releases all remaining principal. Round 2 activation requires Round 1 to have ended. The last purchase's withdrawal deadline can extend beyond sale end; listing cannot bypass it. Dates are editable only in DRAFT and freeze at READY. An expired READY round can now end without activation.
 

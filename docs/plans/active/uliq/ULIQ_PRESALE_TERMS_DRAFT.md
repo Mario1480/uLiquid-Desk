@@ -1,5 +1,10 @@
 # ULIQ Presale Terms — Draft
 
+> Historical working copy: Mario confirmed on 2026-09-12 that the Presale Terms
+> are complete and online. The production runtime reports version `2026-09-07`,
+> SHA-256 `4f5e97a64569a271ecc475f9b3db44b2140e3b799e5a202ed54c563ebdeaf71d`,
+> and URL `/presale/terms`. This file is not the current published copy.
+
 Status: draft dated 2026-09-07, prepared at Mario's request without jurisdiction-specific regulatory sections. Seller details remain placeholders. This review copy reflects the English page content in `apps/web/messages/en/presale.json`; update the EN/DE page messages together when revising the draft. It has not been deployed or configured as an accepted purchase-terms version.
 
 ## 1. Seller and scope

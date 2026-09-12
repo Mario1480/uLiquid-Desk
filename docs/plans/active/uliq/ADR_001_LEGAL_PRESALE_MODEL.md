@@ -2,9 +2,22 @@
 
 ## Status
 
-`PROJECT OWNER APPROVAL RECORDED / MISSING EXECUTION VALUES TO BE SUPPLIED`
+`ACCEPTED BY CURRENT OWNER CONFIRMATION`
 
-Owner: Product (Mario); external legal evidence is not asserted by this record.
+Owner: Product (Mario). On 2026-09-12 Mario confirmed that the legal matters
+listed in this ADR have been clarified and approved. Supporting legal artifacts
+are not stored or independently reproduced in this public repository. Current
+execution and audit gates are tracked in the
+[ULIQ release status](../../../status/uliq-release-status.md).
+
+## Final owner status update — 2026-09-12
+
+Mario confirmed that the ULIQ legal review and approvals are complete. The
+historical questions and blocker language below are retained to preserve the
+review scope; they are no longer classified as unresolved product decisions.
+The independent smart-contract audit remains in progress, Round 2 still needs
+its exact UTC window, and sale/DEX activation remain separate operational
+decisions.
 
 ## Subsequent contract review approval — 2026-09-07
 

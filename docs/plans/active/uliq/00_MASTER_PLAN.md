@@ -1,5 +1,11 @@
 # ULIQ Integration – Codex Master Implementation Plan
 
+> Current status supersession, 2026-09-12: use the
+> [ULIQ release status](../../../status/uliq-release-status.md) for current
+> legal, audit, Round 1, Round 2, Terms, Safe, indexer, and launch gates. Older
+> `BLOCKED`, `unfunded`, and single-round statements below are retained as
+> implementation history and are not the current release classification.
+
 ## Status und Ziel
 
 ULIQ wird als optionaler Utility-, Membership- und Locking-Layer in uLiquid Desk integriert. Das bestehende Arbitrum-USDC-Payment-System bleibt der einzige Settlement-Pfad für Abonnements, AI Credits und weitere Plattformleistungen.

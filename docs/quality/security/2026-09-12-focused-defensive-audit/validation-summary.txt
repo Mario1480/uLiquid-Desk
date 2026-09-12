@@ -1,0 +1,12 @@
+Node v20.20.2. Local tests only; no production network/session/DB tests.
+# tests 31
+# suites 0
+# pass 31
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 703.874333
+Synthetic probes succeeded after forcing the synthetic Binance adapter enabled; no trading method was called on a real adapter.
+Permission and error probes use source modules; package imports resolve local dist artifacts, not a production image.
+Official exchange documentation verification was attempted but failed (web transport / HTTPS URLError). Exact provider permission introspection contracts remain unverified.

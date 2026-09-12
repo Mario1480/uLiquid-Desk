@@ -10,6 +10,8 @@ This page is the internal starting point for admins, operators, and developers. 
 ## Current status and readiness
 
 - [Status directory and evidence rules](../status/README.md)
+- [Program closeout and remaining-work register](../status/active-program-closeout.md)
+- [ULIQ Mainnet release status](../status/uliq-release-status.md)
 - [Go-live Master Plan](../status/go-live-master-plan.md)
 - [Go-live Readiness Follow-ups](../status/go-live-readiness-followups.md)
 - [Release Evidence Matrix](../status/release-evidence-matrix.md)
@@ -83,6 +85,7 @@ This page is the internal starting point for admins, operators, and developers. 
 
 ## ULIQ and onchain references
 
+- [Current ULIQ Mainnet release status](../status/uliq-release-status.md)
 - [ULIQ Presale Terms Draft](../plans/active/uliq/ULIQ_PRESALE_TERMS_DRAFT.md)
 - [ULIQ Token Deployment Audit and Open Release Gates](../../packages/contracts/ULIQ_TOKEN_DEPLOYMENT_AUDIT.md)
 - [ULIQ Presale, Vesting and Locking Review](../../packages/contracts/ULIQ_PRESALE_VESTING_LOCKING_REVIEW.md)
