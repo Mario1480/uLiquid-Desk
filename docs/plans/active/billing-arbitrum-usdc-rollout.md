@@ -8,16 +8,17 @@ icon: landmark
 
 This plan governs the controlled replacement of the retired CCPayment checkout with direct native USDC payments on Arbitrum One.
 
-Current production status on 2026-09-11:
+Current production status on 2026-09-12:
 
 - The billing schema migrations, API, web checkout, reconciliation jobs, subscription lifecycle, package administration, Treasury configuration, and dedicated Billing RPC are deployed.
 - The production Treasury configuration is revision `1` and the RPC reports Arbitrum One chain ID `42161`, the expected native USDC contract, six decimals, and working `safe` and `finalized` block tags.
 - Two historical CCPayment orders are `PAID`; there are no open CCPayment orders.
-- No Arbitrum USDC order, transaction, or subscription term has been created yet.
-- Subscription checkout was found enabled without canary evidence and was paused through the protected admin control on 2026-09-11 at approximately 18:41 Europe/Berlin. AI Credit usage billing remains enabled.
+- One 5 USDC Arbitrum One capacity-add-on canary was paid from the separate sender account and independently verified through network finality, canonical block equality, and the exact Treasury `Transfer` event.
+- The canary is `REVIEW_REQUIRED`: it exposed an advisory-lock result decoding defect and an effective-plan mismatch between checkout and finalization for active admin plan overrides. Both code defects are fixed and deployed in `c7ec5f2bf` and `027ad5c2`.
+- Subscription checkout is paused while the reviewed forward repair awaits fresh owner approval. AI Credit usage billing remains enabled.
 - Network-finality hardening was deployed from commit `14a4f167a` while checkout was paused. Production API and web health, the finalized RPC head, token code, token decimals, empty reconciliation queues, and the rendered admin readiness view were verified.
-- The first canary attempt was safely rejected before order creation because the signed-in admin account's linked wallet is also the configured Treasury. A separate funded sender account and wallet are required.
-- One low-value Mainnet canary, final reconciliation, activation approval, and the post-activation observation are still required before this plan can be archived.
+- The first canary attempt was safely rejected before order creation because the signed-in admin account's linked wallet is also the configured Treasury. The second attempt used the separate sender account successfully.
+- Paid resolution of the reviewed canary, final reconciliation, activation approval, and the post-activation observation are still required before this plan can be archived.
 
 Code, deployment, browser behavior, wallet signature, transaction inclusion, network finality, Treasury receipt, database reconciliation, entitlement activation, and owner acceptance are separate evidence layers.
 
@@ -44,7 +45,7 @@ There is no custom payment contract and no approval flow. The connected user wal
 3. `POST /settings/subscription/orders/:id/submit` records only the transaction hash. Submission never grants entitlements.
 4. The API independently reads the transaction, receipt, logs, latest L2 head, `finalized` head, and canonical receipt block from the server Billing RPC.
 5. A valid payment remains `CONFIRMING` until it has at least 12 L2 confirmations and its receipt block is network-finalized. A canonical block-hash mismatch is routed to `REVIEW_REQUIRED`.
-6. A confirmed order creates exactly one `SubscriptionTerm`. The lifecycle service activates due terms and synchronizes subscription, workspace, license, capacity, and AI Credit state.
+6. A confirmed plan order creates exactly one `SubscriptionTerm`; an add-on-only order creates the corresponding idempotent capacity grant or AI Credit ledger entry. The lifecycle service synchronizes subscription, workspace, license, capacity, and AI Credit state.
 7. The background discovery scanner searches only finalized USDC logs for open Treasury snapshots. It can recover a payment if the browser closes after sending.
 
 The payment reconciler runs every 30 seconds. Subscription lifecycle and reminders run hourly. Cursor overlap, compare-and-swap transitions, unique keys, and idempotency keys prevent replay and duplicate activation.
@@ -116,7 +117,7 @@ During the canary and initial rollout, observe:
 - `REVIEW_REQUIRED` grouped by `paymentStatusRaw` and `lastError`;
 - transaction-hash collisions and ambiguous discovery candidates;
 - RPC errors, retries, backoff, and scan-cursor progress;
-- `PAID` to exactly one `SubscriptionTerm` and one entitlement activation;
+- `PAID` to the exact expected artifact: one term for a plan, one capacity grant for a capacity add-on, or one AI Credit ledger entry for an AI Credit top-up;
 - due `SCHEDULED`, `ACTIVE`, `GRACE`, and `EXPIRED` terms;
 - notification retry and failure rows.
 
@@ -134,8 +135,9 @@ Use [Billing payment review and refund](../../runbooks/billing-payment-review-re
 - [x] Pause checkout before the finality hardening deployment.
 - [x] Deploy the network-finality hardening while checkout remains paused.
 - [x] Confirm deployed readiness includes a healthy finalized block head.
-- [ ] Run one low-value Mainnet canary from the known operator account and wallet after a fresh human transaction approval.
-- [ ] Reconcile transaction receipt, 12 confirmations, finalized head, canonical block hash, Treasury receipt, exactly one paid order, exactly one term, correct term window, entitlements, and audit evidence.
+- [x] Run one low-value Mainnet canary from the known operator account and wallet after a fresh human transaction approval.
+- [x] Reconcile transaction receipt, 12 confirmations, finalized head, canonical block hash, and Treasury receipt.
+- [ ] Resolve the reviewed capacity-add-on canary after fresh owner approval, then verify exactly one paid order, exactly one capacity grant, zero terms, zero AI Credit ledger entries, the corrected effective quota, and audit evidence.
 - [ ] Re-enable checkout through the protected admin flow after explicit owner acceptance.
 - [ ] Observe the first production window and confirm no stale pending, review, duplicate term, RPC, lifecycle, or notification failure.
 - [ ] Record dated production evidence and archive this plan.
