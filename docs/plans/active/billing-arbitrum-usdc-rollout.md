@@ -14,12 +14,12 @@ Current production status on 2026-09-12:
 - The production Treasury configuration is revision `1` and the RPC reports Arbitrum One chain ID `42161`, the expected native USDC contract, six decimals, and working `safe` and `finalized` block tags.
 - Two historical CCPayment orders are `PAID`; there are no open CCPayment orders.
 - One 5 USDC Arbitrum One capacity-add-on canary was paid from the separate sender account and independently verified through network finality, canonical block equality, and the exact Treasury `Transfer` event.
-- The canary is `REVIEW_REQUIRED`: it exposed an advisory-lock result decoding defect and an effective-plan mismatch between checkout and finalization for active admin plan overrides. Both code defects are fixed and deployed in `c7ec5f2bf` and `027ad5c2`.
+- The canary exposed an advisory-lock result decoding defect and an effective-plan mismatch between checkout and finalization for active admin plan overrides. Both code defects are fixed and deployed in `c7ec5f2bf` and `027ad5c2`; the reviewed order was subsequently resolved through the normal idempotent finalizer after fresh owner approval.
 - Receipt acknowledgement and reversible service activation are separated from final settlement as of `ec074035`: after the API proves the successful exact Treasury transfer in the current canonical block, it immediately activates the product and shows "Activated" while parent-chain finality continues automatically in the background.
-- Subscription checkout is paused while the reviewed forward repair awaits fresh owner approval. AI Credit usage billing remains enabled.
+- Subscription checkout remains paused pending separate owner acceptance of reactivation. AI Credit usage billing remains enabled.
 - Network-finality hardening was deployed from commit `14a4f167a` while checkout was paused. Production API and web health, the finalized RPC head, token code, token decimals, empty reconciliation queues, and the rendered admin readiness view were verified.
 - The first canary attempt was safely rejected before order creation because the signed-in admin account's linked wallet is also the configured Treasury. The second attempt used the separate sender account successfully.
-- Paid resolution of the reviewed canary, final reconciliation, activation approval, and the post-activation observation are still required before this plan can be archived.
+- The first open gate is explicit checkout reactivation approval, followed by the post-activation observation window, before this plan can be archived.
 
 Code, deployment, browser behavior, wallet signature, transaction inclusion, network finality, Treasury receipt, database reconciliation, entitlement activation, and owner acceptance are separate evidence layers.
 
@@ -142,7 +142,7 @@ Use [Billing payment review and refund](../../runbooks/billing-payment-review-re
 - [x] Confirm deployed readiness includes a healthy finalized block head.
 - [x] Run one low-value Mainnet canary from the known operator account and wallet after a fresh human transaction approval.
 - [x] Reconcile transaction receipt, 12 confirmations, finalized head, canonical block hash, and Treasury receipt.
-- [ ] Resolve the reviewed capacity-add-on canary after fresh owner approval, then verify exactly one paid order, exactly one capacity grant, zero terms, zero AI Credit ledger entries, the corrected effective quota, and audit evidence.
+- [x] Resolve the reviewed capacity-add-on canary after fresh owner approval, then verify exactly one paid order, exactly one capacity grant, zero terms, zero AI Credit ledger entries, effective AI prediction capacity `11`, and audit evidence.
 - [ ] Re-enable checkout through the protected admin flow after explicit owner acceptance.
 - [ ] Observe the first production window and confirm no stale pending, review, duplicate term, RPC, lifecycle, or notification failure.
 - [ ] Record dated production evidence and archive this plan.

@@ -8,7 +8,7 @@ Application commits: `c7ec5f2bfd0a7cf3ee936c91ce0292a73e280be6`, `027ad5c230277f
 
 Mario created and signed one low-value Arbitrum One payment from the separate Firefox canary account. This file records the reconciled evidence for the resulting `REVIEW_REQUIRED` order. It does not authorize the pending entitlement repair, a refund, or checkout reactivation.
 
-Current decision: pending fresh owner approval for a reviewed paid-resolution repair. The checkout safety switch is closed.
+Current decision: the reviewed paid-resolution repair was explicitly approved by Mario and completed. The checkout safety switch remains closed pending separate reactivation acceptance.
 
 ## Immutable order evidence
 
@@ -66,32 +66,37 @@ Verification after all four fixes:
 
 ## Current database and entitlement state
 
-- Order: `REVIEW_REQUIRED`
-- `paymentStatusRaw`: `finalization:paid_plan_required_for_capacity_topup`
-- Payment `lastError`: `finalization:paid_plan_required_for_capacity_topup`
+- Order: `PAID`
+- `paymentStatusRaw`: `onchain_confirmed_resume`
+- Payment `lastError`: `null`
 - Verification attempts: `25`
 - Subscription commercial state: `FREE|ACTIVE`
 - Active admin override: `PREMIUM`, valid through `2027-08-29T23:59:59.999Z`
 - Terms for this order: `0`
-- Capacity grants for this order: `0`
+- Capacity grants for this order: exactly `1`
+- Capacity grant source key: `order:cmty3hsrg0n8eqj1yt5p0n12v:capacity:0`
+- Capacity grant scope and delta: `PREMIUM`, AI predictions `+1`
 - AI Credit ledger entries for this order: `0`
-- Existing base AI prediction capacity: `1`
+- Premium base AI prediction capacity: `10`
+- Effective AI prediction capacity after the grant: `11`
 - Entitlement synchronization pending: `false`
-- Review queue: exactly `1`, this order
+- Review queue: `0`
+- Repair audit events: approval, completion, and stale historical error cleanup recorded
 - Checkout flags: `billingEnabled=false`, `aiCreditBillingEnabled=true`
 
-No entitlement was granted and no refund was initiated.
+Exactly one entitlement was granted and no refund was initiated.
 
-## Required reviewed forward repair
+## Completed reviewed forward repair
 
-After fresh owner approval, resolve this exact order as paid through an auditable, serializable, idempotent forward repair that:
+After Mario's explicit approval, the exact reviewed order was resolved as paid through an auditable, serializable, idempotent forward repair that:
 
-1. claims only the exact order and transaction hash above;
-2. rechecks the persisted verified receipt evidence and unique hash ownership;
-3. creates exactly one capacity grant with source key `order:cmty3hsrg0n8eqj1yt5p0n12v:capacity:0`, scope `PREMIUM`, delta AI predictions `1`, and validity through the admin override expiry;
-4. changes the order to `PAID` without changing the historical onchain evidence;
-5. persists an `AdminAuditEvent` referencing this evidence file and Mario's approval;
-6. runs entitlement reconciliation and verifies effective AI prediction capacity `2`;
-7. confirms zero terms and zero AI Credit ledger entries, because this is a capacity add-on rather than a plan or AI Credit top-up.
+1. claimed only the exact order and transaction hash above;
+2. rechecked the persisted verified receipt evidence and unique hash ownership;
+3. created exactly one capacity grant with source key `order:cmty3hsrg0n8eqj1yt5p0n12v:capacity:0`, scope `PREMIUM`, delta AI predictions `1`, and validity through the admin override expiry;
+4. changed the order to `PAID` without changing the historical onchain evidence;
+5. persisted approval and completion `AdminAuditEvent` records referencing this evidence file and Mario's approval;
+6. ran entitlement reconciliation and verified effective AI prediction capacity `11`;
+7. confirmed zero terms and zero AI Credit ledger entries, because this is a capacity add-on rather than a plan or AI Credit top-up;
+8. cleared the obsolete historical finalization error only after paid resolution and recorded that cleanup in a separate audit event.
 
 Checkout may be reconsidered only after this review item is closed, the corrected state is verified, and Mario separately accepts activation.
