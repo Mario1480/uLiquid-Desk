@@ -366,7 +366,7 @@ function SubscriptionOrderPageContent() {
     };
     setActiveCheckout(nextCheckout);
     setPaymentStage(stageFromStatus(nextStatus, nextPayment, nextPaymentStatusRaw));
-    if (nextStatus === "paid") setMessage(t("order.payment.confirmed"));
+    if (nextStatus === "paid") setMessage(null);
     return nextStatus;
   }
 
@@ -861,88 +861,92 @@ function SubscriptionOrderPageContent() {
           <div className="subscriptionPortalMuted">{tCommon("loading")}</div>
         ) : (
           <div className="subscriptionOrderGrid">
-            <div className="subscriptionOrderSection">
-              <div className="subscriptionOrderSectionTitle">{t("order.packageLabel")}</div>
-              <DeskSelect className="input" value={selectedPlanId} onChange={(event) => setSelectedPlanId(event.target.value)}>
-                <option value="">{t("order.noPlanSelected")}</option>
-                {model.planPackages.map((pkg) => (
-                  <option key={pkg.id} value={pkg.id}>
-                    {pkg.name} - {centsToCurrency(pkg.priceCents)} / {Math.max(1, pkg.billingMonths)}m
-                  </option>
-                ))}
-              </DeskSelect>
-              {!model.hasPlans ? <div className="subscriptionPortalMuted">{t("order.noPlans")}</div> : null}
-              {selectedPlanPackage ? (
-                <div className="subscriptionOrderIncluded">
-                  <div className="subscriptionOrderIncludedTitle">{t("order.includedTitle")}</div>
-                  <div>{t("order.includedBots", { running: selectedPlanPackage.maxRunningBots ?? 0 })}</div>
-                  <div>{t("order.includedPredictionsAi", { running: selectedPlanPackage.maxRunningPredictionsAi ?? 0 })}</div>
-                  <div>{t("order.includedPredictionsComposite", { running: selectedPlanPackage.maxRunningPredictionsComposite ?? 0 })}</div>
-                  <div>{t("order.includedAiTokens", { tokens: selectedPlanPackage.monthlyAiCredits })}</div>
-                  {isImmediatePremiumUpgrade && payload?.upgradePreview ? (
-                    <DeskSurface><div className="uiNotice uiNotice-success">
-                      {t("order.immediateUpgrade", {
-                        amount: centsToCurrency(payload.upgradePreview.differenceCents),
-                        endsAt: new Date(payload.upgradePreview.sourceTermEndsAt).toLocaleDateString(locale)
-                      })}
-                    </div></DeskSurface>
+            <div className="subscriptionOrderSelection">
+              <section className="subscriptionOrderBlock subscriptionOrderPackageBlock">
+                <div className="subscriptionOrderSectionTitle">{t("order.packageLabel")}</div>
+                <DeskSelect className="input" value={selectedPlanId} onChange={(event) => setSelectedPlanId(event.target.value)}>
+                  <option value="">{t("order.noPlanSelected")}</option>
+                  {model.planPackages.map((pkg) => (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.name} - {centsToCurrency(pkg.priceCents)} / {Math.max(1, pkg.billingMonths)}m
+                    </option>
+                  ))}
+                </DeskSelect>
+                {!model.hasPlans ? <div className="subscriptionPortalMuted">{t("order.noPlans")}</div> : null}
+                {selectedPlanPackage ? (
+                  <div className="subscriptionOrderIncluded">
+                    <div className="subscriptionOrderIncludedTitle">{t("order.includedTitle")}</div>
+                    <div>{t("order.includedBots", { running: selectedPlanPackage.maxRunningBots ?? 0 })}</div>
+                    <div>{t("order.includedPredictionsAi", { running: selectedPlanPackage.maxRunningPredictionsAi ?? 0 })}</div>
+                    <div>{t("order.includedPredictionsComposite", { running: selectedPlanPackage.maxRunningPredictionsComposite ?? 0 })}</div>
+                    <div>{t("order.includedAiTokens", { tokens: selectedPlanPackage.monthlyAiCredits })}</div>
+                    {isImmediatePremiumUpgrade && payload?.upgradePreview ? (
+                      <DeskSurface><div className="uiNotice uiNotice-success">
+                        {t("order.immediateUpgrade", {
+                          amount: centsToCurrency(payload.upgradePreview.differenceCents),
+                          endsAt: new Date(payload.upgradePreview.sourceTermEndsAt).toLocaleDateString(locale)
+                        })}
+                      </div></DeskSurface>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="subscriptionOrderBlock">
+                <div className="subscriptionOrderSectionHead">
+                  <div className="subscriptionOrderSectionTitle">{t("order.capacityAddonsTitle")}</div>
+                  {selectedAddonUnits > 0 ? (
+                    <DeskButton type="button" className="btn" onClick={resetAddons}>
+                      <AppIcon name="reset" />
+                      {t("order.clearCapacityAddons")}
+                    </DeskButton>
                   ) : null}
                 </div>
-              ) : null}
-            </div>
-
-            <div className="subscriptionOrderSection">
-              <div className="subscriptionOrderSectionHead">
-                <div className="subscriptionOrderSectionTitle">{t("order.capacityAddonsTitle")}</div>
-                {selectedAddonUnits > 0 ? (
-                  <DeskButton type="button" className="btn" onClick={resetAddons}>
-                    <AppIcon name="reset" />
-                    {t("order.clearCapacityAddons")}
-                  </DeskButton>
+                <div className="subscriptionPortalMuted">{t("order.selectedCapacityUnits", { count: selectedAddonUnits })}</div>
+                {!canSelectAddons ? (
+                  <DeskSurface><div className="uiNotice uiNotice-info">{t("order.addonsRequirePro")}</div></DeskSurface>
                 ) : null}
-              </div>
-              <div className="subscriptionPortalMuted">{t("order.selectedCapacityUnits", { count: selectedAddonUnits })}</div>
-              {!canSelectAddons ? (
-                <DeskSurface><div className="uiNotice uiNotice-info">{t("order.addonsRequirePro")}</div></DeskSurface>
-              ) : null}
-              {!model.hasAddons ? (
-                <div className="subscriptionPortalMuted">{t("order.noCapacityAddons")}</div>
-              ) : (
-                <div className="subscriptionAddonList">
-                  {model.addonPackages.map((pkg) => {
-                    const quantity = clampQuantity(addonQuantities[pkg.id] ?? 0);
-                    return (
-                      <div key={pkg.id} className={`subscriptionAddonItem ${quantity > 0 ? "subscriptionAddonItemSelected" : ""}`}>
-                        <div>
-                          <div className="subscriptionAddonTitle">{pkg.name}</div>
-                          <div className="subscriptionPortalMuted">
-                            {pkg.addonType === "ai_credits"
-                              ? t("order.addonAiTopupDetails", { tokens: pkg.aiCredits })
-                              : t("order.addonCapacityDetails", {
-                                  runningBots: pkg.deltaRunningBots ?? 0,
-                                  runningAi: pkg.deltaRunningPredictionsAi ?? 0,
-                                  runningComposite: pkg.deltaRunningPredictionsComposite ?? 0
-                                })}
+                {!model.hasAddons ? (
+                  <div className="subscriptionPortalMuted">{t("order.noCapacityAddons")}</div>
+                ) : (
+                  <div className="subscriptionAddonList">
+                    {model.addonPackages.map((pkg) => {
+                      const quantity = clampQuantity(addonQuantities[pkg.id] ?? 0);
+                      return (
+                        <div key={pkg.id} className={`subscriptionAddonItem ${quantity > 0 ? "subscriptionAddonItemSelected" : ""}`}>
+                          <div className="subscriptionAddonCopy">
+                            <div className="subscriptionAddonHeading">
+                              <div className="subscriptionAddonTitle">{pkg.name}</div>
+                              <div className="subscriptionAddonPrice">{centsToCurrency(pkg.priceCents)}</div>
+                            </div>
+                            <div className="subscriptionPortalMuted">
+                              {pkg.addonType === "ai_credits"
+                                ? t("order.addonAiTopupDetails", { tokens: pkg.aiCredits })
+                                : t("order.addonCapacityDetails", {
+                                    runningBots: pkg.deltaRunningBots ?? 0,
+                                    runningAi: pkg.deltaRunningPredictionsAi ?? 0,
+                                    runningComposite: pkg.deltaRunningPredictionsComposite ?? 0
+                                  })}
+                            </div>
                           </div>
-                          <div className="subscriptionAddonPrice">{centsToCurrency(pkg.priceCents)}</div>
+                          <div className="subscriptionAddonQuantityWrap">
+                            <DeskButton type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity - 1)} disabled={!canSelectAddons || quantity === 0} aria-label={`decrease ${pkg.name}`}>
+                              <AppIcon name="remove" />
+                            </DeskButton>
+                            <span className="subscriptionAddonQuantityValue">{quantity}</span>
+                            <DeskButton type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity + 1)} disabled={!canSelectAddons || quantity >= 20} aria-label={`increase ${pkg.name}`}>
+                              <AppIcon name="add" />
+                            </DeskButton>
+                          </div>
                         </div>
-                        <div className="subscriptionAddonQuantityWrap">
-                          <DeskButton type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity - 1)} disabled={!canSelectAddons || quantity === 0} aria-label={`decrease ${pkg.name}`}>
-                            <AppIcon name="remove" />
-                          </DeskButton>
-                          <span className="subscriptionAddonQuantityValue">{quantity}</span>
-                          <DeskButton type="button" className="btn" onClick={() => setAddonQuantity(pkg.id, quantity + 1)} disabled={!canSelectAddons || quantity >= 20} aria-label={`increase ${pkg.name}`}>
-                            <AppIcon name="add" />
-                          </DeskButton>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
             </div>
 
-            <div className="subscriptionOrderSummary subscriptionOrderSummarySticky">
+            <aside className="subscriptionOrderSummary subscriptionOrderSummarySticky">
               <div className="subscriptionOrderSummaryHeader">
                 <div className="subscriptionOrderSummaryTitle">{t("order.summaryTitle")}</div>
                 <div className="subscriptionPortalMuted">{t("order.summaryTypeCart")}</div>
@@ -981,7 +985,7 @@ function SubscriptionOrderPageContent() {
               ) : (
                 <div className="subscriptionPortalMuted">{t("order.selectPackageFirst")}</div>
               )}
-            </div>
+            </aside>
           </div>
         )}
       </div></DeskSurface>
@@ -1134,7 +1138,7 @@ function SubscriptionOrderPageContent() {
       ) : null}
 
       <div className="subscriptionOrderSimpleHint">{t("order.cartHint")}</div>
-      {message ? <div className="subscriptionPortalMessage">
+      {message && activeCheckout?.status !== "paid" ? <div className="subscriptionPortalMessage">
         <span>{message}</span>
         {requiredLockUntil ? <DeskLink className="btn" href={`${withLocalePath("/uliq/locking", locale)}?requiredUntil=${encodeURIComponent(requiredLockUntil)}`}><AppIcon name="shield" /> {tUliq("manageLock")}</DeskLink> : null}
       </div> : null}
