@@ -659,15 +659,17 @@
         "expiredTransactionRecovery": "The order expired, but the transaction hash you already sent is still stored locally. Do not send again. Open it in the explorer and check the status; background reconciliation routes late payments to manual review.",
         "manageWallet": "Manage wallet link",
         "reviewRequired": "This payment needs manual review. No second activation or automatic refund will be triggered.",
-        "confirmed": "The payment is confirmed onchain and the subscription has been updated.",
+        "received": "Payment confirmed. No further action is needed; network finality and activation continue automatically in the background.",
+        "confirmed": "The payment is finally settled and the product has been activated.",
         "confirmations": "{count} of {required} confirmations",
-        "networkFinalityPending": "Waiting for Arbitrum network finality before activating the purchase.",
+        "networkFinalityPending": "Payment confirmed · final network settlement and activation continue in the background.",
         "stages": {
           "ready": "Ready",
           "awaiting_signature": "Signature",
           "submitted": "Submitted",
-          "confirming": "Confirmations",
-          "confirmed": "Confirmed"
+          "confirming": "Verification",
+          "received": "Confirmed",
+          "confirmed": "Activated"
         }
       },
       "errors": {
@@ -708,11 +710,13 @@
       "status": "Status",
       "action": "Action",
       "continuePayment": "Continue payment",
+      "viewPaymentStatus": "View status",
       "reviewPayment": "Open review case",
       "viewTransaction": "View transaction",
       "statuses": {
         "pending": "Pending",
         "confirming": "Confirming",
+        "paymentReceived": "Payment confirmed",
         "reviewRequired": "Manual review",
         "paid": "Paid",
         "failed": "Failed",

@@ -7,6 +7,18 @@ export function isBillingPaymentExpired(
   return !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs;
 }
 
+export function isBillingPaymentReceiptAcknowledged(params: {
+  orderStatus: string;
+  paymentStatusRaw: string | null | undefined;
+}): boolean {
+  if (params.orderStatus !== "confirming") return false;
+  const status = params.paymentStatusRaw ?? "";
+  return status === "payment_received"
+    || status === "onchain_confirmed"
+    || status === "onchain_confirmed_resume"
+    || status.startsWith("finalizing:onchain_confirmed");
+}
+
 export async function executeBillingWriteIfFresh<T>(params: {
   expiresAt: string | null | undefined;
   now?: () => number;

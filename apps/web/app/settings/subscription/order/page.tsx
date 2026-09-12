@@ -38,6 +38,7 @@ import {
 } from "../../../../src/billing/subscriptionViewModel";
 import {
   executeBillingWriteIfFresh,
+  isBillingPaymentReceiptAcknowledged,
   isBillingPaymentExpired,
   selectResumableBillingCheckout
 } from "../../../../src/billing/onchainCheckout";
@@ -76,6 +77,7 @@ type ActiveCheckout = {
   orderId: string;
   merchantOrderId: string | null;
   status: BillingOrderStatus;
+  paymentStatusRaw: string | null;
   payment: BillingOnchainPayment;
   uliqBenefit: UliqBenefitSnapshot | null;
 };
@@ -84,7 +86,7 @@ type PaymentStage =
   | "ready"
   | "awaiting_signature"
   | "submitted"
-  | "confirming"
+  | "received"
   | "confirmed"
   | "review_required"
   | "error";
@@ -156,10 +158,15 @@ function getPaymentRecipient(payment: BillingOnchainPayment | null | undefined):
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function stageFromStatus(status: BillingOrderStatus, payment: BillingOnchainPayment): PaymentStage {
+function stageFromStatus(
+  status: BillingOrderStatus,
+  payment: BillingOnchainPayment,
+  paymentStatusRaw: string | null | undefined
+): PaymentStage {
   if (status === "paid") return "confirmed";
   if (status === "review_required") return "review_required";
-  if (status === "confirming") return "confirming";
+  if (isBillingPaymentReceiptAcknowledged({ orderStatus: status, paymentStatusRaw })) return "received";
+  if (status === "confirming") return "submitted";
   if (status === "failed" || status === "expired") return "error";
   return payment.txHash ? "submitted" : "ready";
 }
@@ -218,6 +225,7 @@ function checkoutFromOrder(order: BillingOrder): ActiveCheckout | null {
     orderId: order.id,
     merchantOrderId: order.merchantOrderId ?? null,
     status: order.status,
+    paymentStatusRaw: order.paymentStatusRaw ?? null,
     payment: normalizePaymentDetails({
       ...order.onchainPayment,
       txHash: order.onchainPayment.txHash ?? storedTxHash
@@ -340,6 +348,10 @@ function SubscriptionOrderPageContent() {
       : fallbackPayment;
     if (!nextPayment || !nextOrderId) return null;
     const nextStatus = response.status ?? order?.status ?? fallback?.status ?? "pending";
+    const nextPaymentStatusRaw = order?.paymentStatusRaw
+      ?? response.paymentStatusRaw
+      ?? fallback?.paymentStatusRaw
+      ?? null;
     if (responsePayment?.txHash || order?.onchainPayment?.txHash || nextStatus === "paid") {
       clearPendingBillingTxHash(nextOrderId);
     }
@@ -347,11 +359,12 @@ function SubscriptionOrderPageContent() {
       orderId: nextOrderId,
       merchantOrderId: order?.merchantOrderId ?? fallback?.merchantOrderId ?? null,
       status: nextStatus,
+      paymentStatusRaw: nextPaymentStatusRaw,
       payment: nextPayment,
       uliqBenefit: response.uliqBenefit ?? order?.uliqBenefit ?? fallback?.uliqBenefit ?? null
     };
     setActiveCheckout(nextCheckout);
-    setPaymentStage(stageFromStatus(nextStatus, nextPayment));
+    setPaymentStage(stageFromStatus(nextStatus, nextPayment, nextPaymentStatusRaw));
     if (nextStatus === "paid") setMessage(t("order.payment.confirmed"));
     return nextStatus;
   }
@@ -406,7 +419,7 @@ function SubscriptionOrderPageContent() {
       const checkout = resumable ? checkoutFromOrder(resumable) : null;
       if (checkout) {
         setActiveCheckout(checkout);
-        setPaymentStage(stageFromStatus(checkout.status, checkout.payment));
+        setPaymentStage(stageFromStatus(checkout.status, checkout.payment, checkout.paymentStatusRaw));
       } else if (requestedOrderId) {
         await fetchOrderStatus(requestedOrderId, null);
       }
@@ -423,7 +436,7 @@ function SubscriptionOrderPageContent() {
 
   useEffect(() => {
     if (!activeCheckout) return;
-    if (!["submitted", "confirming"].includes(paymentStage)) return;
+    if (!["submitted", "received"].includes(paymentStage)) return;
     const timer = window.setInterval(() => {
       void fetchOrderStatus(activeCheckout.orderId, activeCheckout).catch(() => {
         // A temporary polling failure must not replace the submitted transaction state.
@@ -514,11 +527,12 @@ function SubscriptionOrderPageContent() {
         orderId,
         merchantOrderId: response.merchantOrderId ?? response.order?.merchantOrderId ?? null,
         status: response.status ?? response.order?.status ?? "pending",
+        paymentStatusRaw: response.order?.paymentStatusRaw ?? null,
         payment: normalizePaymentDetails(rawPaymentDetails, null, response.order),
         uliqBenefit: response.uliqBenefit ?? response.order?.uliqBenefit ?? null
       };
       setActiveCheckout(nextCheckout);
-      setPaymentStage(stageFromStatus(nextCheckout.status, nextCheckout.payment));
+      setPaymentStage(stageFromStatus(nextCheckout.status, nextCheckout.payment, nextCheckout.paymentStatusRaw));
       setMessage(null);
     } catch (error) {
       const code = parseCheckoutErrorCode(error);
@@ -946,13 +960,15 @@ function SubscriptionOrderPageContent() {
               <div className="subscriptionCardTitle">{t("order.payment.title")}</div>
               <div className="subscriptionPortalMuted">{t("order.payment.orderId", { id: activeCheckout.merchantOrderId ?? activeCheckout.orderId })}</div>
             </div>
-            <DeskBadge className={`subscriptionStatusPill subscriptionStatusPill${activeCheckout.status}`}>
-              {t(`orders.statuses.${activeCheckout.status === "review_required" ? "reviewRequired" : activeCheckout.status}`)}
+            <DeskBadge className={`subscriptionStatusPill subscriptionStatusPill${paymentStage === "received" ? "paid" : activeCheckout.status}`}>
+              {paymentStage === "received"
+                ? t("orders.statuses.paymentReceived")
+                : t(`orders.statuses.${activeCheckout.status === "review_required" ? "reviewRequired" : activeCheckout.status}`)}
             </DeskBadge>
           </div>
 
           <div className="subscriptionPaymentSteps" aria-label={t("order.payment.progressLabel")}>
-            {(["ready", "awaiting_signature", "submitted", "confirming", "confirmed"] as PaymentStage[]).map((stage) => (
+            {(["ready", "awaiting_signature", "submitted", "received", "confirmed"] as PaymentStage[]).map((stage) => (
               <span key={stage} className={stage === paymentStage ? "subscriptionPaymentStepActive" : ""}>
                 {t(`order.payment.stages.${stage}`)}
               </span>
@@ -1032,9 +1048,12 @@ function SubscriptionOrderPageContent() {
           {paymentStage === "confirmed" ? (
             <DeskSurface><div className="uiNotice uiNotice-success">{t("order.payment.confirmed")}</div></DeskSurface>
           ) : null}
+          {paymentStage === "received" ? (
+            <DeskSurface><div className="uiNotice uiNotice-success">{t("order.payment.received")}</div></DeskSurface>
+          ) : null}
 
           <div className="subscriptionPaymentActions">
-            {!["submitted", "confirming", "confirmed", "review_required"].includes(paymentStage) ? (
+            {!["submitted", "received", "confirmed", "review_required"].includes(paymentStage) ? (
               <DeskButton
                 type="button"
                 className="btn btnPrimary"
@@ -1072,15 +1091,12 @@ function SubscriptionOrderPageContent() {
           {payment.txHash ? (
             <div className="subscriptionPaymentConfirmationMeta">
               <span className="subscriptionMono">{payment.txHash}</span>
-              <span>{t("order.payment.confirmations", {
-                count: payment.confirmations ?? 0,
-                required: payment.confirmationsRequired ?? payment.requiredConfirmations ?? 12
-              })}</span>
-              {paymentStage === "confirming"
-                && (payment.confirmations ?? 0) >= (payment.confirmationsRequired ?? payment.requiredConfirmations ?? 12)
-                && !payment.verifiedAt
+              {paymentStage === "received"
                 ? <span>{t("order.payment.networkFinalityPending")}</span>
-                : null}
+                : <span>{t("order.payment.confirmations", {
+                  count: payment.confirmations ?? 0,
+                  required: payment.confirmationsRequired ?? payment.requiredConfirmations ?? 12
+                })}</span>}
             </div>
           ) : null}
         </section></DeskSurface>

@@ -3077,6 +3077,14 @@ export function isWithinLatePaymentRecoveryHorizon(expiresAt: Date | null, now: 
   );
 }
 
+export function isBillingPaymentReceiptAcknowledged(statusRaw: unknown): boolean {
+  const status = typeof statusRaw === "string" ? statusRaw : "";
+  return status === "payment_received"
+    || status === "onchain_confirmed"
+    || status === "onchain_confirmed_resume"
+    || status.startsWith("finalizing:onchain_confirmed");
+}
+
 export async function persistBillingVerificationTransition(params: {
   database: any;
   orderId: string;
@@ -3205,7 +3213,11 @@ export async function reconcileBillingOrderPayment(params: {
       txHash,
       expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
       orderStatus: staleMissingTransaction ? "REVIEW_REQUIRED" : "CONFIRMING",
-      paymentStatusRaw: staleMissingTransaction ? "stale_missing_transaction" : "rpc_retry",
+      paymentStatusRaw: staleMissingTransaction
+        ? "stale_missing_transaction"
+        : isBillingPaymentReceiptAcknowledged(order.paymentStatusRaw)
+          ? "payment_received"
+          : "rpc_retry",
       paymentData: {
         verificationAttempts: { increment: 1 },
         lastCheckedAt: checkedAt,
@@ -3246,7 +3258,11 @@ export async function reconcileBillingOrderPayment(params: {
     txHash,
     expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
     orderStatus: "CONFIRMING",
-    paymentStatusRaw: result.kind === "confirmed" ? "onchain_confirmed" : "confirming",
+    // A `confirming` verifier result has already proven the successful receipt,
+    // sender, token, Treasury and exact transfer amount. Expose that durable
+    // acknowledgement immediately while finality and entitlement activation
+    // continue in the background.
+    paymentStatusRaw: result.kind === "confirmed" ? "onchain_confirmed" : "payment_received",
     paymentData: {
       verificationAttempts: { increment: 1 },
       lastCheckedAt: checkedAt,

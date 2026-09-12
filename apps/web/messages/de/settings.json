@@ -659,15 +659,17 @@
         "expiredTransactionRecovery": "Die Order ist abgelaufen, aber der bereits gesendete Transaktions-Hash bleibt lokal erhalten. Sende nicht erneut. Öffne die Transaktion im Explorer und prüfe den Status; der Hintergrundabgleich ordnet verspätete Zahlungen der manuellen Prüfung zu.",
         "manageWallet": "Wallet-Verknüpfung verwalten",
         "reviewRequired": "Die Zahlung benötigt eine manuelle Prüfung. Es wird keine zweite Aktivierung oder automatische Rückzahlung ausgelöst.",
-        "confirmed": "Die Zahlung wurde onchain bestätigt und das Abo aktualisiert.",
+        "received": "Zahlung bestätigt. Du musst nichts weiter tun; Netzwerkfinalität und Aktivierung laufen automatisch im Hintergrund.",
+        "confirmed": "Die Zahlung ist final verbucht und das Produkt wurde aktiviert.",
         "confirmations": "{count} von {required} Bestätigungen",
-        "networkFinalityPending": "Vor der Aktivierung wird noch auf die Arbitrum-Netzwerkfinalität gewartet.",
+        "networkFinalityPending": "Zahlung bestätigt · die endgültige Netzwerkabsicherung und Aktivierung laufen im Hintergrund.",
         "stages": {
           "ready": "Bereit",
           "awaiting_signature": "Signatur",
           "submitted": "Gesendet",
-          "confirming": "Bestätigungen",
-          "confirmed": "Bestätigt"
+          "confirming": "Prüfung",
+          "received": "Bestätigt",
+          "confirmed": "Aktiviert"
         }
       },
       "errors": {
@@ -708,11 +710,13 @@
       "status": "Status",
       "action": "Aktion",
       "continuePayment": "Zahlung fortsetzen",
+      "viewPaymentStatus": "Status ansehen",
       "reviewPayment": "Prüffall öffnen",
       "viewTransaction": "Transaktion ansehen",
       "statuses": {
         "pending": "Ausstehend",
         "confirming": "Wird bestätigt",
+        "paymentReceived": "Zahlung bestätigt",
         "reviewRequired": "Manuelle Prüfung",
         "paid": "Bezahlt",
         "failed": "Fehlgeschlagen",

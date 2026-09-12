@@ -12,6 +12,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPatch } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { AppIcon } from "../../components/AppIcon";
+import { isBillingPaymentReceiptAcknowledged } from "../../../src/billing/onchainCheckout";
 import {
   buildLicensePageModel,
   centsToCurrency,
@@ -67,6 +68,13 @@ function renderOrderPackageCell(order: BillingOrder) {
 
 function orderStatusKey(status: BillingOrderStatus): string {
   return status === "review_required" ? "reviewRequired" : status;
+}
+
+function isOrderPaymentReceived(order: BillingOrder): boolean {
+  return isBillingPaymentReceiptAcknowledged({
+    orderStatus: order.status,
+    paymentStatusRaw: order.paymentStatusRaw
+  });
 }
 
 function getOrderExplorerUrl(order: BillingOrder): string | null {
@@ -589,8 +597,10 @@ export default function SubscriptionPage() {
                       <td>{renderOrderPackageCell(order)}</td>
                       <td>{centsToCurrency(order.amountCents, order.currency)}</td>
                       <td>
-                        <DeskBadge className={`subscriptionStatusPill subscriptionStatusPill${order.status}`}>
-                          {t(`orders.statuses.${orderStatusKey(order.status)}`)}
+                        <DeskBadge className={`subscriptionStatusPill subscriptionStatusPill${isOrderPaymentReceived(order) ? "paid" : order.status}`}>
+                          {isOrderPaymentReceived(order)
+                            ? t("orders.statuses.paymentReceived")
+                            : t(`orders.statuses.${orderStatusKey(order.status)}`)}
                         </DeskBadge>
                       </td>
                       <td>
@@ -600,7 +610,9 @@ export default function SubscriptionPage() {
                           <Link href={`${withLocalePath("/settings/subscription/order", locale)}?order=${encodeURIComponent(order.id)}`}>
                             {order.status === "review_required"
                               ? t("orders.reviewPayment")
-                              : t("orders.continuePayment")}
+                              : isOrderPaymentReceived(order)
+                                ? t("orders.viewPaymentStatus")
+                                : t("orders.continuePayment")}
                           </Link>
                         ) : order.onchainPayment?.txHash && getOrderExplorerUrl(order) ? (
                           <a href={getOrderExplorerUrl(order) ?? "#"} target="_blank" rel="noreferrer">

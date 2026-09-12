@@ -2,10 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   executeBillingWriteIfFresh,
+  isBillingPaymentReceiptAcknowledged,
   isBillingPaymentExpired,
   selectResumableBillingCheckout,
   shouldResumeBillingCheckout
 } from "./onchainCheckout.js";
+
+test("validated receipts are acknowledged before final settlement", () => {
+  assert.equal(isBillingPaymentReceiptAcknowledged({
+    orderStatus: "confirming",
+    paymentStatusRaw: "payment_received"
+  }), true);
+  assert.equal(isBillingPaymentReceiptAcknowledged({
+    orderStatus: "confirming",
+    paymentStatusRaw: "finalizing:onchain_confirmed"
+  }), true);
+  assert.equal(isBillingPaymentReceiptAcknowledged({
+    orderStatus: "confirming",
+    paymentStatusRaw: "transaction_submitted"
+  }), false);
+  assert.equal(isBillingPaymentReceiptAcknowledged({
+    orderStatus: "review_required",
+    paymentStatusRaw: "payment_received"
+  }), false);
+});
 
 test("checkout expiry is inclusive at the server deadline", () => {
   const expiresAt = "2026-08-02T12:00:00.000Z";

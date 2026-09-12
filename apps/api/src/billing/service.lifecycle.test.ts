@@ -25,6 +25,7 @@ import {
   getVerifiedBillingPaymentTimestamp,
   getBillingDiscoveryScanRange,
   inspectArbitrumUsdcRpc,
+  isBillingPaymentReceiptAcknowledged,
   hasPaidCapacityAddonTarget,
   isEnterpriseStrategyLicense,
   isWithinLatePaymentRecoveryHorizon,
@@ -485,6 +486,15 @@ test("stale missing hashes release checkout only after expiry and bounded attemp
     expiresAt: expiredAt,
     now
   }), false);
+});
+
+test("a validated receipt stays user-visible while network finality retries", () => {
+  assert.equal(isBillingPaymentReceiptAcknowledged("payment_received"), true);
+  assert.equal(isBillingPaymentReceiptAcknowledged("onchain_confirmed"), true);
+  assert.equal(isBillingPaymentReceiptAcknowledged("onchain_confirmed_resume"), true);
+  assert.equal(isBillingPaymentReceiptAcknowledged("finalizing:onchain_confirmed"), true);
+  assert.equal(isBillingPaymentReceiptAcknowledged("transaction_submitted"), false);
+  assert.equal(isBillingPaymentReceiptAcknowledged("rpc_retry"), false);
 });
 
 test("late-payment discovery remains open for seven days after expiry, then stops", () => {
