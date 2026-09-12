@@ -140,6 +140,25 @@ test("routes a finalized receipt whose canonical block hash changed to review", 
   );
 });
 
+test("refuses early activation when the current canonical block hash already changed", async () => {
+  const result = await verify({
+    client: client({
+      async getBlockNumber() { return 100n; },
+      async getBlock(params) {
+        return {
+          number: params.blockNumber ?? 99n,
+          hash: params.blockNumber === undefined ? BLOCK_HASH : `0x${"ef".repeat(32)}`
+        };
+      }
+    })
+  });
+  assert.equal("confirmations" in result ? result.confirmations : null, 1);
+  assert.deepEqual(
+    result.kind === "review_required" && result.reason,
+    "block_hash_mismatch"
+  );
+});
+
 test("retries when finalized-head data is unavailable", async () => {
   const result = await verify({
     client: client({

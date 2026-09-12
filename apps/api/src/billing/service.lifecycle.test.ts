@@ -54,6 +54,7 @@ import {
   runSerializableBillingConfigTransaction,
   runTrackedWorkspaceEntitlementSync,
   shouldEscalateMissingBillingTransaction,
+  shouldTrackActivatedBillingPaymentFinality,
   shouldResumeVerifiedBillingPayment,
   validateBillingPackageConfiguration
 } from "./service.js";
@@ -385,6 +386,21 @@ test("discovery and reconcile CAS cannot regress paid or already verified state"
   }), false);
   assert.equal(state.orderStatus, "CONFIRMING");
   assert.equal(state.payment.verifiedAt?.toISOString(), "2026-08-01T12:00:00.000Z");
+
+  state.orderStatus = "PAID";
+  state.payment.verifiedAt = null;
+  assert.equal(await persistBillingVerificationTransition({
+    database,
+    orderId: "order_1",
+    txHash: HASH_A,
+    expectedVerificationAttempts: 1,
+    expectedOrderStatuses: ["PAID"],
+    orderStatus: "PAID",
+    paymentStatusRaw: "onchain_confirmed",
+    paymentData: { verifiedAt: new Date("2026-08-01T12:30:00.000Z") }
+  }), true);
+  assert.equal(state.orderStatus, "PAID");
+  assert.equal(state.payment.verifiedAt?.toISOString(), "2026-08-01T12:30:00.000Z");
 });
 
 test("migration enforces replay, concurrent-checkout and lifecycle idempotency constraints", async () => {
@@ -495,6 +511,25 @@ test("a validated receipt stays user-visible while network finality retries", ()
   assert.equal(isBillingPaymentReceiptAcknowledged("finalizing:onchain_confirmed"), true);
   assert.equal(isBillingPaymentReceiptAcknowledged("transaction_submitted"), false);
   assert.equal(isBillingPaymentReceiptAcknowledged("rpc_retry"), false);
+});
+
+test("an activated receipt remains in background finality tracking until verified", () => {
+  const provisional = {
+    provider: "ARBITRUM_USDC",
+    status: "PAID",
+    paymentStatusRaw: "payment_received",
+    onchainPayment: { txHash: HASH_A, verifiedAt: null }
+  };
+  assert.equal(shouldTrackActivatedBillingPaymentFinality(provisional), true);
+  assert.equal(shouldTrackActivatedBillingPaymentFinality({
+    ...provisional,
+    onchainPayment: { ...provisional.onchainPayment, verifiedAt: new Date() }
+  }), false);
+  assert.equal(shouldTrackActivatedBillingPaymentFinality({
+    ...provisional,
+    paymentStatusRaw: "onchain_confirmed"
+  }), false);
+  assert.equal(shouldTrackActivatedBillingPaymentFinality({ ...provisional, status: "CONFIRMING" }), false);
 });
 
 test("late-payment discovery remains open for seven days after expiry, then stops", () => {

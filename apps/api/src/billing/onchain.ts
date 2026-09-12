@@ -288,15 +288,6 @@ export async function verifyArbitrumUsdcTransaction(params: {
   if (recipientTransfers.length > 1) return review("ambiguous_transfers");
   if (recipientTransfers[0]!.value !== params.expectedAmountRaw) return review("amount_mismatch");
 
-  if (confirmations < confirmationsRequired || finalizedBlock < receipt.blockNumber) {
-    return {
-      kind: "confirming",
-      confirmations,
-      blockNumber: receipt.blockNumber,
-      blockHash: receipt.blockHash
-    };
-  }
-
   try {
     const canonicalBlock = await params.client.getBlock({ blockNumber: receipt.blockNumber });
     if (
@@ -311,6 +302,15 @@ export async function verifyArbitrumUsdcTransaction(params: {
     return {
       kind: "retry",
       reason: `rpc_unavailable:${String((error as any)?.message ?? error).slice(0, 180)}`
+    };
+  }
+
+  if (confirmations < confirmationsRequired || finalizedBlock < receipt.blockNumber) {
+    return {
+      kind: "confirming",
+      confirmations,
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash
     };
   }
 

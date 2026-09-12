@@ -3085,12 +3085,23 @@ export function isBillingPaymentReceiptAcknowledged(statusRaw: unknown): boolean
     || status.startsWith("finalizing:onchain_confirmed");
 }
 
+export function shouldTrackActivatedBillingPaymentFinality(order: any): boolean {
+  return Boolean(
+    order?.provider === "ARBITRUM_USDC"
+    && order?.status === "PAID"
+    && order?.paymentStatusRaw === "payment_received"
+    && order?.onchainPayment?.verifiedAt == null
+    && order?.onchainPayment?.txHash
+  );
+}
+
 export async function persistBillingVerificationTransition(params: {
   database: any;
   orderId: string;
   txHash: string;
   expectedVerificationAttempts: number;
-  orderStatus: "CONFIRMING" | "REVIEW_REQUIRED";
+  orderStatus: "CONFIRMING" | "PAID" | "REVIEW_REQUIRED";
+  expectedOrderStatuses?: Array<"PENDING" | "CONFIRMING" | "PAID">;
   paymentStatusRaw: string;
   paymentData: Record<string, unknown>;
 }): Promise<boolean> {
@@ -3102,7 +3113,7 @@ export async function persistBillingVerificationTransition(params: {
         where: {
           id: params.orderId,
           provider: "ARBITRUM_USDC",
-          status: { in: ["PENDING", "CONFIRMING"] }
+          status: { in: params.expectedOrderStatuses ?? ["PENDING", "CONFIRMING"] }
         },
         data: {
           status: params.orderStatus,
@@ -3163,8 +3174,11 @@ export async function reconcileBillingOrderPayment(params: {
   if (order.provider !== "ARBITRUM_USDC" || !order.onchainPayment) {
     throw new Error("order_not_payable");
   }
-  if (order.status === "PAID") return { order, payment: buildOnchainPaymentResponse(order) };
-  if (order.status !== "PENDING" && order.status !== "CONFIRMING") {
+  const trackingActivatedPayment = shouldTrackActivatedBillingPaymentFinality(order);
+  if (order.status === "PAID" && !trackingActivatedPayment) {
+    return { order, payment: buildOnchainPaymentResponse(order) };
+  }
+  if (order.status !== "PENDING" && order.status !== "CONFIRMING" && !trackingActivatedPayment) {
     throw new Error(order.status === "REVIEW_REQUIRED" ? "review_required" : "order_not_payable");
   }
   const txHash = order.onchainPayment.txHash ? String(order.onchainPayment.txHash) : "";
@@ -3212,7 +3226,12 @@ export async function reconcileBillingOrderPayment(params: {
       orderId: order.id,
       txHash,
       expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
-      orderStatus: staleMissingTransaction ? "REVIEW_REQUIRED" : "CONFIRMING",
+      orderStatus: staleMissingTransaction
+        ? "REVIEW_REQUIRED"
+        : trackingActivatedPayment
+          ? "PAID"
+          : "CONFIRMING",
+      expectedOrderStatuses: trackingActivatedPayment ? ["PAID"] : undefined,
       paymentStatusRaw: staleMissingTransaction
         ? "stale_missing_transaction"
         : isBillingPaymentReceiptAcknowledged(order.paymentStatusRaw)
@@ -3237,7 +3256,10 @@ export async function reconcileBillingOrderPayment(params: {
       txHash,
       expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
       orderStatus: "REVIEW_REQUIRED",
-      paymentStatusRaw: result.reason,
+      expectedOrderStatuses: trackingActivatedPayment ? ["PAID"] : undefined,
+      paymentStatusRaw: trackingActivatedPayment
+        ? `post_activation_review:${result.reason}`
+        : result.reason,
       paymentData: {
         verificationAttempts: { increment: 1 },
         lastCheckedAt: checkedAt,
@@ -3257,11 +3279,12 @@ export async function reconcileBillingOrderPayment(params: {
     orderId: order.id,
     txHash,
     expectedVerificationAttempts: normalizeInt(order.onchainPayment.verificationAttempts, 0, 0),
-    orderStatus: "CONFIRMING",
+    orderStatus: trackingActivatedPayment ? "PAID" : "CONFIRMING",
+    expectedOrderStatuses: trackingActivatedPayment ? ["PAID"] : undefined,
     // A `confirming` verifier result has already proven the successful receipt,
     // sender, token, Treasury and exact transfer amount. Expose that durable
-    // acknowledgement immediately while finality and entitlement activation
-    // continue in the background.
+    // acknowledgement and reversible service entitlement immediately while
+    // parent-chain finality continues in the background.
     paymentStatusRaw: result.kind === "confirmed" ? "onchain_confirmed" : "payment_received",
     paymentData: {
       verificationAttempts: { increment: 1 },
@@ -3276,11 +3299,11 @@ export async function reconcileBillingOrderPayment(params: {
   });
   if (!persisted) return resolveBillingOrderAfterVerificationCasLoss(order.id, params.userId);
 
-  if (result.kind === "confirmed") {
+  if (!trackingActivatedPayment) {
     await finalizeConfirmedBillingOrderWithReviewHandling(
       order.id,
       order.merchantOrderId,
-      "onchain_confirmed",
+      result.kind === "confirmed" ? "onchain_confirmed" : "payment_received",
       checkedAt
     );
   }
@@ -3298,8 +3321,18 @@ export async function reconcilePendingBillingPayments(params?: {
   const rows = await db.billingOnchainPayment.findMany({
     where: {
       txHash: { not: null },
-      OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
-      order: { status: { in: ["PENDING", "CONFIRMING"] } }
+      AND: [
+        { OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }] },
+        {
+          OR: [
+            { order: { status: { in: ["PENDING", "CONFIRMING"] } } },
+            {
+              verifiedAt: null,
+              order: { status: "PAID", paymentStatusRaw: "payment_received" }
+            }
+          ]
+        }
+      ]
     },
     select: { orderId: true, verificationAttempts: true },
     orderBy: [{ nextRetryAt: "asc" }, { createdAt: "asc" }],
@@ -3319,7 +3352,12 @@ export async function reconcilePendingBillingPayments(params?: {
           orderId: row.orderId,
           verificationAttempts: normalizeInt(row.verificationAttempts, 0, 0),
           verifiedAt: null,
-          order: { status: { in: ["PENDING", "CONFIRMING"] } }
+          order: {
+            OR: [
+              { status: { in: ["PENDING", "CONFIRMING"] } },
+              { status: "PAID", paymentStatusRaw: "payment_received" }
+            ]
+          }
         },
         data: {
           verificationAttempts: { increment: 1 },
@@ -4365,7 +4403,9 @@ async function finalizeConfirmedBillingOrderWithReviewHandling(
         });
         if (orderClaim.count !== 1) return false;
         const paymentClaim = await tx.billingOnchainPayment.updateMany({
-          where: { orderId, verifiedAt: { not: null } },
+          where: statusRaw === "payment_received"
+            ? { orderId, txHash: { not: null } }
+            : { orderId, verifiedAt: { not: null } },
           data: {
             nextRetryAt: null,
             lastCheckedAt: new Date(),

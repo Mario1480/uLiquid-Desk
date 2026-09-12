@@ -961,9 +961,11 @@ function SubscriptionOrderPageContent() {
               <div className="subscriptionPortalMuted">{t("order.payment.orderId", { id: activeCheckout.merchantOrderId ?? activeCheckout.orderId })}</div>
             </div>
             <DeskBadge className={`subscriptionStatusPill subscriptionStatusPill${paymentStage === "received" ? "paid" : activeCheckout.status}`}>
-              {paymentStage === "received"
-                ? t("orders.statuses.paymentReceived")
-                : t(`orders.statuses.${activeCheckout.status === "review_required" ? "reviewRequired" : activeCheckout.status}`)}
+              {paymentStage === "confirmed"
+                ? t("order.payment.stages.confirmed")
+                : paymentStage === "received"
+                  ? t("orders.statuses.paymentReceived")
+                  : t(`orders.statuses.${activeCheckout.status === "review_required" ? "reviewRequired" : activeCheckout.status}`)}
             </DeskBadge>
           </div>
 
@@ -1091,8 +1093,10 @@ function SubscriptionOrderPageContent() {
           {payment.txHash ? (
             <div className="subscriptionPaymentConfirmationMeta">
               <span className="subscriptionMono">{payment.txHash}</span>
-              {paymentStage === "received"
-                ? <span>{t("order.payment.networkFinalityPending")}</span>
+              {activeCheckout.paymentStatusRaw === "payment_received"
+                ? <span>{t(paymentStage === "confirmed"
+                  ? "order.payment.networkFinalityAfterActivation"
+                  : "order.payment.networkFinalityPending")}</span>
                 : <span>{t("order.payment.confirmations", {
                   count: payment.confirmations ?? 0,
                   required: payment.confirmationsRequired ?? payment.requiredConfirmations ?? 12
