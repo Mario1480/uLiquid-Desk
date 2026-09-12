@@ -2,7 +2,7 @@
 
 Date: 2026-09-12  
 Environment: production  
-Application commits: `c7ec5f2bf58ddf843a18d3db752df9546308764e`, `027ad5c230277f6e8a44e19e059d03e1b93109b5`
+Application commits: `c7ec5f2bfd0a7cf3ee936c91ce0292a73e280be6`, `027ad5c230277f6e8a44e19e059d03e1b93109b5`
 
 ## Scope and decision state
 
