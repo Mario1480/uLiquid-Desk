@@ -4450,7 +4450,7 @@ async function finalizeConfirmedBillingOrder(
   let finalizationCommitted = false;
   await db.$transaction(async (tx: any) => {
     if (typeof tx.$queryRaw === "function") {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`billing-subscription:${order.userId}`}, 0))`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`billing-subscription:${order.userId}`}, 0))::text AS lock_result`;
     }
     const currentOrder = await tx.billingOrder.findUnique({
       where: { id: order.id },
