@@ -44,6 +44,7 @@ import {
   requirePayableBillingCartAmountCents,
   resolveBillingOrderFinalizationDecision,
   resolveBillingPackageCreditAmounts,
+  resolveCapacityAddonEntitlement,
   resolvePlanBaseQuotaDefaults,
   resolveCapacityAddonTargetTermInTransaction,
   resolveImmediatePremiumUpgradePricing,
@@ -1173,6 +1174,43 @@ test("an overdue paid term is activated before a capacity add-on selects its tar
   assert.equal(hasPaidCapacityAddonTarget(null, "PRO"), true);
   assert.equal(hasPaidCapacityAddonTarget(null, "PREMIUM"), true);
   assert.equal(hasPaidCapacityAddonTarget(null, "FREE"), false);
+});
+
+test("capacity add-on finalization honors a higher active admin plan override", () => {
+  const now = new Date("2026-09-12T08:30:00.000Z");
+  const overrideValidUntil = new Date("2027-08-29T23:59:59.999Z");
+  assert.deepEqual(resolveCapacityAddonEntitlement({
+    activeTerm: null,
+    subscription: {
+      effectivePlan: "FREE",
+      planValidUntil: null,
+      proValidUntil: null
+    },
+    adminOverride: {
+      active: true,
+      plan: "PREMIUM",
+      validUntil: overrideValidUntil
+    },
+    now
+  }), {
+    planScope: "PREMIUM",
+    validUntil: overrideValidUntil
+  });
+
+  assert.equal(resolveCapacityAddonEntitlement({
+    activeTerm: null,
+    subscription: {
+      effectivePlan: "FREE",
+      planValidUntil: null,
+      proValidUntil: null
+    },
+    adminOverride: {
+      active: true,
+      plan: "PREMIUM",
+      validUntil: now
+    },
+    now
+  }), null);
 });
 
 test("billing finalization only claims confirming orders and treats a concurrent paid winner as success", async () => {

@@ -4407,6 +4407,46 @@ export function hasPaidCapacityAddonTarget(activeTerm: unknown, effectivePlan: u
   return Boolean(activeTerm) || effectivePlan === "PRO" || effectivePlan === "PREMIUM";
 }
 
+export function resolveCapacityAddonEntitlement(params: {
+  activeTerm: { plan?: unknown; graceEndsAt?: unknown } | null;
+  subscription: { effectivePlan?: unknown; planValidUntil?: unknown; proValidUntil?: unknown };
+  adminOverride: { active?: unknown; plan?: unknown; validUntil?: unknown } | null;
+  now: Date;
+}): { planScope: StoredEffectivePlan; validUntil: Date } | null {
+  const commercialPlan = formatPlan(params.activeTerm?.plan ?? params.subscription.effectivePlan);
+  const activeTermGraceEndsAt = params.activeTerm?.graceEndsAt instanceof Date
+    ? params.activeTerm.graceEndsAt
+    : null;
+  const legacyPlanValidUntil = readPlanValidUntil(params.subscription);
+  const legacyGraceEndsAt = legacyPlanValidUntil ? addGracePeriod(legacyPlanValidUntil) : null;
+  const commercialValidUntil = activeTermGraceEndsAt && activeTermGraceEndsAt > params.now
+    ? activeTermGraceEndsAt
+    : legacyGraceEndsAt && legacyGraceEndsAt > params.now
+      ? legacyGraceEndsAt
+      : null;
+  const commercial = commercialPlan !== "free" && commercialValidUntil
+    ? { plan: commercialPlan, planScope: toStoredPlan(commercialPlan), validUntil: commercialValidUntil }
+    : null;
+
+  const overridePlan = params.adminOverride ? formatPlan(params.adminOverride.plan) : "free";
+  const overrideValidUntil = params.adminOverride?.validUntil instanceof Date
+    ? params.adminOverride.validUntil
+    : null;
+  const override = params.adminOverride?.active === true
+    && overridePlan !== "free"
+    && overrideValidUntil
+    && overrideValidUntil > params.now
+    ? { plan: overridePlan, planScope: toStoredPlan(overridePlan), validUntil: overrideValidUntil }
+    : null;
+
+  if (override && (!commercial || planRank(override.plan) > planRank(commercial.plan))) {
+    return { planScope: override.planScope, validUntil: override.validUntil };
+  }
+  return commercial
+    ? { planScope: commercial.planScope, validUntil: commercial.validUntil }
+    : null;
+}
+
 async function finalizeConfirmedBillingOrder(
   merchantOrderId: string,
   statusRaw: string,
@@ -4642,12 +4682,19 @@ async function finalizeConfirmedBillingOrder(
       });
       const activeTerm = target.term;
       lifecycleRunRequired = target.activated > 0;
-      const existingPlanValidUntil = readPlanValidUntil(existingSub);
-      const validUntil = activeTerm?.graceEndsAt
-        ?? (existingPlanValidUntil && addGracePeriod(existingPlanValidUntil) > now
-          ? addGracePeriod(existingPlanValidUntil)
-          : null);
-      if (!validUntil || !hasPaidCapacityAddonTarget(activeTerm, existingSub.effectivePlan)) {
+      const adminOverride = typeof tx.adminPlanOverride?.findUnique === "function"
+        ? await tx.adminPlanOverride.findUnique({
+          where: { userId: order.userId },
+          select: { active: true, plan: true, validUntil: true }
+        })
+        : null;
+      const entitlement = resolveCapacityAddonEntitlement({
+        activeTerm,
+        subscription: existingSub,
+        adminOverride,
+        now
+      });
+      if (!entitlement) {
         throw new Error("paid_plan_required_for_capacity_topup");
       }
       for (const [index, line] of applyLines.entries()) {
@@ -4672,13 +4719,13 @@ async function finalizeConfirmedBillingOrder(
             orderId: order.id,
             termId: activeTerm?.id ?? null,
             sourceKey: `order:${order.id}:capacity:${index}`,
-            planScope: activeTerm?.plan ?? existingSub.effectivePlan,
+            planScope: entitlement.planScope,
             deltaRunningBots: normalizeCapacityDelta(line.pkg.deltaRunningBots) * quantity,
             deltaRunningPredictionsAi: normalizeCapacityDelta(line.pkg.deltaRunningPredictionsAi) * quantity,
             deltaRunningPredictionsComposite: normalizeCapacityDelta(
               line.pkg.deltaRunningPredictionsComposite
             ) * quantity,
-            validUntil
+            validUntil: entitlement.validUntil
           }
         });
       }
