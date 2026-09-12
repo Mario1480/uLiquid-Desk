@@ -752,12 +752,9 @@
     padding: 10px;
   }
 
-  .subscriptionAddonItem {
-    grid-template-columns: 1fr;
-  }
-
-  .subscriptionAddonQuantityWrap {
-    justify-self: end;
+  .subscriptionAddonHeading {
+    flex-wrap: wrap;
+    gap: 2px 8px;
   }
 
   .subscriptionPaymentSteps,
